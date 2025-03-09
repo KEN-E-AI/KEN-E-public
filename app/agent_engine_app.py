@@ -36,8 +36,6 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# example
-
 class AgentEngineApp:
     """Class for managing agent engine functionality."""
 

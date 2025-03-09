@@ -25,8 +25,6 @@ from .crew.crew import DevCrew
 LOCATION = "us-central1"
 LLM = "gemini-2.0-flash-001"
 
-# test commit
-
 @tool
 def coding_tool(code_instructions: str) -> str:
     """Use this tool to write a python program given a set of requirements and or instructions."""
