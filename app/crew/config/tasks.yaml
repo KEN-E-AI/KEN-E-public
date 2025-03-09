@@ -12,26 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-code_task:
+retrieve_news_task:
   description: >
-    You are helping writing python code. These are the instructions:
-    
-    Instructions ------------ {code_instructions}
-
+    Conduct thorough research about the provided topic.
+    Make sure you find any interesting and relevant information given.
 
   expected_output: >
-    Your Final answer must be the full python code, only the python code and nothing else.
+    The list of 10 websites with the most relevant information about the topic.
 
 
-evaluate_task:
+website_scrape_task:
   description: >
-    You are helping writing python code. These are the instructions:
-    
-    Instructions ------------ {code_instructions}
-    
-    You will look over the code to insure that it is complete and does the job that it is supposed to do. You will also check for logic error, syntax errors, missing imports, variable declarations, mismatched brackets and missing test cases. If you find any issue in the code, ask the Senior Software Engineer to fix it by providing them the code and the instructions. Don't fix it yourself.
-
+    Scrape the website for the latest news and information
 
   expected_output: >
-    Your Final answer must be the full python code, only the python code and nothing else.
+    Fully scraped websites with all the important information from the website.
 
+ai_news_write_task:
+  description: >
+    Write the news article
+
+  expected_output: >
+    A fully fledge news article with the main topics, each with a full section of information.
+    Formatted as markdown without '```'
+
+file_write_task:
+  description: >
+    Convert the news article to a file
+
+  expected_output: >
+    A fully fledge news article with all information from previous task into a file named {date}_news_article.md
