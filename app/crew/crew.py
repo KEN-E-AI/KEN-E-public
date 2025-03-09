@@ -14,55 +14,85 @@
 
 # mypy: disable-error-code="attr-defined"
 from typing import Any
-
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
+#from crewai_tools import SerperDevTool, ScrapeWebsiteTool, FileWriterTool
 
 
 @CrewBase
-class DevCrew:
-    """Developer crew"""
+class AnalystCrew:
+    """Analyst crew"""
 
     agents_config: dict[str, Any]
     tasks_config: dict[str, Any]
 
     llm = "vertex_ai/gemini-2.0-flash-001"
 
+    # KEN-E -- Execution agent
     @agent
-    def senior_engineer_agent(self) -> Agent:
+    def ken_e(self) -> Agent:
         return Agent(
-            config=self.agents_config.get("senior_engineer_agent"),
-            allow_delegation=False,
-            verbose=True,
-            llm=self.llm,
-        )
-
-    @agent
-    def chief_qa_engineer_agent(self) -> Agent:
-        return Agent(
-            config=self.agents_config.get("chief_qa_engineer_agent"),
+            config=self.agents_config.get("ken_e"),
             allow_delegation=True,
             verbose=True,
+            tools=[], # FileWriterTool()]
+            llm=self.llm,
+        )
+
+    # BET-E -- Web Scraping Agent
+    @agent
+    def bet_e(self) -> Agent:
+        return Agent(
+            config=self.agents_config.get("bet_e"),
+            allow_delegation=False,
+            verbose=True,
+            tools=[], # SerperDevTool(),ScrapeWebsiteTool()
+            llm=self.llm,
+        )
+
+    # VIK-E -- Report writer
+    @agent
+    def vik_e(self) -> Agent:
+        return Agent(
+            config=self.agents_config.get("vik_e"),
+            allow_delegation=False,
+            verbose=True,
+            tools=[],
             llm=self.llm,
         )
 
     @task
-    def code_task(self) -> Task:
+    def retrieve_news_task(self) -> Task:
         return Task(
-            config=self.tasks_config.get("code_task"),
-            agent=self.senior_engineer_agent(),
+            config=self.tasks_config.get("retrieve_news_task"),
+            agent=self.bet_e(),
         )
 
     @task
-    def evaluate_task(self) -> Task:
+    def website_scrape_task(self) -> Task:
         return Task(
-            config=self.tasks_config.get("evaluate_task"),
-            agent=self.chief_qa_engineer_agent(),
+            config=self.tasks_config.get("website_scrape_task"),
+            agent=self.bet_e(),
+        )
+
+    @task
+    def ai_news_write_task(self) -> Task:
+        return Task(
+            config=self.tasks_config.get("ai_news_write_task"),
+            agent=self.vik_e(),
+        )
+
+    @task
+    def file_write_task(self) -> Task:
+        return Task(
+            config=self.tasks_config.get("file_write_task"),
+            agent=self.vik_e(),
+            # output_file="report.md"
         )
 
     @crew
     def crew(self) -> Crew:
-        """Creates the Dev Crew"""
+        """Creates the Analyst Crew"""
         return Crew(
             agents=self.agents,
             tasks=self.tasks,
