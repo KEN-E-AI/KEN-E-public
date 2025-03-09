@@ -20,7 +20,7 @@ from langchain_google_vertexai import ChatVertexAI
 from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from .crew.crew import DevCrew
+from .crew.crew import AnalystCrew
 
 LOCATION = "us-central1"
 LLM = "gemini-2.0-flash-001"
@@ -29,7 +29,7 @@ LLM = "gemini-2.0-flash-001"
 def coding_tool(code_instructions: str) -> str:
     """Use this tool to write a python program given a set of requirements and or instructions."""
     inputs = {"code_instructions": code_instructions}
-    return DevCrew().crew().kickoff(inputs=inputs)
+    return AnalystCrew().crew().kickoff(inputs=inputs)
 
 
 tools = [coding_tool]
@@ -50,16 +50,16 @@ def should_continue(state: MessagesState) -> str:
 def call_model(state: MessagesState, config: RunnableConfig) -> dict[str, BaseMessage]:
     """Calls the language model and returns the response."""
     system_message = (
-        "You are an expert Lead Software Engineer Manager.\n"
-        "Your role is to speak to a user and understand what kind of code they need to "
-        "build.\n"
+        "You are an expert Marketing Analyst named KEN-E.\n"
+        "Your role is to speak to a user and understand what kind of question they have about their "
+        "business.\n"
         "Part of your task is therefore to gather requirements and clarifying ambiguity "
         "by asking followup questions. Don't ask all the questions together as the user "
         "has a low attention span, rather ask a question at the time.\n"
-        "Once the problem to solve is clear, you will call your tool for writing the "
-        "solution.\n"
-        "Remember, you are an expert in understanding requirements but you cannot code, "
-        "use your coding tool to generate a solution. Keep the test cases if any, they "
+        "Once the question is clear, you will call your tool for analyzing "
+        "the data necessary to find an answer to the question.\n"
+        "Remember, you are an expert in understanding marketing strategy but you cannot write SQL yourself, "
+        "use your coding tool to interact with the data warehouse. Keep the test cases if any, they "
         "are useful for the user."
     )
 

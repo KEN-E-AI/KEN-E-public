@@ -5,7 +5,7 @@ install:
 test:
 	uv run pytest tests/unit && uv run pytest tests/integration
 
-playground:
+ken-e:
 	PYTHONPATH=. uv run streamlit run frontend/streamlit_app.py --browser.serverAddress=localhost --server.enableCORS=false --server.enableXsrfProtection=false
 
 backend:
