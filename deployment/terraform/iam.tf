@@ -96,3 +96,16 @@ resource "google_project_iam_member" "vertexai_pipeline_sa_roles" {
   member     = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa[split(",", each.key)[0]].email}"
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
+
+# assigning IAM roles for db access
+resource "google_project_iam_member" "cloudsql_client_staging" {
+  project = var.staging_project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa["staging"].email}"
+}
+
+resource "google_project_iam_member" "cloudsql_client_prod" {
+  project = var.prod_project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa["prod"].email}"
+}
