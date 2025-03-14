@@ -1,4 +1,4 @@
-# ken-e
+# KEN-E
 
 A multi-agent system implemented with CrewAI created to support coding activities
 
@@ -55,7 +55,7 @@ gcloud auth application-default set-quota-project $PROJECT_ID
 | Command              | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `make install`       | Install all required dependencies using uv                                                  |
-| `make playground`    | Launch Streamlit interface for testing agent locally and remotely |
+| `make ken-e`         | Launch Streamlit interface for testing agent locally and remotely |
 | `make backend`       | Deploy agent to Agent Engine service |
 | `make test`          | Run unit and integration tests                                                              |
 | `make lint`          | Run code quality checks (codespell, ruff, mypy)                                             |
