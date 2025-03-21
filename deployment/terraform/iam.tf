@@ -57,14 +57,14 @@ resource "google_project_iam_member" "vertex_ai_sa_permissions" {
     for pair in setproduct(keys(local.deploy_project_ids), var.agentengine_sa_roles) :
     "${pair[0]}_${pair[1]}" => {
       project = local.deploy_project_ids[pair[0]]
-      role = pair[1]
+      role    = pair[1]
     }
   }
 
-  project     = each.value.project
-  role        = each.value.role
-  member      = "serviceAccount:service-${data.google_project.projects[split("_", each.key)[0]].number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
-  depends_on  = [resource.google_project_service.shared_services, resource.google_project_service_identity.vertex_sa]
+  project    = each.value.project
+  role       = each.value.role
+  member     = "serviceAccount:service-${data.google_project.projects[split("_", each.key)[0]].number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+  depends_on = [resource.google_project_service.shared_services, resource.google_project_service_identity.vertex_sa]
 }
 
 # Special assignment: Allow the CICD SA to create tokens

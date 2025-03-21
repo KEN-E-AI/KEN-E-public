@@ -34,3 +34,7 @@ pipeline_cron_schedule = "0 0 * * 0"
 
 #The value can only be one of "global", "us" and "eu".
 data_store_region = "us"
+
+# sql db passwords
+staging_db_password = "ppPP00))pp"
+prod_db_password = "ppPP00))pp"

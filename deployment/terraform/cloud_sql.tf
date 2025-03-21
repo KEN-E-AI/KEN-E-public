@@ -6,9 +6,16 @@ resource "google_sql_database_instance" "staging_sql" {
   project          = var.staging_project_id
 
   settings {
-    tier              = "db-f1-micro"  # Change if a bigger instance is needed
+    tier              = "db-f1-micro" # Change if a bigger instance is needed
     availability_type = "REGIONAL"
     disk_autoresize   = true
+
+    backup_configuration {
+      enabled            = true
+      start_time         = "02:00"
+      binary_log_enabled = true
+    }
+
     ip_configuration {
       ipv4_enabled = true
     }
@@ -25,6 +32,13 @@ resource "google_sql_database_instance" "prod_sql" {
     tier              = "db-f1-micro"
     availability_type = "REGIONAL"
     disk_autoresize   = true
+
+    backup_configuration {
+      enabled            = true
+      start_time         = "02:00"
+      binary_log_enabled = true
+    }
+
     ip_configuration {
       ipv4_enabled = true
     }
@@ -46,17 +60,17 @@ resource "google_sql_database" "prod_db" {
 
 # creating db users for staging and prod
 resource "google_sql_user" "staging_user" {
-  name     = "genai_user"
-  instance = google_sql_database_instance.staging_sql.name
-  project  = var.staging_project_id
-  password = ""
+  name        = "genai_user"
+  instance    = google_sql_database_instance.staging_sql.name
+  project     = var.staging_project_id
+  password_wo = var.staging_db_password
 }
 
 resource "google_sql_user" "prod_user" {
-  name     = "genai_user"
-  instance = google_sql_database_instance.prod_sql.name
-  project  = var.prod_project_id
-  password = ""
+  name        = "genai_user"
+  instance    = google_sql_database_instance.prod_sql.name
+  project     = var.prod_project_id
+  password_wo = var.prod_db_password
 }
 
 # storage buckets for sql import (separate for staging & prod)
@@ -78,13 +92,13 @@ resource "google_storage_bucket" "sql_bucket_prod" {
 resource "google_storage_bucket_object" "sql_script_staging" {
   name   = "init.sql"
   bucket = google_storage_bucket.sql_bucket_staging.name
-  source = "deployment/terraform/sql/init.sql"
+  source = "./sql/init.sql"
 }
 
 resource "google_storage_bucket_object" "sql_script_prod" {
   name   = "init.sql"
   bucket = google_storage_bucket.sql_bucket_prod.name
-  source = "deployment/terraform/sql/init.sql"
+  source = "./sql/init.sql"
 }
 
 # excute sql script on cloud sql
