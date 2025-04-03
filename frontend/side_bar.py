@@ -51,6 +51,58 @@ class SideBar:
     def init_side_bar(self) -> None:
         """Initialize and render the sidebar components."""
         with self.st.sidebar:
+            c1, c2, c3, c4, c5, c6, c7 = self.st.columns(7)
+            with self.st.container():
+                c1.button(
+                    "",
+                    icon=":material/leaderboard:",
+                    key="1",
+                    on_click=lambda: self.st.session_state.update({"page": "program_overview"})
+                )
+                c2.button(
+                    "",
+                    icon=":material/filter_alt:",
+                    key="2",
+                    on_click=lambda: self.st.session_state.update({"page": "funnel_analysis"})
+                )
+                c3.button(
+                    "",
+                    icon=":material/groups_2:",
+                    key="3",
+                    on_click=lambda: self.st.session_state.update({"page": "competitors"})
+                )
+                c4.button(
+                    "",
+                    icon=":material/diversity_3:",
+                    key="4",
+                    on_click=lambda: self.st.session_state.update({"page": "audiences"})
+                )
+                c5.button(
+                    "",
+                    icon=":material/casino:",
+                    key="5",
+                    on_click=lambda: self.st.session_state.update({"page": "big_bets"})
+                )
+                c6.button(
+                    "",
+                    icon=":material/query_stats:",
+                    key="6",
+                    on_click=lambda: self.st.session_state.update({"page": "exploration"})
+                )
+                c7.button(
+                    "",
+                    icon=":material/support_agent:",
+                    key="7",
+                    on_click=lambda: self.st.session_state.update({"page": "support"})
+                )
+
+            account_labels = self.st.session_state["account_options"]
+            selected = self.st.selectbox("Account Name", account_labels)
+            selected_index = account_labels.index(selected)
+            self.st.session_state["selected_account"] = self.st.session_state["accounts"][selected_index]
+
+            self.chat_placeholder = self.st.empty()
+
             default_agent_type = (
                 "Remote URL" if os.path.exists("Dockerfile") else "Local Agent"
             )
@@ -211,3 +263,64 @@ class SideBar:
             )
 
             self.st.caption(f"Note: {HELP_MESSAGE_MULTIMODALITY}")
+            
+            self.st.button(
+                label="",
+                icon=":material/neurology:",
+                key="configure",
+                on_click=lambda: self.st.session_state.update({"page": "configure"})
+            )
+
+            # if self.st.session_state.get("configure_click"):
+            #     self.st.session_state.update({"page": "configure"})
+            #     self.st.session_state["configure_click"] = False  # reset it
+
+            # self.st.markdown(
+            #     """
+            #     <style>
+            #         .fixed-configure {
+            #             position: fixed;
+            #             bottom: 20px;
+            #             left: 20px;
+            #             z-index: 1000;
+            #         }
+            #         .configure-button {
+            #             display: inline-flex;
+            #             -webkit-box-align: center;
+            #             align-items: center;
+            #             -webkit-box-pack: center;
+            #             justify-content: center;
+            #             font-weight: 400;
+            #             padding: 0.25rem 0.75rem;
+            #             border-radius: 0.5rem;
+            #             min-height: 2.5rem;
+            #             margin: 0px;
+            #             line-height: 1.6;
+            #             text-transform: none;
+            #             font-size: inherit;
+            #             font-family: inherit;
+            #             color: inherit;
+            #             width: auto;
+            #             cursor: pointer;
+            #             user-select: none;
+            #             background-color: rgb(43, 44, 54);
+            #             border: 1px solid #ffffff40;
+            #         }
+            #         .configure-button:hover {
+            #             border-color: #E14B00;
+            #         }
+            #     </style>
+            #     <div class="fixed-configure">
+            #         <form action="#">
+            #             <button class="configure-button" onclick="window.parent.postMessage({type: 'streamlit:setComponentValue', key: 'configure_click', value: true}, '*')">
+            #                 ⚙️
+            #             </button>
+            #         </form>
+            #     </div>
+            #     """,
+            #     unsafe_allow_html=True,
+            # )
+
+
+                
+                

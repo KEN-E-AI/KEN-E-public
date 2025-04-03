@@ -46,6 +46,7 @@ steps:
     args:
       - "-c"
       - |
+        echo "$FIREBASE_KEY_JSON" > firebase-key.json
         uv export --no-hashes --no-sources --no-header --no-emit-project --frozen > .requirements.txt
         uv run app/agent_engine_app.py \
           --project ${_STAGING_PROJECT_ID} \
@@ -53,6 +54,7 @@ steps:
           --set-env-vars COMMIT_SHA=${COMMIT_SHA},DATA_STORE_ID=${_DATA_STORE_ID},DATA_STORE_REGION=${_DATA_STORE_REGION}
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+    secretEnv: ['FIREBASE_KEY_JSON']
 
 
   - name: gcr.io/cloud-builders/gcloud
@@ -133,3 +135,8 @@ logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
   substitutionOption: ALLOW_LOOSE
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/${PROJECT_ID}/secrets/firebase-key-staging/versions/latest
+      env: FIREBASE_KEY_JSON

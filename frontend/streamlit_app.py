@@ -15,6 +15,7 @@
 # mypy: disable-error-code="arg-type"
 import json
 import uuid
+import os
 from collections.abc import Sequence
 from functools import partial
 from typing import Any
@@ -30,9 +31,104 @@ from frontend.utils.message_editing import MessageEditing
 from frontend.utils.multimodal_utils import format_content, get_parts_from_files
 from frontend.utils.stream_handler import Client, StreamHandler, get_chain_response
 
+from firebase_admin import credentials, auth, initialize_app
+import mysql.connector
+
+from dotenv import load_dotenv
+load_dotenv()
+
+@st.cache_resource
+def init_firebase():
+    cred = credentials.Certificate("firebase-key.json")
+    return initialize_app(cred)
+
+init_firebase()
+
 USER = "my_user"
 EMPTY_CHAT_NAME = "Empty chat"
 
+
+def build_header():
+    header_container = st.container()
+    with header_container:
+        col_left, col_right = st.columns([0.82, 0.18])
+
+        with col_left:
+            st.title("KEN-E")
+        with col_right:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.button(
+                "",
+                icon=":material/share:",
+                key="share"
+            )
+            c2.button(
+                "",
+                icon=":material/notifications:",
+                key="notifications"
+            )
+            c3.button(
+                "",
+                icon=":material/account_circle:",
+                key="account"
+            )
+            c4.button(
+                "",
+                icon=":material/logout:",
+                key="logout"
+            )
+
+# --- Identity Platform auth guard ---
+if "user" not in st.session_state:
+    st.title("Login Required")
+    id_token = st.text_input("Enter your Firebase ID token:")
+    if st.button("Login") and id_token:
+        try:
+            decoded = auth.verify_id_token(id_token)
+            st.session_state["user"] = {
+                "uid": decoded["uid"],
+                "email": decoded["email"]
+            }
+            st.success("Logged in successfully")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Invalid token: {e}")
+    st.stop()
+
+def get_user_accounts(user_email):
+    conn = mysql.connector.connect(
+        host=os.environ["SQL_HOST"],
+        user=os.environ["SQL_USER"],
+        password=os.environ["SQL_PASSWORD"],
+        database=os.environ["SQL_DATABASE"]
+    )
+    cursor = conn.cursor(dictionary=True)
+
+    query = """
+    SELECT
+        a.account_id, 
+        a.account_name,
+        o.organization_name
+    FROM user_account_access ua
+    JOIN account_details a ON ua.account_id = a.account_id
+    JOIN organization_details o ON a.organization_id = o.organization_id
+    WHERE ua.user_email = %s
+    """
+    cursor.execute(query, (user_email,))
+    return cursor.fetchall()
+
+if "account_options" not in st.session_state:
+    accounts = get_user_accounts(st.session_state["user"]["email"])
+    if not accounts:
+        st.error("No accounts assigned to your user.")
+        st.stop()
+
+    st.session_state["accounts"] = accounts
+    st.session_state["account_options"] = [
+        f'{a["account_name"]} ({a["organization_name"]})'
+        for a in accounts
+    ]
+    st.session_state["selected_account"] = accounts[0]  # default
 
 def setup_page() -> None:
     """Configure the Streamlit page settings."""
@@ -42,7 +138,6 @@ def setup_page() -> None:
         initial_sidebar_state="auto",
         menu_items=None,
     )
-    st.title("KEN-E")
     st.markdown(MARKDOWN_STR, unsafe_allow_html=True)
 
 
@@ -66,6 +161,9 @@ def initialize_session_state() -> None:
             "title": EMPTY_CHAT_NAME,
             "messages": [],
         }
+    
+    if "page" not in st.session_state:
+        st.session_state["page"] = "home"
 
 
 def display_messages() -> None:
@@ -254,11 +352,78 @@ def main() -> None:
     """Main function to set up and run the Streamlit app."""
     setup_page()
     initialize_session_state()
+
+    current_page = st.session_state["page"]
+
+    build_header()
     side_bar = SideBar(st=st)
     side_bar.init_side_bar()
-    display_messages()
-    handle_user_input(side_bar=side_bar)
-    display_feedback(side_bar=side_bar)
+
+    if current_page == "home":
+        display_messages()
+        handle_user_input(side_bar=side_bar)
+        display_feedback(side_bar=side_bar)
+
+    elif current_page == "configure":
+        st.header("Configure")
+
+        selected = st.session_state["selected_account"]
+
+        st.text_input(
+            "Organization Name",
+            value=selected["organization_name"],
+            disabled=True
+        )
+        st.text_input(
+            "Account Name",
+            value=selected["account_name"],
+            disabled=True
+        )
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+    
+    elif current_page == "program_overview":
+        st.header("Program Overview")
+        st.write("Placeholder for Program Overview...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    elif current_page == "funnel_analysis":
+        st.header("Funnel Analysis")
+        st.write("Placeholder for Funnel Analysis...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    elif current_page == "competitors":
+        st.header("Competitors")
+        st.write("Placeholder for Competitors...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    elif current_page == "audiences":
+        st.header("Audiences")
+        st.write("Placeholder for Audiences...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    elif current_page == "big_bets":
+        st.header("Big Bets")
+        st.write("Placeholder for Big Bets...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    elif current_page == "exploration":
+        st.header("Exploration & Ad Hoc Analysis")
+        st.write("Placeholder for Exploration & Ad Hoc Analysis...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    elif current_page == "support":
+        st.header("Support")
+        st.write("Placeholder for Support...")
+        st.button("Back to Home", on_click=lambda: st.session_state.update({"page": "home"}))
+
+    if current_page != "home":
+        with side_bar.chat_placeholder.container():
+            st.markdown("---")
+            st.header("Chat")
+            display_messages()
+            handle_user_input(side_bar=side_bar)
+            display_feedback(side_bar=side_bar)
+            st.markdown("---")
 
 
 if __name__ == "__main__":

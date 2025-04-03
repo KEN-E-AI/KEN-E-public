@@ -195,3 +195,7 @@ my_env.tfvars
 .saved_chats
 .env
 .requirements.txt
+
+#secrets
+deployment/terraform/keys/*.json
+firebase-key.json
