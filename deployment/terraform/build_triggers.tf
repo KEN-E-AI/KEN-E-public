@@ -92,13 +92,13 @@ resource "google_cloudbuild_trigger" "deploy_to_prod_pipeline" {
     approval_required = true
   }
   substitutions = {
-    _PROD_PROJECT_ID             = var.prod_project_id
-    _REGION                      = var.region
-    _PIPELINE_GCS_ROOT             = "gs://${resource.google_storage_bucket.data_ingestion_pipeline_gcs_root["prod"].name}"
-    _PIPELINE_SA_EMAIL             = "${var.vertexai_pipeline_sa_name}@${var.prod_project_id}.iam.gserviceaccount.com"
-    _PIPELINE_CRON_SCHEDULE        = var.pipeline_cron_schedule
-    _DATA_STORE_ID                 = resource.google_discovery_engine_data_store.data_store_prod.data_store_id
-    _DATA_STORE_REGION             = var.data_store_region
+    _PROD_PROJECT_ID        = var.prod_project_id
+    _REGION                 = var.region
+    _PIPELINE_GCS_ROOT      = "gs://${resource.google_storage_bucket.data_ingestion_pipeline_gcs_root["prod"].name}"
+    _PIPELINE_SA_EMAIL      = "${var.vertexai_pipeline_sa_name}@${var.prod_project_id}.iam.gserviceaccount.com"
+    _PIPELINE_CRON_SCHEDULE = var.pipeline_cron_schedule
+    _DATA_STORE_ID          = resource.google_discovery_engine_data_store.data_store_prod.data_store_id
+    _DATA_STORE_REGION      = var.data_store_region
     # Your other Deploy to Prod Pipeline substitutions
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]

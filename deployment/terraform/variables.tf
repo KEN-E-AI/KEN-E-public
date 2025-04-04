@@ -119,7 +119,7 @@ variable "cicd_roles" {
 variable "cicd_sa_deployment_required_roles" {
   description = "List of roles to assign to the CICD runner service account for the Staging and Prod projects."
   type        = list(string)
-  default = [    
+  default = [
     "roles/iam.serviceAccountUser",
     "roles/aiplatform.user",
     "roles/storage.admin"
@@ -162,12 +162,24 @@ variable "pipelines_roles" {
 
 variable "datastore_name" {
   description = "The name of the datastore"
-  type = string
-  default = "sample-datastore"
+  type        = string
+  default     = "sample-datastore"
 }
 
 variable "search_engine_name" {
   description = "The name of the search engine"
-  type = string
-  default = "sample-search-engine"
+  type        = string
+  default     = "sample-search-engine"
+}
+
+variable "staging_db_password" {
+  description = "Password for staging database user"
+  type        = string
+  sensitive   = true
+}
+
+variable "prod_db_password" {
+  description = "Password for production database user"
+  type        = string
+  sensitive   = true
 }

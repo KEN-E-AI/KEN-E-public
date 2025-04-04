@@ -57,14 +57,14 @@ resource "google_project_iam_member" "vertex_ai_sa_permissions" {
     for pair in setproduct(keys(local.deploy_project_ids), var.agentengine_sa_roles) :
     "${pair[0]}_${pair[1]}" => {
       project = local.deploy_project_ids[pair[0]]
-      role = pair[1]
+      role    = pair[1]
     }
   }
 
-  project     = each.value.project
-  role        = each.value.role
-  member      = "serviceAccount:service-${data.google_project.projects[split("_", each.key)[0]].number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
-  depends_on  = [resource.google_project_service.shared_services, resource.google_project_service_identity.vertex_sa]
+  project    = each.value.project
+  role       = each.value.role
+  member     = "serviceAccount:service-${data.google_project.projects[split("_", each.key)[0]].number}@gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+  depends_on = [resource.google_project_service.shared_services, resource.google_project_service_identity.vertex_sa]
 }
 
 # Special assignment: Allow the CICD SA to create tokens
@@ -96,3 +96,35 @@ resource "google_project_iam_member" "vertexai_pipeline_sa_roles" {
   member     = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa[split(",", each.key)[0]].email}"
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
+
+# assigning IAM roles for db access
+resource "google_project_iam_member" "cloudsql_client_staging" {
+  project = var.staging_project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa["staging"].email}"
+}
+
+resource "google_project_iam_member" "cloudsql_client_prod" {
+  project = var.prod_project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa["prod"].email}"
+}
+
+# grant Cloud Build access to Firebase secrets in staging
+resource "google_secret_manager_secret_iam_member" "firebase_key_staging_access" {
+  secret_id = "projects/${var.staging_project_id}/secrets/firebase-key-staging"
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:service-${data.google_project.projects["staging"].number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
+
+  depends_on = [google_secret_manager_secret.firebase_key_staging]
+}
+
+# grant Cloud Build access to Firebase secrets in production
+resource "google_secret_manager_secret_iam_member" "firebase_key_prod_access" {
+  secret_id = "projects/${var.prod_project_id}/secrets/firebase-key-prod"
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:service-${data.google_project.projects["prod"].number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
+
+  depends_on = [google_secret_manager_secret.firebase_key_prod]
+}
+
