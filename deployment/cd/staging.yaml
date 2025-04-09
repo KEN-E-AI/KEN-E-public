@@ -51,7 +51,7 @@ steps:
         uv run app/agent_engine_app.py \
           --project ${_STAGING_PROJECT_ID} \
           --location ${_REGION} \
-          --set-env-vars COMMIT_SHA=${COMMIT_SHA},DATA_STORE_ID=${_DATA_STORE_ID},DATA_STORE_REGION=${_DATA_STORE_REGION},SQL_HOST=34.31.4.1,SQL_USER=genai_user,SQL_PASSWORD=ppPP00\\)\\)pp,SQL_DATABASE=genai_db
+          --set-env-vars "COMMIT_SHA=${COMMIT_SHA},DATA_STORE_ID=${_DATA_STORE_ID},DATA_STORE_REGION=${_DATA_STORE_REGION},SQL_HOST=34.31.4.1,SQL_USER=genai_user,SQL_PASSWORD=ppPP00))pp,SQL_DATABASE=genai_db"
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
     secretEnv: ['_FIREBASE_KEY_JSON']

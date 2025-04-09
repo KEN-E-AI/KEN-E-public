@@ -53,7 +53,7 @@ steps:
         uv run app/agent_engine_app.py \
           --project ${_PROD_PROJECT_ID} \
           --location ${_REGION} \
-          --set-env-vars COMMIT_SHA=${COMMIT_SHA},DATA_STORE_ID=${_DATA_STORE_ID},DATA_STORE_REGION=${_DATA_STORE_REGION}
+          --set-env-vars "COMMIT_SHA=${COMMIT_SHA},DATA_STORE_ID=${_DATA_STORE_ID},DATA_STORE_REGION=${_DATA_STORE_REGION}"
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
     secretEnv: ['_FIREBASE_KEY_JSON']
