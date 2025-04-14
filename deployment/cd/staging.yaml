@@ -152,6 +152,7 @@ steps:
       - "--image=gcr.io/${PROJECT_ID}/streamlit-staging:${COMMIT_SHA}"
       - "--region=${_REGION}"
       - "--allow-unauthenticated"
+      - "--project=${_STAGING_PROJECT_ID}"
       # if you want environment variables for the DB:
       - "--set-env-vars"
       - "SQL_HOST=34.31.4.1,SQL_USER=genai_user,SQL_PASSWORD=ppPP00))pp,SQL_DATABASE=genai_db"
