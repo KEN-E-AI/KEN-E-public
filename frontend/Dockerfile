@@ -15,7 +15,7 @@ COPY . /app
 # Install uv (like your Makefile does) and then sync
 # We replicate what "make install" typically does
 # with extras like streamlit and jupyter.
-RUN pip install --no-cache-dir uv==<YOUR_VERSION> && \
+RUN pip install --no-cache-dir uv && \
     uv sync --dev --extra streamlit --extra jupyter --frozen
 
 # Streamlit typically defaults to port 8501, 
