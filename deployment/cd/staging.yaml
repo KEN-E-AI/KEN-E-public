@@ -73,7 +73,7 @@ steps:
       - "-c"
       - |
         export _AUTH_TOKEN=$(cat auth_token.txt)
-        uv add locust==2.32.6
+        uv add locust==2.32.6 gevent==24.11.1
         uv run locust -f tests/load_test/load_test.py \
         --headless \
         -t 15s -u 1 -r 0.25 \
