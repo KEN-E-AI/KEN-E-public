@@ -16,8 +16,7 @@ COPY . /app
 # We replicate what "make install" typically does
 # with extras like streamlit and jupyter.
 RUN pip install --no-cache-dir uv && \
-    uv sync --dev --extra streamlit --extra jupyter --frozen && \
-    pip install --no-cache-dir streamlit
+    uv sync --dev --extra streamlit --extra jupyter --frozen
 
 # Streamlit typically defaults to port 8501, 
 # but Cloud Run (or other hosts) usually expect port 8080.
@@ -27,6 +26,6 @@ EXPOSE 8080
 # Set the command to run your Streamlit app
 # Notice we point to the same script you run locally.
 # Adjust paths if your main code is in a different folder.
-CMD ["streamlit", "run", "frontend/streamlit_app.py", \
+CMD ["uv", "run", "streamlit", "run", "frontend/streamlit_app.py", \
      "--server.port=8080", \
      "--server.address=0.0.0.0"]
