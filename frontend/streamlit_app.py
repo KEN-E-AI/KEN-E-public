@@ -31,8 +31,7 @@ from frontend.utils.message_editing import MessageEditing
 from frontend.utils.multimodal_utils import format_content, get_parts_from_files
 from frontend.utils.stream_handler import Client, StreamHandler, get_chain_response
 
-import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, initialize_app
 import mysql.connector
 
 from dotenv import load_dotenv
@@ -40,19 +39,9 @@ load_dotenv()
 
 @st.cache_resource
 def init_firebase():
-    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-key.json")
-
-    # If file doesn't exist but env var is set, create it
-    if not os.path.exists(credentials_path):
-        secret_value = os.getenv("FIREBASE_KEY_JSON")
-        if secret_value:
-            with open(credentials_path, "w") as f:
-                f.write(secret_value)
-        else:
-            raise ValueError("Firebase credentials secret is missing in environment variables.")
-
+    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "/secrets/FIREBASE_KEY_JSON")
     cred = credentials.Certificate(credentials_path)
-    firebase_admin.initialize_app(cred)
+    initialize_app(cred)
 
 init_firebase()
 
