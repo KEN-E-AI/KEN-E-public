@@ -154,9 +154,10 @@ steps:
       - "--allow-unauthenticated"
       - "--memory=1Gi"
       - "--project=${_STAGING_PROJECT_ID}"
-      # if you want environment variables for the DB:
+      - "--set-secrets"
+      - "FIREBASE_KEY_JSON=firebase-key-staging:latest"
       - "--set-env-vars"
-      - "SQL_HOST=34.31.4.1,SQL_USER=genai_user,SQL_PASSWORD=ppPP00))pp,SQL_DATABASE=genai_db"
+      - "SQL_HOST=34.31.4.1,SQL_USER=genai_user,SQL_PASSWORD=ppPP00))pp,SQL_DATABASE=genai_db,FIREBASE_CREDENTIALS_PATH=/secrets/FIREBASE_KEY_JSON"
 
 
 substitutions:

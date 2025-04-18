@@ -31,7 +31,8 @@ from frontend.utils.message_editing import MessageEditing
 from frontend.utils.multimodal_utils import format_content, get_parts_from_files
 from frontend.utils.stream_handler import Client, StreamHandler, get_chain_response
 
-from firebase_admin import credentials, auth, initialize_app
+import firebase_admin
+from firebase_admin import credentials, auth
 import mysql.connector
 
 from dotenv import load_dotenv
@@ -39,8 +40,9 @@ load_dotenv()
 
 @st.cache_resource
 def init_firebase():
-    cred = credentials.Certificate("firebase-key.json")
-    return initialize_app(cred)
+    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-key.json")
+    cred = credentials.Certificate(credentials_path)
+    firebase_admin.initialize_app(cred)
 
 init_firebase()
 
