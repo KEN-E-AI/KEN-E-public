@@ -41,6 +41,16 @@ load_dotenv()
 @st.cache_resource
 def init_firebase():
     credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-key.json")
+
+    # If file doesn't exist but env var is set, create it
+    if not os.path.exists(credentials_path):
+        secret_value = os.getenv("FIREBASE_KEY_JSON")
+        if secret_value:
+            with open(credentials_path, "w") as f:
+                f.write(secret_value)
+        else:
+            raise ValueError("Firebase credentials secret is missing in environment variables.")
+
     cred = credentials.Certificate(credentials_path)
     firebase_admin.initialize_app(cred)
 
