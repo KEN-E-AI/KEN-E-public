@@ -39,9 +39,12 @@ load_dotenv()
 
 @st.cache_resource
 def init_firebase():
-    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "/secrets/FIREBASE_KEY_JSON")
-    cred = credentials.Certificate(credentials_path)
-    initialize_app(cred)
+    import firebase_admin
+
+    if not firebase_admin._apps:
+        credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "/secrets/FIREBASE_KEY_JSON")
+        cred = credentials.Certificate(credentials_path)
+        initialize_app(cred)
 
 USER = "my_user"
 EMPTY_CHAT_NAME = "Empty chat"
