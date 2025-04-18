@@ -43,8 +43,6 @@ def init_firebase():
     cred = credentials.Certificate(credentials_path)
     initialize_app(cred)
 
-init_firebase()
-
 USER = "my_user"
 EMPTY_CHAT_NAME = "Empty chat"
 
@@ -351,6 +349,7 @@ def display_feedback(side_bar: SideBar) -> None:
 
 def main() -> None:
     """Main function to set up and run the Streamlit app."""
+    init_firebase()
     setup_page()
     initialize_session_state()
 
