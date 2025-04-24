@@ -41,10 +41,15 @@ load_dotenv()
 def init_firebase():
     import firebase_admin
 
+    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "/secrets/FIREBASE_KEY_JSON")
+    st.info(f"Firebase credentials path: {credentials_path}")
+
     if not firebase_admin._apps:
-        credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "/secrets/FIREBASE_KEY_JSON")
+        st.info("Initializing Firebase app...")
         cred = credentials.Certificate(credentials_path)
-        initialize_app(cred)
+        firebase_admin.initialize_app(cred)
+    else:
+        st.info("Firebase already initialized.")
 
 USER = "my_user"
 EMPTY_CHAT_NAME = "Empty chat"
