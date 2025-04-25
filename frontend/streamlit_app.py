@@ -41,27 +41,19 @@ load_dotenv()
 def init_firebase():
     import firebase_admin
 
-    st.info("🔵 init_firebase() called.")
-
     firebase_json = os.getenv("FIREBASE_KEY_JSON")
     if not firebase_json:
         st.error("🛑 FIREBASE_KEY_JSON environment variable is missing.")
         st.stop()
 
-    st.info("🟡 FIREBASE_KEY_JSON environment variable found.")
-
     if not firebase_admin._apps:
         try:
-            st.info("🟢 Firebase not initialized. Initializing now...")
             cred_dict = json.loads(firebase_json)
             cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
-            st.success("✅ Firebase initialized successfully.")
         except Exception as e:
             st.error(f"🛑 Firebase initialization failed: {e}")
             st.stop()
-    else:
-        st.info("🟢 Firebase already initialized.")
 
 USER = "my_user"
 EMPTY_CHAT_NAME = "Empty chat"
