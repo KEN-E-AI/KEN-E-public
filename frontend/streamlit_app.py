@@ -97,6 +97,8 @@ def build_header():
                 key="logout"
             )
 
+init_firebase()
+
 # --- Identity Platform auth guard ---
 if "user" not in st.session_state:
     st.title("Login Required")
@@ -369,7 +371,6 @@ def display_feedback(side_bar: SideBar) -> None:
 
 def main() -> None:
     """Main function to set up and run the Streamlit app."""
-    init_firebase()
     setup_page()
     initialize_session_state()
 
