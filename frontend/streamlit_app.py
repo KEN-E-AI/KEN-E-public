@@ -41,12 +41,15 @@ load_dotenv()
 def init_firebase():
     import firebase_admin
 
-    credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH", "/secrets/FIREBASE_KEY_JSON")
-    st.info(f"Firebase credentials path: {credentials_path}")
+    firebase_json = os.getenv("FIREBASE_KEY_JSON")
+    if not firebase_json:
+        st.error("Firebase credentials JSON not found in environment variables.")
+        st.stop()
 
     if not firebase_admin._apps:
         st.info("Initializing Firebase app...")
-        cred = credentials.Certificate(credentials_path)
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
     else:
         st.info("Firebase already initialized.")
