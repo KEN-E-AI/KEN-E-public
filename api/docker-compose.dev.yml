@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: .
+      target: development
+    environment:
+      - DEBUG=${DEBUG:-true}
+      - RELOAD=${RELOAD:-true}
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8000}
+      # Neo4j Configuration
+      - NEO4J_URI=${NEO4J_URI:-bolt://localhost:7687}
+      - NEO4J_USERNAME=${NEO4J_USERNAME:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - NEO4J_DATABASE=${NEO4J_DATABASE:-neo4j}
+      # CORS settings
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - ALLOWED_METHODS=${ALLOWED_METHODS}
+      - ALLOWED_HEADERS=${ALLOWED_HEADERS}
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./uv.lock:/app/uv.lock
+    command: ["uv", "run", "uvicorn", "src.kene_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "${PORT:-8000}:8000"
