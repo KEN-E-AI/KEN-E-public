@@ -153,32 +153,32 @@ steps:
       - "--project=${_STAGING_PROJECT_ID}"
 
   - name: "gcr.io/cloud-builders/docker"
-    id: build-api-prod-image
+    id: build-api-image
     dir: api
     args:
       - build
       - "-t"
-      - "gcr.io/${PROJECT_ID}/kene-api-prod:${COMMIT_SHA}"
+      - "gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA}"
       - "-f"
       - "Dockerfile"
       - "."
 
   - name: "gcr.io/cloud-builders/docker"
-    id: push-api-prod-image
+    id: push-api-image
     args:
       - push
-      - "gcr.io/${PROJECT_ID}/kene-api-prod:${COMMIT_SHA}"
+      - "gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA}"
 
   - name: "gcr.io/cloud-builders/gcloud"
-    id: deploy-api-cloud-run-prod
+    id: deploy-api-to-cloud-run
     args:
       - "run"
       - "deploy"
-      - "kene-api-prod"
-      - "--image=gcr.io/${PROJECT_ID}/kene-api-prod:${COMMIT_SHA}"
+      - "kene-api-staging"
+      - "--image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA}"
       - "--region=${_REGION}"
       - "--platform=managed"
-      - "--project=${_PROD_PROJECT_ID}"
+      - "--project=${_STAGING_PROJECT_ID}"
       - "--allow-unauthenticated"
       - "--memory=512Mi"
       - "--port=8000"
@@ -191,6 +191,7 @@ steps:
         NEO4J_USERNAME=${_NEO4J_USERNAME},
         NEO4J_PASSWORD=${_NEO4J_PASSWORD},
         NEO4J_DATABASE=${_NEO4J_DATABASE}
+
 
 
 
