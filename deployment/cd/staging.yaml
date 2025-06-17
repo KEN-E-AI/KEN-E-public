@@ -47,7 +47,7 @@ steps:
       - "-c"
       - |
         echo "$_FIREBASE_KEY_JSON" > firebase-key.json
-        uv export --no-hashes --no-sources --no-header --no-emit-project --frozen > .requirements.txt
+        uv export --no-hashes --no-header --no-emit-project --frozen > .requirements.txt
         uv run app/agent_engine_app.py \
           --project ${_STAGING_PROJECT_ID} \
           --location ${_REGION} \
