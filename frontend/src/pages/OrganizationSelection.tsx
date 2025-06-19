@@ -95,6 +95,14 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       setIsLoading(true);
       // Simulate selection processing
       setTimeout(() => {
+        // Create the combined org-account ID for the dropdown
+        const combinedId = `${selectedOrganization}-${selectedAccount}`;
+
+        // Save the selection in AuthContext
+        setSelectedOrgAccount(combinedId);
+        setCurrentOrganization(selectedOrganization);
+        completeWorkspaceSelection();
+
         onComplete();
       }, 1000);
     }
