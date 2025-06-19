@@ -18,6 +18,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -26,11 +36,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Plus,
   Edit2,
   Trash2,
   Eye,
   Calendar as CalendarIcon,
+  Share2,
+  Mail,
+  MessageSquare,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -39,25 +58,15 @@ import EditChannelsModal from "./EditChannelsModal";
 import EditTacticsModal from "./EditTacticsModal";
 import "reactflow/dist/style.css";
 
-// Helper function to get random color
+// Helper function to get blue color for all nodes
 const getRandomColor = () => {
-  const colors = [
-    { bg: "bg-red-500", border: "border-red-600", hover: "hover:bg-red-600" },
-    {
-      bg: "bg-yellow-500",
-      border: "border-yellow-600",
-      hover: "hover:bg-yellow-600",
-    },
-    {
-      bg: "bg-green-500",
-      border: "border-green-600",
-      hover: "hover:bg-green-600",
-    },
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
+  return {
+    bg: "bg-blue-500",
+    border: "border-blue-600",
+    text: "text-white",
+  };
 };
 
-// Context Menu Component
 interface ContextMenuProps {
   id: string;
   top: number;
@@ -442,6 +451,21 @@ const ReactFlowComponent = () => {
     string | null
   >(null);
   const [editChannelId, setEditChannelId] = useState<string | null>(null);
+  const [
+    currentChannelForTacticInObjectives,
+    setCurrentChannelForTacticInObjectives,
+  ] = useState<{
+    objectiveId: string;
+    channelId: string;
+  } | null>(null);
+  // State for editing tactics using EditChannelsModal
+  const [editingTacticViaChannelsModal, setEditingTacticViaChannelsModal] =
+    useState<{
+      objectiveId: string;
+      channelId: string;
+    } | null>(null);
+  const [editTacticIdViaChannelsModal, setEditTacticIdViaChannelsModal] =
+    useState<string | null>(null);
   // Edit Tactics Modal state
   const [editTacticsModalOpen, setEditTacticsModalOpen] = useState(false);
   const [currentChannelForTactic, setCurrentChannelForTactic] = useState<{
@@ -449,6 +473,13 @@ const ReactFlowComponent = () => {
     channelId: string;
   } | null>(null);
   const [editTacticId, setEditTacticId] = useState<string | null>(null);
+
+  // Delete confirmation state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [nodeToDelete, setNodeToDelete] = useState<{
+    nodeType: string;
+    nodeId: string;
+  } | null>(null);
 
   // Date range state
   const [pendingDateRange, setPendingDateRange] = useState<{
@@ -618,7 +649,8 @@ const ReactFlowComponent = () => {
   const handleAddChannel = (objectiveId: string) => {
     console.log("Add channel for objective:", objectiveId);
     setCurrentObjectiveForChannel(objectiveId);
-    setEditChannelsModalOpen(true);
+    setOpenDirectlyToForm(true);
+    setEditObjectivesModalOpen(true);
   };
 
   // Handle add tactic button click
@@ -629,8 +661,9 @@ const ReactFlowComponent = () => {
       "in objective:",
       objectiveId,
     );
-    setCurrentChannelForTactic({ objectiveId, channelId });
-    setEditTacticsModalOpen(true);
+    setCurrentChannelForTacticInObjectives({ objectiveId, channelId });
+    setOpenDirectlyToForm(true);
+    setEditObjectivesModalOpen(true);
   };
 
   // Handle delete for objectives, channels, and tactics
@@ -706,6 +739,30 @@ const ReactFlowComponent = () => {
     }));
   };
 
+  // Helper function to get tactics for EditChannelsModal format
+  const getTacticsForChannelsModal = () => {
+    if (
+      !editingTacticViaChannelsModal ||
+      !sampleData[editingTacticViaChannelsModal.objectiveId]
+    ) {
+      return [];
+    }
+    const objective = sampleData[editingTacticViaChannelsModal.objectiveId];
+    const channel = objective.channels[editingTacticViaChannelsModal.channelId];
+    if (!channel || !channel.tactics) {
+      return [];
+    }
+    return Object.entries(channel.tactics).map(([id, tactic]) => ({
+      id,
+      name:
+        tactic?.name ||
+        id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, " "),
+      effectivenessKPI: tactic?.effectivenessKPI || "",
+      efficiencyKPI: tactic?.efficiencyKPI || "",
+      supportingMetrics: tactic?.supportingMetrics || [],
+    }));
+  };
+
   // Handle channels change
   const handleChannelsChange = (channels: any[]) => {
     if (!currentObjectiveForChannel) return;
@@ -729,6 +786,39 @@ const ReactFlowComponent = () => {
       ...updatedData[currentObjectiveForChannel],
       channels: newChannels,
     };
+
+    setSampleData(updatedData);
+  };
+
+  // Handle tactics change via EditChannelsModal
+  const handleTacticsChangeViaChannelsModal = (tactics: any[]) => {
+    if (!editingTacticViaChannelsModal) return;
+
+    const updatedData = { ...sampleData };
+    const newTactics: Record<string, any> = {};
+
+    tactics.forEach((tactic) => {
+      newTactics[tactic.id] = {
+        name: tactic.name,
+        effectivenessKPI: tactic.effectivenessKPI,
+        efficiencyKPI: tactic.efficiencyKPI,
+        supportingMetrics: tactic.supportingMetrics,
+      };
+    });
+
+    if (
+      !updatedData[editingTacticViaChannelsModal.objectiveId].channels[
+        editingTacticViaChannelsModal.channelId
+      ]
+    ) {
+      updatedData[editingTacticViaChannelsModal.objectiveId].channels[
+        editingTacticViaChannelsModal.channelId
+      ] = { tactics: {} };
+    }
+
+    updatedData[editingTacticViaChannelsModal.objectiveId].channels[
+      editingTacticViaChannelsModal.channelId
+    ].tactics = newTactics;
 
     setSampleData(updatedData);
   };
@@ -964,103 +1054,127 @@ const ReactFlowComponent = () => {
 
   return (
     <div className="h-full w-full relative">
-      {/* Date Range Pickers */}
-      <div className="absolute top-4 left-4 z-10 flex gap-2">
-        {/* Primary Date Range */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "justify-start text-left font-normal",
-                !pendingDateRange && "text-muted-foreground",
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {pendingDateRange?.from ? (
-                pendingDateRange.to ? (
-                  <>
-                    {format(pendingDateRange.from, "LLL dd, y")} -{" "}
-                    {format(pendingDateRange.to, "LLL dd, y")}
-                  </>
-                ) : (
-                  format(pendingDateRange.from, "LLL dd, y")
-                )
-              ) : (
-                <span>Pick a date</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <div className="p-3 border-b">
-              <h4 className="font-medium text-sm text-gray-900 mb-2">
-                Primary Date Range
-              </h4>
-              <Calendar
-                mode="range"
-                defaultMonth={pendingDateRange?.from}
-                selected={pendingDateRange}
-                onSelect={(range) => range && setPendingDateRange(range)}
-                numberOfMonths={2}
-              />
-            </div>
-          </PopoverContent>
-        </Popover>
+      {/* Controls Container - Responsive Layout */}
+      <div className="absolute top-4 left-4 right-4 z-10">
+        {/* Large screen layout - side by side */}
+        <div className="hidden lg:flex justify-between items-start">
+          {/* Add Objective Button - Large screens */}
+          <Button
+            onClick={() => {
+              setOpenDirectlyToForm(true);
+              setEditObjectivesModalOpen(true);
+            }}
+            className="bg-black text-white hover:bg-gray-800"
+          >
+            Add Objective
+          </Button>
+        </div>
 
-        {/* Comparison Date Range */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "justify-start text-left font-normal text-gray-600",
-                !pendingComparisonDateRange && "text-muted-foreground",
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {pendingComparisonDateRange?.from ? (
-                pendingComparisonDateRange.to ? (
-                  <>
-                    {format(pendingComparisonDateRange.from, "LLL dd, y")} -{" "}
-                    {format(pendingComparisonDateRange.to, "LLL dd, y")}
-                  </>
-                ) : (
-                  format(pendingComparisonDateRange.from, "LLL dd, y")
-                )
-              ) : (
-                <span>Compare to...</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <div className="p-3">
-              <h4 className="font-medium text-sm text-gray-900 mb-2">
-                Comparison Date Range
-              </h4>
-              <Calendar
-                mode="range"
-                defaultMonth={pendingComparisonDateRange?.from}
-                selected={pendingComparisonDateRange}
-                onSelect={(range) => setPendingComparisonDateRange(range)}
-                numberOfMonths={2}
-              />
+        {/* Small/Medium screen layout - stacked */}
+        <div className="lg:hidden">
+          <div className="flex flex-col gap-3">
+            {/* Date Range Pickers Row */}
+            <div className="flex gap-2 flex-wrap">
+              {/* Primary Date Range */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal",
+                      !pendingDateRange && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {pendingDateRange?.from ? (
+                      pendingDateRange.to ? (
+                        <>
+                          {format(pendingDateRange.from, "LLL dd, y")} -{" "}
+                          {format(pendingDateRange.to, "LLL dd, y")}
+                        </>
+                      ) : (
+                        format(pendingDateRange.from, "LLL dd, y")
+                      )
+                    ) : (
+                      <span>Pick a date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-3 border-b">
+                    <h4 className="font-medium text-sm text-gray-900 mb-2">
+                      Primary Date Range
+                    </h4>
+                    <Calendar
+                      mode="range"
+                      defaultMonth={pendingDateRange?.from}
+                      selected={pendingDateRange}
+                      onSelect={(range) => range && setPendingDateRange(range)}
+                      numberOfMonths={2}
+                    />
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Comparison Date Range */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal text-gray-600",
+                      !pendingComparisonDateRange && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {pendingComparisonDateRange?.from ? (
+                      pendingComparisonDateRange.to ? (
+                        <>
+                          {format(pendingComparisonDateRange.from, "LLL dd, y")}{" "}
+                          - {format(pendingComparisonDateRange.to, "LLL dd, y")}
+                        </>
+                      ) : (
+                        format(pendingComparisonDateRange.from, "LLL dd, y")
+                      )
+                    ) : (
+                      <span>Compare to...</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-3">
+                    <h4 className="font-medium text-sm text-gray-900 mb-2">
+                      Comparison Date Range
+                    </h4>
+                    <Calendar
+                      mode="range"
+                      defaultMonth={pendingComparisonDateRange?.from}
+                      selected={pendingComparisonDateRange}
+                      onSelect={(range) => setPendingComparisonDateRange(range)}
+                      numberOfMonths={2}
+                    />
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
-          </PopoverContent>
-        </Popover>
+
+            {/* Add Objective Button - Small/Medium screens */}
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setOpenDirectlyToForm(true);
+                  setEditObjectivesModalOpen(true);
+                }}
+                className="bg-black text-white hover:bg-gray-800"
+              >
+                Add Objective
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
-
-      {/* Add Objective Button */}
-      <Button
-        onClick={() => {
-          setOpenDirectlyToForm(true);
-          setEditObjectivesModalOpen(true);
-        }}
-        className="absolute top-4 right-4 z-10 bg-black text-white hover:bg-gray-800"
-      >
-        Add Objective
-      </Button>
 
       <ReactFlow
         nodes={nodes}
@@ -1112,6 +1226,12 @@ const ReactFlowComponent = () => {
             </div>
           )}
 
+          {/* Divider */}
+          {modalContent.content &&
+            (modalContent.effectivenessKPI || modalContent.efficiencyKPI) && (
+              <div className="border-t border-gray-200"></div>
+            )}
+
           {/* KPI Information */}
           {(modalContent.effectivenessKPI || modalContent.efficiencyKPI) && (
             <div className="mt-6 space-y-8">
@@ -1126,23 +1246,18 @@ const ReactFlowComponent = () => {
                   </div>
 
                   {/* Metric info */}
-                  <div className="flex items-start gap-2 mb-3">
-                    <div className="w-4 h-4 border border-gray-400 rounded-full flex items-center justify-center mt-0.5">
-                      <span className="text-xs text-gray-600">i</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">
-                        {modalContent.effectivenessKPI}
-                      </h4>
-                      <p className="text-sm text-gray-600 mb-4">
-                        The estimated portion of impressions served to new
-                        prospects across platforms, channels, websites and apps.
-                      </p>
-                    </div>
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 mb-1">
+                      {modalContent.effectivenessKPI}
+                    </h4>
+                    <p className="text-sm text-gray-600 mb-4">
+                      The estimated portion of impressions served to new
+                      prospects across platforms, channels, websites and apps.
+                    </p>
                   </div>
 
                   {/* Scorecard and Chart Container */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     {/* Scorecard */}
                     <div className="md:col-span-1 bg-gray-50 overflow-hidden flex flex-col justify-center items-center">
                       <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
@@ -1233,8 +1348,13 @@ const ReactFlowComponent = () => {
                 </div>
               )}
 
+              {/* Divider */}
+              {modalContent.effectivenessKPI && modalContent.efficiencyKPI && (
+                <div className="border-t border-gray-200"></div>
+              )}
+
               {modalContent.efficiencyKPI && (
-                <div>
+                <div className="mt-4">
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
@@ -1244,19 +1364,14 @@ const ReactFlowComponent = () => {
                   </div>
 
                   {/* Metric info */}
-                  <div className="flex items-start gap-2 mb-3">
-                    <div className="w-4 h-4 border border-gray-400 rounded-full flex items-center justify-center mt-0.5">
-                      <span className="text-xs text-gray-600">i</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">
-                        {modalContent.efficiencyKPI}
-                      </h4>
-                      <p className="text-sm text-gray-600 mb-4">
-                        The average cost paid for each impression served to
-                        prospects across all advertising channels and platforms.
-                      </p>
-                    </div>
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 mb-1">
+                      {modalContent.efficiencyKPI}
+                    </h4>
+                    <p className="text-sm text-gray-600 mb-4">
+                      The average cost paid for each impression served to
+                      prospects across all advertising channels and platforms.
+                    </p>
                   </div>
 
                   {/* Scorecard and Chart Container */}
@@ -1354,6 +1469,13 @@ const ReactFlowComponent = () => {
             </div>
           )}
 
+          {/* Divider */}
+          {(modalContent.effectivenessKPI || modalContent.efficiencyKPI) &&
+            modalContent.supportingMetrics &&
+            modalContent.supportingMetrics.length > 0 && (
+              <div className="border-t border-gray-200"></div>
+            )}
+
           {/* Supporting Metrics */}
           {modalContent.supportingMetrics &&
             modalContent.supportingMetrics.length > 0 && (
@@ -1398,6 +1520,40 @@ const ReactFlowComponent = () => {
             )}
 
           <div className="flex justify-end mt-6 gap-3">
+            {/* Share Button with Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="flex items-center gap-2">
+                  <Share2 className="w-4 h-4" />
+                  Share
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => {
+                    // Handle share by email
+                    console.log("Share by Email clicked");
+                    // TODO: Implement email sharing functionality
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  Share by Email
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    // Handle share on Slack
+                    console.log("Share on Slack clicked");
+                    // TODO: Implement Slack sharing functionality
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Share on Slack
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button
               variant="outline"
               onClick={() => {
@@ -1416,13 +1572,13 @@ const ReactFlowComponent = () => {
                   setEditChannelId(modalContent.id);
                   setEditChannelsModalOpen(true);
                 } else if (modalContent.nodeType === "Tactic") {
-                  // For tactics, open the edit tactics modal
-                  setCurrentChannelForTactic({
+                  // For tactics, use EditChannelsModal (reused for tactics)
+                  setEditingTacticViaChannelsModal({
                     objectiveId: modalContent.objectiveId,
                     channelId: modalContent.channelId,
                   });
-                  setEditTacticId(modalContent.id);
-                  setEditTacticsModalOpen(true);
+                  setEditTacticIdViaChannelsModal(modalContent.id);
+                  setEditChannelsModalOpen(true);
                 }
               }}
               className="flex items-center gap-2"
@@ -1433,8 +1589,24 @@ const ReactFlowComponent = () => {
             <Button
               variant="outline"
               onClick={() => {
-                // TODO: Handle delete functionality
-                console.log("Delete clicked for", modalContent.nodeType);
+                // Prepare node information for deletion
+                let nodeType = "";
+                let nodeId = "";
+
+                if (modalContent.nodeType === "Objective") {
+                  nodeType = "objective";
+                  nodeId = modalContent.id;
+                } else if (modalContent.nodeType === "Channel") {
+                  nodeType = "channel";
+                  nodeId = `${modalContent.objectiveId}-${modalContent.id}`;
+                } else if (modalContent.nodeType === "Tactic") {
+                  nodeType = "tactic";
+                  nodeId = `${modalContent.objectiveId}-${modalContent.channelId}-${modalContent.id}`;
+                }
+
+                // Set the node to delete and show confirmation dialog
+                setNodeToDelete({ nodeType, nodeId });
+                setDeleteConfirmOpen(true);
               }}
               className="flex items-center gap-2 text-red-600 hover:text-red-700 border-red-300 hover:border-red-400"
             >
@@ -1459,6 +1631,8 @@ const ReactFlowComponent = () => {
           if (!open) {
             setOpenDirectlyToForm(false);
             setEditObjectiveId(null);
+            setCurrentObjectiveForChannel(null);
+            setCurrentChannelForTacticInObjectives(null);
           }
         }}
         sampleData={sampleData}
@@ -1466,17 +1640,34 @@ const ReactFlowComponent = () => {
         openDirectlyToForm={openDirectlyToForm}
         editObjectiveId={editObjectiveId || undefined}
         showReturnToView={openDirectlyToForm && Boolean(editObjectiveId)}
+        entityType={
+          currentObjectiveForChannel
+            ? "channel"
+            : currentChannelForTacticInObjectives
+              ? "tactic"
+              : "objective"
+        }
+        parentObjectiveId={
+          currentObjectiveForChannel ||
+          currentChannelForTacticInObjectives?.objectiveId ||
+          undefined
+        }
+        parentChannelId={
+          currentChannelForTacticInObjectives?.channelId || undefined
+        }
         onReturnToView={() => {
           // Close edit modal and reopen view modal with the same content
           setEditObjectivesModalOpen(false);
           setOpenDirectlyToForm(false);
           setEditObjectiveId(null);
+          setCurrentObjectiveForChannel(null);
+          setCurrentChannelForTacticInObjectives(null);
           // Reopen view modal with the previous content
           setModalOpen(true);
         }}
       />
 
-      {/* Edit Channels Modal */}
+      {/* Edit Channels Modal (also used for Tactics) */}
       <EditChannelsModal
         open={editChannelsModalOpen}
         onOpenChange={(open) => {
@@ -1484,17 +1675,70 @@ const ReactFlowComponent = () => {
           if (!open) {
             setCurrentObjectiveForChannel(null);
             setEditChannelId(null);
+            setEditingTacticViaChannelsModal(null);
+            setEditTacticIdViaChannelsModal(null);
           }
         }}
-        channels={getCurrentChannels()}
-        onChannelsChange={handleChannelsChange}
-        showReturnToView={Boolean(editChannelId)}
-        editChannelId={editChannelId || undefined}
+        channels={
+          editingTacticViaChannelsModal
+            ? getTacticsForChannelsModal()
+            : getCurrentChannels()
+        }
+        onChannelsChange={
+          editingTacticViaChannelsModal
+            ? handleTacticsChangeViaChannelsModal
+            : handleChannelsChange
+        }
+        showReturnToView={Boolean(
+          editChannelId || editTacticIdViaChannelsModal,
+        )}
+        editChannelId={
+          editChannelId || editTacticIdViaChannelsModal || undefined
+        }
+        entityType={editingTacticViaChannelsModal ? "tactic" : "channel"}
         onReturnToView={() => {
-          // Close edit modal and reopen view modal
+          // Close edit modal
           setEditChannelsModalOpen(false);
+
+          // Refresh modal content with updated data if editing a tactic
+          if (editingTacticViaChannelsModal && editTacticIdViaChannelsModal) {
+            const { objectiveId, channelId } = editingTacticViaChannelsModal;
+            const tacticId = editTacticIdViaChannelsModal;
+
+            // Get fresh tactic data
+            const objectiveData =
+              sampleData[objectiveId as keyof typeof sampleData];
+            const channelData = objectiveData?.channels[channelId];
+            const tacticData = channelData?.tactics?.[tacticId];
+
+            // Update modal content with fresh data
+            setModalContent({
+              title: `${tacticId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())} Tactic`,
+              effectivenessKPI:
+                tacticData?.effectivenessKPI ||
+                channelData?.effectivenessKPI ||
+                objectiveData?.effectivenessKPI,
+              efficiencyKPI:
+                tacticData?.efficiencyKPI ||
+                channelData?.efficiencyKPI ||
+                objectiveData?.efficiencyKPI,
+              nodeType: "Tactic",
+              supportingMetrics:
+                tacticData?.supportingMetrics ||
+                channelData?.supportingMetrics ||
+                objectiveData?.supportingMetrics,
+              id: tacticId,
+              objectiveId: objectiveId,
+              channelId: channelId,
+            });
+          }
+
+          // Clear states
           setCurrentObjectiveForChannel(null);
           setEditChannelId(null);
+          setEditingTacticViaChannelsModal(null);
+          setEditTacticIdViaChannelsModal(null);
+
           // Reopen view modal
           setModalOpen(true);
         }}
@@ -1523,6 +1767,42 @@ const ReactFlowComponent = () => {
           setModalOpen(true);
         }}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this node along with any child
+              nodes?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteConfirmOpen(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                // Close confirmation dialog
+                setDeleteConfirmOpen(false);
+
+                // Close view modal
+                setModalOpen(false);
+
+                // Perform the deletion
+                if (nodeToDelete) {
+                  handleDeleteNode(nodeToDelete.nodeType, nodeToDelete.nodeId);
+                  setNodeToDelete(null);
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
@@ -1532,13 +1812,26 @@ const ChannelControls = ({ data: propData }: ChannelControlsProps) => {
 
   return (
     <div className="w-full h-[641px] bg-white overflow-hidden">
-      <div className="text-sm text-gray-600 border-b border-gray-200 px-4 pb-4">
-        Use the diagram below to define what you business wants to accomplish
-        and how you will know when you are successful. Or just tell KEN-E about
-        it and let him create it for you.
+      <div className="text-sm text-gray-600 border-b border-gray-200 px-4 pb-4 flex justify-between items-center">
+        <span>
+          Use the diagram below to define what you business wants to accomplish
+          and how you will know when you are successful. Click 'Help' to have
+          KEN-E do it for you.
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // Handle help functionality
+            console.log("Help button clicked");
+            // TODO: Implement help dialog or redirect to help documentation
+          }}
+          className="ml-4 flex-shrink-0"
+        >
+          Help
+        </Button>
       </div>
-
-      <div className="h-[calc(100%-100px)] w-full relative">
+      <div className="h-[calc(100%-100px)] w-full relative flex flex-col flex-grow">
         <ReactFlowProvider>
           <ReactFlowComponent />
         </ReactFlowProvider>

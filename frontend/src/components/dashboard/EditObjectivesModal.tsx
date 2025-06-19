@@ -35,6 +35,9 @@ interface EditObjectivesModalProps {
   editObjectiveId?: string;
   onReturnToView?: () => void;
   showReturnToView?: boolean;
+  entityType?: "objective" | "channel" | "tactic";
+  parentObjectiveId?: string;
+  parentChannelId?: string;
 }
 
 const EditObjectivesModal = ({
@@ -46,6 +49,9 @@ const EditObjectivesModal = ({
   editObjectiveId,
   onReturnToView,
   showReturnToView = false,
+  entityType = "objective",
+  parentObjectiveId,
+  parentChannelId,
 }: EditObjectivesModalProps) => {
   const [editingObjective, setEditingObjective] = useState<{
     id: string;
@@ -116,7 +122,47 @@ const EditObjectivesModal = ({
 
     const updatedData = { ...sampleData };
 
-    if (isCreating) {
+    if (isCreating && entityType === "channel" && parentObjectiveId) {
+      // Add new channel to parent objective
+      if (updatedData[parentObjectiveId]) {
+        const channelId = editingObjective.step_name
+          .toLowerCase()
+          .replace(/\s+/g, "_");
+        updatedData[parentObjectiveId].channels[channelId] = {
+          name: editingObjective.step_name,
+          effectivenessKPI: editingObjective.effectivenessKPI,
+          efficiencyKPI: editingObjective.efficiencyKPI,
+          supportingMetrics: editingObjective.supportingMetrics,
+          tactics: {},
+        };
+      }
+    } else if (
+      isCreating &&
+      entityType === "tactic" &&
+      parentObjectiveId &&
+      parentChannelId
+    ) {
+      // Add new tactic to parent channel
+      if (
+        updatedData[parentObjectiveId] &&
+        updatedData[parentObjectiveId].channels[parentChannelId]
+      ) {
+        const tacticId = editingObjective.step_name
+          .toLowerCase()
+          .replace(/\s+/g, "_");
+        if (!updatedData[parentObjectiveId].channels[parentChannelId].tactics) {
+          updatedData[parentObjectiveId].channels[parentChannelId].tactics = {};
+        }
+        updatedData[parentObjectiveId].channels[parentChannelId].tactics[
+          tacticId
+        ] = {
+          name: editingObjective.step_name,
+          effectivenessKPI: editingObjective.effectivenessKPI,
+          efficiencyKPI: editingObjective.efficiencyKPI,
+          supportingMetrics: editingObjective.supportingMetrics,
+        };
+      }
+    } else if (isCreating) {
       // Add new objective
       updatedData[editingObjective.id] = {
         step_name: editingObjective.step_name,
@@ -382,9 +428,9 @@ const EditObjectivesModal = ({
           <DialogTitle>
             {showForm
               ? isCreating
-                ? "Create New Objective"
-                : "Edit Objective"
-              : "Edit Marketing Objectives"}
+                ? `Create New ${entityType === "objective" ? "Objective" : entityType === "channel" ? "Channel" : "Tactic"}`
+                : `Edit ${entityType === "objective" ? "Objective" : entityType === "channel" ? "Channel" : "Tactic"}`
+              : `Edit Marketing ${entityType === "objective" ? "Objectives" : entityType === "channel" ? "Channels" : "Tactics"}`}
           </DialogTitle>
         </DialogHeader>
 
@@ -404,7 +450,13 @@ const EditObjectivesModal = ({
 
               <div className="grid gap-4">
                 <div>
-                  <Label htmlFor="objective-name">Objective Name</Label>
+                  <Label htmlFor="objective-name">
+                    {entityType === "objective"
+                      ? "Objective Name"
+                      : entityType === "channel"
+                        ? "Channel Name"
+                        : "Tactic Name"}
+                  </Label>
                   <Input
                     id="objective-name"
                     value={editingObjective.step_name}
@@ -414,7 +466,13 @@ const EditObjectivesModal = ({
                         step_name: e.target.value.slice(0, 40),
                       })
                     }
-                    placeholder="e.g., Awareness, Consideration, Conversion"
+                    placeholder={
+                      entityType === "objective"
+                        ? "e.g., Awareness, Consideration, Conversion"
+                        : entityType === "channel"
+                          ? "e.g., Email, Social Media, Search"
+                          : "e.g., Banner Ads, Organic Posts, Newsletter"
+                    }
                     maxLength={40}
                   />
                   <p className="text-xs text-gray-500 mt-1">
@@ -422,27 +480,29 @@ const EditObjectivesModal = ({
                   </p>
                 </div>
 
-                <div>
-                  <Label htmlFor="objective-description">
-                    Objective Description
-                  </Label>
-                  <Textarea
-                    id="objective-description"
-                    value={editingObjective.objective}
-                    onChange={(e) =>
-                      setEditingObjective({
-                        ...editingObjective,
-                        objective: e.target.value.slice(0, 500),
-                      })
-                    }
-                    placeholder="Describe the objective for this step in the marketing funnel"
-                    maxLength={500}
-                    rows={4}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {editingObjective.objective.length}/500 characters
-                  </p>
-                </div>
+                {entityType === "objective" && (
+                  <div>
+                    <Label htmlFor="objective-description">
+                      Objective Description
+                    </Label>
+                    <Textarea
+                      id="objective-description"
+                      value={editingObjective.objective}
+                      onChange={(e) =>
+                        setEditingObjective({
+                          ...editingObjective,
+                          objective: e.target.value.slice(0, 500),
+                        })
+                      }
+                      placeholder="Describe the objective for this step in the marketing funnel"
+                      maxLength={500}
+                      rows={4}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {editingObjective.objective.length}/500 characters
+                    </p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -525,10 +585,13 @@ const EditObjectivesModal = ({
                     onClick={handleSaveObjective}
                     disabled={
                       !editingObjective.step_name.trim() ||
-                      !editingObjective.objective.trim()
+                      (entityType === "objective" &&
+                        !editingObjective.objective.trim())
                     }
                   >
-                    {isCreating ? "Create Objective" : "Save Changes"}
+                    {isCreating
+                      ? `Create ${entityType === "objective" ? "Objective" : entityType === "channel" ? "Channel" : "Tactic"}`
+                      : "Save Changes"}
                   </Button>
                   <Button
                     variant="ghost"
