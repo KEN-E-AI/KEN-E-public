@@ -54,8 +54,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const logout = () => {
     setUser(null);
     setHasSelectedWorkspace(false);
+    setSelectedOrgAccountState(null);
     localStorage.removeItem("user");
     localStorage.removeItem("hasSelectedWorkspace");
+    localStorage.removeItem("selectedOrgAccount");
   };
 
   const completeWorkspaceSelection = () => {
