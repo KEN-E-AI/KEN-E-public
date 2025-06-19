@@ -41,6 +41,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [currentOrganizationId, setCurrentOrganizationId] = useState<
     string | null
   >(null);
+  const [selectedOrgAccount, setSelectedOrgAccountState] = useState<
+    string | null
+  >(null);
 
   const login = (userData: User) => {
     setUser(userData);
