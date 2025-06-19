@@ -277,7 +277,31 @@ const initialActivities: Activity[] = [
 ];
 
 const ActivitiesPage = () => {
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+  // Convert imported activities to component format
+  const convertedActivities: Activity[] = activities.map((activity) => ({
+    id: activity.activity_id,
+    description: activity.description,
+    internal: activity.internal,
+    known: activity.known_activity,
+    expectedImpact: activity.expected_impact,
+    intuitions: activity.intuition.map((intuition, index) => {
+      const [metricName, direction] = Object.entries(intuition)[0];
+      return {
+        id: `i${activity.activity_id}_${index}`,
+        metricName,
+        direction: direction as "increase" | "decrease",
+      };
+    }),
+    logs: activity.logs.map((log) => ({
+      id: log.activity_log_id,
+      startDate: log.start_date,
+      endDate: log.end_date,
+      description: log.description,
+    })),
+  }));
+
+  const [activitiesData, setActivitiesData] =
+    useState<Activity[]>(convertedActivities);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingIntuition, setEditingIntuition] = useState<{
     activity: string;
