@@ -487,7 +487,7 @@ const ActivitiesPage = () => {
   };
 
   const deleteLog = (activityId: string, logId: string) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedLogs = activity.logs.filter((l) => l.id !== logId);
       updateActivity(activityId, { logs: updatedLogs });
