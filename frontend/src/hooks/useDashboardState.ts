@@ -219,16 +219,40 @@ export const useDashboardState = () => {
     ],
   );
 
-  // Handle funnel steps change
+  // Handle funnel steps/objectives change
   const handleFunnelStepsChange = useCallback(
     (newSteps: FunnelStep[]) => {
       const currentAccountData = getCurrentAccountData();
-      const updatedAccountData = {
-        ...currentAccountData,
-        funnelSteps: newSteps,
-      };
 
-      ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      if (currentAccountData.objectives) {
+        // Convert FunnelStep[] to Objective[] while preserving existing channels
+        const updatedObjectives: Objective[] = newSteps.map((step) => {
+          const existingObjective = currentAccountData.objectives?.find(
+            (obj) => obj.id === step.id || obj.name === step.name,
+          );
+
+          return {
+            ...step,
+            supportingMetrics: existingObjective?.supportingMetrics || [],
+            channels: existingObjective?.channels || [],
+          };
+        });
+
+        const updatedAccountData = {
+          ...currentAccountData,
+          objectives: updatedObjectives,
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      } else {
+        // Legacy structure update
+        const updatedAccountData = {
+          ...currentAccountData,
+          funnelSteps: newSteps,
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      }
 
       // Check if current tab still exists
       const sortedSteps = newSteps.slice().sort((a, b) => a.order - b.order);
