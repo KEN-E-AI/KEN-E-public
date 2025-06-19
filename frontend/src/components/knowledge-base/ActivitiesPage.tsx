@@ -432,7 +432,7 @@ const ActivitiesPage = () => {
     const newIntuition = { ...intuition, id: `i${Date.now()}` };
     updateActivity(activityId, {
       intuitions: [
-        ...(activities.find((a) => a.id === activityId)?.intuitions || []),
+        ...(activitiesData.find((a) => a.id === activityId)?.intuitions || []),
         newIntuition,
       ],
     });
