@@ -466,7 +466,7 @@ const ActivitiesPage = () => {
     const newLog = { ...log, id: `l${Date.now()}` };
     updateActivity(activityId, {
       logs: [
-        ...(activities.find((a) => a.id === activityId)?.logs || []),
+        ...(activitiesData.find((a) => a.id === activityId)?.logs || []),
         newLog,
       ],
     });
