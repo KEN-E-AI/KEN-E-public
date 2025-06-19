@@ -33,17 +33,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-interface Metric {
-  id: string;
-  name: string;
-  description: string;
-  dataset: string;
-  product: string;
-  format: string;
-  currency: string;
-  sqlExpression: string;
-}
+import { metrics, type Metric } from "@/data/metrics";
 
 const datasets = [
   { id: "ga4_sessions", name: "GA4 Sessions", product: "Google Analytics" },
