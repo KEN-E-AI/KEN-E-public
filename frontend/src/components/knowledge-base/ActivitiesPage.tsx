@@ -327,7 +327,7 @@ const ActivitiesPage = () => {
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
   // Filter and search activities - optimized with useMemo
   const filteredActivities = useMemo(() => {
-    return activities.filter((activity) => {
+    return activitiesData.filter((activity) => {
       // Search filter
       const matchesSearch =
         activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
