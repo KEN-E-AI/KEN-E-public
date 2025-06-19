@@ -28,10 +28,9 @@ const HomeLayout = ({
   setDateRange = () => {},
   comparisonDateRange,
   setComparisonDateRange = () => {},
-  selectedAccount = "acme-corp",
-  setSelectedAccount = () => {},
 }: HomeLayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { selectedOrgAccount, setSelectedOrgAccount } = useAuth();
 
   return (
     <div className="min-h-screen bg-dashboard-gray-50">
