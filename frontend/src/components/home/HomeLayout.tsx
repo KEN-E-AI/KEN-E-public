@@ -17,8 +17,6 @@ interface HomeLayoutProps {
   setComparisonDateRange?: (
     range: { from: Date; to: Date } | undefined,
   ) => void;
-  selectedAccount?: string;
-  setSelectedAccount?: (accountId: string) => void;
 }
 
 const HomeLayout = ({
