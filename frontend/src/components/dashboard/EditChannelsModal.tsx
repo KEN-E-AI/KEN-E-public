@@ -28,6 +28,7 @@ interface EditChannelsModalProps {
   onReturnToView?: () => void;
   showReturnToView?: boolean;
   editChannelId?: string;
+  entityType?: "channel" | "tactic";
 }
 
 const EditChannelsModal = ({
@@ -38,6 +39,7 @@ const EditChannelsModal = ({
   onReturnToView,
   showReturnToView = false,
   editChannelId,
+  entityType = "channel",
 }: EditChannelsModalProps) => {
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -97,6 +99,14 @@ const EditChannelsModal = ({
 
     setEditingChannel(null);
     setIsCreating(false);
+
+    // For tactics (when editing from View Modal), return to View Modal
+    if (showReturnToView && onReturnToView) {
+      onReturnToView();
+    } else {
+      // For channels (when not editing from View Modal), just close
+      onOpenChange(false);
+    }
   };
 
   const handleDeleteChannel = (channelId: string) => {
@@ -312,7 +322,9 @@ const EditChannelsModal = ({
             </div>
           )}
           <DialogTitle>
-            {editChannelId ? "Edit Channel" : "Edit Marketing Channels"}
+            {editChannelId
+              ? `Edit ${entityType === "channel" ? "Channel" : "Tactic"}`
+              : `Edit Marketing ${entityType === "channel" ? "Channels" : "Tactics"}`}
           </DialogTitle>
         </DialogHeader>
 
@@ -322,7 +334,9 @@ const EditChannelsModal = ({
             <div>
               <div className="grid gap-4">
                 <div>
-                  <Label htmlFor="channel-name">Name</Label>
+                  <Label htmlFor="channel-name">
+                    {entityType === "channel" ? "Channel" : "Tactic"} Name
+                  </Label>
                   <Input
                     id="channel-name"
                     value={editingChannel.name}
@@ -332,7 +346,9 @@ const EditChannelsModal = ({
                         name: e.target.value.slice(0, 40),
                       })
                     }
-                    placeholder="Channel name"
+                    placeholder={
+                      entityType === "channel" ? "Channel name" : "Tactic name"
+                    }
                     maxLength={40}
                   />
                   <p className="text-xs text-gray-500 mt-1">
@@ -417,8 +433,13 @@ const EditChannelsModal = ({
                 </div>
 
                 <div className="flex gap-2 pt-4">
-                  <Button onClick={handleSaveChannel}>
-                    {isCreating ? "Create Channel" : "Save Changes"}
+                  <Button
+                    onClick={handleSaveChannel}
+                    disabled={!editingChannel?.name.trim()}
+                  >
+                    {isCreating
+                      ? `Create ${entityType === "channel" ? "Channel" : "Tactic"}`
+                      : "Save Changes"}
                   </Button>
                   <Button
                     variant="ghost"
@@ -427,6 +448,7 @@ const EditChannelsModal = ({
                       setIsCreating(false);
                       setShowNewKPIInput(null);
                       setNewKPIName("");
+                      onOpenChange(false);
                     }}
                   >
                     Cancel

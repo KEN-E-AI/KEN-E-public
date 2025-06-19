@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Edit2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Edit2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import EditChannelsModal from "./EditChannelsModal";
 import EditTacticsModal from "./EditTacticsModal";
@@ -22,7 +23,7 @@ interface Tactic {
   supportingMetrics: string[];
 }
 
-interface DashboardControlsProps {
+interface MeasurementStrategyControlsProps {
   selectedChannel: string;
   setSelectedChannel: (channel: string) => void;
   selectedTactic: string;
@@ -35,7 +36,7 @@ interface DashboardControlsProps {
   onChannelTacticsChange?: (channelName: string, tactics: Tactic[]) => void;
 }
 
-const DashboardControls = ({
+const MeasurementStrategyControls = ({
   selectedChannel,
   setSelectedChannel,
   selectedTactic,
@@ -46,7 +47,7 @@ const DashboardControls = ({
   channelTactics = {},
   onChannelsChange = () => {},
   onChannelTacticsChange = () => {},
-}: DashboardControlsProps) => {
+}: MeasurementStrategyControlsProps) => {
   const [editChannelsModalOpen, setEditChannelsModalOpen] = useState(false);
   const [editTacticsModalOpen, setEditTacticsModalOpen] = useState(false);
   const [localChannels, setLocalChannels] = useState<Channel[]>(channels);
@@ -100,34 +101,50 @@ const DashboardControls = ({
     onChannelsChange(newChannels);
   };
 
+  const navigate = useNavigate();
+
   return (
-    <div className="rounded-lg bg-white border border-dashboard-gray-200 mt-2.5">
-      <div className="space-y-4 flex flex-col rounded-xl overflow-hidden">
-        {/* React Flow Channel Controls */}
-        <div className="mt-6">
-          <ChannelControls />
-        </div>
+    <>
+      {/* Back to Knowledge Base Link */}
+      <div className="mb-4">
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/knowledge")}
+          className="flex items-center gap-2 text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Knowledge Base
+        </Button>
       </div>
 
-      {/* Edit Channels Modal */}
-      <EditChannelsModal
-        open={editChannelsModalOpen}
-        onOpenChange={setEditChannelsModalOpen}
-        channels={localChannels}
-        onChannelsChange={handleChannelsChange}
-      />
+      <div className="rounded-lg bg-white border border-dashboard-gray-200 my-6">
+        <div className="flex flex-col rounded-xl overflow-hidden h-screen mb-6">
+          {/* React Flow Channel Controls */}
+          <div className="mt-6">
+            <ChannelControls />
+          </div>
+        </div>
 
-      {/* Edit Tactics Modal */}
-      <EditTacticsModal
-        open={editTacticsModalOpen}
-        onOpenChange={setEditTacticsModalOpen}
-        tactics={currentTactics}
-        onTacticsChange={(newTactics) =>
-          updateChannelTactics(selectedChannel, newTactics)
-        }
-      />
-    </div>
+        {/* Edit Channels Modal */}
+        <EditChannelsModal
+          open={editChannelsModalOpen}
+          onOpenChange={setEditChannelsModalOpen}
+          channels={localChannels}
+          onChannelsChange={handleChannelsChange}
+        />
+
+        {/* Edit Tactics Modal */}
+        <EditTacticsModal
+          open={editTacticsModalOpen}
+          onOpenChange={setEditTacticsModalOpen}
+          tactics={currentTactics}
+          onTacticsChange={(newTactics) =>
+            updateChannelTactics(selectedChannel, newTactics)
+          }
+        />
+      </div>
+    </>
   );
 };
 
-export default DashboardControls;
+export default MeasurementStrategyControls;

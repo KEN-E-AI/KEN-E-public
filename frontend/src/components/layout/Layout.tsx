@@ -4,6 +4,7 @@ import ChatSidebar from "@/components/dashboard/ChatSidebar";
 
 interface LayoutProps {
   children: React.ReactNode;
+  pageTitle?: string;
   selectedTab?: string;
   selectedChannel?: string;
   selectedTactic?: string;
@@ -19,13 +20,12 @@ interface LayoutProps {
   setComparisonDateRange?: (
     range: { from: Date; to: Date } | undefined,
   ) => void;
-  pageType?: "dashboard" | "knowledge-base";
-  selectedKnowledgePage?: string;
-  onKnowledgePageChange?: (page: string) => void;
+  hideChatSidebar?: boolean;
 }
 
 const Layout = ({
   children,
+  pageTitle = "Measurement Strategy",
   selectedTab = "Awareness",
   selectedChannel = "Overview",
   selectedTactic = "",
@@ -36,37 +36,46 @@ const Layout = ({
   setDateRange = () => {},
   comparisonDateRange,
   setComparisonDateRange = () => {},
-  pageType = "dashboard",
-  selectedKnowledgePage = "metrics",
-  onKnowledgePageChange = () => {},
+  hideChatSidebar = false,
 }: LayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedOrgAccount, setSelectedOrgAccount] = useState(
+    "healthway-intellipure-b2c",
+  );
 
   return (
     <div className="min-h-screen bg-dashboard-gray-50">
       {/* Chat Sidebar - All screen sizes */}
-      <ChatSidebar
-        selectedTab={selectedTab}
-        selectedChannel={selectedChannel}
-        selectedTactic={selectedTactic}
-        isCollapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        pageType={pageType}
-        selectedKnowledgePage={selectedKnowledgePage}
-        onKnowledgePageChange={onKnowledgePageChange}
-      />
+      {!hideChatSidebar && (
+        <ChatSidebar
+          selectedTab={selectedTab}
+          selectedChannel={selectedChannel}
+          selectedTactic={selectedTactic}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+      )}
 
       {/* Main Content */}
       <div
-        className={`transition-all duration-300 ${sidebarCollapsed ? "pl-16" : "pl-4 md:pl-80"}`}
+        className={`transition-all duration-300 ${
+          hideChatSidebar
+            ? "pl-4"
+            : sidebarCollapsed
+              ? "pl-16"
+              : "pl-4 md:pl-80"
+        }`}
       >
-        <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+        <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 h-screen">
           {/* Header */}
           <GlobalHeader
+            pageTitle={pageTitle}
             dateRange={dateRange}
             setDateRange={setDateRange}
             comparisonDateRange={comparisonDateRange}
             setComparisonDateRange={setComparisonDateRange}
+            selectedOrgAccount={selectedOrgAccount}
+            setSelectedOrgAccount={setSelectedOrgAccount}
           />
 
           {/* Page Content */}
