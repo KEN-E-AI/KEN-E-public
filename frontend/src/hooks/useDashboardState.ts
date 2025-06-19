@@ -64,9 +64,15 @@ export const useDashboardState = () => {
   // Handle account change
   const handleAccountChange = useCallback((newAccount: string) => {
     const newAccountData = ACCOUNTS_DATA[newAccount];
-    const firstStep = newAccountData?.funnelSteps
-      .slice()
+
+    // Try to get first objective, fallback to funnelSteps for backward compatibility
+    const firstObjective = newAccountData?.objectives
+      ?.slice()
       .sort((a, b) => a.order - b.order)[0];
+
+    const firstStep =
+      firstObjective ||
+      newAccountData?.funnelSteps?.slice().sort((a, b) => a.order - b.order)[0];
 
     setState((prev) => ({
       ...prev,
