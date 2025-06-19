@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   User,
   Edit2,
@@ -11,6 +12,7 @@ import {
   Search,
   BookOpen,
   Settings,
+  Building,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,153 +31,152 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { organizations, getAllAccounts } from "@/data/organizationData";
 
 interface GlobalHeaderProps {
+  pageTitle?: string;
   dateRange: { from: Date; to: Date };
   setDateRange: (range: { from: Date; to: Date }) => void;
   comparisonDateRange?: { from: Date; to: Date };
   setComparisonDateRange?: (range: { from: Date; to: Date }) => void;
-  selectedAccount?: string;
-  setSelectedAccount?: (accountId: string) => void;
+  selectedOrgAccount?: string; // Combined org-account ID like "healthway-intellipure-b2c"
+  setSelectedOrgAccount?: (combinedId: string) => void;
 }
-
-export const accounts = [
-  { id: "acme-corp", name: "Acme Corporation" },
-  { id: "digital-solutions", name: "Digital Solutions Inc" },
-  { id: "tech-startup", name: "TechStartup LLC" },
-  { id: "marketing-agency", name: "Marketing Agency Pro" },
-];
 
 const navigationMenuItems = [
   { id: "home", name: "Home", icon: Home },
-  { id: "overview", name: "Overview", icon: BarChart3 },
-  { id: "marketing-funnel", name: "Performance Details", icon: TrendingUp },
+  { id: "overview", name: "Performance", icon: BarChart3 },
   { id: "big-bets", name: "Big Bets", icon: Target },
   { id: "data-exploration", name: "Data Exploration", icon: Search },
-  { id: "knowledge-base", name: "Knowledge Base", icon: BookOpen },
-  { id: "settings", name: "Settings", icon: Settings },
+  { id: "knowledge", name: "Knowledge Base", icon: BookOpen },
+  { id: "settings", name: "Org Settings", icon: Settings },
 ];
 
-const AccountDropdown = ({
-  selectedAccount,
-  setSelectedAccount,
+const OrganizationAccountDropdown = ({
+  selectedOrgAccount,
+  setSelectedOrgAccount,
 }: {
-  selectedAccount: string;
-  setSelectedAccount: (accountId: string) => void;
+  selectedOrgAccount: string;
+  setSelectedOrgAccount: (combinedId: string) => void;
 }) => {
-  const currentAccount = accounts.find(
-    (account) => account.id === selectedAccount,
+  const navigate = useNavigate();
+  const { setCurrentOrganization } = useAuth();
+
+  // Create combined options from organizations and accounts
+  const allAccounts = getAllAccounts();
+  const combinedOptions = allAccounts.map((account) => {
+    const organization = organizations.find(
+      (org) => org.organization_id === account.organization_id,
+    );
+    return {
+      combinedId: `${account.organization_id}-${account.account_id}`,
+      organizationName: organization?.organization_name || "Unknown Org",
+      accountName: account.account_name,
+      displayText: `${organization?.organization_name || "Unknown Org"} - ${account.account_name}`,
+    };
+  });
+
+  const currentSelection = combinedOptions.find(
+    (option) => option.combinedId === selectedOrgAccount,
   );
 
+  const handleValueChange = (value: string) => {
+    if (value === "all-orgs-accounts") {
+      navigate("/organization-selection");
+    } else {
+      setSelectedOrgAccount(value);
+      // Get the organization ID from the accounts data by finding the matching account
+      const allAccounts = getAllAccounts();
+      const selectedAccount = allAccounts.find(
+        (account) =>
+          `${account.organization_id}-${account.account_id}` === value,
+      );
+      console.log("GlobalHeader: Selected value:", value);
+      console.log("GlobalHeader: Found account:", selectedAccount);
+      if (selectedAccount) {
+        console.log(
+          "GlobalHeader: Setting organization to:",
+          selectedAccount.organization_id,
+        );
+        setCurrentOrganization(selectedAccount.organization_id);
+      }
+    }
+  };
+
   return (
-    <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-      <SelectTrigger className="h-auto p-1 border-none shadow-none text-sm font-medium text-dashboard-gray-900 hover:bg-dashboard-gray-50 w-auto bg-transparent">
+    <Select value={selectedOrgAccount} onValueChange={handleValueChange}>
+      <SelectTrigger className="h-auto p-1 border-none shadow-none text-sm font-medium text-dashboard-gray-900 hover:bg-dashboard-gray-50 w-auto bg-transparent min-w-[200px]">
         <SelectValue>
-          <div className="truncate max-w-[120px] gap-1">
-            {currentAccount?.name}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <Building className="h-3 w-3 text-dashboard-gray-500" />
+            </div>
+            <div className="truncate max-w-[180px]">
+              {currentSelection?.displayText || "Select Organization & Account"}
+            </div>
           </div>
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align="end">
-        {accounts.map((account) => (
-          <SelectItem key={account.id} value={account.id}>
-            {account.name}
+      <SelectContent align="start" className="max-w-[300px]">
+        {combinedOptions.map((option) => (
+          <SelectItem key={option.combinedId} value={option.combinedId}>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Building className="h-3 w-3" />
+              </div>
+              <div className="truncate">{option.displayText}</div>
+            </div>
           </SelectItem>
         ))}
+        <SelectItem
+          key="all-orgs-accounts"
+          value="all-orgs-accounts"
+          className="border-t border-gray-200 mt-1 pt-2"
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <Building className="h-3 w-3" />
+            </div>
+            <div className="truncate">All Orgs and Accounts</div>
+          </div>
+        </SelectItem>
       </SelectContent>
     </Select>
   );
 };
 
 const GlobalHeader = ({
+  pageTitle = "Measurement Strategy",
   dateRange,
   setDateRange,
   comparisonDateRange,
   setComparisonDateRange = () => {},
-  selectedAccount = "acme-corp",
-  setSelectedAccount = () => {},
+  selectedOrgAccount = "healthway-intellipure-b2c",
+  setSelectedOrgAccount = () => {},
 }: GlobalHeaderProps) => {
   const navigate = useNavigate();
+  const { logout, setCurrentOrganization } = useAuth();
+
+  // Calculate appropriate width and margin based on sidebar state
+  const getContainerClasses = () => {
+    return "bg-white border border-dashboard-gray-200 rounded-lg px-6 py-4";
+  };
+
   return (
-    <div className="bg-white border border-dashboard-gray-200 rounded-lg px-6 py-4">
+    <div className={getContainerClasses()}>
       {/* Top Row - Navigation and User */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-semibold text-dashboard-gray-900">
-            Measurement Strategy
+            {pageTitle}
           </h1>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <AccountDropdown
-            selectedAccount={selectedAccount}
-            setSelectedAccount={setSelectedAccount}
+          <OrganizationAccountDropdown
+            selectedOrgAccount={selectedOrgAccount}
+            setSelectedOrgAccount={setSelectedOrgAccount}
           />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
-                  />
-                </svg>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => {
-                  // Handle PDF download
-                  console.log("Download PDF");
-                }}
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-                <span>Download PDF</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => {
-                  // Handle Slack sharing
-                  console.log("Share in Slack");
-                }}
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                  />
-                </svg>
-                <span>Share in Slack</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="p-2">
@@ -210,8 +211,7 @@ const GlobalHeader = ({
               <DropdownMenuItem
                 className="flex items-center gap-2 cursor-pointer"
                 onClick={() => {
-                  // Handle user settings
-                  console.log("Your Settings");
+                  navigate("/user-settings");
                 }}
               >
                 <svg
@@ -236,10 +236,9 @@ const GlobalHeader = ({
                 <span>Your Settings</span>
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="flex items-center gap-2 cursor-pointer"
+                className="flex items-center gap-2 cursor-pointer text-red-600"
                 onClick={() => {
-                  // Handle sign out
-                  console.log("Sign Out");
+                  logout();
                 }}
               >
                 <svg
@@ -307,19 +306,50 @@ const GlobalHeader = ({
                       className="flex items-center gap-3 cursor-pointer"
                       onClick={() => {
                         // Handle navigation
-                        if (item.id === "knowledge-base") {
-                          navigate("/knowledge-base");
+                        if (item.id === "knowledge") {
+                          navigate("/knowledge");
                         } else if (item.id === "home") {
                           navigate("/");
+                        } else if (item.id === "overview") {
+                          navigate("/performance");
+                        } else if (item.id === "marketing-funnel") {
+                          navigate("/measurement-strategy");
+                        } else if (item.id === "big-bets") {
+                          navigate("/big-bets");
+                        } else if (item.id === "data-exploration") {
+                          navigate("/exploration");
+                        } else if (item.id === "settings") {
+                          // Extract organization ID from selected org-account combination
+                          const allAccounts = getAllAccounts();
+                          const selectedAccount = allAccounts.find(
+                            (account) =>
+                              `${account.organization_id}-${account.account_id}` ===
+                              selectedOrgAccount,
+                          );
+                          if (selectedAccount) {
+                            setCurrentOrganization(
+                              selectedAccount.organization_id,
+                            );
+                          }
+                          navigate("/account-settings");
                         } else {
                           console.log(`Navigate to ${item.name}`);
                         }
                       }}
                     >
                       <Icon className="h-4 w-4" />
-                      <span>{item.name}</span>
+                      <span>
+                        {item.name === "Performance" ? (
+                          <>
+                            Performance
+                            <br />
+                          </>
+                        ) : (
+                          item.name
+                        )}
+                      </span>
                     </DropdownMenuItem>
-                    {index === navigationMenuItems.length - 2 && (
+                    {index === navigationMenuItems.length - 3 && (
                       <DropdownMenuSeparator />
                     )}
                   </div>
