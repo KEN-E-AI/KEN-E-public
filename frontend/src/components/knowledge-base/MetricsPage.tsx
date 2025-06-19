@@ -381,7 +381,7 @@ const MetricsPage = () => {
                 return (
                   <div key={metric.id} className="p-4">
                     {/* Main Row */}
-                    <div className="grid grid-cols-10 gap-4 items-start">
+                    <div className="grid grid-cols-10 gap-4 items-start text-left">
                       <div className="col-span-1 flex justify-center">
                         <Button
                           variant="ghost"
