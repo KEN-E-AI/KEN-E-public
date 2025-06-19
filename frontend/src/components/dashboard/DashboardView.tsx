@@ -42,6 +42,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({
   const currentAccountData = getCurrentAccountData();
   const currentStepData = getCurrentStepData();
 
+  // Get funnel steps from objectives or fallback to legacy funnelSteps
+  const funnelSteps =
+    currentAccountData.objectives || currentAccountData.funnelSteps || [];
+
   return (
     <>
       {/* Dashboard Controls */}
@@ -56,7 +60,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({
           onTabChange(tab);
         }}
         onEditSteps={() => setEditStepsModalOpen(true)}
-        funnelSteps={currentAccountData.funnelSteps}
+        funnelSteps={funnelSteps}
         channels={currentStepData.channels}
         channelTactics={currentStepData.channelTactics}
         onChannelsChange={handleChannelsChange}
@@ -73,7 +77,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({
       <EditStepsModal
         open={editStepsModalOpen}
         onOpenChange={setEditStepsModalOpen}
-        steps={currentAccountData.funnelSteps}
+        steps={funnelSteps}
         onStepsChange={handleFunnelStepsChange}
       />
     </>
