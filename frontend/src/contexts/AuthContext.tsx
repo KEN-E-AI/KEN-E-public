@@ -75,6 +75,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.setItem("currentOrganizationId", orgId);
   };
 
+  const setSelectedOrgAccount = (combinedId: string) => {
+    setSelectedOrgAccountState(combinedId);
+    localStorage.setItem("selectedOrgAccount", combinedId);
+  };
+
   // Initialize auth state from localStorage on component mount
   useState(() => {
     const savedUser = localStorage.getItem("user");
