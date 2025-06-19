@@ -47,23 +47,20 @@ const formats = ["Integer", "Percent", "Double"];
 
 const currencies = ["USD", "CAD", "EUR", "GBP", "JPY", "AUD"];
 
-
-];
-
 type SortField = "name" | "dataset" | "product" | null;
 type SortDirection = "asc" | "desc";
 
 const MetricsPage = () => {
   // Convert imported metrics to component format
-  const convertedMetrics = metrics.map(metric => ({
+  const convertedMetrics = metrics.map((metric) => ({
     id: metric.metric_id,
     name: metric.verbose_name,
     description: metric.description,
-    dataset: metric.dataset.toLowerCase().replace(/\s+/g, '_'),
+    dataset: metric.dataset.toLowerCase().replace(/\s+/g, "_"),
     product: metric.product,
     format: metric.format,
     currency: metric.currency,
-    sqlExpression: metric.expression
+    sqlExpression: metric.expression,
   }));
 
   const [metricsData, setMetricsData] = useState<Metric[]>(convertedMetrics);
