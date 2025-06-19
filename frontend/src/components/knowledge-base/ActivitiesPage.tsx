@@ -223,59 +223,6 @@ const availableMetrics: AvailableMetric[] = [
   },
 ];
 
-const initialActivities: Activity[] = [
-  {
-    id: "1",
-    description:
-      "Your brand or products are featured or referenced in news and press outlets.",
-    internal: false,
-    known: true,
-    expectedImpact:
-      "This activity is expected to build awareness of the brand and drive users to the website.",
-    intuitions: [
-      { id: "i1", metricName: "Brand Mentions", direction: "increase" },
-      { id: "i2", metricName: "Website Traffic", direction: "increase" },
-    ],
-    logs: [
-      {
-        id: "l1",
-        startDate: "2024-01-01",
-        endDate: "2024-01-31",
-        description: "Q1 PR campaign launch",
-      },
-      {
-        id: "l2",
-        startDate: "2024-02-01",
-        endDate: "2024-02-28",
-        description: "Product announcement coverage",
-      },
-    ],
-  },
-  {
-    id: "2",
-    description:
-      "Offer a temporary promotion or discount to a product/service.",
-    internal: true,
-    known: true,
-    expectedImpact:
-      "Expected to drive short-term conversions and clear inventory.",
-    intuitions: [
-      { id: "i3", metricName: "Conversion Rate", direction: "increase" },
-      { id: "i4", metricName: "Average Order Value", direction: "decrease" },
-    ],
-    logs: [],
-  },
-  {
-    id: "3",
-    description: "Do something else...",
-    internal: false,
-    known: false,
-    expectedImpact: "",
-    intuitions: [],
-    logs: [],
-  },
-];
-
 const ActivitiesPage = () => {
   // Convert imported activities to component format
   const convertedActivities: Activity[] = activities.map((activity) => ({
