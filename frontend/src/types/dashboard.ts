@@ -1,11 +1,16 @@
-export interface FunnelStep {
+export interface Objective {
   id: string;
   name: string;
   objective: string;
   effectivenessKPI: string;
   efficiencyKPI: string;
   order: number;
+  supportingMetrics: string[];
+  channels: ChannelWithTactics[];
 }
+
+// Legacy interface for backward compatibility
+export interface FunnelStep extends Objective {}
 
 export interface Channel {
   id: string;
