@@ -68,8 +68,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const resetWorkspaceSelection = () => {
     setHasSelectedWorkspace(false);
     setCurrentOrganizationId(null);
+    setSelectedOrgAccountState(null);
     localStorage.removeItem("hasSelectedWorkspace");
     localStorage.removeItem("currentOrganizationId");
+    localStorage.removeItem("selectedOrgAccount");
   };
 
   const setCurrentOrganization = (orgId: string) => {
