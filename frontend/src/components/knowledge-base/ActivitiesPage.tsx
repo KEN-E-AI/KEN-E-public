@@ -477,7 +477,7 @@ const ActivitiesPage = () => {
     logId: string,
     updates: Partial<Log>,
   ) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedLogs = activity.logs.map((l) =>
         l.id === logId ? { ...l, ...updates } : l,
