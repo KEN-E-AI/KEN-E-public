@@ -154,27 +154,61 @@ export const useDashboardState = () => {
   const handleChannelTacticsChange = useCallback(
     (channelName: string, newTactics: Tactic[]) => {
       const currentAccountData = getCurrentAccountData();
-      const currentStepData = getCurrentStepData();
 
-      const updatedChannelTactics = {
-        ...currentStepData.channelTactics,
-        [channelName]: newTactics,
-      };
+      if (currentAccountData.objectives) {
+        // Update the new objectives structure
+        const updatedObjectives = currentAccountData.objectives.map(
+          (objective) => {
+            if (objective.name === state.selectedTab) {
+              const updatedChannels = objective.channels.map((channel) => {
+                if (channel.name === channelName) {
+                  return {
+                    ...channel,
+                    tactics: newTactics,
+                  };
+                }
+                return channel;
+              });
 
-      const updatedStepData = {
-        ...currentStepData,
-        channelTactics: updatedChannelTactics,
-      };
+              return {
+                ...objective,
+                channels: updatedChannels,
+              };
+            }
+            return objective;
+          },
+        );
 
-      const updatedAccountData = {
-        ...currentAccountData,
-        stepChannelsAndTactics: {
-          ...currentAccountData.stepChannelsAndTactics,
-          [state.selectedTab]: updatedStepData,
-        },
-      };
+        const updatedAccountData = {
+          ...currentAccountData,
+          objectives: updatedObjectives,
+        };
 
-      ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      } else {
+        // Fallback for legacy structure
+        const currentStepData = getCurrentStepData();
+        const updatedChannelTactics = {
+          ...currentStepData.channelTactics,
+          [channelName]: newTactics,
+        };
+
+        const updatedStepData = {
+          ...currentStepData,
+          channelTactics: updatedChannelTactics,
+        };
+
+        const updatedAccountData = {
+          ...currentAccountData,
+          stepChannelsAndTactics: {
+            ...currentAccountData.stepChannelsAndTactics!,
+            [state.selectedTab]: updatedStepData,
+          },
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      }
+
       setAccountDataVersion((prev) => prev + 1);
     },
     [
