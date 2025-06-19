@@ -443,7 +443,7 @@ const ActivitiesPage = () => {
     intuitionId: string,
     updates: Partial<Intuition>,
   ) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedIntuitions = activity.intuitions.map((i) =>
         i.id === intuitionId ? { ...i, ...updates } : i,
