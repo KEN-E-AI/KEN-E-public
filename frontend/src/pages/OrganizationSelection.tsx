@@ -43,6 +43,11 @@ interface OrganizationSelectionProps {
 
 const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const navigate = useNavigate();
+  const {
+    setSelectedOrgAccount,
+    completeWorkspaceSelection,
+    setCurrentOrganization,
+  } = useAuth();
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [showCreateOrg, setShowCreateOrg] = useState(false);
