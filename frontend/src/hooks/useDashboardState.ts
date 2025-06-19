@@ -3,9 +3,11 @@ import { ACCOUNTS_DATA, DEFAULT_STEP_DATA } from "@/data/accountData";
 import {
   DashboardState,
   FunnelStep,
+  Objective,
   Channel,
   Tactic,
   AccountData,
+  ChannelWithTactics,
 } from "@/types/dashboard";
 
 const INITIAL_STATE: DashboardState = {
