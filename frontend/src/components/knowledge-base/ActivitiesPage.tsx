@@ -387,7 +387,7 @@ const ActivitiesPage = () => {
     setShowIntuitionModal(true);
   };
   const updateActivity = (activityId: string, updates: Partial<Activity>) => {
-    setActivities((prev) =>
+    setActivitiesData((prev) =>
       prev.map((activity) =>
         activity.id === activityId ? { ...activity, ...updates } : activity,
       ),
@@ -396,11 +396,11 @@ const ActivitiesPage = () => {
 
   const addActivity = (activity: Omit<Activity, "id">) => {
     const newActivity = { ...activity, id: `a${Date.now()}` };
-    setActivities((prev) => [...prev, newActivity]);
+    setActivitiesData((prev) => [...prev, newActivity]);
   };
 
   const deleteActivity = (activityId: string) => {
-    setActivities((prev) =>
+    setActivitiesData((prev) =>
       prev.filter((activity) => activity.id !== activityId),
     );
   };
