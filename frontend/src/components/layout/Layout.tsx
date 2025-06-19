@@ -40,9 +40,7 @@ const Layout = ({
   hideChatSidebar = false,
 }: LayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [selectedOrgAccount, setSelectedOrgAccount] = useState(
-    "healthway-intellipure-b2c",
-  );
+  const { selectedOrgAccount, setSelectedOrgAccount } = useAuth();
 
   return (
     <div className="min-h-screen bg-dashboard-gray-50">
