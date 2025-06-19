@@ -355,7 +355,7 @@ const MetricsPage = () => {
 
   const filteredAndSortedMetrics = (() => {
     // First filter
-    let result = metrics.filter((metric) => {
+    let result = metricsData.filter((metric) => {
       // Search filter
       const matchesSearch =
         metric.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
