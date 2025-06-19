@@ -453,7 +453,7 @@ const ActivitiesPage = () => {
   };
 
   const deleteIntuition = (activityId: string, intuitionId: string) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedIntuitions = activity.intuitions.filter(
         (i) => i.id !== intuitionId,
