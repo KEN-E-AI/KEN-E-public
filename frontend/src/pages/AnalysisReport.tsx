@@ -291,7 +291,7 @@ const AnalysisReport = () => {
 
         {/* Recommendations Section */}
         <div className="mt-6">
-          <h2 className="text-2xl font-semibold text-dashboard-gray-900 border-b border-dashboard-gray-900 pb-2 mb-6">
+          <h2 className="text-2xl font-semibold text-dashboard-gray-900 border-b border-dashboard-gray-900 pb-2 mb-6 text-left">
             Recommendations
           </h2>
 
