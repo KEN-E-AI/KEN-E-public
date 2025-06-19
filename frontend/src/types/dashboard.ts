@@ -38,8 +38,10 @@ export interface StepChannelsAndTactics {
 }
 
 export interface AccountData {
-  funnelSteps: FunnelStep[];
-  stepChannelsAndTactics: Record<string, StepChannelsAndTactics>;
+  objectives: Objective[];
+  // Legacy properties for backward compatibility
+  funnelSteps?: FunnelStep[];
+  stepChannelsAndTactics?: Record<string, StepChannelsAndTactics>;
 }
 
 export interface DateRange {
