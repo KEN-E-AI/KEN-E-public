@@ -274,8 +274,30 @@ export const useDashboardState = () => {
   const handleTabChange = useCallback(
     (newTab: string) => {
       const accountData = getCurrentAccountData();
-      const newStepData =
-        accountData.stepChannelsAndTactics[newTab] || DEFAULT_STEP_DATA;
+      let newStepData;
+
+      if (accountData.objectives) {
+        // Find the objective and convert to legacy format
+        const objective = accountData.objectives.find(
+          (obj) => obj.name === newTab,
+        );
+        if (objective) {
+          const channelTactics: Record<string, Tactic[]> = {};
+          objective.channels.forEach((channel) => {
+            channelTactics[channel.name] = channel.tactics || [];
+          });
+          newStepData = {
+            channels: objective.channels,
+            channelTactics,
+          };
+        } else {
+          newStepData = DEFAULT_STEP_DATA;
+        }
+      } else {
+        // Legacy structure
+        newStepData =
+          accountData.stepChannelsAndTactics?.[newTab] || DEFAULT_STEP_DATA;
+      }
 
       const channelExists =
         state.selectedChannel === "Overview" ||
