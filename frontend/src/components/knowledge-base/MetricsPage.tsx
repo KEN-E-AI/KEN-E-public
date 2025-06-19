@@ -305,7 +305,19 @@ type SortField = "name" | "dataset" | "product" | null;
 type SortDirection = "asc" | "desc";
 
 const MetricsPage = () => {
-  const [metrics, setMetrics] = useState<Metric[]>(initialMetrics);
+  // Convert imported metrics to component format
+  const convertedMetrics = metrics.map((metric) => ({
+    id: metric.metric_id,
+    name: metric.verbose_name,
+    description: metric.description,
+    dataset: metric.dataset.toLowerCase().replace(/\s+/g, "_"),
+    product: metric.product,
+    format: metric.format,
+    currency: metric.currency,
+    sqlExpression: metric.expression,
+  }));
+
+  const [metricsData, setMetricsData] = useState<Metric[]>(convertedMetrics);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
