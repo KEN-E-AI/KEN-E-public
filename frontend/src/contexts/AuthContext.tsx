@@ -12,11 +12,13 @@ interface AuthContextType {
   isAuthenticated: boolean;
   hasSelectedWorkspace: boolean;
   currentOrganizationId: string | null;
+  selectedOrgAccount: string | null;
   login: (user: User) => void;
   logout: () => void;
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
   setCurrentOrganization: (orgId: string) => void;
+  setSelectedOrgAccount: (combinedId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
