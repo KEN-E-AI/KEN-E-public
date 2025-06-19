@@ -28,6 +28,10 @@ export interface Tactic {
   supportingMetrics: string[];
 }
 
+export interface ChannelWithTactics extends Channel {
+  tactics: Tactic[];
+}
+
 export interface StepChannelsAndTactics {
   channels: Channel[];
   channelTactics: Record<string, Tactic[]>;
