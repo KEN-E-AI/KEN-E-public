@@ -1062,7 +1062,7 @@ const Performance = () => {
 
           {/* Analysis Reports Card */}
           <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-            <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-6">
+            <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-6 text-left">
               Analysis Reports
             </h2>
 
