@@ -442,25 +442,25 @@ const MetricsPage = () => {
   };
 
   const handleSaveMetric = () => {
-    if (!editingMetric || !editingMetric.name.trim()) return;
+    if (!editingMetric) return;
 
     if (isCreating) {
-      setMetrics([...metrics, editingMetric]);
+      setMetricsData([...metricsData, editingMetric]);
     } else {
-      setMetrics(
-        metrics.map((metric) =>
+      setMetricsData(
+        metricsData.map((metric) =>
           metric.id === editingMetric.id ? editingMetric : metric,
         ),
       );
     }
 
+    setModalOpen(false);
     setEditingMetric(null);
     setIsCreating(false);
-    setModalOpen(false);
   };
 
   const handleDeleteMetric = (metricId: string) => {
-    setMetrics(metrics.filter((metric) => metric.id !== metricId));
+    setMetricsData(metricsData.filter((metric) => metric.id !== metricId));
   };
 
   const handleDatasetChange = (dataset: string) => {
