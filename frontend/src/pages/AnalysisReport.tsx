@@ -146,12 +146,12 @@ const AnalysisReport = () => {
     >
       <div className="space-y-6">
         {/* Back to Performance Link */}
-        <div className="mb-4">
+        <div className="mb-4 flex flex-col">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => navigate("/performance")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
+            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Performance
