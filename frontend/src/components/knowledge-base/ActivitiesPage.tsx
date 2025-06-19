@@ -45,6 +45,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  activities,
+  type Activity as ImportedActivity,
+} from "@/data/activities";
 
 interface Intuition {
   id: string;
