@@ -115,11 +115,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     isAuthenticated: !!user,
     hasSelectedWorkspace,
     currentOrganizationId,
+    selectedOrgAccount,
     login,
     logout,
     completeWorkspaceSelection,
     resetWorkspaceSelection,
     setCurrentOrganization,
+    setSelectedOrgAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
