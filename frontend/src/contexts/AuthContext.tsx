@@ -91,6 +91,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       "hasSelectedWorkspace",
     );
     const savedOrganizationId = localStorage.getItem("currentOrganizationId");
+    const savedOrgAccount = localStorage.getItem("selectedOrgAccount");
 
     if (savedUser) {
       setUser(JSON.parse(savedUser));
@@ -102,6 +103,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     if (savedOrganizationId) {
       setCurrentOrganizationId(savedOrganizationId);
+    }
+
+    if (savedOrgAccount) {
+      setSelectedOrgAccountState(savedOrgAccount);
     }
   });
 
