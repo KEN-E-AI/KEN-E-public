@@ -32,11 +32,32 @@ export const useDashboardState = () => {
     return ACCOUNTS_DATA[state.selectedAccount] || ACCOUNTS_DATA["acme-corp"];
   }, [state.selectedAccount]);
 
-  // Get current step's channels and tactics
+  // Get current objective's channels and tactics
   const getCurrentStepData = useCallback(() => {
     const accountData = getCurrentAccountData();
+
+    // Find the current objective by name
+    const currentObjective = accountData.objectives?.find(
+      (obj) => obj.name === state.selectedTab,
+    );
+
+    if (currentObjective) {
+      // Convert the new structure to the old format for backward compatibility
+      const channelTactics: Record<string, Tactic[]> = {};
+      currentObjective.channels.forEach((channel) => {
+        channelTactics[channel.name] = channel.tactics || [];
+      });
+
+      return {
+        channels: currentObjective.channels,
+        channelTactics,
+      };
+    }
+
+    // Fallback to legacy structure if objectives don't exist
     return (
-      accountData.stepChannelsAndTactics[state.selectedTab] || DEFAULT_STEP_DATA
+      accountData.stepChannelsAndTactics?.[state.selectedTab] ||
+      DEFAULT_STEP_DATA
     );
   }, [getCurrentAccountData, state.selectedTab]);
 
