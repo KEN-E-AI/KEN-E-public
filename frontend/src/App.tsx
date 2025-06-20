@@ -121,6 +121,14 @@ const App = () => (
               }
             />
             <Route
+              path="/insights"
+              element={
+                <ProtectedRoute>
+                  <Insights />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/account-settings"
               element={
                 <ProtectedRoute>
