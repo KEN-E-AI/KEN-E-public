@@ -138,14 +138,17 @@ const OrganizationForm = ({
                   ? formData.company_size
                   : orgData?.company_size || ""
               }
-              onValueChange={(value) =>
-                isCreatingNew &&
-                setFormData({
-                  ...formData,
-                  company_size: value,
-                })
-              }
-              disabled={!isCreatingNew}
+              onValueChange={(value) => {
+                if (isCreatingNew) {
+                  setFormData({
+                    ...formData,
+                    company_size: value,
+                  });
+                } else if (orgData) {
+                  // Update orgData directly for existing organizations
+                  orgData.company_size = value;
+                }
+              }}
             >
               <SelectTrigger>
                 <SelectValue
