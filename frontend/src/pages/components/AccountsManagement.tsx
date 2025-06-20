@@ -122,6 +122,33 @@ const AccountsManagement = ({
   const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
     useState(false);
 
+  // Refs for click-outside handling
+  const editRegionDropdownRef = useRef<HTMLDivElement>(null);
+  const createRegionDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        editRegionDropdownRef.current &&
+        !editRegionDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsEditRegionPopoverOpen(false);
+      }
+      if (
+        createRegionDropdownRef.current &&
+        !createRegionDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsCreateRegionPopoverOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   const [editFormData, setEditFormData] = useState({
     account_name: "",
     industry: "",
