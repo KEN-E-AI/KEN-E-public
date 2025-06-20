@@ -141,6 +141,15 @@ const AccountsManagement = ({
   // Event handlers
   const handleEditAccount = (account: Account) => {
     setSelectedAccount(account);
+    const existingRegion = (account as any).region;
+    let regionArray: string[] = [];
+
+    if (Array.isArray(existingRegion)) {
+      regionArray = existingRegion;
+    } else if (typeof existingRegion === "string" && existingRegion) {
+      regionArray = [existingRegion];
+    }
+
     setEditFormData({
       account_name: account.account_name,
       industry: account.industry,
@@ -150,7 +159,7 @@ const AccountsManagement = ({
           ? account.websites
           : [""],
       timezone: account.timezone || "America/New_York",
-      region: (account as any).region || "North America",
+      region: regionArray,
     });
     setIsModalOpen(true);
   };
