@@ -50,6 +50,13 @@ const Insights = () => {
   const [selectedImpact, setSelectedImpact] = useState<string>("all");
   const [selectedConfidence, setSelectedConfidence] = useState<string>("all");
 
+  // Delete insight function
+  const handleDeleteInsight = (insightId: string) => {
+    setInsights((prev) =>
+      prev.filter((insight) => insight.insight_id !== insightId),
+    );
+  };
+
   // Get unique values for filters
   const categories = useMemo(() => {
     const uniqueCategories = [
