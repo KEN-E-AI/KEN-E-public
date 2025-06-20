@@ -667,48 +667,41 @@ const AccountsManagement = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Customer Region</Label>
-                <Popover
-                  open={isCreateRegionPopoverOpen}
-                  onOpenChange={setIsCreateRegionPopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0">
-                    <div className="max-h-60 overflow-y-auto">
+                <div className="relative">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() =>
+                      setIsCreateRegionPopoverOpen(!isCreateRegionPopoverOpen)
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  {isCreateRegionPopoverOpen && (
+                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
                       {REGION_OPTIONS.map((option) => (
                         <div
                           key={option.value}
-                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                          onClick={() => {
                             if (
                               !createAccountFormData.region.includes(
                                 option.value,
                               )
                             ) {
                               toggleRegion(option.value, false);
-                              setTimeout(
-                                () => setIsCreateRegionPopoverOpen(false),
-                                50,
-                              );
+                              setIsCreateRegionPopoverOpen(false);
                             }
                           }}
                         >
-                          <span className="text-sm flex-1">{option.label}</span>
+                          <span className="flex-1">{option.label}</span>
                         </div>
                       ))}
                     </div>
-                  </PopoverContent>
-                </Popover>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 {createAccountFormData.region.map((regionValue, index) => (
