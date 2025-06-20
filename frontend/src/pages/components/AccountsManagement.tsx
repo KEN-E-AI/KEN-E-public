@@ -475,10 +475,15 @@ const AccountsManagement = ({
                         <div
                           key={option.value}
                           className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => {
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             if (!editFormData.region.includes(option.value)) {
                               toggleRegion(option.value, true);
-                              setIsEditRegionPopoverOpen(false);
+                              setTimeout(
+                                () => setIsEditRegionPopoverOpen(false),
+                                50,
+                              );
                             }
                           }}
                         >
