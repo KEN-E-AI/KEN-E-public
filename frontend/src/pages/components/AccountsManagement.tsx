@@ -716,6 +716,26 @@ const AccountsManagement = ({
               </Select>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="create-account-data-region">Data Region</Label>
+              <Select
+                value={createAccountFormData.data_region}
+                onValueChange={(value) =>
+                  setCreateAccountFormData({
+                    ...createAccountFormData,
+                    data_region: value,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select data region" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="United States">United States</SelectItem>
+                  <SelectItem value="Europe">Europe</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Customer Region</Label>
                 <div className="relative" ref={createRegionDropdownRef}>
