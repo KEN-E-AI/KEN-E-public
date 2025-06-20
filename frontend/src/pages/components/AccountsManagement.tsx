@@ -694,14 +694,19 @@ const AccountsManagement = ({
                         <div
                           key={option.value}
                           className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => {
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             if (
                               !createAccountFormData.region.includes(
                                 option.value,
                               )
                             ) {
                               toggleRegion(option.value, false);
-                              setIsCreateRegionPopoverOpen(false);
+                              setTimeout(
+                                () => setIsCreateRegionPopoverOpen(false),
+                                50,
+                              );
                             }
                           }}
                         >
