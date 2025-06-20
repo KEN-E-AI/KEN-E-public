@@ -28,6 +28,15 @@ import {
   type Account,
 } from "@/data/organizationData";
 
+const REGION_OPTIONS = [
+  { value: "North America", label: "North America" },
+  { value: "Europe", label: "Europe" },
+  { value: "Asia Pacific", label: "Asia Pacific" },
+  { value: "Latin America", label: "Latin America" },
+  { value: "Middle East & Africa", label: "Middle East & Africa" },
+  { value: "Global", label: "Global" },
+];
+
 interface AccountsManagementProps {
   orgData: Organization;
   currentOrgId: string;
