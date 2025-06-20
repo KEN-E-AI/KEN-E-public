@@ -106,6 +106,9 @@ const Knowledge = () => {
             Lightbulb,
             "Insights",
             "Review and manage the insights that KEN-E has uncovered about your business",
+            "",
+            () => navigate("/insights"),
+            false,
           )}
 
           {/* Measurement Strategy Section */}
