@@ -91,14 +91,17 @@ const UserSettings = () => {
             <div className="space-y-4">
               {notificationSettings.map((setting, index) => (
                 <div key={setting.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div className="flex flex-col min-w-0 flex-1">
                       <Label className="mr-auto">{setting.label}</Label>
                       <p className="text-sm text-dashboard-gray-600">
                         {setting.description}
                       </p>
                     </div>
-                    <Switch defaultChecked={setting.enabled} />
+                    <Switch
+                      defaultChecked={setting.enabled}
+                      className="flex-shrink-0"
+                    />
                   </div>
                   {index < notificationSettings.length - 1 && <Separator />}
                 </div>
