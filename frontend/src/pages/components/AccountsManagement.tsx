@@ -445,26 +445,55 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="account-region">Customer Region</Label>
-              <Select
-                value={editFormData.region}
-                onValueChange={(value) =>
-                  setEditFormData({
-                    ...editFormData,
-                    region: value,
-                  })
-                }
-              >
+              <Select>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select customer region" />
+                  <SelectValue
+                    placeholder={
+                      editFormData.region.length === 0
+                        ? "Select customer regions"
+                        : getSelectedRegionLabels(editFormData.region)
+                    }
+                  />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60">
                   {REGION_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        toggleRegion(option.value, true);
+                      }}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="w-4 h-4 flex items-center justify-center">
+                          {editFormData.region.includes(option.value) && (
+                            <Check className="h-3 w-3" />
+                          )}
+                        </div>
+                        <span>{option.label}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {editFormData.region.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {editFormData.region.map((regionValue) => (
+                    <Badge
+                      key={regionValue}
+                      variant="secondary"
+                      className="text-xs cursor-pointer hover:bg-red-100"
+                      onClick={() => toggleRegion(regionValue, true)}
+                    >
+                      {REGION_OPTIONS.find((opt) => opt.value === regionValue)
+                        ?.label || regionValue}
+                      <X className="h-3 w-3 ml-1" />
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
