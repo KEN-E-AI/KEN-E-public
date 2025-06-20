@@ -31,6 +31,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { insights, type Insight } from "@/data/insights";
 
 const Insights = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedImpact, setSelectedImpact] = useState<string>("all");
