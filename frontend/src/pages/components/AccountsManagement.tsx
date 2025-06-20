@@ -650,26 +650,55 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="create-account-region">Customer Region</Label>
-              <Select
-                value={createAccountFormData.region}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    region: value,
-                  })
-                }
-              >
+              <Select>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select customer region" />
+                  <SelectValue
+                    placeholder={
+                      createAccountFormData.region.length === 0
+                        ? "Select customer regions"
+                        : getSelectedRegionLabels(createAccountFormData.region)
+                    }
+                  />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-60">
                   {REGION_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        toggleRegion(option.value, false);
+                      }}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="w-4 h-4 flex items-center justify-center">
+                          {createAccountFormData.region.includes(
+                            option.value,
+                          ) && <Check className="h-3 w-3" />}
+                        </div>
+                        <span>{option.label}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {createAccountFormData.region.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {createAccountFormData.region.map((regionValue) => (
+                    <Badge
+                      key={regionValue}
+                      variant="secondary"
+                      className="text-xs cursor-pointer hover:bg-red-100"
+                      onClick={() => toggleRegion(regionValue, false)}
+                    >
+                      {REGION_OPTIONS.find((opt) => opt.value === regionValue)
+                        ?.label || regionValue}
+                      <X className="h-3 w-3 ml-1" />
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
