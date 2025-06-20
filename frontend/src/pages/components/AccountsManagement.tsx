@@ -119,7 +119,7 @@ const AccountsManagement = ({
     status: "",
     websites: [""],
     timezone: "",
-    region: "",
+    region: [] as string[],
   });
 
   const [createAccountFormData, setCreateAccountFormData] = useState({
@@ -128,7 +128,7 @@ const AccountsManagement = ({
     status: "Active",
     websites: [""],
     timezone: "America/New_York",
-    region: "North America",
+    region: [] as string[],
   });
 
   // Get accounts for current organization
