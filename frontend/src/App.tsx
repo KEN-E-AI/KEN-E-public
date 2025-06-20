@@ -16,6 +16,7 @@ import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
+import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
 import OrganizationSelection from "./pages/OrganizationSelection";
