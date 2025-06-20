@@ -155,6 +155,7 @@ const AccountsManagement = ({
     status: "",
     websites: [""],
     timezone: "",
+    data_region: "",
     region: [] as string[],
   });
 
@@ -164,6 +165,7 @@ const AccountsManagement = ({
     status: "Active",
     websites: [""],
     timezone: "America/New_York",
+    data_region: "United States",
     region: [] as string[],
   });
 
