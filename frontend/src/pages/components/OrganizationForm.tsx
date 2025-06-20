@@ -223,10 +223,7 @@ const OrganizationForm = ({
           )}
         </div>
 
-        <Button
-          onClick={isCreatingNew ? onSubmit : undefined}
-          disabled={!isCreatingNew}
-        >
+        <Button onClick={onSubmit}>
           {isCreatingNew ? "Create Organization" : "Update Organization"}
         </Button>
       </CardContent>
