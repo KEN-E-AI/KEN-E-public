@@ -348,6 +348,29 @@ const AccountsManagement = ({
               </Select>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="account-region">Customer Region</Label>
+              <Select
+                value={editFormData.region}
+                onValueChange={(value) =>
+                  setEditFormData({
+                    ...editFormData,
+                    region: value,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select customer region" />
+                </SelectTrigger>
+                <SelectContent>
+                  {REGION_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Websites</Label>
                 <Button
