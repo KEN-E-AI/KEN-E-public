@@ -49,6 +49,7 @@ const AccountsManagement = ({
     status: "",
     websites: [""],
     timezone: "",
+    region: "",
   });
 
   const [createAccountFormData, setCreateAccountFormData] = useState({
