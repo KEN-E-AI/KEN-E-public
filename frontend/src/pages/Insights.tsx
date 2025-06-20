@@ -44,6 +44,7 @@ import { insights as initialInsights, type Insight } from "@/data/insights";
 
 const Insights = () => {
   const navigate = useNavigate();
+  const [insights, setInsights] = useState<Insight[]>(initialInsights);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedImpact, setSelectedImpact] = useState<string>("all");
