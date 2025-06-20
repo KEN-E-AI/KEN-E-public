@@ -482,7 +482,7 @@ const AccountsManagement = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Customer Region</Label>
-                <div className="relative">
+                <div className="relative" ref={editRegionDropdownRef}>
                   <Button
                     type="button"
                     variant="outline"
