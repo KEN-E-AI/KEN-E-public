@@ -18,7 +18,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { User, Plus, X, Settings, Check } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { User, Plus, X, Settings, Check, ChevronDown } from "lucide-react";
 import {
   accounts,
   createNewAccount,
