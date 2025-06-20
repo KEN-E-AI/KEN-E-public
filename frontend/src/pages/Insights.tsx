@@ -9,6 +9,7 @@ import {
   TrendingDown,
   Minus,
   ArrowLeft,
+  Trash2,
 } from "lucide-react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -26,9 +27,20 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { insights, type Insight } from "@/data/insights";
+import { insights as initialInsights, type Insight } from "@/data/insights";
 
 const Insights = () => {
   const navigate = useNavigate();
