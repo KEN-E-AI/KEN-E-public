@@ -58,6 +58,7 @@ const AccountsManagement = ({
     status: "Active",
     websites: [""],
     timezone: "America/New_York",
+    region: "North America",
   });
 
   // Get accounts for current organization
