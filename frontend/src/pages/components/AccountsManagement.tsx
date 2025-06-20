@@ -257,6 +257,7 @@ const AccountsManagement = ({
         status: "Active",
         websites: [""],
         timezone: "America/New_York",
+        data_region: "United States",
         region: [],
       });
 
