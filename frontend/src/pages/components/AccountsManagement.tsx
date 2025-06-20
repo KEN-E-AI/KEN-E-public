@@ -679,11 +679,17 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="create-account-region">Customer Region</Label>
-              <Popover>
+              <Popover
+                open={isCreateRegionPopoverOpen}
+                onOpenChange={setIsCreateRegionPopoverOpen}
+              >
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className="w-full justify-between h-10 px-3 py-2 text-left font-normal"
+                    onClick={() =>
+                      setIsCreateRegionPopoverOpen(!isCreateRegionPopoverOpen)
+                    }
                   >
                     <span className="truncate">
                       {createAccountFormData.region.length === 0
@@ -693,15 +699,17 @@ const AccountsManagement = ({
                     <ChevronDown className="h-4 w-4 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80 p-0">
+                <PopoverContent
+                  className="w-80 p-0"
+                  onPointerDownOutside={(e) => e.preventDefault()}
+                >
                   <div className="max-h-60 overflow-y-auto">
                     {REGION_OPTIONS.map((option) => (
                       <div
                         key={option.value}
                         className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
                           e.preventDefault();
-                          e.stopPropagation();
                           toggleRegion(option.value, false);
                         }}
                       >
@@ -709,13 +717,20 @@ const AccountsManagement = ({
                           checked={createAccountFormData.region.includes(
                             option.value,
                           )}
-                          onCheckedChange={(checked) => {
-                            toggleRegion(option.value, false);
-                          }}
+                          readOnly
                         />
                         <span className="text-sm flex-1">{option.label}</span>
                       </div>
                     ))}
+                  </div>
+                  <div className="p-2 border-t">
+                    <Button
+                      size="sm"
+                      onClick={() => setIsCreateRegionPopoverOpen(false)}
+                      className="w-full"
+                    >
+                      Done
+                    </Button>
                   </div>
                 </PopoverContent>
               </Popover>
