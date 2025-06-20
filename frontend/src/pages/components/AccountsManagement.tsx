@@ -471,11 +471,17 @@ const AccountsManagement = ({
                       <div
                         key={option.value}
                         className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                        onClick={() => toggleRegion(option.value, true)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleRegion(option.value, true);
+                        }}
                       >
                         <Checkbox
                           checked={editFormData.region.includes(option.value)}
-                          onChange={() => {}} // Controlled by parent click
+                          onCheckedChange={(checked) => {
+                            toggleRegion(option.value, true);
+                          }}
                         />
                         <span className="text-sm flex-1">{option.label}</span>
                       </div>
