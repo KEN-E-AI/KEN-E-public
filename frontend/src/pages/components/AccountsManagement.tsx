@@ -193,6 +193,7 @@ const AccountsManagement = ({
         status: "Active",
         websites: [""],
         timezone: "America/New_York",
+        region: [],
       });
 
       alert(`Account "${newAccount.account_name}" created successfully!`);
