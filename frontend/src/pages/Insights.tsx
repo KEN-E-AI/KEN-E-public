@@ -261,15 +261,49 @@ const Insights = () => {
                   <Card>
                     <CardContent className="pt-6">
                       <div className="space-y-4">
-                        <div>
-                          <h4 className="font-medium text-gray-900 mb-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-gray-900">
                             Evidence
                           </h4>
-                          <div className="bg-gray-50 p-4 rounded-md">
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                              {insight.evidence}
-                            </p>
-                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Insight
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Delete Insight
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete this insight?
+                                  This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() =>
+                                    handleDeleteInsight(insight.insight_id)
+                                  }
+                                  className="bg-red-600 hover:bg-red-700"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-md">
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                            {insight.evidence}
+                          </p>
                         </div>
                       </div>
                     </CardContent>
