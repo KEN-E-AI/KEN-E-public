@@ -138,6 +138,31 @@ const AccountsManagement = ({
     );
   }, [currentOrgId]);
 
+  // Region management helpers
+  const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
+    const formData = isEdit ? editFormData : createAccountFormData;
+    const setFormData = isEdit ? setEditFormData : setCreateAccountFormData;
+
+    const currentRegions = formData.region;
+    const newRegions = currentRegions.includes(regionValue)
+      ? currentRegions.filter((r) => r !== regionValue)
+      : [...currentRegions, regionValue];
+
+    setFormData({
+      ...formData,
+      region: newRegions,
+    });
+  };
+
+  const getSelectedRegionLabels = (regions: string[]) => {
+    return regions
+      .map((regionValue) => {
+        const option = REGION_OPTIONS.find((opt) => opt.value === regionValue);
+        return option ? option.label : regionValue;
+      })
+      .join(", ");
+  };
+
   // Event handlers
   const handleEditAccount = (account: Account) => {
     setSelectedAccount(account);
