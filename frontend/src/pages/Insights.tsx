@@ -193,7 +193,7 @@ const Insights = () => {
         </div>
 
         {/* Results Count */}
-        <div className="text-sm text-gray-600 mb-4">
+        <div className="text-sm text-gray-600 mt-6 mr-auto">
           {filteredInsights.length} insight
           {filteredInsights.length !== 1 ? "s" : ""} found
         </div>
