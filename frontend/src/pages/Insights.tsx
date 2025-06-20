@@ -112,20 +112,6 @@ const Insights = () => {
   return (
     <Layout pageTitle="Insights">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <Lightbulb className="h-6 w-6 text-dashboard-gray-600" />
-          <div>
-            <h1 className="text-2xl font-semibold text-dashboard-gray-900">
-              Insights
-            </h1>
-            <p className="text-dashboard-gray-600">
-              Review and manage the insights that KEN-E has uncovered about your
-              business
-            </p>
-          </div>
-        </div>
-
         {/* Search and Filter Bar */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="flex-1 relative">
