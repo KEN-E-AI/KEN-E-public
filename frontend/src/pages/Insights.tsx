@@ -114,7 +114,7 @@ const Insights = () => {
 
   return (
     <Layout pageTitle="Insights">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6 flex flex-col">
         {/* Back to Knowledge Link */}
         <div className="pt-2 mr-auto">
           <Button
