@@ -451,39 +451,38 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="account-region">Customer Region</Label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      editFormData.region.length === 0
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-10 px-3 py-2 text-left font-normal"
+                  >
+                    <span className="truncate">
+                      {editFormData.region.length === 0
                         ? "Select customer regions"
-                        : getSelectedRegionLabels(editFormData.region)
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {REGION_OPTIONS.map((option) => (
-                    <SelectItem
-                      key={option.value}
-                      value={option.value}
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        toggleRegion(option.value, true);
-                      }}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2 w-full">
-                        <div className="w-4 h-4 flex items-center justify-center">
-                          {editFormData.region.includes(option.value) && (
-                            <Check className="h-3 w-3" />
-                          )}
-                        </div>
-                        <span>{option.label}</span>
+                        : `${editFormData.region.length} region${editFormData.region.length > 1 ? "s" : ""} selected`}
+                    </span>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0">
+                  <div className="max-h-60 overflow-y-auto">
+                    {REGION_OPTIONS.map((option) => (
+                      <div
+                        key={option.value}
+                        className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        onClick={() => toggleRegion(option.value, true)}
+                      >
+                        <Checkbox
+                          checked={editFormData.region.includes(option.value)}
+                          onChange={() => {}} // Controlled by parent click
+                        />
+                        <span className="text-sm flex-1">{option.label}</span>
                       </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
               {editFormData.region.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {editFormData.region.map((regionValue) => (
