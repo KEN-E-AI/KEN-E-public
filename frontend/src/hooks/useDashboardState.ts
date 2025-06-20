@@ -3,9 +3,11 @@ import { ACCOUNTS_DATA, DEFAULT_STEP_DATA } from "@/data/accountData";
 import {
   DashboardState,
   FunnelStep,
+  Objective,
   Channel,
   Tactic,
   AccountData,
+  ChannelWithTactics,
 } from "@/types/dashboard";
 
 const INITIAL_STATE: DashboardState = {
@@ -30,20 +32,47 @@ export const useDashboardState = () => {
     return ACCOUNTS_DATA[state.selectedAccount] || ACCOUNTS_DATA["acme-corp"];
   }, [state.selectedAccount]);
 
-  // Get current step's channels and tactics
+  // Get current objective's channels and tactics
   const getCurrentStepData = useCallback(() => {
     const accountData = getCurrentAccountData();
+
+    // Find the current objective by name
+    const currentObjective = accountData.objectives?.find(
+      (obj) => obj.name === state.selectedTab,
+    );
+
+    if (currentObjective) {
+      // Convert the new structure to the old format for backward compatibility
+      const channelTactics: Record<string, Tactic[]> = {};
+      currentObjective.channels.forEach((channel) => {
+        channelTactics[channel.name] = channel.tactics || [];
+      });
+
+      return {
+        channels: currentObjective.channels,
+        channelTactics,
+      };
+    }
+
+    // Fallback to legacy structure if objectives don't exist
     return (
-      accountData.stepChannelsAndTactics[state.selectedTab] || DEFAULT_STEP_DATA
+      accountData.stepChannelsAndTactics?.[state.selectedTab] ||
+      DEFAULT_STEP_DATA
     );
   }, [getCurrentAccountData, state.selectedTab]);
 
   // Handle account change
   const handleAccountChange = useCallback((newAccount: string) => {
     const newAccountData = ACCOUNTS_DATA[newAccount];
-    const firstStep = newAccountData?.funnelSteps
-      .slice()
+
+    // Try to get first objective, fallback to funnelSteps for backward compatibility
+    const firstObjective = newAccountData?.objectives
+      ?.slice()
       .sort((a, b) => a.order - b.order)[0];
+
+    const firstStep =
+      firstObjective ||
+      newAccountData?.funnelSteps?.slice().sort((a, b) => a.order - b.order)[0];
 
     setState((prev) => ({
       ...prev,
@@ -58,22 +87,59 @@ export const useDashboardState = () => {
   const handleChannelsChange = useCallback(
     (newChannels: Channel[]) => {
       const currentAccountData = getCurrentAccountData();
-      const currentStepData = getCurrentStepData();
 
-      const updatedStepData = {
-        ...currentStepData,
-        channels: newChannels,
-      };
+      if (currentAccountData.objectives) {
+        // Update the new objectives structure
+        const updatedObjectives = currentAccountData.objectives.map(
+          (objective) => {
+            if (objective.name === state.selectedTab) {
+              // Convert Channel[] to ChannelWithTactics[] by preserving existing tactics
+              const updatedChannels: ChannelWithTactics[] = newChannels.map(
+                (channel) => {
+                  const existingChannel = objective.channels.find(
+                    (c) => c.id === channel.id,
+                  );
+                  return {
+                    ...channel,
+                    tactics: existingChannel?.tactics || [],
+                  };
+                },
+              );
 
-      const updatedAccountData = {
-        ...currentAccountData,
-        stepChannelsAndTactics: {
-          ...currentAccountData.stepChannelsAndTactics,
-          [state.selectedTab]: updatedStepData,
-        },
-      };
+              return {
+                ...objective,
+                channels: updatedChannels,
+              };
+            }
+            return objective;
+          },
+        );
 
-      ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+        const updatedAccountData = {
+          ...currentAccountData,
+          objectives: updatedObjectives,
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      } else {
+        // Fallback for legacy structure
+        const currentStepData = getCurrentStepData();
+        const updatedStepData = {
+          ...currentStepData,
+          channels: newChannels,
+        };
+
+        const updatedAccountData = {
+          ...currentAccountData,
+          stepChannelsAndTactics: {
+            ...currentAccountData.stepChannelsAndTactics!,
+            [state.selectedTab]: updatedStepData,
+          },
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      }
+
       setAccountDataVersion((prev) => prev + 1);
     },
     [
@@ -88,27 +154,61 @@ export const useDashboardState = () => {
   const handleChannelTacticsChange = useCallback(
     (channelName: string, newTactics: Tactic[]) => {
       const currentAccountData = getCurrentAccountData();
-      const currentStepData = getCurrentStepData();
 
-      const updatedChannelTactics = {
-        ...currentStepData.channelTactics,
-        [channelName]: newTactics,
-      };
+      if (currentAccountData.objectives) {
+        // Update the new objectives structure
+        const updatedObjectives = currentAccountData.objectives.map(
+          (objective) => {
+            if (objective.name === state.selectedTab) {
+              const updatedChannels = objective.channels.map((channel) => {
+                if (channel.name === channelName) {
+                  return {
+                    ...channel,
+                    tactics: newTactics,
+                  };
+                }
+                return channel;
+              });
 
-      const updatedStepData = {
-        ...currentStepData,
-        channelTactics: updatedChannelTactics,
-      };
+              return {
+                ...objective,
+                channels: updatedChannels,
+              };
+            }
+            return objective;
+          },
+        );
 
-      const updatedAccountData = {
-        ...currentAccountData,
-        stepChannelsAndTactics: {
-          ...currentAccountData.stepChannelsAndTactics,
-          [state.selectedTab]: updatedStepData,
-        },
-      };
+        const updatedAccountData = {
+          ...currentAccountData,
+          objectives: updatedObjectives,
+        };
 
-      ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      } else {
+        // Fallback for legacy structure
+        const currentStepData = getCurrentStepData();
+        const updatedChannelTactics = {
+          ...currentStepData.channelTactics,
+          [channelName]: newTactics,
+        };
+
+        const updatedStepData = {
+          ...currentStepData,
+          channelTactics: updatedChannelTactics,
+        };
+
+        const updatedAccountData = {
+          ...currentAccountData,
+          stepChannelsAndTactics: {
+            ...currentAccountData.stepChannelsAndTactics!,
+            [state.selectedTab]: updatedStepData,
+          },
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      }
+
       setAccountDataVersion((prev) => prev + 1);
     },
     [
@@ -119,16 +219,40 @@ export const useDashboardState = () => {
     ],
   );
 
-  // Handle funnel steps change
+  // Handle funnel steps/objectives change
   const handleFunnelStepsChange = useCallback(
     (newSteps: FunnelStep[]) => {
       const currentAccountData = getCurrentAccountData();
-      const updatedAccountData = {
-        ...currentAccountData,
-        funnelSteps: newSteps,
-      };
 
-      ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      if (currentAccountData.objectives) {
+        // Convert FunnelStep[] to Objective[] while preserving existing channels
+        const updatedObjectives: Objective[] = newSteps.map((step) => {
+          const existingObjective = currentAccountData.objectives?.find(
+            (obj) => obj.id === step.id || obj.name === step.name,
+          );
+
+          return {
+            ...step,
+            supportingMetrics: existingObjective?.supportingMetrics || [],
+            channels: existingObjective?.channels || [],
+          };
+        });
+
+        const updatedAccountData = {
+          ...currentAccountData,
+          objectives: updatedObjectives,
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      } else {
+        // Legacy structure update
+        const updatedAccountData = {
+          ...currentAccountData,
+          funnelSteps: newSteps,
+        };
+
+        ACCOUNTS_DATA[state.selectedAccount] = updatedAccountData;
+      }
 
       // Check if current tab still exists
       const sortedSteps = newSteps.slice().sort((a, b) => a.order - b.order);
@@ -150,8 +274,30 @@ export const useDashboardState = () => {
   const handleTabChange = useCallback(
     (newTab: string) => {
       const accountData = getCurrentAccountData();
-      const newStepData =
-        accountData.stepChannelsAndTactics[newTab] || DEFAULT_STEP_DATA;
+      let newStepData;
+
+      if (accountData.objectives) {
+        // Find the objective and convert to legacy format
+        const objective = accountData.objectives.find(
+          (obj) => obj.name === newTab,
+        );
+        if (objective) {
+          const channelTactics: Record<string, Tactic[]> = {};
+          objective.channels.forEach((channel) => {
+            channelTactics[channel.name] = channel.tactics || [];
+          });
+          newStepData = {
+            channels: objective.channels,
+            channelTactics,
+          };
+        } else {
+          newStepData = DEFAULT_STEP_DATA;
+        }
+      } else {
+        // Legacy structure
+        newStepData =
+          accountData.stepChannelsAndTactics?.[newTab] || DEFAULT_STEP_DATA;
+      }
 
       const channelExists =
         state.selectedChannel === "Overview" ||

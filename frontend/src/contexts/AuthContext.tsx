@@ -12,11 +12,13 @@ interface AuthContextType {
   isAuthenticated: boolean;
   hasSelectedWorkspace: boolean;
   currentOrganizationId: string | null;
+  selectedOrgAccount: string | null;
   login: (user: User) => void;
   logout: () => void;
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
   setCurrentOrganization: (orgId: string) => void;
+  setSelectedOrgAccount: (combinedId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,6 +41,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [currentOrganizationId, setCurrentOrganizationId] = useState<
     string | null
   >(null);
+  const [selectedOrgAccount, setSelectedOrgAccountState] = useState<
+    string | null
+  >(null);
 
   const login = (userData: User) => {
     setUser(userData);
@@ -49,8 +54,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const logout = () => {
     setUser(null);
     setHasSelectedWorkspace(false);
+    setSelectedOrgAccountState(null);
     localStorage.removeItem("user");
     localStorage.removeItem("hasSelectedWorkspace");
+    localStorage.removeItem("selectedOrgAccount");
   };
 
   const completeWorkspaceSelection = () => {
@@ -61,13 +68,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const resetWorkspaceSelection = () => {
     setHasSelectedWorkspace(false);
     setCurrentOrganizationId(null);
+    setSelectedOrgAccountState(null);
     localStorage.removeItem("hasSelectedWorkspace");
     localStorage.removeItem("currentOrganizationId");
+    localStorage.removeItem("selectedOrgAccount");
   };
 
   const setCurrentOrganization = (orgId: string) => {
     setCurrentOrganizationId(orgId);
     localStorage.setItem("currentOrganizationId", orgId);
+  };
+
+  const setSelectedOrgAccount = (combinedId: string) => {
+    setSelectedOrgAccountState(combinedId);
+    localStorage.setItem("selectedOrgAccount", combinedId);
   };
 
   // Initialize auth state from localStorage on component mount
@@ -77,6 +91,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       "hasSelectedWorkspace",
     );
     const savedOrganizationId = localStorage.getItem("currentOrganizationId");
+    const savedOrgAccount = localStorage.getItem("selectedOrgAccount");
 
     if (savedUser) {
       setUser(JSON.parse(savedUser));
@@ -89,6 +104,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     if (savedOrganizationId) {
       setCurrentOrganizationId(savedOrganizationId);
     }
+
+    if (savedOrgAccount) {
+      setSelectedOrgAccountState(savedOrgAccount);
+    }
   });
 
   const value = {
@@ -96,11 +115,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     isAuthenticated: !!user,
     hasSelectedWorkspace,
     currentOrganizationId,
+    selectedOrgAccount,
     login,
     logout,
     completeWorkspaceSelection,
     resetWorkspaceSelection,
     setCurrentOrganization,
+    setSelectedOrgAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

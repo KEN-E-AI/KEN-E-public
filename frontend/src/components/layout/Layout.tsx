@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import GlobalHeader from "@/components/dashboard/GlobalHeader";
 import ChatSidebar from "@/components/dashboard/ChatSidebar";
 
@@ -39,9 +40,7 @@ const Layout = ({
   hideChatSidebar = false,
 }: LayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [selectedOrgAccount, setSelectedOrgAccount] = useState(
-    "healthway-intellipure-b2c",
-  );
+  const { selectedOrgAccount, setSelectedOrgAccount } = useAuth();
 
   return (
     <div className="min-h-screen bg-dashboard-gray-50">
@@ -74,7 +73,9 @@ const Layout = ({
             setDateRange={setDateRange}
             comparisonDateRange={comparisonDateRange}
             setComparisonDateRange={setComparisonDateRange}
-            selectedOrgAccount={selectedOrgAccount}
+            selectedOrgAccount={
+              selectedOrgAccount || "healthway-intellipure-b2c"
+            }
             setSelectedOrgAccount={setSelectedOrgAccount}
           />
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import GlobalHeader from "@/components/dashboard/GlobalHeader";
 import HomeNotificationsSidebar from "./HomeNotificationsSidebar";
 
@@ -16,8 +17,6 @@ interface HomeLayoutProps {
   setComparisonDateRange?: (
     range: { from: Date; to: Date } | undefined,
   ) => void;
-  selectedAccount?: string;
-  setSelectedAccount?: (accountId: string) => void;
 }
 
 const HomeLayout = ({
@@ -29,10 +28,9 @@ const HomeLayout = ({
   setDateRange = () => {},
   comparisonDateRange,
   setComparisonDateRange = () => {},
-  selectedAccount = "acme-corp",
-  setSelectedAccount = () => {},
 }: HomeLayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const { selectedOrgAccount, setSelectedOrgAccount } = useAuth();
 
   return (
     <div className="min-h-screen bg-dashboard-gray-50">
@@ -56,8 +54,10 @@ const HomeLayout = ({
             setDateRange={setDateRange}
             comparisonDateRange={comparisonDateRange}
             setComparisonDateRange={setComparisonDateRange}
-            selectedAccount={selectedAccount}
-            setSelectedAccount={setSelectedAccount}
+            selectedOrgAccount={
+              selectedOrgAccount || "healthway-intellipure-b2c"
+            }
+            setSelectedOrgAccount={setSelectedOrgAccount}
           />
 
           {/* Page Content */}

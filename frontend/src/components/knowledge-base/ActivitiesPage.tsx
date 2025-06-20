@@ -45,6 +45,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  activities,
+  type Activity as ImportedActivity,
+} from "@/data/activities";
 
 interface Intuition {
   id: string;
@@ -219,61 +223,32 @@ const availableMetrics: AvailableMetric[] = [
   },
 ];
 
-const initialActivities: Activity[] = [
-  {
-    id: "1",
-    description:
-      "Your brand or products are featured or referenced in news and press outlets.",
-    internal: false,
-    known: true,
-    expectedImpact:
-      "This activity is expected to build awareness of the brand and drive users to the website.",
-    intuitions: [
-      { id: "i1", metricName: "Brand Mentions", direction: "increase" },
-      { id: "i2", metricName: "Website Traffic", direction: "increase" },
-    ],
-    logs: [
-      {
-        id: "l1",
-        startDate: "2024-01-01",
-        endDate: "2024-01-31",
-        description: "Q1 PR campaign launch",
-      },
-      {
-        id: "l2",
-        startDate: "2024-02-01",
-        endDate: "2024-02-28",
-        description: "Product announcement coverage",
-      },
-    ],
-  },
-  {
-    id: "2",
-    description:
-      "Offer a temporary promotion or discount to a product/service.",
-    internal: true,
-    known: true,
-    expectedImpact:
-      "Expected to drive short-term conversions and clear inventory.",
-    intuitions: [
-      { id: "i3", metricName: "Conversion Rate", direction: "increase" },
-      { id: "i4", metricName: "Average Order Value", direction: "decrease" },
-    ],
-    logs: [],
-  },
-  {
-    id: "3",
-    description: "Do something else...",
-    internal: false,
-    known: false,
-    expectedImpact: "",
-    intuitions: [],
-    logs: [],
-  },
-];
-
 const ActivitiesPage = () => {
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+  // Convert imported activities to component format
+  const convertedActivities: Activity[] = activities.map((activity) => ({
+    id: activity.activity_id,
+    description: activity.description,
+    internal: activity.internal,
+    known: activity.known_activity,
+    expectedImpact: activity.expected_impact,
+    intuitions: activity.intuition.map((intuition, index) => {
+      const [metricName, direction] = Object.entries(intuition)[0];
+      return {
+        id: `i${activity.activity_id}_${index}`,
+        metricName,
+        direction: direction as "increase" | "decrease",
+      };
+    }),
+    logs: activity.logs.map((log) => ({
+      id: log.activity_log_id,
+      startDate: log.start_date,
+      endDate: log.end_date,
+      description: log.description,
+    })),
+  }));
+
+  const [activitiesData, setActivitiesData] =
+    useState<Activity[]>(convertedActivities);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingIntuition, setEditingIntuition] = useState<{
     activity: string;
@@ -299,7 +274,7 @@ const ActivitiesPage = () => {
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
   // Filter and search activities - optimized with useMemo
   const filteredActivities = useMemo(() => {
-    return activities.filter((activity) => {
+    return activitiesData.filter((activity) => {
       // Search filter
       const matchesSearch =
         activity.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -359,7 +334,7 @@ const ActivitiesPage = () => {
     setShowIntuitionModal(true);
   };
   const updateActivity = (activityId: string, updates: Partial<Activity>) => {
-    setActivities((prev) =>
+    setActivitiesData((prev) =>
       prev.map((activity) =>
         activity.id === activityId ? { ...activity, ...updates } : activity,
       ),
@@ -368,11 +343,11 @@ const ActivitiesPage = () => {
 
   const addActivity = (activity: Omit<Activity, "id">) => {
     const newActivity = { ...activity, id: `a${Date.now()}` };
-    setActivities((prev) => [...prev, newActivity]);
+    setActivitiesData((prev) => [...prev, newActivity]);
   };
 
   const deleteActivity = (activityId: string) => {
-    setActivities((prev) =>
+    setActivitiesData((prev) =>
       prev.filter((activity) => activity.id !== activityId),
     );
   };
@@ -404,7 +379,7 @@ const ActivitiesPage = () => {
     const newIntuition = { ...intuition, id: `i${Date.now()}` };
     updateActivity(activityId, {
       intuitions: [
-        ...(activities.find((a) => a.id === activityId)?.intuitions || []),
+        ...(activitiesData.find((a) => a.id === activityId)?.intuitions || []),
         newIntuition,
       ],
     });
@@ -415,7 +390,7 @@ const ActivitiesPage = () => {
     intuitionId: string,
     updates: Partial<Intuition>,
   ) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedIntuitions = activity.intuitions.map((i) =>
         i.id === intuitionId ? { ...i, ...updates } : i,
@@ -425,7 +400,7 @@ const ActivitiesPage = () => {
   };
 
   const deleteIntuition = (activityId: string, intuitionId: string) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedIntuitions = activity.intuitions.filter(
         (i) => i.id !== intuitionId,
@@ -438,7 +413,7 @@ const ActivitiesPage = () => {
     const newLog = { ...log, id: `l${Date.now()}` };
     updateActivity(activityId, {
       logs: [
-        ...(activities.find((a) => a.id === activityId)?.logs || []),
+        ...(activitiesData.find((a) => a.id === activityId)?.logs || []),
         newLog,
       ],
     });
@@ -449,7 +424,7 @@ const ActivitiesPage = () => {
     logId: string,
     updates: Partial<Log>,
   ) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedLogs = activity.logs.map((l) =>
         l.id === logId ? { ...l, ...updates } : l,
@@ -459,7 +434,7 @@ const ActivitiesPage = () => {
   };
 
   const deleteLog = (activityId: string, logId: string) => {
-    const activity = activities.find((a) => a.id === activityId);
+    const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedLogs = activity.logs.filter((l) => l.id !== logId);
       updateActivity(activityId, { logs: updatedLogs });

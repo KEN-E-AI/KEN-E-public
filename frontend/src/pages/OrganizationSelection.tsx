@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,11 @@ interface OrganizationSelectionProps {
 
 const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const navigate = useNavigate();
+  const {
+    setSelectedOrgAccount,
+    completeWorkspaceSelection,
+    setCurrentOrganization,
+  } = useAuth();
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [showCreateOrg, setShowCreateOrg] = useState(false);
@@ -89,6 +95,14 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       setIsLoading(true);
       // Simulate selection processing
       setTimeout(() => {
+        // Create the combined org-account ID for the dropdown
+        const combinedId = `${selectedOrganization}-${selectedAccount}`;
+
+        // Save the selection in AuthContext
+        setSelectedOrgAccount(combinedId);
+        setCurrentOrganization(selectedOrganization);
+        completeWorkspaceSelection();
+
         onComplete();
       }, 1000);
     }

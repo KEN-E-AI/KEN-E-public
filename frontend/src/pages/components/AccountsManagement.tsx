@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { User, Plus, X, Settings } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { User, Plus, X, Settings, Check, ChevronDown } from "lucide-react";
 import {
   accounts,
   createNewAccount,
@@ -27,6 +33,76 @@ import {
   type Organization,
   type Account,
 } from "@/data/organizationData";
+
+const REGION_OPTIONS = [
+  { value: "Global", label: "Global" },
+  { value: "NA", label: "NA: North America" },
+  { value: "JAPAC", label: "JAPAC: Japan and Asia Pacific" },
+  { value: "EMEA", label: "EMEA: Europe, the Middle East and Africa" },
+  { value: "LAC", label: "LAC: Latin America and the Caribbean" },
+  { value: "AE", label: "AE: United Arab Emirates" },
+  { value: "AR", label: "AR: Argentina" },
+  { value: "AT", label: "AT: Austria" },
+  { value: "AU", label: "AU: Australia" },
+  { value: "BE", label: "BE: Belgium" },
+  { value: "BR", label: "BR: Brazil" },
+  { value: "CA", label: "CA: Canada" },
+  { value: "CH", label: "CH: Switzerland" },
+  { value: "CL", label: "CL: Chile" },
+  { value: "CN", label: "CN: China" },
+  { value: "CO", label: "CO: Colombia" },
+  { value: "CZ", label: "CZ: Czechia" },
+  { value: "DE", label: "DE: Germany" },
+  { value: "DK", label: "DK: Denmark" },
+  { value: "DZ", label: "DZ: Algeria" },
+  { value: "EC", label: "EC: Ecuador" },
+  { value: "EE", label: "EE: Estonia" },
+  { value: "EG", label: "EG: Egypt" },
+  { value: "ES", label: "ES: Spain" },
+  { value: "FI", label: "FI: Finland" },
+  { value: "FR", label: "FR: France" },
+  { value: "GB", label: "GB: United Kingdom" },
+  { value: "GR", label: "GR: Greece" },
+  { value: "HK", label: "HK: Hong Kong" },
+  { value: "HU", label: "HU: Hungary" },
+  { value: "ID", label: "ID: Indonesia" },
+  { value: "IE", label: "IE: Ireland" },
+  { value: "IL", label: "IL: Israel" },
+  { value: "IN", label: "IN: India" },
+  { value: "IR", label: "IR: Iran" },
+  { value: "IT", label: "IT: Italy" },
+  { value: "JP", label: "JP: Japan" },
+  { value: "KR", label: "KR: South Korea" },
+  { value: "LV", label: "LV: Latvia" },
+  { value: "MA", label: "MA: Morocco" },
+  { value: "MX", label: "MX: Mexico" },
+  { value: "MY", label: "MY: Malaysia" },
+  { value: "NG", label: "NG: Nigeria" },
+  { value: "NL", label: "NL: Netherlands" },
+  { value: "NO", label: "NO: Norway" },
+  { value: "NZ", label: "NZ: New Zealand" },
+  { value: "PE", label: "PE: Peru" },
+  { value: "PH", label: "PH: Philippines" },
+  { value: "PK", label: "PK: Pakistan" },
+  { value: "PL", label: "PL: Poland" },
+  { value: "PT", label: "PT: Portugal" },
+  { value: "RO", label: "RO: Romania" },
+  { value: "RS", label: "RS: Serbia" },
+  { value: "RU", label: "RU: Russia" },
+  { value: "SA", label: "SA: Saudi Arabia" },
+  { value: "SE", label: "SE: Sweden" },
+  { value: "SG", label: "SG: Singapore" },
+  { value: "SI", label: "SI: Slovenia" },
+  { value: "SK", label: "SK: Slovakia" },
+  { value: "TH", label: "TH: Thailand" },
+  { value: "TR", label: "TR: Turkey" },
+  { value: "TW", label: "TW: Taiwan" },
+  { value: "UA", label: "UA: Ukraine" },
+  { value: "US", label: "US: United States" },
+  { value: "VE", label: "VE: Venezuela" },
+  { value: "VN", label: "VN: Vietnam" },
+  { value: "ZA", label: "ZA: South Africa" },
+];
 
 interface AccountsManagementProps {
   orgData: Organization;
@@ -42,6 +118,36 @@ const AccountsManagement = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateAccountModalOpen, setIsCreateAccountModalOpen] =
     useState(false);
+  const [isEditRegionPopoverOpen, setIsEditRegionPopoverOpen] = useState(false);
+  const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
+    useState(false);
+
+  // Refs for click-outside handling
+  const editRegionDropdownRef = useRef<HTMLDivElement>(null);
+  const createRegionDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to close dropdowns
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        editRegionDropdownRef.current &&
+        !editRegionDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsEditRegionPopoverOpen(false);
+      }
+      if (
+        createRegionDropdownRef.current &&
+        !createRegionDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsCreateRegionPopoverOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const [editFormData, setEditFormData] = useState({
     account_name: "",
@@ -49,6 +155,8 @@ const AccountsManagement = ({
     status: "",
     websites: [""],
     timezone: "",
+    data_region: "",
+    region: [] as string[],
   });
 
   const [createAccountFormData, setCreateAccountFormData] = useState({
@@ -57,6 +165,8 @@ const AccountsManagement = ({
     status: "Active",
     websites: [""],
     timezone: "America/New_York",
+    data_region: "United States",
+    region: [] as string[],
   });
 
   // Get accounts for current organization
@@ -66,9 +176,43 @@ const AccountsManagement = ({
     );
   }, [currentOrgId]);
 
+  // Region management helpers
+  const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
+    const formData = isEdit ? editFormData : createAccountFormData;
+    const setFormData = isEdit ? setEditFormData : setCreateAccountFormData;
+
+    const currentRegions = formData.region;
+    const newRegions = currentRegions.includes(regionValue)
+      ? currentRegions.filter((r) => r !== regionValue)
+      : [...currentRegions, regionValue];
+
+    setFormData({
+      ...formData,
+      region: newRegions,
+    });
+  };
+
+  const getSelectedRegionLabels = (regions: string[]) => {
+    return regions
+      .map((regionValue) => {
+        const option = REGION_OPTIONS.find((opt) => opt.value === regionValue);
+        return option ? option.label : regionValue;
+      })
+      .join(", ");
+  };
+
   // Event handlers
   const handleEditAccount = (account: Account) => {
     setSelectedAccount(account);
+    const existingRegion = (account as any).region;
+    let regionArray: string[] = [];
+
+    if (Array.isArray(existingRegion)) {
+      regionArray = existingRegion;
+    } else if (typeof existingRegion === "string" && existingRegion) {
+      regionArray = [existingRegion];
+    }
+
     setEditFormData({
       account_name: account.account_name,
       industry: account.industry,
@@ -78,6 +222,8 @@ const AccountsManagement = ({
           ? account.websites
           : [""],
       timezone: account.timezone || "America/New_York",
+      data_region: (account as any).data_region || "United States",
+      region: regionArray,
     });
     setIsModalOpen(true);
   };
@@ -111,6 +257,8 @@ const AccountsManagement = ({
         status: "Active",
         websites: [""],
         timezone: "America/New_York",
+        data_region: "United States",
+        region: [],
       });
 
       alert(`Account "${newAccount.account_name}" created successfully!`);
@@ -336,6 +484,85 @@ const AccountsManagement = ({
               </Select>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="account-data-region">Data Region</Label>
+              <Select
+                value={editFormData.data_region}
+                onValueChange={(value) =>
+                  setEditFormData({
+                    ...editFormData,
+                    data_region: value,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select data region" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="United States">United States</SelectItem>
+                  <SelectItem value="Europe">Europe</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Customer Region</Label>
+                <div className="relative" ref={editRegionDropdownRef}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() =>
+                      setIsEditRegionPopoverOpen(!isEditRegionPopoverOpen)
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  {isEditRegionPopoverOpen && (
+                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                      {REGION_OPTIONS.map((option) => (
+                        <div
+                          key={option.value}
+                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                          onClick={() => {
+                            if (!editFormData.region.includes(option.value)) {
+                              toggleRegion(option.value, true);
+                              setIsEditRegionPopoverOpen(false);
+                            }
+                          }}
+                        >
+                          <span className="flex-1">{option.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                {editFormData.region.map((regionValue, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={
+                        REGION_OPTIONS.find((opt) => opt.value === regionValue)
+                          ?.label || regionValue
+                      }
+                      readOnly
+                      className="flex-1 bg-gray-50"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleRegion(regionValue, true)}
+                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Websites</Label>
                 <Button
@@ -487,6 +714,89 @@ const AccountsManagement = ({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-account-data-region">Data Region</Label>
+              <Select
+                value={createAccountFormData.data_region}
+                onValueChange={(value) =>
+                  setCreateAccountFormData({
+                    ...createAccountFormData,
+                    data_region: value,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select data region" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="United States">United States</SelectItem>
+                  <SelectItem value="Europe">Europe</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Customer Region</Label>
+                <div className="relative" ref={createRegionDropdownRef}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() =>
+                      setIsCreateRegionPopoverOpen(!isCreateRegionPopoverOpen)
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  {isCreateRegionPopoverOpen && (
+                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                      {REGION_OPTIONS.map((option) => (
+                        <div
+                          key={option.value}
+                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                          onClick={() => {
+                            if (
+                              !createAccountFormData.region.includes(
+                                option.value,
+                              )
+                            ) {
+                              toggleRegion(option.value, false);
+                              setIsCreateRegionPopoverOpen(false);
+                            }
+                          }}
+                        >
+                          <span className="flex-1">{option.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                {createAccountFormData.region.map((regionValue, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={
+                        REGION_OPTIONS.find((opt) => opt.value === regionValue)
+                          ?.label || regionValue
+                      }
+                      readOnly
+                      className="flex-1 bg-gray-50"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleRegion(regionValue, false)}
+                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">

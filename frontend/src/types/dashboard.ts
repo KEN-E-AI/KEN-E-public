@@ -1,11 +1,16 @@
-export interface FunnelStep {
+export interface Objective {
   id: string;
   name: string;
   objective: string;
   effectivenessKPI: string;
   efficiencyKPI: string;
   order: number;
+  supportingMetrics: string[];
+  channels: ChannelWithTactics[];
 }
+
+// Legacy interface for backward compatibility
+export interface FunnelStep extends Objective {}
 
 export interface Channel {
   id: string;
@@ -23,14 +28,20 @@ export interface Tactic {
   supportingMetrics: string[];
 }
 
+export interface ChannelWithTactics extends Channel {
+  tactics: Tactic[];
+}
+
 export interface StepChannelsAndTactics {
   channels: Channel[];
   channelTactics: Record<string, Tactic[]>;
 }
 
 export interface AccountData {
-  funnelSteps: FunnelStep[];
-  stepChannelsAndTactics: Record<string, StepChannelsAndTactics>;
+  objectives: Objective[];
+  // Legacy properties for backward compatibility
+  funnelSteps?: FunnelStep[];
+  stepChannelsAndTactics?: Record<string, StepChannelsAndTactics>;
 }
 
 export interface DateRange {

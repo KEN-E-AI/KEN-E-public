@@ -114,15 +114,18 @@ const OrganizationForm = ({
                   ? formData.organization_name
                   : orgData?.organization_name || ""
               }
-              onChange={(e) =>
-                isCreatingNew &&
-                setFormData({
-                  ...formData,
-                  organization_name: e.target.value,
-                })
-              }
-              placeholder={isCreatingNew ? "Enter organization name" : ""}
-              disabled={!isCreatingNew}
+              onChange={(e) => {
+                if (isCreatingNew) {
+                  setFormData({
+                    ...formData,
+                    organization_name: e.target.value,
+                  });
+                } else if (orgData) {
+                  // Update orgData directly for existing organizations
+                  orgData.organization_name = e.target.value;
+                }
+              }}
+              placeholder="Enter organization name"
             />
           </div>
           <div className="flex flex-col">
@@ -135,14 +138,17 @@ const OrganizationForm = ({
                   ? formData.company_size
                   : orgData?.company_size || ""
               }
-              onValueChange={(value) =>
-                isCreatingNew &&
-                setFormData({
-                  ...formData,
-                  company_size: value,
-                })
-              }
-              disabled={!isCreatingNew}
+              onValueChange={(value) => {
+                if (isCreatingNew) {
+                  setFormData({
+                    ...formData,
+                    company_size: value,
+                  });
+                } else if (orgData) {
+                  // Update orgData directly for existing organizations
+                  orgData.company_size = value;
+                }
+              }}
             >
               <SelectTrigger>
                 <SelectValue
@@ -217,10 +223,7 @@ const OrganizationForm = ({
           )}
         </div>
 
-        <Button
-          onClick={isCreatingNew ? onSubmit : undefined}
-          disabled={!isCreatingNew}
-        >
+        <Button onClick={onSubmit}>
           {isCreatingNew ? "Create Organization" : "Update Organization"}
         </Button>
       </CardContent>

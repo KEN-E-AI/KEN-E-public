@@ -94,15 +94,15 @@ const HomeNotificationsSidebar: React.FC<HomeNotificationsSidebarProps> = ({
         <div className="h-[calc(100%-4rem)] overflow-y-auto p-2">
           <div className="space-y-2">
             {notifications.slice(0, 6).map((notification) => {
-              const IconComponent = notification.icon;
+              const IconComponent = notification.data.icon;
               return (
                 <div
                   key={notification.id}
                   className="relative flex items-center justify-center h-10 w-10 mx-auto rounded-lg hover:bg-dashboard-gray-50 cursor-pointer transition-colors"
-                  title={notification.title}
+                  title={notification.data.title}
                 >
                   <IconComponent className="h-4 w-4 text-dashboard-gray-600" />
-                  {notification.hasIndicator && (
+                  {notification.data.hasIndicator && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></div>
                   )}
                 </div>
