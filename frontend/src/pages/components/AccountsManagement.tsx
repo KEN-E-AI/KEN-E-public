@@ -89,6 +89,7 @@ const AccountsManagement = ({
           ? account.websites
           : [""],
       timezone: account.timezone || "America/New_York",
+      region: (account as any).region || "North America",
     });
     setIsModalOpen(true);
   };
