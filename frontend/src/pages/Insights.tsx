@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Search,
   Filter,
@@ -7,6 +8,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  ArrowLeft,
 } from "lucide-react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
