@@ -453,76 +453,65 @@ const AccountsManagement = ({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="account-region">Customer Region</Label>
-              <Popover
-                open={isEditRegionPopoverOpen}
-                onOpenChange={setIsEditRegionPopoverOpen}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-between h-10 px-3 py-2 text-left font-normal"
-                    onClick={() =>
-                      setIsEditRegionPopoverOpen(!isEditRegionPopoverOpen)
-                    }
-                  >
-                    <span className="truncate">
-                      {editFormData.region.length === 0
-                        ? "Select customer regions"
-                        : `${editFormData.region.length} region${editFormData.region.length > 1 ? "s" : ""} selected`}
-                    </span>
-                    <ChevronDown className="h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-80 p-0"
-                  onPointerDownOutside={(e) => e.preventDefault()}
+              <div className="flex items-center justify-between">
+                <Label>Customer Region</Label>
+                <Popover
+                  open={isEditRegionPopoverOpen}
+                  onOpenChange={setIsEditRegionPopoverOpen}
                 >
-                  <div className="max-h-60 overflow-y-auto">
-                    {REGION_OPTIONS.map((option) => (
-                      <div
-                        key={option.value}
-                        className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          toggleRegion(option.value, true);
-                        }}
-                      >
-                        <Checkbox
-                          checked={editFormData.region.includes(option.value)}
-                          readOnly
-                        />
-                        <span className="text-sm flex-1">{option.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="p-2 border-t">
+                  <PopoverTrigger asChild>
                     <Button
+                      type="button"
+                      variant="outline"
                       size="sm"
-                      onClick={() => setIsEditRegionPopoverOpen(false)}
-                      className="w-full"
+                      className="h-8 w-8 p-0"
                     >
-                      Done
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0">
+                    <div className="max-h-60 overflow-y-auto">
+                      {REGION_OPTIONS.map((option) => (
+                        <div
+                          key={option.value}
+                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                          onClick={() => {
+                            if (!editFormData.region.includes(option.value)) {
+                              toggleRegion(option.value, true);
+                              setIsEditRegionPopoverOpen(false);
+                            }
+                          }}
+                        >
+                          <span className="text-sm flex-1">{option.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-2">
+                {editFormData.region.map((regionValue, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={
+                        REGION_OPTIONS.find((opt) => opt.value === regionValue)
+                          ?.label || regionValue
+                      }
+                      readOnly
+                      className="flex-1 bg-gray-50"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleRegion(regionValue, true)}
+                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
+                    >
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
-                </PopoverContent>
-              </Popover>
-              {editFormData.region.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {editFormData.region.map((regionValue) => (
-                    <Badge
-                      key={regionValue}
-                      variant="secondary"
-                      className="text-xs cursor-pointer hover:bg-red-100"
-                      onClick={() => toggleRegion(regionValue, true)}
-                    >
-                      {REGION_OPTIONS.find((opt) => opt.value === regionValue)
-                        ?.label || regionValue}
-                      <X className="h-3 w-3 ml-1" />
-                    </Badge>
-                  ))}
-                </div>
-              )}
+                ))}
+              </div>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
