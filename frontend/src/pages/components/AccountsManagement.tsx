@@ -222,6 +222,7 @@ const AccountsManagement = ({
           ? account.websites
           : [""],
       timezone: account.timezone || "America/New_York",
+      data_region: (account as any).data_region || "United States",
       region: regionArray,
     });
     setIsModalOpen(true);
