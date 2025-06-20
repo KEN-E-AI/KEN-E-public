@@ -114,15 +114,18 @@ const OrganizationForm = ({
                   ? formData.organization_name
                   : orgData?.organization_name || ""
               }
-              onChange={(e) =>
-                isCreatingNew &&
-                setFormData({
-                  ...formData,
-                  organization_name: e.target.value,
-                })
-              }
-              placeholder={isCreatingNew ? "Enter organization name" : ""}
-              disabled={!isCreatingNew}
+              onChange={(e) => {
+                if (isCreatingNew) {
+                  setFormData({
+                    ...formData,
+                    organization_name: e.target.value,
+                  });
+                } else if (orgData) {
+                  // Update orgData directly for existing organizations
+                  orgData.organization_name = e.target.value;
+                }
+              }}
+              placeholder="Enter organization name"
             />
           </div>
           <div className="flex flex-col">
