@@ -118,6 +118,9 @@ const AccountsManagement = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateAccountModalOpen, setIsCreateAccountModalOpen] =
     useState(false);
+  const [isEditRegionPopoverOpen, setIsEditRegionPopoverOpen] = useState(false);
+  const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
+    useState(false);
 
   const [editFormData, setEditFormData] = useState({
     account_name: "",
