@@ -164,8 +164,10 @@ const UserSettings = () => {
             <div className="space-y-4">
               {preferenceSettings.map((setting, index) => (
                 <div key={setting.id}>
-                  <div className="flex items-center justify-between flex-wrap gap-4">
-                    <div className="flex flex-col min-w-0 flex-1">
+                  <div
+                    className={`flex items-center flex-wrap gap-4 mb-2 ${setting.id === "theme" ? "justify-start" : "justify-between"}`}
+                  >
+                    <div className="flex flex-col min-w-0 flex-1 justify-center items-start">
                       <Label className="mr-auto">{setting.label}</Label>
                       <p className="text-sm text-dashboard-gray-600">
                         {setting.description}
