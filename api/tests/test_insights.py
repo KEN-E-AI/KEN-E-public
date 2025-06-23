@@ -152,35 +152,6 @@ class TestInsightsRouter:
 
         app.dependency_overrides.clear()
 
-    def test_search_insights(self, client, mock_neo4j_service):
-        """Test searching insights with filters."""
-        mock_insight_record = {
-            "activity": {"id": "activity_001", "activity_description": "Search test"},
-            "metric": {"id": "metric_001", "metric_name": "Revenue"},
-            "activity_log": {"id": "log_001"},
-            "dataset": {"product": "Analytics"},
-            "relationship": {},
-        }
-
-        mock_neo4j_service.execute_query.return_value = [mock_insight_record]
-
-        app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
-
-        search_request = {
-            "account_id": "test_account",
-            "activity_id": "activity_001",
-            "metric_verbose_name": "Revenue",
-        }
-
-        response = client.post("/api/v1/insights/search", json=search_request)
-
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["insights"]) == 1
-        assert data["total"] == 1
-
-        app.dependency_overrides.clear()
-
     def test_create_insight(self, client, mock_neo4j_service):
         """Test creating a new insight."""
         mock_neo4j_service.execute_write_query.return_value = {

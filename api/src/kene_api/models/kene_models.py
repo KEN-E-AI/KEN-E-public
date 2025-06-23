@@ -416,17 +416,13 @@ class InsightSearchRequest(BaseModel):
     """Request model for searching insights."""
 
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
-    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_FILTER_DESCRIPTION)
-    metric_id: Optional[str] = Field(None, description=METRIC_ID_FILTER_DESCRIPTION)
-    activity_log_id: Optional[str] = Field(
-        None, description=ACTIVITY_LOG_ID_DESCRIPTION
-    )
-    metric_verbose_name: Optional[str] = Field(
-        None, description="Filter by metric verbose name"
-    )
-    activity_description: Optional[str] = Field(
-        None, description="Filter by activity description"
-    )
+    metric_id: str = Field(..., description=METRIC_ID_FILTER_DESCRIPTION)
+    activity_id: str = Field(..., description=ACTIVITY_ID_FILTER_DESCRIPTION)
+    evaluation_date_start: str = Field(..., description="Start date for evaluation period (YYYY-MM-DD)")
+    evaluation_date_end: str = Field(..., description="End date for evaluation period (YYYY-MM-DD)")
+    comparison_date_start: str = Field(..., description="Start date for comparison period (YYYY-MM-DD)")
+    comparison_date_end: str = Field(..., description="End date for comparison period (YYYY-MM-DD)")
+    direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
 
 
 class InsightSearchResponse(BaseModel):
@@ -534,6 +530,18 @@ class AnalysisWorkflowResponse(BaseModel):
         ..., description="Generated recommendations"
     )
     execution_time: float = Field(..., description="Execution time in seconds")
+
+
+class AnalysisSearchRequest(BaseModel):
+    """Request model for analysis search without activity_id."""
+
+    account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
+    metric_id: str = Field(..., description=METRIC_ID_FILTER_DESCRIPTION)
+    evaluation_date_start: str = Field(..., description="Start date for evaluation period (YYYY-MM-DD)")
+    evaluation_date_end: str = Field(..., description="End date for evaluation period (YYYY-MM-DD)")
+    comparison_date_start: str = Field(..., description="Start date for comparison period (YYYY-MM-DD)")
+    comparison_date_end: str = Field(..., description="End date for comparison period (YYYY-MM-DD)")
+    direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
 
 
 # Response Models

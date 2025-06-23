@@ -29,6 +29,11 @@ class KeneAPIClient:
     METRICS_ENDPOINT = "/api/v1/metrics/"
     INSIGHTS_ENDPOINT = "/api/v1/insights/"
     INTUITIONS_ENDPOINT = "/api/v1/intuitions/"
+    # Firestore endpoints
+    FIRESTORE_KPI_ENDPOINT = "/api/v1/firestore/kpi-settings"
+    FIRESTORE_FUNNEL_STEPS_ENDPOINT = "/api/v1/firestore/funnel-steps"
+    FIRESTORE_CHANNELS_ENDPOINT = "/api/v1/firestore/channels"
+    FIRESTORE_TACTICS_ENDPOINT = "/api/v1/firestore/tactics"
     
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url.rstrip("/")
@@ -118,7 +123,125 @@ class KeneAPIClient:
     def delete_intuition(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Delete an intuition."""
         return self._make_request("DELETE", self.INTUITIONS_ENDPOINT, json=data)
-
+    
+    # KPI Settings methods
+    def get_kpi_setting(self, account_id: str, kpi_name: str) -> Dict[str, Any]:
+        """Get a specific KPI setting."""
+        return self._make_request("GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{account_id}/{kpi_name}")
+    
+    def update_kpi_setting(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a KPI setting."""
+        return self._make_request("PUT", self.FIRESTORE_KPI_ENDPOINT, json=data)
+    
+    def get_all_kpi_settings(self, account_id: str) -> Dict[str, Any]:
+        """Get all KPI settings for an account."""
+        return self._make_request("GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{account_id}")
+    
+    # Funnel Steps methods
+    def create_funnel_step(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new funnel step."""
+        return self._make_request("POST", self.FIRESTORE_FUNNEL_STEPS_ENDPOINT, json=data)
+    
+    def get_funnel_steps(self, account_id: str, funnel_type: str, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get all funnel steps for a funnel."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("GET", f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}{params}")
+    
+    def get_funnel_step(self, account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get a specific funnel step."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("GET", f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}/{funnel_step_num}{params}")
+    
+    def update_funnel_step(self, account_id: str, funnel_type: str, funnel_step_num: int, data: Dict[str, Any], big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Update a funnel step."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("PUT", f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}/{funnel_step_num}{params}", json=data)
+    
+    def delete_funnel_step(self, account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Delete a funnel step."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("DELETE", f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}/{funnel_step_num}{params}")
+    
+    # Channels methods
+    def create_channel(self, data: Dict[str, Any], account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new channel."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("POST", f"{self.FIRESTORE_CHANNELS_ENDPOINT}{params}", json=data)
+    
+    def get_channels(self, account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get all channels in a funnel step."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("GET", f"{self.FIRESTORE_CHANNELS_ENDPOINT}{params}")
+    
+    def get_channel(self, channel_name: str, account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get a specific channel."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("GET", f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{channel_name}{params}")
+    
+    def update_channel(self, channel_name: str, data: Dict[str, Any], account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Update a channel."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("PUT", f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{channel_name}{params}", json=data)
+    
+    def delete_channel(self, channel_name: str, account_id: str, funnel_type: str, funnel_step_num: int, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Delete a channel."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("DELETE", f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{channel_name}{params}")
+    
+    # Tactics methods
+    def create_tactic(self, data: Dict[str, Any], account_id: str, funnel_type: str, funnel_step_num: int, channel_name: str, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Create a new tactic."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("POST", f"{self.FIRESTORE_TACTICS_ENDPOINT}{params}", json=data)
+    
+    def get_tactics(self, account_id: str, funnel_type: str, funnel_step_num: int, channel_name: str, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get all tactics in a channel."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("GET", f"{self.FIRESTORE_TACTICS_ENDPOINT}{params}")
+    
+    def get_tactic(self, tactic_name: str, account_id: str, funnel_type: str, funnel_step_num: int, channel_name: str, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get a specific tactic."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("GET", f"{self.FIRESTORE_TACTICS_ENDPOINT}/{tactic_name}{params}")
+    
+    def update_tactic(self, tactic_name: str, data: Dict[str, Any], account_id: str, funnel_type: str, funnel_step_num: int, channel_name: str, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Update a tactic."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("PUT", f"{self.FIRESTORE_TACTICS_ENDPOINT}/{tactic_name}{params}", json=data)
+    
+    def delete_tactic(self, tactic_name: str, account_id: str, funnel_type: str, funnel_step_num: int, channel_name: str, big_bet_name: Optional[str] = None) -> Dict[str, Any]:
+        """Delete a tactic."""
+        params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
+        if big_bet_name:
+            params += f"&big_bet_name={big_bet_name}"
+        return self._make_request("DELETE", f"{self.FIRESTORE_TACTICS_ENDPOINT}/{tactic_name}{params}")
+    
 
 class KeneCLI:
     """Command Line Interface for Kene API."""
@@ -164,6 +287,14 @@ class KeneCLI:
                 elif choice == "4":
                     self._manage_intuitions()
                 elif choice == "5":
+                    self._manage_kpi_settings()
+                elif choice == "6":
+                    self._manage_funnel_steps()
+                elif choice == "7":
+                    self._manage_channels()
+                elif choice == "8":
+                    self._manage_tactics()
+                elif choice == "9":
                     console.print("[yellow]Goodbye![/yellow]")
                     break
                 else:
@@ -183,9 +314,13 @@ class KeneCLI:
         console.print("2. Manage Metrics")
         console.print("3. Manage Insights")
         console.print("4. Manage Intuitions")
-        console.print("5. Exit")
+        console.print("5. Manage KPI Settings")
+        console.print("6. Manage Funnel Steps")
+        console.print("7. Manage Channels")
+        console.print("8. Manage Tactics")
+        console.print("9. Exit")
         
-        return Prompt.ask(self.CHOOSE_OPTION_PROMPT, choices=["1", "2", "3", "4", "5"])
+        return Prompt.ask(self.CHOOSE_OPTION_PROMPT, choices=["1", "2", "3", "4", "5", "6", "7", "8", "9"])
     
     def _show_crud_menu(self, entity_type: str) -> str:
         """Display CRUD menu for an entity type."""
@@ -1502,6 +1637,614 @@ class KeneCLI:
                 console.print("[green]Intuition deleted successfully![/green]")
             except Exception as e:
                 console.print(f"[red]Failed to delete intuition: {e}[/red]")
+    
+    # Firestore Management Methods
+    
+    def _manage_kpi_settings(self):
+        """Manage KPI settings."""
+        while True:
+            console.print(f"\n[bold]KPI Settings Management:[/bold]")
+            console.print("1. View All KPI Settings")
+            console.print("2. Update KPI Setting")
+            console.print("3. Back to Main Menu")
+            
+            choice = Prompt.ask(self.CHOOSE_OPTION_PROMPT, choices=["1", "2", "3"])
+            
+            if choice == "1":
+                self._view_kpi_settings()
+            elif choice == "2":
+                self._update_kpi_setting()
+            elif choice == "3":
+                break
+    
+    def _view_kpi_settings(self):
+        """View all KPI settings."""
+        try:
+            result = self.client.get_all_kpi_settings(self.account_id)
+            if result.get("success"):
+                kpi_settings = result.get("kpi_settings", {})
+                if kpi_settings:
+                    table = Table(title="KPI Settings")
+                    table.add_column("KPI Name", style="cyan")
+                    table.add_column("Metric ID", style="yellow")
+                    
+                    for kpi_name, metric_id in kpi_settings.items():
+                        table.add_row(kpi_name, metric_id)
+                    
+                    console.print(table)
+                else:
+                    console.print("[yellow]No KPI settings found.[/yellow]")
+            else:
+                console.print(f"[red]Error: {result.get('detail', 'Unknown error')}[/red]")
+        except Exception as e:
+            console.print(f"[red]Failed to retrieve KPI settings: {e}[/red]")
+    
+    def _update_kpi_setting(self):
+        """Update a KPI setting."""
+        console.print("\n[bold]Update KPI Setting[/bold]")
+        
+        kpi_name = Prompt.ask(
+            "KPI Name",
+            choices=["income_kpi", "marketing_cost_kpi", "net_income_kpi"]
+        )
+        
+        metric_id = Prompt.ask("Metric ID")
+        
+        data = {
+            "account_id": self.account_id,
+            "kpi_name": kpi_name,
+            "metric_id": metric_id
+        }
+        
+        self._show_data_preview("KPI Setting", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.update_kpi_setting(data)
+                if result.get("success"):
+                    console.print("[green]KPI setting updated successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to update KPI setting: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to update KPI setting: {e}[/red]")
+    
+    def _manage_funnel_steps(self):
+        """Manage funnel steps."""
+        while True:
+            choice = self._show_crud_menu("Funnel Steps")
+            if choice == "1":
+                self._view_funnel_steps()
+            elif choice == "2":
+                self._add_funnel_step()
+            elif choice == "3":
+                self._edit_funnel_step()
+            elif choice == "4":
+                self._delete_funnel_step()
+            elif choice == "5":
+                break
+    
+    def _view_funnel_steps(self):
+        """View all funnel steps."""
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        try:
+            result = self.client.get_funnel_steps(self.account_id, funnel_type, big_bet_name)
+            if result.get("success"):
+                funnel_steps = result.get("funnel_steps", [])
+                if funnel_steps:
+                    table = Table(title=f"Funnel Steps ({funnel_type})")
+                    table.add_column("Step #", style="cyan")
+                    table.add_column("Step Name", style="yellow")
+                    table.add_column("Objective", style="magenta", max_width=50)
+                    table.add_column("Effectiveness KPI", style="green")
+                    table.add_column("Efficiency KPI", style="blue")
+                    
+                    for step in funnel_steps:
+                        table.add_row(
+                            str(step.get("funnel_step_num", "")),
+                            step.get("step_name", ""),
+                            step.get("objective", ""),
+                            step.get("effectiveness_kpi", ""),
+                            step.get("efficiency_kpi", "")
+                        )
+                    
+                    console.print(table)
+                else:
+                    console.print("[yellow]No funnel steps found.[/yellow]")
+            else:
+                console.print(f"[red]Error: {result.get('detail', 'Unknown error')}[/red]")
+        except Exception as e:
+            console.print(f"[red]Failed to retrieve funnel steps: {e}[/red]")
+    
+    def _add_funnel_step(self):
+        """Add a new funnel step."""
+        console.print("\n[bold]Add New Funnel Step[/bold]")
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        funnel_step_name = Prompt.ask(
+            "Funnel Step Name",
+            choices=["awareness", "consideration", "conversion", "loyalty"]
+        )
+        effectiveness_kpi = Prompt.ask("Effectiveness KPI (Metric ID)")
+        efficiency_kpi = Prompt.ask("Efficiency KPI (Metric ID)")
+        objective = Prompt.ask("Objective")
+        
+        data = {
+            "account_id": self.account_id,
+            "funnel_type": funnel_type,
+            "funnel_step_num": funnel_step_num,
+            "funnel_step_name": funnel_step_name,
+            "effectiveness_kpi": effectiveness_kpi,
+            "efficiency_kpi": efficiency_kpi,
+            "objective": objective
+        }
+        
+        if big_bet_name:
+            data["big_bet_name"] = big_bet_name
+        
+        self._show_data_preview("Funnel Step", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.create_funnel_step(data)
+                if result.get("success"):
+                    console.print("[green]Funnel step created successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to create funnel step: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to create funnel step: {e}[/red]")
+    
+    def _edit_funnel_step(self):
+        """Edit an existing funnel step."""
+        console.print("\n[bold]Edit Funnel Step[/bold]")
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        
+        # Get current data
+        try:
+            current_result = self.client.get_funnel_step(self.account_id, funnel_type, funnel_step_num, big_bet_name)
+            if not current_result.get("success"):
+                console.print("[red]Funnel step not found.[/red]")
+                return
+            
+            current_data = current_result.get("funnel_step_data", {})
+        except Exception as e:
+            console.print(f"[red]Failed to get current funnel step: {e}[/red]")
+            return
+        
+        # Prompt for new values
+        funnel_step_name = Prompt.ask(
+            "Funnel Step Name",
+            choices=["awareness", "consideration", "conversion", "loyalty"],
+            default=current_data.get("funnel_step_name", "")
+        )
+        effectiveness_kpi = Prompt.ask(
+            "Effectiveness KPI (Metric ID)",
+            default=current_data.get("effectiveness_kpi", "")
+        )
+        efficiency_kpi = Prompt.ask(
+            "Efficiency KPI (Metric ID)",
+            default=current_data.get("efficiency_kpi", "")
+        )
+        objective = Prompt.ask(
+            "Objective",
+            default=current_data.get("objective", "")
+        )
+        
+        data = {
+            "account_id": self.account_id,
+            "funnel_type": funnel_type,
+            "funnel_step_num": funnel_step_num,
+            "funnel_step_name": funnel_step_name,
+            "effectiveness_kpi": effectiveness_kpi,
+            "efficiency_kpi": efficiency_kpi,
+            "objective": objective
+        }
+        
+        if big_bet_name:
+            data["big_bet_name"] = big_bet_name
+        
+        self._show_data_preview("Updated Funnel Step", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.update_funnel_step(self.account_id, funnel_type, funnel_step_num, data, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Funnel step updated successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to update funnel step: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to update funnel step: {e}[/red]")
+    
+    def _delete_funnel_step(self):
+        """Delete a funnel step."""
+        console.print("\n[bold]Delete Funnel Step[/bold]")
+        console.print(self.CANNOT_UNDONE_WARNING)
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        
+        if Confirm.ask("Are you sure you want to delete this funnel step?"):
+            try:
+                result = self.client.delete_funnel_step(self.account_id, funnel_type, funnel_step_num, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Funnel step deleted successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to delete funnel step: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to delete funnel step: {e}[/red]")
+    
+    def _manage_channels(self):
+        """Manage channels."""
+        while True:
+            choice = self._show_crud_menu("Channels")
+            if choice == "1":
+                self._view_channels()
+            elif choice == "2":
+                self._add_channel()
+            elif choice == "3":
+                self._edit_channel()
+            elif choice == "4":
+                self._delete_channel()
+            elif choice == "5":
+                break
+    
+    def _view_channels(self):
+        """View all channels in a funnel step."""
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        
+        try:
+            result = self.client.get_channels(self.account_id, funnel_type, funnel_step_num, big_bet_name)
+            if result.get("channels"):
+                channels = result.get("channels", [])
+                if channels:
+                    table = Table(title=f"Channels (Step {funnel_step_num})")
+                    table.add_column("Channel Name", style="cyan")
+                    table.add_column("Effectiveness KPI", style="yellow")
+                    table.add_column("Efficiency KPI", style="green")
+                    table.add_column("Supporting Metrics", style="blue")
+                    
+                    for channel in channels:
+                        supporting_metrics = ", ".join(channel.get("supporting_metrics", []))
+                        table.add_row(
+                            channel.get("channel_name", ""),
+                            channel.get("effectiveness_kpi", ""),
+                            channel.get("efficiency_kpi", ""),
+                            supporting_metrics
+                        )
+                    
+                    console.print(table)
+                else:
+                    console.print("[yellow]No channels found.[/yellow]")
+            else:
+                console.print(f"[red]Error: {result.get('detail', 'Unknown error')}[/red]")
+        except Exception as e:
+            console.print(f"[red]Failed to retrieve channels: {e}[/red]")
+    
+    def _add_channel(self):
+        """Add a new channel."""
+        console.print("\n[bold]Add New Channel[/bold]")
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        effectiveness_kpi = Prompt.ask("Effectiveness KPI (Metric ID)")
+        efficiency_kpi = Prompt.ask("Efficiency KPI (Metric ID)")
+        
+        # Get supporting metrics
+        supporting_metrics = self._prompt_for_list_input("Supporting Metrics (Metric IDs)")
+        
+        data = {
+            "channel_name": channel_name,
+            "effectiveness_kpi": effectiveness_kpi,
+            "efficiency_kpi": efficiency_kpi,
+            "supporting_metrics": supporting_metrics
+        }
+        
+        self._show_data_preview("Channel", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.create_channel(data, self.account_id, funnel_type, funnel_step_num, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Channel created successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to create channel: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to create channel: {e}[/red]")
+    
+    def _edit_channel(self):
+        """Edit an existing channel."""
+        console.print("\n[bold]Edit Channel[/bold]")
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        
+        # Get current data
+        try:
+            current_result = self.client.get_channel(channel_name, self.account_id, funnel_type, funnel_step_num, big_bet_name)
+            if not current_result.get("success"):
+                console.print("[red]Channel not found.[/red]")
+                return
+            
+            current_data = current_result.get("channel_data", {})
+        except Exception as e:
+            console.print(f"[red]Failed to get current channel: {e}[/red]")
+            return
+        
+        # Prompt for new values
+        effectiveness_kpi = Prompt.ask(
+            "Effectiveness KPI (Metric ID)",
+            default=current_data.get("effectiveness_kpi", "")
+        )
+        efficiency_kpi = Prompt.ask(
+            "Efficiency KPI (Metric ID)",
+            default=current_data.get("efficiency_kpi", "")
+        )
+        
+        # Get supporting metrics
+        supporting_metrics = self._prompt_for_list_input(
+            "Supporting Metrics (Metric IDs)",
+            default=current_data.get("supporting_metrics", [])
+        )
+        
+        data = {
+            "effectiveness_kpi": effectiveness_kpi,
+            "efficiency_kpi": efficiency_kpi,
+            "supporting_metrics": supporting_metrics
+        }
+        
+        self._show_data_preview("Updated Channel", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.update_channel(channel_name, data, self.account_id, funnel_type, funnel_step_num, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Channel updated successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to update channel: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to update channel: {e}[/red]")
+    
+    def _delete_channel(self):
+        """Delete a channel."""
+        console.print("\n[bold]Delete Channel[/bold]")
+        console.print(self.CANNOT_UNDONE_WARNING)
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        
+        if Confirm.ask("Are you sure you want to delete this channel?"):
+            try:
+                result = self.client.delete_channel(channel_name, self.account_id, funnel_type, funnel_step_num, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Channel deleted successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to delete channel: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to delete channel: {e}[/red]")
+    
+    def _manage_tactics(self):
+        """Manage tactics."""
+        while True:
+            choice = self._show_crud_menu("Tactics")
+            if choice == "1":
+                self._view_tactics()
+            elif choice == "2":
+                self._add_tactic()
+            elif choice == "3":
+                self._edit_tactic()
+            elif choice == "4":
+                self._delete_tactic()
+            elif choice == "5":
+                break
+    
+    def _view_tactics(self):
+        """View all tactics in a channel."""
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        
+        try:
+            result = self.client.get_tactics(self.account_id, funnel_type, funnel_step_num, channel_name, big_bet_name)
+            if result.get("tactics"):
+                tactics = result.get("tactics", [])
+                if tactics:
+                    table = Table(title=f"Tactics (Channel: {channel_name})")
+                    table.add_column("Tactic Name", style="cyan")
+                    table.add_column("Effectiveness KPI", style="yellow")
+                    table.add_column("Efficiency KPI", style="green")
+                    table.add_column("Supporting Metrics", style="blue")
+                    
+                    for tactic in tactics:
+                        supporting_metrics = ", ".join(tactic.get("supporting_metrics", []))
+                        table.add_row(
+                            tactic.get("tactic_name", ""),
+                            tactic.get("effectiveness_kpi", ""),
+                            tactic.get("efficiency_kpi", ""),
+                            supporting_metrics
+                        )
+                    
+                    console.print(table)
+                else:
+                    console.print("[yellow]No tactics found.[/yellow]")
+            else:
+                console.print(f"[red]Error: {result.get('detail', 'Unknown error')}[/red]")
+        except Exception as e:
+            console.print(f"[red]Failed to retrieve tactics: {e}[/red]")
+    
+    def _add_tactic(self):
+        """Add a new tactic."""
+        console.print("\n[bold]Add New Tactic[/bold]")
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        tactic_name = Prompt.ask("Tactic Name")
+        effectiveness_kpi = Prompt.ask("Effectiveness KPI (Metric ID)")
+        efficiency_kpi = Prompt.ask("Efficiency KPI (Metric ID)")
+        
+        # Get supporting metrics
+        supporting_metrics = self._prompt_for_list_input("Supporting Metrics (Metric IDs)")
+        
+        data = {
+            "tactic_name": tactic_name,
+            "effectiveness_kpi": effectiveness_kpi,
+            "efficiency_kpi": efficiency_kpi,
+            "supporting_metrics": supporting_metrics
+        }
+        
+        self._show_data_preview("Tactic", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.create_tactic(data, self.account_id, funnel_type, funnel_step_num, channel_name, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Tactic created successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to create tactic: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to create tactic: {e}[/red]")
+    
+    def _edit_tactic(self):
+        """Edit an existing tactic."""
+        console.print("\n[bold]Edit Tactic[/bold]")
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        tactic_name = Prompt.ask("Tactic Name")
+        
+        # Get current data
+        try:
+            current_result = self.client.get_tactic(tactic_name, self.account_id, funnel_type, funnel_step_num, channel_name, big_bet_name)
+            if not current_result.get("success"):
+                console.print("[red]Tactic not found.[/red]")
+                return
+            
+            current_data = current_result.get("tactic_data", {})
+        except Exception as e:
+            console.print(f"[red]Failed to get current tactic: {e}[/red]")
+            return
+        
+        # Prompt for new values
+        effectiveness_kpi = Prompt.ask(
+            "Effectiveness KPI (Metric ID)",
+            default=current_data.get("effectiveness_kpi", "")
+        )
+        efficiency_kpi = Prompt.ask(
+            "Efficiency KPI (Metric ID)",
+            default=current_data.get("efficiency_kpi", "")
+        )
+        
+        # Get supporting metrics
+        supporting_metrics = self._prompt_for_list_input(
+            "Supporting Metrics (Metric IDs)",
+            default=current_data.get("supporting_metrics", [])
+        )
+        
+        data = {
+            "effectiveness_kpi": effectiveness_kpi,
+            "efficiency_kpi": efficiency_kpi,
+            "supporting_metrics": supporting_metrics
+        }
+        
+        self._show_data_preview("Updated Tactic", data)
+        
+        if Confirm.ask(self.SAVE_CHANGES_PROMPT):
+            try:
+                result = self.client.update_tactic(tactic_name, data, self.account_id, funnel_type, funnel_step_num, channel_name, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Tactic updated successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to update tactic: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to update tactic: {e}[/red]")
+    
+    def _delete_tactic(self):
+        """Delete a tactic."""
+        console.print("\n[bold]Delete Tactic[/bold]")
+        console.print(self.CANNOT_UNDONE_WARNING)
+        
+        funnel_type = Prompt.ask("Funnel Type", choices=["organization", "big_bet"])
+        big_bet_name = None
+        if funnel_type == "big_bet":
+            big_bet_name = Prompt.ask("Big Bet Name")
+        
+        funnel_step_num = int(Prompt.ask("Funnel Step Number"))
+        channel_name = Prompt.ask("Channel Name")
+        tactic_name = Prompt.ask("Tactic Name")
+        
+        if Confirm.ask("Are you sure you want to delete this tactic?"):
+            try:
+                result = self.client.delete_tactic(tactic_name, self.account_id, funnel_type, funnel_step_num, channel_name, big_bet_name)
+                if result.get("success"):
+                    console.print("[green]Tactic deleted successfully![/green]")
+                else:
+                    console.print(f"[red]Failed to delete tactic: {result.get('detail', 'Unknown error')}[/red]")
+            except Exception as e:
+                console.print(f"[red]Failed to delete tactic: {e}[/red]")
+    
+    def _prompt_for_list_input(self, prompt: str, default: Optional[List[str]] = None) -> List[str]:
+        """Prompt for list input with comma separation."""
+        if default is None:
+            default = []
+        
+        default_str = ", ".join(default)
+        input_str = Prompt.ask(f"{prompt} (comma-separated)", default=default_str)
+        
+        if not input_str.strip():
+            return []
+        
+        return [item.strip() for item in input_str.split(",") if item.strip()]
     
     # Utility methods
     def _show_data_preview(self, title: str, data: Dict[str, Any]):

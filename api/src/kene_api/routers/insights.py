@@ -18,8 +18,6 @@ from ..models.kene_models import (
     Insight,
     InsightListResponse,
     InsightRequest,
-    InsightSearchRequest,
-    InsightSearchResponse,
     Intuition,
     RelationshipType,
     SuccessResponse,
@@ -324,87 +322,6 @@ async def get_insights(
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
             status_code=500, detail=f"Error fetching insights: {str(e)}"
-        )
-
-
-@router.post("/search", response_model=InsightSearchResponse)
-async def search_insights(
-    request: InsightSearchRequest,
-    neo4j: Neo4jService = Depends(get_neo4j_service),
-) -> InsightSearchResponse:
-    """
-    Search insights with filters.
-
-    Search for insights based on activity, metric, relationship type, and confidence filters.
-    """
-    try:
-        # Check Neo4j connectivity
-        is_healthy = await neo4j.health_check()
-        if not is_healthy:
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-
-        # Build dynamic query based on filters
-        where_conditions = []
-        parameters = {"account_id": request.account_id}
-
-        if request.activity_id:
-            where_conditions.append("activity.activity_id = $activity_id")
-            parameters["activity_id"] = request.activity_id
-
-        if request.metric_id:
-            where_conditions.append("metric.metric_id = $metric_id")
-            parameters["metric_id"] = request.metric_id
-
-        if request.activity_log_id:
-            where_conditions.append("activity_log.id = $activity_log_id")
-            parameters["activity_log_id"] = request.activity_log_id
-
-        if request.metric_verbose_name:
-            where_conditions.append("metric.metric_name CONTAINS $metric_verbose_name")
-            parameters["metric_verbose_name"] = request.metric_verbose_name
-
-        if request.activity_description:
-            where_conditions.append(
-                "activity.activity_description CONTAINS $activity_description"
-            )
-            parameters["activity_description"] = request.activity_description
-
-        where_clause = (
-            " AND " + " AND ".join(where_conditions) if where_conditions else ""
-        )
-
-        search_query = f"""
-        MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity)
-        MATCH (activity)<-[:LOGGED]-(activity_log:ActivityLog)
-        MATCH (activity_log)-[insight_rel:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(metric:Metric)
-        OPTIONAL MATCH (metric)-[:CALCULATED_FROM]->(dataset:Dataset)
-        WHERE 1=1{where_clause}
-        RETURN activity, activity_log, properties(insight_rel) as relationship, type(insight_rel) as relationship_type, metric, dataset
-        ORDER BY activity.activity_description, metric.metric_name
-        LIMIT 100
-        """
-
-        result = await neo4j.execute_query(search_query, parameters)
-
-        insights = []
-        for record in result:
-            try:
-                insight = await _create_insight_from_record(record)
-                insights.append(insight)
-            except Exception as e:
-                print(f"Error processing search result record: {e}")
-                continue
-
-        return InsightSearchResponse(insights=insights, total=len(insights))
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Handle Neo4j connectivity issues specifically
-        if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(
-            status_code=500, detail=f"Error searching insights: {str(e)}"
         )
 
 
