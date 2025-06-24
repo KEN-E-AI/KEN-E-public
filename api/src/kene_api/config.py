@@ -21,6 +21,11 @@ class Settings:
     neo4j_password: str = os.getenv("NEO4J_PASSWORD", "password")
     neo4j_database: str = os.getenv("NEO4J_DATABASE", "neo4j")
 
+    # Apache Superset settings
+    superset_base_url: str = os.getenv("SUPERSET_BASE_URL", "http://localhost:8088")
+    superset_username: str = os.getenv("SUPERSET_USERNAME", "admin")
+    superset_password: str = os.getenv("SUPERSET_PASSWORD", "admin")
+
     # CORS settings
     allowed_origins: List[str] = ["*"]  # Configure for production
     allowed_methods: List[str] = ["*"]

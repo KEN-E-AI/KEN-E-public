@@ -64,8 +64,9 @@ class TestMetricsRouter:
         assert "Database service unavailable" in response.json()["detail"]
 
     @pytest.mark.asyncio
+    @patch("src.kene_api.superset.superset_client")
     @patch("src.kene_api.database.neo4j_service")
-    async def test_create_metric_success(self, mock_neo4j_service):
+    async def test_create_metric_success(self, mock_neo4j_service, mock_superset_client):
         """Test successful metric creation."""
         # Mock successful account and dataset checks
         mock_neo4j_service.health_check = AsyncMock(return_value=True)
@@ -81,6 +82,9 @@ class TestMetricsRouter:
                 [],  # Relationship created
             ]
         )
+
+        # Mock Superset client
+        mock_superset_client.create_metric = AsyncMock(return_value={"id": 123})
 
         request_data = {
             "account_id": "test_account",
@@ -130,14 +134,15 @@ class TestMetricsRouter:
         assert "Account nonexistent_account not found" in response.json()["detail"]
 
     @pytest.mark.asyncio
+    @patch("src.kene_api.superset.superset_client")
     @patch("src.kene_api.database.neo4j_service")
-    async def test_update_metric_success(self, mock_neo4j_service):
+    async def test_update_metric_success(self, mock_neo4j_service, mock_superset_client):
         """Test successful metric update."""
         # Mock metric exists and update successful
         mock_neo4j_service.health_check = AsyncMock(return_value=True)
         mock_neo4j_service.execute_query = AsyncMock(
             side_effect=[
-                [{"metric": {"id": "test_metric"}}],  # Metric exists
+                [{"metric": {"id": "test_metric"}, "dataset": {"dataset_id": 1}, "superset_metric_id": 123}],  # Metric exists with superset info
             ]
         )
         mock_neo4j_service.execute_write_query = AsyncMock(
@@ -145,6 +150,9 @@ class TestMetricsRouter:
                 [{"metric": {"id": "test_metric"}}],  # Update successful
             ]
         )
+
+        # Mock Superset client
+        mock_superset_client.update_metric = AsyncMock(return_value={"success": True})
 
         request_data = {
             "account_id": "test_account",
@@ -160,7 +168,7 @@ class TestMetricsRouter:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["message"] == "Metric updated successfully"
+        assert data["message"] == "Metric updated successfully (synced with Superset)"
 
     @pytest.mark.asyncio
     @patch("src.kene_api.database.neo4j_service")
@@ -184,14 +192,15 @@ class TestMetricsRouter:
         assert "Metric nonexistent_metric not found" in response.json()["detail"]
 
     @pytest.mark.asyncio
+    @patch("src.kene_api.superset.superset_client")
     @patch("src.kene_api.database.neo4j_service")
-    async def test_delete_metric_success(self, mock_neo4j_service):
+    async def test_delete_metric_success(self, mock_neo4j_service, mock_superset_client):
         """Test successful metric deletion."""
         # Mock metric exists and deletion successful
         mock_neo4j_service.health_check = AsyncMock(return_value=True)
         mock_neo4j_service.execute_query = AsyncMock(
             side_effect=[
-                [{"metric": {"id": "test_metric"}}],  # Metric exists
+                [{"metric": {"id": "test_metric"}, "dataset": {"dataset_id": 1}, "superset_metric_id": 123}],  # Metric exists with superset info
             ]
         )
         mock_neo4j_service.execute_write_query = AsyncMock(
@@ -199,6 +208,9 @@ class TestMetricsRouter:
                 [],  # Deletion successful
             ]
         )
+
+        # Mock Superset client
+        mock_superset_client.delete_metric = AsyncMock(return_value=True)
 
         request_data = {
             "account_id": "test_account",
@@ -212,4 +224,4 @@ class TestMetricsRouter:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["message"] == "Metric deleted successfully"
+        assert data["message"] == "Metric deleted successfully (removed from Superset)"

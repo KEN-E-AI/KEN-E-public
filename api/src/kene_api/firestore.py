@@ -14,7 +14,7 @@ load_dotenv()
 
 # Constants
 FIRESTORE_NOT_INITIALIZED = "Firestore not initialized"
-CUSTOMER_DATABASE = "customer-database"
+CUSTOMER_DATABASE = "(default)"
 ORGANIZATIONS_COLLECTION = "organizations"
 ORGANIZATION_DOCUMENT_ID = "3RVmprzASztrmfpY0ipE"
 
