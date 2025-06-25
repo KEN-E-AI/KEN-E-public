@@ -115,6 +115,7 @@ class SupersetClient:
                 "expression": metric_data.get("expression"),
                 "description": metric_data.get("description", ""),
                 "d3_format": metric_data.get("d3_format", ""),
+                "currency": metric_data.get("currency", ""),
                 "is_restricted": False,
                 "warning_text": "",
                 "metric_type": "count"  # Default metric type
@@ -153,6 +154,8 @@ class SupersetClient:
                 metric_payload["description"] = metric_data["description"]
             if metric_data.get("d3_format") is not None:
                 metric_payload["d3_format"] = metric_data["d3_format"]
+            if metric_data.get("currency") is not None:
+                metric_payload["currency"] = metric_data["currency"]
             
             response = self.session.put(
                 f"{self.base_url}/api/v1/dataset/{dataset_id}/metric/{metric_id}",

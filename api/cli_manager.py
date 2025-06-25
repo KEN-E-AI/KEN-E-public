@@ -795,6 +795,7 @@ class KeneCLI:
         table.add_column("ID", style="cyan")
         table.add_column("Verbose Name", style="green") 
         table.add_column("Metric Name", style="yellow")
+        table.add_column("Currency", style="magenta")
         table.add_column("Description", style="blue")
         table.add_column("Expression", style="magenta")
         table.add_column("D3 Format", style="red")
@@ -811,6 +812,7 @@ class KeneCLI:
                 metric_data["id"],
                 metric_data["verbose_name"],
                 metric_data["metric_name"],
+                metric_data["currency"],
                 metric_data["description"],
                 metric_data["expression"],
                 metric_data["d3_format"],
@@ -828,6 +830,7 @@ class KeneCLI:
             "id": str(metric.get("id", "N/A")),
             "verbose_name": metric.get("verbose_name", "N/A"),
             "metric_name": metric.get("metric_name", "N/A"),
+            "currency": metric.get("currency", "N/A"),
             "description": metric.get("description", "N/A"),
             "expression": metric.get("expression", "N/A"),
             "d3_format": metric.get("d3_format", "N/A"),
@@ -841,6 +844,7 @@ class KeneCLI:
         truncation_limits = {
             "verbose_name": 25,
             "metric_name": 20,
+            "currency": 10,
             "description": 30,
             "expression": 35,
             "components": 25,
@@ -866,6 +870,7 @@ class KeneCLI:
         description = Prompt.ask("Description", default="")
         expression = Prompt.ask("SQL expression", default="")
         d3_format = Prompt.ask("D3 format (e.g., '.2f', ',d')", default="")
+        currency = Prompt.ask("Currency (e.g., USD, EUR, GBP)", default="")
         
         # Account components as comma-separated list
         components_str = Prompt.ask("Account components (comma-separated)", default="")
@@ -896,6 +901,7 @@ class KeneCLI:
             "description": description,
             "expression": expression,
             "d3_format": d3_format,
+            "currency": currency,
             "account_components": account_components,
             "related_dataset_id": related_dataset_id
         }
@@ -969,6 +975,7 @@ class KeneCLI:
         description = Prompt.ask("Description", default=metric.get("description", ""))
         expression = Prompt.ask("SQL expression", default=metric.get("expression", ""))
         d3_format = Prompt.ask("D3 format", default=metric.get("d3_format", ""))
+        currency = Prompt.ask("Currency (e.g., USD, EUR, GBP)", default=metric.get("currency", ""))
         
         # Handle account components
         current_components = metric.get("account_components", [])
@@ -990,6 +997,7 @@ class KeneCLI:
             "description": description,
             "expression": expression,
             "d3_format": d3_format,
+            "currency": currency,
             "account_components": account_components,
             "related_dataset_id": related_dataset_id
         }

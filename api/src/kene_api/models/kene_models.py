@@ -101,6 +101,10 @@ class Metric(BaseEntity):
         ...,
         description="The snake_case representation of the metric name. Should be identical to the value stored in Superset",
     )
+    currency: str = Field(
+        ...,
+        description="The currency code for the metric (e.g., USD, EUR, GBP). Used for formatting monetary values",
+    )
     account_components: List[str] = Field(
         ...,
         description="A list of components that the metric can be used to assist with in an analysis. An account must include at least one component from the list for the metric to be relevant",
@@ -142,6 +146,10 @@ class MetricRequest(BaseRequest):
     metric_name: Optional[str] = Field(
         None,
         description="The snake_case representation of the metric name. Should be identical to the value stored in Superset",
+    )
+    currency: Optional[str] = Field(
+        None,
+        description="The currency code for the metric (e.g., USD, EUR, GBP). Used for formatting monetary values",
     )
     account_components: Optional[List[str]] = Field(
         None,

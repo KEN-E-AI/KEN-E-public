@@ -123,6 +123,7 @@ async def _create_metric_from_record(record: Dict[str, Any], account_id: str) ->
         verbose_name=metric_data.get("verbose_name") or "",
         expression=metric_data.get("expression") or "",
         metric_name=metric_data.get("metric_name") or "",
+        currency=metric_data.get("currency") or "",
         account_components=account_components,
         related_dataset_id=dataset_data.get("dataset_id") if dataset_data else 0,
         related_dataset_name=dataset_data.get("dataset_name") if dataset_data else "",
@@ -157,8 +158,13 @@ async def _verify_dataset_exists(db: Neo4jService, dataset_id: int) -> None:
         raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
 
 
-async def _create_metric_node(db: Neo4jService, request: MetricRequest) -> str:
+async def _create_metric_node(db: Neo4jService, request: MetricRequest, superset_metric_id: Optional[int] = None) -> str:
     """Create the Metric node with BELONGS_TO relationship to Account.
+
+    Args:
+        db: Neo4j service instance
+        request: Metric creation request
+        superset_metric_id: Optional superset metric ID to store on the metric node
 
     Returns:
         str: The generated metric ID for the created metric node
@@ -180,7 +186,9 @@ async def _create_metric_node(db: Neo4jService, request: MetricRequest) -> str:
         description: $description,
         expression: $expression,
         metric_name: $metric_name,
-        verbose_name: $verbose_name
+        verbose_name: $verbose_name,
+        currency: $currency,
+        superset_metric_id: $superset_metric_id
     })
     CREATE (metric)-[:BELONGS_TO]->(account)
     RETURN metric
@@ -195,6 +203,8 @@ async def _create_metric_node(db: Neo4jService, request: MetricRequest) -> str:
         "expression": request.expression or "",
         "metric_name": metric_name,
         "verbose_name": request.verbose_name or "",
+        "currency": request.currency or "",
+        "superset_metric_id": superset_metric_id,
     }
 
     metric_result = await db.execute_write_query(create_metric_query, metric_params)
@@ -226,6 +236,8 @@ async def _sync_metric_to_superset(
             superset_metric_data["description"] = request.description
         if request.d3_format is not None:
             superset_metric_data["d3_format"] = request.d3_format
+        if request.currency is not None:
+            superset_metric_data["currency"] = request.currency
         
         if superset_metric_data:
             await superset_client.update_metric(
@@ -270,21 +282,25 @@ async def _build_neo4j_update_params(request: MetricRequest) -> tuple[List[str],
         set_clauses.append("metric.verbose_name = $verbose_name")
         params["verbose_name"] = request.verbose_name
 
+    if request.currency is not None:
+        set_clauses.append("metric.currency = $currency")
+        params["currency"] = request.currency
+
     return set_clauses, params
 
 
 async def _create_dataset_relationship(
-    db: Neo4jService, metric_id: str, dataset_id: int, superset_metric_id: Optional[int] = None
+    db: Neo4jService, metric_id: str, dataset_id: int
 ) -> None:
-    """Create CALCULATED_FROM relationship between Metric and Dataset with optional superset_metric_id."""
+    """Create CALCULATED_FROM relationship between Metric and Dataset."""
     relationship_query = """
     MATCH (metric:Metric {metric_id: $metric_id})
     MATCH (dataset:Dataset {dataset_id: $dataset_id})
-    CREATE (metric)-[:CALCULATED_FROM {superset_metric_id: $superset_metric_id}]->(dataset)
+    CREATE (metric)-[:CALCULATED_FROM]->(dataset)
     """
     await db.execute_write_query(
         relationship_query,
-        {"metric_id": metric_id, "dataset_id": dataset_id, "superset_metric_id": superset_metric_id},
+        {"metric_id": metric_id, "dataset_id": dataset_id},
     )
 
 
@@ -324,7 +340,8 @@ async def create_metric(
                     "verbose_name": request.verbose_name or request.metric_name,
                     "expression": request.expression,
                     "description": request.description or "",
-                    "d3_format": request.d3_format or ""
+                    "d3_format": request.d3_format or "",
+                    "currency": request.currency or ""
                 }
                 
                 superset_result = await superset_client.create_metric(
@@ -339,12 +356,12 @@ async def create_metric(
                 logger.warning(f"Failed to create metric in Superset: {e}")
 
         # Create Metric node in Neo4j
-        generated_metric_id = await _create_metric_node(db, request)
+        generated_metric_id = await _create_metric_node(db, request, superset_metric_id)
 
         # Create CALCULATED_FROM relationship to Dataset if dataset_id provided
         if request.related_dataset_id:
             await _create_dataset_relationship(
-                db, generated_metric_id, request.related_dataset_id, superset_metric_id
+                db, generated_metric_id, request.related_dataset_id
             )
 
         response_data = {"metric_id": generated_metric_id}
@@ -387,8 +404,8 @@ async def update_metric(
         # Check if metric exists and get current data
         metric_check_query = """
         MATCH (metric:Metric {metric_id: $metric_id})
-        OPTIONAL MATCH (metric)-[rel:CALCULATED_FROM]->(dataset:Dataset)
-        RETURN metric, dataset, rel.superset_metric_id as superset_metric_id
+        OPTIONAL MATCH (metric)-[:CALCULATED_FROM]->(dataset:Dataset)
+        RETURN metric, dataset, metric.superset_metric_id as superset_metric_id
         """
         metric_result = await db.execute_query(metric_check_query, {"metric_id": request.id})
         if not metric_result:
@@ -467,8 +484,8 @@ async def delete_metric(
         # Check if metric exists and get Superset information
         metric_check_query = """
         MATCH (metric:Metric {metric_id: $metric_id})
-        OPTIONAL MATCH (metric)-[rel:CALCULATED_FROM]->(dataset:Dataset)
-        RETURN metric, dataset, rel.superset_metric_id as superset_metric_id
+        OPTIONAL MATCH (metric)-[:CALCULATED_FROM]->(dataset:Dataset)
+        RETURN metric, dataset, metric.superset_metric_id as superset_metric_id
         """
         metric_result = await db.execute_query(metric_check_query, {"metric_id": request.id})
         if not metric_result:

@@ -25,6 +25,7 @@ class TestMetricsRouter:
                         "verbose_name": "Total Revenue",
                         "expression": "SUM(revenue)",
                         "metric_name": "total_revenue",
+                        "currency": "USD",
                         "account_components": ["financial", "sales"],
                         "description": "Total revenue metric",
                     },
@@ -93,6 +94,7 @@ class TestMetricsRouter:
             "verbose_name": "Test Metric",
             "expression": "COUNT(*)",
             "metric_name": "test_metric",
+            "currency": "USD",
             "account_components": ["marketing"],
             "related_dataset_id": 1,
             "description": "Test metric description",
@@ -122,6 +124,7 @@ class TestMetricsRouter:
             "verbose_name": "Test Metric",
             "expression": "COUNT(*)",
             "metric_name": "test_metric",
+            "currency": "USD",
             "account_components": ["marketing"],
             "description": "Test metric description",
         }
