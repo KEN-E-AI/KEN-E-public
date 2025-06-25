@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,7 @@ interface AuthenticationProps {
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [signInData, setSignInData] = useState({
     email: "",
     password: "",
@@ -41,23 +44,57 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage("");
 
-    // Simulate authentication
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
       onAuthenticated();
-    }, 1500);
+    } catch (error: any) {
+      console.error("Sign-in error:", error);
+      switch (error.code) {
+        case "auth/user-not-found":
+          setErrorMessage("No user found with this email.");
+          break;
+        case "auth/wrong-password":
+        case "auth/invalid-credential":
+          setErrorMessage("Invalid email or password.");
+          break;
+        default:
+          setErrorMessage("Failed to sign in. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate account creation
-    setTimeout(() => {
+    if (signUpData.password !== signUpData.confirmPassword) {
+      setErrorMessage("Passwords do not match.");
       setIsLoading(false);
+      return;
+    }
+
+    try {
+      await createUserWithEmailAndPassword(auth, signUpData.email, signUpData.password);
       onAuthenticated();
-    }, 1500);
+    } catch (error: any) {
+      console.error("Sign-up error:", error);
+      switch (error.code) {
+        case "auth/email-already-in-use":
+          setErrorMessage("This email is already registered.");
+          break;
+        case "auth/weak-password":
+          setErrorMessage("Password is too weak (min 6 characters).");
+          break;
+        default:
+          setErrorMessage("Failed to create account. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -75,6 +112,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         </div>
 
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+          {errorMessage && (
+            <div className="text-red-600 text-sm font-medium pt-4">{errorMessage}</div>
+          )}
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-center text-xl">
               Sign in to your account
