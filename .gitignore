@@ -198,3 +198,4 @@ my_env.tfvars
 #secrets
 deployment/terraform/keys/*.json
 firebase-key.json
+*service-account-key.json

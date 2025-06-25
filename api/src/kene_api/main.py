@@ -7,8 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import neo4j_service
+from .firestore import firestore_service
 from .routers import (
     activities,
+    firestore,
     funnel_reports,
     home,
     insights,
@@ -31,6 +33,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to connect to Neo4j: {e}")
         # You might want to decide whether to continue without Neo4j or exit
+
+    try:
+        firestore_service.initialize()
+        logger.info("Firestore service initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Firestore: {e}")
+        # Continue without Firestore if initialization fails
 
     yield
 
@@ -68,6 +77,7 @@ app.include_router(home.router, prefix="/api/v1/home", tags=["home"])
 app.include_router(
     funnel_reports.router, prefix="/api/v1/funnel-reports", tags=["funnel-reports"]
 )
+app.include_router(firestore.router, prefix="/api/v1/firestore", tags=["firestore"])
 
 
 @app.get("/")
@@ -89,8 +99,18 @@ async def health_check():
     except Exception:
         neo4j_healthy = False
 
+    try:
+        firestore_healthy = firestore_service.health_check()
+    except Exception:
+        firestore_healthy = False
+
+    overall_healthy = neo4j_healthy and firestore_healthy
+
     return {
-        "status": "healthy" if neo4j_healthy else "degraded",
+        "status": "healthy" if overall_healthy else "degraded",
         "message": "API is running",
-        "services": {"neo4j": "healthy" if neo4j_healthy else "unhealthy"},
+        "services": {
+            "neo4j": "healthy" if neo4j_healthy else "unhealthy",
+            "firestore": "healthy" if firestore_healthy else "unhealthy"
+        },
     }
