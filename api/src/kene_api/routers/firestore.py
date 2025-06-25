@@ -280,7 +280,6 @@ async def create_document(
 async def get_document(
     collection: str,
     document_id: str,
-    account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> FirestoreDocumentResponse:
     """
@@ -1451,3 +1450,23 @@ async def delete_tactic(
         raise HTTPException(
             status_code=500, detail=f"Error deleting tactic: {str(e)}"
         )
+
+
+@router.get("/debug/documents/{collection}/{document_id}")
+async def debug_get_document(
+    collection: str,
+    document_id: str,
+    account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
+) -> Dict[str, Any]:
+    """
+    Debug endpoint to test document path routing.
+    
+    This is a simple endpoint to verify that the routing works correctly.
+    """
+    return {
+        "message": "Debug endpoint working",
+        "collection": collection,
+        "document_id": document_id,
+        "account_id": account_id,
+        "method": "GET"
+    }
