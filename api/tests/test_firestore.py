@@ -298,7 +298,7 @@ class TestFirestoreRouter:
         mock_firestore_service.get_kpi_setting.return_value = "metric123"
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/account123/income_kpi")
+        response = client.get("/api/v1/firestore/kpi-settings/org123/account123/income_kpi")
 
         assert response.status_code == 200
         data = response.json()
@@ -309,6 +309,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_kpi_setting.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             kpi_name="income_kpi"
         )
@@ -321,7 +322,7 @@ class TestFirestoreRouter:
         mock_firestore_service.get_kpi_setting.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/account123/income_kpi")
+        response = client.get("/api/v1/firestore/kpi-settings/org123/account123/income_kpi")
 
         assert response.status_code == 404
         assert "KPI setting not found" in response.json()["detail"]
@@ -333,7 +334,7 @@ class TestFirestoreRouter:
         """Test getting a KPI setting with invalid KPI name."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/account123/invalid_kpi")
+        response = client.get("/api/v1/firestore/kpi-settings/org123/account123/invalid_kpi")
 
         assert response.status_code == 400
         assert "Invalid kpi_name" in response.json()["detail"]
@@ -347,6 +348,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         update_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "kpi_name": "marketing_cost_kpi",
             "metric_id": "metric456"
@@ -361,6 +363,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.update_kpi_setting.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             kpi_name="marketing_cost_kpi",
             metric_id="metric456"
@@ -374,6 +377,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         update_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "kpi_name": "invalid_kpi",
             "metric_id": "metric456"
@@ -393,6 +397,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         update_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "kpi_name": "net_income_kpi",
             "metric_id": "metric789"
@@ -416,7 +421,7 @@ class TestFirestoreRouter:
         mock_firestore_service.get_all_kpi_settings.return_value = mock_kpi_settings
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/account123")
+        response = client.get("/api/v1/firestore/kpi-settings/org123/account123")
 
         assert response.status_code == 200
         data = response.json()
@@ -426,6 +431,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_all_kpi_settings.assert_called_once_with(
+            organization_id="org123",
             account_id="account123"
         )
 
@@ -437,7 +443,7 @@ class TestFirestoreRouter:
         mock_firestore_service.get_all_kpi_settings.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/account123")
+        response = client.get("/api/v1/firestore/kpi-settings/org123/account123")
 
         assert response.status_code == 200
         data = response.json()
@@ -454,6 +460,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         funnel_step_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "funnel_type": "organization",
             "funnel_step_num": 1,
@@ -482,6 +489,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         funnel_step_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "funnel_type": "big_bet",
             "big_bet_name": "new_product_launch",
@@ -506,6 +514,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         funnel_step_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "funnel_type": "invalid_type",
             "funnel_step_num": 1,
@@ -528,6 +537,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         funnel_step_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "funnel_type": "big_bet",
             "funnel_step_num": 1,
@@ -566,7 +576,7 @@ class TestFirestoreRouter:
         mock_firestore_service.list_funnel_steps.return_value = mock_funnel_steps
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/funnel-steps/account123/organization")
+        response = client.get("/api/v1/firestore/funnel-steps/org123/account123/organization")
 
         assert response.status_code == 200
         data = response.json()
@@ -578,6 +588,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.list_funnel_steps.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None
@@ -597,7 +608,7 @@ class TestFirestoreRouter:
         mock_firestore_service.get_funnel_step.return_value = mock_funnel_step
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/funnel-steps/account123/organization/3")
+        response = client.get("/api/v1/firestore/funnel-steps/org123/account123/organization/3")
 
         assert response.status_code == 200
         data = response.json()
@@ -609,6 +620,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_funnel_step.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -623,7 +635,7 @@ class TestFirestoreRouter:
         mock_firestore_service.get_funnel_step.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/funnel-steps/account123/organization/999")
+        response = client.get("/api/v1/firestore/funnel-steps/org123/account123/organization/999")
 
         assert response.status_code == 404
         assert "Funnel step not found" in response.json()["detail"]
@@ -637,6 +649,7 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         funnel_step_request = {
+            "organization_id": "org123",
             "account_id": "account123",
             "funnel_type": "organization",
             "funnel_step_num": 2,
@@ -647,7 +660,7 @@ class TestFirestoreRouter:
         }
 
         response = client.put(
-            "/api/v1/firestore/funnel-steps/account123/organization/2",
+            "/api/v1/firestore/funnel-steps/org123/account123/organization/2",
             json=funnel_step_request
         )
 
@@ -667,7 +680,7 @@ class TestFirestoreRouter:
         mock_firestore_service.delete_funnel_step.return_value = True
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.delete("/api/v1/firestore/funnel-steps/account123/organization/2")
+        response = client.delete("/api/v1/firestore/funnel-steps/org123/account123/organization/2")
 
         assert response.status_code == 200
         data = response.json()
@@ -676,6 +689,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.delete_funnel_step.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -708,7 +722,7 @@ class TestChannelEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/channels?account_id=account123&funnel_type=organization&funnel_step_num=1",
+            "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=organization&funnel_step_num=1",
             json=create_request
         )
 
@@ -723,6 +737,7 @@ class TestChannelEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.create_channel.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -747,7 +762,7 @@ class TestChannelEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/channels?account_id=account123&funnel_type=organization&funnel_step_num=1",
+            "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=organization&funnel_step_num=1",
             json=create_request
         )
 
@@ -768,7 +783,7 @@ class TestChannelEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/channels/email?account_id=account123&funnel_type=organization&funnel_step_num=1"
+            "/api/v1/firestore/channels/org123/email?account_id=account123&funnel_type=organization&funnel_step_num=1"
         )
 
         assert response.status_code == 200
@@ -782,6 +797,7 @@ class TestChannelEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_channel.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -798,7 +814,7 @@ class TestChannelEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/channels/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1"
+            "/api/v1/firestore/channels/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1"
         )
 
         assert response.status_code == 404
@@ -827,7 +843,7 @@ class TestChannelEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/channels?account_id=account123&funnel_type=organization&funnel_step_num=1"
+            "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=organization&funnel_step_num=1"
         )
 
         assert response.status_code == 200
@@ -853,7 +869,7 @@ class TestChannelEndpoints:
         }
 
         response = client.put(
-            "/api/v1/firestore/channels/email?account_id=account123&funnel_type=organization&funnel_step_num=1",
+            "/api/v1/firestore/channels/org123/email?account_id=account123&funnel_type=organization&funnel_step_num=1",
             json=update_request
         )
 
@@ -868,6 +884,7 @@ class TestChannelEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.update_channel.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -889,7 +906,7 @@ class TestChannelEndpoints:
         }
 
         response = client.put(
-            "/api/v1/firestore/channels/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1",
+            "/api/v1/firestore/channels/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1",
             json=update_request
         )
 
@@ -905,7 +922,7 @@ class TestChannelEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.delete(
-            "/api/v1/firestore/channels/email?account_id=account123&funnel_type=organization&funnel_step_num=1"
+            "/api/v1/firestore/channels/org123/email?account_id=account123&funnel_type=organization&funnel_step_num=1"
         )
 
         assert response.status_code == 200
@@ -915,6 +932,7 @@ class TestChannelEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.delete_channel.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -931,7 +949,7 @@ class TestChannelEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.delete(
-            "/api/v1/firestore/channels/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1"
+            "/api/v1/firestore/channels/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1"
         )
 
         assert response.status_code == 404
@@ -959,7 +977,7 @@ class TestChannelEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/channels?account_id=account123&funnel_type=big_bet&funnel_step_num=1&big_bet_name=expansion",
+            "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=big_bet&funnel_step_num=1&big_bet_name=expansion",
             json=create_request
         )
 
@@ -970,6 +988,7 @@ class TestChannelEndpoints:
         assert data["big_bet_name"] == "expansion"
 
         mock_firestore_service.create_channel.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="big_bet",
             big_bet_name="expansion",
@@ -993,7 +1012,7 @@ class TestChannelEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/channels?account_id=account123&funnel_type=invalid&funnel_step_num=1",
+            "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=invalid&funnel_step_num=1",
             json=create_request
         )
 
@@ -1015,7 +1034,7 @@ class TestChannelEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/channels?account_id=account123&funnel_type=big_bet&funnel_step_num=1",
+            "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=big_bet&funnel_step_num=1",
             json=create_request
         )
 
@@ -1048,7 +1067,7 @@ class TestTacticEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/tactics?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
+            "/api/v1/firestore/tactics/org123?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
             json=create_request
         )
 
@@ -1064,6 +1083,7 @@ class TestTacticEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.create_tactic.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -1089,7 +1109,7 @@ class TestTacticEndpoints:
         }
 
         response = client.post(
-            "/api/v1/firestore/tactics?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
+            "/api/v1/firestore/tactics/org123?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
             json=create_request
         )
 
@@ -1111,7 +1131,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/tactics/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 200
@@ -1122,6 +1142,7 @@ class TestTacticEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_tactic.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -1139,7 +1160,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/tactics/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 404
@@ -1169,7 +1190,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/tactics?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 200
@@ -1179,6 +1200,7 @@ class TestTacticEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.list_tactics.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -1204,7 +1226,7 @@ class TestTacticEndpoints:
         }
 
         response = client.put(
-            "/api/v1/firestore/tactics/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
+            "/api/v1/firestore/tactics/org123/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
             json=update_request
         )
 
@@ -1216,6 +1238,7 @@ class TestTacticEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.update_tactic.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -1238,7 +1261,7 @@ class TestTacticEndpoints:
         }
 
         response = client.put(
-            "/api/v1/firestore/tactics/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
+            "/api/v1/firestore/tactics/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
             json=update_request
         )
 
@@ -1255,7 +1278,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.delete(
-            "/api/v1/firestore/tactics/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 200
@@ -1265,6 +1288,7 @@ class TestTacticEndpoints:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.delete_tactic.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
@@ -1282,7 +1306,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.delete(
-            "/api/v1/firestore/tactics/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 404
@@ -1303,7 +1327,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/tactics/test_tactic?account_id=account123&funnel_type=big_bet&funnel_step_num=1&channel_name=email&big_bet_name=new_product"
+            "/api/v1/firestore/tactics/org123/test_tactic?account_id=account123&funnel_type=big_bet&funnel_step_num=1&channel_name=email&big_bet_name=new_product"
         )
 
         assert response.status_code == 200
@@ -1313,6 +1337,7 @@ class TestTacticEndpoints:
         assert data["big_bet_name"] == "new_product"
 
         mock_firestore_service.get_tactic.assert_called_once_with(
+            organization_id="org123",
             account_id="account123",
             funnel_type="big_bet",
             big_bet_name="new_product",
@@ -1329,7 +1354,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/tactics/test_tactic?account_id=account123&funnel_type=invalid&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123/test_tactic?account_id=account123&funnel_type=invalid&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 400
@@ -1344,7 +1369,7 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.get(
-            "/api/v1/firestore/tactics/test_tactic?account_id=account123&funnel_type=big_bet&funnel_step_num=1&channel_name=email"
+            "/api/v1/firestore/tactics/org123/test_tactic?account_id=account123&funnel_type=big_bet&funnel_step_num=1&channel_name=email"
         )
 
         assert response.status_code == 400

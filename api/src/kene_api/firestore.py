@@ -16,7 +16,6 @@ load_dotenv()
 FIRESTORE_NOT_INITIALIZED = "Firestore not initialized"
 CUSTOMER_DATABASE = "(default)"
 ORGANIZATIONS_COLLECTION = "organizations"
-ORGANIZATION_DOCUMENT_ID = "3RVmprzASztrmfpY0ipE"
 
 
 class FirestoreService:
@@ -243,11 +242,12 @@ class FirestoreService:
 
     # KPI Operations
     
-    def get_kpi_setting(self, account_id: str, kpi_name: str) -> Optional[str]:
+    def get_kpi_setting(self, organization_id: str, account_id: str, kpi_name: str) -> Optional[str]:
         """
         Get a specific KPI setting for an account.
         
         Args:
+            organization_id: The organization document identifier
             account_id: The account identifier
             kpi_name: The KPI name (income_kpi, marketing_cost_kpi, or net_income_kpi)
             
@@ -258,7 +258,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -280,11 +280,12 @@ class FirestoreService:
             print(f"Error getting KPI setting: {e}")
             return None
 
-    def update_kpi_setting(self, account_id: str, kpi_name: str, metric_id: str) -> bool:
+    def update_kpi_setting(self, organization_id: str, account_id: str, kpi_name: str, metric_id: str) -> bool:
         """
         Update a specific KPI setting for an account.
         
         Args:
+            organization_id: The organization document identifier
             account_id: The account identifier
             kpi_name: The KPI name (income_kpi, marketing_cost_kpi, or net_income_kpi)
             metric_id: The metric identifier to associate with the KPI
@@ -296,7 +297,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             
             # Use Firestore's field path notation for nested updates
             field_path = f"accounts.{account_id}.account_settings.overview_kpis.{kpi_name}"
@@ -308,7 +309,7 @@ class FirestoreService:
             # If the document doesn't exist, we might need to create the nested structure
             try:
                 # Create the nested structure if it doesn't exist
-                doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+                doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
                 doc_ref.set({
                     "accounts": {
                         account_id: {
@@ -328,11 +329,12 @@ class FirestoreService:
             print(f"Error updating KPI setting: {e}")
             return False
 
-    def get_all_kpi_settings(self, account_id: str) -> Optional[Dict[str, str]]:
+    def get_all_kpi_settings(self, organization_id: str, account_id: str) -> Optional[Dict[str, str]]:
         """
         Get all KPI settings for an account.
         
         Args:
+            organization_id: The organization document identifier
             account_id: The account identifier
             
         Returns:
@@ -342,7 +344,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -366,12 +368,13 @@ class FirestoreService:
 
     # Funnel Step Operations
     
-    def create_funnel_step(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def create_funnel_step(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                           funnel_step_num: int, funnel_step_data: Dict[str, Any]) -> bool:
         """
         Create a funnel step, handling step number conflicts by incrementing subsequent steps.
         
         Args:
+            organization_id: The organization document identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -385,7 +388,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             # Get current funnel steps
@@ -433,12 +436,13 @@ class FirestoreService:
             print(f"Error creating funnel step: {e}")
             return False
 
-    def get_funnel_step(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def get_funnel_step(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                        funnel_step_num: int) -> Optional[Dict[str, Any]]:
         """
         Get a specific funnel step.
         
         Args:
+            organization_id: The organization document identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -451,7 +455,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -478,11 +482,12 @@ class FirestoreService:
             print(f"Error getting funnel step: {e}")
             return None
 
-    def list_funnel_steps(self, account_id: str, funnel_type: str, big_bet_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_funnel_steps(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         List all funnel steps for a specific funnel.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -494,7 +499,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -530,12 +535,13 @@ class FirestoreService:
             print(f"Error listing funnel steps: {e}")
             return []
 
-    def update_funnel_step(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def update_funnel_step(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                           funnel_step_num: int, funnel_step_data: Dict[str, Any]) -> bool:
         """
         Update a funnel step.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -550,7 +556,7 @@ class FirestoreService:
             
         try:
             # Check if the step exists first
-            existing_step = self.get_funnel_step(account_id, funnel_type, big_bet_name, funnel_step_num)
+            existing_step = self.get_funnel_step(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num)
             if existing_step is None:
                 return False
             
@@ -560,7 +566,7 @@ class FirestoreService:
             else:  # big_bet
                 field_path = f"accounts.{account_id}.funnels.big_bets.{big_bet_name}.{funnel_step_num}"
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: funnel_step_data})
             return True
             
@@ -568,12 +574,13 @@ class FirestoreService:
             print(f"Error updating funnel step: {e}")
             return False
 
-    def delete_funnel_step(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def delete_funnel_step(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                           funnel_step_num: int) -> bool:
         """
         Delete a funnel step and shift subsequent steps down.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -586,7 +593,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -639,12 +646,13 @@ class FirestoreService:
 
     # Channel Operations
     
-    def create_channel(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def create_channel(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                       funnel_step_num: int, channel_name: str, channel_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Create a channel within a funnel step.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -660,12 +668,12 @@ class FirestoreService:
             
         try:
             # First check if the funnel step exists
-            funnel_step = self.get_funnel_step(account_id, funnel_type, big_bet_name, funnel_step_num)
+            funnel_step = self.get_funnel_step(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num)
             if funnel_step is None:
                 return None
             
             # Check if channel already exists
-            existing_channel = self.get_channel(account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
+            existing_channel = self.get_channel(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
             if existing_channel is not None:
                 return None  # Channel already exists
             
@@ -675,7 +683,7 @@ class FirestoreService:
             else:  # big_bet
                 field_path = f"accounts.{account_id}.funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}"
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: channel_data})
             
             # Return the created data
@@ -685,12 +693,13 @@ class FirestoreService:
             print(f"Error creating channel: {e}")
             return None
 
-    def get_channel(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def get_channel(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                    funnel_step_num: int, channel_name: str) -> Optional[Dict[str, Any]]:
         """
         Get a specific channel from a funnel step.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -704,7 +713,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -734,12 +743,13 @@ class FirestoreService:
             print(f"Error getting channel: {e}")
             return None
 
-    def list_channels(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def list_channels(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                      funnel_step_num: int) -> List[Dict[str, Any]]:
         """
         List all channels in a funnel step.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -752,7 +762,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -791,12 +801,13 @@ class FirestoreService:
             print(f"Error listing channels: {e}")
             return []
 
-    def update_channel(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def update_channel(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                       funnel_step_num: int, channel_name: str, channel_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Update a channel in a funnel step.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -812,7 +823,7 @@ class FirestoreService:
             
         try:
             # Check if the channel exists first
-            existing_channel = self.get_channel(account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
+            existing_channel = self.get_channel(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
             if existing_channel is None:
                 return None
             
@@ -825,7 +836,7 @@ class FirestoreService:
             else:  # big_bet
                 field_path = f"accounts.{account_id}.funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}"
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: updated_data})
             
             # Return the updated data
@@ -835,12 +846,13 @@ class FirestoreService:
             print(f"Error updating channel: {e}")
             return None
 
-    def delete_channel(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def delete_channel(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                       funnel_step_num: int, channel_name: str) -> bool:
         """
         Delete a channel from a funnel step.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -855,7 +867,7 @@ class FirestoreService:
             
         try:
             # Check if the channel exists first
-            existing_channel = self.get_channel(account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
+            existing_channel = self.get_channel(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
             if existing_channel is None:
                 return False
             
@@ -867,7 +879,7 @@ class FirestoreService:
             
             from google.cloud.firestore_v1 import DELETE_FIELD
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: DELETE_FIELD})
             return True
             
@@ -877,13 +889,14 @@ class FirestoreService:
 
     # Tactic Operations
     
-    def create_tactic(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def create_tactic(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                      funnel_step_num: int, channel_name: str, tactic_name: str, 
                      tactic_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Create a tactic within a channel.
         
         Args:
+            organization_id: The organization identifier
             account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
@@ -900,12 +913,12 @@ class FirestoreService:
             
         try:
             # First check if the channel exists
-            channel = self.get_channel(account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
+            channel = self.get_channel(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, channel_name)
             if channel is None:
                 return None
             
             # Check if tactic already exists
-            existing_tactic = self.get_tactic(account_id, funnel_type, big_bet_name, funnel_step_num, 
+            existing_tactic = self.get_tactic(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, 
                                             channel_name, tactic_name)
             if existing_tactic is not None:
                 return None  # Tactic already exists
@@ -916,7 +929,7 @@ class FirestoreService:
             else:  # big_bet
                 field_path = f"accounts.{account_id}.funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}.tactics.{tactic_name}"
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: tactic_data})
             
             # Return the created data
@@ -926,13 +939,14 @@ class FirestoreService:
             print(f"Error creating tactic: {e}")
             return None
 
-    def get_tactic(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def get_tactic(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                   funnel_step_num: int, channel_name: str, tactic_name: str) -> Optional[Dict[str, Any]]:
         """
         Get a specific tactic from a channel.
         
         Args:
-            account_id: The account identifier
+            organization_id: The organization identifier
+                        account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
             funnel_step_num: The step number
@@ -946,7 +960,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -978,13 +992,14 @@ class FirestoreService:
             print(f"Error getting tactic: {e}")
             return None
 
-    def list_tactics(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def list_tactics(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                     funnel_step_num: int, channel_name: str) -> List[Dict[str, Any]]:
         """
         List all tactics in a channel.
         
         Args:
-            account_id: The account identifier
+            organization_id: The organization identifier
+                        account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
             funnel_step_num: The step number
@@ -997,7 +1012,7 @@ class FirestoreService:
             raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
             
         try:
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc = doc_ref.get()
             
             if not doc.exists:
@@ -1036,14 +1051,15 @@ class FirestoreService:
             print(f"Error listing tactics: {e}")
             return []
 
-    def update_tactic(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def update_tactic(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                      funnel_step_num: int, channel_name: str, tactic_name: str, 
                      tactic_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Update a tactic in a channel.
         
         Args:
-            account_id: The account identifier
+            organization_id: The organization identifier
+                        account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
             funnel_step_num: The step number
@@ -1059,7 +1075,7 @@ class FirestoreService:
             
         try:
             # Check if the tactic exists first
-            existing_tactic = self.get_tactic(account_id, funnel_type, big_bet_name, funnel_step_num, 
+            existing_tactic = self.get_tactic(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, 
                                             channel_name, tactic_name)
             if existing_tactic is None:
                 return None
@@ -1073,7 +1089,7 @@ class FirestoreService:
             else:  # big_bet
                 field_path = f"accounts.{account_id}.funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}.tactics.{tactic_name}"
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: updated_data})
             
             # Return the updated data
@@ -1083,13 +1099,14 @@ class FirestoreService:
             print(f"Error updating tactic: {e}")
             return None
 
-    def delete_tactic(self, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
+    def delete_tactic(self, organization_id: str, account_id: str, funnel_type: str, big_bet_name: Optional[str], 
                      funnel_step_num: int, channel_name: str, tactic_name: str) -> bool:
         """
         Delete a tactic from a channel.
         
         Args:
-            account_id: The account identifier
+            organization_id: The organization identifier
+                        account_id: The account identifier
             funnel_type: Type of funnel ('organization' or 'big_bet')
             big_bet_name: Big bet name (required if funnel_type is 'big_bet')
             funnel_step_num: The step number
@@ -1104,7 +1121,7 @@ class FirestoreService:
             
         try:
             # Check if the tactic exists first
-            existing_tactic = self.get_tactic(account_id, funnel_type, big_bet_name, funnel_step_num, 
+            existing_tactic = self.get_tactic(organization_id, account_id, funnel_type, big_bet_name, funnel_step_num, 
                                             channel_name, tactic_name)
             if existing_tactic is None:
                 return False
@@ -1115,7 +1132,7 @@ class FirestoreService:
             else:  # big_bet
                 field_path = f"accounts.{account_id}.funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}.tactics.{tactic_name}"
             
-            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(ORGANIZATION_DOCUMENT_ID)
+            doc_ref = self._db.collection(ORGANIZATIONS_COLLECTION).document(organization_id)
             doc_ref.update({field_path: DELETE_FIELD})
             return True
             
