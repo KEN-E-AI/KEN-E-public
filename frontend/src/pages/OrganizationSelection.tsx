@@ -36,6 +36,7 @@ interface OrganizationSelectionProps {
 }
 
 const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const navigate = useNavigate();
   const {
     setSelectedOrgAccount,
@@ -70,11 +71,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   useEffect(() => {
     if (!FIRESTORE_USER_ID) return;
 
-    console.log("Using Firestore user ID:", FIRESTORE_USER_ID);
-
     const fetchUserData = async () => {
       try {
-        const res = await axios.get(`http://localhost:8000/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`);
+        const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`);
         const { data } = res.data;
         setOrgsFromFirestore(data.permissions.organizations || {});
         setAccountsFromFirestore(data.permissions.accounts || {});
@@ -99,7 +98,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       const entries: [string, any][] = await Promise.all(
         Object.keys(orgsFromFirestore).map(async (orgId) => {
           try {
-            const res = await axios.get(`http://localhost:8000/api/v1/firestore/documents/organizations/${orgId}`);
+            const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/organizations/${orgId}`);
             return [orgId, res.data.data];
           } catch (err) {
             console.error(`Failed to load org metadata for ${orgId}`, err);
