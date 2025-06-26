@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ interface AuthenticationProps {
 }
 
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -47,7 +49,15 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     setErrorMessage("");
 
     try {
-      await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
+      const result = await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
+      const firebaseUser = result.user;
+      console.log(result);
+      login({
+        id: firebaseUser.uid,
+        email: firebaseUser.email ?? "",
+        firstName: "", // Fill from Firestore later if needed
+        lastName: "",  // Fill from Firestore later if needed
+      });
       onAuthenticated();
     } catch (error: any) {
       console.error("Sign-in error:", error);
