@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,13 +30,6 @@ import {
   Crown,
   Briefcase,
 } from "lucide-react";
-import {
-  organizations,
-  getAllAccounts,
-  getAccountsByOrganizationId,
-  type Organization,
-  type Account,
-} from "@/data/organizationData";
 
 interface OrganizationSelectionProps {
   onComplete: () => void;
@@ -53,6 +47,10 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [orgsFromFirestore, setOrgsFromFirestore] = useState<Record<string, string>>({});
+  const [accountsFromFirestore, setAccountsFromFirestore] = useState<Record<string, string>>({});
+  const [loadingUserData, setLoadingUserData] = useState(true);
+  const [orgMetadata, setOrgMetadata] = useState<Record<string, any>>({});
 
   const [newOrgData, setNewOrgData] = useState({
     name: "",
@@ -65,6 +63,83 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     type: "",
     description: "",
   });
+
+  const { user } = useAuth();
+  const FIRESTORE_USER_ID = user?.id;
+
+  useEffect(() => {
+    if (!FIRESTORE_USER_ID) return;
+
+    console.log("Using Firestore user ID:", FIRESTORE_USER_ID);
+
+    const fetchUserData = async () => {
+      try {
+        const res = await axios.get(`http://localhost:8000/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`);
+        const { data } = res.data;
+        setOrgsFromFirestore(data.permissions.organizations || {});
+        setAccountsFromFirestore(data.permissions.accounts || {});
+      } catch (error) {
+        console.error("Failed to fetch user org/account data", error);
+      } finally {
+        setLoadingUserData(false);
+      }
+    };
+
+    fetchUserData();
+  }, [FIRESTORE_USER_ID]);
+
+  useEffect(() => {
+    if (!loadingUserData && Object.keys(orgsFromFirestore).length === 0) {
+      navigate("/create-organization");
+    }
+  }, [loadingUserData, orgsFromFirestore]);
+
+  useEffect(() => {
+    const fetchOrgMetadata = async () => {
+      const entries: [string, any][] = await Promise.all(
+        Object.keys(orgsFromFirestore).map(async (orgId) => {
+          try {
+            const res = await axios.get(`http://localhost:8000/api/v1/firestore/documents/organizations/${orgId}`);
+            return [orgId, res.data.data];
+          } catch (err) {
+            console.error(`Failed to load org metadata for ${orgId}`, err);
+            return [orgId, { organization_name: orgId }];
+          }
+        })
+      );
+
+      const result = Object.fromEntries(entries);
+      setOrgMetadata(result);
+    };
+
+    if (Object.keys(orgsFromFirestore).length > 0) {
+      fetchOrgMetadata();
+    }
+  }, [orgsFromFirestore]);
+
+  const organizationList = Object.entries(orgsFromFirestore).map(([orgId, permission]) => {
+    const metadata = orgMetadata[orgId] || {};
+    return {
+      organization_id: orgId,
+      organization_name: metadata.organization_name || orgId.replace(/-/g, " "),
+      permission,
+      ...metadata,
+    };
+  });
+
+  const getAccountsByOrganizationId = (orgId: string) => {
+    const orgAccounts: any[] = orgMetadata[orgId]?.accounts || [];
+
+    return orgAccounts
+      .filter((account) => account.account_id in accountsFromFirestore)
+      .map((account) => ({
+        account_id: account.account_id,
+        account_name: account.account_name || account.account_id.replace(/-/g, " "),
+        industry: account.industry || "Unknown",
+        status: account.status || "Active",
+        permission: accountsFromFirestore[account.account_id],
+      })).sort((a, b) => a.account_name.localeCompare(b.account_name));
+  };
 
   const handleCreateOrganization = () => {
     setIsLoading(true);
@@ -108,9 +183,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     }
   };
 
-  const selectedOrgData = organizations.find(
-    (org) => org.organization_id === selectedOrganization,
-  );
+  const selectedOrgData = organizationList.find((org) => org.organization_id === selectedOrganization);
 
   // Filter accounts based on selected organization
   const availableAccounts = selectedOrganization
@@ -122,6 +195,10 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     }
     setSelectedOrganization(orgId);
   };
+
+  if (loadingUserData || Object.keys(orgMetadata).length === 0) {
+    return <div className="text-center py-10 text-gray-500">Loading organizations...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4">
@@ -145,7 +222,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
               <CardTitle>Select Organization</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {organizations.map((org) => (
+              {organizationList.map((org) => (
                 <div
                   key={org.organization_id}
                   className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
