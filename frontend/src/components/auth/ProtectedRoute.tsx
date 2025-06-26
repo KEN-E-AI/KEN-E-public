@@ -21,15 +21,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   if (!isAuthenticated) {
     return (
       <Authentication
-        onAuthenticated={() => {
-          // Mock user data - in a real app this would come from the authentication response
-          login({
-            id: "user-123",
-            email: "john.doe@company.com",
-            firstName: "John",
-            lastName: "Doe",
-          });
-        }}
+        onAuthenticated={() => {}}
       />
     );
   }
