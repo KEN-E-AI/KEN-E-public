@@ -232,6 +232,219 @@ class SupersetClient:
         except requests.RequestException:
             return False
 
+    # Saved Queries Operations
+
+    async def get_saved_queries_by_schema_pattern(self, schema_pattern: str) -> List[Dict[str, Any]]:
+        """
+        Get all saved queries where the schema name matches the given pattern.
+        
+        Args:
+            schema_pattern: Pattern to match schema names (e.g., "account123_output")
+            
+        Returns:
+            List[Dict[str, Any]]: List of saved queries matching the pattern
+        """
+        await self._ensure_authenticated()
+        
+        try:
+            # Get all saved queries
+            response = self.session.get(
+                f"{self.base_url}/api/v1/saved_query/",
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            all_queries = result.get("result", [])
+            
+            # Filter queries by schema pattern
+            matching_queries = []
+            for query in all_queries:
+                schema = query.get("schema", "")
+                if schema_pattern in schema:
+                    matching_queries.append(query)
+            
+            logger.info(f"Found {len(matching_queries)} saved queries matching pattern '{schema_pattern}'")
+            return matching_queries
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to get saved queries: {e}")
+            raise SupersetClientError(f"Failed to get saved queries: {e}")
+
+    async def create_saved_query(self, query_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new saved query in Superset.
+        
+        Args:
+            query_data: Dictionary containing saved query data
+            
+        Returns:
+            Dict[str, Any]: Created saved query data
+        """
+        await self._ensure_authenticated()
+        
+        try:
+            response = self.session.post(
+                f"{self.base_url}/api/v1/saved_query/",
+                json=query_data,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            logger.info(f"Successfully created saved query '{query_data.get('label', 'unknown')}'")
+            return result.get("result", {})
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to create saved query: {e}")
+            raise SupersetClientError(f"Failed to create saved query: {e}")
+
+    async def update_saved_query(self, query_id: int, query_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Update an existing saved query in Superset.
+        
+        Args:
+            query_id: ID of the saved query to update
+            query_data: Dictionary containing updated saved query data
+            
+        Returns:
+            Dict[str, Any]: Updated saved query data
+        """
+        await self._ensure_authenticated()
+        
+        try:
+            response = self.session.put(
+                f"{self.base_url}/api/v1/saved_query/{query_id}",
+                json=query_data,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            logger.info(f"Successfully updated saved query {query_id}")
+            return result.get("result", {})
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to update saved query {query_id}: {e}")
+            raise SupersetClientError(f"Failed to update saved query: {e}")
+
+    async def delete_saved_query(self, query_id: int) -> bool:
+        """
+        Delete a saved query from Superset.
+        
+        Args:
+            query_id: ID of the saved query to delete
+            
+        Returns:
+            bool: True if deletion was successful
+        """
+        await self._ensure_authenticated()
+        
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/api/v1/saved_query/{query_id}",
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            logger.info(f"Successfully deleted saved query {query_id}")
+            return True
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to delete saved query {query_id}: {e}")
+            raise SupersetClientError(f"Failed to delete saved query: {e}")
+
+    async def get_saved_query_by_label(self, label: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a saved query by its label.
+        
+        Args:
+            label: Label of the saved query to find
+            
+        Returns:
+            Optional[Dict[str, Any]]: Saved query data or None if not found
+        """
+        await self._ensure_authenticated()
+        
+        try:
+            # Use the direct endpoint with label parameter
+            response = self.session.get(
+                f"{self.base_url}/api/v1/saved_query/?label={label}",
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            queries = result.get("result", [])
+            
+            # Return the first matching query or None if not found
+            if queries:
+                return queries[0]
+            
+            return None
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to get saved query by label '{label}': {e}")
+            raise SupersetClientError(f"Failed to get saved query: {e}")
+
+    async def execute_saved_query(self, query_label: str) -> Dict[str, Any]:
+        """
+        Execute a saved query and return the results.
+        
+        Args:
+            query_label: Label of the saved query to execute
+            
+        Returns:
+            Dict[str, Any]: Query execution results
+        """
+        await self._ensure_authenticated()
+        
+        try:
+            # First find the saved query by label
+            saved_query = await self.get_saved_query_by_label(query_label)
+            if not saved_query:
+                raise SupersetClientError(f"Saved query with label '{query_label}' not found")
+            
+            # Use the configured database ID from settings
+            from .config import settings
+            database_id = settings.superset_database_id
+            
+            logger.info(f"Executing saved query '{query_label}' with database_id={database_id}")
+            
+            # Execute the query via SQL Lab
+            query_payload = {
+                "database_id": database_id,
+                "sql": saved_query.get("sql"),
+                "schema": saved_query.get("schema", "")
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/api/v1/sqllab/execute/",
+                json=query_payload,
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Successfully executed saved query '{query_label}'")
+                return result
+            else:
+                # Get detailed error information
+                error_text = response.text
+                try:
+                    error_json = response.json()
+                    error_detail = error_json.get('message', error_json)
+                except:
+                    error_detail = error_text
+                
+                raise SupersetClientError(f"Query execution failed: {response.status_code} - {error_detail}")
+                    
+        except SupersetClientError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error executing saved query '{query_label}': {e}")
+            raise SupersetClientError(f"Unexpected error during query execution: {e}")
+
 
 # Global instance
 superset_client = SupersetClient()

@@ -25,6 +25,7 @@ class Settings:
     superset_base_url: str = os.getenv("SUPERSET_BASE_URL", "http://localhost:8088")
     superset_username: str = os.getenv("SUPERSET_USERNAME", "admin")
     superset_password: str = os.getenv("SUPERSET_PASSWORD", "admin")
+    superset_database_id: int = int(os.getenv("SUPERSET_DATABASE_ID", "2"))
 
     # CORS settings
     allowed_origins: List[str] = ["*"]  # Configure for production
