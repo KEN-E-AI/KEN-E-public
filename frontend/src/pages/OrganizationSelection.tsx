@@ -184,6 +184,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
 
       const newAccount = {
         account_id: newAccountId,
+        organization_id: selectedOrganization,
         account_name: newAccountData.name,
         account_type: newAccountData.type,
         description: newAccountData.description,
