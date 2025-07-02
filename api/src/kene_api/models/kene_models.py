@@ -567,3 +567,45 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: str
     details: Optional[Dict[str, Any]] = None
+
+
+# Superset Saved Queries Models
+class SavedQueryRequest(BaseRequest):
+    """Request model for creating/updating saved queries."""
+    
+    label: str = Field(..., description="Label/name of the saved query")
+    description: Optional[str] = Field(None, description="Description of the saved query")
+    database_id: int = Field(..., description="Database ID for the saved query")
+    schema_name: str = Field(..., description="Schema name for the saved query")
+    sql: str = Field(..., description="SQL query text")
+
+
+class SavedQueryResponse(BaseModel):
+    """Response model for saved query operations."""
+    
+    id: int = Field(..., description="Saved query ID")
+    label: str = Field(..., description="Label/name of the saved query")
+    description: Optional[str] = Field(None, description="Description of the saved query")
+    database_id: int = Field(..., description="Database ID")
+    schema_name: str = Field(..., description="Schema name")
+    sql: str = Field(..., description="SQL query text")
+    created_on: Optional[str] = Field(None, description="Creation timestamp")
+    changed_on: Optional[str] = Field(None, description="Last modification timestamp")
+
+
+class SavedQueryListResponse(BaseModel):
+    """Response model for saved query list."""
+    
+    saved_queries: List[SavedQueryResponse] = Field(..., description="List of saved queries")
+    total: int = Field(..., description="Total number of saved queries")
+
+
+class QueryExecutionResponse(BaseModel):
+    """Response model for query execution results."""
+    
+    query_id: Optional[int] = Field(None, description="Query execution ID")
+    status: str = Field(..., description="Execution status")
+    data: Optional[List[Dict[str, Any]]] = Field(None, description="Query result data")
+    columns: Optional[List[Dict[str, Any]]] = Field(None, description="Column metadata")
+    error: Optional[str] = Field(None, description="Error message if execution failed")
+    query: Optional[Dict[str, Any]] = Field(None, description="Query metadata object containing execution details")

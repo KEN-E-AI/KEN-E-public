@@ -17,6 +17,7 @@ from .routers import (
     intuitions,
     items,
     metrics,
+    superset_saved_queries,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,11 @@ app.include_router(
     funnel_reports.router, prefix="/api/v1/funnel-reports", tags=["funnel-reports"]
 )
 app.include_router(firestore.router, prefix="/api/v1/firestore", tags=["firestore"])
+app.include_router(
+    superset_saved_queries.router, 
+    prefix="/api/v1/superset/saved-queries", 
+    tags=["superset-saved-queries"]
+)
 
 
 @app.get("/")
