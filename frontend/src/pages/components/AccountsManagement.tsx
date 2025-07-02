@@ -300,6 +300,18 @@ const AccountsManagement = ({
         }
       );
 
+      // await axios.put(
+      //   `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user?.id}?account_id=${user?.id}`,
+      //   {
+      //     update: {
+      //       // This is a nested field path for dot-notation update
+      //       field: `permissions.accounts.${newAccountId}`,
+      //       operator: "set",
+      //       value: "admin",
+      //     },
+      //   }
+      // );
+
       // 🧠 Optionally update local context
       const updatedAccounts = [...(orgData?.accounts || []), newAccount];
       setAccountMetadata({
