@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,6 +26,7 @@ interface AuthenticationProps {
 }
 
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,12 +53,19 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     try {
       const result = await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
       const firebaseUser = result.user;
-      console.log(result);
+
+      // 🔥 Fetch full Firestore user data
+      const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`);
+      const firestoreData = res.data.data;
+
       login({
         id: firebaseUser.uid,
-        email: firebaseUser.email ?? "",
-        firstName: "", // Fill from Firestore later if needed
-        lastName: "",  // Fill from Firestore later if needed
+        email: firestoreData.profile?.email || firebaseUser.email || "",
+        firstName: firestoreData.profile?.first_name || "",
+        lastName: firestoreData.profile?.last_name || "",
+        jobTitle: firestoreData.profile?.job_title,
+        permissions: firestoreData.permissions || {},
+        preferences: firestoreData.preferences || {},
       });
       onAuthenticated();
     } catch (error: any) {
@@ -80,6 +89,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage("");
 
     if (signUpData.password !== signUpData.confirmPassword) {
       setErrorMessage("Passwords do not match.");
@@ -88,7 +98,47 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     }
 
     try {
-      await createUserWithEmailAndPassword(auth, signUpData.email, signUpData.password);
+      const result = await createUserWithEmailAndPassword(auth, signUpData.email, signUpData.password);
+      const firebaseUser = result.user;
+
+      await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
+        account_id: firebaseUser.uid,  // Using user ID as account_id
+        collection: "users",
+        document_id: firebaseUser.uid,
+        data: {
+          profile: {
+            email: signUpData.email,
+            first_name: signUpData.firstName,
+            last_name: signUpData.lastName,
+            job_title: "",  // Default empty
+          },
+          permissions: {
+            organizations: {},
+            accounts: {},
+          },
+          preferences: {
+            language: "en",
+            theme: "light",
+            date_format: "mm-dd-yyyy",
+          },
+        },
+      });
+
+      // 🔥 Fetch the created Firestore document for login context
+      const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`);
+      const firestoreData = res.data.data;
+
+      // Call login() to update AuthContext state
+      login({
+        id: firebaseUser.uid,
+        email: firestoreData.profile?.email || firebaseUser.email || "",
+        firstName: firestoreData.profile?.first_name || "",
+        lastName: firestoreData.profile?.last_name || "",
+        jobTitle: firestoreData.profile?.job_title,
+        permissions: firestoreData.permissions || {},
+        preferences: firestoreData.preferences || {},
+      });
+
       onAuthenticated();
     } catch (error: any) {
       console.error("Sign-up error:", error);
