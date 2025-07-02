@@ -17,8 +17,17 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - ALLOWED_METHODS=${ALLOWED_METHODS}
       - ALLOWED_HEADERS=${ALLOWED_HEADERS}
+      # Superset Configuration
+      - SUPERSET_BASE_URL=${SUPERSET_BASE_URL}
+      - SUPERSET_USERNAME=${SUPERSET_USERNAME}
+      - SUPERSET_PASSWORD=${SUPERSET_PASSWORD}
+      - SUPERSET_DATABASE_ID=${SUPERSET_DATABASE_ID:-2}
+      # Google Cloud Firestore Configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+      - GOOGLE_CLOUD_PROJECT_ID=${GOOGLE_CLOUD_PROJECT_ID}
+      - FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID}
     env_file:
-      - .env
+      - .env.dev
     volumes:
       # Mount source code for development (comment out for production)
       - ./src:/app/src

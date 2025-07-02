@@ -1,10 +1,56 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import axios from "axios";
 
 interface User {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
+  jobTitle?: string;
+  permissions?: {
+    accounts?: Record<string, string>;
+    organizations?: Record<string, string>;
+  };
+  preferences?: {
+    theme?: string;
+    language?: string;
+    date_format?: string;
+  };
+}
+
+export interface SelectedOrgAccount {
+  orgId: string;
+  accountId: string;
+  metadata: {
+    organization_name: string;
+    account_name: string;
+    industry: string;
+    status: string;
+    timezone?: string;
+    plan?: string;
+    [key: string]: any;
+  };
+}
+
+interface Notification {
+  id: string;
+  account_id: string;
+  category: string;
+  created_date: string;
+  data: {
+    hasIndicator: boolean;
+    icon: string;
+    metadata: {
+      priority: string;
+      source: string;
+      tags: string[];
+    };
+    title: string;
+    type: string;
+  };
+  description: string;
+  modified_timestamp: number;
+  status: string;
 }
 
 interface AuthContextType {
@@ -12,13 +58,19 @@ interface AuthContextType {
   isAuthenticated: boolean;
   hasSelectedWorkspace: boolean;
   currentOrganizationId: string | null;
-  selectedOrgAccount: string | null;
+  selectedOrgAccount: SelectedOrgAccount | null;
   login: (user: User) => void;
   logout: () => void;
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
   setCurrentOrganization: (orgId: string) => void;
-  setSelectedOrgAccount: (combinedId: string) => void;
+  setSelectedOrgAccount: (account: SelectedOrgAccount) => void;
+  orgMetadata: Record<string, any>;
+  accountMetadata: Record<string, any>;
+  setOrgMetadata: (data: Record<string, any>) => void;
+  setAccountMetadata: (data: Record<string, any>) => void;
+  notifications: Notification[];
+  setNotifications: (n: Notification[]) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -41,9 +93,34 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [currentOrganizationId, setCurrentOrganizationId] = useState<
     string | null
   >(null);
-  const [selectedOrgAccount, setSelectedOrgAccountState] = useState<
-    string | null
-  >(null);
+  const [selectedOrgAccount, setSelectedOrgAccountState] = useState<SelectedOrgAccount | null>(null);
+  const [orgMetadata, setOrgMetadata] = useState<Record<string, any>>({});
+  const [accountMetadata, setAccountMetadata] = useState<Record<string, any>>({});
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const fetchNotifications = async (accountId: string) => {
+    try {
+      const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/query`, {
+        account_id: accountId,
+        collection: "notifications",
+        field: "account_id",
+        operator: "==",
+        value: accountId,
+        limit: 20,
+      });
+
+      console.log("📬 Notifications fetched in context:", res.data);
+      const documents = res.data.documents ?? []; // ✅ fallback to empty array
+      const sorted = [...documents].sort((a, b) =>
+        new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
+      );
+
+      setNotifications(sorted);
+    } catch (err) {
+      console.error("❌ Failed to fetch notifications in context", err);
+    }
+  };
+
 
   const login = (userData: User) => {
     setUser(userData);
@@ -79,13 +156,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.setItem("currentOrganizationId", orgId);
   };
 
-  const setSelectedOrgAccount = (combinedId: string) => {
-    setSelectedOrgAccountState(combinedId);
-    localStorage.setItem("selectedOrgAccount", combinedId);
+  const setSelectedOrgAccount = (account: SelectedOrgAccount) => {
+    console.log("✅ Context updated:", account);
+    setSelectedOrgAccountState(account);
+    localStorage.setItem("selectedOrgAccount", JSON.stringify(account));
+
+    // 🧠 Fetch notifications here
+    fetchNotifications(account.accountId);
   };
 
   // Initialize auth state from localStorage on component mount
-  useState(() => {
+  useEffect(() => {
     const savedUser = localStorage.getItem("user");
     const savedWorkspaceSelection = localStorage.getItem(
       "hasSelectedWorkspace",
@@ -106,7 +187,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
 
     if (savedOrgAccount) {
-      setSelectedOrgAccountState(savedOrgAccount);
+      try {
+        setSelectedOrgAccountState(JSON.parse(savedOrgAccount));
+      } catch (err) {
+        console.warn("Failed to parse savedOrgAccount", err);
+      }
     }
   });
 
@@ -122,6 +207,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     resetWorkspaceSelection,
     setCurrentOrganization,
     setSelectedOrgAccount,
+    orgMetadata,
+    accountMetadata,
+    setOrgMetadata,
+    setAccountMetadata,
+    notifications,
+    setNotifications,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,14 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
+import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  getOrganizationById,
-  createNewOrganization,
-  type Organization,
-} from "@/data/organizationData";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -36,11 +32,17 @@ const AccountSettings = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
+    user,
     resetWorkspaceSelection,
     completeWorkspaceSelection,
     currentOrganizationId,
     setCurrentOrganization,
+    orgMetadata,
+    setOrgMetadata,
+    selectedOrgAccount,
   } = useAuth();
+
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   // Derived state
   const isCreatingNew = location.pathname === "/create-organization";
@@ -51,8 +53,8 @@ const AccountSettings = () => {
   }, [isCreatingNew, currentOrganizationId]);
 
   const orgData = useMemo(() => {
-    return currentOrgId ? getOrganizationById(currentOrgId) : null;
-  }, [currentOrgId]);
+    return currentOrgId ? orgMetadata[currentOrgId] || null : null;
+  }, [currentOrgId, orgMetadata]);
 
   // Form state
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
@@ -99,7 +101,16 @@ const AccountSettings = () => {
     }
 
     try {
-      const newOrg = createNewOrganization(newOrgFormData);
+      const res = await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
+        account_id: user?.id,
+        collection: "organizations",
+        document_id: newOrgFormData.organization_name.toLowerCase().replace(/\s+/g, "-"),
+        data: {
+          ...newOrgFormData,
+        },
+      });
+
+      const newOrg = res.data.data;
       setCurrentOrganization(newOrg.organization_id);
       completeWorkspaceSelection();
 

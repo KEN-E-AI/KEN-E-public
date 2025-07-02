@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import axios from "axios";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,8 +28,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { User, Plus, X, Settings, Check, ChevronDown } from "lucide-react";
 import {
-  accounts,
-  createNewAccount,
   INDUSTRY_OPTIONS,
   TIMEZONE_OPTIONS,
   type Organization,
@@ -113,6 +113,7 @@ const AccountsManagement = ({
   orgData,
   currentOrgId,
 }: AccountsManagementProps) => {
+  const { accountMetadata, setAccountMetadata, user } = useAuth();
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -169,12 +170,14 @@ const AccountsManagement = ({
     region: [] as string[],
   });
 
-  // Get accounts for current organization
   const organizationAccounts = useMemo(() => {
-    return accounts.filter(
-      (account) => account.organization_id === currentOrgId,
-    );
-  }, [currentOrgId]);
+    if (!orgData?.accounts || !user?.permissions?.accounts) return [];
+
+    return orgData.accounts
+      .filter((a: any) => user.permissions.accounts?.[a.account_id])
+      .map((a: any) => accountMetadata[a.account_id])
+      .filter(Boolean); // remove undefined
+  }, [orgData, accountMetadata, user]);
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
@@ -228,13 +231,45 @@ const AccountsManagement = ({
     setIsModalOpen(true);
   };
 
-  const handleSaveAccount = () => {
-    console.log("Saving account:", editFormData);
-    setIsModalOpen(false);
-    setSelectedAccount(null);
+  const handleSaveAccount = async () => {
+    if (!selectedAccount) return;
+
+    try {
+      const updatedAccount = {
+        ...selectedAccount,
+        ...editFormData,
+      };
+
+      await axios.put(
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/organizations/${currentOrgId}?account_id=${currentOrgId}`,
+        {
+          update: {
+            field: "accounts",
+            operator: "replaceOne",
+            matchField: "account_id",
+            matchValue: selectedAccount.account_id,
+            value: updatedAccount,
+          },
+        }
+      );
+
+      // Optionally update local accountMetadata context
+      setAccountMetadata((prev) => ({
+        ...prev,
+        [selectedAccount.account_id]: updatedAccount,
+      }));
+
+      setIsModalOpen(false);
+      setSelectedAccount(null);
+      alert("Account updated successfully.");
+    } catch (error) {
+      console.error("Error saving account:", error);
+      alert("Failed to update account. Please try again.");
+    }
   };
 
-  const handleCreateAccount = () => {
+
+  const handleCreateAccount = async () => {
     if (
       !createAccountFormData.account_name ||
       !createAccountFormData.industry
@@ -244,11 +279,55 @@ const AccountsManagement = ({
     }
 
     try {
-      const newAccount = createNewAccount({
+      const newAccountId = createAccountFormData.account_name
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+
+      const newAccount = {
         ...createAccountFormData,
+        account_id: newAccountId,
         organization_id: currentOrgId,
+      };
+
+      // 🔁 PATCH the organization to add a new account
+      await axios.put(
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/organizations/${currentOrgId}?account_id=${currentOrgId}`,
+        {
+          update: {
+            field: "accounts",
+            operator: "arrayUnion",
+            value: newAccount,
+          },
+        }
+      );
+
+      // await axios.put(
+      //   `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user?.id}?account_id=${user?.id}`,
+      //   {
+      //     update: {
+      //       // This is a nested field path for dot-notation update
+      //       field: `permissions.accounts.${newAccountId}`,
+      //       operator: "set",
+      //       value: "admin",
+      //     },
+      //   }
+      // );
+
+      // 🧠 Optionally update local context
+      const updatedAccounts = [...(orgData?.accounts || []), newAccount];
+      setAccountMetadata({
+        ...accountMetadata,
+        [newAccountId]: newAccount,
       });
-      console.log("Account created successfully:", newAccount);
+
+      // You may also want to update `orgMetadata` here:
+      // setOrgMetadata((prev) => ({
+      //   ...prev,
+      //   [currentOrgId]: {
+      //     ...prev[currentOrgId],
+      //     accounts: updatedAccounts,
+      //   }
+      // }));
 
       setIsCreateAccountModalOpen(false);
       setCreateAccountFormData({

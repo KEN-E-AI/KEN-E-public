@@ -1,9 +1,12 @@
 import { useState } from "react";
 import HomeLayout from "@/components/home/HomeLayout";
 import HomeChatArea from "@/components/home/HomeChatArea";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 const Home = () => {
-  const [selectedAccount, setSelectedAccount] = useState("acme-corp");
+  const navigate = useNavigate();
+  const { selectedOrgAccount } = useAuth();
   const [dateRange, setDateRange] = useState({
     from: new Date(2025, 0, 1),
     to: new Date(2025, 0, 31),
@@ -16,14 +19,16 @@ const Home = () => {
     | undefined
   >(undefined);
 
+  if (!selectedOrgAccount) {
+    navigate("/organization-selection");
+  }
+
   return (
     <HomeLayout
       dateRange={dateRange}
       setDateRange={setDateRange}
       comparisonDateRange={comparisonDateRange}
       setComparisonDateRange={setComparisonDateRange}
-      selectedAccount={selectedAccount}
-      setSelectedAccount={setSelectedAccount}
     >
       <HomeChatArea />
     </HomeLayout>

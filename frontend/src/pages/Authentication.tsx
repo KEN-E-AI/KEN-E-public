@@ -1,4 +1,8 @@
 import { useState } from "react";
+import axios from "axios";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +26,11 @@ interface AuthenticationProps {
 }
 
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [signInData, setSignInData] = useState({
     email: "",
     password: "",
@@ -41,23 +48,113 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage("");
 
-    // Simulate authentication
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const result = await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
+      const firebaseUser = result.user;
+
+      // 🔥 Fetch full Firestore user data
+      const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`);
+      const firestoreData = res.data.data;
+
+      login({
+        id: firebaseUser.uid,
+        email: firestoreData.profile?.email || firebaseUser.email || "",
+        firstName: firestoreData.profile?.first_name || "",
+        lastName: firestoreData.profile?.last_name || "",
+        jobTitle: firestoreData.profile?.job_title,
+        permissions: firestoreData.permissions || {},
+        preferences: firestoreData.preferences || {},
+      });
       onAuthenticated();
-    }, 1500);
+    } catch (error: any) {
+      console.error("Sign-in error:", error);
+      switch (error.code) {
+        case "auth/user-not-found":
+          setErrorMessage("No user found with this email.");
+          break;
+        case "auth/wrong-password":
+        case "auth/invalid-credential":
+          setErrorMessage("Invalid email or password.");
+          break;
+        default:
+          setErrorMessage("Failed to sign in. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage("");
 
-    // Simulate account creation
-    setTimeout(() => {
+    if (signUpData.password !== signUpData.confirmPassword) {
+      setErrorMessage("Passwords do not match.");
       setIsLoading(false);
+      return;
+    }
+
+    try {
+      const result = await createUserWithEmailAndPassword(auth, signUpData.email, signUpData.password);
+      const firebaseUser = result.user;
+
+      await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
+        account_id: firebaseUser.uid,  // Using user ID as account_id
+        collection: "users",
+        document_id: firebaseUser.uid,
+        data: {
+          profile: {
+            email: signUpData.email,
+            first_name: signUpData.firstName,
+            last_name: signUpData.lastName,
+            job_title: "",  // Default empty
+          },
+          permissions: {
+            organizations: {},
+            accounts: {},
+          },
+          preferences: {
+            language: "en",
+            theme: "light",
+            date_format: "mm-dd-yyyy",
+          },
+        },
+      });
+
+      // 🔥 Fetch the created Firestore document for login context
+      const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`);
+      const firestoreData = res.data.data;
+
+      // Call login() to update AuthContext state
+      login({
+        id: firebaseUser.uid,
+        email: firestoreData.profile?.email || firebaseUser.email || "",
+        firstName: firestoreData.profile?.first_name || "",
+        lastName: firestoreData.profile?.last_name || "",
+        jobTitle: firestoreData.profile?.job_title,
+        permissions: firestoreData.permissions || {},
+        preferences: firestoreData.preferences || {},
+      });
+
       onAuthenticated();
-    }, 1500);
+    } catch (error: any) {
+      console.error("Sign-up error:", error);
+      switch (error.code) {
+        case "auth/email-already-in-use":
+          setErrorMessage("This email is already registered.");
+          break;
+        case "auth/weak-password":
+          setErrorMessage("Password is too weak (min 6 characters).");
+          break;
+        default:
+          setErrorMessage("Failed to create account. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -75,6 +172,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         </div>
 
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+          {errorMessage && (
+            <div className="text-red-600 text-sm font-medium pt-4">{errorMessage}</div>
+          )}
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-center text-xl">
               Sign in to your account

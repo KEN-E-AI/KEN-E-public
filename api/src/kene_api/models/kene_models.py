@@ -101,6 +101,10 @@ class Metric(BaseEntity):
         ...,
         description="The snake_case representation of the metric name. Should be identical to the value stored in Superset",
     )
+    currency: str = Field(
+        ...,
+        description="The currency code for the metric (e.g., USD, EUR, GBP). Used for formatting monetary values",
+    )
     account_components: List[str] = Field(
         ...,
         description="A list of components that the metric can be used to assist with in an analysis. An account must include at least one component from the list for the metric to be relevant",
@@ -142,6 +146,10 @@ class MetricRequest(BaseRequest):
     metric_name: Optional[str] = Field(
         None,
         description="The snake_case representation of the metric name. Should be identical to the value stored in Superset",
+    )
+    currency: Optional[str] = Field(
+        None,
+        description="The currency code for the metric (e.g., USD, EUR, GBP). Used for formatting monetary values",
     )
     account_components: Optional[List[str]] = Field(
         None,
@@ -416,17 +424,13 @@ class InsightSearchRequest(BaseModel):
     """Request model for searching insights."""
 
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
-    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_FILTER_DESCRIPTION)
-    metric_id: Optional[str] = Field(None, description=METRIC_ID_FILTER_DESCRIPTION)
-    activity_log_id: Optional[str] = Field(
-        None, description=ACTIVITY_LOG_ID_DESCRIPTION
-    )
-    metric_verbose_name: Optional[str] = Field(
-        None, description="Filter by metric verbose name"
-    )
-    activity_description: Optional[str] = Field(
-        None, description="Filter by activity description"
-    )
+    metric_id: str = Field(..., description=METRIC_ID_FILTER_DESCRIPTION)
+    activity_id: str = Field(..., description=ACTIVITY_ID_FILTER_DESCRIPTION)
+    evaluation_date_start: str = Field(..., description="Start date for evaluation period (YYYY-MM-DD)")
+    evaluation_date_end: str = Field(..., description="End date for evaluation period (YYYY-MM-DD)")
+    comparison_date_start: str = Field(..., description="Start date for comparison period (YYYY-MM-DD)")
+    comparison_date_end: str = Field(..., description="End date for comparison period (YYYY-MM-DD)")
+    direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
 
 
 class InsightSearchResponse(BaseModel):
@@ -536,6 +540,18 @@ class AnalysisWorkflowResponse(BaseModel):
     execution_time: float = Field(..., description="Execution time in seconds")
 
 
+class AnalysisSearchRequest(BaseModel):
+    """Request model for analysis search without activity_id."""
+
+    account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
+    metric_id: str = Field(..., description=METRIC_ID_FILTER_DESCRIPTION)
+    evaluation_date_start: str = Field(..., description="Start date for evaluation period (YYYY-MM-DD)")
+    evaluation_date_end: str = Field(..., description="End date for evaluation period (YYYY-MM-DD)")
+    comparison_date_start: str = Field(..., description="Start date for comparison period (YYYY-MM-DD)")
+    comparison_date_end: str = Field(..., description="End date for comparison period (YYYY-MM-DD)")
+    direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
+
+
 # Response Models
 class SuccessResponse(BaseModel):
     """Standard success response."""
@@ -551,3 +567,45 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: str
     details: Optional[Dict[str, Any]] = None
+
+
+# Superset Saved Queries Models
+class SavedQueryRequest(BaseRequest):
+    """Request model for creating/updating saved queries."""
+    
+    label: str = Field(..., description="Label/name of the saved query")
+    description: Optional[str] = Field(None, description="Description of the saved query")
+    database_id: int = Field(..., description="Database ID for the saved query")
+    schema_name: str = Field(..., description="Schema name for the saved query")
+    sql: str = Field(..., description="SQL query text")
+
+
+class SavedQueryResponse(BaseModel):
+    """Response model for saved query operations."""
+    
+    id: int = Field(..., description="Saved query ID")
+    label: str = Field(..., description="Label/name of the saved query")
+    description: Optional[str] = Field(None, description="Description of the saved query")
+    database_id: int = Field(..., description="Database ID")
+    schema_name: str = Field(..., description="Schema name")
+    sql: str = Field(..., description="SQL query text")
+    created_on: Optional[str] = Field(None, description="Creation timestamp")
+    changed_on: Optional[str] = Field(None, description="Last modification timestamp")
+
+
+class SavedQueryListResponse(BaseModel):
+    """Response model for saved query list."""
+    
+    saved_queries: List[SavedQueryResponse] = Field(..., description="List of saved queries")
+    total: int = Field(..., description="Total number of saved queries")
+
+
+class QueryExecutionResponse(BaseModel):
+    """Response model for query execution results."""
+    
+    query_id: Optional[int] = Field(None, description="Query execution ID")
+    status: str = Field(..., description="Execution status")
+    data: Optional[List[Dict[str, Any]]] = Field(None, description="Query result data")
+    columns: Optional[List[Dict[str, Any]]] = Field(None, description="Column metadata")
+    error: Optional[str] = Field(None, description="Error message if execution failed")
+    query: Optional[Dict[str, Any]] = Field(None, description="Query metadata object containing execution details")

@@ -151,6 +151,11 @@ steps:
       - "--allow-unauthenticated"
       - "--memory=1Gi"
       - "--project=${_STAGING_PROJECT_ID}"
+      - "--set-env-vars"
+      - |
+        VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY},
+        VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_API_BASE_URL=${_VITE_API_BASE_URL}
 
   - name: "gcr.io/cloud-builders/docker"
     id: build-api-image
@@ -171,25 +176,29 @@ steps:
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: deploy-api-to-cloud-run
+    entrypoint: /bin/bash
     args:
-      - "run"
-      - "deploy"
-      - "kene-api-staging"
-      - "--image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA}"
-      - "--region=${_REGION}"
-      - "--platform=managed"
-      - "--project=${_STAGING_PROJECT_ID}"
-      - "--allow-unauthenticated"
-      - "--memory=512Mi"
-      - "--port=8000"
-      - "--set-env-vars"
+      - "-c"
       - |
-        DEBUG=false,
-        HOST=0.0.0.0,
-        NEO4J_URI=${_NEO4J_URI},
-        NEO4J_USERNAME=${_NEO4J_USERNAME},
-        NEO4J_PASSWORD=${_NEO4J_PASSWORD},
-        NEO4J_DATABASE=${_NEO4J_DATABASE}
+        echo "$_GCLOUD_SA_KEY_JSON" > ./api/google-cloud-service-account-key.json
+
+        gcloud run deploy kene-api-staging \
+          --image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --project=${_STAGING_PROJECT_ID} \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --port=8000 \
+          --set-env-vars \
+            DEBUG=false,\
+            HOST=0.0.0.0,\
+            NEO4J_URI=${_NEO4J_URI},\
+            NEO4J_USERNAME=${_NEO4J_USERNAME},\
+            NEO4J_PASSWORD=${_NEO4J_PASSWORD},\
+            NEO4J_DATABASE=${_NEO4J_DATABASE},\
+            GOOGLE_APPLICATION_CREDENTIALS=./google-cloud-service-account-key.json
+    secretEnv: ['_GCLOUD_SA_KEY_JSON']
 
 
 
@@ -205,6 +214,9 @@ substitutions:
   _NEO4J_USERNAME: neo4j
   _NEO4J_PASSWORD: your_password
   _NEO4J_DATABASE: neo4j
+  _VITE_FIREBASE_API_KEY: AIzaSyC2Oxqfs3AxCcggkrS-rZxepvP2onV7lOI
+  _VITE_FIREBASE_AUTH_DOMAIN: ken-e-staging.firebaseapp.com
+  _VITE_API_BASE_RUL: https://kene-api-staging-391472102753.us-central1.run.app
 
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
@@ -215,3 +227,5 @@ availableSecrets:
   secretManager:
     - versionName: projects/${PROJECT_ID}/secrets/firebase-key-staging/versions/latest
       env: _FIREBASE_KEY_JSON
+    - versionName: projects/${PROJECT_ID}/secrets/google-cloud-service-account-key-staging/versions/latest
+      env: _GCLOUD_SA_KEY_JSON

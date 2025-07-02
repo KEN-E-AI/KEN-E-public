@@ -54,9 +54,7 @@ const HomeLayout = ({
             setDateRange={setDateRange}
             comparisonDateRange={comparisonDateRange}
             setComparisonDateRange={setComparisonDateRange}
-            selectedOrgAccount={
-              selectedOrgAccount || "healthway-intellipure-b2c"
-            }
+            selectedOrgAccount={selectedOrgAccount}
             setSelectedOrgAccount={setSelectedOrgAccount}
           />
 

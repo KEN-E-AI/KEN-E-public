@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import type { SelectedOrgAccount } from "@/contexts/AuthContext";
 import {
   User,
   Edit2,
@@ -31,7 +32,6 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { organizations, getAllAccounts } from "@/data/organizationData";
 
 interface GlobalHeaderProps {
   pageTitle?: string;
@@ -39,8 +39,8 @@ interface GlobalHeaderProps {
   setDateRange: (range: { from: Date; to: Date }) => void;
   comparisonDateRange?: { from: Date; to: Date };
   setComparisonDateRange?: (range: { from: Date; to: Date }) => void;
-  selectedOrgAccount?: string; // Combined org-account ID like "healthway-intellipure-b2c"
-  setSelectedOrgAccount?: (combinedId: string) => void;
+  selectedOrgAccount: SelectedOrgAccount | null;
+  setSelectedOrgAccount: (account: SelectedOrgAccount) => void;
 }
 
 const navigationMenuItems = [
@@ -56,75 +56,107 @@ const OrganizationAccountDropdown = ({
   selectedOrgAccount,
   setSelectedOrgAccount,
 }: {
-  selectedOrgAccount: string;
-  setSelectedOrgAccount: (combinedId: string) => void;
+  selectedOrgAccount: SelectedOrgAccount | null;
+  setSelectedOrgAccount: (account: SelectedOrgAccount) => void;
 }) => {
   const navigate = useNavigate();
-  const { setCurrentOrganization } = useAuth();
+  const {
+    setCurrentOrganization,
+    user,
+    orgMetadata,
+    accountMetadata,
+  } = useAuth();
+  const accessibleAccountIds = Object.keys(user?.permissions?.accounts || {});
 
-  // Create combined options from organizations and accounts
-  const allAccounts = getAllAccounts();
-  const combinedOptions = allAccounts.map((account) => {
-    const organization = organizations.find(
-      (org) => org.organization_id === account.organization_id,
-    );
-    return {
-      combinedId: `${account.organization_id}-${account.account_id}`,
-      organizationName: organization?.organization_name || "Unknown Org",
-      accountName: account.account_name,
-      displayText: `${organization?.organization_name || "Unknown Org"} - ${account.account_name}`,
-    };
-  });
+  const combinedOptions = accessibleAccountIds
+    .map((accountId) => {
+      const account = accountMetadata[accountId];
+      const orgId = account?.organization_id;
+      const organization = orgMetadata[orgId];
 
-  const currentSelection = combinedOptions.find(
-    (option) => option.combinedId === selectedOrgAccount,
-  );
+      if (!account || !organization) return null;
+
+      return {
+        value: JSON.stringify({ orgId, accountId }),
+        label: `${organization.organization_name} - ${account.account_name}`,
+        orgId,
+        accountId,
+        metadata: {
+          organization_name: organization.organization_name,
+          account_name: account.account_name,
+          industry: account.industry,
+          status: account.status,
+          timezone: account.timezone,
+          plan: organization.plan,
+        },
+      };
+    })
+    .filter(Boolean);
+
+  const currentValue = selectedOrgAccount
+    ? JSON.stringify({
+        orgId: selectedOrgAccount.orgId,
+        accountId: selectedOrgAccount.accountId,
+      })
+    : "";
 
   const handleValueChange = (value: string) => {
     if (value === "all-orgs-accounts") {
       navigate("/organization-selection");
-    } else {
-      setSelectedOrgAccount(value);
-      // Get the organization ID from the accounts data by finding the matching account
-      const allAccounts = getAllAccounts();
-      const selectedAccount = allAccounts.find(
-        (account) =>
-          `${account.organization_id}-${account.account_id}` === value,
-      );
-      console.log("GlobalHeader: Selected value:", value);
-      console.log("GlobalHeader: Found account:", selectedAccount);
-      if (selectedAccount) {
-        console.log(
-          "GlobalHeader: Setting organization to:",
-          selectedAccount.organization_id,
-        );
-        setCurrentOrganization(selectedAccount.organization_id);
-      }
+      return;
     }
+
+    let parsed: { orgId: string; accountId: string };
+    try {
+      parsed = JSON.parse(value);
+    } catch (err) {
+      console.warn("⚠️ Failed to parse selection JSON:", value);
+      return;
+    }
+
+    const { orgId, accountId } = parsed;
+    const account = accountMetadata[accountId];
+    const organization = orgMetadata[orgId];
+
+    if (!account || !organization) {
+      console.warn("⚠️ Invalid selection — no matching org/account.", {
+        orgId,
+        accountId,
+      });
+      return;
+    }
+
+    const selection: SelectedOrgAccount = {
+      orgId,
+      accountId,
+      metadata: {
+        organization_name: organization.organization_name,
+        account_name: account.account_name,
+        industry: account.industry,
+        status: account.status,
+        timezone: account.timezone,
+        plan: organization.plan,
+      },
+    };
+
+    setSelectedOrgAccount(selection);
+    setCurrentOrganization(orgId);
   };
 
+
+
+
   return (
-    <Select value={selectedOrgAccount} onValueChange={handleValueChange}>
+    <Select value={currentValue} onValueChange={handleValueChange}>
       <SelectTrigger className="h-auto p-1 border-none shadow-none text-sm font-medium text-dashboard-gray-900 hover:bg-dashboard-gray-50 w-auto bg-transparent min-w-[200px]">
-        <SelectValue>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <Building className="h-3 w-3 text-dashboard-gray-500" />
-            </div>
-            <div className="truncate max-w-[180px]">
-              {currentSelection?.displayText || "Select Organization & Account"}
-            </div>
-          </div>
-        </SelectValue>
+        <SelectValue placeholder="Select Organization & Account" />
       </SelectTrigger>
       <SelectContent align="start" className="max-w-[300px]">
         {combinedOptions.map((option) => (
-          <SelectItem key={option.combinedId} value={option.combinedId}>
+          <SelectItem key={option.value} value={option.value}>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                <Building className="h-3 w-3" />
-              </div>
-              <div className="truncate">{option.displayText}</div>
+              <Building className="h-3 w-3" />
+              <div className="truncate">{option.label}</div>
             </div>
           </SelectItem>
         ))}
@@ -134,9 +166,7 @@ const OrganizationAccountDropdown = ({
           className="border-t border-gray-200 mt-1 pt-2"
         >
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <Building className="h-3 w-3" />
-            </div>
+            <Building className="h-3 w-3" />
             <div className="truncate">All Orgs and Accounts</div>
           </div>
         </SelectItem>
@@ -151,11 +181,12 @@ const GlobalHeader = ({
   setDateRange,
   comparisonDateRange,
   setComparisonDateRange = () => {},
-  selectedOrgAccount = "healthway-intellipure-b2c",
-  setSelectedOrgAccount = () => {},
+  selectedOrgAccount = null,
+  setSelectedOrgAccount,
 }: GlobalHeaderProps) => {
   const navigate = useNavigate();
-  const { logout, setCurrentOrganization } = useAuth();
+  const { logout, setCurrentOrganization, setSelectedOrgAccount: setAuthOrgAccount } = useAuth();
+  const { accountMetadata } = useAuth();
 
   // Calculate appropriate width and margin based on sidebar state
   const getContainerClasses = () => {
@@ -175,7 +206,10 @@ const GlobalHeader = ({
         <div className="flex items-center gap-3 flex-wrap">
           <OrganizationAccountDropdown
             selectedOrgAccount={selectedOrgAccount}
-            setSelectedOrgAccount={setSelectedOrgAccount}
+            setSelectedOrgAccount={(account) => {
+              setSelectedOrgAccount(account);
+              setAuthOrgAccount(account);
+            }}
           />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -319,18 +353,14 @@ const GlobalHeader = ({
                         } else if (item.id === "data-exploration") {
                           navigate("/exploration");
                         } else if (item.id === "settings") {
-                          // Extract organization ID from selected org-account combination
-                          const allAccounts = getAllAccounts();
-                          const selectedAccount = allAccounts.find(
-                            (account) =>
-                              `${account.organization_id}-${account.account_id}` ===
-                              selectedOrgAccount,
-                          );
+                          const selectedAccount =
+                            selectedOrgAccount?.accountId &&
+                            accountMetadata[selectedOrgAccount.accountId];
+
                           if (selectedAccount) {
-                            setCurrentOrganization(
-                              selectedAccount.organization_id,
-                            );
+                            setCurrentOrganization(selectedOrgAccount.orgId);
                           }
+
                           navigate("/account-settings");
                         } else {
                           console.log(`Navigate to ${item.name}`);

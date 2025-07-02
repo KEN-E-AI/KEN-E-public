@@ -13,6 +13,9 @@ dependencies = [
     "requests>=2.32.0",
     "rich>=13.0.0",
     "httpx>=0.28.1",
+    "python-dateutil>=2.9.0.post0",
+    "python-multipart>=0.0.20",
+    "google-cloud-firestore>=2.21.0",
 ]
 
 [dependency-groups]
