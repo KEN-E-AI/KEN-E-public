@@ -39,9 +39,12 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const navigate = useNavigate();
   const {
+    user,
     setSelectedOrgAccount,
     completeWorkspaceSelection,
     setCurrentOrganization,
+    setOrgMetadata,
+    setAccountMetadata,
   } = useAuth();
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
@@ -51,7 +54,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const [orgsFromFirestore, setOrgsFromFirestore] = useState<Record<string, string>>({});
   const [accountsFromFirestore, setAccountsFromFirestore] = useState<Record<string, string>>({});
   const [loadingUserData, setLoadingUserData] = useState(true);
-  const [orgMetadata, setOrgMetadata] = useState<Record<string, any>>({});
+  const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>({});
 
   const [newOrgData, setNewOrgData] = useState({
     name: "",
@@ -64,8 +67,6 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     type: "",
     description: "",
   });
-
-  const { user } = useAuth();
   const FIRESTORE_USER_ID = user?.id;
 
   useEffect(() => {
@@ -108,7 +109,16 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       );
 
       const result = Object.fromEntries(entries);
-      setOrgMetadata(result);
+      setLocalOrgMetadata(result);
+      setOrgMetadata(result); // from context
+
+      const flattenedAccounts: Record<string, any> = {};
+      Object.values(result).forEach((org: any) => {
+        (org.accounts || []).forEach((acc: any) => {
+          flattenedAccounts[acc.account_id] = acc;
+        });
+      });
+      setAccountMetadata(flattenedAccounts); // from context
     };
 
     if (Object.keys(orgsFromFirestore).length > 0) {
@@ -117,7 +127,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   }, [orgsFromFirestore]);
 
   const organizationList = Object.entries(orgsFromFirestore).map(([orgId, permission]) => {
-    const metadata = orgMetadata[orgId] || {};
+    const metadata = localOrgMetadata[orgId] || {};
     return {
       organization_id: orgId,
       organization_name: metadata.organization_name || orgId.replace(/-/g, " "),
@@ -127,7 +137,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   });
 
   const getAccountsByOrganizationId = (orgId: string) => {
-    const orgAccounts: any[] = orgMetadata[orgId]?.accounts || [];
+    const orgAccounts: any[] = localOrgMetadata[orgId]?.accounts || [];
 
     return orgAccounts
       .filter((account) => account.account_id in accountsFromFirestore)
@@ -154,15 +164,72 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     navigate("/create-organization");
   };
 
-  const handleCreateAccount = () => {
-    setIsLoading(true);
-    // Simulate account creation
-    setTimeout(() => {
-      setIsLoading(false);
+  const handleCreateAccount = async () => {
+    if (!selectedOrganization) {
+      alert("Please select an organization first.");
+      return;
+    }
+
+    if (!newAccountData.name || !newAccountData.type) {
+      alert("Please fill in all required fields");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      const newAccountId = newAccountData.name
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+
+      const newAccount = {
+        account_id: newAccountId,
+        account_name: newAccountData.name,
+        account_type: newAccountData.type,
+        description: newAccountData.description,
+        industry: "Unknown", // placeholder if not available
+        status: "Active",
+        timezone: "America/New_York",
+        data_region: "United States",
+        region: [],
+        websites: [],
+      };
+
+      await axios.put(
+        `${API_BASE_URL}/api/v1/firestore/documents/organizations/${selectedOrganization}?account_id=${selectedOrganization}`,
+        {
+          update: {
+            field: "accounts",
+            operator: "arrayUnion",
+            value: newAccount,
+          },
+        }
+      );
+
+      // Optionally update local org/account state (optional but good UX)
+      const updatedOrg = { ...localOrgMetadata[selectedOrganization] };
+      updatedOrg.accounts = [...(updatedOrg.accounts || []), newAccount];
+      setLocalOrgMetadata((prev) => ({
+        ...prev,
+        [selectedOrganization]: updatedOrg,
+      }));
+
+      setAccountMetadata((prev) => ({
+        ...prev,
+        [newAccountId]: newAccount,
+      }));
+
       setShowCreateAccount(false);
       setNewAccountData({ name: "", type: "", description: "" });
-    }, 1500);
+      alert(`Account "${newAccount.account_name}" created successfully!`);
+    } catch (err) {
+      console.error("Failed to create account", err);
+      alert("Error creating account. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
 
   const handleContinue = () => {
     if (selectedOrganization && selectedAccount) {
@@ -170,10 +237,23 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       // Simulate selection processing
       setTimeout(() => {
         // Create the combined org-account ID for the dropdown
-        const combinedId = `${selectedOrganization}-${selectedAccount}`;
+        const org = localOrgMetadata[selectedOrganization];
+        const account = org?.accounts?.find(
+          (a: any) => a.account_id === selectedAccount
+        );
 
-        // Save the selection in AuthContext
-        setSelectedOrgAccount(combinedId);
+        setSelectedOrgAccount({
+          orgId: selectedOrganization,
+          accountId: selectedAccount,
+          metadata: {
+            organization_name: org?.organization_name || selectedOrganization,
+            account_name: account?.account_name || selectedAccount,
+            industry: account?.industry || "Unknown",
+            status: account?.status || "Active",
+            timezone: account?.timezone,
+            plan: org?.plan,
+          },
+        });
         setCurrentOrganization(selectedOrganization);
         completeWorkspaceSelection();
 
@@ -195,7 +275,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     setSelectedOrganization(orgId);
   };
 
-  if (loadingUserData || Object.keys(orgMetadata).length === 0) {
+  if (loadingUserData || Object.keys(localOrgMetadata).length === 0) {
     return <div className="text-center py-10 text-gray-500">Loading organizations...</div>;
   }
 
