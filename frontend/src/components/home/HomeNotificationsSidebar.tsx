@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Bell } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,7 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { notifications, type Notification } from "@/data/notificationData";
+import { useAuth } from "@/contexts/AuthContext";
+import { iconMap } from "@/lib/iconMap";
 
 interface HomeNotificationsSidebarProps {
   isCollapsed: boolean;
@@ -20,6 +22,7 @@ const HomeNotificationsSidebar: React.FC<HomeNotificationsSidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
 }) => {
+  const { notifications } = useAuth();
   return (
     <div
       className={cn(
@@ -54,7 +57,8 @@ const HomeNotificationsSidebar: React.FC<HomeNotificationsSidebarProps> = ({
           {/* Notifications List */}
           <div className="rounded-r-lg overflow-hidden border border-[#E2E8F0]">
             {notifications.map((notification, index) => {
-              const IconComponent = notification.data.icon;
+              const iconName = notification.data.icon;
+              const IconComponent = iconMap[iconName] || Bell;
               return (
                 <div
                   key={notification.id}
@@ -94,7 +98,8 @@ const HomeNotificationsSidebar: React.FC<HomeNotificationsSidebarProps> = ({
         <div className="h-[calc(100%-4rem)] overflow-y-auto p-2">
           <div className="space-y-2">
             {notifications.slice(0, 6).map((notification) => {
-              const IconComponent = notification.data.icon;
+              const iconName = notification.data.icon;
+              const IconComponent = iconMap[iconName] || Bell;
               return (
                 <div
                   key={notification.id}
