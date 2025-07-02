@@ -324,27 +324,136 @@ async def update_document(
     """
     Update a document in Firestore.
     
-    Updates an existing document with the provided data.
+    Updates an existing document with the provided data. Supports three modes:
+    
+    1. Direct update (existing functionality):
+       data = {"field1": "value1", "field2": "value2"}
+    
+    2. Array union operation:
+       data = {
+         "update": {
+           "field": "field_name",
+           "operator": "arrayUnion",
+           "value": {...object_to_add...}
+         }
+       }
+    
+    3. Replace array element:
+       data = {
+         "update": {
+           "field": "field_name", 
+           "operator": "replaceOne",
+           "matchField": "id_field",
+           "matchValue": "id_value",
+           "value": {...replacement_object...}
+         }
+       }
     """
     try:
-        # Check Firestore connectivity
+        # First validate the request payload structure before checking Firestore
+        if "update" in data and isinstance(data["update"], dict):
+            update_config = data["update"]
+            operator = update_config.get("operator")
+            
+            if operator == "arrayUnion":
+                # Validate arrayUnion parameters
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                if not field or value is None:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="arrayUnion operation requires 'field' and 'value' parameters"
+                    )
+                    
+            elif operator == "replaceOne":
+                # Validate replaceOne parameters
+                field = update_config.get("field")
+                match_field = update_config.get("matchField")
+                match_value = update_config.get("matchValue")
+                value = update_config.get("value")
+                
+                if not all([field, match_field, match_value is not None, value is not None]):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters"
+                    )
+                    
+            elif operator and operator not in ["arrayUnion", "replaceOne"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                )
+
+        # Check Firestore connectivity after parameter validation
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Update document
-        success = firestore.update_document(
-            collection=collection,
-            document_id=document_id,
-            data=data
-        )
+        # Process the validated operation
+        if "update" in data and isinstance(data["update"], dict):
+            update_config = data["update"]
+            operator = update_config.get("operator")
+            
+            if operator == "arrayUnion":
+                # Handle array union operation
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                # Type assertion: we've already validated these are not None
+                assert field is not None and value is not None
+                
+                success = firestore.array_union_document(
+                    collection=collection,
+                    document_id=document_id,
+                    field=field,
+                    value=value
+                )
+                
+                operation_desc = f"Array union operation on field '{field}'"
+                
+            elif operator == "replaceOne":
+                # Handle replace one operation
+                field = update_config.get("field")
+                match_field = update_config.get("matchField")
+                match_value = update_config.get("matchValue")
+                value = update_config.get("value")
+                
+                # Type assertion: we've already validated these are not None  
+                assert field is not None and match_field is not None
+                assert match_value is not None and value is not None
+                
+                success = firestore.replace_array_element(
+                    collection=collection,
+                    document_id=document_id,
+                    field=field,
+                    match_field=match_field,
+                    match_value=match_value,
+                    new_value=value
+                )
+                
+                operation_desc = f"Replace operation on field '{field}' where {match_field}={match_value}"
+                
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                )
+        else:
+            # Handle standard document update (existing functionality)
+            success = firestore.update_document(
+                collection=collection,
+                document_id=document_id,
+                data=data
+            )
+            operation_desc = "Document update"
         
         if not success:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(status_code=404, detail="Document not found or operation failed")
 
         return SuccessResponse(
             success=True,
-            message=f"Document {document_id} updated successfully"
+            message=f"Document {document_id} updated successfully - {operation_desc}"
         )
 
     except HTTPException:

@@ -16,6 +16,8 @@ def mock_firestore_service():
     mock_service.create_document.return_value = "test_doc_id"
     mock_service.get_document.return_value = {"test_field": "test_value"}
     mock_service.update_document.return_value = True
+    mock_service.array_union_document.return_value = True
+    mock_service.replace_array_element.return_value = True
     mock_service.delete_document.return_value = True
     mock_service.list_documents.return_value = [{"id": "doc1", "data": "value1"}]
     mock_service.query_documents.return_value = [{"id": "doc2", "data": "value2"}]
@@ -180,6 +182,251 @@ class TestFirestoreRouter:
 
         assert response.status_code == 404
         assert "Document not found" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_document_success(self, client, mock_firestore_service):
+        """Test arrayUnion operation successfully."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts",
+                "value": {"account_id": "new_account", "name": "New Account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Array union operation on field 'accounts'" in data["message"]
+
+        mock_firestore_service.health_check.assert_called_once()
+        mock_firestore_service.array_union_document.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field="accounts",
+            value={"account_id": "new_account", "name": "New Account"}
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_missing_field(self, client, mock_firestore_service):
+        """Test arrayUnion operation with missing field parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "value": {"account_id": "new_account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "arrayUnion operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_missing_value(self, client, mock_firestore_service):
+        """Test arrayUnion operation with missing value parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "arrayUnion operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_replace_one_document_success(self, client, mock_firestore_service):
+        """Test replaceOne operation successfully."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "replaceOne",
+                "field": "accounts",
+                "matchField": "account_id",
+                "matchValue": "acc_001",
+                "value": {"account_id": "acc_001", "name": "Updated Account", "status": "premium"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Replace operation on field 'accounts' where account_id=acc_001" in data["message"]
+
+        mock_firestore_service.health_check.assert_called_once()
+        mock_firestore_service.replace_array_element.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field="accounts",
+            match_field="account_id",
+            match_value="acc_001",
+            new_value={"account_id": "acc_001", "name": "Updated Account", "status": "premium"}
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_replace_one_missing_parameters(self, client, mock_firestore_service):
+        """Test replaceOne operation with missing parameters."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "replaceOne",
+                "field": "accounts",
+                "matchField": "account_id"
+                # Missing matchValue and value
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_replace_one_not_found(self, client, mock_firestore_service):
+        """Test replaceOne operation when target element is not found."""
+        mock_firestore_service.replace_array_element.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "replaceOne",
+                "field": "accounts",
+                "matchField": "account_id",
+                "matchValue": "nonexistent_id",
+                "value": {"account_id": "nonexistent_id", "name": "Updated Account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 404
+        assert "Document not found or operation failed" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_invalid_update_operator(self, client, mock_firestore_service):
+        """Test update operation with invalid operator."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "invalidOperator",
+                "field": "accounts",
+                "value": {"test": "value"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "Unsupported update operator: invalidOperator" in response.json()["detail"]
+        assert "Supported operators: arrayUnion, replaceOne" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_firestore_unavailable(self, client, mock_firestore_service):
+        """Test arrayUnion operation when Firestore is unavailable."""
+        mock_firestore_service.health_check.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts",
+                "value": {"account_id": "new_account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 503
+        assert "Firestore service unavailable" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_operation_failed(self, client, mock_firestore_service):
+        """Test arrayUnion operation when the operation fails."""
+        mock_firestore_service.array_union_document.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts",
+                "value": {"account_id": "new_account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 404
+        assert "Document not found or operation failed" in response.json()["detail"]
 
         # Clean up
         app.dependency_overrides.clear()
@@ -1375,6 +1622,251 @@ class TestTacticEndpoints:
         assert response.status_code == 400
         data = response.json()
         assert "big_bet_name is required" in data["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_document_success(self, client, mock_firestore_service):
+        """Test arrayUnion operation successfully."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts",
+                "value": {"account_id": "new_account", "name": "New Account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Array union operation on field 'accounts'" in data["message"]
+
+        mock_firestore_service.health_check.assert_called_once()
+        mock_firestore_service.array_union_document.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field="accounts",
+            value={"account_id": "new_account", "name": "New Account"}
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_missing_field(self, client, mock_firestore_service):
+        """Test arrayUnion operation with missing field parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "value": {"account_id": "new_account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "arrayUnion operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_missing_value(self, client, mock_firestore_service):
+        """Test arrayUnion operation with missing value parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "arrayUnion operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_replace_one_document_success(self, client, mock_firestore_service):
+        """Test replaceOne operation successfully."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "replaceOne",
+                "field": "accounts",
+                "matchField": "account_id",
+                "matchValue": "acc_001",
+                "value": {"account_id": "acc_001", "name": "Updated Account", "status": "premium"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Replace operation on field 'accounts' where account_id=acc_001" in data["message"]
+
+        mock_firestore_service.health_check.assert_called_once()
+        mock_firestore_service.replace_array_element.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field="accounts",
+            match_field="account_id",
+            match_value="acc_001",
+            new_value={"account_id": "acc_001", "name": "Updated Account", "status": "premium"}
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_replace_one_missing_parameters(self, client, mock_firestore_service):
+        """Test replaceOne operation with missing parameters."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "replaceOne",
+                "field": "accounts",
+                "matchField": "account_id"
+                # Missing matchValue and value
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_replace_one_not_found(self, client, mock_firestore_service):
+        """Test replaceOne operation when target element is not found."""
+        mock_firestore_service.replace_array_element.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "replaceOne",
+                "field": "accounts",
+                "matchField": "account_id",
+                "matchValue": "nonexistent_id",
+                "value": {"account_id": "nonexistent_id", "name": "Updated Account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 404
+        assert "Document not found or operation failed" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_invalid_update_operator(self, client, mock_firestore_service):
+        """Test update operation with invalid operator."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "invalidOperator",
+                "field": "accounts",
+                "value": {"test": "value"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "Unsupported update operator: invalidOperator" in response.json()["detail"]
+        assert "Supported operators: arrayUnion, replaceOne" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_firestore_unavailable(self, client, mock_firestore_service):
+        """Test arrayUnion operation when Firestore is unavailable."""
+        mock_firestore_service.health_check.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts",
+                "value": {"account_id": "new_account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 503
+        assert "Firestore service unavailable" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_array_union_operation_failed(self, client, mock_firestore_service):
+        """Test arrayUnion operation when the operation fails."""
+        mock_firestore_service.array_union_document.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "arrayUnion",
+                "field": "accounts",
+                "value": {"account_id": "new_account"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 404
+        assert "Document not found or operation failed" in response.json()["detail"]
 
         # Clean up
         app.dependency_overrides.clear()

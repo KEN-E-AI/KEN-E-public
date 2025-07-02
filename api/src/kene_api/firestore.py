@@ -1140,6 +1140,84 @@ class FirestoreService:
             print(f"Error deleting tactic: {e}")
             return False
 
+    # Array Operations
+    
+    def array_union_document(self, collection: str, document_id: str, field: str, value: Any) -> bool:
+        """
+        Add a value to an array field in a document using arrayUnion operation.
+        
+        Args:
+            collection: Collection name
+            document_id: Document ID
+            field: Field name (must be an array field)
+            value: Value to add to the array
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = self._db.collection(collection).document(document_id)
+            # Use Firestore's arrayUnion operation
+            doc_ref.update({
+                field: firestore.ArrayUnion([value])
+            })
+            return True
+        except NotFound:
+            return False
+
+    def replace_array_element(self, collection: str, document_id: str, field: str, 
+                             match_field: str, match_value: Any, new_value: Dict[str, Any]) -> bool:
+        """
+        Replace an element in an array field where a sub-field matches a value.
+        
+        Args:
+            collection: Collection name
+            document_id: Document ID
+            field: Field name (must be an array field)
+            match_field: Sub-field to match within array elements
+            match_value: Value to match in the sub-field
+            new_value: New value to replace the matched element
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = self._db.collection(collection).document(document_id)
+            doc = doc_ref.get()
+            
+            if not doc.exists:
+                return False
+                
+            doc_data = doc.to_dict()
+            if not doc_data or field not in doc_data or not isinstance(doc_data[field], list):
+                return False
+                
+            # Find and replace the matching element
+            array_field = doc_data[field]
+            found = False
+            
+            for i, item in enumerate(array_field):
+                if isinstance(item, dict) and item.get(match_field) == match_value:
+                    array_field[i] = new_value
+                    found = True
+                    break
+                    
+            if not found:
+                return False
+                
+            # Update the document with the modified array
+            doc_ref.update({field: array_field})
+            return True
+            
+        except NotFound:
+            return False
+
 # Global Firestore service instance
 firestore_service = FirestoreService()
 
