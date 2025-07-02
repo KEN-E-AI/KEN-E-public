@@ -113,7 +113,7 @@ const AccountsManagement = ({
   orgData,
   currentOrgId,
 }: AccountsManagementProps) => {
-  const { accountMetadata, setAccountMetadata } = useAuth();
+  const { accountMetadata, setAccountMetadata, user } = useAuth();
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -170,14 +170,14 @@ const AccountsManagement = ({
     region: [] as string[],
   });
 
-  // Get accounts for current organization
   const organizationAccounts = useMemo(() => {
-    if (!orgData?.accounts) return [];
+    if (!orgData?.accounts || !user?.permissions?.accounts) return [];
 
     return orgData.accounts
+      .filter((a: any) => user.permissions.accounts?.[a.account_id])
       .map((a: any) => accountMetadata[a.account_id])
-      .filter(Boolean); // removes undefined
-  }, [orgData, accountMetadata]);
+      .filter(Boolean); // remove undefined
+  }, [orgData, accountMetadata, user]);
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
