@@ -286,6 +286,7 @@ const AccountsManagement = ({
       const newAccount = {
         ...createAccountFormData,
         account_id: newAccountId,
+        organization_id: currentOrgId,
       };
 
       // 🔁 PATCH the organization to add a new account
