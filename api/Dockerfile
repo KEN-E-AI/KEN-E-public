@@ -22,7 +22,7 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-COPY google-cloud-service-account-key.json ./google-cloud-service-account-key.json
+# COPY google-cloud-service-account-key.json ./google-cloud-service-account-key.json
 
 # Development stage
 FROM base AS development
