@@ -1,3 +1,5 @@
+import { useState } from "react";
+import axios from "axios";
 import Layout from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,30 +15,56 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { User, Bell, Shield, Globe, Moon, Sun } from "lucide-react";
-import {
-  userSettingsData,
-  getUserProfile,
-  getNotificationSettings,
-  getSecuritySettings,
-  getPreferenceSettings,
-} from "@/data";
+import { useAuth } from "@/contexts/AuthContext";
 
 const UserSettings = () => {
-  const profile = getUserProfile();
-  const notificationSettings = getNotificationSettings();
-  const securitySettings = getSecuritySettings();
-  const preferenceSettings = getPreferenceSettings();
+  const { user, notificationSettings, securitySettings } = useAuth();
+  const [profile, setProfile] = useState({
+    firstName: user?.firstName || "",
+    lastName: user?.lastName || "",
+    email: user?.email || "",
+    jobTitle: user?.jobTitle || "",
+  });
+  const [preferences, setPreferences] = useState(user?.preferences || {});
+   
+  if (!user) return <div>Loading...</div>;
+
+  const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setProfile({ ...profile, [e.target.id]: e.target.value });
+  };
+
+  const handlePreferenceChange = (key: string, value: string) => {
+    setPreferences({ ...preferences, [key]: value });
+  };
+
+  const saveProfile = async () => {
+    try {
+      await axios.put(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}`, {
+        profile: {
+          first_name: profile.firstName,
+          last_name: profile.lastName,
+          email: profile.email,
+          job_title: profile.jobTitle,
+        },
+        preferences,
+      });
+      alert("Profile saved successfully!");
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      alert("Failed to save profile.");
+    }
+  };
 
   return (
-    <Layout pageTitle={userSettingsData.page_title}>
+    <Layout pageTitle="User Settings">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-dashboard-gray-900">
-            {userSettingsData.header.title}
+            User Settings
           </h1>
           <p className="text-dashboard-gray-600 mt-2">
-            {userSettingsData.header.description}
+            Manage your personal preferences and user settings
           </p>
         </div>
 
@@ -54,28 +82,28 @@ const UserSettings = () => {
                 <Label htmlFor="firstName" className="mr-auto">
                   First Name
                 </Label>
-                <Input id="firstName" defaultValue={profile.first_name} />
+                <Input id="firstName" defaultValue={profile.firstName} onChange={handleProfileChange} />
               </div>
               <div className="flex flex-col">
                 <Label htmlFor="lastName" className="mr-auto">
                   Last Name
                 </Label>
-                <Input id="lastName" defaultValue={profile.last_name} />
+                <Input id="lastName" defaultValue={profile.lastName} onChange={handleProfileChange} />
               </div>
             </div>
             <div className="flex flex-col">
               <Label htmlFor="email" className="mr-auto">
                 Email Address
               </Label>
-              <Input id="email" type="email" defaultValue={profile.email} />
+              <Input id="email" type="email" defaultValue={profile.email} onChange={handleProfileChange} />
             </div>
             <div className="flex flex-col">
               <Label htmlFor="title" className="mr-auto">
                 Job Title
               </Label>
-              <Input id="title" defaultValue={profile.job_title} />
+              <Input id="title" defaultValue={profile.jobTitle} onChange={handleProfileChange} />
             </div>
-            <Button>Save Changes</Button>
+            <Button onClick={saveProfile}>Save Changes</Button>
           </CardContent>
         </Card>
 
@@ -138,12 +166,12 @@ const UserSettings = () => {
                         {setting.action_text}
                       </Button>
                     )}
-                    {setting.action_type === "switch" && (
+                    {/* {setting.action_type === "switch" && (
                       <Switch
                         defaultChecked={setting.enabled}
                         className="flex-shrink-0"
                       />
-                    )}
+                    )} */}
                   </div>
                   {index < securitySettings.length - 1 && <Separator />}
                 </div>
@@ -161,46 +189,49 @@ const UserSettings = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-4">
-              {preferenceSettings.map((setting, index) => (
-                <div key={setting.id}>
-                  <div
-                    className={`flex items-center flex-wrap gap-4 mb-2 ${setting.id === "theme" ? "justify-start" : "justify-between"}`}
-                  >
-                    <div className="flex flex-col min-w-0 flex-1 justify-center items-start">
-                      <Label className="mr-auto">{setting.label}</Label>
-                      <p className="text-sm text-dashboard-gray-600">
-                        {setting.description}
-                      </p>
-                    </div>
-                    <Select defaultValue={setting.value}>
-                      <SelectTrigger className="w-[150px] flex-shrink-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {setting.options.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.icon ? (
-                              <div className="flex items-center gap-2">
-                                {option.icon === "sun" && (
-                                  <Sun className="h-4 w-4" />
-                                )}
-                                {option.icon === "moon" && (
-                                  <Moon className="h-4 w-4" />
-                                )}
-                                {option.label}
-                              </div>
-                            ) : (
-                              option.label
-                            )}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {index < preferenceSettings.length - 1 && <Separator />}
-                </div>
-              ))}
+            <div className="flex items-center justify-between">
+              <Label>Language</Label>
+              <Select
+                defaultValue={preferences.language || "en"}
+                onValueChange={(value) => handlePreferenceChange("language", value)}
+              >
+                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="es">Español</SelectItem>
+                  <SelectItem value="fr">Français</SelectItem>
+                  <SelectItem value="de">Deutsch</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <Label>Theme</Label>
+              <Select
+                defaultValue={preferences.theme || "light"}
+                onValueChange={(value) => handlePreferenceChange("theme", value)}
+              >
+                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light"><Sun className="inline h-4 w-4 mr-2" />Light</SelectItem>
+                  <SelectItem value="dark"><Moon className="inline h-4 w-4 mr-2" />Dark</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <Label>Date Format</Label>
+              <Select
+                defaultValue={preferences.date_format || "mm-dd-yyyy"}
+                onValueChange={(value) => handlePreferenceChange("date_format", value)}
+              >
+                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mm-dd-yyyy">MM/DD/YYYY</SelectItem>
+                  <SelectItem value="dd-mm-yyyy">DD/MM/YYYY</SelectItem>
+                  <SelectItem value="yyyy-mm-dd">YYYY-MM-DD</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>

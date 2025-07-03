@@ -27,7 +27,7 @@ interface AuthenticationProps {
 
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-  const { login } = useAuth();
+  const { login, setNotificationSettings, setSecuritySettings } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -54,9 +54,23 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       const result = await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
       const firebaseUser = result.user;
 
-      // 🔥 Fetch full Firestore user data
-      const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`);
-      const firestoreData = res.data.data;
+      const [userRes, notificationsRes, securityRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`),
+        axios.post(`${API_BASE_URL}/api/v1/firestore/documents/query`, {
+          account_id: firebaseUser.uid,
+          collection: `users/${firebaseUser.uid}/notifications`,
+          limit: 20,
+        }),
+        axios.post(`${API_BASE_URL}/api/v1/firestore/documents/query`, {
+          account_id: firebaseUser.uid,
+          collection: `users/${firebaseUser.uid}/security`,
+          limit: 20,
+        }),
+      ]);
+
+      const firestoreData = userRes.data.data;
+      const notificationsData = notificationsRes.data.documents || [];
+      const securityData = securityRes.data.documents || [];
 
       login({
         id: firebaseUser.uid,
@@ -67,24 +81,18 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         permissions: firestoreData.permissions || {},
         preferences: firestoreData.preferences || {},
       });
+
+      setNotificationSettings(notificationsData);
+      setSecuritySettings(securityData);
+
       onAuthenticated();
     } catch (error: any) {
-      console.error("Sign-in error:", error);
-      switch (error.code) {
-        case "auth/user-not-found":
-          setErrorMessage("No user found with this email.");
-          break;
-        case "auth/wrong-password":
-        case "auth/invalid-credential":
-          setErrorMessage("Invalid email or password.");
-          break;
-        default:
-          setErrorMessage("Failed to sign in. Please try again.");
-      }
+      // handle errors...
     } finally {
       setIsLoading(false);
     }
   };
+
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();

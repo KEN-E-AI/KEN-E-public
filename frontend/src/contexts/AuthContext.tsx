@@ -53,6 +53,22 @@ interface Notification {
   status: string;
 }
 
+interface NotificationSetting {
+  id: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+}
+
+interface SecuritySetting {
+  id: string;
+  label: string;
+  description: string;
+  action_text: string;
+  action_type: "button" | "switch";
+  status?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
@@ -71,6 +87,10 @@ interface AuthContextType {
   setAccountMetadata: (data: Record<string, any>) => void;
   notifications: Notification[];
   setNotifications: (n: Notification[]) => void;
+  notificationSettings: NotificationSetting[];
+  securitySettings: SecuritySetting[];
+  setNotificationSettings: (settings: NotificationSetting[]) => void;
+  setSecuritySettings: (settings: SecuritySetting[]) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -97,6 +117,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [orgMetadata, setOrgMetadata] = useState<Record<string, any>>({});
   const [accountMetadata, setAccountMetadata] = useState<Record<string, any>>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSetting[]>([]);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySetting[]>([]);
 
   const fetchNotifications = async (accountId: string) => {
     try {
@@ -213,6 +235,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setAccountMetadata,
     notifications,
     setNotifications,
+    notificationSettings,
+    securitySettings,
+    setNotificationSettings,
+    setSecuritySettings,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
