@@ -156,7 +156,7 @@ steps:
         VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY},\
         VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN},\
         VITE_API_BASE_URL=${_VITE_API_BASE_URL}
-        
+
   - name: "gcr.io/cloud-builders/docker"
     id: build-api-image
     dir: api
@@ -190,17 +190,7 @@ steps:
           --allow-unauthenticated \
           --memory=512Mi \
           --port=8000 \
-          --set-env-vars \
-            DEBUG=false,\
-            HOST=0.0.0.0,\
-            NEO4J_URI=${_NEO4J_URI},\
-            NEO4J_USERNAME=${_NEO4J_USERNAME},\
-            NEO4J_PASSWORD=${_NEO4J_PASSWORD},\
-            NEO4J_DATABASE=${_NEO4J_DATABASE},\
-            GOOGLE_APPLICATION_CREDENTIALS=api/google-cloud-service-account-key.json,\
-            GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},\
-            FIRESTORE_DATABASE_ID="(default)",\
-            LOG_LEVEL=INFO
+          --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_APPLICATION_CREDENTIALS=api/google-cloud-service-account-key.json,GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO"
     secretEnv: ['_GCLOUD_SA_KEY_JSON']
 
 
