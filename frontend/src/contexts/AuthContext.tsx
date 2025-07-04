@@ -77,6 +77,7 @@ interface AuthContextType {
   selectedOrgAccount: SelectedOrgAccount | null;
   login: (user: User) => void;
   logout: () => void;
+  updateUser: (updates: Partial<User>) => void;
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
   setCurrentOrganization: (orgId: string) => void;
@@ -148,6 +149,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(userData);
     // In a real app, you'd also store the auth token
     localStorage.setItem("user", JSON.stringify(userData));
+  };
+
+  const updateUser = (updates: Partial<User>) => {
+    setUser(prev => {
+      const merged = { ...prev, ...updates };
+      localStorage.setItem("user", JSON.stringify(merged));
+      return merged;
+    });
   };
 
   const logout = () => {
@@ -225,6 +234,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     selectedOrgAccount,
     login,
     logout,
+    updateUser,
     completeWorkspaceSelection,
     resetWorkspaceSelection,
     setCurrentOrganization,

@@ -18,7 +18,7 @@ import { User, Bell, Shield, Globe, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const UserSettings = () => {
-  const { user, notificationSettings, securitySettings } = useAuth();
+  const { user, notificationSettings, securitySettings, updateUser, setNotificationSettings } = useAuth();
   const [profile, setProfile] = useState({
     firstName: user?.firstName || "",
     lastName: user?.lastName || "",
@@ -48,7 +48,7 @@ const UserSettings = () => {
 
   const saveProfile = async () => {
     try {
-      await axios.put(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}`, {
+      await axios.put(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}?account_id=${user.id}`, {
         profile: {
           first_name: profile.firstName,
           last_name: profile.lastName,
@@ -57,6 +57,15 @@ const UserSettings = () => {
         },
         preferences,
       });
+
+      updateUser({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        jobTitle: profile.jobTitle,
+        preferences,
+      });
+
       alert("Profile saved successfully!");
     } catch (error) {
       console.error("Error saving profile:", error);
@@ -69,11 +78,13 @@ const UserSettings = () => {
       await Promise.all(
         localNotificationSettings.map(setting =>
           axios.put(
-            `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}/notifications/${setting.id}`,
-            { enabled: setting.enabled },
-          ),
-        ),
+            `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}/notifications/${setting.id}?account_id=${user.id}`,
+            { enabled: setting.enabled }
+          )
+        )
       );
+
+      setNotificationSettings(localNotificationSettings);
 
       alert("Notification settings updated successfully!");
     } catch (error) {
@@ -81,6 +92,7 @@ const UserSettings = () => {
       alert("Failed to save notification settings.");
     }
   };
+
 
   return (
     <Layout pageTitle="User Settings">
@@ -109,26 +121,26 @@ const UserSettings = () => {
                 <Label htmlFor="firstName" className="mr-auto">
                   First Name
                 </Label>
-                <Input id="firstName" defaultValue={profile.firstName} onChange={handleProfileChange} />
+                <Input id="firstName" value={profile.firstName} onChange={handleProfileChange} />
               </div>
               <div className="flex flex-col">
                 <Label htmlFor="lastName" className="mr-auto">
                   Last Name
                 </Label>
-                <Input id="lastName" defaultValue={profile.lastName} onChange={handleProfileChange} />
+                <Input id="lastName" value={profile.lastName} onChange={handleProfileChange} />
               </div>
             </div>
             <div className="flex flex-col">
               <Label htmlFor="email" className="mr-auto">
                 Email Address
               </Label>
-              <Input id="email" type="email" defaultValue={profile.email} onChange={handleProfileChange} />
+              <Input id="email" type="email" value={profile.email} onChange={handleProfileChange} />
             </div>
             <div className="flex flex-col">
-              <Label htmlFor="title" className="mr-auto">
+              <Label htmlFor="jobTitle" className="mr-auto">
                 Job Title
               </Label>
-              <Input id="title" defaultValue={profile.jobTitle} onChange={handleProfileChange} />
+              <Input id="title" value={profile.jobTitle} onChange={handleProfileChange} />
             </div>
             <Button onClick={saveProfile}>Save Changes</Button>
           </CardContent>
