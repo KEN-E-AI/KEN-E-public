@@ -197,7 +197,7 @@ steps:
 
 
 substitutions:
-  _STAGING_PROJECT_ID: YOUR_STAGING_PROJECT_ID
+  _STAGING_PROJECT_ID: ken-e-staging
   _BUCKET_NAME_LOAD_TEST_RESULTS: ${PROJECT_ID}-cicd-load-test-results
   _REGION: us-central1
   _DATA_STORE_REGION: us
