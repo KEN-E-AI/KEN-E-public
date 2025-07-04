@@ -45,17 +45,17 @@ class FirestoreService:
             if not project_id:
                 raise ValueError("Firestore configuration missing. Check GOOGLE_CLOUD_PROJECT_ID")
 
-            # Set credentials path if provided - resolve relative paths to absolute
-            if credentials_path:
-                if not os.path.isabs(credentials_path):
-                    # Convert relative path to absolute path
-                    credentials_path = os.path.abspath(credentials_path)
-                
-                if os.path.exists(credentials_path):
-                    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-                    print(f"Using Firestore credentials from: {credentials_path}")
-                else:
-                    raise ValueError(f"Credentials file not found: {credentials_path}")
+            # Ensure the credentials path is a file path, not raw JSON
+            if not credentials_path:
+                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS is not set")
+
+            if credentials_path.strip().startswith("{"):
+                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS appears to be a raw JSON string. Expected a file path. This usually means it was incorrectly passed via --set-env-vars instead of --set-secrets.")
+
+            if not os.path.isfile(credentials_path):
+                raise ValueError(f"Credentials file not found at: {credentials_path}")
+
+            print(f"Using Firestore credentials from: {credentials_path}")
 
             # Initialize Firestore client
             self._db = firestore.Client(project=project_id, database=database_id)
