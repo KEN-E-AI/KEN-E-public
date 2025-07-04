@@ -18,7 +18,7 @@ import { User, Bell, Shield, Globe, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const UserSettings = () => {
-  const { user, notificationSettings, securitySettings } = useAuth();
+  const { user, notificationSettings, securitySettings, updateUser, setNotificationSettings } = useAuth();
   const [profile, setProfile] = useState({
     firstName: user?.firstName || "",
     lastName: user?.lastName || "",
@@ -26,6 +26,7 @@ const UserSettings = () => {
     jobTitle: user?.jobTitle || "",
   });
   const [preferences, setPreferences] = useState(user?.preferences || {});
+  const [localNotificationSettings, setLocalNotificationSettings] = useState(notificationSettings);
    
   if (!user) return <div>Loading...</div>;
 
@@ -37,9 +38,17 @@ const UserSettings = () => {
     setPreferences({ ...preferences, [key]: value });
   };
 
+  const handleNotificationChange = (id: string, enabled: boolean) => {
+    setLocalNotificationSettings(prevSettings =>
+      prevSettings.map(setting =>
+        setting.id === id ? { ...setting, enabled } : setting,
+      ),
+    );
+  };
+
   const saveProfile = async () => {
     try {
-      await axios.put(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}`, {
+      await axios.put(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}?account_id=${user.id}`, {
         profile: {
           first_name: profile.firstName,
           last_name: profile.lastName,
@@ -48,12 +57,42 @@ const UserSettings = () => {
         },
         preferences,
       });
+
+      updateUser({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        jobTitle: profile.jobTitle,
+        preferences,
+      });
+
       alert("Profile saved successfully!");
     } catch (error) {
       console.error("Error saving profile:", error);
       alert("Failed to save profile.");
     }
   };
+
+  const saveNotificationSettings = async () => {
+    try {
+      await Promise.all(
+        localNotificationSettings.map(setting =>
+          axios.put(
+            `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}/notifications/${setting.id}?account_id=${user.id}`,
+            { enabled: setting.enabled }
+          )
+        )
+      );
+
+      setNotificationSettings(localNotificationSettings);
+
+      alert("Notification settings updated successfully!");
+    } catch (error) {
+      console.error("Error saving notification settings:", error);
+      alert("Failed to save notification settings.");
+    }
+  };
+
 
   return (
     <Layout pageTitle="User Settings">
@@ -82,26 +121,26 @@ const UserSettings = () => {
                 <Label htmlFor="firstName" className="mr-auto">
                   First Name
                 </Label>
-                <Input id="firstName" defaultValue={profile.firstName} onChange={handleProfileChange} />
+                <Input id="firstName" value={profile.firstName} onChange={handleProfileChange} />
               </div>
               <div className="flex flex-col">
                 <Label htmlFor="lastName" className="mr-auto">
                   Last Name
                 </Label>
-                <Input id="lastName" defaultValue={profile.lastName} onChange={handleProfileChange} />
+                <Input id="lastName" value={profile.lastName} onChange={handleProfileChange} />
               </div>
             </div>
             <div className="flex flex-col">
               <Label htmlFor="email" className="mr-auto">
                 Email Address
               </Label>
-              <Input id="email" type="email" defaultValue={profile.email} onChange={handleProfileChange} />
+              <Input id="email" type="email" value={profile.email} onChange={handleProfileChange} />
             </div>
             <div className="flex flex-col">
-              <Label htmlFor="title" className="mr-auto">
+              <Label htmlFor="jobTitle" className="mr-auto">
                 Job Title
               </Label>
-              <Input id="title" defaultValue={profile.jobTitle} onChange={handleProfileChange} />
+              <Input id="title" value={profile.jobTitle} onChange={handleProfileChange} />
             </div>
             <Button onClick={saveProfile}>Save Changes</Button>
           </CardContent>
@@ -111,32 +150,35 @@ const UserSettings = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notification Preferences
+              <Bell className="h-5 w-5" /> Notification Preferences
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              {notificationSettings.map((setting, index) => (
+              {localNotificationSettings.map((setting, index) => (
                 <div key={setting.id}>
-                  <div className="flex items-center justify-between flex-wrap gap-4 mb-2">
-                    <div className="flex flex-col min-w-0 flex-1 justify-center items-start">
-                      <Label className="mr-auto">{setting.label}</Label>
+                  <div className="flex items-center justify-between gap-4 mb-2">
+                    <div>
+                      <Label>{setting.label}</Label>
                       <p className="text-sm text-dashboard-gray-600">
                         {setting.description}
                       </p>
                     </div>
                     <Switch
-                      defaultChecked={setting.enabled}
-                      className="flex-shrink-0"
+                      checked={setting.enabled}
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange(setting.id, checked as boolean)
+                      }
                     />
                   </div>
-                  {index < notificationSettings.length - 1 && <Separator />}
+                  {index < localNotificationSettings.length - 1 && <Separator />}
                 </div>
               ))}
+              <Button onClick={saveNotificationSettings}>Save Notification Changes</Button>
             </div>
           </CardContent>
         </Card>
+
 
         {/* Security Settings */}
         <Card>

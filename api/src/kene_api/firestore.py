@@ -1218,6 +1218,214 @@ class FirestoreService:
         except NotFound:
             return False
 
+    # Subcollection Operations
+    
+    def get_subcollection_document(self, collection: str, document_id: str, 
+                                 subcollection: str, subdocument_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a document from a subcollection.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID
+            
+        Returns:
+            Optional[Dict[str, Any]]: Document data if found, None otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = (self._db.collection(collection)
+                      .document(document_id)
+                      .collection(subcollection)
+                      .document(subdocument_id))
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                return doc.to_dict()
+            else:
+                return None
+                
+        except Exception:
+            return None
+
+    def update_subcollection_document(self, collection: str, document_id: str,
+                                    subcollection: str, subdocument_id: str, 
+                                    data: Dict[str, Any]) -> bool:
+        """
+        Update a document in a subcollection.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID
+            data: Update data
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = (self._db.collection(collection)
+                      .document(document_id)
+                      .collection(subcollection)
+                      .document(subdocument_id))
+            doc_ref.update(data)
+            return True
+        except NotFound:
+            return False
+
+    def create_subcollection_document(self, collection: str, document_id: str,
+                                    subcollection: str, subdocument_id: Optional[str],
+                                    data: Dict[str, Any]) -> str:
+        """
+        Create a document in a subcollection.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID (auto-generated if None)
+            data: Document data
+            
+        Returns:
+            str: Document ID of created document
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        subcollection_ref = (self._db.collection(collection)
+                           .document(document_id)
+                           .collection(subcollection))
+        
+        if subdocument_id:
+            doc_ref = subcollection_ref.document(subdocument_id)
+            doc_ref.set(data)
+            return subdocument_id
+        else:
+            doc_ref = subcollection_ref.add(data)
+            return doc_ref[1].id  # doc_ref[1] is the DocumentReference
+
+    def delete_subcollection_document(self, collection: str, document_id: str,
+                                    subcollection: str, subdocument_id: str) -> bool:
+        """
+        Delete a document from a subcollection.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = (self._db.collection(collection)
+                      .document(document_id)
+                      .collection(subcollection)
+                      .document(subdocument_id))
+            doc_ref.delete()
+            return True
+        except Exception:
+            return False
+
+    def array_union_subcollection_document(self, collection: str, document_id: str,
+                                         subcollection: str, subdocument_id: str,
+                                         field: str, value: Any) -> bool:
+        """
+        Add a value to an array field in a subcollection document using arrayUnion.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID
+            field: Array field name
+            value: Value to add to the array
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = (self._db.collection(collection)
+                      .document(document_id)
+                      .collection(subcollection)
+                      .document(subdocument_id))
+            doc_ref.update({field: firestore.ArrayUnion([value])})
+            return True
+        except NotFound:
+            return False
+
+    def replace_array_element_subcollection(self, collection: str, document_id: str,
+                                          subcollection: str, subdocument_id: str,
+                                          field: str, match_field: str, match_value: Any,
+                                          new_value: Any) -> bool:
+        """
+        Replace an element in an array field of a subcollection document by matching a subfield.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID
+            field: Array field name
+            match_field: Field within array objects to match against
+            match_value: Value to match in the match_field
+            new_value: New value to replace the matched element
+            
+        Returns:
+            bool: True if successful, False if not found or no match
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = (self._db.collection(collection)
+                      .document(document_id)
+                      .collection(subcollection)
+                      .document(subdocument_id))
+            doc = doc_ref.get()
+            
+            if not doc.exists:
+                return False
+                
+            doc_data = doc.to_dict()
+            if field not in doc_data or not isinstance(doc_data[field], list):
+                return False
+                
+            # Find and replace the matching element
+            array_field = doc_data[field]
+            found = False
+            
+            for i, item in enumerate(array_field):
+                if isinstance(item, dict) and item.get(match_field) == match_value:
+                    array_field[i] = new_value
+                    found = True
+                    break
+                    
+            if not found:
+                return False
+                
+            # Update the document with the modified array
+            doc_ref.update({field: array_field})
+            return True
+            
+        except NotFound:
+            return False
+
 # Global Firestore service instance
 firestore_service = FirestoreService()
 
