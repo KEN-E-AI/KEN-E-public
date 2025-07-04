@@ -579,6 +579,299 @@ async def list_collection_documents(
         )
 
 
+# Subcollection Document Operations
+
+@router.post("/documents/{collection}/{document_id}/{subcollection}", response_model=FirestoreDocumentResponse)
+async def create_subcollection_document(
+    collection: str,
+    document_id: str,
+    subcollection: str,
+    data: Dict[str, Any],
+    subdocument_id: Optional[str] = Query(None, description="Subdocument ID (auto-generated if not provided)"),
+    account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> FirestoreDocumentResponse:
+    """
+    Create a document in a subcollection.
+    
+    Creates a new document in the specified subcollection within a parent document.
+    """
+    try:
+        # Check Firestore connectivity
+        is_healthy = firestore.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
+
+        # Create subcollection document
+        created_subdocument_id = firestore.create_subcollection_document(
+            collection=collection,
+            document_id=document_id,
+            subcollection=subcollection,
+            subdocument_id=subdocument_id,
+            data=data
+        )
+
+        return FirestoreDocumentResponse(
+            success=True,
+            document_id=created_subdocument_id,
+            data=data
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error creating subcollection document: {str(e)}"
+        )
+
+
+@router.get("/documents/{collection}/{document_id}/{subcollection}/{subdocument_id}", response_model=FirestoreDocumentResponse)
+async def get_subcollection_document(
+    collection: str,
+    document_id: str,
+    subcollection: str,
+    subdocument_id: str,
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> FirestoreDocumentResponse:
+    """
+    Get a document from a subcollection.
+    
+    Retrieves a document by its ID from the specified subcollection within a parent document.
+    """
+    try:
+        # Check Firestore connectivity
+        is_healthy = firestore.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
+
+        # Get subcollection document
+        doc_data = firestore.get_subcollection_document(
+            collection=collection,
+            document_id=document_id,
+            subcollection=subcollection,
+            subdocument_id=subdocument_id
+        )
+        
+        if doc_data is None:
+            raise HTTPException(status_code=404, detail=DOCUMENT_NOT_FOUND_MESSAGE)
+
+        return FirestoreDocumentResponse(
+            success=True,
+            document_id=subdocument_id,
+            data=doc_data
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving subcollection document: {str(e)}"
+        )
+
+
+@router.put("/documents/{collection}/{document_id}/{subcollection}/{subdocument_id}", response_model=SuccessResponse)
+async def update_subcollection_document(
+    collection: str,
+    document_id: str,
+    subcollection: str,
+    subdocument_id: str,
+    data: Dict[str, Any],
+    account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """
+    Update a document in a subcollection.
+    
+    Updates an existing document in the specified subcollection with the provided data. Supports three modes:
+    
+    1. Direct update (standard functionality):
+       data = {"field1": "value1", "field2": "value2"}
+    
+    2. Array union operation:
+       data = {
+         "update": {
+           "field": "field_name",
+           "operator": "arrayUnion",
+           "value": {...object_to_add...}
+         }
+       }
+    
+    3. Replace array element:
+       data = {
+         "update": {
+           "field": "field_name", 
+           "operator": "replaceOne",
+           "matchField": "id_field",
+           "matchValue": "id_value",
+           "value": {...replacement_object...}
+         }
+       }
+    """
+    try:
+        # First validate the request payload structure before checking Firestore
+        if "update" in data and isinstance(data["update"], dict):
+            update_config = data["update"]
+            operator = update_config.get("operator")
+            
+            if operator == "arrayUnion":
+                # Validate arrayUnion parameters
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                if not field or value is None:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="arrayUnion operation requires 'field' and 'value' parameters"
+                    )
+                    
+            elif operator == "replaceOne":
+                # Validate replaceOne parameters
+                field = update_config.get("field")
+                match_field = update_config.get("matchField")
+                match_value = update_config.get("matchValue")
+                value = update_config.get("value")
+                
+                if not all([field, match_field, match_value is not None, value is not None]):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters"
+                    )
+                    
+            elif operator and operator not in ["arrayUnion", "replaceOne"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                )
+
+        # Check Firestore connectivity after parameter validation
+        is_healthy = firestore.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
+
+        # Process the validated operation
+        if "update" in data and isinstance(data["update"], dict):
+            update_config = data["update"]
+            operator = update_config.get("operator")
+            
+            if operator == "arrayUnion":
+                # Handle array union operation
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                # Type assertion: we've already validated these are not None
+                assert field is not None and value is not None
+                
+                success = firestore.array_union_subcollection_document(
+                    collection=collection,
+                    document_id=document_id,
+                    subcollection=subcollection,
+                    subdocument_id=subdocument_id,
+                    field=field,
+                    value=value
+                )
+                
+                operation_desc = f"Array union operation on field '{field}'"
+                
+            elif operator == "replaceOne":
+                # Handle replace one operation
+                field = update_config.get("field")
+                match_field = update_config.get("matchField")
+                match_value = update_config.get("matchValue")
+                value = update_config.get("value")
+                
+                # Type assertion: we've already validated these are not None  
+                assert field is not None and match_field is not None
+                assert match_value is not None and value is not None
+                
+                success = firestore.replace_array_element_subcollection(
+                    collection=collection,
+                    document_id=document_id,
+                    subcollection=subcollection,
+                    subdocument_id=subdocument_id,
+                    field=field,
+                    match_field=match_field,
+                    match_value=match_value,
+                    new_value=value
+                )
+                
+                operation_desc = f"Replace operation on field '{field}' where {match_field}={match_value}"
+                
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                )
+        else:
+            # Handle standard document update (existing functionality)
+            success = firestore.update_subcollection_document(
+                collection=collection,
+                document_id=document_id,
+                subcollection=subcollection,
+                subdocument_id=subdocument_id,
+                data=data
+            )
+            operation_desc = "Subcollection document update"
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found or operation failed")
+
+        return SuccessResponse(
+            success=True,
+            message=f"Subcollection document {subdocument_id} updated successfully - {operation_desc}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error updating subcollection document: {str(e)}"
+        )
+
+
+@router.delete("/documents/{collection}/{document_id}/{subcollection}/{subdocument_id}", response_model=SuccessResponse)
+async def delete_subcollection_document(
+    collection: str,
+    document_id: str,
+    subcollection: str,
+    subdocument_id: str,
+    account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """
+    Delete a document from a subcollection.
+    
+    Deletes a document by its ID from the specified subcollection within a parent document.
+    """
+    try:
+        # Check Firestore connectivity
+        is_healthy = firestore.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
+
+        # Delete subcollection document
+        success = firestore.delete_subcollection_document(
+            collection=collection,
+            document_id=document_id,
+            subcollection=subcollection,
+            subdocument_id=subdocument_id
+        )
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        return SuccessResponse(
+            success=True,
+            message=f"Subcollection document {subdocument_id} deleted successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting subcollection document: {str(e)}"
+        )
+
+
 @router.get("/health", response_model=SuccessResponse)
 async def firestore_health_check(
     firestore: FirestoreService = Depends(get_firestore_service),
