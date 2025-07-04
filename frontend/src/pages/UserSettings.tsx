@@ -26,6 +26,7 @@ const UserSettings = () => {
     jobTitle: user?.jobTitle || "",
   });
   const [preferences, setPreferences] = useState(user?.preferences || {});
+  const [localNotificationSettings, setLocalNotificationSettings] = useState(notificationSettings);
    
   if (!user) return <div>Loading...</div>;
 
@@ -35,6 +36,14 @@ const UserSettings = () => {
 
   const handlePreferenceChange = (key: string, value: string) => {
     setPreferences({ ...preferences, [key]: value });
+  };
+
+  const handleNotificationChange = (id: string, enabled: boolean) => {
+    setLocalNotificationSettings(prevSettings =>
+      prevSettings.map(setting =>
+        setting.id === id ? { ...setting, enabled } : setting,
+      ),
+    );
   };
 
   const saveProfile = async () => {
@@ -52,6 +61,24 @@ const UserSettings = () => {
     } catch (error) {
       console.error("Error saving profile:", error);
       alert("Failed to save profile.");
+    }
+  };
+
+  const saveNotificationSettings = async () => {
+    try {
+      await Promise.all(
+        localNotificationSettings.map(setting =>
+          axios.put(
+            `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}/notifications/${setting.id}`,
+            { enabled: setting.enabled },
+          ),
+        ),
+      );
+
+      alert("Notification settings updated successfully!");
+    } catch (error) {
+      console.error("Error saving notification settings:", error);
+      alert("Failed to save notification settings.");
     }
   };
 
@@ -111,32 +138,35 @@ const UserSettings = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Notification Preferences
+              <Bell className="h-5 w-5" /> Notification Preferences
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              {notificationSettings.map((setting, index) => (
+              {localNotificationSettings.map((setting, index) => (
                 <div key={setting.id}>
-                  <div className="flex items-center justify-between flex-wrap gap-4 mb-2">
-                    <div className="flex flex-col min-w-0 flex-1 justify-center items-start">
-                      <Label className="mr-auto">{setting.label}</Label>
+                  <div className="flex items-center justify-between gap-4 mb-2">
+                    <div>
+                      <Label>{setting.label}</Label>
                       <p className="text-sm text-dashboard-gray-600">
                         {setting.description}
                       </p>
                     </div>
                     <Switch
-                      defaultChecked={setting.enabled}
-                      className="flex-shrink-0"
+                      checked={setting.enabled}
+                      onCheckedChange={(checked) =>
+                        handleNotificationChange(setting.id, checked as boolean)
+                      }
                     />
                   </div>
-                  {index < notificationSettings.length - 1 && <Separator />}
+                  {index < localNotificationSettings.length - 1 && <Separator />}
                 </div>
               ))}
+              <Button onClick={saveNotificationSettings}>Save Notification Changes</Button>
             </div>
           </CardContent>
         </Card>
+
 
         {/* Security Settings */}
         <Card>
