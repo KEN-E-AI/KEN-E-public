@@ -219,3 +219,5 @@ availableSecrets:
   secretManager:
     - versionName: projects/${PROJECT_ID}/secrets/firebase-key-staging/versions/latest
       env: _FIREBASE_KEY_JSON
+    - versionName: projects/${PROJECT_ID}/secrets/google-cloud-service-account-key-staging/versions/latest
+      env: GOOGLE_APPLICATION_CREDENTIALS
