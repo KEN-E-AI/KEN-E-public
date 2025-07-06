@@ -180,16 +180,19 @@ steps:
     args:
       - "-c"
       - |
-        gcloud run deploy kene-api-staging \
-          --image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA} \
-          --region=${_REGION} \
-          --platform=managed \
-          --project=${_STAGING_PROJECT_ID} \
-          --allow-unauthenticated \
-          --memory=512Mi \
-          --port=8000 \
-          --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/google/google-cloud-service-account-key-staging" \
-          --secret="google-cloud-service-account-key-staging=/var/secrets/google/google-cloud-service-account-key-staging"
+          echo "$_GCLOUD_SA_KEY_JSON" > /workspace/gcloud-key.json
+
+          gcloud run deploy kene-api-staging \
+            --image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA} \
+            --region=${_REGION} \
+            --platform=managed \
+            --project=${_STAGING_PROJECT_ID} \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --port=8000 \
+            --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcloud-key.json"
+    secretEnv: ['_GCLOUD_SA_KEY_JSON']
+
 
 
 
@@ -220,5 +223,5 @@ availableSecrets:
   secretManager:
     - versionName: projects/${PROJECT_ID}/secrets/firebase-key-staging/versions/latest
       env: _FIREBASE_KEY_JSON
-    - mountPath: /var/secrets/google
-      secret: google-cloud-service-account-key-staging
+    - versionName: projects/${PROJECT_ID}/secrets/google-cloud-service-account-key-staging/versions/latest
+      env: _GCLOUD_SA_KEY_JSON
