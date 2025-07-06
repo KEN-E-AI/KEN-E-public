@@ -180,18 +180,25 @@ steps:
     args:
       - "-c"
       - |
-          echo "$_GCLOUD_SA_KEY_JSON" > /workspace/gcloud-key.json
+        set -e  # stop immediately if any command fails
+        set -x  # print each command before executing
 
-          gcloud run deploy kene-api-staging \
-            --image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA} \
-            --region=${_REGION} \
-            --platform=managed \
-            --project=${_STAGING_PROJECT_ID} \
-            --allow-unauthenticated \
-            --memory=512Mi \
-            --port=8000 \
-            --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcloud-key.json"
+        echo "Writing service account JSON to file..."
+        echo "$_GCLOUD_SA_KEY_JSON" > /workspace/gcloud-key.json
+        cat /workspace/gcloud-key.json | head -n 3  # sanity check
+
+        echo "Deploying Cloud Run service..."
+        gcloud run deploy kene-api-staging \
+          --image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --project=${_STAGING_PROJECT_ID} \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --port=8000 \
+          --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcloud-key.json"
     secretEnv: ['_GCLOUD_SA_KEY_JSON']
+
 
 
 
