@@ -188,8 +188,9 @@ steps:
           --allow-unauthenticated \
           --memory=512Mi \
           --port=8000 \
-          --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO" \
-          --set-secrets="GOOGLE_APPLICATION_CREDENTIALS=google-cloud-service-account-key-staging:latest"
+          --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/google/google-cloud-service-account-key-staging" \
+          --secret="google-cloud-service-account-key-staging=/var/secrets/google/google-cloud-service-account-key-staging"
+
 
 
 
@@ -219,5 +220,5 @@ availableSecrets:
   secretManager:
     - versionName: projects/${PROJECT_ID}/secrets/firebase-key-staging/versions/latest
       env: _FIREBASE_KEY_JSON
-    - versionName: projects/${PROJECT_ID}/secrets/google-cloud-service-account-key-staging/versions/latest
-      env: GOOGLE_APPLICATION_CREDENTIALS
+    - mountPath: /var/secrets/google
+      secret: google-cloud-service-account-key-staging
