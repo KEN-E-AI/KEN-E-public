@@ -7,6 +7,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from google.cloud.firestore_v1 import DELETE_FIELD
 from google.cloud.exceptions import NotFound
+from google.auth import default
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -38,30 +39,52 @@ class FirestoreService:
                 return True
 
             # Get Firestore configuration from environment
-            credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
             database_id = os.getenv("FIRESTORE_DATABASE_ID", CUSTOMER_DATABASE)
+            use_adc = os.getenv("USE_APPLICATION_DEFAULT_CREDENTIALS", "false").lower() == "true"
+            credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
             if not project_id:
                 raise ValueError("Firestore configuration missing. Check GOOGLE_CLOUD_PROJECT_ID")
+            
+            # Method 1: Use Application Default Credentials (recommended for Cloud Run)
+            if use_adc or not credentials_path:
+                print("Using Application Default Credentials for Firestore")
+                try:
+                    credentials, detected_project = default()
+                    self._db = firestore.Client(
+                        project=project_id,
+                        database=database_id,
+                        credentials=credentials
+                    )
+                    print(f"Successfully initialized Firestore with ADC for project: {project_id}")
+                    self._initialized = True
+                    return True
+                except Exception as e:
+                    print(f"Failed to initialize with Application Default Credentials: {e}")
+                    # Fall back to credentials file if ADC fails
+                    if not credentials_path:
+                        raise
 
-            # Ensure the credentials path is a file path, not raw JSON
-            if not credentials_path:
-                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS is not set")
+            # Method 2: Use credentials file (fallback or local development)
+            if credentials_path:
+                # Ensure the credentials path is a file path, not raw JSON
+                if credentials_path.strip().startswith("{"):
+                    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS appears to be a raw JSON string. Expected a file path. This usually means it was incorrectly passed via --set-env-vars instead of --set-secrets.")
 
-            if credentials_path.strip().startswith("{"):
-                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS appears to be a raw JSON string. Expected a file path. This usually means it was incorrectly passed via --set-env-vars instead of --set-secrets.")
+                if not os.path.isfile(credentials_path):
+                    raise ValueError(f"Credentials file not found at: {credentials_path}")
 
-            if not os.path.isfile(credentials_path):
-                raise ValueError(f"Credentials file not found at: {credentials_path}")
+                print(f"Using Firestore credentials from file: {credentials_path}")
+                
+                # Initialize Firestore client with explicit credentials file
+                self._db = firestore.Client(project=project_id, database=database_id)
+                
+                print(f"Successfully initialized Firestore with credentials file for project: {project_id}")
+                self._initialized = True
+                return True
 
-            print(f"Using Firestore credentials from: {credentials_path}")
-
-            # Initialize Firestore client
-            self._db = firestore.Client(project=project_id, database=database_id)
-
-            self._initialized = True
-            return True
+            raise ValueError("No valid authentication method found. Set USE_APPLICATION_DEFAULT_CREDENTIALS=true for Cloud Run or provide GOOGLE_APPLICATION_CREDENTIALS file path.")
 
         except Exception as e:
             print(f"Error initializing Firestore: {e}")
