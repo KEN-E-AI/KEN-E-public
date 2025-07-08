@@ -24,11 +24,8 @@ import {
   Building,
   Plus,
   Check,
-  Users,
   ArrowRight,
   Settings,
-  Crown,
-  Briefcase,
 } from "lucide-react";
 
 interface OrganizationSelectionProps {
