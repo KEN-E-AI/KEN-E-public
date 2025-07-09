@@ -159,25 +159,6 @@ async def _create_insight_from_record(record: Dict[str, Any]) -> Insight:
     )
 
 
-async def _create_intuition_from_record(record: Dict[str, Any]) -> Intuition:
-    """Create an Intuition object from a Neo4j record."""
-    activity_data = record.get("activity") or {}
-    metric_data = record.get("metric") or {}
-    relationship_data = record.get("relationship") or {}
-
-    # Parse direction from relationship properties
-    direction_str = relationship_data.get("direction", "positive")
-    direction = (
-        DirectionType.POSITIVE
-        if direction_str == "positive"
-        else DirectionType.NEGATIVE
-    )
-
-    return Intuition(
-        activity_id=activity_data.get("activity_id", ""),
-        metric_id=metric_data.get("metric_id", ""),
-        direction=direction,
-    )
 
 
 def _determine_relationship_type(evidence: Optional[Evidence] = None) -> str:
