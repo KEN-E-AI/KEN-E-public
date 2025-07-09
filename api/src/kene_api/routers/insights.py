@@ -389,6 +389,7 @@ async def update_insight(
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log
     - `metric_id` (required): The unique identifier of the metric
+    - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `direction` (optional): Updated direction of influence (positive or negative)
     - `evidence` (optional): Updated evidence object containing active and influence evidence
     
@@ -403,6 +404,7 @@ async def update_insight(
     {
         "activity_log_id": "log123",
         "metric_id": "metric456",
+        "account_id": "a000001",
         "direction": "negative",
         "evidence": {
             "active_evidence": {
@@ -423,6 +425,11 @@ async def update_insight(
                 status_code=400,
                 detail="Both activity_log_id and metric_id are required for updating insights",
             )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400,
+                detail="account_id is required for updating insights",
+            )
 
         # Check Neo4j connectivity
         is_healthy = await neo4j.health_check()
@@ -432,9 +439,12 @@ async def update_insight(
         # Prepare evidence data for storage
         evidence_data = _prepare_evidence_data(request.evidence)
 
-        # Neo4j query to update insight relationship
+        # Neo4j query to update insight relationship with account validation
         query = """
-        MATCH (al:ActivityLog {activity_log_id: $activity_log_id})-[r:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(m:Metric {metric_id: $metric_id})
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(al:ActivityLog {activity_log_id: $activity_log_id})
+        MATCH (al)-[r:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(metric)
         SET r.evidence = $evidence, r.direction = $direction
         RETURN r
         """
@@ -442,6 +452,7 @@ async def update_insight(
         parameters = {
             "activity_log_id": request.activity_log_id,
             "metric_id": request.metric_id,
+            "account_id": request.account_id,
             "evidence": str(evidence_data) if evidence_data else None,
             "direction": request.direction.value if request.direction else None,
         }
@@ -449,7 +460,7 @@ async def update_insight(
         result = await neo4j.execute_write_query(query, parameters)
         if result["properties_set"] == 0:
             raise HTTPException(
-                status_code=404, detail="Insight relationship not found"
+                status_code=404, detail="Insight relationship not found for the specified account, or the ActivityLog and Metric don't belong to the same account"
             )
 
         return SuccessResponse(
