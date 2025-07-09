@@ -253,6 +253,19 @@ async def get_insights(
     Returns insight relationships and intuitions for the account.
     Fetches Activities for an account, then ActivityLog nodes linked to those Activities,
     then finds relationships from ActivityLog to Metric nodes.
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `insights`: List of insight objects with relationship data and evidence
+    - `intuitions`: List of intuition objects showing likely influences
+    - `total`: Total number of insights and intuitions combined
+    
+    **Example:**
+    ```
+    GET /api/v1/insights/?account_id=a000001
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -335,6 +348,35 @@ async def create_insight(
 
     Creates an INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship
     between an ActivityLog node and a Metric node in neo4j.
+    
+    **Parameters (in request body):**
+    - `activity_log_id` (required): The unique identifier of the activity log
+    - `metric_id` (required): The unique identifier of the metric
+    - `relationship_type` (optional): Type of relationship (INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED)
+    - `direction` (optional): Direction of influence (positive or negative)
+    - `evidence` (optional): Evidence object containing active and influence evidence
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message with relationship type
+    - `data`: null
+    
+    **Example:**
+    ```json
+    POST /api/v1/insights/
+    {
+        "activity_log_id": "log123",
+        "metric_id": "metric456",
+        "relationship_type": "INFLUENCE_CONFIRMED",
+        "direction": "positive",
+        "evidence": {
+            "active_evidence": {
+                "active_confidence": "HIGH",
+                "evidence": ["data point 1", "data point 2"]
+            }
+        }
+    }
+    ```
     """
     try:
         if not request.activity_log_id or not request.metric_id:
@@ -400,6 +442,37 @@ async def update_insight(
     Update an existing insight relationship.
 
     Updates properties of an INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship in neo4j.
+    
+    **Parameters (in request body):**
+    - `activity_log_id` (required): The unique identifier of the activity log
+    - `metric_id` (required): The unique identifier of the metric
+    - `direction` (optional): Updated direction of influence (positive or negative)
+    - `evidence` (optional): Updated evidence object containing active and influence evidence
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: null
+    
+    **Example:**
+    ```json
+    PUT /api/v1/insights/
+    {
+        "activity_log_id": "log123",
+        "metric_id": "metric456",
+        "direction": "negative",
+        "evidence": {
+            "active_evidence": {
+                "active_confidence": "MEDIUM",
+                "evidence": ["updated data point"]
+            },
+            "influence_evidence": {
+                "influence_likely": true,
+                "influence_direction_aligned": false
+            }
+        }
+    }
+    ```
     """
     try:
         if not request.activity_log_id or not request.metric_id:
@@ -459,6 +532,24 @@ async def delete_insight(
 
     Removes an INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship
     between ActivityLog and Metric nodes in neo4j.
+    
+    **Parameters (in request body):**
+    - `activity_log_id` (required): The unique identifier of the activity log
+    - `metric_id` (required): The unique identifier of the metric
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: null
+    
+    **Example:**
+    ```json
+    DELETE /api/v1/insights/
+    {
+        "activity_log_id": "log123",
+        "metric_id": "metric456"
+    }
+    ```
     """
     try:
         if not request.activity_log_id or not request.metric_id:

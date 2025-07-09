@@ -21,6 +21,26 @@ async def create_intuition(
 
     Creates an intuition record linking an activity and metric with descriptive text.
     Prevents creation of duplicate relationships between the same activity and metric.
+    
+    **Parameters (in request body):**
+    - `activity_id` (required): The unique identifier of the activity
+    - `metric_id` (required): The unique identifier of the metric
+    - `direction` (optional): Direction of influence (positive or negative)
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: null
+    
+    **Example:**
+    ```json
+    POST /api/v1/intuitions/
+    {
+        "activity_id": "act123",
+        "metric_id": "metric456",
+        "direction": "positive"
+    }
+    ```
     """
     try:
         if not request.activity_id or not request.metric_id:
@@ -92,6 +112,26 @@ async def update_intuition(
     Update an existing intuition.
 
     Updates intuition properties in neo4j.
+    
+    **Parameters (in request body):**
+    - `activity_id` (required): The unique identifier of the activity
+    - `metric_id` (required): The unique identifier of the metric
+    - `direction` (optional): Updated direction of influence (positive or negative)
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: null
+    
+    **Example:**
+    ```json
+    PUT /api/v1/intuitions/
+    {
+        "activity_id": "act123",
+        "metric_id": "metric456",
+        "direction": "negative"
+    }
+    ```
     """
     try:
         if not request.activity_id or not request.metric_id:
@@ -145,6 +185,24 @@ async def delete_intuition(
     Delete an intuition.
 
     Removes an intuition record from neo4j.
+    
+    **Parameters (in request body):**
+    - `activity_id` (required): The unique identifier of the activity
+    - `metric_id` (required): The unique identifier of the metric
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: null
+    
+    **Example:**
+    ```json
+    DELETE /api/v1/intuitions/
+    {
+        "activity_id": "act123",
+        "metric_id": "metric456"
+    }
+    ```
     """
     try:
         if not request.activity_id or not request.metric_id:
