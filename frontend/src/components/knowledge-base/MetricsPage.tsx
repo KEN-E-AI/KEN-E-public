@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
 import {
   Search,
   Filter,
@@ -33,7 +34,32 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { metrics, type Metric } from "@/data/metrics";
+import { useAuth } from "@/contexts/AuthContext";
+
+interface ApiMetric {
+  id: string;
+  account_id: string;
+  d3_format?: string;
+  verbose_name: string;
+  expression: string;
+  metric_name: string;
+  currency?: string;
+  related_dataset_id?: number;
+  related_dataset_name?: string;
+  related_dataset_products?: string[];
+  description: string;
+}
+
+interface Metric {
+  id: string;
+  name: string;
+  description: string;
+  dataset: string;
+  product: string;
+  format: string;
+  currency: string;
+  sqlExpression: string;
+}
 
 const datasets = [
   { id: "ga4_sessions", name: "GA4 Sessions", product: "Google Analytics" },
@@ -51,19 +77,12 @@ type SortField = "name" | "dataset" | "product" | null;
 type SortDirection = "asc" | "desc";
 
 const MetricsPage = () => {
-  // Convert imported metrics to component format
-  const convertedMetrics = metrics.map((metric) => ({
-    id: metric.metric_id,
-    name: metric.verbose_name,
-    description: metric.description,
-    dataset: metric.dataset.toLowerCase().replace(/\s+/g, "_"),
-    product: metric.product,
-    format: metric.format,
-    currency: metric.currency,
-    sqlExpression: metric.expression,
-  }));
-
-  const [metricsData, setMetricsData] = useState<Metric[]>(convertedMetrics);
+  const { selectedOrgAccount } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  
+  const [metricsData, setMetricsData] = useState<Metric[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -73,6 +92,143 @@ const MetricsPage = () => {
   const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Convert API metric to component format
+  const convertApiMetric = (apiMetric: ApiMetric): Metric => ({
+    id: apiMetric.id,
+    name: apiMetric.verbose_name,
+    description: apiMetric.description,
+    dataset: apiMetric.related_dataset_name?.toLowerCase().replace(/\s+/g, "_") || "unknown",
+    product: apiMetric.related_dataset_products?.[0] || "Unknown",
+    format: apiMetric.d3_format || "Integer",
+    currency: apiMetric.currency || "None",
+    sqlExpression: apiMetric.expression,
+  });
+
+  // Convert component metric to API format
+  const convertToApiMetric = (metric: Metric): Partial<ApiMetric> => ({
+    account_id: selectedOrgAccount?.accountId || "",
+    verbose_name: metric.name,
+    expression: metric.sqlExpression,
+    metric_name: metric.name.toLowerCase().replace(/\s+/g, "_"),
+    currency: metric.currency === "None" ? undefined : metric.currency,
+    d3_format: metric.format,
+    description: metric.description,
+  });
+
+  // Fetch metrics from API
+  const fetchMetrics = async () => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount.accountId}`
+      );
+      
+      if (response.data.success) {
+        const convertedMetrics = response.data.data.metrics.map(convertApiMetric);
+        setMetricsData(convertedMetrics);
+      } else {
+        setError("Failed to fetch metrics");
+      }
+    } catch (err) {
+      console.error("Error fetching metrics:", err);
+      setError("Failed to fetch metrics");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create metric via API
+  const createMetric = async (metric: Metric) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/v1/metrics/`,
+        convertToApiMetric(metric)
+      );
+      
+      if (response.data.success) {
+        await fetchMetrics(); // Refresh the list
+      } else {
+        setError("Failed to create metric");
+      }
+    } catch (err) {
+      console.error("Error creating metric:", err);
+      setError("Failed to create metric");
+    }
+  };
+
+  // Update metric via API
+  const updateMetric = async (metric: Metric) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.put(
+        `${API_BASE_URL}/api/v1/metrics/`,
+        {
+          ...convertToApiMetric(metric),
+          id: metric.id,
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchMetrics(); // Refresh the list
+      } else {
+        setError("Failed to update metric");
+      }
+    } catch (err) {
+      console.error("Error updating metric:", err);
+      setError("Failed to update metric");
+    }
+  };
+
+  // Delete metric via API
+  const deleteMetric = async (metricId: string) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/v1/metrics/`,
+        {
+          data: {
+            account_id: selectedOrgAccount.accountId,
+            id: metricId,
+          },
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchMetrics(); // Refresh the list
+      } else {
+        setError("Failed to delete metric");
+      }
+    } catch (err) {
+      console.error("Error deleting metric:", err);
+      setError("Failed to delete metric");
+    }
+  };
+
+  // Load metrics on component mount and when account changes
+  useEffect(() => {
+    fetchMetrics();
+  }, [selectedOrgAccount?.accountId]);
 
   // Filter state
   const [selectedDataset, setSelectedDataset] = useState<string>("all");
@@ -153,7 +309,7 @@ const MetricsPage = () => {
   })();
 
   // Get unique products for filtering
-  const uniqueProducts = [...new Set(metrics.map((m) => m.product))];
+  const uniqueProducts = [...new Set(metricsData.map((m) => m.product))];
 
   const toggleExpanded = (metricId: string) => {
     const newExpanded = new Set(expandedMetrics);
@@ -187,17 +343,13 @@ const MetricsPage = () => {
     setModalOpen(true);
   };
 
-  const handleSaveMetric = () => {
+  const handleSaveMetric = async () => {
     if (!editingMetric) return;
 
     if (isCreating) {
-      setMetricsData([...metricsData, editingMetric]);
+      await createMetric(editingMetric);
     } else {
-      setMetricsData(
-        metricsData.map((metric) =>
-          metric.id === editingMetric.id ? editingMetric : metric,
-        ),
-      );
+      await updateMetric(editingMetric);
     }
 
     setModalOpen(false);
@@ -205,8 +357,8 @@ const MetricsPage = () => {
     setIsCreating(false);
   };
 
-  const handleDeleteMetric = (metricId: string) => {
-    setMetricsData(metricsData.filter((metric) => metric.id !== metricId));
+  const handleDeleteMetric = async (metricId: string) => {
+    await deleteMetric(metricId);
   };
 
   const handleDatasetChange = (dataset: string) => {
@@ -219,6 +371,36 @@ const MetricsPage = () => {
       product: selectedDataset?.product || "",
     });
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
+            Metrics
+          </h2>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-gray-500">Loading metrics...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
+            Metrics
+          </h2>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-red-500">{error}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
