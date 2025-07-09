@@ -130,6 +130,32 @@ const AccountSettings = () => {
     }
   };
 
+  const handleUpdateOrganization = async () => {
+    if (!orgData?.organization_name || !orgData?.company_size) {
+      alert("Please fill in all required fields");
+      return;
+    }
+
+    try {
+      await axios.put(
+        `${API_BASE_URL}/api/v1/firestore/documents/organizations/${orgData.organization_id}?account_id=${user?.id}`,
+        {
+          organization_name: orgData.organization_name,
+          company_size: orgData.company_size,
+          agency: editAgencyData.agency,
+          child_organizations: editAgencyData.child_organizations,
+        }
+      );
+
+      alert("Organization updated successfully!");
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      alert("Failed to update organization. Please try again.");
+    }
+  };
+
+
+
   const handleBackToSelection = () => {
     resetWorkspaceSelection();
     navigate("/organization-selection");
@@ -148,7 +174,7 @@ const AccountSettings = () => {
           setFormData={setNewOrgFormData}
           editAgencyData={editAgencyData}
           setEditAgencyData={setEditAgencyData}
-          onSubmit={handleCreateOrganization}
+          onSubmit={isCreatingNew ? handleCreateOrganization : handleUpdateOrganization}
         />
 
         {/* Conditional sections for existing organizations */}
