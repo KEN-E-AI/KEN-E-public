@@ -328,6 +328,40 @@ async def create_metric(
     Creates a new Metric node in Neo4j with a BELONGS_TO relationship to the Account node.
     Also creates a CALCULATED_FROM relationship to an existing Dataset node if related_dataset_id is provided.
     Additionally, creates the metric in Apache Superset if dataset information is available.
+    
+    **Parameters (in request body):**
+    - `account_id` (required): The unique identifier for the account
+    - `d3_format` (optional): The d3 formatting guidelines for metric presentation
+    - `verbose_name` (optional): The friendly name of the metric
+    - `expression` (optional): The SQL expression used to calculate the metric
+    - `metric_name` (optional): The snake_case representation of the metric name
+    - `currency` (optional): The currency code for the metric (e.g., USD, EUR, GBP)
+    - `account_components` (optional): List of components the metric assists with in analysis
+    - `related_dataset_id` (optional): Unique identifier for the dataset used to calculate the metric
+    - `related_dataset_name` (optional): Name of the dataset used to calculate the metric
+    - `related_dataset_products` (optional): List of martech products used to calculate the metric
+    - `description` (optional): Friendly description of the metric and its usage
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: Contains the generated metric ID
+    
+    **Example:**
+    ```json
+    POST /api/v1/metrics/
+    {
+        "account_id": "a000001",
+        "verbose_name": "Total Revenue",
+        "metric_name": "total_revenue",
+        "expression": "sum(revenue)",
+        "d3_format": "$,.2f",
+        "currency": "USD",
+        "account_components": ["ecommerce"],
+        "related_dataset_id": 28,
+        "description": "Total revenue from all transactions"
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -401,6 +435,37 @@ async def update_metric(
 
     Updates Metric node properties in Neo4j and syncs changes with Apache Superset.
     Does not modify relationships to other nodes.
+    
+    **Parameters (in request body):**
+    - `id` (required): The unique identifier of the metric to update
+    - `account_id` (required): The unique identifier for the account
+    - `d3_format` (optional): Updated d3 formatting guidelines for metric presentation
+    - `verbose_name` (optional): Updated friendly name of the metric
+    - `expression` (optional): Updated SQL expression used to calculate the metric
+    - `metric_name` (optional): Updated snake_case representation of the metric name
+    - `currency` (optional): Updated currency code for the metric (e.g., USD, EUR, GBP)
+    - `account_components` (optional): Updated list of components the metric assists with in analysis
+    - `related_dataset_id` (optional): Updated unique identifier for the dataset used to calculate the metric
+    - `related_dataset_name` (optional): Updated name of the dataset used to calculate the metric
+    - `related_dataset_products` (optional): Updated list of martech products used to calculate the metric
+    - `description` (optional): Updated friendly description of the metric and its usage
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message (includes Superset sync status)
+    - `data`: null
+    
+    **Example:**
+    ```json
+    PUT /api/v1/metrics/
+    {
+        "id": "888ttt",
+        "account_id": "a000001",
+        "verbose_name": "Updated Total Revenue",
+        "expression": "sum(revenue * 1.1)",
+        "description": "Total revenue with 10% markup"
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -481,6 +546,24 @@ async def delete_metric(
     Removes Metric node from Neo4j along with all its relationships, and also 
     deletes the corresponding metric from Apache Superset if it exists.
     Does not modify connected Account or Dataset nodes.
+    
+    **Parameters (in request body):**
+    - `id` (required): The unique identifier of the metric to delete
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message (includes Superset deletion status)
+    - `data`: null
+    
+    **Example:**
+    ```json
+    DELETE /api/v1/metrics/
+    {
+        "id": "888ttt",
+        "account_id": "a000001"
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
