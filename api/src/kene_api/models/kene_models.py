@@ -293,7 +293,7 @@ class Activity(BaseEntity):
 class ActivityRequest(BaseRequest):
     """Request model for activity operations."""
 
-    id: Optional[str] = Field(None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION)
+    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION)
     activity_description: Optional[str] = Field(
         None, description=ACTIVITY_DESCRIPTION_DESCRIPTION
     )

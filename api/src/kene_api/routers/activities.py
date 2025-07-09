@@ -230,7 +230,7 @@ async def update_activity(
     Edit an Activity node in neo4j.
     
     **Parameters (in request body):**
-    - `id` (required): The unique identifier of the activity to update
+    - `activity_id` (required): The unique identifier of the activity to update
     - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
     - `activity_description` (optional): Updated description of the activity
     - `expected_impact` (optional): Updated expected impact of the activity
@@ -246,7 +246,7 @@ async def update_activity(
     ```json
     PUT /api/v1/activities/
     {
-        "id": "ccc333",
+        "activity_id": "ccc333",
         "account_id": "a000001",
         "activity_description": "Updated promotional email campaign",
         "expected_impact": "Enhanced customer engagement and retention",
@@ -255,9 +255,9 @@ async def update_activity(
     ```
     """
     try:
-        if not request.id:
+        if not request.activity_id:
             raise HTTPException(
-                status_code=400, detail="id is required for update operation"
+                status_code=400, detail="activity_id is required for update operation"
             )
         if not request.account_id:
             raise HTTPException(
@@ -269,22 +269,22 @@ async def update_activity(
 
         # Check if the Activity node exists and belongs to the specified account
         check_activity_query = """
-        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
         RETURN activity
         """
         activity_result = await db.execute_query(
-            check_activity_query, {"id": request.id, "account_id": request.account_id}
+            check_activity_query, {"activity_id": request.activity_id, "account_id": request.account_id}
         )
 
         if not activity_result:
             raise HTTPException(
                 status_code=404,
-                detail=f"Activity with id '{request.id}' not found for account '{request.account_id}'",
+                detail=f"Activity with id '{request.activity_id}' not found for account '{request.account_id}'",
             )
 
         # Build update query dynamically based on provided fields
         update_fields = []
-        parameters: Dict[str, Any] = {"id": request.id, "account_id": request.account_id}
+        parameters: Dict[str, Any] = {"activity_id": request.activity_id, "account_id": request.account_id}
 
         if request.activity_description is not None:
             update_fields.append(
@@ -309,7 +309,7 @@ async def update_activity(
 
         # Execute update query with account validation
         update_query = f"""
-        MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity {{activity_id: $id}})
+        MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity {{activity_id: $activity_id}})
         SET {', '.join(update_fields)}
         RETURN activity
         """
@@ -340,7 +340,8 @@ async def delete_activity(
     Delete an Activity node in neo4j along with its relationships.
     
     **Parameters (in request body):**
-    - `id` (required): The unique identifier of the activity to delete
+    - `activity_id` (required): The unique identifier of the activity to delete
+    - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
     
     **Returns:**
     - `success`: Boolean indicating operation success
@@ -351,41 +352,46 @@ async def delete_activity(
     ```json
     DELETE /api/v1/activities/
     {
-        "id": "ccc333"
+        "activity_id": "ccc333",
+        "account_id": "a000001"
     }
     ```
     """
     try:
-        if not request.id:
+        if not request.activity_id:
             raise HTTPException(
-                status_code=400, detail="id is required for delete operation"
+                status_code=400, detail="activity_id is required for delete operation"
+            )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400, detail="account_id is required for delete operation"
             )
 
         # Verify Neo4j connectivity
         await db.health_check()
 
-        # Check if the Activity node exists
+        # Check if the Activity node exists and belongs to the specified account
         check_activity_query = """
-        MATCH (activity:Activity {activity_id: $id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
         RETURN activity
         """
         activity_result = await db.execute_query(
-            check_activity_query, {"id": request.id}
+            check_activity_query, {"activity_id": request.activity_id, "account_id": request.account_id}
         )
 
         if not activity_result:
             raise HTTPException(
                 status_code=404,
-                detail=f"Activity with id '{request.id}' not found",
+                detail=f"Activity with activity_id '{request.activity_id}' not found for account '{request.account_id}'",
             )
 
-        # Delete the Activity node and all its relationships
+        # Delete the Activity node and all its relationships with account validation
         delete_activity_query = """
-        MATCH (activity:Activity {activity_id: $id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
         DETACH DELETE activity
         """
 
-        result = await db.execute_write_query(delete_activity_query, {"id": request.id})
+        result = await db.execute_write_query(delete_activity_query, {"activity_id": request.activity_id, "account_id": request.account_id})
 
         return SuccessResponse(
             success=True,
