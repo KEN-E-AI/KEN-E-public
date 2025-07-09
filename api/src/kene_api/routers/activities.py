@@ -644,7 +644,9 @@ async def delete_activity_log(
     Delete an ActivityLog node in neo4j.
     
     **Parameters (in request body):**
-    - `id` (required): The unique identifier of the activity log to delete
+    - `activity_log_id` (required): The unique identifier of the activity log to delete
+    - `activity_id` (required): The unique identifier of the activity (ensures log belongs to this activity)
+    - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
     
     **Returns:**
     - `success`: Boolean indicating operation success
@@ -655,40 +657,62 @@ async def delete_activity_log(
     ```json
     DELETE /api/v1/activities/logs
     {
-        "id": "bzbzbz"
+        "activity_log_id": "bzbzbz",
+        "activity_id": "ccc333",
+        "account_id": "a000001"
     }
     ```
     """
     try:
-        if not request.id:
+        if not request.activity_log_id:
             raise HTTPException(
                 status_code=400,
-                detail="id is required for delete operation",
+                detail="activity_log_id is required for delete operation",
+            )
+        if not request.activity_id:
+            raise HTTPException(
+                status_code=400,
+                detail="activity_id is required for delete operation",
+            )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400,
+                detail="account_id is required for delete operation",
             )
 
         # Verify Neo4j connectivity
         await db.health_check()
 
-        # Check if the ActivityLog node exists
+        # Check if the ActivityLog node exists and belongs to the specified activity and account
         check_log_query = """
-        MATCH (log:ActivityLog {activity_log_id: $activity_log_id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (activity)-[:LOGGED]->(log:ActivityLog {activity_log_id: $activity_log_id})
         RETURN log
         """
-        log_result = await db.execute_query(check_log_query, {"activity_log_id": request.activity_log_id})
+        log_result = await db.execute_query(check_log_query, {
+            "activity_log_id": request.activity_log_id,
+            "activity_id": request.activity_id,
+            "account_id": request.account_id
+        })
 
         if not log_result:
             raise HTTPException(
                 status_code=404,
-                detail=f"Activity log with activity_log_id '{request.activity_log_id}' not found",
+                detail=f"Activity log with activity_log_id '{request.activity_log_id}' not found for activity '{request.activity_id}' and account '{request.account_id}'",
             )
 
-        # Delete the ActivityLog node and all its relationships
+        # Delete the ActivityLog node and all its relationships with account and activity validation
         delete_log_query = """
-        MATCH (log:ActivityLog {activity_log_id: $activity_log_id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (activity)-[:LOGGED]->(log:ActivityLog {activity_log_id: $activity_log_id})
         DETACH DELETE log
         """
 
-        result = await db.execute_write_query(delete_log_query, {"id": request.id})
+        result = await db.execute_write_query(delete_log_query, {
+            "activity_log_id": request.activity_log_id,
+            "activity_id": request.activity_id,
+            "account_id": request.account_id
+        })
 
         return SuccessResponse(
             success=True,
