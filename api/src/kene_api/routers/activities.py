@@ -231,6 +231,7 @@ async def update_activity(
     
     **Parameters (in request body):**
     - `id` (required): The unique identifier of the activity to update
+    - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
     - `activity_description` (optional): Updated description of the activity
     - `expected_impact` (optional): Updated expected impact of the activity
     - `internal` (optional): Updated boolean indicating if activity is internal
@@ -246,6 +247,7 @@ async def update_activity(
     PUT /api/v1/activities/
     {
         "id": "ccc333",
+        "account_id": "a000001",
         "activity_description": "Updated promotional email campaign",
         "expected_impact": "Enhanced customer engagement and retention",
         "internal": true
@@ -257,28 +259,32 @@ async def update_activity(
             raise HTTPException(
                 status_code=400, detail="id is required for update operation"
             )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400, detail="account_id is required for update operation"
+            )
 
         # Verify Neo4j connectivity
         await db.health_check()
 
-        # Check if the Activity node exists
+        # Check if the Activity node exists and belongs to the specified account
         check_activity_query = """
-        MATCH (activity:Activity {activity_id: $id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $id})
         RETURN activity
         """
         activity_result = await db.execute_query(
-            check_activity_query, {"id": request.id}
+            check_activity_query, {"id": request.id, "account_id": request.account_id}
         )
 
         if not activity_result:
             raise HTTPException(
                 status_code=404,
-                detail=f"Activity with id '{request.id}' not found",
+                detail=f"Activity with id '{request.id}' not found for account '{request.account_id}'",
             )
 
         # Build update query dynamically based on provided fields
         update_fields = []
-        parameters: Dict[str, Any] = {"id": request.id}
+        parameters: Dict[str, Any] = {"id": request.id, "account_id": request.account_id}
 
         if request.activity_description is not None:
             update_fields.append(
@@ -301,9 +307,9 @@ async def update_activity(
         if not update_fields:
             raise HTTPException(status_code=400, detail="No fields provided for update")
 
-        # Execute update query
+        # Execute update query with account validation
         update_query = f"""
-        MATCH (activity:Activity {{activity_id: $id}})
+        MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity {{activity_id: $id}})
         SET {', '.join(update_fields)}
         RETURN activity
         """
