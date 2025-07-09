@@ -122,6 +122,7 @@ async def create_intuition(
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity
     - `metric_id` (required): The unique identifier of the metric
+    - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `direction` (optional): Direction of influence (positive or negative)
     
     **Returns:**
@@ -135,6 +136,7 @@ async def create_intuition(
     {
         "activity_id": "act123",
         "metric_id": "metric456",
+        "account_id": "a000001",
         "direction": "positive"
     }
     ```
@@ -142,14 +144,27 @@ async def create_intuition(
     try:
         if not request.activity_id or not request.metric_id:
             raise HTTPException(status_code=400, detail=MISSING_REQUIRED_IDS_ERROR)
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400, detail="account_id is required for creating intuitions"
+            )
 
-        # First, check if the relationship already exists
+        # Check Neo4j connectivity
+        is_healthy = await neo4j.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # First, check if the relationship already exists with account validation
         check_query = """
-        MATCH (a:Activity {activity_id: $activity_id})-[r:INFLUENCE_LIKELY]->(m:Metric {metric_id: $metric_id})
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
+        MATCH (activity)-[r:INFLUENCE_LIKELY]->(metric)
         RETURN r
         """
         
         check_result = await neo4j.execute_query(check_query, {
+            "account_id": request.account_id,
             "activity_id": request.activity_id,
             "metric_id": request.metric_id,
         })
@@ -160,17 +175,19 @@ async def create_intuition(
                 detail=f"Intuition relationship already exists between activity {request.activity_id} and metric {request.metric_id}"
             )
 
-        # Neo4j query to create intuition relationship
+        # Neo4j query to create intuition relationship with account validation
         query = """
-        MATCH (a:Activity {activity_id: $activity_id})
-        MATCH (m:Metric {metric_id: $metric_id})
-        CREATE (a)-[r:INFLUENCE_LIKELY {
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
+        CREATE (activity)-[r:INFLUENCE_LIKELY {
             direction: $direction
-        }]->(m)
+        }]->(metric)
         RETURN r
         """
 
         parameters = {
+            "account_id": request.account_id,
             "activity_id": request.activity_id,
             "metric_id": request.metric_id,
             "direction": request.direction.value if request.direction else None,
@@ -180,7 +197,7 @@ async def create_intuition(
 
         # Check if the relationship was actually created
         if result.get("relationships_created", 0) == 0:
-            raise HTTPException(status_code=404, detail="Activity or Metric not found")
+            raise HTTPException(status_code=404, detail="Activity or Metric not found for the specified account, or they don't belong to the same account")
 
         return SuccessResponse(
             success=True, data=None, message="Intuition created successfully"
