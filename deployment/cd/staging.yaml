@@ -193,6 +193,7 @@ steps:
             --memory=512Mi \
             --port=8000 \
             --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
+            --clear-secrets \
             --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,USE_APPLICATION_DEFAULT_CREDENTIALS=true"
 
 
