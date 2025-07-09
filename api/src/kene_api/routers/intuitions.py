@@ -318,6 +318,7 @@ async def delete_intuition(
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity
     - `metric_id` (required): The unique identifier of the metric
+    - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     
     **Returns:**
     - `success`: Boolean indicating operation success
@@ -329,22 +330,36 @@ async def delete_intuition(
     DELETE /api/v1/intuitions/
     {
         "activity_id": "act123",
-        "metric_id": "metric456"
+        "metric_id": "metric456",
+        "account_id": "a000001"
     }
     ```
     """
     try:
         if not request.activity_id or not request.metric_id:
             raise HTTPException(status_code=400, detail=MISSING_REQUIRED_IDS_ERROR)
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400, detail="account_id is required for deleting intuitions"
+            )
 
-        # Neo4j query to delete intuition relationship
+        # Check Neo4j connectivity
+        is_healthy = await neo4j.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Neo4j query to delete intuition relationship with account validation
         query = """
-        MATCH (a:Activity {activity_id: $activity_id})-[r:INFLUENCE_LIKELY]->(m:Metric {metric_id: $metric_id})
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
+        MATCH (activity)-[r:INFLUENCE_LIKELY]->(metric)
         DELETE r
         RETURN count(r) as deleted_count
         """
 
         parameters = {
+            "account_id": request.account_id,
             "activity_id": request.activity_id,
             "metric_id": request.metric_id,
         }
@@ -354,7 +369,7 @@ async def delete_intuition(
         # Check if any relationships were actually deleted
         if result.get("relationships_deleted", 0) == 0:
             raise HTTPException(
-                status_code=404, detail="Intuition relationship not found"
+                status_code=404, detail="Intuition relationship not found for the specified account, or the Activity and Metric don't belong to the same account"
             )
 
         return SuccessResponse(
