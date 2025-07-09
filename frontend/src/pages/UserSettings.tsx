@@ -140,7 +140,7 @@ const UserSettings = () => {
               <Label htmlFor="jobTitle" className="mr-auto">
                 Job Title
               </Label>
-              <Input id="title" value={profile.jobTitle} onChange={handleProfileChange} />
+              <Input id="jobTitle" value={profile.jobTitle} onChange={handleProfileChange} />
             </div>
             <Button onClick={saveProfile}>Save Changes</Button>
           </CardContent>
@@ -275,6 +275,7 @@ const UserSettings = () => {
                 </SelectContent>
               </Select>
             </div>
+            <Button onClick={saveProfile}>Save Changes</Button>
           </CardContent>
         </Card>
       </div>
