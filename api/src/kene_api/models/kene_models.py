@@ -236,15 +236,13 @@ class InfluenceEvidence(BaseModel):
 
 
 class Evidence(BaseModel):
-    """Evidence object for activity logs."""
+    """Evidence object for activity logs - flexible structure to accommodate any evidence format."""
 
-    active_evidence: ActiveEvidence = Field(
-        ..., description="Active evidence with confidence level and data"
-    )
-    influence_evidence: InfluenceEvidence = Field(
-        ...,
-        description="Influence evidence with direction alignment and insight analysis",
-    )
+    model_config = {"extra": "allow"}
+
+    def __init__(self, **data):
+        """Initialize Evidence with any structure."""
+        super().__init__(**data)
 
 
 # Activity Models
@@ -446,6 +444,13 @@ class InsightListResponse(BaseModel):
     insights: List[Insight] = Field(..., description="List of insights")
     intuitions: List[Intuition] = Field(..., description="List of intuitions")
     total: int = Field(..., description="Total number of items")
+
+
+class IntuitionListResponse(BaseModel):
+    """Response model for intuition list."""
+
+    intuitions: List[Intuition] = Field(..., description="List of intuitions")
+    total: int = Field(..., description="Total number of intuitions")
 
 
 # Home/Notification Models

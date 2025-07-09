@@ -191,55 +191,12 @@ def _determine_relationship_type(evidence: Optional[Evidence] = None) -> str:
 def _prepare_evidence_data(
     evidence: Optional[Evidence] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Prepare evidence data for storage in Neo4j."""
+    """Prepare evidence data for storage in Neo4j - handles flexible evidence structure."""
     if not evidence:
         return None
 
-    return {
-        "active_evidence": {
-            "active_confidence": (
-                evidence.active_evidence.active_confidence.value
-                if evidence.active_evidence
-                else "MEDIUM"
-            ),
-            "evidence": (
-                evidence.active_evidence.evidence if evidence.active_evidence else []
-            ),
-            "data": evidence.active_evidence.data if evidence.active_evidence else None,
-        },
-        "influence_evidence": {
-            "influence_direction_aligned": (
-                evidence.influence_evidence.influence_direction_aligned
-                if evidence.influence_evidence
-                else False
-            ),
-            "influence_likely": (
-                evidence.influence_evidence.influence_likely
-                if evidence.influence_evidence
-                else False
-            ),
-            "other_conflicting_insights": (
-                evidence.influence_evidence.other_conflicting_insights
-                if evidence.influence_evidence
-                else []
-            ),
-            "other_supporting_insights": (
-                evidence.influence_evidence.other_supporting_insights
-                if evidence.influence_evidence
-                else []
-            ),
-            "overlapping_conflicting_insights": (
-                evidence.influence_evidence.overlapping_conflicting_insights
-                if evidence.influence_evidence
-                else []
-            ),
-            "overlapping_supporting_insights": (
-                evidence.influence_evidence.overlapping_supporting_insights
-                if evidence.influence_evidence
-                else []
-            ),
-        },
-    }
+    # Convert the evidence object to a dictionary, preserving any structure
+    return evidence.model_dump()
 
 
 @router.get("/", response_model=InsightListResponse)
@@ -329,6 +286,7 @@ async def create_insight(
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log
     - `metric_id` (required): The unique identifier of the metric
+    - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `relationship_type` (optional): Type of relationship (INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED)
     - `direction` (optional): Direction of influence (positive or negative)
     - `evidence` (optional): Evidence object containing active and influence evidence
@@ -344,6 +302,7 @@ async def create_insight(
     {
         "activity_log_id": "log123",
         "metric_id": "metric456",
+        "account_id": "a000001",
         "relationship_type": "INFLUENCE_CONFIRMED",
         "direction": "positive",
         "evidence": {
@@ -361,6 +320,11 @@ async def create_insight(
                 status_code=400,
                 detail="Both activity_log_id and metric_id are required for creating insights",
             )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400,
+                detail="account_id is required for creating insights",
+            )
 
         # Check Neo4j connectivity
         is_healthy = await neo4j.health_check()
@@ -371,20 +335,22 @@ async def create_insight(
         relationship_type = request.relationship_type.value if request.relationship_type else "INFLUENCE_CONFIRMED"
         evidence_data = _prepare_evidence_data(request.evidence)
 
-        # Neo4j query to create insight relationship
+        # Neo4j query to create insight relationship with account validation
         query = f"""
-        MATCH (al:ActivityLog {{activity_log_id: $activity_log_id}})
-        MATCH (m:Metric {{metric_id: $metric_id}})
+        MATCH (account:Account {{account_id: $account_id}})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {{metric_id: $metric_id}})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(al:ActivityLog {{activity_log_id: $activity_log_id}})
         CREATE (al)-[r:{relationship_type} {{
             evidence: $evidence,
             direction: $direction
-        }}]->(m)
+        }}]->(metric)
         RETURN r
         """
 
         parameters = {
             "activity_log_id": request.activity_log_id,
             "metric_id": request.metric_id,
+            "account_id": request.account_id,
             "evidence": str(evidence_data) if evidence_data else None,
             "direction": request.direction.value if request.direction else None,
         }
@@ -392,7 +358,7 @@ async def create_insight(
         result = await neo4j.execute_write_query(query, parameters)
         if result["relationships_created"] == 0:
             raise HTTPException(
-                status_code=404, detail="ActivityLog or Metric not found"
+                status_code=404, detail="ActivityLog or Metric not found for the specified account, or they don't belong to the same account"
             )
 
         return SuccessResponse(
