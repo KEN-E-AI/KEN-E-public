@@ -490,6 +490,7 @@ async def delete_insight(
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log
     - `metric_id` (required): The unique identifier of the metric
+    - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     
     **Returns:**
     - `success`: Boolean indicating operation success
@@ -501,7 +502,8 @@ async def delete_insight(
     DELETE /api/v1/insights/
     {
         "activity_log_id": "log123",
-        "metric_id": "metric456"
+        "metric_id": "metric456",
+        "account_id": "a000001"
     }
     ```
     """
@@ -511,15 +513,23 @@ async def delete_insight(
                 status_code=400,
                 detail="Both activity_log_id and metric_id are required for deleting insights",
             )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400,
+                detail="account_id is required for deleting insights",
+            )
 
         # Check Neo4j connectivity
         is_healthy = await neo4j.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        # Neo4j query to delete insight relationship
+        # Neo4j query to delete insight relationship with account validation
         query = """
-        MATCH (al:ActivityLog {activity_log_id: $activity_log_id})-[r:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(m:Metric {metric_id: $metric_id})
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(al:ActivityLog {activity_log_id: $activity_log_id})
+        MATCH (al)-[r:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(metric)
         DELETE r
         RETURN count(r) as deleted_count
         """
@@ -527,12 +537,13 @@ async def delete_insight(
         parameters = {
             "activity_log_id": request.activity_log_id,
             "metric_id": request.metric_id,
+            "account_id": request.account_id,
         }
 
         result = await neo4j.execute_write_query(query, parameters)
         if result["relationships_deleted"] == 0:
             raise HTTPException(
-                status_code=404, detail="Insight relationship not found"
+                status_code=404, detail="Insight relationship not found for the specified account, or the ActivityLog and Metric don't belong to the same account"
             )
 
         return SuccessResponse(
