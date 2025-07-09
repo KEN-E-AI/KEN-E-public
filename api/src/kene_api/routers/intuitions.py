@@ -230,6 +230,7 @@ async def update_intuition(
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity
     - `metric_id` (required): The unique identifier of the metric
+    - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `direction` (optional): Updated direction of influence (positive or negative)
     
     **Returns:**
@@ -243,6 +244,7 @@ async def update_intuition(
     {
         "activity_id": "act123",
         "metric_id": "metric456",
+        "account_id": "a000001",
         "direction": "negative"
     }
     ```
@@ -250,15 +252,28 @@ async def update_intuition(
     try:
         if not request.activity_id or not request.metric_id:
             raise HTTPException(status_code=400, detail=MISSING_REQUIRED_IDS_ERROR)
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400, detail="account_id is required for updating intuitions"
+            )
 
-        # Neo4j query to update intuition relationship
+        # Check Neo4j connectivity
+        is_healthy = await neo4j.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Neo4j query to update intuition relationship with account validation
         query = """
-        MATCH (a:Activity {activity_id: $activity_id})-[r:INFLUENCE_LIKELY]->(m:Metric {metric_id: $metric_id})
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
+        MATCH (activity)-[r:INFLUENCE_LIKELY]->(metric)
         SET r.direction = $direction
         RETURN r
         """
 
         parameters = {
+            "account_id": request.account_id,
             "activity_id": request.activity_id,
             "metric_id": request.metric_id,
             "direction": request.direction.value if request.direction else None,
@@ -269,7 +284,7 @@ async def update_intuition(
         # Check if any properties were actually set (meaning the relationship was found)
         if result.get("properties_set", 0) == 0:
             raise HTTPException(
-                status_code=404, detail="Intuition relationship not found"
+                status_code=404, detail="Intuition relationship not found for the specified account, or the Activity and Metric don't belong to the same account"
             )
 
         return SuccessResponse(
