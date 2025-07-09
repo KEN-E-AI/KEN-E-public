@@ -250,17 +250,16 @@ async def get_insights(
     """
     Get all insights for an account.
 
-    Returns insight relationships and intuitions for the account.
+    Returns insight relationships for the account.
     Fetches Activities for an account, then ActivityLog nodes linked to those Activities,
-    then finds relationships from ActivityLog to Metric nodes.
+    then finds INFLUENCE_CONFIRMED and NO_INFLUENCE_CONFIRMED relationships from ActivityLog to Metric nodes.
     
     **Parameters (query parameter):**
     - `account_id` (required): The unique identifier for the account
     
     **Returns:**
     - `insights`: List of insight objects with relationship data and evidence
-    - `intuitions`: List of intuition objects showing likely influences
-    - `total`: Total number of insights and intuitions combined
+    - `total`: Total number of insights found
     
     **Example:**
     ```
@@ -283,20 +282,9 @@ async def get_insights(
         ORDER BY activity.activity_description, metric.metric_name
         """
 
-        # Query to fetch intuitions: Account → Activity → Metric relationships with INFLUENCE_LIKELY
-        intuitions_query = """
-        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)
-        MATCH (activity)-[intuition_rel:INFLUENCE_LIKELY]->(metric:Metric)
-        RETURN activity, properties(intuition_rel) as relationship, metric
-        ORDER BY activity.activity_description, metric.metric_name
-        """
-
-        # Execute both queries
+        # Execute insights query
         insights_result = await neo4j.execute_query(
             insights_query, {"account_id": account_id}
-        )
-        intuitions_result = await neo4j.execute_query(
-            intuitions_query, {"account_id": account_id}
         )
 
         # Process insights
@@ -310,21 +298,10 @@ async def get_insights(
                 print(f"Error processing insight record: {e}")
                 continue
 
-        # Process intuitions
-        intuitions = []
-        for record in intuitions_result:
-            try:
-                intuition = await _create_intuition_from_record(record)
-                intuitions.append(intuition)
-            except Exception as e:
-                # Log error but continue processing other records
-                print(f"Error processing intuition record: {e}")
-                continue
-
         return InsightListResponse(
             insights=insights,
-            intuitions=intuitions,
-            total=len(insights) + len(intuitions),
+            intuitions=[],  # Empty list since intuitions are now handled separately
+            total=len(insights),
         )
 
     except HTTPException:

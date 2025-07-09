@@ -1,15 +1,112 @@
 """Intuitions router for CRUD operations on intuition relationships."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..database import Neo4jService, get_neo4j_service
 from ..models.kene_models import (
+    ACCOUNT_ID_DESCRIPTION,
     MISSING_REQUIRED_IDS_ERROR,
+    DirectionType,
+    Intuition,
+    IntuitionListResponse,
     IntuitionRequest,
     SuccessResponse,
 )
 
 router = APIRouter(tags=["intuitions"])
+
+# Constants
+DATABASE_UNAVAILABLE_MESSAGE = "Database service unavailable. Please try again later."
+
+
+async def _create_intuition_from_record(record) -> Intuition:
+    """Create an Intuition object from a Neo4j record."""
+    activity_data = record.get("activity") or {}
+    metric_data = record.get("metric") or {}
+    relationship_data = record.get("relationship") or {}
+
+    # Parse direction from relationship properties
+    direction_str = relationship_data.get("direction", "positive")
+    direction = (
+        DirectionType.POSITIVE
+        if direction_str == "positive"
+        else DirectionType.NEGATIVE
+    )
+
+    return Intuition(
+        activity_id=activity_data.get("activity_id", ""),
+        metric_id=metric_data.get("metric_id", ""),
+        direction=direction,
+    )
+
+
+@router.get("/", response_model=IntuitionListResponse)
+async def get_intuitions(
+    account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
+    neo4j: Neo4jService = Depends(get_neo4j_service),
+) -> IntuitionListResponse:
+    """
+    Get all intuitions for an account.
+
+    Returns intuition relationships for the account.
+    Fetches Activities for an account, then finds INFLUENCE_LIKELY relationships from Activity to Metric nodes.
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `intuitions`: List of intuition objects showing likely influences
+    - `total`: Total number of intuitions found
+    
+    **Example:**
+    ```
+    GET /api/v1/intuitions/?account_id=a000001
+    ```
+    """
+    try:
+        # Check Neo4j connectivity
+        is_healthy = await neo4j.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Query to fetch intuitions: Account → Activity → Metric relationships with INFLUENCE_LIKELY
+        intuitions_query = """
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)
+        MATCH (activity)-[intuition_rel:INFLUENCE_LIKELY]->(metric:Metric)
+        RETURN activity, properties(intuition_rel) as relationship, metric
+        ORDER BY activity.activity_description, metric.metric_name
+        """
+
+        # Execute intuitions query
+        intuitions_result = await neo4j.execute_query(
+            intuitions_query, {"account_id": account_id}
+        )
+
+        # Process intuitions
+        intuitions = []
+        for record in intuitions_result:
+            try:
+                intuition = await _create_intuition_from_record(record)
+                intuitions.append(intuition)
+            except Exception as e:
+                # Log error but continue processing other records
+                print(f"Error processing intuition record: {e}")
+                continue
+
+        return IntuitionListResponse(
+            intuitions=intuitions,
+            total=len(intuitions),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Handle Neo4j connectivity issues specifically
+        if "Neo4j" in str(e) or "connect" in str(e).lower():
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching intuitions: {str(e)}"
+        )
 
 
 @router.post("/", response_model=SuccessResponse)
