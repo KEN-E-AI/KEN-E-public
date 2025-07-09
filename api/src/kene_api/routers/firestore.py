@@ -248,6 +248,29 @@ async def create_document(
     Create a document in Firestore.
     
     Creates a new document in the specified collection with the provided data.
+    
+    **Parameters (in request body):**
+    - `collection` (required): Firestore collection name
+    - `document_id` (optional): Document ID (auto-generated if not provided)
+    - `data` (required): Document data as key-value pairs
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `document_id`: ID of the created document
+    - `data`: Document data that was stored
+    
+    **Example:**
+    ```json
+    POST /api/v1/firestore/documents
+    {
+        "collection": "users",
+        "document_id": "user123",
+        "data": {
+            "name": "John Doe",
+            "email": "john@example.com"
+        }
+    }
+    ```
     """
     try:
         # Check Firestore connectivity
@@ -286,6 +309,20 @@ async def get_document(
     Get a document from Firestore.
     
     Retrieves a document by its ID from the specified collection.
+    
+    **Parameters (in URL path):**
+    - `collection` (required): Firestore collection name
+    - `document_id` (required): Document ID to retrieve
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `document_id`: ID of the retrieved document
+    - `data`: Document data
+    
+    **Example:**
+    ```
+    GET /api/v1/firestore/documents/users/user123
+    ```
     """
     try:
         # Check Firestore connectivity
@@ -326,28 +363,51 @@ async def update_document(
     
     Updates an existing document with the provided data. Supports three modes:
     
-    1. Direct update (existing functionality):
-       data = {"field1": "value1", "field2": "value2"}
+    **Parameters (in URL path):**
+    - `collection` (required): Firestore collection name
+    - `document_id` (required): Document ID to update
     
-    2. Array union operation:
-       data = {
-         "update": {
-           "field": "field_name",
-           "operator": "arrayUnion",
-           "value": {...object_to_add...}
-         }
-       }
+    **Parameters (query parameter):**
+    - `account_id` (required): Account ID for validation
     
-    3. Replace array element:
-       data = {
-         "update": {
-           "field": "field_name", 
-           "operator": "replaceOne",
-           "matchField": "id_field",
-           "matchValue": "id_value",
-           "value": {...replacement_object...}
-         }
-       }
+    **Parameters (in request body):**
+    Mode 1 - Direct update:
+    ```json
+    {"field1": "value1", "field2": "value2"}
+    ```
+    
+    Mode 2 - Array union operation:
+    ```json
+    {
+      "update": {
+        "field": "field_name",
+        "operator": "arrayUnion",
+        "value": {...object_to_add...}
+      }
+    }
+    ```
+    
+    Mode 3 - Replace array element:
+    ```json
+    {
+      "update": {
+        "field": "field_name", 
+        "operator": "replaceOne",
+        "matchField": "id_field",
+        "matchValue": "id_value",
+        "value": {...replacement_object...}
+      }
+    }
+    ```
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message with operation details
+    
+    **Example:**
+    ```
+    PUT /api/v1/firestore/documents/users/user123?account_id=a000001
+    ```
     """
     try:
         # First validate the request payload structure before checking Firestore
@@ -475,6 +535,22 @@ async def delete_document(
     Delete a document from Firestore.
     
     Deletes a document by its ID from the specified collection.
+    
+    **Parameters (in URL path):**
+    - `collection` (required): Firestore collection name
+    - `document_id` (required): Document ID to delete
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): Account ID for validation
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    
+    **Example:**
+    ```
+    DELETE /api/v1/firestore/documents/users/user123?account_id=a000001
+    ```
     """
     try:
         # Check Firestore connectivity
@@ -510,6 +586,29 @@ async def query_documents(
     Query documents from Firestore.
     
     Retrieves documents from a collection based on query parameters.
+    
+    **Parameters (in request body):**
+    - `collection` (required): Firestore collection name
+    - `field` (optional): Field to query
+    - `operator` (optional): Query operator (==, !=, <, <=, >, >=, in, not-in, array-contains, array-contains-any)
+    - `value` (optional): Value to compare against
+    - `limit` (optional): Maximum number of documents to return
+    
+    **Returns:**
+    - `documents`: List of matching documents
+    - `total`: Total number of documents found
+    
+    **Example:**
+    ```json
+    POST /api/v1/firestore/documents/query
+    {
+        "collection": "users",
+        "field": "email",
+        "operator": "==",
+        "value": "john@example.com",
+        "limit": 10
+    }
+    ```
     """
     try:
         # Check Firestore connectivity

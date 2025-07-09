@@ -37,6 +37,18 @@ async def get_metrics(
     Returns a list of all metrics that have been created for the account,
     along with all properties. Also includes related Dataset information
     through the CALCULATED_FROM relationship.
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `metrics`: List of metric objects with their properties and dataset information
+    - `total`: Total number of metrics found
+    
+    **Example:**
+    ```
+    GET /api/v1/metrics/?account_id=a000001
+    ```
     """
     try:
         # Check Neo4j connectivity

@@ -31,6 +31,33 @@ async def run_insight_analysis(
 
     Search insights with filters using the search insight utility.
     This endpoint has been moved from the insights router and adapted for funnel analysis.
+    
+    **Parameters (in request body):**
+    - `account_id` (required): The unique identifier for the account
+    - `metric_id` (required): The unique identifier for the metric to analyze
+    - `direction` (required): Direction of influence ("positive" or "negative")
+    - `evaluation_date_start` (required): Start date for evaluation period (YYYY-MM-DD)
+    - `evaluation_date_end` (required): End date for evaluation period (YYYY-MM-DD)
+    - `comparison_date_start` (required): Start date for comparison period (YYYY-MM-DD)
+    - `comparison_date_end` (required): End date for comparison period (YYYY-MM-DD)
+    
+    **Returns:**
+    - `insights`: List of insights from the analysis
+    - `total`: Total number of insights found
+    
+    **Example:**
+    ```json
+    POST /api/v1/funnel-reports/analysis
+    {
+        "account_id": "a000001",
+        "metric_id": "m001",
+        "direction": "positive",
+        "evaluation_date_start": "2025-01-01",
+        "evaluation_date_end": "2025-01-31",
+        "comparison_date_start": "2024-12-01",
+        "comparison_date_end": "2024-12-31"
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
