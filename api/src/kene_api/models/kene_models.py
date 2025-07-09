@@ -317,7 +317,7 @@ class ActivityLogRequest(BaseRequest):
     activity_id: Optional[str] = Field(
         None, description="Activity ID (required for associating logs)"
     )
-    id: Optional[str] = Field(
+    activity_log_id: Optional[str] = Field(
         None, description="Activity log ID (required for edit/delete)"
     )
     start_date: Optional[str] = Field(

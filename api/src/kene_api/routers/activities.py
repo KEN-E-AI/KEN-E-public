@@ -524,7 +524,9 @@ async def update_activity_log(
     Edit an ActivityLog node in neo4j.
     
     **Parameters (in request body):**
-    - `id` (required): The unique identifier of the activity log to update
+    - `activity_log_id` (required): The unique identifier of the activity log to update
+    - `activity_id` (required): The unique identifier of the activity (ensures log belongs to this activity)
+    - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
     - `start_date` (optional): Updated start date of the activity log
     - `end_date` (optional): Updated end date of the activity log
     - `description` (optional): Updated description of the activity log entry
@@ -538,7 +540,9 @@ async def update_activity_log(
     ```json
     PUT /api/v1/activities/logs
     {
-        "id": "bzbzbz",
+        "activity_log_id": "bzbzbz",
+        "activity_id": "ccc333",
+        "account_id": "a000001",
         "start_date": "2025-01-08",
         "end_date": "2025-01-09",
         "description": "Updated email campaign with A/B testing results"
@@ -546,31 +550,50 @@ async def update_activity_log(
     ```
     """
     try:
-        if not request.id:
+        if not request.activity_log_id:
             raise HTTPException(
                 status_code=400,
-                detail="id is required for update operation",
+                detail="activity_log_id is required for update operation",
+            )
+        if not request.activity_id:
+            raise HTTPException(
+                status_code=400,
+                detail="activity_id is required for update operation",
+            )
+        if not request.account_id:
+            raise HTTPException(
+                status_code=400,
+                detail="account_id is required for update operation",
             )
 
         # Verify Neo4j connectivity
         await db.health_check()
 
-        # Check if the ActivityLog node exists
+        # Check if the ActivityLog node exists and belongs to the specified activity and account
         check_log_query = """
-        MATCH (log:ActivityLog {activity_log_id: $id})
+        MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity {activity_id: $activity_id})
+        MATCH (activity)-[:LOGGED]->(log:ActivityLog {activity_log_id: $activity_log_id})
         RETURN log
         """
-        log_result = await db.execute_query(check_log_query, {"id": request.id})
+        log_result = await db.execute_query(check_log_query, {
+            "activity_log_id": request.activity_log_id,
+            "activity_id": request.activity_id,
+            "account_id": request.account_id
+        })
 
         if not log_result:
             raise HTTPException(
                 status_code=404,
-                detail=f"Activity log with id '{request.id}' not found",
+                detail=f"Activity log with activity_log_id '{request.activity_log_id}' not found for activity '{request.activity_id}' and account '{request.account_id}'",
             )
 
         # Build update query dynamically based on provided fields
         update_fields = []
-        parameters: Dict[str, Any] = {"id": request.id}
+        parameters: Dict[str, Any] = {
+            "activity_log_id": request.activity_log_id,
+            "activity_id": request.activity_id,
+            "account_id": request.account_id
+        }
 
         if request.start_date is not None:
             update_fields.append("log.start_date = $start_date")
@@ -587,9 +610,10 @@ async def update_activity_log(
         if not update_fields:
             raise HTTPException(status_code=400, detail="No fields provided for update")
 
-        # Execute update query
+        # Execute update query with account and activity validation
         update_query = f"""
-        MATCH (log:ActivityLog {{activity_log_id: $id}})
+        MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity {{activity_id: $activity_id}})
+        MATCH (activity)-[:LOGGED]->(log:ActivityLog {{activity_log_id: $activity_log_id}})
         SET {', '.join(update_fields)}
         RETURN log
         """
@@ -647,20 +671,20 @@ async def delete_activity_log(
 
         # Check if the ActivityLog node exists
         check_log_query = """
-        MATCH (log:ActivityLog {activity_log_id: $id})
+        MATCH (log:ActivityLog {activity_log_id: $activity_log_id})
         RETURN log
         """
-        log_result = await db.execute_query(check_log_query, {"id": request.id})
+        log_result = await db.execute_query(check_log_query, {"activity_log_id": request.activity_log_id})
 
         if not log_result:
             raise HTTPException(
                 status_code=404,
-                detail=f"Activity log with id '{request.id}' not found",
+                detail=f"Activity log with activity_log_id '{request.activity_log_id}' not found",
             )
 
         # Delete the ActivityLog node and all its relationships
         delete_log_query = """
-        MATCH (log:ActivityLog {activity_log_id: $id})
+        MATCH (log:ActivityLog {activity_log_id: $activity_log_id})
         DETACH DELETE log
         """
 
