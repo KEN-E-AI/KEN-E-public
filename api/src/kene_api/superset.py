@@ -100,37 +100,84 @@ class SupersetClient:
             raise SupersetClientError(f"Failed to get dataset: {e}")
 
     async def create_metric(self, dataset_id: int, metric_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new metric in a Superset dataset."""
+        """Create a new metric in a Superset dataset by updating the dataset."""
         await self._ensure_authenticated()
         
         try:
-            # First verify the dataset exists
-            dataset = await self.get_dataset(dataset_id)
+            # Get the current dataset with all its metrics
+            response = self.session.get(
+                f"{self.base_url}/api/v1/dataset/{dataset_id}",
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            dataset_response = response.json()
+            dataset = dataset_response.get("result", {})
+            
             if not dataset:
                 raise SupersetClientError(f"Dataset {dataset_id} not found")
             
-            metric_payload = {
+            # Get existing metrics and clean them for the update
+            existing_metrics = dataset.get("metrics", [])
+            
+            # Remove read-only fields from existing metrics - keep only the minimal required fields
+            cleaned_existing_metrics = []
+            for metric in existing_metrics:
+                cleaned_metric = {
+                    "metric_name": metric.get("metric_name"),
+                    "verbose_name": metric.get("verbose_name"), 
+                    "expression": metric.get("expression")
+                }
+                # Add optional fields only if they exist and are not empty
+                if metric.get("description"):
+                    cleaned_metric["description"] = metric.get("description")
+                if metric.get("d3format"):
+                    cleaned_metric["d3format"] = metric.get("d3format")
+                if metric.get("currency"):
+                    cleaned_metric["currency"] = metric.get("currency")
+                
+                cleaned_existing_metrics.append(cleaned_metric)
+            
+            # Create new metric payload with minimal required fields
+            new_metric = {
                 "metric_name": metric_data.get("metric_name"),
                 "verbose_name": metric_data.get("verbose_name"),
-                "expression": metric_data.get("expression"),
-                "description": metric_data.get("description", ""),
-                "d3_format": metric_data.get("d3_format", ""),
-                "currency": metric_data.get("currency", ""),
-                "is_restricted": False,
-                "warning_text": "",
-                "metric_type": "count"  # Default metric type
+                "expression": metric_data.get("expression")
             }
             
-            response = self.session.post(
-                f"{self.base_url}/api/v1/dataset/{dataset_id}/metric",
-                json=metric_payload,
+            # Add optional fields only if they have values
+            if metric_data.get("description"):
+                new_metric["description"] = metric_data.get("description")
+            if metric_data.get("d3_format"):
+                new_metric["d3format"] = metric_data.get("d3_format")
+            if metric_data.get("currency"):
+                new_metric["currency"] = metric_data.get("currency")
+            
+            # Add new metric to cleaned existing metrics
+            all_metrics = cleaned_existing_metrics + [new_metric]
+            
+            # Update the dataset with all metrics
+            update_payload = {"metrics": all_metrics}
+            
+            response = self.session.put(
+                f"{self.base_url}/api/v1/dataset/{dataset_id}",
+                json=update_payload,
                 timeout=30
             )
             response.raise_for_status()
             
             result = response.json()
             logger.info(f"Successfully created metric {metric_data.get('metric_name')} in dataset {dataset_id}")
-            return result.get("result", {})
+            
+            # Get the created metric from the response
+            updated_metrics = result.get("result", {}).get("metrics", [])
+            created_metric = None
+            for metric in updated_metrics:
+                if metric.get("metric_name") == metric_data.get("metric_name"):
+                    created_metric = metric
+                    break
+            
+            return created_metric or {}
             
         except requests.RequestException as e:
             logger.error(f"Failed to create metric in dataset {dataset_id}: {e}")
