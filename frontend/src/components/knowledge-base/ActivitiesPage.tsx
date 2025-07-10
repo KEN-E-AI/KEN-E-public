@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Info,
@@ -45,10 +45,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  activities,
-  type Activity as ImportedActivity,
-} from "@/data/activities";
+import { useAuth } from "@/contexts/AuthContext";
+import axios from "axios";
 
 interface Intuition {
   id: string;
@@ -61,6 +59,25 @@ interface Log {
   startDate: string;
   endDate: string;
   description: string;
+}
+
+interface ApiActivity {
+  id: string;
+  account_id: string;
+  activity_description: string;
+  expected_impact: string;
+  internal: boolean;
+  known_activity: boolean;
+  logs: ApiLog[];
+}
+
+interface ApiLog {
+  id: string;
+  account_id: string;
+  start_date: string;
+  end_date: string;
+  description: string;
+  evidence: any;
 }
 
 interface Activity {
@@ -224,31 +241,37 @@ const availableMetrics: AvailableMetric[] = [
 ];
 
 const ActivitiesPage = () => {
-  // Convert imported activities to component format
-  const convertedActivities: Activity[] = activities.map((activity) => ({
-    id: activity.activity_id,
-    description: activity.description,
-    internal: activity.internal,
-    known: activity.known_activity,
-    expectedImpact: activity.expected_impact,
-    intuitions: activity.intuition.map((intuition, index) => {
-      const [metricName, direction] = Object.entries(intuition)[0];
-      return {
-        id: `i${activity.activity_id}_${index}`,
-        metricName,
-        direction: direction as "increase" | "decrease",
-      };
-    }),
-    logs: activity.logs.map((log) => ({
-      id: log.activity_log_id,
+  const { selectedOrgAccount } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+  // Convert API activity to component format
+  const convertApiActivity = (apiActivity: ApiActivity): Activity => ({
+    id: apiActivity.id,
+    description: apiActivity.activity_description,
+    internal: apiActivity.internal,
+    known: apiActivity.known_activity,
+    expectedImpact: apiActivity.expected_impact,
+    intuitions: [], // TODO: Will need to be populated from insights/relationships
+    logs: apiActivity.logs.map((log) => ({
+      id: log.id,
       startDate: log.start_date,
       endDate: log.end_date,
       description: log.description,
     })),
-  }));
+  });
 
-  const [activitiesData, setActivitiesData] =
-    useState<Activity[]>(convertedActivities);
+  // Convert component activity to API format
+  const convertToApiActivity = (activity: Activity): Partial<ApiActivity> => ({
+    account_id: selectedOrgAccount?.accountId || "",
+    activity_description: activity.description,
+    expected_impact: activity.expectedImpact,
+    internal: activity.internal,
+    known_activity: activity.known,
+  });
+
+  const [activitiesData, setActivitiesData] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingIntuition, setEditingIntuition] = useState<{
     activity: string;
@@ -272,6 +295,117 @@ const ActivitiesPage = () => {
   const [metricSearchTerm, setMetricSearchTerm] = useState("");
   const [selectedDataset, setSelectedDataset] = useState<string>("all");
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
+  // Fetch activities from API
+  const fetchActivities = async () => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/activities/?account_id=${selectedOrgAccount.accountId}`
+      );
+      
+      if (response.data.activities !== undefined) {
+        const convertedActivities = response.data.activities.map(convertApiActivity);
+        setActivitiesData(convertedActivities);
+      } else {
+        setError("Failed to fetch activities");
+      }
+    } catch (err) {
+      console.error("Error fetching activities:", err);
+      setError("Failed to fetch activities");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create activity via API
+  const createActivity = async (activity: Activity) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/v1/activities/`,
+        convertToApiActivity(activity)
+      );
+      
+      if (response.data.success) {
+        await fetchActivities(); // Refresh the list
+      } else {
+        setError("Failed to create activity");
+      }
+    } catch (err) {
+      console.error("Error creating activity:", err);
+      setError("Failed to create activity");
+    }
+  };
+
+  // Update activity via API
+  const updateActivity = async (activity: Activity) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.put(
+        `${API_BASE_URL}/api/v1/activities/`,
+        { ...convertToApiActivity(activity), id: activity.id }
+      );
+      
+      if (response.data.success) {
+        await fetchActivities(); // Refresh the list
+      } else {
+        setError("Failed to update activity");
+      }
+    } catch (err) {
+      console.error("Error updating activity:", err);
+      setError("Failed to update activity");
+    }
+  };
+
+  // Delete activity via API
+  const deleteActivity = async (activityId: string) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/v1/activities/`,
+        { 
+          data: { 
+            id: activityId,
+            account_id: selectedOrgAccount.accountId 
+          } 
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchActivities(); // Refresh the list
+      } else {
+        setError("Failed to delete activity");
+      }
+    } catch (err) {
+      console.error("Error deleting activity:", err);
+      setError("Failed to delete activity");
+    }
+  };
+
+  // Load activities on component mount
+  useEffect(() => {
+    fetchActivities();
+  }, [selectedOrgAccount?.accountId]);
+
   // Filter and search activities - optimized with useMemo
   const filteredActivities = useMemo(() => {
     return activitiesData.filter((activity) => {
@@ -291,7 +425,7 @@ const ActivitiesPage = () => {
 
       return matchesSearch && matchesFilter;
     });
-  }, [activities, searchTerm, filterStatus]);
+  }, [activitiesData, searchTerm, filterStatus]);
 
   // Filter and search metrics for intuition selection - optimized with useMemo
   const filteredMetrics = useMemo(() => {
@@ -333,38 +467,19 @@ const ActivitiesPage = () => {
     });
     setShowIntuitionModal(true);
   };
-  const updateActivity = (activityId: string, updates: Partial<Activity>) => {
-    setActivitiesData((prev) =>
-      prev.map((activity) =>
-        activity.id === activityId ? { ...activity, ...updates } : activity,
-      ),
-    );
-  };
-
-  const addActivity = (activity: Omit<Activity, "id">) => {
-    const newActivity = { ...activity, id: `a${Date.now()}` };
-    setActivitiesData((prev) => [...prev, newActivity]);
-  };
-
-  const deleteActivity = (activityId: string) => {
-    setActivitiesData((prev) =>
-      prev.filter((activity) => activity.id !== activityId),
-    );
-  };
-
   const handleEditActivity = (activity: Activity) => {
     setEditingActivity(activity);
     setIsCreating(false);
     setShowActivityModal(true);
   };
 
-  const handleSaveActivity = () => {
+  const handleSaveActivity = async () => {
     if (!editingActivity || !editingActivity.description.trim()) return;
 
     if (isCreating) {
-      addActivity(editingActivity);
+      await createActivity(editingActivity);
     } else {
-      updateActivity(editingActivity.id, editingActivity);
+      await updateActivity(editingActivity);
     }
 
     setEditingActivity(null);
@@ -372,20 +487,26 @@ const ActivitiesPage = () => {
     setShowActivityModal(false);
   };
 
-  const addIntuition = (
+  const handleDeleteActivity = async (activityId: string) => {
+    await deleteActivity(activityId);
+  };
+
+  const addIntuition = async (
     activityId: string,
     intuition: Omit<Intuition, "id">,
   ) => {
     const newIntuition = { ...intuition, id: `i${Date.now()}` };
-    updateActivity(activityId, {
-      intuitions: [
-        ...(activitiesData.find((a) => a.id === activityId)?.intuitions || []),
-        newIntuition,
-      ],
-    });
+    const activity = activitiesData.find((a) => a.id === activityId);
+    if (activity) {
+      const updatedActivity = {
+        ...activity,
+        intuitions: [...activity.intuitions, newIntuition],
+      };
+      await updateActivity(updatedActivity);
+    }
   };
 
-  const updateIntuition = (
+  const updateIntuition = async (
     activityId: string,
     intuitionId: string,
     updates: Partial<Intuition>,
@@ -395,31 +516,41 @@ const ActivitiesPage = () => {
       const updatedIntuitions = activity.intuitions.map((i) =>
         i.id === intuitionId ? { ...i, ...updates } : i,
       );
-      updateActivity(activityId, { intuitions: updatedIntuitions });
+      const updatedActivity = {
+        ...activity,
+        intuitions: updatedIntuitions,
+      };
+      await updateActivity(updatedActivity);
     }
   };
 
-  const deleteIntuition = (activityId: string, intuitionId: string) => {
+  const deleteIntuition = async (activityId: string, intuitionId: string) => {
     const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedIntuitions = activity.intuitions.filter(
         (i) => i.id !== intuitionId,
       );
-      updateActivity(activityId, { intuitions: updatedIntuitions });
+      const updatedActivity = {
+        ...activity,
+        intuitions: updatedIntuitions,
+      };
+      await updateActivity(updatedActivity);
     }
   };
 
-  const addLog = (activityId: string, log: Omit<Log, "id">) => {
+  const addLog = async (activityId: string, log: Omit<Log, "id">) => {
     const newLog = { ...log, id: `l${Date.now()}` };
-    updateActivity(activityId, {
-      logs: [
-        ...(activitiesData.find((a) => a.id === activityId)?.logs || []),
-        newLog,
-      ],
-    });
+    const activity = activitiesData.find((a) => a.id === activityId);
+    if (activity) {
+      const updatedActivity = {
+        ...activity,
+        logs: [...activity.logs, newLog],
+      };
+      await updateActivity(updatedActivity);
+    }
   };
 
-  const updateLog = (
+  const updateLog = async (
     activityId: string,
     logId: string,
     updates: Partial<Log>,
@@ -429,19 +560,27 @@ const ActivitiesPage = () => {
       const updatedLogs = activity.logs.map((l) =>
         l.id === logId ? { ...l, ...updates } : l,
       );
-      updateActivity(activityId, { logs: updatedLogs });
+      const updatedActivity = {
+        ...activity,
+        logs: updatedLogs,
+      };
+      await updateActivity(updatedActivity);
     }
   };
 
-  const deleteLog = (activityId: string, logId: string) => {
+  const deleteLog = async (activityId: string, logId: string) => {
     const activity = activitiesData.find((a) => a.id === activityId);
     if (activity) {
       const updatedLogs = activity.logs.filter((l) => l.id !== logId);
-      updateActivity(activityId, { logs: updatedLogs });
+      const updatedActivity = {
+        ...activity,
+        logs: updatedLogs,
+      };
+      await updateActivity(updatedActivity);
     }
   };
 
-  const handleSaveIntuition = () => {
+  const handleSaveIntuition = async () => {
     if (!editingIntuition.activity || !editingIntuition.intuition?.metricName)
       return;
 
@@ -471,13 +610,13 @@ const ActivitiesPage = () => {
     } else {
       // Regular activity editing (in accordion)
       if (editingIntuition.intuition.id) {
-        updateIntuition(
+        await updateIntuition(
           editingIntuition.activity,
           editingIntuition.intuition.id,
           editingIntuition.intuition,
         );
       } else {
-        addIntuition(editingIntuition.activity, editingIntuition.intuition);
+        await addIntuition(editingIntuition.activity, editingIntuition.intuition);
       }
     }
 
@@ -485,7 +624,7 @@ const ActivitiesPage = () => {
     setShowIntuitionModal(false);
   };
 
-  const handleSaveLog = () => {
+  const handleSaveLog = async () => {
     if (!editingLog.activity || !editingLog.log?.description) return;
 
     // If we're editing within the Activity modal (temp activity)
@@ -514,9 +653,9 @@ const ActivitiesPage = () => {
     } else {
       // Regular activity editing (in accordion)
       if (editingLog.log.id) {
-        updateLog(editingLog.activity, editingLog.log.id, editingLog.log);
+        await updateLog(editingLog.activity, editingLog.log.id, editingLog.log);
       } else {
-        addLog(editingLog.activity, editingLog.log);
+        await addLog(editingLog.activity, editingLog.log);
       }
     }
 
@@ -552,6 +691,27 @@ const ActivitiesPage = () => {
             Add Activity
           </Button>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <Info className="h-5 w-5 text-red-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {loading && (
+          <div className="text-center py-8">
+            <div className="text-sm text-gray-500">Loading activities...</div>
+          </div>
+        )}
 
         {/* Search and Filter */}
         <div className="flex items-center gap-3">
@@ -647,273 +807,275 @@ const ActivitiesPage = () => {
         </div>
 
         {/* Activities Accordion */}
-        <div className="bg-white border border-dashboard-gray-200 rounded-lg">
-          {filteredActivities.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-gray-500 text-sm">
-                {searchTerm || filterStatus !== "all"
-                  ? "No activities match your current filter criteria."
-                  : "No activities have been added yet."}
-              </p>
-              {(searchTerm || filterStatus !== "all") && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setFilterStatus("all");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              )}
-            </div>
-          ) : (
-            <Accordion type="multiple" className="w-full">
-              {filteredActivities.map((activity) => (
-                <AccordionItem
-                  key={activity.id}
-                  value={activity.id}
-                  className="border-b border-dashboard-gray-200 last:border-b-0"
-                >
-                  <div className="flex items-start justify-between px-4 sm:px-6 py-4 gap-3">
-                    <AccordionTrigger className="flex items-start gap-3 hover:no-underline [&>svg]:hidden cursor-pointer flex-1 min-w-0">
-                      <div className="flex items-center justify-center w-6 h-6 rounded hover:bg-gray-100 transition-colors flex-shrink-0 mt-0.5">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-4 w-4 shrink-0 transition-transform duration-200 accordion-chevron text-dashboard-gray-600"
-                        >
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </div>
-                      <div className="text-left flex-1 min-w-0">
-                        <p className="text-sm text-dashboard-gray-900 break-words leading-relaxed">
-                          {activity.description}
-                        </p>
-                      </div>
-                    </AccordionTrigger>
-                    <div className="flex-shrink-0">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 hover:bg-gray-100 border border-gray-200"
+        {!loading && (
+          <div className="bg-white border border-dashboard-gray-200 rounded-lg">
+            {filteredActivities.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-gray-500 text-sm">
+                  {searchTerm || filterStatus !== "all"
+                    ? "No activities match your current filter criteria."
+                    : "No activities have been added yet."}
+                </p>
+                {(searchTerm || filterStatus !== "all") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => {
+                      setSearchTerm("");
+                      setFilterStatus("all");
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Accordion type="multiple" className="w-full">
+                {filteredActivities.map((activity) => (
+                  <AccordionItem
+                    key={activity.id}
+                    value={activity.id}
+                    className="border-b border-dashboard-gray-200 last:border-b-0"
+                  >
+                    <div className="flex items-start justify-between px-4 sm:px-6 py-4 gap-3">
+                      <AccordionTrigger className="flex items-start gap-3 hover:no-underline [&>svg]:hidden cursor-pointer flex-1 min-w-0">
+                        <div className="flex items-center justify-center w-6 h-6 rounded hover:bg-gray-100 transition-colors flex-shrink-0 mt-0.5">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4 shrink-0 transition-transform duration-200 accordion-chevron text-dashboard-gray-600"
                           >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => handleEditActivity(activity)}
-                          >
-                            <Edit2 className="w-4 h-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => deleteActivity(activity.id)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                  <AccordionContent className="px-6 pb-6">
-                    <div className="space-y-6">
-                      {/* Full Description */}
-                      <div>
-                        <Label className="text-sm font-medium text-dashboard-gray-900 mb-2 block">
-                          Description
-                        </Label>
-                        <p className="text-sm text-dashboard-gray-600 break-words">
-                          {activity.description}
-                        </p>
-                      </div>
-
-                      {/* Checkboxes Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`internal-${activity.id}`}
-                            checked={activity.internal}
-                            disabled={true}
-                            className="opacity-60"
-                          />
-                          <Label
-                            htmlFor={`internal-${activity.id}`}
-                            className="text-sm font-medium text-gray-600"
-                          >
-                            Internal
-                          </Label>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Info className="h-4 w-4 text-gray-400" />
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <p>
-                                Check if your internal team can choose to
-                                activate this Activity. Leave unchecked for
-                                holidays and other Activities outside of your
-                                control.
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
                         </div>
-
-                        <div className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`known-${activity.id}`}
-                            checked={activity.known}
-                            disabled={true}
-                            className="opacity-60"
-                          />
-                          <Label
-                            htmlFor={`known-${activity.id}`}
-                            className="text-sm font-medium text-gray-600"
-                          >
-                            Known
-                          </Label>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Info className="h-4 w-4 text-gray-400" />
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <p>
-                                Check if you always know when this Activity is
-                                active, and it will be recorded in the Logs.
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </div>
-
-                      {/* Expected Impact */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Label className="text-sm font-medium text-gray-600">
-                            Expected Impact
-                          </Label>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Info className="h-4 w-4 text-gray-400" />
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <p>
-                                Describe the expected impact this activity will
-                                have on your metrics
-                              </p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                        <div className="min-h-[80px] p-3 bg-gray-50 border border-gray-200 rounded-md">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                            {activity.expectedImpact ||
-                              "No expected impact description provided."}
+                        <div className="text-left flex-1 min-w-0">
+                          <p className="text-sm text-dashboard-gray-900 break-words leading-relaxed">
+                            {activity.description}
                           </p>
                         </div>
+                      </AccordionTrigger>
+                      <div className="flex-shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 hover:bg-gray-100 border border-gray-200"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleEditActivity(activity)}
+                            >
+                              <Edit2 className="w-4 h-4 mr-2" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => handleDeleteActivity(activity.id)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-
-                      {/* Intuition and Logs Row */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Intuition */}
+                    </div>
+                    <AccordionContent className="px-6 pb-6">
+                      <div className="space-y-6">
+                        {/* Full Description */}
                         <div>
-                          <div className="flex items-center gap-2 mb-3">
-                            <Label className="text-sm font-medium text-gray-600">
-                              Intuition
-                            </Label>
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <Info className="h-4 w-4 text-gray-400" />
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-sm">
-                                <p>
-                                  Identify any metrics that will reliably be
-                                  influenced by this Activity when it is active
-                                  (at least 80% of the time), and indicate if
-                                  the metrics is expected to be influenced in a
-                                  'positive' or 'negative' direction.
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                          <div className="space-y-2">
-                            {activity.intuitions.map((intuition) => (
-                              <div
-                                key={intuition.id}
-                                className="p-2 bg-gray-50 rounded border"
-                              >
-                                <span className="text-sm text-gray-700">
-                                  {intuition.metricName} [{intuition.direction}]
-                                </span>
-                              </div>
-                            ))}
-                            {activity.intuitions.length === 0 && (
-                              <p className="text-sm text-gray-500 italic">
-                                No intuitions added yet
-                              </p>
-                            )}
-                          </div>
+                          <Label className="text-sm font-medium text-dashboard-gray-900 mb-2 block">
+                            Description
+                          </Label>
+                          <p className="text-sm text-dashboard-gray-600 break-words">
+                            {activity.description}
+                          </p>
                         </div>
 
-                        {/* Logs */}
-                        <div>
-                          <div className="flex items-center gap-2 mb-3">
-                            <Label className="text-sm font-medium text-gray-600">
-                              Logs
+                        {/* Checkboxes Row */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`internal-${activity.id}`}
+                              checked={activity.internal}
+                              disabled={true}
+                              className="opacity-60"
+                            />
+                            <Label
+                              htmlFor={`internal-${activity.id}`}
+                              className="text-sm font-medium text-gray-600"
+                            >
+                              Internal
                             </Label>
                             <Tooltip>
                               <TooltipTrigger>
                                 <Info className="h-4 w-4 text-gray-400" />
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
-                                <p>Timeline and history of this activity</p>
+                                <p>
+                                  Check if your internal team can choose to
+                                  activate this Activity. Leave unchecked for
+                                  holidays and other Activities outside of your
+                                  control.
+                                </p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
-                          <div className="space-y-2">
-                            {activity.logs.map((log) => (
-                              <div
-                                key={log.id}
-                                className="p-2 bg-gray-50 rounded border"
-                              >
-                                <div className="flex items-center gap-2 mb-1">
-                                  <Calendar className="w-3 h-3 text-gray-500" />
-                                  <span className="text-xs text-gray-600">
-                                    {log.startDate} to {log.endDate}
+
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`known-${activity.id}`}
+                              checked={activity.known}
+                              disabled={true}
+                              className="opacity-60"
+                            />
+                            <Label
+                              htmlFor={`known-${activity.id}`}
+                              className="text-sm font-medium text-gray-600"
+                            >
+                              Known
+                            </Label>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-4 w-4 text-gray-400" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  Check if you always know when this Activity is
+                                  active, and it will be recorded in the Logs.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+
+                        {/* Expected Impact */}
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Label className="text-sm font-medium text-gray-600">
+                              Expected Impact
+                            </Label>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Info className="h-4 w-4 text-gray-400" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>
+                                  Describe the expected impact this activity will
+                                  have on your metrics
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                          <div className="min-h-[80px] p-3 bg-gray-50 border border-gray-200 rounded-md">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {activity.expectedImpact ||
+                                "No expected impact description provided."}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Intuition and Logs Row */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {/* Intuition */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Label className="text-sm font-medium text-gray-600">
+                                Intuition
+                              </Label>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Info className="h-4 w-4 text-gray-400" />
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-sm">
+                                  <p>
+                                    Identify any metrics that will reliably be
+                                    influenced by this Activity when it is active
+                                    (at least 80% of the time), and indicate if
+                                    the metrics is expected to be influenced in a
+                                    'positive' or 'negative' direction.
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <div className="space-y-2">
+                              {activity.intuitions.map((intuition) => (
+                                <div
+                                  key={intuition.id}
+                                  className="p-2 bg-gray-50 rounded border"
+                                >
+                                  <span className="text-sm text-gray-700">
+                                    {intuition.metricName} [{intuition.direction}]
                                   </span>
                                 </div>
-                                <p className="text-sm text-gray-700">
-                                  {log.description}
+                              ))}
+                              {activity.intuitions.length === 0 && (
+                                <p className="text-sm text-gray-500 italic">
+                                  No intuitions added yet
                                 </p>
-                              </div>
-                            ))}
-                            {activity.logs.length === 0 && (
-                              <p className="text-sm text-gray-500 italic">
-                                No logs added yet
-                              </p>
-                            )}
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Logs */}
+                          <div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Label className="text-sm font-medium text-gray-600">
+                                Logs
+                              </Label>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Info className="h-4 w-4 text-gray-400" />
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-xs">
+                                  <p>Timeline and history of this activity</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <div className="space-y-2">
+                              {activity.logs.map((log) => (
+                                <div
+                                  key={log.id}
+                                  className="p-2 bg-gray-50 rounded border"
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Calendar className="w-3 h-3 text-gray-500" />
+                                    <span className="text-xs text-gray-600">
+                                      {log.startDate} to {log.endDate}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-700">
+                                    {log.description}
+                                  </p>
+                                </div>
+                              ))}
+                              {activity.logs.length === 0 && (
+                                <p className="text-sm text-gray-500 italic">
+                                  No logs added yet
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          )}
-        </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            )}
+          </div>
+        )}
 
         {/* Intuition Modal */}
         <Dialog open={showIntuitionModal} onOpenChange={setShowIntuitionModal}>
