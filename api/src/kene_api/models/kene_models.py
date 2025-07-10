@@ -661,3 +661,27 @@ class DatasetListResponse(BaseModel):
     
     datasets: List[Dataset] = Field(..., description="List of datasets")
     total: int = Field(..., description="Total number of datasets")
+
+
+# Product Models
+
+class ProductRequest(BaseRequest):
+    """Request model for product operations."""
+    
+    product: str = Field(..., description="Name of the product (corresponds to document ID in Firestore product-metrics collection)")
+
+
+class ProductAddResponse(BaseModel):
+    """Response model for add_product operation."""
+    
+    success: bool = True
+    message: str = Field(..., description="Success message")
+    data: Dict[str, Any] = Field(..., description="Product processing results")
+
+
+class ProductDeleteResponse(BaseModel):
+    """Response model for delete_product operation."""
+    
+    success: bool = True
+    message: str = Field(..., description="Success message")
+    data: Dict[str, Any] = Field(..., description="Deletion results")
