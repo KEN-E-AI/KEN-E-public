@@ -398,26 +398,22 @@ async def create_metric(
         
         # Create metric in Superset if dataset information is provided
         if request.related_dataset_id and request.metric_name and request.expression:
-            try:
-                superset_metric_data = {
-                    "metric_name": request.metric_name,
-                    "verbose_name": request.verbose_name or request.metric_name,
-                    "expression": request.expression,
-                    "description": request.description or "",
-                    "d3_format": request.d3_format or "",
-                    "currency": request.currency or ""
-                }
+
+            superset_metric_data = {
+                "metric_name": request.metric_name,
+                "verbose_name": request.verbose_name or request.metric_name,
+                "expression": request.expression,
+                "description": request.description or "",
+                "d3_format": request.d3_format or "",
+                "currency": request.currency or ""
+            }
+            
+            superset_result = await superset_client.create_metric(
+                request.related_dataset_id, 
+                superset_metric_data
+            )
+            superset_metric_id = superset_result.get("id")
                 
-                superset_result = await superset_client.create_metric(
-                    request.related_dataset_id, 
-                    superset_metric_data
-                )
-                superset_metric_id = superset_result.get("id")
-                
-            except SupersetClientError as e:
-                # Log the error but don't fail the entire operation
-                # The metric will still be created in Neo4j without Superset integration
-                logger.warning(f"Failed to create metric in Superset: {e}")
 
         # Create Metric node in Neo4j
         generated_metric_id = await _create_metric_node(db, request, superset_metric_id)
