@@ -125,6 +125,14 @@ class Metric(BaseEntity):
         ...,
         description="A friendly description of the metric and how it is used. Should be identical to the value stored in Superset",
     )
+    below_zero: bool = Field(
+        ...,
+        description="Indicates whether the metric can return a result below 0",
+    )
+    is_kpi: bool = Field(
+        ...,
+        description="Indicates whether the metric has been flagged as a Key Performance Indicator",
+    )
 
 
 class MetricRequest(BaseRequest):
@@ -170,6 +178,14 @@ class MetricRequest(BaseRequest):
     description: Optional[str] = Field(
         None,
         description="A friendly description of the metric and how it is used. Should be identical to the value stored in Superset",
+    )
+    below_zero: Optional[bool] = Field(
+        None,
+        description="Indicates whether the metric can return a result below 0",
+    )
+    is_kpi: Optional[bool] = Field(
+        None,
+        description="Indicates whether the metric has been flagged as a Key Performance Indicator",
     )
 
 
