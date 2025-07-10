@@ -106,15 +106,20 @@ const MetricsPage = () => {
   });
 
   // Convert component metric to API format
-  const convertToApiMetric = (metric: Metric): Partial<ApiMetric> => ({
-    account_id: selectedOrgAccount?.accountId || "",
-    verbose_name: metric.name,
-    expression: metric.sqlExpression,
-    metric_name: metric.name.toLowerCase().replace(/\s+/g, "_"),
-    currency: metric.currency === "None" ? undefined : metric.currency,
-    d3_format: metric.format,
-    description: metric.description,
-  });
+  const convertToApiMetric = (metric: Metric): Partial<ApiMetric> => {
+    const dataset = datasets.find(d => d.id === metric.dataset);
+    return {
+      account_id: selectedOrgAccount?.accountId || "",
+      verbose_name: metric.name,
+      expression: metric.sqlExpression,
+      metric_name: metric.name.toLowerCase().replace(/\s+/g, "_"),
+      currency: metric.currency === "None" ? undefined : metric.currency,
+      d3_format: metric.format,
+      description: metric.description,
+      related_dataset_name: dataset?.name || "",
+      related_dataset_products: dataset ? [dataset.product] : [],
+    };
+  };
 
   // Fetch metrics from API
   const fetchMetrics = async () => {
@@ -131,8 +136,8 @@ const MetricsPage = () => {
         `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount.accountId}`
       );
       
-      if (response.data.success) {
-        const convertedMetrics = response.data.data.metrics.map(convertApiMetric);
+      if (response.data.metrics !== undefined) {
+        const convertedMetrics = response.data.metrics.map(convertApiMetric);
         setMetricsData(convertedMetrics);
       } else {
         setError("Failed to fetch metrics");
@@ -153,12 +158,15 @@ const MetricsPage = () => {
     }
 
     try {
+      const apiMetric = convertToApiMetric(metric);
+      console.log("Sending to API:", apiMetric);
       const response = await axios.post(
         `${API_BASE_URL}/api/v1/metrics/`,
-        convertToApiMetric(metric)
+        apiMetric
       );
       
-      if (response.data.success) {
+      console.log("Create response:", response.data);
+      if (response.data.metric_id || response.status === 200) {
         await fetchMetrics(); // Refresh the list
       } else {
         setError("Failed to create metric");
