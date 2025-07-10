@@ -138,7 +138,7 @@ class Metric(BaseEntity):
 class MetricRequest(BaseRequest):
     """Request model for metric operations."""
 
-    id: Optional[str] = Field(None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION)
+    metric_id: Optional[str] = Field(None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION)
     d3_format: Optional[str] = Field(
         None,
         description="The d3 formatting guidelines that define how the metric should be presented",
