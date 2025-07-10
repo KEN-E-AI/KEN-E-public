@@ -630,3 +630,34 @@ class QueryExecutionResponse(BaseModel):
     columns: Optional[List[Dict[str, Any]]] = Field(None, description="Column metadata")
     error: Optional[str] = Field(None, description="Error message if execution failed")
     query: Optional[Dict[str, Any]] = Field(None, description="Query metadata object containing execution details")
+
+
+# Dataset Models
+
+class Dataset(BaseModel):
+    """Response model for dataset data."""
+    
+    id: int = Field(..., description="The unique identifier for the dataset")
+    account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
+    dataset_id: int = Field(..., description="Unique identifier for the dataset")
+    dataset_name: str = Field(..., description="Unique name for the dataset")
+    products: List[str] = Field(..., description="List of products that collect the data used in this dataset")
+    default_datetime: str = Field(..., description="Name of the datetime column used to aggregate data by date")
+    description: str = Field(..., description="Description of the dataset and its usefulness")
+
+
+class DatasetRequest(BaseRequest):
+    """Request model for dataset operations."""
+    
+    dataset_id: Optional[int] = Field(None, description="Unique identifier for the dataset (required for create)")
+    dataset_name: Optional[str] = Field(None, description="Unique name for the dataset (required for create/update/delete)")
+    products: Optional[List[str]] = Field(None, description="List of products that collect the data used in this dataset")
+    default_datetime: Optional[str] = Field(None, description="Name of the datetime column used to aggregate data by date")
+    description: Optional[str] = Field(None, description="Description of the dataset and its usefulness")
+
+
+class DatasetListResponse(BaseModel):
+    """Response model for dataset list."""
+    
+    datasets: List[Dataset] = Field(..., description="List of datasets")
+    total: int = Field(..., description="Total number of datasets")

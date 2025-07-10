@@ -10,6 +10,7 @@ from .database import neo4j_service
 from .firestore import firestore_service
 from .routers import (
     activities,
+    datasets,
     firestore,
     funnel_reports,
     home,
@@ -70,6 +71,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
 app.include_router(activities.router, prefix="/api/v1/activities", tags=["activities"])
 app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"])
 app.include_router(intuitions.router, prefix="/api/v1/intuitions", tags=["intuitions"])
