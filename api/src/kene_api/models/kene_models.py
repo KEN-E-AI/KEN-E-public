@@ -125,12 +125,20 @@ class Metric(BaseEntity):
         ...,
         description="A friendly description of the metric and how it is used. Should be identical to the value stored in Superset",
     )
+    below_zero: bool = Field(
+        ...,
+        description="Indicates whether the metric can return a result below 0",
+    )
+    is_kpi: bool = Field(
+        ...,
+        description="Indicates whether the metric has been flagged as a Key Performance Indicator",
+    )
 
 
 class MetricRequest(BaseRequest):
     """Request model for metric operations."""
 
-    id: Optional[str] = Field(None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION)
+    metric_id: Optional[str] = Field(None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION)
     d3_format: Optional[str] = Field(
         None,
         description="The d3 formatting guidelines that define how the metric should be presented",
@@ -170,6 +178,14 @@ class MetricRequest(BaseRequest):
     description: Optional[str] = Field(
         None,
         description="A friendly description of the metric and how it is used. Should be identical to the value stored in Superset",
+    )
+    below_zero: Optional[bool] = Field(
+        None,
+        description="Indicates whether the metric can return a result below 0",
+    )
+    is_kpi: Optional[bool] = Field(
+        None,
+        description="Indicates whether the metric has been flagged as a Key Performance Indicator",
     )
 
 
@@ -236,15 +252,13 @@ class InfluenceEvidence(BaseModel):
 
 
 class Evidence(BaseModel):
-    """Evidence object for activity logs."""
+    """Evidence object for activity logs - flexible structure to accommodate any evidence format."""
 
-    active_evidence: ActiveEvidence = Field(
-        ..., description="Active evidence with confidence level and data"
-    )
-    influence_evidence: InfluenceEvidence = Field(
-        ...,
-        description="Influence evidence with direction alignment and insight analysis",
-    )
+    model_config = {"extra": "allow"}
+
+    def __init__(self, **data):
+        """Initialize Evidence with any structure."""
+        super().__init__(**data)
 
 
 # Activity Models
@@ -293,7 +307,7 @@ class Activity(BaseEntity):
 class ActivityRequest(BaseRequest):
     """Request model for activity operations."""
 
-    id: Optional[str] = Field(None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION)
+    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION)
     activity_description: Optional[str] = Field(
         None, description=ACTIVITY_DESCRIPTION_DESCRIPTION
     )
@@ -317,7 +331,7 @@ class ActivityLogRequest(BaseRequest):
     activity_id: Optional[str] = Field(
         None, description="Activity ID (required for associating logs)"
     )
-    id: Optional[str] = Field(
+    activity_log_id: Optional[str] = Field(
         None, description="Activity log ID (required for edit/delete)"
     )
     start_date: Optional[str] = Field(
@@ -446,6 +460,13 @@ class InsightListResponse(BaseModel):
     insights: List[Insight] = Field(..., description="List of insights")
     intuitions: List[Intuition] = Field(..., description="List of intuitions")
     total: int = Field(..., description="Total number of items")
+
+
+class IntuitionListResponse(BaseModel):
+    """Response model for intuition list."""
+
+    intuitions: List[Intuition] = Field(..., description="List of intuitions")
+    total: int = Field(..., description="Total number of intuitions")
 
 
 # Home/Notification Models
@@ -609,3 +630,58 @@ class QueryExecutionResponse(BaseModel):
     columns: Optional[List[Dict[str, Any]]] = Field(None, description="Column metadata")
     error: Optional[str] = Field(None, description="Error message if execution failed")
     query: Optional[Dict[str, Any]] = Field(None, description="Query metadata object containing execution details")
+
+
+# Dataset Models
+
+class Dataset(BaseModel):
+    """Response model for dataset data."""
+    
+    id: int = Field(..., description="The unique identifier for the dataset")
+    account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
+    dataset_id: int = Field(..., description="Unique identifier for the dataset")
+    dataset_name: str = Field(..., description="Unique name for the dataset")
+    products: List[str] = Field(..., description="List of products that collect the data used in this dataset")
+    default_datetime: str = Field(..., description="Name of the datetime column used to aggregate data by date")
+    description: str = Field(..., description="Description of the dataset and its usefulness")
+
+
+class DatasetRequest(BaseRequest):
+    """Request model for dataset operations."""
+    
+    dataset_id: Optional[int] = Field(None, description="Unique identifier for the dataset (required for create)")
+    dataset_name: Optional[str] = Field(None, description="Unique name for the dataset (required for create/update/delete)")
+    products: Optional[List[str]] = Field(None, description="List of products that collect the data used in this dataset")
+    default_datetime: Optional[str] = Field(None, description="Name of the datetime column used to aggregate data by date")
+    description: Optional[str] = Field(None, description="Description of the dataset and its usefulness")
+
+
+class DatasetListResponse(BaseModel):
+    """Response model for dataset list."""
+    
+    datasets: List[Dataset] = Field(..., description="List of datasets")
+    total: int = Field(..., description="Total number of datasets")
+
+
+# Product Models
+
+class ProductRequest(BaseRequest):
+    """Request model for product operations."""
+    
+    product: str = Field(..., description="Name of the product (corresponds to document ID in Firestore product-metrics collection)")
+
+
+class ProductAddResponse(BaseModel):
+    """Response model for add_product operation."""
+    
+    success: bool = True
+    message: str = Field(..., description="Success message")
+    data: Dict[str, Any] = Field(..., description="Product processing results")
+
+
+class ProductDeleteResponse(BaseModel):
+    """Response model for delete_product operation."""
+    
+    success: bool = True
+    message: str = Field(..., description="Success message")
+    data: Dict[str, Any] = Field(..., description="Deletion results")

@@ -23,6 +23,25 @@ async def scan_activities(request: ActivityScanRequest) -> ActivityScanResponse:
     Scan recent activities for insights and notifications.
 
     Analyzes recent activities to discover insights and create notifications.
+    
+    **Parameters (in request body):**
+    - `account_id` (required): The unique identifier for the account
+    - `scan_depth` (optional): Number of activities to scan (default: 0)
+    
+    **Returns:**
+    - `scanned_activities`: Number of activities scanned
+    - `notifications_created`: Number of notifications created
+    - `insights_found`: Number of insights discovered
+    - `scan_duration`: Time taken for the scan in seconds
+    
+    **Example:**
+    ```json
+    POST /api/v1/home/scan-activities
+    {
+        "account_id": "a000001",
+        "scan_depth": 50
+    }
+    ```
     """
     try:
         # Implementation placeholder: activity scanning logic
@@ -59,6 +78,19 @@ async def get_notifications(
     Get notifications for an account.
 
     Retrieves notifications from BigQuery with optional filtering.
+    
+    **Parameters (query parameters):**
+    - `account_id` (required): The unique identifier for the account
+    - `limit` (optional): Maximum number of notifications to return (default: 10)
+    - `unread_only` (optional): Return only unread notifications (default: false)
+    
+    **Returns:**
+    - List of notification objects containing id, title, message, type, priority, and read status
+    
+    **Example:**
+    ```
+    GET /api/v1/home/notifications?account_id=a000001&limit=5&unread_only=true
+    ```
     """
     try:
         # Implementation placeholder: BigQuery query
@@ -102,6 +134,30 @@ async def create_notification(request: NotificationRequest) -> SuccessResponse:
     Create a new notification.
 
     Creates a notification and optionally publishes it via pub/sub and stores in BigQuery.
+    
+    **Parameters (in request body):**
+    - `account_id` (required): The unique identifier for the account
+    - `title` (required): Notification title
+    - `message` (required): Notification message content
+    - `notification_type` (required): Type of notification
+    - `priority` (required): Priority level
+    - `metadata` (optional): Additional metadata
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    
+    **Example:**
+    ```json
+    POST /api/v1/home/notifications
+    {
+        "account_id": "a000001",
+        "title": "New Insight Available",
+        "message": "Product launch shows strong correlation",
+        "notification_type": "insight",
+        "priority": "high"
+    }
+    ```
     """
     try:
         # Implementation placeholder: notification creation
@@ -127,6 +183,21 @@ async def mark_notification_read(
     Mark a notification as read.
 
     Updates notification status in BigQuery.
+    
+    **Parameters (in URL path):**
+    - `notification_id` (required): The unique identifier for the notification
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    
+    **Example:**
+    ```
+    PUT /api/v1/home/notifications/notif_001/read?account_id=a000001
+    ```
     """
     try:
         # Implementation placeholder: notification status update in BigQuery
@@ -152,6 +223,21 @@ async def delete_notification(
     Delete a notification.
 
     Removes notification from BigQuery.
+    
+    **Parameters (in URL path):**
+    - `notification_id` (required): The unique identifier for the notification
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    
+    **Example:**
+    ```
+    DELETE /api/v1/home/notifications/notif_001?account_id=a000001
+    ```
     """
     try:
         # Implementation placeholder: notification deletion from BigQuery
@@ -176,6 +262,17 @@ async def get_dashboard_data(
     Get dashboard data for home page.
 
     Aggregates data from various sources for the home dashboard.
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - Dashboard data object containing metrics counts, activities, insights, and key metrics
+    
+    **Example:**
+    ```
+    GET /api/v1/home/dashboard?account_id=a000001
+    ```
     """
     try:
         # Implementation placeholder: dashboard data aggregation

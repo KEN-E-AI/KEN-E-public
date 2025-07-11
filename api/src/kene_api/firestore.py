@@ -1449,15 +1449,106 @@ class FirestoreService:
         except NotFound:
             return False
 
-# Global Firestore service instance
-firestore_service = FirestoreService()
+    def set_nested_field(self, collection: str, document_id: str, field_path: str, value: Any) -> bool:
+        """
+        Set a nested field in a document using dot notation.
+        
+        This operation will create the nested structure if it doesn't exist,
+        or update the field if it already exists.
+        
+        Args:
+            collection: Collection name
+            document_id: Document ID
+            field_path: Dot-separated field path (e.g., "permissions.accounts.newAccountId")
+            value: Value to set at the field path
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = self._db.collection(collection).document(document_id)
+            # Use Firestore's field path notation for nested updates
+            doc_ref.update({field_path: value})
+            return True
+        except NotFound:
+            # If the document doesn't exist, create it with the nested structure
+            try:
+                doc_ref = self._db.collection(collection).document(document_id)
+                doc_ref.set({field_path: value}, merge=True)
+                return True
+            except Exception as e:
+                print(f"Error creating document with nested field: {e}")
+                return False
+        except Exception as e:
+            print(f"Error setting nested field: {e}")
+            return False
+
+    def set_nested_field_subcollection(self, collection: str, document_id: str,
+                                     subcollection: str, subdocument_id: str,
+                                     field_path: str, value: Any) -> bool:
+        """
+        Set a nested field in a subcollection document using dot notation.
+        
+        This operation will create the nested structure if it doesn't exist,
+        or update the field if it already exists.
+        
+        Args:
+            collection: Parent collection name
+            document_id: Parent document ID
+            subcollection: Subcollection name
+            subdocument_id: Subdocument ID
+            field_path: Dot-separated field path (e.g., "permissions.accounts.newAccountId")
+            value: Value to set at the field path
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self._initialized or not self._db:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+            
+        try:
+            doc_ref = (self._db.collection(collection)
+                      .document(document_id)
+                      .collection(subcollection)
+                      .document(subdocument_id))
+            # Use Firestore's field path notation for nested updates
+            doc_ref.update({field_path: value})
+            return True
+        except NotFound:
+            # If the document doesn't exist, create it with the nested structure
+            try:
+                doc_ref = (self._db.collection(collection)
+                          .document(document_id)
+                          .collection(subcollection)
+                          .document(subdocument_id))
+                doc_ref.set({field_path: value}, merge=True)
+                return True
+            except Exception as e:
+                print(f"Error creating subcollection document with nested field: {e}")
+                return False
+        except Exception as e:
+            print(f"Error setting nested field in subcollection: {e}")
+            return False
+
+
+# Global service instance
+_firestore_service: Optional[FirestoreService] = None
 
 
 def get_firestore_service() -> FirestoreService:
     """
-    Dependency to get Firestore service instance.
+    Get the global FirestoreService instance.
     
     Returns:
-        FirestoreService: Firestore service instance
+        FirestoreService: The global Firestore service instance
     """
-    return firestore_service
+    global _firestore_service
+    
+    if _firestore_service is None:
+        _firestore_service = FirestoreService()
+        _firestore_service.initialize()
+    
+    return _firestore_service

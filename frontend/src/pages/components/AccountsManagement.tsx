@@ -113,7 +113,7 @@ const AccountsManagement = ({
   orgData,
   currentOrgId,
 }: AccountsManagementProps) => {
-  const { accountMetadata, setAccountMetadata, user } = useAuth();
+  const { accountMetadata, setAccountMetadata, user, updateUser, orgMetadata, setOrgMetadata } = useAuth();
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -301,33 +301,47 @@ const AccountsManagement = ({
         }
       );
 
-      // await axios.put(
-      //   `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user?.id}?account_id=${user?.id}`,
-      //   {
-      //     update: {
-      //       // This is a nested field path for dot-notation update
-      //       field: `permissions.accounts.${newAccountId}`,
-      //       operator: "set",
-      //       value: "admin",
-      //     },
-      //   }
-      // );
+      // Get user's permission level for the organization to apply same level to new account
+      const userOrgPermission = user?.permissions?.organizations?.[currentOrgId] || "view";
 
-      // 🧠 Optionally update local context
-      const updatedAccounts = [...(orgData?.accounts || []), newAccount];
+      // Add the new account to user's permissions with same level as organization
+      await axios.put(
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user?.id}?account_id=${user?.id}`,
+        {
+          update: {
+            // This is a nested field path for dot-notation update
+            field: `permissions.accounts.${newAccountId}`,
+            operator: "set",
+            value: userOrgPermission,
+          },
+        }
+      );
+
+      // 🧠 Update local context
       setAccountMetadata({
         ...accountMetadata,
         [newAccountId]: newAccount,
       });
 
-      // You may also want to update `orgMetadata` here:
-      // setOrgMetadata((prev) => ({
-      //   ...prev,
-      //   [currentOrgId]: {
-      //     ...prev[currentOrgId],
-      //     accounts: updatedAccounts,
-      //   }
-      // }));
+      // Update user's local permissions state
+      updateUser({
+        permissions: {
+          ...user?.permissions,
+          accounts: {
+            ...user?.permissions?.accounts,
+            [newAccountId]: userOrgPermission,
+          },
+        },
+      });
+
+      // Update orgMetadata to include the new account
+      setOrgMetadata((prev) => ({
+        ...prev,
+        [currentOrgId]: {
+          ...prev[currentOrgId],
+          accounts: [...(prev[currentOrgId]?.accounts || []), newAccount],
+        }
+      }));
 
       setIsCreateAccountModalOpen(false);
       setCreateAccountFormData({

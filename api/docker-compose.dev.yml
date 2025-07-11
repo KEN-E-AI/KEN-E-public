@@ -36,3 +36,21 @@ services:
     command: ["uv", "run", "uvicorn", "src.kene_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "${PORT:-8000}:8000"
+    depends_on:
+      - neo4j
+
+  neo4j:
+    image: neo4j:5.28
+    environment:
+      NEO4J_AUTH: neo4j/password123
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "7474:7474"  # Neo4j Browser
+      - "7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:

@@ -33,6 +33,7 @@ const AccountSettings = () => {
   const location = useLocation();
   const {
     user,
+    updateUser,
     resetWorkspaceSelection,
     completeWorkspaceSelection,
     currentOrganizationId,
@@ -101,16 +102,43 @@ const AccountSettings = () => {
     }
 
     try {
+      const newOrgId = newOrgFormData.organization_name.toLowerCase().replace(/\s+/g, "-");
+      
       const res = await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
         account_id: user?.id,
         collection: "organizations",
-        document_id: newOrgFormData.organization_name.toLowerCase().replace(/\s+/g, "-"),
+        document_id: newOrgId,
         data: {
           ...newOrgFormData,
         },
       });
 
       const newOrg = res.data.data;
+
+      // Add the new organization to user's permissions with admin level
+      await axios.put(
+        `${API_BASE_URL}/api/v1/firestore/documents/users/${user?.id}?account_id=${user?.id}`,
+        {
+          update: {
+            // This is a nested field path for dot-notation update
+            field: `permissions.organizations.${newOrgId}`,
+            operator: "set",
+            value: "admin",
+          },
+        }
+      );
+
+      // Update user's local permissions state
+      updateUser({
+        permissions: {
+          ...user?.permissions,
+          organizations: {
+            ...user?.permissions?.organizations,
+            [newOrgId]: "admin",
+          },
+        },
+      });
+
       setCurrentOrganization(newOrg.organization_id);
       completeWorkspaceSelection();
 

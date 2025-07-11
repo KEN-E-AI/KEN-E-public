@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
 import {
   Search,
   Filter,
@@ -33,15 +34,44 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { metrics, type Metric } from "@/data/metrics";
+import { useAuth } from "@/contexts/AuthContext";
 
-const datasets = [
-  { id: "ga4_sessions", name: "GA4 Sessions", product: "Google Analytics" },
-  { id: "ga4_events", name: "GA4 Events", product: "Google Analytics" },
-  { id: "google_ads", name: "Google Ads", product: "Google Ads" },
-  { id: "facebook_ads", name: "Facebook Ads", product: "Meta" },
-  { id: "salesforce", name: "Salesforce", product: "Salesforce" },
-];
+interface ApiMetric {
+  id: string;
+  account_id: string;
+  d3_format?: string;
+  verbose_name: string;
+  expression: string;
+  metric_name: string;
+  currency?: string;
+  related_dataset_id?: number;
+  related_dataset_name?: string;
+  related_dataset_products?: string[];
+  description: string;
+}
+
+interface Dataset {
+  id: number;
+  account_id: string;
+  dataset_id: number;
+  dataset_name: string;
+  products: string[];
+  default_datetime: string;
+  description: string;
+}
+
+interface Metric {
+  id: string;
+  name: string;
+  description: string;
+  dataset: string;
+  product: string;
+  format: string;
+  currency: string;
+  sqlExpression: string;
+}
+
+// Datasets will be fetched from API
 
 const formats = ["Integer", "Percent", "Double"];
 
@@ -51,19 +81,15 @@ type SortField = "name" | "dataset" | "product" | null;
 type SortDirection = "asc" | "desc";
 
 const MetricsPage = () => {
-  // Convert imported metrics to component format
-  const convertedMetrics = metrics.map((metric) => ({
-    id: metric.metric_id,
-    name: metric.verbose_name,
-    description: metric.description,
-    dataset: metric.dataset.toLowerCase().replace(/\s+/g, "_"),
-    product: metric.product,
-    format: metric.format,
-    currency: metric.currency,
-    sqlExpression: metric.expression,
-  }));
-
-  const [metricsData, setMetricsData] = useState<Metric[]>(convertedMetrics);
+  const { selectedOrgAccount } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  
+  const [metricsData, setMetricsData] = useState<Metric[]>([]);
+  const [rawMetricsData, setRawMetricsData] = useState<ApiMetric[]>([]);
+  const [datasetsData, setDatasetsData] = useState<Dataset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [datasetsLoading, setDatasetsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -73,6 +99,189 @@ const MetricsPage = () => {
   const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Convert API metric to component format
+  const convertApiMetric = (apiMetric: ApiMetric): Metric => {
+    // Find the matching dataset to get the correct product
+    const matchingDataset = datasetsData.find(d => d.dataset_name === apiMetric.related_dataset_name);
+    
+    return {
+      id: apiMetric.id,
+      name: apiMetric.verbose_name,
+      description: apiMetric.description,
+      dataset: apiMetric.related_dataset_name || "unknown",
+      product: matchingDataset?.products?.[0] || apiMetric.related_dataset_products?.[0] || "Unknown",
+      format: apiMetric.d3_format || "Integer",
+      currency: apiMetric.currency || "None",
+      sqlExpression: apiMetric.expression,
+    };
+  };
+
+  // Convert component metric to API format
+  const convertToApiMetric = (metric: Metric): Partial<ApiMetric> => {
+    const dataset = datasetsData.find(d => d.dataset_name === metric.dataset);
+    return {
+      account_id: selectedOrgAccount?.accountId || "",
+      verbose_name: metric.name,
+      expression: metric.sqlExpression,
+      metric_name: metric.name.toLowerCase().replace(/\s+/g, "_"),
+      currency: metric.currency === "None" ? undefined : metric.currency,
+      d3_format: metric.format,
+      description: metric.description,
+      related_dataset_name: dataset?.dataset_name || "",
+      related_dataset_products: dataset?.products || [],
+    };
+  };
+
+  // Fetch datasets from API
+  const fetchDatasets = async () => {
+    if (!selectedOrgAccount?.accountId) {
+      setDatasetsLoading(false);
+      return;
+    }
+
+    try {
+      setDatasetsLoading(true);
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount.accountId}`
+      );
+      
+      if (response.data.datasets !== undefined) {
+        setDatasetsData(response.data.datasets);
+      }
+    } catch (err) {
+      console.error("Error fetching datasets:", err);
+      // Don't set error state for datasets, just log it
+    } finally {
+      setDatasetsLoading(false);
+    }
+  };
+
+  // Fetch metrics from API
+  const fetchMetrics = async () => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount.accountId}`
+      );
+      
+      if (response.data.metrics !== undefined) {
+        // Store raw metrics data, will convert after datasets are loaded
+        setRawMetricsData(response.data.metrics);
+      } else {
+        setError("Failed to fetch metrics");
+      }
+    } catch (err) {
+      console.error("Error fetching metrics:", err);
+      setError("Failed to fetch metrics");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create metric via API
+  const createMetric = async (metric: Metric) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const apiMetric = convertToApiMetric(metric);
+      console.log("Sending to API:", apiMetric);
+      const response = await axios.post(
+        `${API_BASE_URL}/api/v1/metrics/`,
+        apiMetric
+      );
+      
+      console.log("Create response:", response.data);
+      if (response.data.metric_id || response.status === 200) {
+        await fetchMetrics(); // Refresh the list
+      } else {
+        setError("Failed to create metric");
+      }
+    } catch (err) {
+      console.error("Error creating metric:", err);
+      setError("Failed to create metric");
+    }
+  };
+
+  // Update metric via API
+  const updateMetric = async (metric: Metric) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.put(
+        `${API_BASE_URL}/api/v1/metrics/`,
+        {
+          ...convertToApiMetric(metric),
+          id: metric.id,
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchMetrics(); // Refresh the list
+      } else {
+        setError("Failed to update metric");
+      }
+    } catch (err) {
+      console.error("Error updating metric:", err);
+      setError("Failed to update metric");
+    }
+  };
+
+  // Delete metric via API
+  const deleteMetric = async (metricId: string) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/v1/metrics/`,
+        {
+          data: {
+            account_id: selectedOrgAccount.accountId,
+            metric_id: metricId,
+          },
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchMetrics(); // Refresh the list
+      } else {
+        setError("Failed to delete metric");
+      }
+    } catch (err) {
+      console.error("Error deleting metric:", err);
+      setError("Failed to delete metric");
+    }
+  };
+
+  // Convert raw metrics data when datasets are loaded
+  useEffect(() => {
+    if (rawMetricsData.length > 0 && datasetsData.length > 0) {
+      const convertedMetrics = rawMetricsData.map(convertApiMetric);
+      setMetricsData(convertedMetrics);
+    }
+  }, [rawMetricsData, datasetsData]);
+
+  // Load datasets and metrics on component mount and when account changes
+  useEffect(() => {
+    fetchDatasets();
+    fetchMetrics();
+  }, [selectedOrgAccount?.accountId]);
 
   // Filter state
   const [selectedDataset, setSelectedDataset] = useState<string>("all");
@@ -131,10 +340,10 @@ const MetricsPage = () => {
             break;
           case "dataset":
             valueA = (
-              datasets.find((d) => d.id === a.dataset)?.name || a.dataset
+              datasetsData.find((d) => d.dataset_name === a.dataset)?.dataset_name || a.dataset
             ).toLowerCase();
             valueB = (
-              datasets.find((d) => d.id === b.dataset)?.name || b.dataset
+              datasetsData.find((d) => d.dataset_name === b.dataset)?.dataset_name || b.dataset
             ).toLowerCase();
             break;
           case "product":
@@ -153,7 +362,7 @@ const MetricsPage = () => {
   })();
 
   // Get unique products for filtering
-  const uniqueProducts = [...new Set(metrics.map((m) => m.product))];
+  const uniqueProducts = [...new Set(metricsData.map((m) => m.product))];
 
   const toggleExpanded = (metricId: string) => {
     const newExpanded = new Set(expandedMetrics);
@@ -187,17 +396,13 @@ const MetricsPage = () => {
     setModalOpen(true);
   };
 
-  const handleSaveMetric = () => {
+  const handleSaveMetric = async () => {
     if (!editingMetric) return;
 
     if (isCreating) {
-      setMetricsData([...metricsData, editingMetric]);
+      await createMetric(editingMetric);
     } else {
-      setMetricsData(
-        metricsData.map((metric) =>
-          metric.id === editingMetric.id ? editingMetric : metric,
-        ),
-      );
+      await updateMetric(editingMetric);
     }
 
     setModalOpen(false);
@@ -205,20 +410,50 @@ const MetricsPage = () => {
     setIsCreating(false);
   };
 
-  const handleDeleteMetric = (metricId: string) => {
-    setMetricsData(metricsData.filter((metric) => metric.id !== metricId));
+  const handleDeleteMetric = async (metricId: string) => {
+    await deleteMetric(metricId);
   };
 
   const handleDatasetChange = (dataset: string) => {
     if (!editingMetric) return;
 
-    const selectedDataset = datasets.find((d) => d.id === dataset);
+    const selectedDataset = datasetsData.find((d) => d.dataset_name === dataset);
     setEditingMetric({
       ...editingMetric,
       dataset,
-      product: selectedDataset?.product || "",
+      product: selectedDataset?.products?.[0] || "",
     });
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
+            Metrics
+          </h2>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-gray-500">Loading metrics...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
+            Metrics
+          </h2>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-red-500">{error}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -282,9 +517,9 @@ const MetricsPage = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Datasets</SelectItem>
-                      {datasets.map((dataset) => (
-                        <SelectItem key={dataset.id} value={dataset.id}>
-                          {dataset.name}
+                      {datasetsData.map((dataset) => (
+                        <SelectItem key={dataset.dataset_id} value={dataset.dataset_name}>
+                          {dataset.dataset_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -403,8 +638,8 @@ const MetricsPage = () => {
                       </div>
                       <div className="col-span-3 min-w-0">
                         <span className="text-sm text-gray-700 break-words">
-                          {datasets.find((d) => d.id === metric.dataset)
-                            ?.name || metric.dataset}
+                          {datasetsData.find((d) => d.dataset_name === metric.dataset)
+                            ?.dataset_name || metric.dataset}
                         </span>
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -538,8 +773,8 @@ const MetricsPage = () => {
                         <div className="mt-1 space-y-1">
                           <p className="text-xs text-gray-600">
                             <span className="font-medium">Dataset:</span>{" "}
-                            {datasets.find((d) => d.id === metric.dataset)
-                              ?.name || metric.dataset}
+                            {datasetsData.find((d) => d.dataset_name === metric.dataset)
+                              ?.dataset_name || metric.dataset}
                           </p>
                           <p className="text-xs text-gray-600">
                             <span className="font-medium">Product:</span>{" "}
@@ -697,9 +932,9 @@ const MetricsPage = () => {
                       <SelectValue placeholder="Select dataset" />
                     </SelectTrigger>
                     <SelectContent>
-                      {datasets.map((dataset) => (
-                        <SelectItem key={dataset.id} value={dataset.id}>
-                          {dataset.name}
+                      {datasetsData.map((dataset) => (
+                        <SelectItem key={dataset.dataset_id} value={dataset.dataset_name}>
+                          {dataset.dataset_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
