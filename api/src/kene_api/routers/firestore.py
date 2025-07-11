@@ -361,7 +361,7 @@ async def update_document(
     """
     Update a document in Firestore.
     
-    Updates an existing document with the provided data. Supports three modes:
+    Updates an existing document with the provided data. Supports four modes:
     
     **Parameters (in URL path):**
     - `collection` (required): Firestore collection name
@@ -400,6 +400,17 @@ async def update_document(
     }
     ```
     
+    Mode 4 - Set nested field:
+    ```json
+    {
+      "update": {
+        "field": "permissions.accounts.newAccountId",
+        "operator": "set",
+        "value": "admin"
+      }
+    }
+    ```
+    
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message with operation details
@@ -420,7 +431,7 @@ async def update_document(
                 field = update_config.get("field")
                 value = update_config.get("value")
                 
-                if not field or value is None:
+                if not field or "value" not in update_config:
                     raise HTTPException(
                         status_code=400, 
                         detail="arrayUnion operation requires 'field' and 'value' parameters"
@@ -439,10 +450,21 @@ async def update_document(
                         detail="replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters"
                     )
                     
-            elif operator and operator not in ["arrayUnion", "replaceOne"]:
+            elif operator == "set":
+                # Validate set parameters
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                if not field or "value" not in update_config:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="set operation requires 'field' and 'value' parameters"
+                    )
+                    
+            elif operator and operator not in ["arrayUnion", "replaceOne", "set"]:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne, set"
                 )
 
         # Check Firestore connectivity after parameter validation
@@ -494,10 +516,27 @@ async def update_document(
                 
                 operation_desc = f"Replace operation on field '{field}' where {match_field}={match_value}"
                 
+            elif operator == "set":
+                # Handle set nested field operation
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                # Type assertion: we've already validated these are not None
+                assert field is not None
+                
+                success = firestore.set_nested_field(
+                    collection=collection,
+                    document_id=document_id,
+                    field_path=field,
+                    value=value
+                )
+                
+                operation_desc = f"Set nested field operation on '{field}'"
+                
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne, set"
                 )
         else:
             # Handle standard document update (existing functionality)
@@ -781,7 +820,7 @@ async def update_subcollection_document(
     """
     Update a document in a subcollection.
     
-    Updates an existing document in the specified subcollection with the provided data. Supports three modes:
+    Updates an existing document in the specified subcollection with the provided data. Supports four modes:
     
     1. Direct update (standard functionality):
        data = {"field1": "value1", "field2": "value2"}
@@ -805,6 +844,15 @@ async def update_subcollection_document(
            "value": {...replacement_object...}
          }
        }
+    
+    4. Set nested field:
+       data = {
+         "update": {
+           "field": "set_name.subset_name.field_name",
+           "operator": "set",
+           "value": "admin"
+         }
+       }
     """
     try:
         # First validate the request payload structure before checking Firestore
@@ -817,7 +865,7 @@ async def update_subcollection_document(
                 field = update_config.get("field")
                 value = update_config.get("value")
                 
-                if not field or value is None:
+                if not field or "value" not in update_config:
                     raise HTTPException(
                         status_code=400, 
                         detail="arrayUnion operation requires 'field' and 'value' parameters"
@@ -836,10 +884,21 @@ async def update_subcollection_document(
                         detail="replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters"
                     )
                     
-            elif operator and operator not in ["arrayUnion", "replaceOne"]:
+            elif operator == "set":
+                # Validate set parameters
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                if not field or "value" not in update_config:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="set operation requires 'field' and 'value' parameters"
+                    )
+                    
+            elif operator and operator not in ["arrayUnion", "replaceOne", "set"]:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne, set"
                 )
 
         # Check Firestore connectivity after parameter validation
@@ -895,10 +954,29 @@ async def update_subcollection_document(
                 
                 operation_desc = f"Replace operation on field '{field}' where {match_field}={match_value}"
                 
+            elif operator == "set":
+                # Handle set nested field operation
+                field = update_config.get("field")
+                value = update_config.get("value")
+                
+                # Type assertion: we've already validated these are not None
+                assert field is not None
+                
+                success = firestore.set_nested_field_subcollection(
+                    collection=collection,
+                    document_id=document_id,
+                    subcollection=subcollection,
+                    subdocument_id=subdocument_id,
+                    field_path=field,
+                    value=value
+                )
+                
+                operation_desc = f"Set nested field operation on '{field}'"
+                
             else:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne"
+                    detail=f"Unsupported update operator: {operator}. Supported operators: arrayUnion, replaceOne, set"
                 )
         else:
             # Handle standard document update (existing functionality)
