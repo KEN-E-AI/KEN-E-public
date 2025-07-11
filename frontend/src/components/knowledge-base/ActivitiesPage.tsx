@@ -98,154 +98,26 @@ interface AvailableMetric {
   product: string;
 }
 
-// Available datasets for filtering (TODO: Replace with API call when datasets endpoint is available)
-const datasets = [
-  { id: "ga4_sessions", name: "GA4 Sessions", product: "Google Analytics" },
-  { id: "ga4_events", name: "GA4 Events", product: "Google Analytics" },
-  { id: "google_ads", name: "Google Ads", product: "Google Ads" },
-  { id: "facebook_ads", name: "Facebook Ads", product: "Meta" },
-  { id: "salesforce", name: "Salesforce", product: "Salesforce" },
-  { id: "email_marketing", name: "Email Marketing", product: "Mailchimp" },
-  { id: "social_media", name: "Social Media", product: "Social Platforms" },
-];
+// Dataset interface for API integration
+interface Dataset {
+  id: number;
+  account_id: string;
+  dataset_id: number;
+  dataset_name: string;
+  products: string[];
+  default_datetime: string;
+  description: string;
+}
 
-// Static metrics - will be replaced with API data
-const staticMetrics: AvailableMetric[] = [
-  {
-    id: "1",
-    name: "Engaged Sessions",
-    dataset: "ga4_sessions",
-    product: "Google Analytics",
-  },
-  {
-    id: "2",
-    name: "Transactions",
-    dataset: "ga4_sessions",
-    product: "Google Analytics",
-  },
-  {
-    id: "3",
-    name: "Page Views",
-    dataset: "ga4_events",
-    product: "Google Analytics",
-  },
-  {
-    id: "4",
-    name: "Session Duration",
-    dataset: "ga4_sessions",
-    product: "Google Analytics",
-  },
-  {
-    id: "5",
-    name: "Bounce Rate",
-    dataset: "ga4_sessions",
-    product: "Google Analytics",
-  },
-  {
-    id: "6",
-    name: "Conversion Rate",
-    dataset: "ga4_events",
-    product: "Google Analytics",
-  },
-  {
-    id: "7",
-    name: "New Users",
-    dataset: "ga4_sessions",
-    product: "Google Analytics",
-  },
-  {
-    id: "8",
-    name: "Returning Users",
-    dataset: "ga4_sessions",
-    product: "Google Analytics",
-  },
-  {
-    id: "9",
-    name: "Cost Per Click",
-    dataset: "google_ads",
-    product: "Google Ads",
-  },
-  {
-    id: "10",
-    name: "Click Through Rate",
-    dataset: "google_ads",
-    product: "Google Ads",
-  },
-  {
-    id: "11",
-    name: "Impressions",
-    dataset: "google_ads",
-    product: "Google Ads",
-  },
-  {
-    id: "12",
-    name: "Cost Per Acquisition",
-    dataset: "google_ads",
-    product: "Google Ads",
-  },
-  {
-    id: "13",
-    name: "Facebook Reach",
-    dataset: "facebook_ads",
-    product: "Meta",
-  },
-  {
-    id: "14",
-    name: "Facebook Engagement",
-    dataset: "facebook_ads",
-    product: "Meta",
-  },
-  { id: "15", name: "Ad Spend", dataset: "facebook_ads", product: "Meta" },
-  {
-    id: "16",
-    name: "Lead Generation",
-    dataset: "salesforce",
-    product: "Salesforce",
-  },
-  {
-    id: "17",
-    name: "Deal Value",
-    dataset: "salesforce",
-    product: "Salesforce",
-  },
-  {
-    id: "18",
-    name: "Sales Pipeline",
-    dataset: "salesforce",
-    product: "Salesforce",
-  },
-  {
-    id: "19",
-    name: "Email Open Rate",
-    dataset: "email_marketing",
-    product: "Mailchimp",
-  },
-  {
-    id: "20",
-    name: "Email Click Rate",
-    dataset: "email_marketing",
-    product: "Mailchimp",
-  },
-  {
-    id: "21",
-    name: "Social Media Followers",
-    dataset: "social_media",
-    product: "Social Platforms",
-  },
-  {
-    id: "22",
-    name: "Brand Mentions",
-    dataset: "social_media",
-    product: "Social Platforms",
-  },
-];
+// Metrics will be fetched from API
 
 const ActivitiesPage = () => {
   const { selectedOrgAccount } = useAuth();
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-  // State for dynamic metrics from API
-  const [availableMetrics, setAvailableMetrics] = useState<AvailableMetric[]>(staticMetrics);
+  // State for dynamic metrics and datasets from API
+  const [availableMetrics, setAvailableMetrics] = useState<AvailableMetric[]>([]);
+  const [datasetsData, setDatasetsData] = useState<Dataset[]>([]);
 
   // Convert API activity to component format
   const convertApiActivity = (apiActivity: ApiActivity): Activity => ({
@@ -315,7 +187,7 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/insights/?account_id=${selectedOrgAccount.accountId}`
+        `${API_BASE_URL}/api/v1/intuitions/?account_id=${selectedOrgAccount.accountId}`
       );
       
       if (response.data.intuitions) {
@@ -371,7 +243,8 @@ const ActivitiesPage = () => {
         // Fetch and populate intuitions
         convertedActivities = await fetchAndPopulateIntuitions(convertedActivities);
         
-        console.log("AcFetched activities: ", convertedActivities);
+        console.log("Activities: ", convertedActivities);
+
         setActivitiesData(convertedActivities);
       } else {
         setError("Failed to fetch activities");
@@ -399,22 +272,42 @@ const ActivitiesPage = () => {
         const metrics: AvailableMetric[] = response.data.metrics.map((metric: any) => ({
           id: metric.id,
           name: metric.verbose_name || metric.metric_name,
-          dataset: metric.related_dataset_name?.toLowerCase().replace(/\s+/g, "_") || "unknown",
+          dataset: metric.related_dataset_name || "unknown",
           product: metric.related_dataset_products?.[0] || "Unknown",
         }));
         setAvailableMetrics(metrics);
       }
     } catch (err) {
       console.error("Error fetching available metrics:", err);
-      // Fall back to static metrics on error
-      setAvailableMetrics(staticMetrics);
+      // Keep empty array on error
     }
   }, [selectedOrgAccount?.accountId, API_BASE_URL]);
 
-  // Load metrics when component mounts
+  // Fetch available datasets for filtering
+  const fetchAvailableDatasets = useCallback(async () => {
+    if (!selectedOrgAccount?.accountId) {
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount.accountId}`
+      );
+      
+      if (response.data.datasets !== undefined) {
+        setDatasetsData(response.data.datasets);
+      }
+    } catch (err) {
+      console.error("Error fetching datasets:", err);
+      // Don't set error state for datasets, just log it
+    }
+  }, [selectedOrgAccount?.accountId, API_BASE_URL]);
+
+  // Load metrics and datasets when component mounts
   useEffect(() => {
     fetchAvailableMetrics();
-  }, [fetchAvailableMetrics]);
+    fetchAvailableDatasets();
+  }, [fetchAvailableMetrics, fetchAvailableDatasets]);
 
   // Create activity log via API
   const createActivityLog = async (activityId: string, log: Log) => {
@@ -460,7 +353,17 @@ const ActivitiesPage = () => {
           }
         }
         
-        await fetchActivities(); // Refresh the list
+        // Create any intuitions for this activity
+        if (activity.intuitions && activity.intuitions.length > 0) {
+          for (const intuition of activity.intuitions) {
+            await createIntuition(newActivityId, intuition);
+          }
+        }
+        
+        // Add a small delay to ensure database consistency
+        setTimeout(async () => {
+          await fetchActivities(); // Refresh the list
+        }, 100);
       } else {
         setError("Failed to create activity");
       }
@@ -480,7 +383,7 @@ const ActivitiesPage = () => {
     try {
       const response = await axios.put(
         `${API_BASE_URL}/api/v1/activities/`,
-        { ...convertToApiActivity(activity), id: activity.id }
+        { ...convertToApiActivity(activity), activity_id: activity.id }
       );
       
       if (response.data.success) {
@@ -506,7 +409,7 @@ const ActivitiesPage = () => {
         `${API_BASE_URL}/api/v1/activities/`,
         { 
           data: { 
-            id: activityId,
+            activity_id: activityId,
             account_id: selectedOrgAccount.accountId 
           } 
         }
@@ -567,12 +470,18 @@ const ActivitiesPage = () => {
 
       return matchesSearch && matchesDataset && matchesProduct;
     });
-  }, [metricSearchTerm, selectedDataset, selectedProduct]);
+  }, [availableMetrics, metricSearchTerm, selectedDataset, selectedProduct]);
 
   // Get unique products for filtering - optimized with useMemo
   const uniqueProducts = useMemo(() => {
     return [...new Set(availableMetrics.map((m) => m.product))];
-  }, []);
+  }, [availableMetrics]);
+
+  // Helper function to get metric name from ID
+  const getMetricNameById = (metricId: string): string => {
+    const metric = availableMetrics.find(m => m.id === metricId);
+    return metric ? metric.name : metricId;
+  };
 
   // Reset metric filters when opening intuition modal
   const openIntuitionModal = (activityId: string, intuition?: Intuition) => {
@@ -598,11 +507,14 @@ const ActivitiesPage = () => {
   const handleSaveActivity = async () => {
     if (!editingActivity || !editingActivity.description.trim()) return;
 
-
     if (isCreating || !editingActivity.id || editingActivity.id === "") {
       await createActivity(editingActivity);
     } else {
+      // Update the activity first
       await updateActivity(editingActivity);
+      
+      // For existing activities, intuitions are created immediately when the intuition modal is saved
+      // So we don't need to create them again here
     }
 
     setEditingActivity(null);
@@ -620,21 +532,6 @@ const ActivitiesPage = () => {
   ) => {
     const newIntuition = { ...intuition, id: `i${Date.now()}` };
     await createIntuition(activityId, newIntuition);
-  };
-
-
-  const deleteIntuition = async (activityId: string, intuitionId: string) => {
-    const activity = activitiesData.find((a) => a.id === activityId);
-    if (activity) {
-      const updatedIntuitions = activity.intuitions.filter(
-        (i) => i.id !== intuitionId,
-      );
-      const updatedActivity = {
-        ...activity,
-        intuitions: updatedIntuitions,
-      };
-      await updateActivity(updatedActivity);
-    }
   };
 
   const addLog = async (activityId: string, log: Omit<Log, "id">) => {
@@ -722,14 +619,16 @@ const ActivitiesPage = () => {
     }
 
     try {
+      const payload = {
+        account_id: selectedOrgAccount.accountId,
+        activity_id: activityId,
+        metric_id: intuition.metricName, // This should be the actual metric ID
+        direction: intuition.direction === "increase" ? "positive" : "negative",
+      };
+      
       const response = await axios.post(
         `${API_BASE_URL}/api/v1/intuitions/`,
-        {
-          account_id: selectedOrgAccount.accountId,
-          activity_id: activityId,
-          metric_id: intuition.metricName, // Using metricName as metric_id
-          direction: intuition.direction === "increase" ? "positive" : "negative",
-        }
+        payload
       );
       
       if (response.data.success) {
@@ -789,15 +688,63 @@ const ActivitiesPage = () => {
     }
   };
 
-  const deleteLog = async (activityId: string, logId: string) => {
-    const activity = activitiesData.find((a) => a.id === activityId);
-    if (activity) {
-      const updatedLogs = activity.logs.filter((l) => l.id !== logId);
-      const updatedActivity = {
-        ...activity,
-        logs: updatedLogs,
-      };
-      await updateActivity(updatedActivity);
+  // Delete intuition via API
+  const deleteIntuition = async (activityId: string, metricId: string) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/v1/intuitions/`,
+        {
+          data: {
+            account_id: selectedOrgAccount.accountId,
+            activity_id: activityId,
+            metric_id: metricId,
+          },
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchActivities(); // Refresh the list
+      } else {
+        setError("Failed to delete intuition");
+      }
+    } catch (err) {
+      console.error("Error deleting intuition:", err);
+      setError("Failed to delete intuition");
+    }
+  };
+
+  // Delete log via API
+  const deleteLog = async (logId: string, activityId: string) => {
+    if (!selectedOrgAccount?.accountId) {
+      setError("No account selected");
+      return;
+    }
+
+    try {
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/v1/activities/logs`,
+        {
+          data: {
+            account_id: selectedOrgAccount.accountId,
+            activity_id: activityId,
+            activity_log_id: logId,
+          },
+        }
+      );
+      
+      if (response.data.success) {
+        await fetchActivities(); // Refresh the list
+      } else {
+        setError("Failed to delete log");
+      }
+    } catch (err) {
+      console.error("Error deleting log:", err);
+      setError("Failed to delete log");
     }
   };
 
@@ -1238,7 +1185,7 @@ const ActivitiesPage = () => {
                                   className="p-2 bg-gray-50 rounded border"
                                 >
                                   <span className="text-sm text-gray-700">
-                                    {intuition.metricName} [{intuition.direction}]
+                                    {getMetricNameById(intuition.metricName)} [{intuition.direction}]
                                   </span>
                                 </div>
                               ))}
@@ -1344,9 +1291,9 @@ const ActivitiesPage = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Datasets</SelectItem>
-                        {datasets.map((dataset) => (
-                          <SelectItem key={dataset.id} value={dataset.id}>
-                            {dataset.name}
+                        {datasetsData.map((dataset) => (
+                          <SelectItem key={dataset.dataset_id} value={dataset.dataset_name}>
+                            {dataset.dataset_name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1394,14 +1341,14 @@ const ActivitiesPage = () => {
                         </div>
                       ) : (
                         filteredMetrics.map((metric) => (
-                          <SelectItem key={metric.id} value={metric.name}>
+                          <SelectItem key={metric.id} value={metric.id}>
                             <div className="flex flex-col">
                               <span className="font-medium">{metric.name}</span>
                               <span className="text-xs text-gray-500">
                                 {metric.product} •{" "}
                                 {
-                                  datasets.find((d) => d.id === metric.dataset)
-                                    ?.name
+                                  datasetsData.find((d) => d.dataset_name === metric.dataset)
+                                    ?.dataset_name || metric.dataset
                                 }
                               </span>
                             </div>
@@ -1746,7 +1693,7 @@ const ActivitiesPage = () => {
                         className="flex items-center justify-between p-2 bg-gray-50 rounded"
                       >
                         <span className="text-sm text-gray-700">
-                          {intuition.metricName} [{intuition.direction}]
+                          {getMetricNameById(intuition.metricName)} [{intuition.direction}]
                         </span>
                         <div className="flex gap-1">
                           <Button
@@ -1766,16 +1713,30 @@ const ActivitiesPage = () => {
                             size="sm"
                             variant="ghost"
                             className="h-6 w-6 p-0"
-                            onClick={() => {
+                            onClick={async () => {
                               if (editingActivity) {
-                                const updatedIntuitions =
-                                  editingActivity.intuitions.filter(
-                                    (i) => i.id !== intuition.id,
-                                  );
-                                setEditingActivity({
-                                  ...editingActivity,
-                                  intuitions: updatedIntuitions,
-                                });
+                                // If this is a new activity being created, just remove from local state
+                                if (isCreating) {
+                                  const updatedIntuitions =
+                                    editingActivity.intuitions.filter(
+                                      (i) => i.id !== intuition.id,
+                                    );
+                                  setEditingActivity({
+                                    ...editingActivity,
+                                    intuitions: updatedIntuitions,
+                                  });
+                                } else {
+                                  // For existing activities, delete via API and update local state
+                                  await deleteIntuition(editingActivity.id, intuition.metricName);
+                                  const updatedIntuitions =
+                                    editingActivity.intuitions.filter(
+                                      (i) => i.id !== intuition.id,
+                                    );
+                                  setEditingActivity({
+                                    ...editingActivity,
+                                    intuitions: updatedIntuitions,
+                                  });
+                                }
                               }
                             }}
                           >
@@ -1863,15 +1824,28 @@ const ActivitiesPage = () => {
                             size="sm"
                             variant="ghost"
                             className="h-6 w-6 p-0"
-                            onClick={() => {
+                            onClick={async () => {
                               if (editingActivity) {
-                                const updatedLogs = editingActivity.logs.filter(
-                                  (l) => l.id !== log.id,
-                                );
-                                setEditingActivity({
-                                  ...editingActivity,
-                                  logs: updatedLogs,
-                                });
+                                // If this is a new activity being created, just remove from local state
+                                if (isCreating) {
+                                  const updatedLogs = editingActivity.logs.filter(
+                                    (l) => l.id !== log.id,
+                                  );
+                                  setEditingActivity({
+                                    ...editingActivity,
+                                    logs: updatedLogs,
+                                  });
+                                } else {
+                                  // For existing activities, delete via API and update local state
+                                  await deleteLog(log.id, editingActivity.id);
+                                  const updatedLogs = editingActivity.logs.filter(
+                                    (l) => l.id !== log.id,
+                                  );
+                                  setEditingActivity({
+                                    ...editingActivity,
+                                    logs: updatedLogs,
+                                  });
+                                }
                               }
                             }}
                           >

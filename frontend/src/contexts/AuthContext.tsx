@@ -115,11 +115,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     string | null
   >(null);
   const [selectedOrgAccount, setSelectedOrgAccountState] = useState<SelectedOrgAccount | null>(null);
-  const [orgMetadata, setOrgMetadata] = useState<Record<string, any>>({});
-  const [accountMetadata, setAccountMetadata] = useState<Record<string, any>>({});
+  const [orgMetadata, setOrgMetadataState] = useState<Record<string, any>>({});
+  const [accountMetadata, setAccountMetadataState] = useState<Record<string, any>>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSetting[]>([]);
   const [securitySettings, setSecuritySettings] = useState<SecuritySetting[]>([]);
+
+  // Wrapper functions to persist metadata to localStorage
+  const setOrgMetadata = (data: Record<string, any>) => {
+    setOrgMetadataState(data);
+    localStorage.setItem("orgMetadata", JSON.stringify(data));
+  };
+
+  const setAccountMetadata = (data: Record<string, any>) => {
+    setAccountMetadataState(data);
+    localStorage.setItem("accountMetadata", JSON.stringify(data));
+  };
 
   const fetchNotifications = async (accountId: string) => {
     try {
@@ -163,9 +174,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(null);
     setHasSelectedWorkspace(false);
     setSelectedOrgAccountState(null);
+    setOrgMetadataState({});
+    setAccountMetadataState({});
     localStorage.removeItem("user");
     localStorage.removeItem("hasSelectedWorkspace");
     localStorage.removeItem("selectedOrgAccount");
+    localStorage.removeItem("orgMetadata");
+    localStorage.removeItem("accountMetadata");
   };
 
   const completeWorkspaceSelection = () => {
@@ -177,9 +192,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setHasSelectedWorkspace(false);
     setCurrentOrganizationId(null);
     setSelectedOrgAccountState(null);
+    setOrgMetadataState({});
+    setAccountMetadataState({});
     localStorage.removeItem("hasSelectedWorkspace");
     localStorage.removeItem("currentOrganizationId");
     localStorage.removeItem("selectedOrgAccount");
+    localStorage.removeItem("orgMetadata");
+    localStorage.removeItem("accountMetadata");
   };
 
   const setCurrentOrganization = (orgId: string) => {
@@ -204,6 +223,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     );
     const savedOrganizationId = localStorage.getItem("currentOrganizationId");
     const savedOrgAccount = localStorage.getItem("selectedOrgAccount");
+    const savedOrgMetadata = localStorage.getItem("orgMetadata");
+    const savedAccountMetadata = localStorage.getItem("accountMetadata");
 
     if (savedUser) {
       setUser(JSON.parse(savedUser));
@@ -219,12 +240,31 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     if (savedOrgAccount) {
       try {
-        setSelectedOrgAccountState(JSON.parse(savedOrgAccount));
+        const parsedOrgAccount = JSON.parse(savedOrgAccount);
+        setSelectedOrgAccountState(parsedOrgAccount);
+        // Fetch notifications for the restored account
+        fetchNotifications(parsedOrgAccount.accountId);
       } catch (err) {
         console.warn("Failed to parse savedOrgAccount", err);
       }
     }
-  });
+
+    if (savedOrgMetadata) {
+      try {
+        setOrgMetadataState(JSON.parse(savedOrgMetadata));
+      } catch (err) {
+        console.warn("Failed to parse savedOrgMetadata", err);
+      }
+    }
+
+    if (savedAccountMetadata) {
+      try {
+        setAccountMetadataState(JSON.parse(savedAccountMetadata));
+      } catch (err) {
+        console.warn("Failed to parse savedAccountMetadata", err);
+      }
+    }
+  }, []); // Add empty dependency array to run only on mount
 
   const value = {
     user,

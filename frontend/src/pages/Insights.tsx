@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   Search,
   Filter,
@@ -40,21 +41,99 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { insights as initialInsights, type Insight } from "@/data/insights";
+import { useAuth } from "@/contexts/AuthContext";
+import { 
+  transformAPIInsightsToFrontend, 
+  type APIInsightResponse,
+  type FrontendInsight
+} from "@/lib/insightsUtils";
+
+// Keep the Insight type for compatibility, but rename it to match the frontend structure
+type Insight = FrontendInsight;
 
 const Insights = () => {
   const navigate = useNavigate();
-  const [insights, setInsights] = useState<Insight[]>(initialInsights);
+  const { selectedOrgAccount } = useAuth();
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedImpact, setSelectedImpact] = useState<string>("all");
   const [selectedConfidence, setSelectedConfidence] = useState<string>("all");
 
+  // Fetch insights from API
+  useEffect(() => {
+    const fetchInsights = async () => {
+      if (!selectedOrgAccount) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const response = await axios.get<APIInsightResponse>(
+          `${import.meta.env.VITE_API_BASE_URL}/api/v1/insights/`,
+          {
+            params: {
+              account_id: selectedOrgAccount.accountId,
+            },
+          }
+        );
+
+        const transformedInsights = transformAPIInsightsToFrontend(response.data);
+        setInsights(transformedInsights);
+      } catch (err) {
+        console.error("Error fetching insights:", err);
+        setError("Failed to load insights. Please try again.");
+        setInsights([]); // Fallback to empty array on error
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchInsights();
+  }, [selectedOrgAccount]);
+
   // Delete insight function
-  const handleDeleteInsight = (insightId: string) => {
-    setInsights((prev) =>
-      prev.filter((insight) => insight.insight_id !== insightId),
-    );
+  const handleDeleteInsight = async (insightId: string) => {
+    if (!selectedOrgAccount) {
+      alert("No account selected");
+      return;
+    }
+
+    try {
+      // Find the insight to get original API IDs
+      const insightToDelete = insights.find(insight => insight.insight_id === insightId);
+      if (!insightToDelete) {
+        alert("Insight not found");
+        return;
+      }
+
+      // Call the API to delete the insight
+      await axios.delete(
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/insights/`,
+        {
+          data: {
+            account_id: selectedOrgAccount.accountId,
+            activity_log_id: insightToDelete._originalData.activity_log_id,
+            metric_id: insightToDelete._originalData.metric_id,
+          },
+        }
+      );
+
+      // Remove from local state on successful API deletion
+      setInsights((prev) =>
+        prev.filter((insight) => insight.insight_id !== insightId),
+      );
+      
+      console.log("Insight deleted successfully:", insightId);
+    } catch (err) {
+      console.error("Error deleting insight:", err);
+      alert("Failed to delete insight. Please try again.");
+    }
   };
 
   // Get unique values for filters
@@ -213,13 +292,47 @@ const Insights = () => {
         </div>
 
         {/* Results Count */}
-        <div className="text-sm text-gray-600 mt-6 mr-auto">
-          {filteredInsights.length} insight
-          {filteredInsights.length !== 1 ? "s" : ""} found
-        </div>
+        {!loading && !error && selectedOrgAccount && (
+          <div className="text-sm text-gray-600 mt-6 mr-auto">
+            {filteredInsights.length} insight
+            {filteredInsights.length !== 1 ? "s" : ""} found
+          </div>
+        )}
 
-        {/* Insights List */}
-        {filteredInsights.length > 0 ? (
+        {/* Loading State */}
+        {loading ? (
+          <Card>
+            <CardContent className="text-center py-12">
+              <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading insights...</p>
+            </CardContent>
+          </Card>
+        ) : error ? (
+          /* Error State */
+          <Card>
+            <CardContent className="text-center py-12">
+              <div className="text-red-500 mb-4">
+                <svg className="h-12 w-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Insights</h3>
+              <p className="text-gray-500 mb-4">{error}</p>
+              <Button onClick={() => window.location.reload()} variant="outline">
+                Try Again
+              </Button>
+            </CardContent>
+          </Card>
+        ) : !selectedOrgAccount ? (
+          /* No Account Selected */
+          <Card>
+            <CardContent className="text-center py-12">
+              <Lightbulb className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Account Selected</h3>
+              <p className="text-gray-500">Please select an organization and account to view insights.</p>
+            </CardContent>
+          </Card>
+        ) : filteredInsights.length > 0 ? (
           <Accordion type="single" collapsible className="space-y-4">
             {filteredInsights.map((insight) => (
               <AccordionItem

@@ -50,6 +50,16 @@ interface ApiMetric {
   description: string;
 }
 
+interface Dataset {
+  id: number;
+  account_id: string;
+  dataset_id: number;
+  dataset_name: string;
+  products: string[];
+  default_datetime: string;
+  description: string;
+}
+
 interface Metric {
   id: string;
   name: string;
@@ -61,13 +71,7 @@ interface Metric {
   sqlExpression: string;
 }
 
-const datasets = [
-  { id: "ga4_sessions", name: "GA4 Sessions", product: "Google Analytics" },
-  { id: "ga4_events", name: "GA4 Events", product: "Google Analytics" },
-  { id: "google_ads", name: "Google Ads", product: "Google Ads" },
-  { id: "facebook_ads", name: "Facebook Ads", product: "Meta" },
-  { id: "salesforce", name: "Salesforce", product: "Salesforce" },
-];
+// Datasets will be fetched from API
 
 const formats = ["Integer", "Percent", "Double"];
 
@@ -81,7 +85,10 @@ const MetricsPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   
   const [metricsData, setMetricsData] = useState<Metric[]>([]);
+  const [rawMetricsData, setRawMetricsData] = useState<ApiMetric[]>([]);
+  const [datasetsData, setDatasetsData] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [datasetsLoading, setDatasetsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<SortField>(null);
@@ -94,20 +101,25 @@ const MetricsPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
 
   // Convert API metric to component format
-  const convertApiMetric = (apiMetric: ApiMetric): Metric => ({
-    id: apiMetric.id,
-    name: apiMetric.verbose_name,
-    description: apiMetric.description,
-    dataset: apiMetric.related_dataset_name?.toLowerCase().replace(/\s+/g, "_") || "unknown",
-    product: apiMetric.related_dataset_products?.[0] || "Unknown",
-    format: apiMetric.d3_format || "Integer",
-    currency: apiMetric.currency || "None",
-    sqlExpression: apiMetric.expression,
-  });
+  const convertApiMetric = (apiMetric: ApiMetric): Metric => {
+    // Find the matching dataset to get the correct product
+    const matchingDataset = datasetsData.find(d => d.dataset_name === apiMetric.related_dataset_name);
+    
+    return {
+      id: apiMetric.id,
+      name: apiMetric.verbose_name,
+      description: apiMetric.description,
+      dataset: apiMetric.related_dataset_name || "unknown",
+      product: matchingDataset?.products?.[0] || apiMetric.related_dataset_products?.[0] || "Unknown",
+      format: apiMetric.d3_format || "Integer",
+      currency: apiMetric.currency || "None",
+      sqlExpression: apiMetric.expression,
+    };
+  };
 
   // Convert component metric to API format
   const convertToApiMetric = (metric: Metric): Partial<ApiMetric> => {
-    const dataset = datasets.find(d => d.id === metric.dataset);
+    const dataset = datasetsData.find(d => d.dataset_name === metric.dataset);
     return {
       account_id: selectedOrgAccount?.accountId || "",
       verbose_name: metric.name,
@@ -116,9 +128,33 @@ const MetricsPage = () => {
       currency: metric.currency === "None" ? undefined : metric.currency,
       d3_format: metric.format,
       description: metric.description,
-      related_dataset_name: dataset?.name || "",
-      related_dataset_products: dataset ? [dataset.product] : [],
+      related_dataset_name: dataset?.dataset_name || "",
+      related_dataset_products: dataset?.products || [],
     };
+  };
+
+  // Fetch datasets from API
+  const fetchDatasets = async () => {
+    if (!selectedOrgAccount?.accountId) {
+      setDatasetsLoading(false);
+      return;
+    }
+
+    try {
+      setDatasetsLoading(true);
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount.accountId}`
+      );
+      
+      if (response.data.datasets !== undefined) {
+        setDatasetsData(response.data.datasets);
+      }
+    } catch (err) {
+      console.error("Error fetching datasets:", err);
+      // Don't set error state for datasets, just log it
+    } finally {
+      setDatasetsLoading(false);
+    }
   };
 
   // Fetch metrics from API
@@ -137,8 +173,8 @@ const MetricsPage = () => {
       );
       
       if (response.data.metrics !== undefined) {
-        const convertedMetrics = response.data.metrics.map(convertApiMetric);
-        setMetricsData(convertedMetrics);
+        // Store raw metrics data, will convert after datasets are loaded
+        setRawMetricsData(response.data.metrics);
       } else {
         setError("Failed to fetch metrics");
       }
@@ -217,7 +253,7 @@ const MetricsPage = () => {
         {
           data: {
             account_id: selectedOrgAccount.accountId,
-            id: metricId,
+            metric_id: metricId,
           },
         }
       );
@@ -233,8 +269,17 @@ const MetricsPage = () => {
     }
   };
 
-  // Load metrics on component mount and when account changes
+  // Convert raw metrics data when datasets are loaded
   useEffect(() => {
+    if (rawMetricsData.length > 0 && datasetsData.length > 0) {
+      const convertedMetrics = rawMetricsData.map(convertApiMetric);
+      setMetricsData(convertedMetrics);
+    }
+  }, [rawMetricsData, datasetsData]);
+
+  // Load datasets and metrics on component mount and when account changes
+  useEffect(() => {
+    fetchDatasets();
     fetchMetrics();
   }, [selectedOrgAccount?.accountId]);
 
@@ -295,10 +340,10 @@ const MetricsPage = () => {
             break;
           case "dataset":
             valueA = (
-              datasets.find((d) => d.id === a.dataset)?.name || a.dataset
+              datasetsData.find((d) => d.dataset_name === a.dataset)?.dataset_name || a.dataset
             ).toLowerCase();
             valueB = (
-              datasets.find((d) => d.id === b.dataset)?.name || b.dataset
+              datasetsData.find((d) => d.dataset_name === b.dataset)?.dataset_name || b.dataset
             ).toLowerCase();
             break;
           case "product":
@@ -372,11 +417,11 @@ const MetricsPage = () => {
   const handleDatasetChange = (dataset: string) => {
     if (!editingMetric) return;
 
-    const selectedDataset = datasets.find((d) => d.id === dataset);
+    const selectedDataset = datasetsData.find((d) => d.dataset_name === dataset);
     setEditingMetric({
       ...editingMetric,
       dataset,
-      product: selectedDataset?.product || "",
+      product: selectedDataset?.products?.[0] || "",
     });
   };
 
@@ -472,9 +517,9 @@ const MetricsPage = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Datasets</SelectItem>
-                      {datasets.map((dataset) => (
-                        <SelectItem key={dataset.id} value={dataset.id}>
-                          {dataset.name}
+                      {datasetsData.map((dataset) => (
+                        <SelectItem key={dataset.dataset_id} value={dataset.dataset_name}>
+                          {dataset.dataset_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -593,8 +638,8 @@ const MetricsPage = () => {
                       </div>
                       <div className="col-span-3 min-w-0">
                         <span className="text-sm text-gray-700 break-words">
-                          {datasets.find((d) => d.id === metric.dataset)
-                            ?.name || metric.dataset}
+                          {datasetsData.find((d) => d.dataset_name === metric.dataset)
+                            ?.dataset_name || metric.dataset}
                         </span>
                       </div>
                       <div className="col-span-1 min-w-0">
@@ -728,8 +773,8 @@ const MetricsPage = () => {
                         <div className="mt-1 space-y-1">
                           <p className="text-xs text-gray-600">
                             <span className="font-medium">Dataset:</span>{" "}
-                            {datasets.find((d) => d.id === metric.dataset)
-                              ?.name || metric.dataset}
+                            {datasetsData.find((d) => d.dataset_name === metric.dataset)
+                              ?.dataset_name || metric.dataset}
                           </p>
                           <p className="text-xs text-gray-600">
                             <span className="font-medium">Product:</span>{" "}
@@ -887,9 +932,9 @@ const MetricsPage = () => {
                       <SelectValue placeholder="Select dataset" />
                     </SelectTrigger>
                     <SelectContent>
-                      {datasets.map((dataset) => (
-                        <SelectItem key={dataset.id} value={dataset.id}>
-                          {dataset.name}
+                      {datasetsData.map((dataset) => (
+                        <SelectItem key={dataset.dataset_id} value={dataset.dataset_name}>
+                          {dataset.dataset_name}
                         </SelectItem>
                       ))}
                     </SelectContent>

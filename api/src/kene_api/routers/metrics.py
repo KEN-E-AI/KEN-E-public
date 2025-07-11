@@ -191,24 +191,49 @@ async def _create_metric_node(db: Neo4jService, request: MetricRequest, superset
         request.metric_name or request.verbose_name or f"metric_{metric_id[:8]}"
     )
 
-    create_metric_query = """
-    MATCH (account:Account {account_id: $account_id})
-    CREATE (metric:Metric {
-        metric_id: $metric_id,
-        account_components: $account_components,
-        d3_format: $d3_format,
-        description: $description,
-        expression: $expression,
-        metric_name: $metric_name,
-        verbose_name: $verbose_name,
-        currency: $currency,
-        superset_metric_id: $superset_metric_id,
-        below_zero: $below_zero,
-        is_kpi: $is_kpi
-    })
-    CREATE (metric)-[:BELONGS_TO]->(account)
-    RETURN metric
-    """
+    # Create the base metric creation query
+    if request.related_dataset_name:
+        # Create metric with dataset relationship
+        create_metric_query = """
+        MATCH (account:Account {account_id: $account_id})
+        MATCH (dataset:Dataset {dataset_name: $related_dataset_name})-[:BELONGS_TO]->(account)
+        CREATE (metric:Metric {
+            metric_id: $metric_id,
+            account_components: $account_components,
+            d3_format: $d3_format,
+            description: $description,
+            expression: $expression,
+            metric_name: $metric_name,
+            verbose_name: $verbose_name,
+            currency: $currency,
+            superset_metric_id: $superset_metric_id,
+            below_zero: $below_zero,
+            is_kpi: $is_kpi
+        })
+        CREATE (metric)-[:BELONGS_TO]->(account)
+        CREATE (metric)-[:CALCULATED_FROM]->(dataset)
+        RETURN metric
+        """
+    else:
+        # Create metric without dataset relationship
+        create_metric_query = """
+        MATCH (account:Account {account_id: $account_id})
+        CREATE (metric:Metric {
+            metric_id: $metric_id,
+            account_components: $account_components,
+            d3_format: $d3_format,
+            description: $description,
+            expression: $expression,
+            metric_name: $metric_name,
+            verbose_name: $verbose_name,
+            currency: $currency,
+            superset_metric_id: $superset_metric_id,
+            below_zero: $below_zero,
+            is_kpi: $is_kpi
+        })
+        CREATE (metric)-[:BELONGS_TO]->(account)
+        RETURN metric
+        """
 
     metric_params = {
         "account_id": request.account_id,
@@ -223,6 +248,7 @@ async def _create_metric_node(db: Neo4jService, request: MetricRequest, superset
         "superset_metric_id": superset_metric_id,
         "below_zero": request.below_zero if request.below_zero is not None else False,
         "is_kpi": request.is_kpi if request.is_kpi is not None else False,
+        "related_dataset_name": request.related_dataset_name or "",
     }
 
     metric_result = await db.execute_write_query(create_metric_query, metric_params)
