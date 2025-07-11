@@ -37,6 +37,18 @@ async def get_metrics(
     Returns a list of all metrics that have been created for the account,
     along with all properties. Also includes related Dataset information
     through the CALCULATED_FROM relationship.
+    
+    **Parameters (query parameter):**
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `metrics`: List of metric objects with their properties and dataset information
+    - `total`: Total number of metrics found
+    
+    **Example:**
+    ```
+    GET /api/v1/metrics/?account_id=a000001
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -129,6 +141,8 @@ async def _create_metric_from_record(record: Dict[str, Any], account_id: str) ->
         related_dataset_name=dataset_data.get("dataset_name") if dataset_data else "",
         related_dataset_products=dataset_products,
         description=metric_data.get("description") or "",
+        below_zero=metric_data.get("below_zero", False),
+        is_kpi=metric_data.get("is_kpi", False),
     )
 
 
@@ -188,7 +202,9 @@ async def _create_metric_node(db: Neo4jService, request: MetricRequest, superset
         metric_name: $metric_name,
         verbose_name: $verbose_name,
         currency: $currency,
-        superset_metric_id: $superset_metric_id
+        superset_metric_id: $superset_metric_id,
+        below_zero: $below_zero,
+        is_kpi: $is_kpi
     })
     CREATE (metric)-[:BELONGS_TO]->(account)
     RETURN metric
@@ -205,6 +221,8 @@ async def _create_metric_node(db: Neo4jService, request: MetricRequest, superset
         "verbose_name": request.verbose_name or "",
         "currency": request.currency or "",
         "superset_metric_id": superset_metric_id,
+        "below_zero": request.below_zero if request.below_zero is not None else False,
+        "is_kpi": request.is_kpi if request.is_kpi is not None else False,
     }
 
     metric_result = await db.execute_write_query(create_metric_query, metric_params)
@@ -256,7 +274,7 @@ async def _sync_metric_to_superset(
 async def _build_neo4j_update_params(request: MetricRequest) -> tuple[List[str], Dict[str, Any]]:
     """Build update parameters for Neo4j query."""
     set_clauses = []
-    params: Dict[str, Any] = {"metric_id": request.id}
+    params: Dict[str, Any] = {"metric_id": request.metric_id}
 
     if request.account_components is not None:
         set_clauses.append("metric.account_components = $account_components")
@@ -285,6 +303,14 @@ async def _build_neo4j_update_params(request: MetricRequest) -> tuple[List[str],
     if request.currency is not None:
         set_clauses.append("metric.currency = $currency")
         params["currency"] = request.currency
+
+    if request.below_zero is not None:
+        set_clauses.append("metric.below_zero = $below_zero")
+        params["below_zero"] = request.below_zero
+
+    if request.is_kpi is not None:
+        set_clauses.append("metric.is_kpi = $is_kpi")
+        params["is_kpi"] = request.is_kpi
 
     return set_clauses, params
 
@@ -316,6 +342,44 @@ async def create_metric(
     Creates a new Metric node in Neo4j with a BELONGS_TO relationship to the Account node.
     Also creates a CALCULATED_FROM relationship to an existing Dataset node if related_dataset_id is provided.
     Additionally, creates the metric in Apache Superset if dataset information is available.
+    
+    **Parameters (in request body):**
+    - `account_id` (required): The unique identifier for the account
+    - `d3_format` (optional): The d3 formatting guidelines for metric presentation
+    - `verbose_name` (optional): The friendly name of the metric
+    - `expression` (optional): The SQL expression used to calculate the metric
+    - `metric_name` (optional): The snake_case representation of the metric name
+    - `currency` (optional): The currency code for the metric (e.g., USD, EUR, GBP)
+    - `account_components` (optional): List of components the metric assists with in analysis
+    - `related_dataset_id` (optional): Unique identifier for the dataset used to calculate the metric
+    - `related_dataset_name` (optional): Name of the dataset used to calculate the metric
+    - `related_dataset_products` (optional): List of martech products used to calculate the metric
+    - `description` (optional): Friendly description of the metric and its usage
+    - `below_zero` (optional): Boolean indicating whether the metric can return a result below 0 (default: false)
+    - `is_kpi` (optional): Boolean indicating whether the metric has been flagged as a Key Performance Indicator (default: false)
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message
+    - `data`: Contains the generated metric ID
+    
+    **Example:**
+    ```json
+    POST /api/v1/metrics/
+    {
+        "account_id": "a000001",
+        "verbose_name": "Total Revenue",
+        "metric_name": "total_revenue",
+        "expression": "sum(revenue)",
+        "d3_format": "$,.2f",
+        "currency": "USD",
+        "account_components": ["ecommerce"],
+        "related_dataset_id": 28,
+        "description": "Total revenue from all transactions",
+        "below_zero": false,
+        "is_kpi": true
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -332,28 +396,25 @@ async def create_metric(
 
         superset_metric_id = None
         
-        # Create metric in Superset if dataset information is provided
-        if request.related_dataset_id and request.metric_name and request.expression:
-            try:
-                superset_metric_data = {
-                    "metric_name": request.metric_name,
-                    "verbose_name": request.verbose_name or request.metric_name,
-                    "expression": request.expression,
-                    "description": request.description or "",
-                    "d3_format": request.d3_format or "",
-                    "currency": request.currency or ""
-                }
+        # TODO: Create metric in Superset if dataset information is provided
+        # Temporarily commented out due to API payload format issues
+        # if request.related_dataset_id and request.metric_name and request.expression:
+        #
+        #     superset_metric_data = {
+        #         "metric_name": request.metric_name,
+        #         "verbose_name": request.verbose_name or request.metric_name,
+        #         "expression": request.expression,
+        #         "description": request.description or "",
+        #         "d3_format": request.d3_format or "",
+        #         "currency": request.currency or ""
+        #     }
+        #     
+        #     superset_result = await superset_client.create_metric(
+        #         request.related_dataset_id, 
+        #         superset_metric_data
+        #     )
+        #     superset_metric_id = superset_result.get("id")
                 
-                superset_result = await superset_client.create_metric(
-                    request.related_dataset_id, 
-                    superset_metric_data
-                )
-                superset_metric_id = superset_result.get("id")
-                
-            except SupersetClientError as e:
-                # Log the error but don't fail the entire operation
-                # The metric will still be created in Neo4j without Superset integration
-                logger.warning(f"Failed to create metric in Superset: {e}")
 
         # Create Metric node in Neo4j
         generated_metric_id = await _create_metric_node(db, request, superset_metric_id)
@@ -389,6 +450,39 @@ async def update_metric(
 
     Updates Metric node properties in Neo4j and syncs changes with Apache Superset.
     Does not modify relationships to other nodes.
+    
+    **Parameters (in request body):**
+    - `metric_id` (required): The unique identifier of the metric to update
+    - `account_id` (required): The unique identifier for the account
+    - `d3_format` (optional): Updated d3 formatting guidelines for metric presentation
+    - `verbose_name` (optional): Updated friendly name of the metric
+    - `expression` (optional): Updated SQL expression used to calculate the metric
+    - `metric_name` (optional): Updated snake_case representation of the metric name
+    - `currency` (optional): Updated currency code for the metric (e.g., USD, EUR, GBP)
+    - `account_components` (optional): Updated list of components the metric assists with in analysis
+    - `related_dataset_id` (optional): Updated unique identifier for the dataset used to calculate the metric
+    - `related_dataset_name` (optional): Updated name of the dataset used to calculate the metric
+    - `related_dataset_products` (optional): Updated list of martech products used to calculate the metric
+    - `description` (optional): Updated friendly description of the metric and its usage
+    - `below_zero` (optional): Updated boolean indicating whether the metric can return a result below 0
+    - `is_kpi` (optional): Updated boolean indicating whether the metric has been flagged as a Key Performance Indicator
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message (includes Superset sync status)
+    - `data`: null
+    
+    **Example:**
+    ```json
+    PUT /api/v1/metrics/
+    {
+        "metric_id": "888ttt",
+        "account_id": "a000001",
+        "verbose_name": "Updated Total Revenue",
+        "expression": "sum(revenue * 1.1)",
+        "description": "Total revenue with 10% markup"
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -396,9 +490,9 @@ async def update_metric(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        if not request.id:
+        if not request.metric_id:
             raise HTTPException(
-                status_code=400, detail="id is required for update operation"
+                status_code=400, detail="metric_id is required for update operation"
             )
 
         # Check if metric exists and get current data
@@ -407,10 +501,10 @@ async def update_metric(
         OPTIONAL MATCH (metric)-[:CALCULATED_FROM]->(dataset:Dataset)
         RETURN metric, dataset, metric.superset_metric_id as superset_metric_id
         """
-        metric_result = await db.execute_query(metric_check_query, {"metric_id": request.id})
+        metric_result = await db.execute_query(metric_check_query, {"metric_id": request.metric_id})
         if not metric_result:
             raise HTTPException(
-                status_code=404, detail=f"Metric {request.id} not found"
+                status_code=404, detail=f"Metric {request.metric_id} not found"
             )
 
         current_dataset = metric_result[0]["dataset"]
@@ -422,14 +516,15 @@ async def update_metric(
         if not set_clauses:
             raise HTTPException(status_code=400, detail="No fields provided for update")
 
-        # Try to update in Superset
+        # TODO: Try to update in Superset
+        # Temporarily commented out due to API payload format issues
         superset_updated = False
-        dataset_id = current_dataset.get("dataset_id") if current_dataset else None
-        
-        if superset_metric_id and dataset_id:
-            superset_updated = await _sync_metric_to_superset(
-                superset_client, dataset_id, superset_metric_id, request
-            )
+        # dataset_id = current_dataset.get("dataset_id") if current_dataset else None
+        # 
+        # if superset_metric_id and dataset_id:
+        #     superset_updated = await _sync_metric_to_superset(
+        #         superset_client, dataset_id, superset_metric_id, request
+        #     )
 
         # Execute update query in Neo4j
         update_query = f"""
@@ -442,10 +537,11 @@ async def update_metric(
 
         # Generate response message
         response_message = "Metric updated successfully"
-        if superset_updated:
-            response_message += " (synced with Superset)"
-        elif superset_metric_id and dataset_id:
-            response_message += " (Superset sync failed - check logs)"
+        # TODO: Re-enable Superset sync status when integration is fixed
+        # if superset_updated:
+        #     response_message += " (synced with Superset)"
+        # elif superset_metric_id and dataset_id:
+        #     response_message += " (Superset sync failed - check logs)"
 
         return SuccessResponse(
             success=True, data=None, message=response_message
@@ -469,6 +565,24 @@ async def delete_metric(
     Removes Metric node from Neo4j along with all its relationships, and also 
     deletes the corresponding metric from Apache Superset if it exists.
     Does not modify connected Account or Dataset nodes.
+    
+    **Parameters (in request body):**
+    - `metric_id` (required): The unique identifier of the metric to delete
+    - `account_id` (required): The unique identifier for the account
+    
+    **Returns:**
+    - `success`: Boolean indicating operation success
+    - `message`: Success message (includes Superset deletion status)
+    - `data`: null
+    
+    **Example:**
+    ```json
+    DELETE /api/v1/metrics/
+    {
+        "metric_id": "888ttt",
+        "account_id": "a000001"
+    }
+    ```
     """
     try:
         # Check Neo4j connectivity
@@ -476,9 +590,9 @@ async def delete_metric(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        if not request.id:
+        if not request.metric_id:
             raise HTTPException(
-                status_code=400, detail="id is required for delete operation"
+                status_code=400, detail="metric_id is required for delete operation"
             )
 
         # Check if metric exists and get Superset information
@@ -487,27 +601,28 @@ async def delete_metric(
         OPTIONAL MATCH (metric)-[:CALCULATED_FROM]->(dataset:Dataset)
         RETURN metric, dataset, metric.superset_metric_id as superset_metric_id
         """
-        metric_result = await db.execute_query(metric_check_query, {"metric_id": request.id})
+        metric_result = await db.execute_query(metric_check_query, {"metric_id": request.metric_id})
         if not metric_result:
             raise HTTPException(
-                status_code=404, detail=f"Metric {request.id} not found"
+                status_code=404, detail=f"Metric {request.metric_id} not found"
             )
 
         current_dataset = metric_result[0]["dataset"]
         superset_metric_id = metric_result[0]["superset_metric_id"]
         
-        # Delete from Superset if superset_metric_id exists
+        # TODO: Delete from Superset if superset_metric_id exists
+        # Temporarily commented out due to API payload format issues
         superset_deleted = False
-        dataset_id = current_dataset.get("dataset_id") if current_dataset else None
-        
-        if superset_metric_id and dataset_id:
-            try:
-                success = await superset_client.delete_metric(dataset_id, superset_metric_id)
-                superset_deleted = success
-                
-            except SupersetClientError as e:
-                # Log the error but don't fail the entire operation
-                logger.warning(f"Failed to delete metric from Superset: {e}")
+        # dataset_id = current_dataset.get("dataset_id") if current_dataset else None
+        # 
+        # if superset_metric_id and dataset_id:
+        #     try:
+        #         success = await superset_client.delete_metric(dataset_id, superset_metric_id)
+        #         superset_deleted = success
+        #         
+        #     except SupersetClientError as e:
+        #         # Log the error but don't fail the entire operation
+        #         logger.warning(f"Failed to delete metric from Superset: {e}")
 
         # Delete metric node and all its relationships from Neo4j
         delete_query = """
@@ -515,13 +630,14 @@ async def delete_metric(
         DETACH DELETE metric
         """
 
-        await db.execute_write_query(delete_query, {"metric_id": request.id})
+        await db.execute_write_query(delete_query, {"metric_id": request.metric_id})
 
         response_message = "Metric deleted successfully"
-        if superset_deleted:
-            response_message += " (removed from Superset)"
-        elif superset_metric_id and dataset_id:
-            response_message += " (Superset deletion failed - check logs)"
+        # TODO: Re-enable Superset deletion status when integration is fixed
+        # if superset_deleted:
+        #     response_message += " (removed from Superset)"
+        # elif superset_metric_id and dataset_id:
+        #     response_message += " (Superset deletion failed - check logs)"
 
         return SuccessResponse(
             success=True, data=None, message=response_message

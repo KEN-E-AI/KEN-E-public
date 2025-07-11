@@ -7,9 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import neo4j_service
-from .firestore import firestore_service
+from .firestore import get_firestore_service
 from .routers import (
     activities,
+    datasets,
     firestore,
     funnel_reports,
     home,
@@ -17,6 +18,7 @@ from .routers import (
     intuitions,
     items,
     metrics,
+    products,
     superset_saved_queries,
 )
 
@@ -36,7 +38,7 @@ async def lifespan(app: FastAPI):
         # You might want to decide whether to continue without Neo4j or exit
 
     try:
-        firestore_service.initialize()
+        get_firestore_service()  # This will initialize the service
         logger.info("Firestore service initialized")
     except Exception as e:
         logger.error(f"Failed to initialize Firestore: {e}")
@@ -70,6 +72,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
+app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
 app.include_router(activities.router, prefix="/api/v1/activities", tags=["activities"])
 app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"])
 app.include_router(intuitions.router, prefix="/api/v1/intuitions", tags=["intuitions"])
@@ -106,7 +110,7 @@ async def health_check():
         neo4j_healthy = False
 
     try:
-        firestore_healthy = firestore_service.health_check()
+        firestore_healthy = get_firestore_service().health_check()
     except Exception:
         firestore_healthy = False
 

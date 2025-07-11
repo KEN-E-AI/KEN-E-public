@@ -47,6 +47,9 @@ def mock_firestore_service():
     mock_service.list_tactics.return_value = []
     mock_service.update_tactic.return_value = {"effectiveness_kpi": "metric123"}
     mock_service.delete_tactic.return_value = True
+    # Add nested field set method mocks
+    mock_service.set_nested_field.return_value = True
+    mock_service.set_nested_field_subcollection.return_value = True
     return mock_service
 
 
@@ -383,7 +386,7 @@ class TestFirestoreRouter:
 
         assert response.status_code == 400
         assert "Unsupported update operator: invalidOperator" in response.json()["detail"]
-        assert "Supported operators: arrayUnion, replaceOne" in response.json()["detail"]
+        assert "Supported operators: arrayUnion, replaceOne, set" in response.json()["detail"]
 
         # Clean up
         app.dependency_overrides.clear()
@@ -1829,6 +1832,385 @@ class TestTacticEndpoints:
         assert response.status_code == 400
         data = response.json()
         assert "big_bet_name is required" in data["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_nested_field_success(self, client, mock_firestore_service):
+        """Test set operation for nested field successfully."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "permissions.accounts.newAccountId",
+                "value": "admin"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Document test_doc updated successfully - Set nested field operation on 'permissions.accounts.newAccountId'" in data["message"]
+
+        mock_firestore_service.health_check.assert_called_once()
+        mock_firestore_service.set_nested_field.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field_path="permissions.accounts.newAccountId",
+            value="admin"
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_nested_field_complex_value(self, client, mock_firestore_service):
+        """Test set operation with complex nested object value."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        complex_value = {
+            "role": "admin", 
+            "permissions": ["read", "write"], 
+            "created_at": "2025-01-01T00:00:00Z"
+        }
+        
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "user_data.profile.settings",
+                "value": complex_value
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Document test_doc updated successfully - Set nested field operation on 'user_data.profile.settings'" in data["message"]
+
+        mock_firestore_service.set_nested_field.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field_path="user_data.profile.settings",
+            value=complex_value
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_missing_field(self, client, mock_firestore_service):
+        """Test set operation with missing field parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "value": "admin"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_missing_value(self, client, mock_firestore_service):
+        """Test set operation with missing value parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "permissions.accounts.newAccountId"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_empty_field_path(self, client, mock_firestore_service):
+        """Test set operation with empty field path."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "",
+                "value": "admin"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_none_value_allowed(self, client, mock_firestore_service):
+        """Test set operation with None value (should be allowed)."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "permissions.accounts.removedAccountId",
+                "value": None
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Document test_doc updated successfully - Set nested field operation on 'permissions.accounts.removedAccountId'" in data["message"]
+
+        mock_firestore_service.set_nested_field.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            field_path="permissions.accounts.removedAccountId",
+            value=None
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_firestore_unavailable(self, client, mock_firestore_service):
+        """Test set operation when Firestore is unavailable."""
+        mock_firestore_service.health_check.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "permissions.accounts.newAccountId",
+                "value": "admin"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 503
+        assert "Firestore service unavailable" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_set_operation_failed(self, client, mock_firestore_service):
+        """Test set operation when the operation fails."""
+        mock_firestore_service.set_nested_field.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "permissions.accounts.newAccountId",
+                "value": "admin"
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 404
+        assert "Document not found or operation failed" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_invalid_update_operator_includes_set(self, client, mock_firestore_service):
+        """Test that error message includes 'set' in supported operators."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "invalidOperator",
+                "field": "accounts",
+                "value": {"test": "value"}
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "Unsupported update operator: invalidOperator" in response.json()["detail"]
+        assert "Supported operators: arrayUnion, replaceOne, set" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_update_subcollection_document_set_nested_field(self, client, mock_firestore_service):
+        """Test set operation on subcollection document for nested field."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "config.notification_settings.email_enabled",
+                "value": True
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Subcollection document email_notifications updated successfully - Set nested field operation on 'config.notification_settings.email_enabled'" in data["message"]
+
+        mock_firestore_service.health_check.assert_called_once()
+        mock_firestore_service.set_nested_field_subcollection.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            subcollection="notifications",
+            subdocument_id="email_notifications",
+            field_path="config.notification_settings.email_enabled",
+            value=True
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_update_subcollection_document_set_complex_object(self, client, mock_firestore_service):
+        """Test set operation on subcollection document with complex object."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        complex_config = {
+            "frequency": "daily",
+ "templates": ["welcome", "reminder"],
+            "settings": {
+                "html_enabled": True,
+                "tracking_enabled": False
+            }
+        }
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "notification_config.email",
+                "value": complex_config
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Subcollection document email_notifications updated successfully - Set nested field operation on 'notification_config.email'" in data["message"]
+
+        mock_firestore_service.set_nested_field_subcollection.assert_called_once_with(
+            collection="test_collection",
+            document_id="test_doc",
+            subcollection="notifications",
+            subdocument_id="email_notifications",
+            field_path="notification_config.email",
+            value=complex_config
+        )
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_update_subcollection_document_set_missing_field(self, client, mock_firestore_service):
+        """Test set operation on subcollection document with missing field parameter."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "value": True
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 400
+        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+
+        # Clean up
+        app.dependency_overrides.clear()
+
+    def test_update_subcollection_document_set_operation_failed(self, client, mock_firestore_service):
+        """Test set operation on subcollection document when operation fails."""
+        mock_firestore_service.set_nested_field_subcollection.return_value = False
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        update_data = {
+            "update": {
+                "operator": "set",
+                "field": "config.notification_settings.email_enabled",
+                "value": True
+            }
+        }
+
+        response = client.put(
+            "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
+            json=update_data,
+            params={"account_id": "test_account"}
+        )
+
+        assert response.status_code == 404
+        assert "Document not found or operation failed" in response.json()["detail"]
 
         # Clean up
         app.dependency_overrides.clear()

@@ -152,10 +152,7 @@ steps:
       - "--memory=1Gi"
       - "--project=${_STAGING_PROJECT_ID}"
       - "--set-env-vars"
-      - |
-        VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY},\
-        VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN},\
-        VITE_API_BASE_URL=${_VITE_API_BASE_URL}
+      - "VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY},VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN},VITE_API_BASE_URL=${_VITE_API_BASE_URL}"
 
   - name: "gcr.io/cloud-builders/docker"
     id: build-api-image
@@ -193,6 +190,7 @@ steps:
             --memory=512Mi \
             --port=8000 \
             --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
+            --clear-secrets \
             --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,USE_APPLICATION_DEFAULT_CREDENTIALS=true"
 
 

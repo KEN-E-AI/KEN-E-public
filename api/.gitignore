@@ -42,3 +42,6 @@ htmlcov/
 
 # FastAPI
 .uvicorn.pid
+
+# API Keys
+./ken-e-production-e6cbb5681ea3.json
