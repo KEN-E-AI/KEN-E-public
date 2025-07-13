@@ -1,97 +1,249 @@
 # KEN-E
 
-A multi-agent system implemented with CrewAI created to support coding activities
+A multi-agent AI system for marketing analysis built on Google Cloud Platform. KEN-E combines LangGraph orchestration, CrewAI multi-agent collaboration, and a modern React frontend to provide comprehensive marketing insights and analytics.
 
-Agent generated with [`googleCloudPlatform/agent-starter-pack`](https://github.com/GoogleCloudPlatform/agent-starter-pack)
+## Overview
+
+KEN-E is a sophisticated marketing analysis platform that leverages:
+- **AI-Powered Agents**: Three specialized CrewAI agents (KEN-E, BET-E, VIK-E) for execution, data collection, and reporting
+- **Modern Tech Stack**: FastAPI backend, React frontend, Neo4j graph database
+- **Cloud-Native**: Fully deployed on Google Cloud Platform with Vertex AI integration
+- **Real-time Analytics**: Performance metrics, big bets tracking, and exploration tools
+- **Claude Code Shortcuts**: A series of shortcuts have been created for Claude Code, and an example for using them properly can be found [here](https://www.youtube.com/watch?v=SDiDkK0r-9c)
 
 ## Project Structure
 
-This project is organized as follows:
-
 ```
 ken-e/
-├── app/                 # Core application code
-│   ├── agent.py         # Main agent logic
-│   ├── agent_engine_app.py # Agent Engine application logic
-│   └── utils/           # Utility functions and helpers
-├── deployment/          # Infrastructure and deployment scripts
-├── notebooks/           # Jupyter notebooks for prototyping and evaluation
-├── tests/               # Unit, integration, and load tests
-├── Makefile             # Makefile for common commands
-└── pyproject.toml       # Project dependencies and configuration
+├── app/                    # Main agent system (LangGraph & CrewAI)
+│   ├── agent.py           # Core LangGraph orchestration
+│   ├── agent_engine_app.py # Google Cloud Agent Engine deployment
+│   ├── crew/              # CrewAI multi-agent configuration
+│   └── utils/             # Utilities for GCS, tracing, typing
+├── api/                   # FastAPI REST service
+│   ├── src/kene_api/      # API source code
+│   ├── tests/             # API test suite
+│   └── docker files       # Containerization configs
+├── frontend/              # React TypeScript application
+│   ├── src/               # Frontend source code
+│   └── public/            # Static assets
+├── data_ingestion/        # Vertex AI data pipeline
+│   └── data_ingestion_pipeline/
+├── deployment/            # Infrastructure & CI/CD
+│   ├── terraform/         # IaC for GCP resources
+│   ├── ci/               # CI pipeline (PR checks)
+│   └── cd/               # CD pipelines (staging/prod)
+├── notebooks/             # Jupyter notebooks for prototyping
+└── tests/                 # Testing suite
+    ├── unit/             # Unit tests
+    ├── integration/      # Integration tests
+    └── load_test/        # Load testing with Locust
 ```
 
 ## Requirements
 
 Before you begin, ensure you have:
-- **uv**: Python package manager - [Install](https://docs.astral.sh/uv/getting-started/installation/)
+- **Python 3.10-3.11**: Required Python version
+- **Node.js 18+**: For frontend development
+- **uv**: Modern Python package manager - [Install](https://docs.astral.sh/uv/getting-started/installation/)
 - **Google Cloud SDK**: For GCP services - [Install](https://cloud.google.com/sdk/docs/install)
 - **Terraform**: For infrastructure deployment - [Install](https://developer.hashicorp.com/terraform/downloads)
-- **make**: Build automation tool - [Install](https://www.gnu.org/software/make/) (pre-installed on most Unix-based systems)
+- **Docker**: For containerized development - [Install](https://docs.docker.com/get-docker/)
+- **make**: Build automation tool (pre-installed on most Unix-based systems)
 
+## Quick Start
 
-### Installation
-
-Install required packages using uv:
+### 1. Clone and Install
 
 ```bash
+# Clone the repository
+git clone https://github.com/KEN-E-AI/ken-e.git
+cd ken-e
+
+# Install Python dependencies
 make install
+
+# Install frontend dependencies
+cd frontend && npm install
+cd ..
 ```
 
-### Setup
-
-If not done during the initialization, set your default Google Cloud project and Location:
+### 2. Configure Environment
 
 ```bash
+# Set up Google Cloud
 export PROJECT_ID="YOUR_PROJECT_ID"
 export LOCATION="us-central1"
 gcloud config set project $PROJECT_ID
 gcloud auth application-default login
 gcloud auth application-default set-quota-project $PROJECT_ID
+
+# Copy environment files
+cp api/.env.example api/.env
+# Edit api/.env with your configuration
+
+# Create frontend environment
+cat > frontend/.env.local << EOF
+VITE_API_BASE_URL=http://localhost:8000
+VITE_FIREBASE_API_KEY=your-firebase-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-auth-domain
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-storage-bucket
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
+EOF
 ```
 
-## Commands
+### 3. Start Development Servers
 
-| Command              | Description                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `make install`       | Install all required dependencies using uv                                                  |
-| `make ken-e`         | Launch Streamlit interface for testing agent locally and remotely |
-| `make backend`       | Deploy agent to Agent Engine service |
-| `make test`          | Run unit and integration tests                                                              |
-| `make lint`          | Run code quality checks (codespell, ruff, mypy)                                             |
-| `uv run jupyter lab` | Launch Jupyter notebook                                                                     |
+```bash
+# Terminal 1: Start API server
+cd api && uvicorn src.kene_api.main:app --reload
 
-For full command options and usage, refer to the [Makefile](Makefile).
+# Terminal 2: Start frontend
+cd frontend && npm run dev
 
+# Access applications:
+# - Frontend: http://localhost:8080
+# - API Docs: http://localhost:8000/docs
+```
 
-## Usage
+## Development Commands
 
-1. **Prototype:** Build your Generative AI Agent using the intro notebooks in `notebooks/` for guidance. Use Vertex AI Evaluation to assess performance.
-2. **Integrate:** Import your chain into the app by editing `app/agent.py`.
-3. **Test:** Explore your chain's functionality using the Streamlit playground with `make playground`. The playground offers features like chat history, user feedback, and various input types, and automatically reloads your agent on code changes.
-4. **Deploy:** Configure and trigger the CI/CD pipelines, editing tests if needed. See the [deployment section](#deployment) for details.
-5. **Monitor:** Track performance and gather insights using Cloud Logging, Tracing, and the Looker Studio dashboard to iterate on your application.
+### Root Level Commands
+| Command              | Description                                                    |
+| -------------------- | -------------------------------------------------------------- |
+| `make install`       | Install all Python dependencies using uv                       |
+| `make test`          | Run unit and integration tests                                 |
+| `make lint`          | Run code quality checks (codespell, ruff, mypy)              |
+| `make backend`       | Deploy agent to Google Cloud Agent Engine                      |
+| `uv run jupyter lab` | Launch Jupyter notebooks for prototyping                       |
 
+### API Development
+```bash
+cd api
+uvicorn src.kene_api.main:app --reload  # Start dev server
+pytest tests/                            # Run tests
+./docker.sh dev                          # Run in Docker
+./docker.sh test                         # Run tests in Docker
+```
+
+### Frontend Development
+```bash
+cd frontend
+npm run dev          # Start dev server (port 8080)
+npm run build        # Build for production
+npm test            # Run tests
+npm run typecheck   # Type checking
+npm run format.fix  # Format code
+```
+
+### Data Pipeline
+```bash
+cd data_ingestion
+python data_ingestion_pipeline/submit_pipeline.py  # Submit to Vertex AI
+```
+
+## Architecture
+
+### Core Components
+
+1. **Agent System** (`app/`): LangGraph orchestration with CrewAI agents
+   - KEN-E: Main execution agent
+   - BET-E: Web scraping and data collection
+   - VIK-E: Reporting and analysis
+
+2. **API Service** (`api/`): FastAPI with Neo4j and Firestore
+   - RESTful endpoints for metrics, activities, insights
+   - Firebase authentication
+   - Async support with CORS
+
+3. **Frontend** (`frontend/`): React 18 with TypeScript
+   - ~50 Radix UI components
+   - TailwindCSS styling
+   - Protected routing with Firebase Auth
+
+4. **Data Pipeline** (`data_ingestion/`): Vertex AI Kubeflow pipeline
+   - Data processing and embedding generation
+   - RAG-enabled search capabilities
 
 ## Deployment
 
-### Dev Environment
-You can test deployment towards a Dev Environment using the following command:
+### Infrastructure Setup
+
+The project uses Terraform for infrastructure as code:
 
 ```bash
-gcloud config set project <your-dev-project-id>
-make backend
+cd deployment/terraform
+terraform init
+terraform plan -var-file=vars/staging.tfvars
+terraform apply -var-file=vars/staging.tfvars
 ```
 
-The repository includes a Terraform configuration for the setup of the Dev Google Cloud project.
-See [deployment/README.md](deployment/README.md) for instructions.
+See [deployment/README.md](deployment/README.md) for detailed instructions.
 
-### Production Deployment
+### CI/CD Pipeline
 
-The repository includes a Terraform configuration for the setup of a production Google Cloud project. Refer to [deployment/README.md](deployment/README.md) for detailed instructions on how to deploy the infrastructure and application.
+The project includes GitHub Actions workflows:
+- **PR Checks**: Automated testing on pull requests
+- **Staging Deployment**: Automatic deployment to staging
+- **Production Deployment**: Manual approval required
+
+### Manual Deployment
+
+```bash
+# Deploy agent to Agent Engine
+make backend
+
+# Deploy API to Cloud Run
+cd api && gcloud run deploy kene-api --source .
+
+# Deploy frontend to Cloud Run
+cd frontend && npm run build
+gcloud run deploy kene-frontend --source .
+```
+
+## Testing
+
+```bash
+# Run all tests
+make test
+
+# Run specific test suites
+cd api && pytest tests/                    # API tests
+cd frontend && npm test                    # Frontend tests
+cd api && ./docker.sh test                # Dockerized tests
+python -m pytest tests/load_test/          # Load tests
+```
 
 ## Monitoring and Observability
 
->> You can use [this Looker Studio dashboard](https://lookerstudio.google.com/c/reporting/fa742264-4b4b-4c56-81e6-a667dd0f853f/page/tEnnC) template for visualizing events being logged in BigQuery. See the "Setup Instructions" tab to getting started.
+- **OpenTelemetry**: Distributed tracing across all services
+- **Google Cloud Logging**: Centralized log aggregation
+- **BigQuery**: Long-term event storage and analytics
+- **Looker Studio**: [Dashboard template](https://lookerstudio.google.com/c/reporting/fa742264-4b4b-4c56-81e6-a667dd0f853f/page/tEnnC) for visualization
 
-The application uses OpenTelemetry for comprehensive observability with all events being sent to Google Cloud Trace and Logging for monitoring and to BigQuery for long term storage. 
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Documentation
+
+- [CLAUDE.md](CLAUDE.md) - AI assistant guidance for the codebase
+- [Frontend README](frontend/README.md) - Frontend-specific documentation
+- [API Documentation](http://localhost:8000/docs) - Interactive API docs
+- [Deployment Guide](deployment/README.md) - Infrastructure and deployment details
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Built with [Google Cloud Platform](https://cloud.google.com/)
+- Agent framework by [LangGraph](https://github.com/langchain-ai/langgraph) and [CrewAI](https://www.crewai.com/)
+- Initially generated with [`googleCloudPlatform/agent-starter-pack`](https://github.com/GoogleCloudPlatform/agent-starter-pack)

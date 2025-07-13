@@ -1,110 +1,565 @@
-# Fusion Starter
+# CLAUDE.md - Frontend
 
-The Fusion Starter is a modern, production-ready template for building full-stack React applications using react-router-dom in SPA mode.
+This file provides detailed guidance for working with the KEN-E frontend codebase. For general project guidelines and best practices, refer to the [root CLAUDE.md](../CLAUDE.md).
+
+## Frontend Overview
+
+The KEN-E frontend is a modern React TypeScript application built with Vite, featuring a comprehensive component library based on Radix UI and styled with TailwindCSS. It provides a dashboard interface for marketing analytics and insights.
 
 ## Core Framework & Technologies
 
-- **React 18**
-- **React Router 6**: Powers the client-side routing
-- **TypeScript**: Type safety is built-in by default
-- **Vite**: Bundling and development server
-- **Vitest**: For testing
-- **TailwindCSS 3**: For styling
+- **React 18** with TypeScript
+- **Vite**: Fast builds and HMR with React SWC plugin
+- **React Router 6**: Client-side routing for SPA
+- **TailwindCSS 3**: Utility-first styling with custom configuration
+- **Radix UI**: Accessible component primitives (~50 UI components)
+- **TanStack Query**: Server state management
+- **Firebase Auth**: Authentication system
+- **Axios**: HTTP client for API communication
+- **React Hook Form + Zod**: Form handling and validation
+
+## Common Development Commands
+
+- `npm run dev` - Start development server on port 8080
+- `npm run build` - Build for production
+- `npm run test` - Run Vitest tests
+- `npm run typecheck` - Run TypeScript type checking
+- `npm run format.fix` - Format code with Prettier
+- `npm run preview` - Preview production build locally
+
+## Project Structure
+
+```
+frontend/src/
+├── components/
+│   ├── ui/               # ~50 reusable UI components
+│   ├── auth/            # Authentication components
+│   ├── dashboard/       # Dashboard-specific components
+│   ├── home/           # Home page components
+│   ├── configuration/  # Settings and config components
+│   └── layout/         # Layout components
+├── contexts/           # React contexts (AuthContext)
+├── data/              # Static and mock data
+├── hooks/             # Custom React hooks
+├── lib/               # Utilities and configurations
+├── pages/             # Page components
+└── types/             # TypeScript type definitions
+```
 
 ## Routing System
 
-The routing system is powered by React Router 7:
+Routing is managed by React Router v6 with protected routes:
 
-- `src/pages/Index.tsx` represents the home page.
-- Routes are defined in `src/App.tsx` using the `react-router-dom` import
-- Route files are located in the `src/pages/` directory
+- **Public routes**: `/login`, `/signup`
+- **Protected routes**: All dashboard pages require authentication
+- **Dynamic routes**: Use React Router params (e.g., `/analysis-report/:reportId`)
+- Routes are defined in `src/App.tsx`
+- Page components are in `src/pages/`
 
-For example, routes can be defined with:
-
-```typescript
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-
-<Routes>
-  <Route path="/" element={<Index />} />
-  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-  <Route path="*" element={<NotFound />} />
-</Routes>;
-```
+Key routes:
+- `/` - Home page
+- `/performance` - Performance dashboard
+- `/big-bets` - Big bets page
+- `/exploration` - Exploration page
+- `/insights` - Insights page
+- `/knowledge/*` - Knowledge base section
+- `/account-settings`, `/user-settings` - Settings pages
 
 ## Styling System
 
-The styling system combines several technologies:
+### TailwindCSS Configuration
 
-- **TailwindCSS 3**: Used as the primary styling method with utility classes
-- **tailwind.config.ts**: Used to describe the design system tokens, update this file to change the whole look and feel
-- **CSS Imports**: Base styles are imported in `src/index.css`
-- **UI Component Library**: A comprehensive set of pre-styled UI components in `src/components/ui/` built with:
-  - Radix UI: For accessible UI primitives
-  - Class Variance Authority: For component variants
-  - TailwindCSS: For styling
-  - Lucide React: For icons
-  - Lots of utility components, like carousels, calendar, alerts...
-- **Class Name Utility**: The codebase includes a `cn` utility function from `@/lib/utils` that combines the functionality of `clsx` and `tailwind-merge`. Here's how it's typically used:
+The `tailwind.config.ts` file defines the design system:
+- Custom color palette with semantic naming
+- Extended theme with dashboard-specific colors
+- Dark mode support via CSS variables
+- Custom animations and transitions
 
-  ```typescript
-  // A complex example showing the power of the cn utility
-  function CustomComponent(props) {
-    return (
-      <div
-        className={cn(
-          // Base styles always applied
-          "flex items-center rounded-md transition-all duration-200",
+### The `cn()` Utility
 
-          // Object syntax for conditional classes - keys are class names, values are boolean expressions
-          {
-            // Size-based classes
-            "text-xs p-1.5 gap-1": props.size === "sm",
-            "text-base p-3.5 gap-3": props.size === "lg",
+The codebase uses a custom `cn()` utility function that combines `clsx` and `tailwind-merge`:
 
-            // Width control
-            "w-full": isFullWidth,
-            "w-auto": !isFullWidth,
-          },
+```typescript
+import { cn } from "@/lib/utils"
 
-          // Error state overrides other states
-          props.hasError && "border-red-500 text-red-700 bg-red-50",
+// Basic usage
+<div className={cn("base-class", conditionalClass && "conditional-class")} />
 
-          // User-provided className comes last for highest precedence
-          props.className
-        )}
-      />
-    );
+// Complex example
+function CustomComponent({ size, isFullWidth, hasError, className, ...props }) {
+  return (
+    <div
+      className={cn(
+        // Base styles always applied
+        "flex items-center rounded-md transition-all duration-200",
+        
+        // Object syntax for conditional classes
+        {
+          "text-xs p-1.5 gap-1": size === "sm",
+          "text-sm p-2 gap-2": size === "md",
+          "text-base p-3 gap-3": size === "lg",
+          "w-full": isFullWidth,
+        },
+        
+        // Conditional with && operator
+        hasError && "border-red-500 text-red-700 bg-red-50",
+        
+        // User-provided className comes last for override capability
+        className
+      )}
+      {...props}
+    />
+  );
+}
+```
+
+### Dark Mode
+
+Dark mode is implemented using:
+- CSS variables defined in `src/index.css`
+- TailwindCSS dark mode classes
+- Theme toggle component (if implemented)
+
+## Component Development Guide
+
+### UI Component Library
+
+The project includes ~50 pre-built UI components in `src/components/ui/`:
+
+**Layout Components:**
+- `Card`, `Separator`, `ScrollArea`
+
+**Form Components:**
+- `Button`, `Input`, `Textarea`, `Select`
+- `Checkbox`, `RadioGroup`, `Switch`
+- `Form` (React Hook Form integration)
+
+**Feedback Components:**
+- `Alert`, `Toast`, `Progress`
+- `Skeleton` (loading states)
+
+**Overlay Components:**
+- `Dialog`, `Sheet`, `Popover`, `Tooltip`
+- `DropdownMenu`, `ContextMenu`
+
+**Data Display:**
+- `Table`, `DataTable` (with TanStack Table)
+- `Badge`, `Avatar`
+
+**Navigation:**
+- `Tabs`, `NavigationMenu`, `Breadcrumb`
+
+### Creating New Components
+
+Follow this pattern for new components:
+
+```tsx
+import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
+import { cn } from "@/lib/utils"
+
+const componentVariants = cva(
+  "base classes here",
+  {
+    variants: {
+      variant: {
+        default: "default classes",
+        secondary: "secondary classes",
+      },
+      size: {
+        sm: "small classes",
+        md: "medium classes",
+        lg: "large classes",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "md",
+    },
   }
-  ```
+)
 
-The styling system supports dark mode through CSS variables and media queries.
+export interface ComponentProps
+  extends React.HTMLAttributes<HTMLElement>,
+    VariantProps<typeof componentVariants> {
+  // Additional props here
+}
 
-## Testing
-
-- **Unit Testing Utilities**: Utility functions such as `cn` in `src/lib/utils.ts` are covered by dedicated unit tests in `src/lib/utils.spec.ts`.
-- **Testing Framework**: Tests are written using [Vitest](https://vitest.dev/), which provides a Jest-like API and fast performance for Vite projects.
-- **Adding More Tests**: Place new utility tests in the same directory as the utility, using the `.spec.ts` suffix.
-
-## Development Workflow
-
-- **Development**: `npm run dev` - Starts the development server with HMR
-- **Production Build**: `npm run build` - Creates optimized production build
-- **Type Checking**: `npm run typecheck` - Validates TypeScript types
-- **Run tests**: `npm test` - Run all .spec tests
-
-## Architecture Overview
-
-The architecture follows a modern React application structure:
-
-```
-package.json
-app/
-├── components/     # Reusable UI components
-│   └── ui/         # Core UI component library
-├── routes/         # Route components and logic
-├── app.css         # Global styles
-├── root.tsx        # Root layout and error boundary
-└── routes.ts       # Route configuration
+export const Component = React.forwardRef<HTMLElement, ComponentProps>(
+  ({ className, variant, size, ...props }, ref) => {
+    return (
+      <element
+        ref={ref}
+        className={cn(componentVariants({ variant, size }), className)}
+        {...props}
+      />
+    )
+  }
+)
+Component.displayName = "Component"
 ```
 
-This structure provides a clean separation of concerns between UI components, routes, and application logic.
+## State Management Patterns
+
+### Authentication State
+
+```tsx
+import { useAuth } from "@/contexts/AuthContext"
+
+function MyComponent() {
+  const { 
+    user, 
+    selectedOrganization, 
+    selectedAccount,
+    signOut 
+  } = useAuth()
+  
+  if (!user) {
+    return <Navigate to="/login" />
+  }
+  
+  // Component logic
+}
+```
+
+### Server State with TanStack Query
+
+```tsx
+import { useQuery, useMutation } from "@tanstack/react-query"
+
+// GET request
+const { data, isLoading, error } = useQuery({
+  queryKey: ['metrics', organizationId],
+  queryFn: () => api.getMetrics(organizationId),
+  staleTime: 5 * 60 * 1000, // 5 minutes
+})
+
+// POST/PUT/DELETE
+const mutation = useMutation({
+  mutationFn: (data: CreateMetricDto) => api.createMetric(data),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['metrics'] })
+    toast({ title: "Success", description: "Metric created" })
+  },
+  onError: (error) => {
+    toast({ 
+      title: "Error", 
+      description: error.message,
+      variant: "destructive" 
+    })
+  },
+})
+```
+
+### Form State with React Hook Form
+
+```tsx
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+
+const formSchema = z.object({
+  name: z.string().min(2).max(50),
+  email: z.string().email(),
+  role: z.enum(["admin", "user"]),
+})
+
+function MyForm() {
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      role: "user",
+    },
+  })
+  
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    // Handle form submission
+  }
+  
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        {/* Other fields */}
+      </form>
+    </Form>
+  )
+}
+```
+
+## API Integration
+
+### Axios Configuration
+
+```tsx
+// src/lib/api.ts
+import axios from 'axios'
+import { auth } from '@/lib/firebase'
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL,
+})
+
+// Request interceptor for auth
+api.interceptors.request.use(async (config) => {
+  const token = await auth.currentUser?.getIdToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// Response interceptor for errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Handle unauthorized
+    }
+    return Promise.reject(error)
+  }
+)
+```
+
+### Type-Safe API Calls
+
+```tsx
+// src/types/api.ts
+export interface Metric {
+  id: string
+  name: string
+  value: number
+  organizationId: string
+}
+
+// src/services/metrics.ts
+export const metricsApi = {
+  getAll: (orgId: string) => 
+    api.get<Metric[]>(`/metrics?organizationId=${orgId}`),
+    
+  getById: (id: string) => 
+    api.get<Metric>(`/metrics/${id}`),
+    
+  create: (data: CreateMetricDto) => 
+    api.post<Metric>('/metrics', data),
+    
+  update: (id: string, data: UpdateMetricDto) => 
+    api.put<Metric>(`/metrics/${id}`, data),
+    
+  delete: (id: string) => 
+    api.delete(`/metrics/${id}`),
+}
+```
+
+## Testing Guidelines
+
+### Component Testing
+
+```tsx
+import { describe, test, expect } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+
+describe('Button', () => {
+  test('renders with correct text', () => {
+    render(<Button>Click me</Button>)
+    expect(screen.getByRole('button')).toHaveTextContent('Click me')
+  })
+  
+  test('handles click events', async () => {
+    const handleClick = vi.fn()
+    const user = userEvent.setup()
+    
+    render(<Button onClick={handleClick}>Click me</Button>)
+    await user.click(screen.getByRole('button'))
+    
+    expect(handleClick).toHaveBeenCalledTimes(1)
+  })
+})
+```
+
+### Testing Utilities
+
+```tsx
+// src/test/utils.tsx
+import { render } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { BrowserRouter } from 'react-router-dom'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: false },
+  },
+})
+
+export function renderWithProviders(ui: React.ReactElement) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        {ui}
+      </BrowserRouter>
+    </QueryClientProvider>
+  )
+}
+```
+
+## Performance Optimization
+
+### Code Splitting
+
+```tsx
+import { lazy, Suspense } from 'react'
+
+// Lazy load heavy components
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+
+// In your routes
+<Route 
+  path="/dashboard" 
+  element={
+    <Suspense fallback={<LoadingSpinner />}>
+      <Dashboard />
+    </Suspense>
+  } 
+/>
+```
+
+### Memoization
+
+```tsx
+import { memo, useMemo, useCallback } from 'react'
+
+// Memoize expensive components
+export const ExpensiveComponent = memo(({ data }) => {
+  // Component logic
+})
+
+// Memoize expensive calculations
+const processedData = useMemo(() => {
+  return heavyDataProcessing(rawData)
+}, [rawData])
+
+// Memoize callbacks
+const handleClick = useCallback((id: string) => {
+  // Handle click
+}, [dependencies])
+```
+
+## Common Patterns & Solutions
+
+### Loading States
+
+```tsx
+function DataComponent() {
+  const { data, isLoading } = useQuery(...)
+  
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+    )
+  }
+  
+  return <DataDisplay data={data} />
+}
+```
+
+### Error Boundaries
+
+```tsx
+import { ErrorBoundary } from 'react-error-boundary'
+
+function ErrorFallback({ error, resetErrorBoundary }) {
+  return (
+    <Alert variant="destructive">
+      <AlertTitle>Something went wrong</AlertTitle>
+      <AlertDescription>{error.message}</AlertDescription>
+      <Button onClick={resetErrorBoundary}>Try again</Button>
+    </Alert>
+  )
+}
+
+// Wrap components
+<ErrorBoundary FallbackComponent={ErrorFallback}>
+  <YourComponent />
+</ErrorBoundary>
+```
+
+### Infinite Scroll
+
+```tsx
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInView } from 'react-intersection-observer'
+
+function InfiniteList() {
+  const { ref, inView } = useInView()
+  
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['items'],
+    queryFn: ({ pageParam = 0 }) => fetchItems({ page: pageParam }),
+    getNextPageParam: (lastPage, pages) => lastPage.nextPage,
+  })
+  
+  React.useEffect(() => {
+    if (inView && hasNextPage) {
+      fetchNextPage()
+    }
+  }, [inView, fetchNextPage, hasNextPage])
+  
+  return (
+    <div>
+      {data?.pages.map((page) => 
+        page.items.map((item) => <Item key={item.id} {...item} />)
+      )}
+      <div ref={ref}>
+        {isFetchingNextPage && <LoadingSpinner />}
+      </div>
+    </div>
+  )
+}
+```
+
+## Debugging Tips
+
+1. **React DevTools**: Use for component inspection and performance profiling
+2. **Network Tab**: Monitor API calls and responses
+3. **Console Logging**: Use structured logging:
+   ```tsx
+   console.log('[ComponentName]', { action: 'fetchData', data })
+   ```
+4. **Error Boundaries**: Implement to catch and log component errors
+5. **React Query DevTools**: Add in development for query inspection
+
+## Important Notes
+
+1. **SPA Architecture**: This is a client-side rendered application
+2. **Authentication**: Always check auth state before protected operations
+3. **UI Library**: Check existing components before creating new ones
+4. **TypeScript**: Prefer strict typing despite some relaxed settings
+5. **Performance**: Monitor bundle size and implement code splitting for large features
+
+---
+
+For general coding standards, testing practices, and project-wide guidelines, refer to the [root CLAUDE.md](../CLAUDE.md) file.
