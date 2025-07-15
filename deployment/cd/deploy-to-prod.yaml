@@ -148,7 +148,7 @@ substitutions:
   _SUPERSET_PASSWORD: ***REMOVED***
   _VITE_FIREBASE_API_KEY: AIzaSyCk-cFmDqBKylKVGCPtfhr3w62IB7WvgmA
   _VITE_FIREBASE_AUTH_DOMAIN: ken-e-production.firebaseapp.com
-  _VITE_API_BASE_URL: https://kene-api-prod-391472102753.us-central1.run.app # You can update this later
+  _VITE_API_BASE_URL: https://kene-api-prod-395770269870.us-central1.run.app # You can update this later
   _API_SERVICE_ACCOUNT_EMAIL: ken-e-api@ken-e-production.iam.gserviceaccount.com
 
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
