@@ -57,6 +57,7 @@ Routing is managed by React Router v6 with protected routes:
 - Page components are in `src/pages/`
 
 Key routes:
+
 - `/` - Home page
 - `/performance` - Performance dashboard
 - `/big-bets` - Big bets page
@@ -70,6 +71,7 @@ Key routes:
 ### TailwindCSS Configuration
 
 The `tailwind.config.ts` file defines the design system:
+
 - Custom color palette with semantic naming
 - Extended theme with dashboard-specific colors
 - Dark mode support via CSS variables
@@ -92,7 +94,7 @@ function CustomComponent({ size, isFullWidth, hasError, className, ...props }) {
       className={cn(
         // Base styles always applied
         "flex items-center rounded-md transition-all duration-200",
-        
+
         // Object syntax for conditional classes
         {
           "text-xs p-1.5 gap-1": size === "sm",
@@ -100,10 +102,10 @@ function CustomComponent({ size, isFullWidth, hasError, className, ...props }) {
           "text-base p-3 gap-3": size === "lg",
           "w-full": isFullWidth,
         },
-        
+
         // Conditional with && operator
         hasError && "border-red-500 text-red-700 bg-red-50",
-        
+
         // User-provided className comes last for override capability
         className
       )}
@@ -116,6 +118,7 @@ function CustomComponent({ size, isFullWidth, hasError, className, ...props }) {
 ### Dark Mode
 
 Dark mode is implemented using:
+
 - CSS variables defined in `src/index.css`
 - TailwindCSS dark mode classes
 - Theme toggle component (if implemented)
@@ -127,26 +130,32 @@ Dark mode is implemented using:
 The project includes ~50 pre-built UI components in `src/components/ui/`:
 
 **Layout Components:**
+
 - `Card`, `Separator`, `ScrollArea`
 
 **Form Components:**
+
 - `Button`, `Input`, `Textarea`, `Select`
 - `Checkbox`, `RadioGroup`, `Switch`
 - `Form` (React Hook Form integration)
 
 **Feedback Components:**
+
 - `Alert`, `Toast`, `Progress`
 - `Skeleton` (loading states)
 
 **Overlay Components:**
+
 - `Dialog`, `Sheet`, `Popover`, `Tooltip`
 - `DropdownMenu`, `ContextMenu`
 
 **Data Display:**
+
 - `Table`, `DataTable` (with TanStack Table)
 - `Badge`, `Avatar`
 
 **Navigation:**
+
 - `Tabs`, `NavigationMenu`, `Breadcrumb`
 
 ### Creating New Components
@@ -154,30 +163,27 @@ The project includes ~50 pre-built UI components in `src/components/ui/`:
 Follow this pattern for new components:
 
 ```tsx
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
 
-const componentVariants = cva(
-  "base classes here",
-  {
-    variants: {
-      variant: {
-        default: "default classes",
-        secondary: "secondary classes",
-      },
-      size: {
-        sm: "small classes",
-        md: "medium classes",
-        lg: "large classes",
-      },
+const componentVariants = cva("base classes here", {
+  variants: {
+    variant: {
+      default: "default classes",
+      secondary: "secondary classes",
     },
-    defaultVariants: {
-      variant: "default",
-      size: "md",
+    size: {
+      sm: "small classes",
+      md: "medium classes",
+      lg: "large classes",
     },
-  }
-)
+  },
+  defaultVariants: {
+    variant: "default",
+    size: "md",
+  },
+});
 
 export interface ComponentProps
   extends React.HTMLAttributes<HTMLElement>,
@@ -193,10 +199,10 @@ export const Component = React.forwardRef<HTMLElement, ComponentProps>(
         className={cn(componentVariants({ variant, size }), className)}
         {...props}
       />
-    )
-  }
-)
-Component.displayName = "Component"
+    );
+  },
+);
+Component.displayName = "Component";
 ```
 
 ## State Management Patterns
@@ -204,20 +210,15 @@ Component.displayName = "Component"
 ### Authentication State
 
 ```tsx
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/contexts/AuthContext";
 
 function MyComponent() {
-  const { 
-    user, 
-    selectedOrganization, 
-    selectedAccount,
-    signOut 
-  } = useAuth()
-  
+  const { user, selectedOrganization, selectedAccount, signOut } = useAuth();
+
   if (!user) {
-    return <Navigate to="/login" />
+    return <Navigate to="/login" />;
   }
-  
+
   // Component logic
 }
 ```
@@ -225,44 +226,44 @@ function MyComponent() {
 ### Server State with TanStack Query
 
 ```tsx
-import { useQuery, useMutation } from "@tanstack/react-query"
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 // GET request
 const { data, isLoading, error } = useQuery({
-  queryKey: ['metrics', organizationId],
+  queryKey: ["metrics", organizationId],
   queryFn: () => api.getMetrics(organizationId),
   staleTime: 5 * 60 * 1000, // 5 minutes
-})
+});
 
 // POST/PUT/DELETE
 const mutation = useMutation({
   mutationFn: (data: CreateMetricDto) => api.createMetric(data),
   onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['metrics'] })
-    toast({ title: "Success", description: "Metric created" })
+    queryClient.invalidateQueries({ queryKey: ["metrics"] });
+    toast({ title: "Success", description: "Metric created" });
   },
   onError: (error) => {
-    toast({ 
-      title: "Error", 
+    toast({
+      title: "Error",
       description: error.message,
-      variant: "destructive" 
-    })
+      variant: "destructive",
+    });
   },
-})
+});
 ```
 
 ### Form State with React Hook Form
 
 ```tsx
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 
 const formSchema = z.object({
   name: z.string().min(2).max(50),
   email: z.string().email(),
   role: z.enum(["admin", "user"]),
-})
+});
 
 function MyForm() {
   const form = useForm<z.infer<typeof formSchema>>({
@@ -272,12 +273,12 @@ function MyForm() {
       email: "",
       role: "user",
     },
-  })
-  
+  });
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     // Handle form submission
   }
-  
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -297,7 +298,7 @@ function MyForm() {
         {/* Other fields */}
       </form>
     </Form>
-  )
+  );
 }
 ```
 
@@ -307,21 +308,21 @@ function MyForm() {
 
 ```tsx
 // src/lib/api.ts
-import axios from 'axios'
-import { auth } from '@/lib/firebase'
+import axios from "axios";
+import { auth } from "@/lib/firebase";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
-})
+});
 
 // Request interceptor for auth
 api.interceptors.request.use(async (config) => {
-  const token = await auth.currentUser?.getIdToken()
+  const token = await auth.currentUser?.getIdToken();
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+    config.headers.Authorization = `Bearer ${token}`;
   }
-  return config
-})
+  return config;
+});
 
 // Response interceptor for errors
 api.interceptors.response.use(
@@ -330,9 +331,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Handle unauthorized
     }
-    return Promise.reject(error)
-  }
-)
+    return Promise.reject(error);
+  },
+);
 ```
 
 ### Type-Safe API Calls
@@ -340,29 +341,26 @@ api.interceptors.response.use(
 ```tsx
 // src/types/api.ts
 export interface Metric {
-  id: string
-  name: string
-  value: number
-  organizationId: string
+  id: string;
+  name: string;
+  value: number;
+  organizationId: string;
 }
 
 // src/services/metrics.ts
 export const metricsApi = {
-  getAll: (orgId: string) => 
+  getAll: (orgId: string) =>
     api.get<Metric[]>(`/metrics?organizationId=${orgId}`),
-    
-  getById: (id: string) => 
-    api.get<Metric>(`/metrics/${id}`),
-    
-  create: (data: CreateMetricDto) => 
-    api.post<Metric>('/metrics', data),
-    
-  update: (id: string, data: UpdateMetricDto) => 
+
+  getById: (id: string) => api.get<Metric>(`/metrics/${id}`),
+
+  create: (data: CreateMetricDto) => api.post<Metric>("/metrics", data),
+
+  update: (id: string, data: UpdateMetricDto) =>
     api.put<Metric>(`/metrics/${id}`, data),
-    
-  delete: (id: string) => 
-    api.delete(`/metrics/${id}`),
-}
+
+  delete: (id: string) => api.delete(`/metrics/${id}`),
+};
 ```
 
 ## Testing Guidelines
@@ -370,50 +368,48 @@ export const metricsApi = {
 ### Component Testing
 
 ```tsx
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { describe, test, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-describe('Button', () => {
-  test('renders with correct text', () => {
-    render(<Button>Click me</Button>)
-    expect(screen.getByRole('button')).toHaveTextContent('Click me')
-  })
-  
-  test('handles click events', async () => {
-    const handleClick = vi.fn()
-    const user = userEvent.setup()
-    
-    render(<Button onClick={handleClick}>Click me</Button>)
-    await user.click(screen.getByRole('button'))
-    
-    expect(handleClick).toHaveBeenCalledTimes(1)
-  })
-})
+describe("Button", () => {
+  test("renders with correct text", () => {
+    render(<Button>Click me</Button>);
+    expect(screen.getByRole("button")).toHaveTextContent("Click me");
+  });
+
+  test("handles click events", async () => {
+    const handleClick = vi.fn();
+    const user = userEvent.setup();
+
+    render(<Button onClick={handleClick}>Click me</Button>);
+    await user.click(screen.getByRole("button"));
+
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+});
 ```
 
 ### Testing Utilities
 
 ```tsx
 // src/test/utils.tsx
-import { render } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter } from 'react-router-dom'
+import { render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter } from "react-router-dom";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: false },
   },
-})
+});
 
 export function renderWithProviders(ui: React.ReactElement) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        {ui}
-      </BrowserRouter>
-    </QueryClientProvider>
-  )
+      <BrowserRouter>{ui}</BrowserRouter>
+    </QueryClientProvider>,
+  );
 }
 ```
 
@@ -428,35 +424,38 @@ import { lazy, Suspense } from 'react'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 
 // In your routes
-<Route 
-  path="/dashboard" 
+<Route
+  path="/dashboard"
   element={
     <Suspense fallback={<LoadingSpinner />}>
       <Dashboard />
     </Suspense>
-  } 
+  }
 />
 ```
 
 ### Memoization
 
 ```tsx
-import { memo, useMemo, useCallback } from 'react'
+import { memo, useMemo, useCallback } from "react";
 
 // Memoize expensive components
 export const ExpensiveComponent = memo(({ data }) => {
   // Component logic
-})
+});
 
 // Memoize expensive calculations
 const processedData = useMemo(() => {
-  return heavyDataProcessing(rawData)
-}, [rawData])
+  return heavyDataProcessing(rawData);
+}, [rawData]);
 
 // Memoize callbacks
-const handleClick = useCallback((id: string) => {
-  // Handle click
-}, [dependencies])
+const handleClick = useCallback(
+  (id: string) => {
+    // Handle click
+  },
+  [dependencies],
+);
 ```
 
 ## Common Patterns & Solutions
@@ -466,7 +465,7 @@ const handleClick = useCallback((id: string) => {
 ```tsx
 function DataComponent() {
   const { data, isLoading } = useQuery(...)
-  
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -476,7 +475,7 @@ function DataComponent() {
       </div>
     )
   }
-  
+
   return <DataDisplay data={data} />
 }
 ```
@@ -484,7 +483,7 @@ function DataComponent() {
 ### Error Boundaries
 
 ```tsx
-import { ErrorBoundary } from 'react-error-boundary'
+import { ErrorBoundary } from "react-error-boundary";
 
 function ErrorFallback({ error, resetErrorBoundary }) {
   return (
@@ -493,51 +492,45 @@ function ErrorFallback({ error, resetErrorBoundary }) {
       <AlertDescription>{error.message}</AlertDescription>
       <Button onClick={resetErrorBoundary}>Try again</Button>
     </Alert>
-  )
+  );
 }
 
 // Wrap components
 <ErrorBoundary FallbackComponent={ErrorFallback}>
   <YourComponent />
-</ErrorBoundary>
+</ErrorBoundary>;
 ```
 
 ### Infinite Scroll
 
 ```tsx
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { useInView } from 'react-intersection-observer'
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInView } from "react-intersection-observer";
 
 function InfiniteList() {
-  const { ref, inView } = useInView()
-  
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ['items'],
-    queryFn: ({ pageParam = 0 }) => fetchItems({ page: pageParam }),
-    getNextPageParam: (lastPage, pages) => lastPage.nextPage,
-  })
-  
+  const { ref, inView } = useInView();
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ["items"],
+      queryFn: ({ pageParam = 0 }) => fetchItems({ page: pageParam }),
+      getNextPageParam: (lastPage, pages) => lastPage.nextPage,
+    });
+
   React.useEffect(() => {
     if (inView && hasNextPage) {
-      fetchNextPage()
+      fetchNextPage();
     }
-  }, [inView, fetchNextPage, hasNextPage])
-  
+  }, [inView, fetchNextPage, hasNextPage]);
+
   return (
     <div>
-      {data?.pages.map((page) => 
-        page.items.map((item) => <Item key={item.id} {...item} />)
+      {data?.pages.map((page) =>
+        page.items.map((item) => <Item key={item.id} {...item} />),
       )}
-      <div ref={ref}>
-        {isFetchingNextPage && <LoadingSpinner />}
-      </div>
+      <div ref={ref}>{isFetchingNextPage && <LoadingSpinner />}</div>
     </div>
-  )
+  );
 }
 ```
 
@@ -547,7 +540,7 @@ function InfiniteList() {
 2. **Network Tab**: Monitor API calls and responses
 3. **Console Logging**: Use structured logging:
    ```tsx
-   console.log('[ComponentName]', { action: 'fetchData', data })
+   console.log("[ComponentName]", { action: "fetchData", data });
    ```
 4. **Error Boundaries**: Implement to catch and log component errors
 5. **React Query DevTools**: Add in development for query inspection

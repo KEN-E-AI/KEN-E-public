@@ -18,7 +18,13 @@ import { User, Bell, Shield, Globe, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const UserSettings = () => {
-  const { user, notificationSettings, securitySettings, updateUser, setNotificationSettings } = useAuth();
+  const {
+    user,
+    notificationSettings,
+    securitySettings,
+    updateUser,
+    setNotificationSettings,
+  } = useAuth();
   const [profile, setProfile] = useState({
     firstName: user?.firstName || "",
     lastName: user?.lastName || "",
@@ -26,8 +32,9 @@ const UserSettings = () => {
     jobTitle: user?.jobTitle || "",
   });
   const [preferences, setPreferences] = useState(user?.preferences || {});
-  const [localNotificationSettings, setLocalNotificationSettings] = useState(notificationSettings);
-   
+  const [localNotificationSettings, setLocalNotificationSettings] =
+    useState(notificationSettings);
+
   if (!user) return <div>Loading...</div>;
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,8 +46,8 @@ const UserSettings = () => {
   };
 
   const handleNotificationChange = (id: string, enabled: boolean) => {
-    setLocalNotificationSettings(prevSettings =>
-      prevSettings.map(setting =>
+    setLocalNotificationSettings((prevSettings) =>
+      prevSettings.map((setting) =>
         setting.id === id ? { ...setting, enabled } : setting,
       ),
     );
@@ -48,15 +55,18 @@ const UserSettings = () => {
 
   const saveProfile = async () => {
     try {
-      await axios.put(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}?account_id=${user.id}`, {
-        profile: {
-          first_name: profile.firstName,
-          last_name: profile.lastName,
-          email: profile.email,
-          job_title: profile.jobTitle,
+      await axios.put(
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}?account_id=${user.id}`,
+        {
+          profile: {
+            first_name: profile.firstName,
+            last_name: profile.lastName,
+            email: profile.email,
+            job_title: profile.jobTitle,
+          },
+          preferences,
         },
-        preferences,
-      });
+      );
 
       updateUser({
         firstName: profile.firstName,
@@ -76,12 +86,12 @@ const UserSettings = () => {
   const saveNotificationSettings = async () => {
     try {
       await Promise.all(
-        localNotificationSettings.map(setting =>
+        localNotificationSettings.map((setting) =>
           axios.put(
             `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}/notifications/${setting.id}?account_id=${user.id}`,
-            { enabled: setting.enabled }
-          )
-        )
+            { enabled: setting.enabled },
+          ),
+        ),
       );
 
       setNotificationSettings(localNotificationSettings);
@@ -92,7 +102,6 @@ const UserSettings = () => {
       alert("Failed to save notification settings.");
     }
   };
-
 
   return (
     <Layout pageTitle="User Settings">
@@ -121,26 +130,43 @@ const UserSettings = () => {
                 <Label htmlFor="firstName" className="mr-auto">
                   First Name
                 </Label>
-                <Input id="firstName" value={profile.firstName} onChange={handleProfileChange} />
+                <Input
+                  id="firstName"
+                  value={profile.firstName}
+                  onChange={handleProfileChange}
+                />
               </div>
               <div className="flex flex-col">
                 <Label htmlFor="lastName" className="mr-auto">
                   Last Name
                 </Label>
-                <Input id="lastName" value={profile.lastName} onChange={handleProfileChange} />
+                <Input
+                  id="lastName"
+                  value={profile.lastName}
+                  onChange={handleProfileChange}
+                />
               </div>
             </div>
             <div className="flex flex-col">
               <Label htmlFor="email" className="mr-auto">
                 Email Address
               </Label>
-              <Input id="email" type="email" value={profile.email} onChange={handleProfileChange} />
+              <Input
+                id="email"
+                type="email"
+                value={profile.email}
+                onChange={handleProfileChange}
+              />
             </div>
             <div className="flex flex-col">
               <Label htmlFor="jobTitle" className="mr-auto">
                 Job Title
               </Label>
-              <Input id="jobTitle" value={profile.jobTitle} onChange={handleProfileChange} />
+              <Input
+                id="jobTitle"
+                value={profile.jobTitle}
+                onChange={handleProfileChange}
+              />
             </div>
             <Button onClick={saveProfile}>Save Changes</Button>
           </CardContent>
@@ -171,14 +197,17 @@ const UserSettings = () => {
                       }
                     />
                   </div>
-                  {index < localNotificationSettings.length - 1 && <Separator />}
+                  {index < localNotificationSettings.length - 1 && (
+                    <Separator />
+                  )}
                 </div>
               ))}
-              <Button onClick={saveNotificationSettings}>Save Notification Changes</Button>
+              <Button onClick={saveNotificationSettings}>
+                Save Notification Changes
+              </Button>
             </div>
           </CardContent>
         </Card>
-
 
         {/* Security Settings */}
         <Card>
@@ -235,9 +264,13 @@ const UserSettings = () => {
               <Label>Language</Label>
               <Select
                 defaultValue={preferences.language || "en"}
-                onValueChange={(value) => handlePreferenceChange("language", value)}
+                onValueChange={(value) =>
+                  handlePreferenceChange("language", value)
+                }
               >
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="en">English</SelectItem>
                   <SelectItem value="es">Español</SelectItem>
@@ -251,12 +284,22 @@ const UserSettings = () => {
               <Label>Theme</Label>
               <Select
                 defaultValue={preferences.theme || "light"}
-                onValueChange={(value) => handlePreferenceChange("theme", value)}
+                onValueChange={(value) =>
+                  handlePreferenceChange("theme", value)
+                }
               >
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="light"><Sun className="inline h-4 w-4 mr-2" />Light</SelectItem>
-                  <SelectItem value="dark"><Moon className="inline h-4 w-4 mr-2" />Dark</SelectItem>
+                  <SelectItem value="light">
+                    <Sun className="inline h-4 w-4 mr-2" />
+                    Light
+                  </SelectItem>
+                  <SelectItem value="dark">
+                    <Moon className="inline h-4 w-4 mr-2" />
+                    Dark
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -265,9 +308,13 @@ const UserSettings = () => {
               <Label>Date Format</Label>
               <Select
                 defaultValue={preferences.date_format || "mm-dd-yyyy"}
-                onValueChange={(value) => handlePreferenceChange("date_format", value)}
+                onValueChange={(value) =>
+                  handlePreferenceChange("date_format", value)
+                }
               >
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mm-dd-yyyy">MM/DD/YYYY</SelectItem>
                   <SelectItem value="dd-mm-yyyy">DD/MM/YYYY</SelectItem>

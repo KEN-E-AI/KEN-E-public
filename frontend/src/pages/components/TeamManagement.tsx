@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Users } from "lucide-react";
-import { type Organization } from "@/data/organizationData";
+import { type Organization } from "@/data/organizationTypes";
 
 interface TeamManagementProps {
   orgData: Organization;

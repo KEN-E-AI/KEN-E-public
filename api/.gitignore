@@ -12,7 +12,9 @@ wheels/
 # Environment variables
 .env
 .env.dev
-.env.prod
+.env.development
+.env.staging
+.env.production
 .env.local
 
 # IDEs and editors
@@ -44,4 +46,6 @@ htmlcov/
 .uvicorn.pid
 
 # API Keys
-./ken-e-production-e6cbb5681ea3.json
+.ken-e-production-e6cbb5681ea3.json
+.ken-e-staging-5e3ac0cc75e0.json
+.ken-e-dev-b2808a955c59.json

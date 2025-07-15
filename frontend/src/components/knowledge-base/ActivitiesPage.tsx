@@ -116,7 +116,9 @@ const ActivitiesPage = () => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   // State for dynamic metrics and datasets from API
-  const [availableMetrics, setAvailableMetrics] = useState<AvailableMetric[]>([]);
+  const [availableMetrics, setAvailableMetrics] = useState<AvailableMetric[]>(
+    [],
+  );
   const [datasetsData, setDatasetsData] = useState<Dataset[]>([]);
 
   // Convert API activity to component format
@@ -187,30 +189,31 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/intuitions/?account_id=${selectedOrgAccount.accountId}`
+        `${API_BASE_URL}/api/v1/intuitions/?account_id=${selectedOrgAccount.accountId}`,
       );
-      
+
       if (response.data.intuitions) {
         // Create a map of activity ID to intuitions
         const intuitionsByActivity = new Map<string, Intuition[]>();
-        
+
         response.data.intuitions.forEach((intuition: any) => {
           const activityId = intuition.activity_id;
           if (!intuitionsByActivity.has(activityId)) {
             intuitionsByActivity.set(activityId, []);
           }
-          
+
           const convertedIntuition: Intuition = {
             id: `i_${intuition.activity_id}_${intuition.metric_id}`,
             metricName: intuition.metric_id,
-            direction: intuition.direction === "positive" ? "increase" : "decrease",
+            direction:
+              intuition.direction === "positive" ? "increase" : "decrease",
           };
-          
+
           intuitionsByActivity.get(activityId)!.push(convertedIntuition);
         });
-        
+
         // Populate intuitions into activities
-        return activities.map(activity => ({
+        return activities.map((activity) => ({
           ...activity,
           intuitions: intuitionsByActivity.get(activity.id) || [],
         }));
@@ -218,7 +221,7 @@ const ActivitiesPage = () => {
     } catch (err) {
       console.error("Error fetching intuitions:", err);
     }
-    
+
     return activities;
   };
 
@@ -234,15 +237,17 @@ const ActivitiesPage = () => {
       setLoading(true);
       setError(null);
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/activities/?account_id=${selectedOrgAccount.accountId}`
+        `${API_BASE_URL}/api/v1/activities/?account_id=${selectedOrgAccount.accountId}`,
       );
-      
+
       if (response.data.activities !== undefined) {
-        let convertedActivities = response.data.activities.map(convertApiActivity);
-        
+        let convertedActivities =
+          response.data.activities.map(convertApiActivity);
+
         // Fetch and populate intuitions
-        convertedActivities = await fetchAndPopulateIntuitions(convertedActivities);
-        
+        convertedActivities =
+          await fetchAndPopulateIntuitions(convertedActivities);
+
         console.log("Activities: ", convertedActivities);
 
         setActivitiesData(convertedActivities);
@@ -265,16 +270,18 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount.accountId}`
+        `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount.accountId}`,
       );
-      
+
       if (response.data.metrics !== undefined) {
-        const metrics: AvailableMetric[] = response.data.metrics.map((metric: any) => ({
-          id: metric.id,
-          name: metric.verbose_name || metric.metric_name,
-          dataset: metric.related_dataset_name || "unknown",
-          product: metric.related_dataset_products?.[0] || "Unknown",
-        }));
+        const metrics: AvailableMetric[] = response.data.metrics.map(
+          (metric: any) => ({
+            id: metric.id,
+            name: metric.verbose_name || metric.metric_name,
+            dataset: metric.related_dataset_name || "unknown",
+            product: metric.related_dataset_products?.[0] || "Unknown",
+          }),
+        );
         setAvailableMetrics(metrics);
       }
     } catch (err) {
@@ -291,9 +298,9 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount.accountId}`
+        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount.accountId}`,
       );
-      
+
       if (response.data.datasets !== undefined) {
         setDatasetsData(response.data.datasets);
       }
@@ -321,7 +328,7 @@ const ActivitiesPage = () => {
         {
           ...convertToApiLog(log),
           activity_id: activityId,
-        }
+        },
       );
       return response.data.success;
     } catch (err) {
@@ -340,26 +347,26 @@ const ActivitiesPage = () => {
     try {
       const response = await axios.post(
         `${API_BASE_URL}/api/v1/activities/`,
-        convertToApiActivity(activity)
+        convertToApiActivity(activity),
       );
-      
+
       if (response.data.success) {
         const newActivityId = response.data.data.id;
-        
+
         // Create any logs for this activity
         if (activity.logs && activity.logs.length > 0) {
           for (const log of activity.logs) {
             await createActivityLog(newActivityId, log);
           }
         }
-        
+
         // Create any intuitions for this activity
         if (activity.intuitions && activity.intuitions.length > 0) {
           for (const intuition of activity.intuitions) {
             await createIntuition(newActivityId, intuition);
           }
         }
-        
+
         // Add a small delay to ensure database consistency
         setTimeout(async () => {
           await fetchActivities(); // Refresh the list
@@ -381,11 +388,11 @@ const ActivitiesPage = () => {
     }
 
     try {
-      const response = await axios.put(
-        `${API_BASE_URL}/api/v1/activities/`,
-        { ...convertToApiActivity(activity), activity_id: activity.id }
-      );
-      
+      const response = await axios.put(`${API_BASE_URL}/api/v1/activities/`, {
+        ...convertToApiActivity(activity),
+        activity_id: activity.id,
+      });
+
       if (response.data.success) {
         await fetchActivities(); // Refresh the list
       } else {
@@ -407,14 +414,14 @@ const ActivitiesPage = () => {
     try {
       const response = await axios.delete(
         `${API_BASE_URL}/api/v1/activities/`,
-        { 
-          data: { 
+        {
+          data: {
             activity_id: activityId,
-            account_id: selectedOrgAccount.accountId 
-          } 
-        }
+            account_id: selectedOrgAccount.accountId,
+          },
+        },
       );
-      
+
       if (response.data.success) {
         await fetchActivities(); // Refresh the list
       } else {
@@ -479,7 +486,7 @@ const ActivitiesPage = () => {
 
   // Helper function to get metric name from ID
   const getMetricNameById = (metricId: string): string => {
-    const metric = availableMetrics.find(m => m.id === metricId);
+    const metric = availableMetrics.find((m) => m.id === metricId);
     return metric ? metric.name : metricId;
   };
 
@@ -512,7 +519,7 @@ const ActivitiesPage = () => {
     } else {
       // Update the activity first
       await updateActivity(editingActivity);
-      
+
       // For existing activities, intuitions are created immediately when the intuition modal is saved
       // So we don't need to create them again here
     }
@@ -546,13 +553,16 @@ const ActivitiesPage = () => {
         {
           ...convertToApiLog({ ...log, id: "" }),
           activity_id: activityId,
-        }
+        },
       );
-      
+
       if (response.data.success) {
         // Update the editingActivity state immediately to show the new log in the modal
         if (editingActivity && editingActivity.id === activityId) {
-          const newLog = { ...log, id: response.data.data?.id || `l${Date.now()}` };
+          const newLog = {
+            ...log,
+            id: response.data.data?.id || `l${Date.now()}`,
+          };
           setEditingActivity({
             ...editingActivity,
             logs: [...editingActivity.logs, newLog],
@@ -587,14 +597,14 @@ const ActivitiesPage = () => {
           start_date: updates.startDate,
           end_date: updates.endDate,
           description: updates.description,
-        }
+        },
       );
-      
+
       if (response.data.success) {
         // Update the editingActivity state immediately to show the updated log in the modal
         if (editingActivity && editingActivity.id === activityId) {
           const updatedLogs = editingActivity.logs.map((l) =>
-            l.id === logId ? { ...l, ...updates } : l
+            l.id === logId ? { ...l, ...updates } : l,
           );
           setEditingActivity({
             ...editingActivity,
@@ -625,12 +635,12 @@ const ActivitiesPage = () => {
         metric_id: intuition.metricName, // This should be the actual metric ID
         direction: intuition.direction === "increase" ? "positive" : "negative",
       };
-      
+
       const response = await axios.post(
         `${API_BASE_URL}/api/v1/intuitions/`,
-        payload
+        payload,
       );
-      
+
       if (response.data.success) {
         // Update the editingActivity state immediately to show the new intuition in the modal
         if (editingActivity && editingActivity.id === activityId) {
@@ -650,28 +660,29 @@ const ActivitiesPage = () => {
   };
 
   // Update intuition via API
-  const updateIntuition = async (activityId: string, intuitionId: string, updates: Partial<Intuition>) => {
+  const updateIntuition = async (
+    activityId: string,
+    intuitionId: string,
+    updates: Partial<Intuition>,
+  ) => {
     if (!selectedOrgAccount?.accountId) {
       setError("No account selected");
       return;
     }
 
     try {
-      const response = await axios.put(
-        `${API_BASE_URL}/api/v1/intuitions/`,
-        {
-          account_id: selectedOrgAccount.accountId,
-          activity_id: activityId,
-          metric_id: updates.metricName,
-          direction: updates.direction === "increase" ? "positive" : "negative",
-        }
-      );
-      
+      const response = await axios.put(`${API_BASE_URL}/api/v1/intuitions/`, {
+        account_id: selectedOrgAccount.accountId,
+        activity_id: activityId,
+        metric_id: updates.metricName,
+        direction: updates.direction === "increase" ? "positive" : "negative",
+      });
+
       if (response.data.success) {
         // Update the editingActivity state immediately
         if (editingActivity && editingActivity.id === activityId) {
           const updatedIntuitions = editingActivity.intuitions.map((i) =>
-            i.id === intuitionId ? { ...i, ...updates } : i
+            i.id === intuitionId ? { ...i, ...updates } : i,
           );
           setEditingActivity({
             ...editingActivity,
@@ -704,9 +715,9 @@ const ActivitiesPage = () => {
             activity_id: activityId,
             metric_id: metricId,
           },
-        }
+        },
       );
-      
+
       if (response.data.success) {
         await fetchActivities(); // Refresh the list
       } else {
@@ -734,9 +745,9 @@ const ActivitiesPage = () => {
             activity_id: activityId,
             activity_log_id: logId,
           },
-        }
+        },
       );
-      
+
       if (response.data.success) {
         await fetchActivities(); // Refresh the list
       } else {
@@ -753,7 +764,10 @@ const ActivitiesPage = () => {
       return;
 
     // If we're editing within the Activity modal for a new activity being created
-    if ((editingIntuition.activity === "temp" || isCreating) && editingActivity) {
+    if (
+      (editingIntuition.activity === "temp" || isCreating) &&
+      editingActivity
+    ) {
       const newIntuition = {
         ...editingIntuition.intuition,
         id: editingIntuition.intuition.id || `i${Date.now()}`,
@@ -784,7 +798,10 @@ const ActivitiesPage = () => {
           editingIntuition.intuition,
         );
       } else {
-        await addIntuition(editingIntuition.activity, editingIntuition.intuition);
+        await addIntuition(
+          editingIntuition.activity,
+          editingIntuition.intuition,
+        );
       }
     }
 
@@ -794,7 +811,6 @@ const ActivitiesPage = () => {
 
   const handleSaveLog = async () => {
     if (!editingLog.activity || !editingLog.log?.description) return;
-
 
     // If we're editing within the Activity modal for a new activity being created
     if ((editingLog.activity === "temp" || isCreating) && editingActivity) {
@@ -1141,8 +1157,8 @@ const ActivitiesPage = () => {
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
                                 <p>
-                                  Describe the expected impact this activity will
-                                  have on your metrics
+                                  Describe the expected impact this activity
+                                  will have on your metrics
                                 </p>
                               </TooltipContent>
                             </Tooltip>
@@ -1170,10 +1186,11 @@ const ActivitiesPage = () => {
                                 <TooltipContent className="max-w-sm">
                                   <p>
                                     Identify any metrics that will reliably be
-                                    influenced by this Activity when it is active
-                                    (at least 80% of the time), and indicate if
-                                    the metrics is expected to be influenced in a
-                                    'positive' or 'negative' direction.
+                                    influenced by this Activity when it is
+                                    active (at least 80% of the time), and
+                                    indicate if the metrics is expected to be
+                                    influenced in a 'positive' or 'negative'
+                                    direction.
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
@@ -1185,7 +1202,8 @@ const ActivitiesPage = () => {
                                   className="p-2 bg-gray-50 rounded border"
                                 >
                                   <span className="text-sm text-gray-700">
-                                    {getMetricNameById(intuition.metricName)} [{intuition.direction}]
+                                    {getMetricNameById(intuition.metricName)} [
+                                    {intuition.direction}]
                                   </span>
                                 </div>
                               ))}
@@ -1247,8 +1265,8 @@ const ActivitiesPage = () => {
         )}
 
         {/* Intuition Modal */}
-        <Dialog 
-          open={showIntuitionModal} 
+        <Dialog
+          open={showIntuitionModal}
           onOpenChange={(open) => {
             if (!open) {
               setShowIntuitionModal(false);
@@ -1292,7 +1310,10 @@ const ActivitiesPage = () => {
                       <SelectContent>
                         <SelectItem value="all">All Datasets</SelectItem>
                         {datasetsData.map((dataset) => (
-                          <SelectItem key={dataset.dataset_id} value={dataset.dataset_name}>
+                          <SelectItem
+                            key={dataset.dataset_id}
+                            value={dataset.dataset_name}
+                          >
                             {dataset.dataset_name}
                           </SelectItem>
                         ))}
@@ -1346,10 +1367,9 @@ const ActivitiesPage = () => {
                               <span className="font-medium">{metric.name}</span>
                               <span className="text-xs text-gray-500">
                                 {metric.product} •{" "}
-                                {
-                                  datasetsData.find((d) => d.dataset_name === metric.dataset)
-                                    ?.dataset_name || metric.dataset
-                                }
+                                {datasetsData.find(
+                                  (d) => d.dataset_name === metric.dataset,
+                                )?.dataset_name || metric.dataset}
                               </span>
                             </div>
                           </SelectItem>
@@ -1433,8 +1453,8 @@ const ActivitiesPage = () => {
         </Dialog>
 
         {/* Log Modal */}
-        <Dialog 
-          open={showLogModal} 
+        <Dialog
+          open={showLogModal}
           onOpenChange={(open) => {
             if (!open) {
               setShowLogModal(false);
@@ -1513,8 +1533,8 @@ const ActivitiesPage = () => {
         </Dialog>
 
         {/* Activity Modal */}
-        <Dialog 
-          open={showActivityModal} 
+        <Dialog
+          open={showActivityModal}
           onOpenChange={(open) => {
             if (!open) {
               setShowActivityModal(false);
@@ -1680,7 +1700,9 @@ const ActivitiesPage = () => {
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        openIntuitionModal(isCreating ? "temp" : (editingActivity?.id || "temp"))
+                        openIntuitionModal(
+                          isCreating ? "temp" : editingActivity?.id || "temp",
+                        )
                       }
                     >
                       <Plus className="w-4 h-4" />
@@ -1693,7 +1715,8 @@ const ActivitiesPage = () => {
                         className="flex items-center justify-between p-2 bg-gray-50 rounded"
                       >
                         <span className="text-sm text-gray-700">
-                          {getMetricNameById(intuition.metricName)} [{intuition.direction}]
+                          {getMetricNameById(intuition.metricName)} [
+                          {intuition.direction}]
                         </span>
                         <div className="flex gap-1">
                           <Button
@@ -1702,7 +1725,9 @@ const ActivitiesPage = () => {
                             className="h-6 w-6 p-0"
                             onClick={() =>
                               openIntuitionModal(
-                                isCreating ? "temp" : (editingActivity?.id || "temp"),
+                                isCreating
+                                  ? "temp"
+                                  : editingActivity?.id || "temp",
                                 intuition,
                               )
                             }
@@ -1727,7 +1752,10 @@ const ActivitiesPage = () => {
                                   });
                                 } else {
                                   // For existing activities, delete via API and update local state
-                                  await deleteIntuition(editingActivity.id, intuition.metricName);
+                                  await deleteIntuition(
+                                    editingActivity.id,
+                                    intuition.metricName,
+                                  );
                                   const updatedIntuitions =
                                     editingActivity.intuitions.filter(
                                       (i) => i.id !== intuition.id,
@@ -1774,7 +1802,9 @@ const ActivitiesPage = () => {
                       variant="outline"
                       onClick={() => {
                         setEditingLog({
-                          activity: isCreating ? "temp" : (editingActivity?.id || "temp"),
+                          activity: isCreating
+                            ? "temp"
+                            : editingActivity?.id || "temp",
                           log: {
                             id: "",
                             startDate: "",
@@ -1812,7 +1842,9 @@ const ActivitiesPage = () => {
                             className="h-6 w-6 p-0"
                             onClick={() => {
                               setEditingLog({
-                                activity: isCreating ? "temp" : (editingActivity?.id || "temp"),
+                                activity: isCreating
+                                  ? "temp"
+                                  : editingActivity?.id || "temp",
                                 log,
                               });
                               setShowLogModal(true);
@@ -1828,9 +1860,10 @@ const ActivitiesPage = () => {
                               if (editingActivity) {
                                 // If this is a new activity being created, just remove from local state
                                 if (isCreating) {
-                                  const updatedLogs = editingActivity.logs.filter(
-                                    (l) => l.id !== log.id,
-                                  );
+                                  const updatedLogs =
+                                    editingActivity.logs.filter(
+                                      (l) => l.id !== log.id,
+                                    );
                                   setEditingActivity({
                                     ...editingActivity,
                                     logs: updatedLogs,
@@ -1838,9 +1871,10 @@ const ActivitiesPage = () => {
                                 } else {
                                   // For existing activities, delete via API and update local state
                                   await deleteLog(log.id, editingActivity.id);
-                                  const updatedLogs = editingActivity.logs.filter(
-                                    (l) => l.id !== log.id,
-                                  );
+                                  const updatedLogs =
+                                    editingActivity.logs.filter(
+                                      (l) => l.id !== log.id,
+                                    );
                                   setEditingActivity({
                                     ...editingActivity,
                                     logs: updatedLogs,

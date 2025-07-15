@@ -1,6 +1,9 @@
 import { useState } from "react";
 import axios from "axios";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+} from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,11 +54,17 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     setErrorMessage("");
 
     try {
-      const result = await signInWithEmailAndPassword(auth, signInData.email, signInData.password);
+      const result = await signInWithEmailAndPassword(
+        auth,
+        signInData.email,
+        signInData.password,
+      );
       const firebaseUser = result.user;
 
       const [userRes, notificationsRes, securityRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`),
+        axios.get(
+          `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
+        ),
         axios.post(`${API_BASE_URL}/api/v1/firestore/documents/query`, {
           account_id: firebaseUser.uid,
           collection: `users/${firebaseUser.uid}/notifications`,
@@ -93,7 +102,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     }
   };
 
-
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -106,11 +114,23 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     }
 
     try {
-      const result = await createUserWithEmailAndPassword(auth, signUpData.email, signUpData.password);
+      console.log("Attempting signup with email:", signUpData.email);
+      console.log("Email validation check:", {
+        email: signUpData.email,
+        isValidFormat: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signUpData.email),
+        trimmedEmail: signUpData.email.trim(),
+        length: signUpData.email.length
+      });
+      
+      const result = await createUserWithEmailAndPassword(
+        auth,
+        signUpData.email.trim(),
+        signUpData.password,
+      );
       const firebaseUser = result.user;
 
       await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
-        account_id: firebaseUser.uid,  // Using user ID as account_id
+        account_id: firebaseUser.uid, // Using user ID as account_id
         collection: "users",
         document_id: firebaseUser.uid,
         data: {
@@ -118,7 +138,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             email: signUpData.email,
             first_name: signUpData.firstName,
             last_name: signUpData.lastName,
-            job_title: "",  // Default empty
+            job_title: "", // Default empty
           },
           permissions: {
             organizations: {},
@@ -133,7 +153,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       });
 
       // 🔥 Fetch the created Firestore document for login context
-      const res = await axios.get(`${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`);
+      const res = await axios.get(
+        `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
+      );
       const firestoreData = res.data.data;
 
       // Call login() to update AuthContext state
@@ -181,7 +203,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
 
         <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
           {errorMessage && (
-            <div className="text-red-600 text-sm font-medium pt-4">{errorMessage}</div>
+            <div className="text-red-600 text-sm font-medium pt-4">
+              {errorMessage}
+            </div>
           )}
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-center text-xl">
