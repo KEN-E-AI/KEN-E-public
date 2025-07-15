@@ -30,6 +30,7 @@ steps:
       - "SERVICE_ACCOUNT=${_PIPELINE_SA_EMAIL}"
       - "PIPELINE_NAME=${_PIPELINE_NAME}"
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+      
   - name: "python:3.11-slim" 
     id: install-dependencies
     entrypoint: /bin/bash
