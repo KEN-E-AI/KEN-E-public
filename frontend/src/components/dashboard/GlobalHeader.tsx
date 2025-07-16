@@ -62,30 +62,67 @@ const OrganizationAccountDropdown = ({
   const navigate = useNavigate();
   const { setCurrentOrganization, user, orgMetadata, accountMetadata } =
     useAuth();
-  const accessibleAccountIds = Object.keys(user?.permissions?.accounts || {});
 
-  const combinedOptions = accessibleAccountIds
-    .map((accountId) => {
-      const account = accountMetadata[accountId];
-      const orgId = account?.organization_id;
+  // Get organizations the user has access to (instead of accounts)
+  const accessibleOrgIds = Object.keys(user?.permissions?.organizations || {});
+
+  // Build all accessible org/account combinations
+  const combinedOptions = accessibleOrgIds
+    .flatMap((orgId) => {
       const organization = orgMetadata[orgId];
+      if (!organization) return [];
 
-      if (!account || !organization) return null;
+      // Get all accounts for this organization
+      const orgAccounts = organization.accounts || [];
 
-      return {
-        value: JSON.stringify({ orgId, accountId }),
-        label: `${organization.organization_name} - ${account.account_name}`,
-        orgId,
-        accountId,
-        metadata: {
-          organization_name: organization.organization_name,
-          account_name: account.account_name,
-          industry: account.industry,
-          status: account.status,
-          timezone: account.timezone,
-          plan: organization.plan,
-        },
-      };
+      // For regular organizations, return all accounts in the organization
+      if (!organization.agency) {
+        return orgAccounts.map((account: any) => ({
+          value: JSON.stringify({ orgId, accountId: account.account_id }),
+          label: `${organization.organization_name} - ${account.account_name}`,
+          orgId,
+          accountId: account.account_id,
+          metadata: {
+            organization_name: organization.organization_name,
+            account_name: account.account_name,
+            industry: account.industry || "Unknown",
+            status: account.status || "Active",
+            timezone: account.timezone,
+            plan: organization.plan,
+          },
+        }));
+      }
+
+      // For agency organizations, get accounts from child organizations
+      if (organization.agency && organization.child_organizations) {
+        return organization.child_organizations.flatMap(
+          (childOrgId: string) => {
+            const childOrg = orgMetadata[childOrgId];
+            if (!childOrg) return [];
+
+            const childAccounts = childOrg.accounts || [];
+            return childAccounts.map((account: any) => ({
+              value: JSON.stringify({
+                orgId: childOrgId,
+                accountId: account.account_id,
+              }),
+              label: `${childOrg.organization_name} - ${account.account_name}`,
+              orgId: childOrgId,
+              accountId: account.account_id,
+              metadata: {
+                organization_name: childOrg.organization_name,
+                account_name: account.account_name,
+                industry: account.industry || "Unknown",
+                status: account.status || "Active",
+                timezone: account.timezone,
+                plan: childOrg.plan,
+              },
+            }));
+          },
+        );
+      }
+
+      return [];
     })
     .filter(Boolean);
 
