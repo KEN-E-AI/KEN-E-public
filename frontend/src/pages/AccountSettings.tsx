@@ -191,7 +191,7 @@ const AccountSettings = () => {
       });
 
       // Navigate immediately without blocking
-      navigate("/organization-selection");
+      navigate("/settings");
     } catch (error) {
       console.error("Error creating organization:", error);
       toast({
@@ -230,8 +230,7 @@ const AccountSettings = () => {
   };
 
   const handleBackToSelection = () => {
-    resetWorkspaceSelection();
-    navigate("/organization-selection");
+    navigate("/settings");
   };
 
   return (
@@ -280,7 +279,7 @@ const BackButton = ({ onBack }: { onBack: () => void }) => (
       className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
     >
       <ArrowLeft className="h-4 w-4 mr-2" />
-      Back to Organizations & Accounts
+      Back to Settings
     </Button>
   </div>
 );

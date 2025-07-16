@@ -2,7 +2,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+} from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import "./App.css";
@@ -19,6 +25,7 @@ import KnowledgeActivities from "./pages/KnowledgeActivities";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
+import Settings from "./pages/Settings";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import NotFound from "./pages/NotFound";
 
@@ -129,12 +136,24 @@ const App = () => (
               }
             />
             <Route
-              path="/account-settings"
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organization-settings"
               element={
                 <ProtectedRoute>
                   <AccountSettings />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/account-settings"
+              element={<Navigate to="/organization-settings" replace />}
             />
             <Route
               path="/user-settings"

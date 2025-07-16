@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,10 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { User, Bell, Shield, Globe, Moon, Sun } from "lucide-react";
+import { User, Bell, Shield, Globe, Moon, Sun, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const UserSettings = () => {
+  const navigate = useNavigate();
   const {
     user,
     notificationSettings,
@@ -106,6 +108,18 @@ const UserSettings = () => {
   return (
     <Layout pageTitle="User Settings">
       <div className="max-w-4xl mx-auto space-y-8">
+        {/* Back Button */}
+        <div className="pt-2 mr-auto">
+          <Button
+            variant="ghost"
+            onClick={() => navigate("/settings")}
+            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Settings
+          </Button>
+        </div>
+
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-dashboard-gray-900">

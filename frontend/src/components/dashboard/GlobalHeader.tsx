@@ -49,7 +49,7 @@ const navigationMenuItems = [
   { id: "big-bets", name: "Big Bets", icon: Target },
   { id: "data-exploration", name: "Data Exploration", icon: Search },
   { id: "knowledge", name: "Knowledge Base", icon: BookOpen },
-  { id: "settings", name: "Org Settings", icon: Settings },
+  { id: "settings", name: "Settings", icon: Settings },
 ];
 
 const OrganizationAccountDropdown = ({
@@ -279,7 +279,7 @@ const GlobalHeader = ({
               <DropdownMenuItem
                 className="flex items-center gap-2 cursor-pointer"
                 onClick={() => {
-                  navigate("/user-settings");
+                  navigate("/settings");
                 }}
               >
                 <svg
@@ -301,7 +301,7 @@ const GlobalHeader = ({
                     d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                   />
                 </svg>
-                <span>Your Settings</span>
+                <span>Settings</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="flex items-center gap-2 cursor-pointer text-red-600"
@@ -387,15 +387,7 @@ const GlobalHeader = ({
                         } else if (item.id === "data-exploration") {
                           navigate("/exploration");
                         } else if (item.id === "settings") {
-                          const selectedAccount =
-                            selectedOrgAccount?.accountId &&
-                            accountMetadata[selectedOrgAccount.accountId];
-
-                          if (selectedAccount) {
-                            setCurrentOrganization(selectedOrgAccount.orgId);
-                          }
-
-                          navigate("/account-settings");
+                          navigate("/settings");
                         } else {
                           console.log(`Navigate to ${item.name}`);
                         }
