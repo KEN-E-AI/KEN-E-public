@@ -224,6 +224,35 @@ export async function createNewAccount(accountData: {
   });
 }
 
+// Function to fetch child organizations for agency organizations
+export async function getChildOrganizations(
+  parentOrgId: string,
+): Promise<Organization[]> {
+  try {
+    const parentOrg = await getOrganizationById(parentOrgId);
+    if (!parentOrg || !parentOrg.agency || !parentOrg.child_organizations) {
+      return [];
+    }
+
+    // Fetch each child organization
+    const childOrgs = await Promise.all(
+      parentOrg.child_organizations.map(async (childOrgId) => {
+        const childOrg = await getOrganizationById(childOrgId);
+        return childOrg;
+      }),
+    );
+
+    // Filter out any undefined results
+    return childOrgs.filter((org): org is Organization => org !== undefined);
+  } catch (error) {
+    console.error(
+      `Failed to fetch child organizations for ${parentOrgId}:`,
+      error,
+    );
+    return [];
+  }
+}
+
 // Re-export the organizations array as a promise for initial compatibility
 // This will be replaced by actual API calls
 export const organizations = getOrganizations();

@@ -10,6 +10,7 @@ import {
   createAccount,
   updateAccount,
   deleteAccount,
+  getChildOrganizations,
 } from "./organizationApi";
 
 describe("organizationApi", () => {
@@ -204,6 +205,160 @@ describe("organizationApi", () => {
           },
         },
       );
+    });
+  });
+
+  describe("getChildOrganizations", () => {
+    test("fetches child organizations for agency organization", async () => {
+      const mockAgencyOrg = {
+        organization_id: mockOrgId,
+        organization_name: "Agency Org",
+        agency: true,
+        child_organizations: ["child-org-1", "child-org-2"],
+      };
+      const mockChildOrg1 = {
+        organization_id: "child-org-1",
+        organization_name: "Child Org 1",
+        agency: false,
+      };
+      const mockChildOrg2 = {
+        organization_id: "child-org-2",
+        organization_name: "Child Org 2",
+        agency: false,
+      };
+
+      // Mock the API calls
+      vi.mocked(fetch)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockAgencyOrg,
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockChildOrg1,
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockChildOrg2,
+        } as Response);
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([mockChildOrg1, mockChildOrg2]);
+      expect(fetch).toHaveBeenCalledTimes(3); // Parent + 2 children
+    });
+
+    test("returns empty array for non-agency organization", async () => {
+      const mockNonAgencyOrg = {
+        organization_id: mockOrgId,
+        organization_name: "Regular Org",
+        agency: false,
+      };
+
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockNonAgencyOrg,
+      } as Response);
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1); // Only parent org
+    });
+
+    test("returns empty array for agency organization with no children", async () => {
+      const mockAgencyOrgNoChildren = {
+        organization_id: mockOrgId,
+        organization_name: "Agency Org",
+        agency: true,
+        child_organizations: [],
+      };
+
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockAgencyOrgNoChildren,
+      } as Response);
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1); // Only parent org
+    });
+
+    test("returns empty array for organization with undefined child_organizations", async () => {
+      const mockAgencyOrgUndefined = {
+        organization_id: mockOrgId,
+        organization_name: "Agency Org",
+        agency: true,
+        child_organizations: undefined,
+      };
+
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockAgencyOrgUndefined,
+      } as Response);
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1); // Only parent org
+    });
+
+    test("filters out undefined child organizations", async () => {
+      const mockAgencyOrg = {
+        organization_id: mockOrgId,
+        organization_name: "Agency Org",
+        agency: true,
+        child_organizations: ["child-org-1", "child-org-2"],
+      };
+      const mockChildOrg1 = {
+        organization_id: "child-org-1",
+        organization_name: "Child Org 1",
+        agency: false,
+      };
+
+      // Mock the API calls - second child org fails
+      vi.mocked(fetch)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockAgencyOrg,
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockChildOrg1,
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 404,
+          json: async () => ({ detail: "Not found" }),
+        } as Response);
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([mockChildOrg1]);
+      expect(fetch).toHaveBeenCalledTimes(3); // Parent + 2 children (1 failed)
+    });
+
+    test("handles error when parent organization not found", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ detail: "Not found" }),
+      } as Response);
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1); // Only parent org
+    });
+
+    test("handles error when fetching parent organization fails", async () => {
+      vi.mocked(fetch).mockRejectedValueOnce(new Error("Network error"));
+
+      const result = await getChildOrganizations(mockOrgId);
+
+      expect(result).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1); // Only parent org
     });
   });
 

@@ -7,7 +7,25 @@ import {
   getOrganizationById,
   getAccountsByOrganizationId,
   createAccount,
+  getChildOrganizations,
 } from "@/data/organizationApi";
+import {
+  validateAccountCreationRequirements,
+  getTargetOrganizationId,
+  resolveOrganizationAndAccount,
+  formatWorkspaceMetadata,
+} from "@/lib/organizationUtils";
+import {
+  ACCOUNT_CREATION_REDIRECT_DELAY,
+  WORKSPACE_SELECTION_DELAY,
+  DEFAULT_TIMEZONE,
+  DEFAULT_DATA_REGION,
+  DEFAULT_ACCOUNT_STATUS,
+  DEFAULT_REGION,
+  ACCOUNT_CREATION_SUCCESS_TITLE,
+  ACCOUNT_CREATION_SUCCESS_DESCRIPTION,
+  AGENCY_ORGANIZATION_MESSAGE,
+} from "@/constants/organizationSelection";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,9 +46,130 @@ import {
 } from "@/components/ui/select";
 import { Building, Plus, Check, ArrowRight, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useChildOrganizations } from "@/hooks/useChildOrganizations";
+import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
 
 interface OrganizationSelectionProps {
   onComplete: () => void;
+}
+
+/**
+ * Creates an account in the correct organization (regular or child)
+ */
+async function createAccountInCorrectOrganization(
+  accountName: string,
+  accountType: string,
+  selectedOrganization: string,
+  selectedChildOrg: string,
+  localOrgMetadata: Record<string, any>,
+) {
+  const targetOrgId = getTargetOrganizationId(
+    selectedOrganization,
+    selectedChildOrg,
+    localOrgMetadata,
+  );
+
+  return await createAccount({
+    account_name: accountName,
+    organization_id: targetOrgId,
+    industry: accountType || "Unknown",
+    status: DEFAULT_ACCOUNT_STATUS,
+    websites: [],
+    timezone: DEFAULT_TIMEZONE,
+    data_region: DEFAULT_DATA_REGION,
+    region: DEFAULT_REGION,
+  });
+}
+
+/**
+ * Handles successful account creation UI updates
+ */
+function handleAccountCreationSuccess(
+  newAccount: any,
+  setAccountMetadata: (fn: (prev: any) => any) => void,
+  setShowCreateAccount: (show: boolean) => void,
+  setNewAccountData: (data: any) => void,
+  setSelectedAccount: (accountId: string) => void,
+  toast: any,
+) {
+  const newAccountId = newAccount.account_id;
+
+  // Update local state
+  setAccountMetadata((prev) => ({
+    ...prev,
+    [newAccountId]: newAccount,
+  }));
+
+  setShowCreateAccount(false);
+  setNewAccountData({ name: "", type: "", description: "" });
+
+  // Set the newly created account as selected
+  setSelectedAccount(newAccountId);
+
+  // Toast user of successful creation
+  toast({
+    title: ACCOUNT_CREATION_SUCCESS_TITLE,
+    description: ACCOUNT_CREATION_SUCCESS_DESCRIPTION(newAccount.account_name),
+  });
+
+  return newAccountId;
+}
+
+/**
+ * Handles workspace selection and navigation after account creation
+ */
+function navigateToAccountSettings(
+  newAccountId: string,
+  selectedOrganization: string,
+  selectedChildOrg: string,
+  localOrgMetadata: Record<string, any>,
+  childOrganizations: Record<string, any>[],
+  newAccount: any,
+  setSelectedOrgAccount: any,
+  setCurrentOrganization: any,
+  completeWorkspaceSelection: any,
+  navigate: any,
+) {
+  const resolution = resolveOrganizationAndAccount(
+    selectedOrganization,
+    newAccountId,
+    selectedChildOrg,
+    localOrgMetadata,
+    childOrganizations,
+  );
+
+  const account = resolution.account || newAccount;
+  const metadata = formatWorkspaceMetadata(
+    resolution.organization?.organization_name || resolution.organizationId,
+    account?.account_name || newAccount.account_name,
+    account?.industry || newAccount.industry || "Unknown",
+    account?.status || newAccount.status || DEFAULT_ACCOUNT_STATUS,
+    account?.timezone || newAccount.timezone,
+    resolution.organization?.plan,
+  );
+
+  setSelectedOrgAccount({
+    orgId: resolution.organizationId,
+    accountId: newAccountId,
+    metadata,
+  });
+  setCurrentOrganization(resolution.organizationId);
+  completeWorkspaceSelection();
+
+  // Navigate to account settings instead of home
+  navigate("/account-settings");
+}
+
+/**
+ * Handles account creation errors
+ */
+function handleAccountCreationError(err: any) {
+  console.error("Failed to create account", err);
+  const errorMessage =
+    err.response?.data?.detail ||
+    err.message ||
+    "Error creating account. Please try again.";
+  alert(errorMessage);
 }
 
 const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
@@ -58,6 +197,54 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>(
     {},
   );
+  const [selectedChildOrg, setSelectedChildOrg] = useState<string>("");
+
+  // Use custom hooks for child organizations and available accounts
+  const {
+    childOrganizations,
+    loading: childOrganizationsLoading,
+    error: childOrganizationsError,
+    fetchChildOrganizations,
+    clearChildOrganizations,
+  } = useChildOrganizations();
+
+  // Define function for getting accounts by organization ID from local state
+  const getAccountsByOrganizationIdFromLocal = (orgId: string) => {
+    const orgAccounts: any[] = localOrgMetadata[orgId]?.accounts || [];
+
+    // Check if user has access to the organization
+    const hasOrgAccess = orgId in orgsFromFirestore;
+
+    if (!hasOrgAccess) {
+      return [];
+    }
+
+    // If user has organization access, they can see all accounts in that organization
+    return orgAccounts
+      .map((account) => ({
+        account_id: account.account_id,
+        account_name:
+          account.account_name || account.account_id.replace(/-/g, " "),
+        industry: account.industry || "Unknown",
+        status: account.status || "Active",
+        permission: orgsFromFirestore[orgId], // Use organization permission level
+      }))
+      .sort((a, b) => a.account_name.localeCompare(b.account_name));
+  };
+
+  const {
+    availableAccounts,
+    hasAccounts,
+    isAgencyOrganization,
+    needsChildOrgSelection,
+  } = useAvailableAccounts({
+    selectedOrganization,
+    selectedChildOrg,
+    localOrgMetadata,
+    childOrganizations,
+    orgsFromFirestore,
+    getAccountsByOrganizationIdFromLocal,
+  });
 
   const [newOrgData, setNewOrgData] = useState({
     name: "",
@@ -167,29 +354,6 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     },
   );
 
-  const getAccountsByOrganizationIdFromLocal = (orgId: string) => {
-    const orgAccounts: any[] = localOrgMetadata[orgId]?.accounts || [];
-
-    // Check if user has access to the organization
-    const hasOrgAccess = orgId in orgsFromFirestore;
-
-    if (!hasOrgAccess) {
-      return [];
-    }
-
-    // If user has organization access, they can see all accounts in that organization
-    return orgAccounts
-      .map((account) => ({
-        account_id: account.account_id,
-        account_name:
-          account.account_name || account.account_id.replace(/-/g, " "),
-        industry: account.industry || "Unknown",
-        status: account.status || "Active",
-        permission: orgsFromFirestore[orgId], // Use organization permission level
-      }))
-      .sort((a, b) => a.account_name.localeCompare(b.account_name));
-  };
-
   const handleCreateOrganization = () => {
     setIsLoading(true);
     // Simulate organization creation
@@ -205,84 +369,59 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   };
 
   const handleCreateAccount = async () => {
-    if (!selectedOrganization) {
-      alert("Please select an organization first.");
-      return;
-    }
+    // Validate account creation requirements
+    const validation = validateAccountCreationRequirements(
+      selectedOrganization,
+      selectedChildOrg,
+      localOrgMetadata,
+      newAccountData.name,
+      newAccountData.type,
+    );
 
-    if (!newAccountData.name || !newAccountData.type) {
-      alert("Please fill in all required fields");
+    if (!validation.isValid) {
+      alert(validation.errorMessage);
       return;
     }
 
     try {
       setIsLoading(true);
 
-      // Create account in Neo4j (source of truth)
-      const newAccount = await createAccount({
-        account_name: newAccountData.name,
-        organization_id: selectedOrganization,
-        industry: newAccountData.type || "Unknown",
-        status: "Active",
-        websites: [],
-        timezone: "America/New_York",
-        data_region: "United States",
-        region: [],
-      });
+      // Create account in the correct organization
+      const newAccount = await createAccountInCorrectOrganization(
+        newAccountData.name,
+        newAccountData.type,
+        selectedOrganization,
+        selectedChildOrg,
+        localOrgMetadata,
+      );
 
-      const newAccountId = newAccount.account_id;
-
-      // Update local state
-      setAccountMetadata((prev) => ({
-        ...prev,
-        [newAccountId]: newAccount,
-      }));
-
-      setShowCreateAccount(false);
-      setNewAccountData({ name: "", type: "", description: "" });
-
-      // Set the newly created account as selected
-      setSelectedAccount(newAccountId);
-
-      // Toast user of successful creation
-      toast({
-        title: "Account created successfully!",
-        description: `"${newAccount.account_name}" has been created. Redirecting to account settings...`,
-      });
+      // Handle successful account creation
+      const newAccountId = handleAccountCreationSuccess(
+        newAccount,
+        setAccountMetadata,
+        setShowCreateAccount,
+        setNewAccountData,
+        setSelectedAccount,
+        toast,
+      );
 
       // Auto-navigate to account settings after successful account creation
       setTimeout(() => {
-        // Set the workspace selection data before navigating
-        const org = localOrgMetadata[selectedOrganization];
-        const account =
-          org?.accounts?.find((a: any) => a.account_id === newAccountId) ||
-          newAccount;
-
-        setSelectedOrgAccount({
-          orgId: selectedOrganization,
-          accountId: newAccountId,
-          metadata: {
-            organization_name: org?.organization_name || selectedOrganization,
-            account_name: account?.account_name || newAccount.account_name,
-            industry: account?.industry || newAccount.industry || "Unknown",
-            status: account?.status || newAccount.status || "Active",
-            timezone: account?.timezone || newAccount.timezone,
-            plan: org?.plan,
-          },
-        });
-        setCurrentOrganization(selectedOrganization);
-        completeWorkspaceSelection();
-
-        // Navigate to account settings instead of home
-        navigate("/account-settings");
-      }, 1500); // 1.5 second delay to show the toast
+        navigateToAccountSettings(
+          newAccountId,
+          selectedOrganization,
+          selectedChildOrg,
+          localOrgMetadata,
+          childOrganizations,
+          newAccount,
+          setSelectedOrgAccount,
+          setCurrentOrganization,
+          completeWorkspaceSelection,
+          navigate,
+        );
+      }, ACCOUNT_CREATION_REDIRECT_DELAY);
     } catch (err: any) {
-      console.error("Failed to create account", err);
-      const errorMessage =
-        err.response?.data?.detail ||
-        err.message ||
-        "Error creating account. Please try again.";
-      alert(errorMessage);
+      handleAccountCreationError(err);
     } finally {
       setIsLoading(false);
     }
@@ -293,29 +432,33 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       setIsLoading(true);
       // Simulate selection processing
       setTimeout(() => {
-        // Create the combined org-account ID for the dropdown
-        const org = localOrgMetadata[selectedOrganization];
-        const account = org?.accounts?.find(
-          (a: any) => a.account_id === selectedAccount,
+        const resolution = resolveOrganizationAndAccount(
+          selectedOrganization,
+          selectedAccount,
+          selectedChildOrg,
+          localOrgMetadata,
+          childOrganizations,
+        );
+
+        const metadata = formatWorkspaceMetadata(
+          resolution.organization?.organization_name || selectedOrganization,
+          resolution.account?.account_name || selectedAccount,
+          resolution.account?.industry || "Unknown",
+          resolution.account?.status || "Active",
+          resolution.account?.timezone,
+          resolution.organization?.plan,
         );
 
         setSelectedOrgAccount({
-          orgId: selectedOrganization,
+          orgId: resolution.organizationId,
           accountId: selectedAccount,
-          metadata: {
-            organization_name: org?.organization_name || selectedOrganization,
-            account_name: account?.account_name || selectedAccount,
-            industry: account?.industry || "Unknown",
-            status: account?.status || "Active",
-            timezone: account?.timezone,
-            plan: org?.plan,
-          },
+          metadata,
         });
-        setCurrentOrganization(selectedOrganization);
+        setCurrentOrganization(resolution.organizationId);
         completeWorkspaceSelection();
 
         onComplete();
-      }, 1000);
+      }, WORKSPACE_SELECTION_DELAY);
     }
   };
 
@@ -323,15 +466,19 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     (org) => org.organization_id === selectedOrganization,
   );
 
-  // Filter accounts based on selected organization
-  const availableAccounts = selectedOrganization
-    ? getAccountsByOrganizationIdFromLocal(selectedOrganization)
-    : [];
-  const handleOrganizationSelect = (orgId: string) => {
+  const handleOrganizationSelect = async (orgId: string) => {
     if (orgId !== selectedOrganization) {
       setSelectedAccount(""); // Reset account selection
+      setSelectedChildOrg(""); // Reset child organization selection
+      clearChildOrganizations(); // Clear child organizations
     }
     setSelectedOrganization(orgId);
+
+    // If this is an agency organization, fetch child organizations
+    const selectedOrg = localOrgMetadata[orgId];
+    if (selectedOrg && selectedOrg.agency) {
+      await fetchChildOrganizations(orgId);
+    }
   };
 
   if (loadingUserData || Object.keys(localOrgMetadata).length === 0) {
@@ -415,61 +562,175 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                     </p>
                   </div>
 
-                  {availableAccounts.map((account) => (
-                    <div
-                      key={account.account_id}
-                      className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                        selectedAccount === account.account_id
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                      onClick={() => setSelectedAccount(account.account_id)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-semibold text-gray-900">
-                              {account.account_name}
-                            </h3>
-                            {selectedAccount === account.account_id && (
-                              <Check className="h-4 w-4 text-blue-600" />
-                            )}
+                  {/* Agency Organization Handling */}
+                  {selectedOrgData.agency ? (
+                    <>
+                      <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg mb-4">
+                        <p className="text-sm text-orange-800">
+                          {AGENCY_ORGANIZATION_MESSAGE}
+                        </p>
+                      </div>
+
+                      {/* Child Organization Selection */}
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">
+                          Client Organizations
+                        </Label>
+                        {childOrganizations.map((childOrg) => (
+                          <div
+                            key={childOrg.organization_id}
+                            className={`p-3 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                              selectedChildOrg === childOrg.organization_id
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-gray-200 hover:border-gray-300"
+                            }`}
+                            onClick={() =>
+                              setSelectedChildOrg(childOrg.organization_id)
+                            }
+                          >
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium text-gray-900">
+                                {childOrg.organization_name}
+                              </h4>
+                              {selectedChildOrg ===
+                                childOrg.organization_id && (
+                                <Check className="h-4 w-4 text-blue-600" />
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge
-                              variant={
-                                account.industry === "Retail"
-                                  ? "default"
-                                  : account.industry === "Healthcare Services"
-                                    ? "secondary"
-                                    : account.industry === "Financial Services"
-                                      ? "outline"
-                                      : "outline"
+                        ))}
+                      </div>
+
+                      {/* Show accounts for selected child organization */}
+                      {selectedChildOrg && (
+                        <div className="mt-4 space-y-3">
+                          <Label className="text-sm font-medium">
+                            Accounts
+                          </Label>
+                          {availableAccounts.map((account) => (
+                            <div
+                              key={account.account_id}
+                              className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                                selectedAccount === account.account_id
+                                  ? "border-blue-500 bg-blue-50"
+                                  : "border-gray-200 hover:border-gray-300"
+                              }`}
+                              onClick={() =>
+                                setSelectedAccount(account.account_id)
                               }
-                              className="text-xs"
                             >
-                              {account.industry}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="text-xs text-green-600 border-green-200"
-                            >
-                              {account.status}
-                            </Badge>
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <h3 className="font-semibold text-gray-900">
+                                      {account.account_name}
+                                    </h3>
+                                    {selectedAccount === account.account_id && (
+                                      <Check className="h-4 w-4 text-blue-600" />
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Badge
+                                      variant={
+                                        account.industry === "Retail"
+                                          ? "default"
+                                          : account.industry ===
+                                              "Healthcare Services"
+                                            ? "secondary"
+                                            : account.industry ===
+                                                "Financial Services"
+                                              ? "outline"
+                                              : "outline"
+                                      }
+                                      className="text-xs"
+                                    >
+                                      {account.industry}
+                                    </Badge>
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs text-green-600 border-green-200"
+                                    >
+                                      {account.status}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => setShowCreateAccount(true)}
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Create New Account
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    /* Regular Organization Handling */
+                    <>
+                      {availableAccounts.map((account) => (
+                        <div
+                          key={account.account_id}
+                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                            selectedAccount === account.account_id
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                          onClick={() => setSelectedAccount(account.account_id)}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h3 className="font-semibold text-gray-900">
+                                  {account.account_name}
+                                </h3>
+                                {selectedAccount === account.account_id && (
+                                  <Check className="h-4 w-4 text-blue-600" />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge
+                                  variant={
+                                    account.industry === "Retail"
+                                      ? "default"
+                                      : account.industry ===
+                                          "Healthcare Services"
+                                        ? "secondary"
+                                        : account.industry ===
+                                            "Financial Services"
+                                          ? "outline"
+                                          : "outline"
+                                  }
+                                  className="text-xs"
+                                >
+                                  {account.industry}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs text-green-600 border-green-200"
+                                >
+                                  {account.status}
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      ))}
 
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setShowCreateAccount(true)}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create New Account
-                  </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setShowCreateAccount(true)}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create New Account
+                      </Button>
+                    </>
+                  )}
                 </>
               ) : (
                 <div className="p-8 text-center text-gray-500">
@@ -485,7 +746,12 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         <div className="flex justify-center mt-8">
           <Button
             onClick={handleContinue}
-            disabled={!selectedOrganization || !selectedAccount || isLoading}
+            disabled={
+              !selectedOrganization ||
+              !selectedAccount ||
+              isLoading ||
+              (selectedOrgData?.agency && !selectedChildOrg)
+            }
             className="px-8 py-3"
             size="lg"
           >
