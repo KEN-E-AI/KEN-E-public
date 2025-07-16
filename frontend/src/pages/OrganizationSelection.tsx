@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   getOrganizations,
   getOrganizationById,
+  getAccountsByOrganizationId,
   createAccount,
 } from "@/data/organizationApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,9 +53,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const [orgsFromFirestore, setOrgsFromFirestore] = useState<
     Record<string, string>
   >({});
-  const [accountsFromFirestore, setAccountsFromFirestore] = useState<
-    Record<string, string>
-  >({});
+  // Note: accountsFromFirestore removed - users now inherit account access from organization permissions
   const [loadingUserData, setLoadingUserData] = useState(true);
   const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>(
     {},
@@ -83,7 +82,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         );
         const { data } = res.data;
         setOrgsFromFirestore(data.permissions.organizations || {});
-        setAccountsFromFirestore(data.permissions.accounts || {});
+        // Note: No longer fetching account permissions - users inherit access from organization permissions
       } catch (error) {
         console.error("Failed to fetch user org/account data", error);
       } finally {
@@ -107,13 +106,17 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
           try {
             // Fetch from Neo4j as the source of truth
             const org = await getOrganizationById(orgId);
+
+            // Fetch accounts for this organization
+            const accounts = await getAccountsByOrganizationId(orgId);
+
             if (org) {
-              return [orgId, org];
+              return [orgId, { ...org, accounts }];
             } else {
               console.warn(`Organization ${orgId} not found in Neo4j`);
               return [
                 orgId,
-                { organization_id: orgId, organization_name: orgId },
+                { organization_id: orgId, organization_name: orgId, accounts },
               ];
             }
           } catch (err) {
@@ -123,7 +126,11 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
             );
             return [
               orgId,
-              { organization_id: orgId, organization_name: orgId },
+              {
+                organization_id: orgId,
+                organization_name: orgId,
+                accounts: [],
+              },
             ];
           }
         }),
@@ -160,18 +167,25 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     },
   );
 
-  const getAccountsByOrganizationId = (orgId: string) => {
+  const getAccountsByOrganizationIdFromLocal = (orgId: string) => {
     const orgAccounts: any[] = localOrgMetadata[orgId]?.accounts || [];
 
+    // Check if user has access to the organization
+    const hasOrgAccess = orgId in orgsFromFirestore;
+
+    if (!hasOrgAccess) {
+      return [];
+    }
+
+    // If user has organization access, they can see all accounts in that organization
     return orgAccounts
-      .filter((account) => account.account_id in accountsFromFirestore)
       .map((account) => ({
         account_id: account.account_id,
         account_name:
           account.account_name || account.account_id.replace(/-/g, " "),
         industry: account.industry || "Unknown",
         status: account.status || "Active",
-        permission: accountsFromFirestore[account.account_id],
+        permission: orgsFromFirestore[orgId], // Use organization permission level
       }))
       .sort((a, b) => a.account_name.localeCompare(b.account_name));
   };
@@ -311,7 +325,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
 
   // Filter accounts based on selected organization
   const availableAccounts = selectedOrganization
-    ? getAccountsByOrganizationId(selectedOrganization)
+    ? getAccountsByOrganizationIdFromLocal(selectedOrganization)
     : [];
   const handleOrganizationSelect = (orgId: string) => {
     if (orgId !== selectedOrganization) {
