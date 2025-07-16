@@ -1,6 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Settings } from "lucide-react";
 import { type AccountTemplate } from "@/data/accountTemplates";
@@ -51,9 +57,12 @@ export const WizardStep4Settings = ({
 
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-sm font-medium">Performance alerts</Label>
+                <Label className="text-sm font-medium">
+                  Performance alerts
+                </Label>
                 <p className="text-sm text-dashboard-gray-600">
-                  Get notified when performance exceeds or falls below thresholds
+                  Get notified when performance exceeds or falls below
+                  thresholds
                 </p>
               </div>
               <Checkbox

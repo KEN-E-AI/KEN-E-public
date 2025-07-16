@@ -18,7 +18,7 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     expect(screen.getByText("Create New Account")).toBeInTheDocument();
@@ -32,7 +32,7 @@ describe("AccountCreationWizard", () => {
         isOpen={false}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     expect(screen.queryByText("Create New Account")).not.toBeInTheDocument();
@@ -45,7 +45,7 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     await user.click(screen.getByText("Cancel"));
@@ -58,7 +58,7 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     const nextButton = screen.getByText("Next");
@@ -72,11 +72,14 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Fill required fields
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
 
     const nextButton = screen.getByText("Next");
@@ -90,11 +93,14 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Step 1: Fill basic info
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
@@ -110,11 +116,14 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Fill basic info and go to step 2
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
@@ -131,17 +140,20 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate to step 2
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
     // Select template
     const saasTemplate = screen.getByText("SaaS");
-    await user.click(saasTemplate.closest('.cursor-pointer')!);
+    await user.click(saasTemplate.closest(".cursor-pointer")!);
 
     // Template should be selected (visual feedback)
     expect(screen.getByText("SaaS")).toBeInTheDocument();
@@ -155,11 +167,14 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate to step 2
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
@@ -175,18 +190,21 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate to step 2
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
     // Filter by Technology category
     await user.click(screen.getByText("Technology"));
     expect(screen.getByText("SaaS")).toBeInTheDocument();
-    
+
     // Filter by Retail category
     await user.click(screen.getByText("Retail"));
     expect(screen.getByText("E-Commerce")).toBeInTheDocument();
@@ -199,17 +217,20 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate through steps
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
     // Select SaaS template
     const saasTemplate = screen.getByText("SaaS");
-    await user.click(saasTemplate.closest('.cursor-pointer')!);
+    await user.click(saasTemplate.closest(".cursor-pointer")!);
     await user.click(screen.getByText("Next"));
 
     // Step 3: Configuration
@@ -225,16 +246,19 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate to step 3
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
     const saasTemplate = screen.getByText("SaaS");
-    await user.click(saasTemplate.closest('.cursor-pointer')!);
+    await user.click(saasTemplate.closest(".cursor-pointer")!);
     await user.click(screen.getByText("Next"));
 
     // Uncheck all objectives and channels
@@ -257,16 +281,19 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate to final step
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
     const saasTemplate = screen.getByText("SaaS");
-    await user.click(saasTemplate.closest('.cursor-pointer')!);
+    await user.click(saasTemplate.closest(".cursor-pointer")!);
     await user.click(screen.getByText("Next"));
     await user.click(screen.getByText("Next"));
 
@@ -283,16 +310,19 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Navigate through all steps
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 
     const saasTemplate = screen.getByText("SaaS");
-    await user.click(saasTemplate.closest('.cursor-pointer')!);
+    await user.click(saasTemplate.closest(".cursor-pointer")!);
     await user.click(screen.getByText("Next"));
     await user.click(screen.getByText("Next"));
 
@@ -304,7 +334,7 @@ describe("AccountCreationWizard", () => {
         account_name: "Test Account",
         industry: "Technology",
         template_id: "saas",
-      })
+      }),
     );
   });
 
@@ -315,14 +345,17 @@ describe("AccountCreationWizard", () => {
         isOpen={true}
         onClose={mockOnClose}
         onComplete={mockOnComplete}
-      />
+      />,
     );
 
     // Check initial progress
     expect(screen.getByText("Step 1 of 4")).toBeInTheDocument();
 
     // Navigate to step 2
-    await user.type(screen.getByPlaceholderText("e.g., Q1 2024 Campaign"), "Test Account");
+    await user.type(
+      screen.getByPlaceholderText("e.g., Q1 2024 Campaign"),
+      "Test Account",
+    );
     await user.click(screen.getByText("Technology"));
     await user.click(screen.getByText("Next"));
 

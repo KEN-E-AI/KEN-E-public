@@ -6,39 +6,33 @@ export const accountProfileSchema = z.object({
     .string()
     .min(1, "Account name is required")
     .max(100, "Account name must be less than 100 characters")
-    .regex(/^[a-zA-Z0-9\s\-_]+$/, "Account name can only contain letters, numbers, spaces, hyphens, and underscores"),
-  
-  industry: z
-    .string()
-    .min(1, "Industry is required"),
-  
-  status: z
-    .enum(["Active", "Inactive", "Setup", "Paused"])
-    .default("Active"),
-  
-  timezone: z
-    .string()
-    .optional(),
-  
+    .regex(
+      /^[a-zA-Z0-9\s\-_]+$/,
+      "Account name can only contain letters, numbers, spaces, hyphens, and underscores",
+    ),
+
+  industry: z.string().min(1, "Industry is required"),
+
+  status: z.enum(["Active", "Inactive", "Setup", "Paused"]).default("Active"),
+
+  timezone: z.string().optional(),
+
   description: z
     .string()
     .max(500, "Description must be less than 500 characters")
     .optional(),
-  
-  website: z
-    .string()
-    .url("Invalid website URL")
-    .optional()
-    .or(z.literal("")),
-  
+
+  website: z.union([
+    z.string().url("Invalid website URL"),
+    z.literal("")
+  ]).optional(),
+
   location: z
     .string()
     .max(100, "Location must be less than 100 characters")
     .optional(),
-  
-  template_id: z
-    .string()
-    .optional(),
+
+  template_id: z.string().optional(),
 });
 
 // Validation schema for marketing objectives
@@ -48,19 +42,15 @@ export const marketingObjectiveSchema = z.object({
     .string()
     .min(1, "Objective name is required")
     .max(100, "Objective name must be less than 100 characters"),
-  
+
   description: z
     .string()
     .max(500, "Description must be less than 500 characters")
     .optional(),
-  
-  priority: z
-    .enum(["high", "medium", "low"])
-    .default("medium"),
-  
-  status: z
-    .enum(["active", "paused", "completed"])
-    .default("active"),
+
+  priority: z.enum(["high", "medium", "low"]).default("medium"),
+
+  status: z.enum(["active", "paused", "completed"]).default("active"),
 });
 
 // Validation schema for marketing channels
@@ -70,19 +60,15 @@ export const marketingChannelSchema = z.object({
     .string()
     .min(1, "Channel name is required")
     .max(100, "Channel name must be less than 100 characters"),
-  
+
   budget: z
     .number()
     .min(0, "Budget must be non-negative")
     .max(10000000, "Budget must be less than $10,000,000"),
-  
-  status: z
-    .enum(["active", "paused"])
-    .default("active"),
-  
-  tactics: z
-    .array(z.string())
-    .default([]),
+
+  status: z.enum(["active", "paused"]).default("active"),
+
+  tactics: z.array(z.string()).default([]),
 });
 
 // Validation schema for marketing settings
@@ -90,22 +76,20 @@ export const marketingSettingsSchema = z.object({
   objectives: z
     .array(marketingObjectiveSchema)
     .min(1, "At least one objective is required"),
-  
+
   channels: z
     .array(marketingChannelSchema)
     .min(1, "At least one channel is required"),
-  
+
   budget: z.object({
     total: z
       .number()
       .min(0, "Total budget must be non-negative")
       .max(100000000, "Total budget must be less than $100,000,000"),
-    
-    period: z
-      .enum(["monthly", "quarterly", "yearly"])
-      .default("monthly"),
+
+    period: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
   }),
-  
+
   settings: z.object({
     auto_optimization: z.boolean().default(true),
     performance_alerts: z.boolean().default(true),
@@ -119,51 +103,38 @@ export const accountCreationSchema = z.object({
     .string()
     .min(1, "Account name is required")
     .max(100, "Account name must be less than 100 characters"),
-  
+
   description: z
     .string()
     .max(500, "Description must be less than 500 characters")
     .optional(),
-  
-  industry: z
-    .string()
-    .min(1, "Industry is required"),
-  
+
+  industry: z.string().min(1, "Industry is required"),
+
   location: z
     .string()
     .max(100, "Location must be less than 100 characters")
     .optional(),
-  
-  website: z
-    .string()
-    .url("Invalid website URL")
-    .optional()
-    .or(z.literal("")),
-  
-  template_id: z
-    .string()
-    .min(1, "Template selection is required"),
-  
-  objectives: z
-    .array(z.string())
-    .min(1, "At least one objective is required"),
-  
-  channels: z
-    .array(z.string())
-    .min(1, "At least one channel is required"),
-  
-  kpis: z
-    .array(z.string())
-    .min(1, "At least one KPI is required"),
-  
-  timezone: z
-    .string()
-    .min(1, "Timezone is required"),
-  
+
+  website: z.union([
+    z.string().url("Invalid website URL"),
+    z.literal("")
+  ]).optional(),
+
+  template_id: z.string().min(1, "Template selection is required"),
+
+  objectives: z.array(z.string()).min(1, "At least one objective is required"),
+
+  channels: z.array(z.string()).min(1, "At least one channel is required"),
+
+  kpis: z.array(z.string()).min(1, "At least one KPI is required"),
+
+  timezone: z.string().min(1, "Timezone is required"),
+
   auto_sync: z.boolean().default(true),
   performance_alerts: z.boolean().default(true),
   budget_alerts: z.boolean().default(true),
-  
+
   data_retention: z
     .number()
     .min(30, "Data retention must be at least 30 days")
@@ -177,33 +148,22 @@ export const kpiSchema = z.object({
     .string()
     .min(1, "KPI name is required")
     .max(100, "KPI name must be less than 100 characters"),
-  
+
   description: z
     .string()
     .max(500, "Description must be less than 500 characters")
     .optional(),
-  
-  target: z
-    .number()
-    .min(0, "Target must be non-negative"),
-  
-  current: z
-    .number()
-    .min(0, "Current value must be non-negative"),
-  
-  unit: z
-    .string()
-    .max(20, "Unit must be less than 20 characters")
-    .optional(),
-  
-  trend: z
-    .enum(["up", "down", "stable"])
-    .default("stable"),
-  
-  frequency: z
-    .enum(["daily", "weekly", "monthly"])
-    .default("monthly"),
-  
+
+  target: z.number().min(0, "Target must be non-negative"),
+
+  current: z.number().min(0, "Current value must be non-negative"),
+
+  unit: z.string().max(20, "Unit must be less than 20 characters").optional(),
+
+  trend: z.enum(["up", "down", "stable"]).default("stable"),
+
+  frequency: z.enum(["daily", "weekly", "monthly"]).default("monthly"),
+
   alerts: z.object({
     threshold: z.number().min(0, "Threshold must be non-negative"),
     type: z.enum(["above", "below"]).default("below"),
@@ -232,8 +192,8 @@ export const validateAccountProfile = (data: unknown) => {
       return {
         success: false,
         data: null,
-        errors: error.errors.map(err => ({
-          field: err.path.join('.'),
+        errors: error.errors.map((err) => ({
+          field: err.path.join("."),
           message: err.message,
         })),
       };
@@ -241,7 +201,7 @@ export const validateAccountProfile = (data: unknown) => {
     return {
       success: false,
       data: null,
-      errors: [{ field: 'unknown', message: 'Validation failed' }],
+      errors: [{ field: "unknown", message: "Validation failed" }],
     };
   }
 };
@@ -258,8 +218,8 @@ export const validateMarketingSettings = (data: unknown) => {
       return {
         success: false,
         data: null,
-        errors: error.errors.map(err => ({
-          field: err.path.join('.'),
+        errors: error.errors.map((err) => ({
+          field: err.path.join("."),
           message: err.message,
         })),
       };
@@ -267,7 +227,7 @@ export const validateMarketingSettings = (data: unknown) => {
     return {
       success: false,
       data: null,
-      errors: [{ field: 'unknown', message: 'Validation failed' }],
+      errors: [{ field: "unknown", message: "Validation failed" }],
     };
   }
 };
@@ -284,8 +244,8 @@ export const validateAccountCreation = (data: unknown) => {
       return {
         success: false,
         data: null,
-        errors: error.errors.map(err => ({
-          field: err.path.join('.'),
+        errors: error.errors.map((err) => ({
+          field: err.path.join("."),
           message: err.message,
         })),
       };
@@ -293,7 +253,7 @@ export const validateAccountCreation = (data: unknown) => {
     return {
       success: false,
       data: null,
-      errors: [{ field: 'unknown', message: 'Validation failed' }],
+      errors: [{ field: "unknown", message: "Validation failed" }],
     };
   }
 };

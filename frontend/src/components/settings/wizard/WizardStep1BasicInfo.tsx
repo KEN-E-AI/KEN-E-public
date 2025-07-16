@@ -2,7 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Building2 } from "lucide-react";
 import { AccountCreationData } from "../AccountCreationWizard";
 
@@ -11,7 +17,10 @@ interface WizardStep1BasicInfoProps {
   setFormData: (data: AccountCreationData) => void;
 }
 
-export const WizardStep1BasicInfo = ({ formData, setFormData }: WizardStep1BasicInfoProps) => {
+export const WizardStep1BasicInfo = ({
+  formData,
+  setFormData,
+}: WizardStep1BasicInfoProps) => {
   return (
     <Card>
       <CardHeader>
@@ -73,7 +82,9 @@ export const WizardStep1BasicInfo = ({ formData, setFormData }: WizardStep1Basic
                 <SelectItem value="Education">Education</SelectItem>
                 <SelectItem value="Retail">Retail</SelectItem>
                 <SelectItem value="Manufacturing">Manufacturing</SelectItem>
-                <SelectItem value="Professional Services">Professional Services</SelectItem>
+                <SelectItem value="Professional Services">
+                  Professional Services
+                </SelectItem>
                 <SelectItem value="Non-Profit">Non-Profit</SelectItem>
                 <SelectItem value="Other">Other</SelectItem>
               </SelectContent>

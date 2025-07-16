@@ -57,7 +57,9 @@ export const AccountCreationWizard = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<Array<{field: string; message: string}>>([]);
+  const [validationErrors, setValidationErrors] = useState<
+    Array<{ field: string; message: string }>
+  >([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [formData, setFormData] = useState<AccountCreationData>({
     account_name: "",
@@ -115,7 +117,7 @@ export const AccountCreationWizard = ({
     try {
       // Validate all form data before submission
       const validation = validateAccountCreation(formData);
-      
+
       if (!validation.success) {
         setValidationErrors(validation.errors || []);
         setIsSubmitting(false);
@@ -126,7 +128,9 @@ export const AccountCreationWizard = ({
       await onComplete(validation.data);
       onClose();
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "An unexpected error occurred");
+      setSubmitError(
+        error instanceof Error ? error.message : "An unexpected error occurred",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -154,108 +158,115 @@ export const AccountCreationWizard = ({
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
           <div className="p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-dashboard-gray-900">
-                Create New Account
-              </h2>
-              <p className="text-dashboard-gray-600 mt-1">
-                Step {currentStep} of {totalSteps}
-              </p>
-            </div>
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="mb-8">
-            <Progress value={progress} className="w-full" />
-            <div className="flex justify-between mt-2 text-sm text-dashboard-gray-600">
-              <span className={currentStep >= 1 ? "text-blue-600" : ""}>
-                Basic Info
-              </span>
-              <span className={currentStep >= 2 ? "text-blue-600" : ""}>
-                Template
-              </span>
-              <span className={currentStep >= 3 ? "text-blue-600" : ""}>
-                Configuration
-              </span>
-              <span className={currentStep >= 4 ? "text-blue-600" : ""}>
-                Settings
-              </span>
-            </div>
-          </div>
-
-          {/* Step Content */}
-          <div className="min-h-[400px]">
-            {currentStep === 1 && (
-              <WizardStep1BasicInfo
-                formData={formData}
-                setFormData={setFormData}
-              />
-            )}
-
-            {currentStep === 2 && (
-              <WizardStep2TemplateSelection
-                formData={formData}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                onTemplateSelect={handleTemplateSelect}
-              />
-            )}
-
-            {currentStep === 3 && selectedTemplate && (
-              <WizardStep3Configuration
-                formData={formData}
-                setFormData={setFormData}
-                selectedTemplate={selectedTemplate}
-              />
-            )}
-
-            {currentStep === 4 && (
-              <WizardStep4Settings
-                formData={formData}
-                setFormData={setFormData}
-                selectedTemplate={selectedTemplate}
-              />
-            )}
-          </div>
-
-          {/* Error Display */}
-          {(submitError || validationErrors.length > 0) && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                {submitError || "Please fix the validation errors before continuing."}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Navigation */}
-          <div className="flex justify-between mt-8">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentStep === 1 || isSubmitting}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Previous
-            </Button>
-
-            {currentStep < totalSteps ? (
-              <Button onClick={handleNext} disabled={!canProceed() || isSubmitting}>
-                Next
-                <ArrowRight className="h-4 w-4 ml-2" />
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-dashboard-gray-900">
+                  Create New Account
+                </h2>
+                <p className="text-dashboard-gray-600 mt-1">
+                  Step {currentStep} of {totalSteps}
+                </p>
+              </div>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
               </Button>
-            ) : (
-              <Button onClick={handleComplete} disabled={!canProceed() || isSubmitting}>
-                <CheckCircle className="h-4 w-4 mr-2" />
-                {isSubmitting ? "Creating Account..." : "Create Account"}
-              </Button>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="mb-8">
+              <Progress value={progress} className="w-full" />
+              <div className="flex justify-between mt-2 text-sm text-dashboard-gray-600">
+                <span className={currentStep >= 1 ? "text-blue-600" : ""}>
+                  Basic Info
+                </span>
+                <span className={currentStep >= 2 ? "text-blue-600" : ""}>
+                  Template
+                </span>
+                <span className={currentStep >= 3 ? "text-blue-600" : ""}>
+                  Configuration
+                </span>
+                <span className={currentStep >= 4 ? "text-blue-600" : ""}>
+                  Settings
+                </span>
+              </div>
+            </div>
+
+            {/* Step Content */}
+            <div className="min-h-[400px]">
+              {currentStep === 1 && (
+                <WizardStep1BasicInfo
+                  formData={formData}
+                  setFormData={setFormData}
+                />
+              )}
+
+              {currentStep === 2 && (
+                <WizardStep2TemplateSelection
+                  formData={formData}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  onTemplateSelect={handleTemplateSelect}
+                />
+              )}
+
+              {currentStep === 3 && selectedTemplate && (
+                <WizardStep3Configuration
+                  formData={formData}
+                  setFormData={setFormData}
+                  selectedTemplate={selectedTemplate}
+                />
+              )}
+
+              {currentStep === 4 && (
+                <WizardStep4Settings
+                  formData={formData}
+                  setFormData={setFormData}
+                  selectedTemplate={selectedTemplate}
+                />
+              )}
+            </div>
+
+            {/* Error Display */}
+            {(submitError || validationErrors.length > 0) && (
+              <Alert variant="destructive" className="mt-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  {submitError ||
+                    "Please fix the validation errors before continuing."}
+                </AlertDescription>
+              </Alert>
             )}
-          </div>
+
+            {/* Navigation */}
+            <div className="flex justify-between mt-8">
+              <Button
+                variant="outline"
+                onClick={handlePrevious}
+                disabled={currentStep === 1 || isSubmitting}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Previous
+              </Button>
+
+              {currentStep < totalSteps ? (
+                <Button
+                  onClick={handleNext}
+                  disabled={!canProceed() || isSubmitting}
+                >
+                  Next
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleComplete}
+                  disabled={!canProceed() || isSubmitting}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  {isSubmitting ? "Creating Account..." : "Create Account"}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

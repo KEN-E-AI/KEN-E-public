@@ -27,12 +27,12 @@ describe("Account Templates", () => {
       expect(template).toHaveProperty("defaultChannels");
       expect(template).toHaveProperty("defaultKPIs");
       expect(template).toHaveProperty("recommendedSettings");
-      
+
       // Check that arrays are not empty
       expect(template.defaultObjectives.length).toBeGreaterThan(0);
       expect(template.defaultChannels.length).toBeGreaterThan(0);
       expect(template.defaultKPIs.length).toBeGreaterThan(0);
-      
+
       // Check recommendedSettings structure
       expect(template.recommendedSettings).toHaveProperty("timezone");
       expect(template.recommendedSettings).toHaveProperty("data_region");
@@ -57,7 +57,7 @@ describe("Account Templates", () => {
   test("getTemplatesByCategory filters templates by category", () => {
     const technologyTemplates = getTemplatesByCategory("Technology");
     expect(technologyTemplates.length).toBeGreaterThan(0);
-    
+
     technologyTemplates.forEach((template) => {
       expect(template.category).toBe("Technology");
     });
@@ -85,8 +85,12 @@ describe("Account Templates", () => {
     const ecommerceTemplate = ACCOUNT_TEMPLATES["e-commerce"];
     expect(ecommerceTemplate.name).toBe("E-Commerce");
     expect(ecommerceTemplate.category).toBe("Retail");
-    expect(ecommerceTemplate.defaultObjectives).toContain("Drive website traffic");
-    expect(ecommerceTemplate.defaultChannels).toContain("Search Engine Marketing");
+    expect(ecommerceTemplate.defaultObjectives).toContain(
+      "Drive website traffic",
+    );
+    expect(ecommerceTemplate.defaultChannels).toContain(
+      "Search Engine Marketing",
+    );
     expect(ecommerceTemplate.defaultKPIs).toContain("Conversion Rate");
     expect(ecommerceTemplate.recommendedSettings.industry).toBe("Retail");
   });
@@ -95,7 +99,9 @@ describe("Account Templates", () => {
     const saasTemplate = ACCOUNT_TEMPLATES["saas"];
     expect(saasTemplate.name).toBe("SaaS");
     expect(saasTemplate.category).toBe("Technology");
-    expect(saasTemplate.defaultObjectives).toContain("Generate qualified leads");
+    expect(saasTemplate.defaultObjectives).toContain(
+      "Generate qualified leads",
+    );
     expect(saasTemplate.defaultChannels).toContain("Content Marketing");
     expect(saasTemplate.defaultKPIs).toContain("Monthly Recurring Revenue");
     expect(saasTemplate.recommendedSettings.industry).toBe("Software");
@@ -105,10 +111,16 @@ describe("Account Templates", () => {
     const healthcareTemplate = ACCOUNT_TEMPLATES["healthcare"];
     expect(healthcareTemplate.name).toBe("Healthcare");
     expect(healthcareTemplate.category).toBe("Healthcare");
-    expect(healthcareTemplate.defaultObjectives).toContain("Attract new patients");
+    expect(healthcareTemplate.defaultObjectives).toContain(
+      "Attract new patients",
+    );
     expect(healthcareTemplate.defaultChannels).toContain("Local Advertising");
-    expect(healthcareTemplate.defaultKPIs).toContain("Patient Acquisition Cost");
-    expect(healthcareTemplate.recommendedSettings.industry).toBe("Healthcare Services");
+    expect(healthcareTemplate.defaultKPIs).toContain(
+      "Patient Acquisition Cost",
+    );
+    expect(healthcareTemplate.recommendedSettings.industry).toBe(
+      "Healthcare Services",
+    );
   });
 
   test("all templates have unique ids", () => {
@@ -120,7 +132,7 @@ describe("Account Templates", () => {
   test("all templates have valid timezones", () => {
     const validTimezones = [
       "America/New_York",
-      "America/Chicago", 
+      "America/Chicago",
       "America/Denver",
       "America/Los_Angeles",
       "America/Detroit",
@@ -137,12 +149,12 @@ describe("Account Templates", () => {
 
   test("template categories match template assignments", () => {
     const categoriesFromTemplates = new Set(
-      Object.values(ACCOUNT_TEMPLATES).map(t => t.category)
+      Object.values(ACCOUNT_TEMPLATES).map((t) => t.category),
     );
-    
+
     // All categories except "All" should be present in templates
-    const expectedCategories = TEMPLATE_CATEGORIES.filter(c => c !== "All");
-    expectedCategories.forEach(category => {
+    const expectedCategories = TEMPLATE_CATEGORIES.filter((c) => c !== "All");
+    expectedCategories.forEach((category) => {
       expect(categoriesFromTemplates).toContain(category);
     });
   });
@@ -151,10 +163,10 @@ describe("Account Templates", () => {
     Object.values(ACCOUNT_TEMPLATES).forEach((template) => {
       expect(template.defaultObjectives.length).toBeGreaterThanOrEqual(3);
       expect(template.defaultObjectives.length).toBeLessThanOrEqual(6);
-      
+
       expect(template.defaultChannels.length).toBeGreaterThanOrEqual(3);
       expect(template.defaultChannels.length).toBeLessThanOrEqual(8);
-      
+
       expect(template.defaultKPIs.length).toBeGreaterThanOrEqual(3);
       expect(template.defaultKPIs.length).toBeLessThanOrEqual(8);
     });

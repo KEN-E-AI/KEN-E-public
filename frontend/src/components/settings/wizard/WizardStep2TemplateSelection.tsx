@@ -2,7 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, CheckCircle } from "lucide-react";
-import { TEMPLATE_CATEGORIES, getTemplatesByCategory, type AccountTemplate } from "@/data/accountTemplates";
+import {
+  TEMPLATE_CATEGORIES,
+  getTemplatesByCategory,
+  type AccountTemplate,
+} from "@/data/accountTemplates";
 import { AccountCreationData } from "../AccountCreationWizard";
 
 interface WizardStep2TemplateSelectionProps {

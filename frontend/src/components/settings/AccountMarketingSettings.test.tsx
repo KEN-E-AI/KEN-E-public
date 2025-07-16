@@ -53,7 +53,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     expect(screen.getByText("Brand Awareness")).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     expect(screen.getByText("Social Media")).toBeInTheDocument();
@@ -82,7 +82,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     const editButton = screen.getByText("Edit Marketing Settings");
@@ -99,7 +99,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     // Enter edit mode
@@ -120,7 +120,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     // Enter edit mode
@@ -128,8 +128,8 @@ describe("AccountMarketingSettings", () => {
 
     // Find and click remove button (X button)
     const removeButtons = screen.getAllByRole("button");
-    const removeButton = removeButtons.find(btn => btn.querySelector('svg'));
-    
+    const removeButton = removeButtons.find((btn) => btn.querySelector("svg"));
+
     if (removeButton) {
       await user.click(removeButton);
     }
@@ -145,7 +145,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     // Enter edit mode
@@ -167,7 +167,7 @@ describe("AccountMarketingSettings", () => {
               name: "Updated Awareness",
             }),
           ]),
-        })
+        }),
       );
     });
   });
@@ -179,7 +179,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     // Enter edit mode
@@ -199,7 +199,7 @@ describe("AccountMarketingSettings", () => {
           budget: expect.objectContaining({
             total: 15000,
           }),
-        })
+        }),
       );
     });
   });
@@ -211,7 +211,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     // Enter edit mode
@@ -231,7 +231,7 @@ describe("AccountMarketingSettings", () => {
           settings: expect.objectContaining({
             auto_optimization: false, // Should be toggled
           }),
-        })
+        }),
       );
     });
   });
@@ -243,7 +243,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     // Enter edit mode
@@ -269,7 +269,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={mockMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     expect(screen.getByText("high")).toBeInTheDocument();
@@ -294,7 +294,7 @@ describe("AccountMarketingSettings", () => {
         accountId="test-account"
         marketingData={emptyMarketingData}
         onUpdate={mockOnUpdate}
-      />
+      />,
     );
 
     expect(screen.getByText("Marketing Objectives")).toBeInTheDocument();
