@@ -119,9 +119,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         email: signUpData.email,
         isValidFormat: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signUpData.email),
         trimmedEmail: signUpData.email.trim(),
-        length: signUpData.email.length
+        length: signUpData.email.length,
       });
-      
+
       const result = await createUserWithEmailAndPassword(
         auth,
         signUpData.email.trim(),

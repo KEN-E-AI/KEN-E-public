@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { getOrganizations, getOrganizationById, createAccount } from "@/data/organizationApi";
+import {
+  getOrganizations,
+  getOrganizationById,
+  createAccount,
+} from "@/data/organizationApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,11 +109,20 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
               return [orgId, org];
             } else {
               console.warn(`Organization ${orgId} not found in Neo4j`);
-              return [orgId, { organization_id: orgId, organization_name: orgId }];
+              return [
+                orgId,
+                { organization_id: orgId, organization_name: orgId },
+              ];
             }
           } catch (err) {
-            console.error(`Failed to load org metadata for ${orgId} from Neo4j`, err);
-            return [orgId, { organization_id: orgId, organization_name: orgId }];
+            console.error(
+              `Failed to load org metadata for ${orgId} from Neo4j`,
+              err,
+            );
+            return [
+              orgId,
+              { organization_id: orgId, organization_name: orgId },
+            ];
           }
         }),
       );
@@ -211,15 +224,20 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
 
       setShowCreateAccount(false);
       setNewAccountData({ name: "", type: "", description: "" });
-      
+
       // Set the newly created account as selected
       setSelectedAccount(newAccountId);
-      
+
       // Alert user of successful creation
-      alert(`Account "${newAccount.account_name}" created successfully! Click Continue to proceed to account settings.`);
+      alert(
+        `Account "${newAccount.account_name}" created successfully! Click Continue to proceed to account settings.`,
+      );
     } catch (err: any) {
       console.error("Failed to create account", err);
-      const errorMessage = err.response?.data?.detail || err.message || "Error creating account. Please try again.";
+      const errorMessage =
+        err.response?.data?.detail ||
+        err.message ||
+        "Error creating account. Please try again.";
       alert(errorMessage);
     } finally {
       setIsLoading(false);

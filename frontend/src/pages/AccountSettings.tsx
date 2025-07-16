@@ -176,7 +176,9 @@ const AccountSettings = () => {
       });
 
       // Redirect to organization selection page so user can create an account
-      alert(`Organization "${newOrg.organization_name}" created successfully! Please create an account.`);
+      alert(
+        `Organization "${newOrg.organization_name}" created successfully! Please create an account.`,
+      );
       navigate("/organization-selection");
     } catch (error) {
       console.error("Error creating organization:", error);

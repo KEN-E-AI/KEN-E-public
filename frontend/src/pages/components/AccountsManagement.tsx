@@ -2,7 +2,10 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
-import { createAccount, getAccountsByOrganizationId } from "@/data/organizationApi";
+import {
+  createAccount,
+  getAccountsByOrganizationId,
+} from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,7 +136,9 @@ const AccountsManagement = ({
   const [isEditRegionPopoverOpen, setIsEditRegionPopoverOpen] = useState(false);
   const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
     useState(false);
-  const [organizationAccounts, setOrganizationAccounts] = useState<Account[]>([]);
+  const [organizationAccounts, setOrganizationAccounts] = useState<Account[]>(
+    [],
+  );
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
 
   // Refs for click-outside handling
@@ -187,18 +192,21 @@ const AccountsManagement = ({
   useEffect(() => {
     const loadAccounts = async () => {
       if (!currentOrgId) return;
-      
+
       setIsLoadingAccounts(true);
       try {
-        console.log("[AccountsManagement] Fetching accounts for org:", currentOrgId);
+        console.log(
+          "[AccountsManagement] Fetching accounts for org:",
+          currentOrgId,
+        );
         const accounts = await getAccountsByOrganizationId(currentOrgId);
         console.log("[AccountsManagement] Fetched accounts:", accounts);
-        
+
         // Filter accounts based on user permissions
         const permittedAccounts = accounts.filter(
-          (account) => user?.permissions?.accounts?.[account.account_id]
+          (account) => user?.permissions?.accounts?.[account.account_id],
         );
-        
+
         setOrganizationAccounts(permittedAccounts);
       } catch (error) {
         console.error("[AccountsManagement] Error loading accounts:", error);
@@ -207,7 +215,7 @@ const AccountsManagement = ({
         setIsLoadingAccounts(false);
       }
     };
-    
+
     loadAccounts();
   }, [currentOrgId, user?.permissions?.accounts]);
 
@@ -304,12 +312,12 @@ const AccountsManagement = ({
     console.log("[AccountsManagement] handleCreateAccount called");
     console.log("[AccountsManagement] Current org ID:", currentOrgId);
     console.log("[AccountsManagement] Form data:", createAccountFormData);
-    
+
     if (!currentOrgId) {
       alert("No organization selected. Please select an organization first.");
       return;
     }
-    
+
     if (
       !createAccountFormData.account_name ||
       !createAccountFormData.industry
@@ -342,7 +350,10 @@ const AccountsManagement = ({
         region: createAccountFormData.region,
       });
 
-      console.log("[AccountsManagement] Account created successfully:", newAccount);
+      console.log(
+        "[AccountsManagement] Account created successfully:",
+        newAccount,
+      );
       const newAccountId = newAccount.account_id;
 
       // Get user's permission level for the organization to apply same level to new account
@@ -350,39 +361,51 @@ const AccountsManagement = ({
       console.log("[AccountsManagement] User permissions:", user?.permissions);
       const userOrgPermission =
         user?.permissions?.organizations?.[currentOrgId] || "view";
-      console.log("[AccountsManagement] User org permission:", userOrgPermission);
+      console.log(
+        "[AccountsManagement] User org permission:",
+        userOrgPermission,
+      );
 
       // Add the new account to user's permissions with same level as organization
       console.log("[AccountsManagement] Updating Firestore permissions...");
-      
+
       let firestoreUpdateFailed = false;
-      
+
       // Skip Firestore update if no user ID
       if (!user?.id) {
-        console.warn("[AccountsManagement] No user ID, skipping Firestore permission update");
+        console.warn(
+          "[AccountsManagement] No user ID, skipping Firestore permission update",
+        );
         firestoreUpdateFailed = true;
       } else {
         const firestoreUrl = `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}?account_id=${user.id}`;
         console.log("[AccountsManagement] Firestore URL:", firestoreUrl);
-        
+
         try {
-          await axios.put(
-            firestoreUrl,
-            {
-              update: {
-                // This is a nested field path for dot-notation update
-                field: `permissions.accounts.${newAccountId}`,
-                operator: "set",
-                value: userOrgPermission,
-              },
+          await axios.put(firestoreUrl, {
+            update: {
+              // This is a nested field path for dot-notation update
+              field: `permissions.accounts.${newAccountId}`,
+              operator: "set",
+              value: userOrgPermission,
             },
+          });
+          console.log(
+            "[AccountsManagement] Firestore permissions updated successfully",
           );
-          console.log("[AccountsManagement] Firestore permissions updated successfully");
         } catch (firestoreError: any) {
-          console.error("[AccountsManagement] Firestore update error:", firestoreError);
-          console.error("[AccountsManagement] Firestore error response:", firestoreError.response?.data);
+          console.error(
+            "[AccountsManagement] Firestore update error:",
+            firestoreError,
+          );
+          console.error(
+            "[AccountsManagement] Firestore error response:",
+            firestoreError.response?.data,
+          );
           // Continue even if Firestore update fails - account was created in Neo4j
-          console.warn("[AccountsManagement] Continuing despite Firestore error - account was created in Neo4j");
+          console.warn(
+            "[AccountsManagement] Continuing despite Firestore error - account was created in Neo4j",
+          );
           firestoreUpdateFailed = true;
         }
       }
@@ -414,17 +437,21 @@ const AccountsManagement = ({
       }));
 
       // Refresh the accounts list from Neo4j
-      console.log("[AccountsManagement] Refreshing accounts list after creation");
+      console.log(
+        "[AccountsManagement] Refreshing accounts list after creation",
+      );
       const updatedAccounts = await getAccountsByOrganizationId(currentOrgId);
-      
+
       // Since we might not have updated Firestore permissions, show all accounts for now
       // In production, you'd want to handle this more gracefully
       if (firestoreUpdateFailed) {
-        console.log("[AccountsManagement] Showing all accounts due to Firestore error");
+        console.log(
+          "[AccountsManagement] Showing all accounts due to Firestore error",
+        );
         setOrganizationAccounts(updatedAccounts);
       } else {
         const permittedAccounts = updatedAccounts.filter(
-          (account) => user?.permissions?.accounts?.[account.account_id]
+          (account) => user?.permissions?.accounts?.[account.account_id],
         );
         setOrganizationAccounts(permittedAccounts);
       }
@@ -441,8 +468,10 @@ const AccountsManagement = ({
       });
 
       // Set the newly created account as selected in auth context
-      console.log("[AccountsManagement] Setting selected account and redirecting...");
-      
+      console.log(
+        "[AccountsManagement] Setting selected account and redirecting...",
+      );
+
       // Update auth context with the new selected account
       const selectedOrgAccount = {
         orgId: currentOrgId,
@@ -456,10 +485,10 @@ const AccountsManagement = ({
           plan: orgData.plan,
         },
       };
-      
+
       // Set the selected account in auth context
       setSelectedOrgAccount(selectedOrgAccount);
-      
+
       // Redirect to account settings page
       navigate("/account-settings");
     } catch (error: any) {
@@ -467,11 +496,14 @@ const AccountsManagement = ({
       console.error("[AccountsManagement] Error details:", {
         message: error.message,
         response: error.response,
-        stack: error.stack
+        stack: error.stack,
       });
-      
+
       // Show more detailed error message
-      const errorMessage = error.response?.data?.detail || error.message || "Failed to create account";
+      const errorMessage =
+        error.response?.data?.detail ||
+        error.message ||
+        "Failed to create account";
       alert(`Error: ${errorMessage}`);
     }
   };

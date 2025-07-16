@@ -12,7 +12,7 @@ const API_BASE_URL =
 async function apiCall<T>(path: string, options: RequestInit = {}): Promise<T> {
   console.log(`[organizationApi] Making API call to: ${API_BASE_URL}${path}`);
   console.log(`[organizationApi] Options:`, options);
-  
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -136,7 +136,7 @@ export async function createAccount(accountData: {
 }): Promise<Account> {
   console.log("[organizationApi] Creating account with data:", accountData);
   console.log("[organizationApi] API URL:", `${API_BASE_URL}/api/v1/accounts/`);
-  
+
   return apiCall<Account>("/api/v1/accounts/", {
     method: "POST",
     body: JSON.stringify(accountData),

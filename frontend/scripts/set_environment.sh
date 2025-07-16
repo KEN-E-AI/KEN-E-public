@@ -1,15 +1,10 @@
 #!/bin/bash
 
-# Script to switch between different Neo4j environments
+# Script to switch between different frontend environments
 
 if [ $# -eq 0 ]; then
     echo "Usage: ./set_environment.sh [development|staging|production]"
-    if [ -f .env ]; then
-        current_env=$(grep ENVIRONMENT .env 2>/dev/null | cut -d'=' -f2)
-        echo "Current environment: ${current_env:-'not set'}"
-    else
-        echo "Current environment: not set"
-    fi
+    echo "Current environment: $([ -f .env.local ] && grep VITE_ENVIRONMENT .env.local | cut -d'=' -f2 || echo 'not set')"
     exit 1
 fi
 
@@ -21,30 +16,30 @@ case $ENV in
             echo "❌ ERROR: .env.development file not found"
             exit 1
         fi
-        cp .env.development .env
+        cp .env.development .env.local
         echo "✅ Switched to DEVELOPMENT environment"
-        echo "   Neo4j: Development Aura instance"
-        echo "   Debug: Enabled"
+        echo "   API: http://localhost:8000"
+        echo "   Firebase: ken-e-dev"
         ;;
     staging|stage)
         if [ ! -f .env.staging ]; then
             echo "❌ ERROR: .env.staging file not found"
             exit 1
         fi
-        cp .env.staging .env
+        cp .env.staging .env.local
         echo "✅ Switched to STAGING environment"
-        echo "   Neo4j: Staging Aura instance"
-        echo "   Debug: Disabled"
+        echo "   API: http://localhost:8000"
+        echo "   Firebase: ken-e-staging"
         ;;
     production|prod)
         if [ ! -f .env.production ]; then
             echo "❌ ERROR: .env.production file not found"
             exit 1
         fi
-        cp .env.production .env
+        cp .env.production .env.local
         echo "⚠️  Switched to PRODUCTION environment"
-        echo "   Neo4j: Production Aura instance"
-        echo "   Debug: Disabled"
+        echo "   API: https://api.ken-e.ai"
+        echo "   Firebase: ken-e-production"
         echo "   WARNING: You are now connected to PRODUCTION!"
         ;;
     *)
@@ -54,6 +49,6 @@ case $ENV in
         ;;
 esac
 
-# Show current Neo4j URI and Google Cloud Project
-echo "   Neo4j URI: $(grep NEO4J_URI .env | cut -d'=' -f2)"
-echo "   GCP Project: $(grep GOOGLE_CLOUD_PROJECT_ID .env | cut -d'=' -f2)"
+# Show current API URL and Firebase project
+echo "   API URL: $(grep VITE_API_BASE_URL .env.local | cut -d'=' -f2)"
+echo "   Firebase Project: $(grep VITE_FIREBASE_PROJECT_ID .env.local | cut -d'=' -f2)"
