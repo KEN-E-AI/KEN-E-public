@@ -32,6 +32,7 @@ steps:
       - "CRON_SCHEDULE=${_PIPELINE_CRON_SCHEDULE}"
       - "DISABLE_CACHING=TRUE"
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
   - name: "python:3.11-slim" 
     id: install-dependencies
     entrypoint: /bin/bash
@@ -43,13 +44,13 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
   - name: "python:3.11-slim"
-    id: trigger-deployment
+    id: deploy-agent-engine
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         echo "$_FIREBASE_KEY_JSON" > firebase-key.json
-        uv export --no-hashes --no-sources --no-header --no-emit-project --frozen > .requirements.txt
+        uv export --no-hashes --no-header --no-emit-project --frozen > .requirements.txt
         uv run app/agent_engine_app.py \
           --project ${_PROD_PROJECT_ID} \
           --location ${_REGION} \
@@ -58,9 +59,97 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
     secretEnv: ['_FIREBASE_KEY_JSON']
 
+  - name: "gcr.io/cloud-builders/docker"
+    id: build-react-image
+    args:
+      - build
+      - "-t"
+      - "gcr.io/${PROJECT_ID}/kene-frontend-prod:${COMMIT_SHA}"
+      - "-f"
+      - "frontend/Dockerfile"
+      - "--build-arg"
+      - "VITE_FIREBASE_API_KEY=${_VITE_FIREBASE_API_KEY}"
+      - "--build-arg"
+      - "VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}"
+      - "--build-arg"
+      - "VITE_API_BASE_URL=${_VITE_API_BASE_URL}"
+      - "./frontend"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-react-image
+    args:
+      - push
+      - "gcr.io/${PROJECT_ID}/kene-frontend-prod:${COMMIT_SHA}"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: deploy-react-cloud-run
+    args:
+      - "run"
+      - "deploy"
+      - "kene-frontend-prod"
+      - "--image=gcr.io/${PROJECT_ID}/kene-frontend-prod:${COMMIT_SHA}"
+      - "--region=${_REGION}"
+      - "--allow-unauthenticated"
+      - "--memory=1Gi"
+      - "--project=${_PROD_PROJECT_ID}"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: build-api-image
+    dir: api
+    args:
+      - build
+      - "-t"
+      - "gcr.io/${PROJECT_ID}/kene-api-prod:${COMMIT_SHA}"
+      - "-f"
+      - "Dockerfile"
+      - "."
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-api-image
+    args:
+      - push
+      - "gcr.io/${PROJECT_ID}/kene-api-prod:${COMMIT_SHA}"
+
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: deploy-api-to-cloud-run
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -e
+        set -x
+
+        echo "Deploying Cloud Run service with attached service account..."
+        gcloud run deploy kene-api-prod \
+          --image=gcr.io/${PROJECT_ID}/kene-api-prod:${COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --project=${_PROD_PROJECT_ID} \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --port=8000 \
+          --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
+          --clear-secrets \
+          --set-env-vars "DEBUG=false,HOST=0.0.0.0,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},AURA_INSTANCEID=${_AURA_INSTANCEID},AURA_INSTANCENAME=${_AURA_INSTANCENAME},SUPERSET_BASE_URL=${_SUPERSET_BASE_URL},SUPERSET_USERNAME=${_SUPERSET_USERNAME},SUPERSET_PASSWORD=${_SUPERSET_PASSWORD},GOOGLE_CLOUD_PROJECT_ID=${_PROD_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,USE_APPLICATION_DEFAULT_CREDENTIALS=true"
+
 substitutions:
-  _PROD_PROJECT_ID: YOUR_PROD_PROJECT_ID
+  _PROD_PROJECT_ID: ken-e-production
   _REGION: us-central1
+  _DATA_STORE_REGION: us
+  _PIPELINE_NAME: genai_sample_data_ingestion
+  _NEO4J_DATABASE: neo4j
+  _NEO4J_URI: neo4j+s://3bc4b1fb.databases.neo4j.io
+  _NEO4J_USERNAME: neo4j
+  _NEO4J_PASSWORD: ***REMOVED***
+  _AURA_INSTANCEID: 3bc4b1fb
+  _AURA_INSTANCENAME: KEN-E Production
+  _SUPERSET_BASE_URL: https://superset.ken-e.ai
+  _SUPERSET_USERNAME: api
+  _SUPERSET_PASSWORD: ***REMOVED***
+  _VITE_FIREBASE_API_KEY: AIzaSyCk-cFmDqBKylKVGCPtfhr3w62IB7WvgmA
+  _VITE_FIREBASE_AUTH_DOMAIN: ken-e-production.firebaseapp.com
+  _VITE_API_BASE_URL: https://kene-api-prod-395770269870.us-central1.run.app # You can update this later
+  _API_SERVICE_ACCOUNT_EMAIL: ken-e-api@ken-e-production.iam.gserviceaccount.com
 
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
