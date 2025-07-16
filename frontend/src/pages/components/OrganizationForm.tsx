@@ -39,6 +39,7 @@ interface OrganizationFormProps {
   editAgencyData: EditAgencyData;
   setEditAgencyData: (data: EditAgencyData) => void;
   onSubmit: () => void;
+  isLoading?: boolean;
 }
 
 const OrganizationForm = ({
@@ -49,6 +50,7 @@ const OrganizationForm = ({
   editAgencyData,
   setEditAgencyData,
   onSubmit,
+  isLoading = false,
 }: OrganizationFormProps) => {
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -242,8 +244,17 @@ const OrganizationForm = ({
 
         {/* Submit Button */}
         <div className="flex justify-end pt-6">
-          <Button onClick={onSubmit} disabled={loading}>
-            {isCreatingNew ? "Create Organization" : "Save Changes"}
+          <Button onClick={onSubmit} disabled={loading || isLoading}>
+            {isLoading ? (
+              <>
+                <span className="mr-2">⏳</span>
+                {isCreatingNew ? "Creating..." : "Saving..."}
+              </>
+            ) : isCreatingNew ? (
+              "Create Organization"
+            ) : (
+              "Save Changes"
+            )}
           </Button>
         </div>
       </CardContent>

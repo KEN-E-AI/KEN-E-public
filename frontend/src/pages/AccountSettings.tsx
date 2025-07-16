@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
+import { useToast } from "@/hooks/use-toast";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -32,6 +33,7 @@ const AccountSettings = () => {
   // Hooks
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
   const {
     user,
     updateUser,
@@ -71,6 +73,8 @@ const AccountSettings = () => {
     child_organizations: [],
   });
 
+  const [isCreatingOrganization, setIsCreatingOrganization] = useState(false);
+
   // Initialize edit agency state when orgData changes
   useEffect(() => {
     if (orgData && !isCreatingNew) {
@@ -98,10 +102,15 @@ const AccountSettings = () => {
   // Event handlers
   const handleCreateOrganization = async () => {
     if (!newOrgFormData.organization_name || !newOrgFormData.company_size) {
-      alert("Please fill in all required fields");
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
       return;
     }
 
+    setIsCreatingOrganization(true);
     try {
       // Create organization in Neo4j
       const newOrg = await createOrganization({
@@ -175,14 +184,24 @@ const AccountSettings = () => {
         child_organizations: [],
       });
 
-      // Redirect to organization selection page so user can create an account
-      alert(
-        `Organization "${newOrg.organization_name}" created successfully! Please create an account.`,
-      );
+      // Show success message and redirect to organization selection
+      toast({
+        title: "Organization created successfully!",
+        description: `"${newOrg.organization_name}" has been created. You can now create accounts for this organization.`,
+      });
+
+      // Navigate immediately without blocking
       navigate("/organization-selection");
     } catch (error) {
       console.error("Error creating organization:", error);
-      alert("Failed to create organization. Please try again.");
+      toast({
+        title: "Failed to create organization",
+        description:
+          "Please try again later. If the problem persists, contact support.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingOrganization(false);
     }
   };
 
@@ -231,6 +250,7 @@ const AccountSettings = () => {
           onSubmit={
             isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
           }
+          isLoading={isCreatingOrganization}
         />
 
         {/* Conditional sections for existing organizations */}
