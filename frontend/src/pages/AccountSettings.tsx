@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect } from "react";
 import axios from "axios";
-import { useNavigate, useLocation } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
+import SettingsLayout from "@/components/layout/SettingsLayout";
 import { Button } from "@/components/ui/button";
-import { ContextBreadcrumb } from "@/components/ui/context-breadcrumb";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
 import { useToast } from "@/hooks/use-toast";
+import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -34,7 +34,9 @@ const AccountSettings = () => {
   // Hooks
   const navigate = useNavigate();
   const location = useLocation();
+  const params = useParams();
   const { toast } = useToast();
+  const { currentSection } = useSettingsNavigation();
   const {
     user,
     updateUser,
@@ -51,6 +53,8 @@ const AccountSettings = () => {
 
   // Derived state
   const isCreatingNew = location.pathname === "/create-organization";
+  const isAccountSpecific = location.pathname.startsWith("/settings/account/");
+  const accountId = params.accountId;
 
   // Organization data
   const currentOrgId = useMemo(() => {
@@ -89,14 +93,14 @@ const AccountSettings = () => {
   // Early return for missing organization data
   if (!isCreatingNew && !orgData) {
     return (
-      <Layout pageTitle="Organization Settings">
-        <div className="max-w-4xl mx-auto space-y-8 flex flex-col">
-          <BackButton onBack={() => navigate("/organization-selection")} />
-          <div className="text-center py-8">
-            <p className="text-gray-500">Organization not found</p>
-          </div>
+      <SettingsLayout
+        pageTitle="Organization Settings"
+        currentPage="organization"
+      >
+        <div className="text-center py-8">
+          <p className="text-gray-500">Organization not found</p>
         </div>
-      </Layout>
+      </SettingsLayout>
     );
   }
 
@@ -234,40 +238,51 @@ const AccountSettings = () => {
     navigate("/settings");
   };
 
+  // Determine current page based on route
+  const getCurrentPage = () => {
+    if (isCreatingNew) return "organization";
+    if (isAccountSpecific) return "account";
+    return currentSection;
+  };
+
+  // Determine page title based on context
+  const getPageTitle = () => {
+    if (isCreatingNew) return "Create Organization";
+    if (isAccountSpecific) return "Account Settings";
+    return "Organization Settings";
+  };
+
   return (
-    <Layout pageTitle="Organization Settings">
-      <div className="max-w-4xl mx-auto space-y-8 flex flex-col">
-        <ContextBreadcrumb currentPage="organization" />
+    <SettingsLayout
+      pageTitle={getPageTitle()}
+      currentPage={getCurrentPage()}
+      showBackButton={!isCreatingNew}
+    >
+      {/* Organization Information */}
+      <OrganizationForm
+        isCreatingNew={isCreatingNew}
+        orgData={orgData}
+        formData={newOrgFormData}
+        setFormData={setNewOrgFormData}
+        editAgencyData={editAgencyData}
+        setEditAgencyData={setEditAgencyData}
+        onSubmit={
+          isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
+        }
+        isLoading={isCreatingOrganization}
+      />
 
-        {/* Organization Information */}
-        <OrganizationForm
-          isCreatingNew={isCreatingNew}
-          orgData={orgData}
-          formData={newOrgFormData}
-          setFormData={setNewOrgFormData}
-          editAgencyData={editAgencyData}
-          setEditAgencyData={setEditAgencyData}
-          onSubmit={
-            isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
-          }
-          isLoading={isCreatingOrganization}
-        />
-
-        {/* Conditional sections for existing organizations */}
-        {orgData && (
-          <>
-            <SubscriptionCard orgData={orgData} />
-            <AccountsManagement
-              orgData={orgData}
-              currentOrgId={currentOrgId!}
-            />
-            <BillingSection orgData={orgData} />
-            <TeamManagement orgData={orgData} />
-            <DangerZone orgData={orgData} />
-          </>
-        )}
-      </div>
-    </Layout>
+      {/* Conditional sections for existing organizations */}
+      {orgData && (
+        <>
+          <SubscriptionCard orgData={orgData} />
+          <AccountsManagement orgData={orgData} currentOrgId={currentOrgId!} />
+          <BillingSection orgData={orgData} />
+          <TeamManagement orgData={orgData} />
+          <DangerZone orgData={orgData} />
+        </>
+      )}
+    </SettingsLayout>
   );
 };
 

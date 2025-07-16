@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
+import SettingsLayout from "@/components/layout/SettingsLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,10 +15,12 @@ import {
   Clock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
 
 const Settings = () => {
   const navigate = useNavigate();
   const { user, selectedOrgAccount, orgMetadata } = useAuth();
+  const { navigationItems } = useSettingsNavigation();
 
   const currentOrgName =
     selectedOrgAccount?.metadata?.organization_name || "Organization";
@@ -66,7 +68,7 @@ const Settings = () => {
       description:
         "Manage organization profile, subscription, billing, and team settings",
       icon: Building2,
-      route: "/organization-settings",
+      route: "/settings/organization",
       context: currentOrgName,
       enabled: true,
       ...getConfigurationStatus("organization"),
@@ -76,7 +78,7 @@ const Settings = () => {
       title: "Account Management",
       description: "Create and manage accounts within your organization",
       icon: Users,
-      route: "/organization-settings", // For now, accounts are managed within org settings
+      route: "/settings/account",
       context: "Manage accounts",
       enabled: true,
       ...getConfigurationStatus("account"),
@@ -87,7 +89,7 @@ const Settings = () => {
       description:
         "Manage your personal profile, notifications, and preferences",
       icon: User,
-      route: "/user-settings",
+      route: "/settings/user",
       context:
         `${user?.firstName} ${user?.lastName}`.trim() || "Personal Settings",
       enabled: true,
@@ -126,131 +128,132 @@ const Settings = () => {
   };
 
   return (
-    <Layout pageTitle="Settings">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-dashboard-gray-900">
-            Settings
-          </h1>
-          <p className="text-dashboard-gray-600 mt-2">
-            Manage your organization, accounts, and personal settings
-          </p>
-        </div>
+    <SettingsLayout
+      pageTitle="Settings"
+      currentPage="settings"
+      showBackButton={false}
+      showEntitySelector={false}
+    >
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-dashboard-gray-900">Settings</h1>
+        <p className="text-dashboard-gray-600 mt-2">
+          Manage your organization, accounts, and personal settings
+        </p>
+      </div>
 
-        {/* Current Context with Enhanced Entity Selector */}
-        {selectedOrgAccount && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span className="text-lg">Current Context</span>
-                <EntitySelector className="min-w-[300px]" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 text-dashboard-gray-600">
-                <Building2 className="h-4 w-4" />
-                <span className="font-medium">Active Context:</span>
-                <span>{currentOrgName}</span>
-                {selectedOrgAccount.metadata?.account_name && (
-                  <>
-                    <span className="text-dashboard-gray-400">→</span>
-                    <span>{currentAccountName}</span>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Settings Cards with Status Indicators */}
-        <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
-          {settingsCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <Card
-                key={card.id}
-                className="cursor-pointer hover:shadow-md transition-shadow group"
-                onClick={() => handleCardClick(card.route)}
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <Icon className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-dashboard-gray-900">
-                            {card.title}
-                          </h3>
-                          {getStatusBadge(card.status)}
-                        </div>
-                        <p className="text-sm text-dashboard-gray-600 font-normal">
-                          {card.context}
-                        </p>
-                      </div>
-                    </div>
-                    <ArrowRight className="h-5 w-5 text-dashboard-gray-400 group-hover:text-dashboard-gray-600 transition-colors" />
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-dashboard-gray-600 text-sm leading-relaxed mb-4">
-                    {card.description}
-                  </p>
-
-                  {/* Configuration Progress */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-dashboard-gray-600">
-                        Configuration
-                      </span>
-                      <span className="text-dashboard-gray-900 font-medium">
-                        {card.completedSteps}/{card.totalSteps}
-                      </span>
-                    </div>
-                    <Progress
-                      value={(card.completedSteps / card.totalSteps) * 100}
-                      className="h-2"
-                    />
-                    <p className="text-xs text-dashboard-gray-500">
-                      Last updated: {card.lastUpdated}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* Quick Actions */}
+      {/* Current Context with Enhanced Entity Selector */}
+      {selectedOrgAccount && (
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              <span className="text-lg">Current Context</span>
+              <EntitySelector className="min-w-[300px]" />
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-3">
-              <Button
-                variant="outline"
-                onClick={() => navigate("/organization-selection")}
-                className="flex items-center gap-2"
-              >
-                <Building2 className="h-4 w-4" />
-                Switch Organization
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => navigate("/create-organization")}
-                className="flex items-center gap-2"
-              >
-                <Building2 className="h-4 w-4" />
-                Create Organization
-              </Button>
+          <CardContent>
+            <div className="flex items-center gap-2 text-dashboard-gray-600">
+              <Building2 className="h-4 w-4" />
+              <span className="font-medium">Active Context:</span>
+              <span>{currentOrgName}</span>
+              {selectedOrgAccount.metadata?.account_name && (
+                <>
+                  <span className="text-dashboard-gray-400">→</span>
+                  <span>{currentAccountName}</span>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Settings Cards with Status Indicators */}
+      <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+        {settingsCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Card
+              key={card.id}
+              className="cursor-pointer hover:shadow-md transition-shadow group"
+              onClick={() => handleCardClick(card.route)}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Icon className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-dashboard-gray-900">
+                          {card.title}
+                        </h3>
+                        {getStatusBadge(card.status)}
+                      </div>
+                      <p className="text-sm text-dashboard-gray-600 font-normal">
+                        {card.context}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-dashboard-gray-400 group-hover:text-dashboard-gray-600 transition-colors" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-dashboard-gray-600 text-sm leading-relaxed mb-4">
+                  {card.description}
+                </p>
+
+                {/* Configuration Progress */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-dashboard-gray-600">
+                      Configuration
+                    </span>
+                    <span className="text-dashboard-gray-900 font-medium">
+                      {card.completedSteps}/{card.totalSteps}
+                    </span>
+                  </div>
+                  <Progress
+                    value={(card.completedSteps / card.totalSteps) * 100}
+                    className="h-2"
+                  />
+                  <p className="text-xs text-dashboard-gray-500">
+                    Last updated: {card.lastUpdated}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
-    </Layout>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/organization-selection")}
+              className="flex items-center gap-2"
+            >
+              <Building2 className="h-4 w-4" />
+              Switch Organization
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/create-organization")}
+              className="flex items-center gap-2"
+            >
+              <Building2 className="h-4 w-4" />
+              Create Organization
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </SettingsLayout>
   );
 };
 

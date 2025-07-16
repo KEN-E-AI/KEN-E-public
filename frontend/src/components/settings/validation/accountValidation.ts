@@ -22,10 +22,9 @@ export const accountProfileSchema = z.object({
     .max(500, "Description must be less than 500 characters")
     .optional(),
 
-  website: z.union([
-    z.string().url("Invalid website URL"),
-    z.literal("")
-  ]).optional(),
+  website: z
+    .union([z.string().url("Invalid website URL"), z.literal("")])
+    .optional(),
 
   location: z
     .string()
@@ -116,10 +115,9 @@ export const accountCreationSchema = z.object({
     .max(100, "Location must be less than 100 characters")
     .optional(),
 
-  website: z.union([
-    z.string().url("Invalid website URL"),
-    z.literal("")
-  ]).optional(),
+  website: z
+    .union([z.string().url("Invalid website URL"), z.literal("")])
+    .optional(),
 
   template_id: z.string().min(1, "Template selection is required"),
 

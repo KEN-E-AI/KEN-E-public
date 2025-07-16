@@ -143,8 +143,9 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            {/* New organized settings routes */}
             <Route
-              path="/organization-settings"
+              path="/settings/organization"
               element={
                 <ProtectedRoute>
                   <AccountSettings />
@@ -152,16 +153,41 @@ const App = () => (
               }
             />
             <Route
-              path="/account-settings"
-              element={<Navigate to="/organization-settings" replace />}
+              path="/settings/account"
+              element={
+                <ProtectedRoute>
+                  <AccountSettings />
+                </ProtectedRoute>
+              }
             />
             <Route
-              path="/user-settings"
+              path="/settings/account/:accountId"
+              element={
+                <ProtectedRoute>
+                  <AccountSettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/user"
               element={
                 <ProtectedRoute>
                   <UserSettings />
                 </ProtectedRoute>
               }
+            />
+            {/* Backward compatibility routes */}
+            <Route
+              path="/organization-settings"
+              element={<Navigate to="/settings/organization" replace />}
+            />
+            <Route
+              path="/account-settings"
+              element={<Navigate to="/settings/organization" replace />}
+            />
+            <Route
+              path="/user-settings"
+              element={<Navigate to="/settings/user" replace />}
             />
             <Route
               path="/organization-selection"
