@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ContextBreadcrumb } from "@/components/ui/context-breadcrumb";
 import { User, Bell, Shield, Globe, Moon, Sun, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -108,17 +109,7 @@ const UserSettings = () => {
   return (
     <Layout pageTitle="User Settings">
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* Back Button */}
-        <div className="pt-2 mr-auto">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/settings")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Settings
-          </Button>
-        </div>
+        <ContextBreadcrumb currentPage="user" showUserContext={true} />
 
         {/* Header */}
         <div>

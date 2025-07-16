@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate, useLocation } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
+import { ContextBreadcrumb } from "@/components/ui/context-breadcrumb";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
@@ -236,7 +237,7 @@ const AccountSettings = () => {
   return (
     <Layout pageTitle="Organization Settings">
       <div className="max-w-4xl mx-auto space-y-8 flex flex-col">
-        <BackButton onBack={handleBackToSelection} />
+        <ContextBreadcrumb currentPage="organization" />
 
         {/* Organization Information */}
         <OrganizationForm

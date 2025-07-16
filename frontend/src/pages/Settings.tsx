@@ -2,7 +2,18 @@ import { useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, User, Users, ArrowRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { EntitySelector } from "@/components/ui/entity-selector";
+import {
+  Building2,
+  User,
+  Users,
+  ArrowRight,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
@@ -14,6 +25,40 @@ const Settings = () => {
   const currentAccountName =
     selectedOrgAccount?.metadata?.account_name || "Account";
 
+  // Mock configuration completion data - in a real app, this would come from API
+  const getConfigurationStatus = (cardId: string) => {
+    switch (cardId) {
+      case "organization":
+        return {
+          status: "complete" as const,
+          completedSteps: 4,
+          totalSteps: 4,
+          lastUpdated: "2 days ago",
+        };
+      case "account":
+        return {
+          status: "warning" as const,
+          completedSteps: 2,
+          totalSteps: 3,
+          lastUpdated: "1 week ago",
+        };
+      case "user":
+        return {
+          status: "incomplete" as const,
+          completedSteps: 1,
+          totalSteps: 3,
+          lastUpdated: "Never",
+        };
+      default:
+        return {
+          status: "incomplete" as const,
+          completedSteps: 0,
+          totalSteps: 1,
+          lastUpdated: "Never",
+        };
+    }
+  };
+
   const settingsCards = [
     {
       id: "organization",
@@ -24,6 +69,7 @@ const Settings = () => {
       route: "/organization-settings",
       context: currentOrgName,
       enabled: true,
+      ...getConfigurationStatus("organization"),
     },
     {
       id: "account",
@@ -33,6 +79,7 @@ const Settings = () => {
       route: "/organization-settings", // For now, accounts are managed within org settings
       context: "Manage accounts",
       enabled: true,
+      ...getConfigurationStatus("account"),
     },
     {
       id: "user",
@@ -44,8 +91,35 @@ const Settings = () => {
       context:
         `${user?.firstName} ${user?.lastName}`.trim() || "Personal Settings",
       enabled: true,
+      ...getConfigurationStatus("user"),
     },
   ];
+
+  const getStatusBadge = (status: "complete" | "incomplete" | "warning") => {
+    switch (status) {
+      case "complete":
+        return (
+          <Badge className="bg-green-50 text-green-700 border-green-200">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Complete
+          </Badge>
+        );
+      case "warning":
+        return (
+          <Badge className="bg-yellow-50 text-yellow-700 border-yellow-200">
+            <AlertCircle className="h-3 w-3 mr-1" />
+            Needs Attention
+          </Badge>
+        );
+      case "incomplete":
+        return (
+          <Badge className="bg-gray-50 text-gray-700 border-gray-200">
+            <Clock className="h-3 w-3 mr-1" />
+            Incomplete
+          </Badge>
+        );
+    }
+  };
 
   const handleCardClick = (route: string) => {
     navigate(route);
@@ -64,24 +138,32 @@ const Settings = () => {
           </p>
         </div>
 
-        {/* Current Context */}
+        {/* Current Context with Enhanced Entity Selector */}
         {selectedOrgAccount && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-blue-800">
-              <Building2 className="h-4 w-4" />
-              <span className="font-medium">Current Context:</span>
-              <span>{currentOrgName}</span>
-              {selectedOrgAccount.metadata?.account_name && (
-                <>
-                  <span className="text-blue-600">→</span>
-                  <span>{currentAccountName}</span>
-                </>
-              )}
-            </div>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="text-lg">Current Context</span>
+                <EntitySelector className="min-w-[300px]" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2 text-dashboard-gray-600">
+                <Building2 className="h-4 w-4" />
+                <span className="font-medium">Active Context:</span>
+                <span>{currentOrgName}</span>
+                {selectedOrgAccount.metadata?.account_name && (
+                  <>
+                    <span className="text-dashboard-gray-400">→</span>
+                    <span>{currentAccountName}</span>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
-        {/* Settings Cards */}
+        {/* Settings Cards with Status Indicators */}
         <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
           {settingsCards.map((card) => {
             const Icon = card.icon;
@@ -98,9 +180,12 @@ const Settings = () => {
                         <Icon className="h-5 w-5 text-blue-600" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-dashboard-gray-900">
-                          {card.title}
-                        </h3>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-dashboard-gray-900">
+                            {card.title}
+                          </h3>
+                          {getStatusBadge(card.status)}
+                        </div>
                         <p className="text-sm text-dashboard-gray-600 font-normal">
                           {card.context}
                         </p>
@@ -110,9 +195,28 @@ const Settings = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-dashboard-gray-600 text-sm leading-relaxed">
+                  <p className="text-dashboard-gray-600 text-sm leading-relaxed mb-4">
                     {card.description}
                   </p>
+
+                  {/* Configuration Progress */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-dashboard-gray-600">
+                        Configuration
+                      </span>
+                      <span className="text-dashboard-gray-900 font-medium">
+                        {card.completedSteps}/{card.totalSteps}
+                      </span>
+                    </div>
+                    <Progress
+                      value={(card.completedSteps / card.totalSteps) * 100}
+                      className="h-2"
+                    />
+                    <p className="text-xs text-dashboard-gray-500">
+                      Last updated: {card.lastUpdated}
+                    </p>
+                  </div>
                 </CardContent>
               </Card>
             );
