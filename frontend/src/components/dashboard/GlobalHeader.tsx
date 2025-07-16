@@ -60,12 +60,8 @@ const OrganizationAccountDropdown = ({
   setSelectedOrgAccount: (account: SelectedOrgAccount) => void;
 }) => {
   const navigate = useNavigate();
-  const {
-    setCurrentOrganization,
-    user,
-    orgMetadata,
-    accountMetadata,
-  } = useAuth();
+  const { setCurrentOrganization, user, orgMetadata, accountMetadata } =
+    useAuth();
   const accessibleAccountIds = Object.keys(user?.permissions?.accounts || {});
 
   const combinedOptions = accessibleAccountIds
@@ -143,9 +139,6 @@ const OrganizationAccountDropdown = ({
     setCurrentOrganization(orgId);
   };
 
-
-
-
   return (
     <Select value={currentValue} onValueChange={handleValueChange}>
       <SelectTrigger className="h-auto p-1 border-none shadow-none text-sm font-medium text-dashboard-gray-900 hover:bg-dashboard-gray-50 w-auto bg-transparent min-w-[200px]">
@@ -185,7 +178,11 @@ const GlobalHeader = ({
   setSelectedOrgAccount,
 }: GlobalHeaderProps) => {
   const navigate = useNavigate();
-  const { logout, setCurrentOrganization, setSelectedOrgAccount: setAuthOrgAccount } = useAuth();
+  const {
+    logout,
+    setCurrentOrganization,
+    setSelectedOrgAccount: setAuthOrgAccount,
+  } = useAuth();
   const { accountMetadata } = useAuth();
 
   // Calculate appropriate width and margin based on sidebar state

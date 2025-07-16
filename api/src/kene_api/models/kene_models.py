@@ -685,3 +685,114 @@ class ProductDeleteResponse(BaseModel):
     success: bool = True
     message: str = Field(..., description="Success message")
     data: Dict[str, Any] = Field(..., description="Deletion results")
+
+
+# Organization and Account Models
+
+class PaymentMethod(BaseModel):
+    """Payment method details."""
+    
+    last_four: str = Field(..., description="Last four digits of payment method")
+    brand: str = Field(..., description="Payment method brand (e.g., Visa, Mastercard)")
+    expires: str = Field(..., description="Expiration date (MM/YY)")
+
+
+class Billing(BaseModel):
+    """Billing information for an organization."""
+    
+    payment_method: PaymentMethod = Field(..., description="Payment method details")
+    address: str = Field(..., description="Billing address")
+    tax_id: str = Field(..., description="Tax identification number")
+
+
+class Subscription(BaseModel):
+    """Subscription details for an organization."""
+    
+    plan_name: str = Field(..., description="Name of the subscription plan")
+    plan_description: str = Field(..., description="Description of the subscription plan")
+    price: float = Field(..., description="Price of the subscription")
+    currency: str = Field(..., description="Currency code (e.g., USD)")
+    billing_cycle: str = Field(..., description="Billing cycle (e.g., monthly, yearly)")
+    next_billing_date: str = Field(..., description="Next billing date")
+    features: List[str] = Field(..., description="List of features included in the plan")
+    usage: Dict[str, int] = Field(..., description="Usage statistics (e.g., reports_generated, reports_limit)")
+
+
+class Team(BaseModel):
+    """Team information for an organization."""
+    
+    members_used: int = Field(..., description="Number of team members currently used")
+    members_limit: int = Field(..., description="Maximum number of team members allowed")
+    pending_invitations: int = Field(..., description="Number of pending team invitations")
+
+
+class Organization(BaseModel):
+    """Organization entity model."""
+    
+    organization_id: str = Field(..., description="Unique identifier for the organization")
+    organization_name: str = Field(..., description="Name of the organization")
+    plan: str = Field(..., description="Subscription plan tier")
+    website: str = Field(..., description="Organization website URL")
+    company_size: str = Field(..., description="Size category of the company")
+    agency: bool = Field(..., description="Whether the organization is an agency")
+    child_organizations: List[str] = Field(default_factory=list, description="List of child organization IDs")
+    subscription: Subscription = Field(..., description="Subscription details")
+    billing: Billing = Field(..., description="Billing information")
+    team: Team = Field(..., description="Team information")
+
+
+class Account(BaseModel):
+    """Account entity model."""
+    
+    account_id: str = Field(..., description="Unique identifier for the account")
+    account_name: str = Field(..., description="Name of the account")
+    organization_id: str = Field(..., description="ID of the organization this account belongs to")
+    industry: str = Field(..., description="Industry category")
+    status: str = Field(..., description="Account status (e.g., Active, Inactive)")
+    websites: List[str] = Field(..., description="List of websites associated with the account")
+    timezone: str = Field(..., description="Timezone for the account")
+    data_region: str = Field(default="", description="Data region for the account")
+    region: List[str] = Field(default_factory=list, description="List of regions for the account")
+
+
+class OrganizationRequest(BaseModel):
+    """Request model for organization operations."""
+    
+    organization_id: Optional[str] = Field(None, description="Organization ID (required for update/delete)")
+    organization_name: Optional[str] = Field(None, description="Name of the organization")
+    plan: Optional[str] = Field(None, description="Subscription plan tier")
+    website: Optional[str] = Field(None, description="Organization website URL")
+    company_size: Optional[str] = Field(None, description="Size category of the company")
+    agency: Optional[bool] = Field(None, description="Whether the organization is an agency")
+    child_organizations: Optional[List[str]] = Field(None, description="List of child organization IDs")
+    subscription: Optional[Subscription] = Field(None, description="Subscription details")
+    billing: Optional[Billing] = Field(None, description="Billing information")
+    team: Optional[Team] = Field(None, description="Team information")
+
+
+class AccountRequest(BaseModel):
+    """Request model for account operations."""
+    
+    account_id: Optional[str] = Field(None, description="Account ID (required for update/delete)")
+    account_name: Optional[str] = Field(None, description="Name of the account")
+    organization_id: Optional[str] = Field(None, description="ID of the organization (required for create)")
+    industry: Optional[str] = Field(None, description="Industry category")
+    status: Optional[str] = Field(None, description="Account status")
+    websites: Optional[List[str]] = Field(None, description="List of websites")
+    timezone: Optional[str] = Field(None, description="Timezone for the account")
+    data_region: Optional[str] = Field(None, description="Data region for the account")
+    region: Optional[List[str]] = Field(None, description="List of regions for the account")
+
+
+class OrganizationListResponse(BaseModel):
+    """Response model for organization list."""
+    
+    organizations: List[Organization] = Field(..., description="List of organizations")
+    total: int = Field(..., description="Total number of organizations")
+
+
+class AccountListResponse(BaseModel):
+    """Response model for account list."""
+    
+    accounts: List[Account] = Field(..., description="List of accounts")
+    total: int = Field(..., description="Total number of accounts")

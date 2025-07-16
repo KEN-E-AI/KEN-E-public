@@ -42,10 +42,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
-import { 
-  transformAPIInsightsToFrontend, 
+import {
+  transformAPIInsightsToFrontend,
   type APIInsightResponse,
-  type FrontendInsight
+  type FrontendInsight,
 } from "@/lib/insightsUtils";
 
 // Keep the Insight type for compatibility, but rename it to match the frontend structure
@@ -73,17 +73,19 @@ const Insights = () => {
       try {
         setLoading(true);
         setError(null);
-        
+
         const response = await axios.get<APIInsightResponse>(
           `${import.meta.env.VITE_API_BASE_URL}/api/v1/insights/`,
           {
             params: {
               account_id: selectedOrgAccount.accountId,
             },
-          }
+          },
         );
 
-        const transformedInsights = transformAPIInsightsToFrontend(response.data);
+        const transformedInsights = transformAPIInsightsToFrontend(
+          response.data,
+        );
         setInsights(transformedInsights);
       } catch (err) {
         console.error("Error fetching insights:", err);
@@ -106,7 +108,9 @@ const Insights = () => {
 
     try {
       // Find the insight to get original API IDs
-      const insightToDelete = insights.find(insight => insight.insight_id === insightId);
+      const insightToDelete = insights.find(
+        (insight) => insight.insight_id === insightId,
+      );
       if (!insightToDelete) {
         alert("Insight not found");
         return;
@@ -121,14 +125,14 @@ const Insights = () => {
             activity_log_id: insightToDelete._originalData.activity_log_id,
             metric_id: insightToDelete._originalData.metric_id,
           },
-        }
+        },
       );
 
       // Remove from local state on successful API deletion
       setInsights((prev) =>
         prev.filter((insight) => insight.insight_id !== insightId),
       );
-      
+
       console.log("Insight deleted successfully:", insightId);
     } catch (err) {
       console.error("Error deleting insight:", err);
@@ -312,13 +316,28 @@ const Insights = () => {
           <Card>
             <CardContent className="text-center py-12">
               <div className="text-red-500 mb-4">
-                <svg className="h-12 w-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="h-12 w-12 mx-auto mb-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Insights</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Error Loading Insights
+              </h3>
               <p className="text-gray-500 mb-4">{error}</p>
-              <Button onClick={() => window.location.reload()} variant="outline">
+              <Button
+                onClick={() => window.location.reload()}
+                variant="outline"
+              >
                 Try Again
               </Button>
             </CardContent>
@@ -328,8 +347,12 @@ const Insights = () => {
           <Card>
             <CardContent className="text-center py-12">
               <Lightbulb className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Account Selected</h3>
-              <p className="text-gray-500">Please select an organization and account to view insights.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No Account Selected
+              </h3>
+              <p className="text-gray-500">
+                Please select an organization and account to view insights.
+              </p>
             </CardContent>
           </Card>
         ) : filteredInsights.length > 0 ? (

@@ -5,6 +5,8 @@ import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { createOrganization } from "@/data/organizationApi";
+import { useToast } from "@/hooks/use-toast";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -31,6 +33,7 @@ const AccountSettings = () => {
   // Hooks
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
   const {
     user,
     updateUser,
@@ -70,6 +73,8 @@ const AccountSettings = () => {
     child_organizations: [],
   });
 
+  const [isCreatingOrganization, setIsCreatingOrganization] = useState(false);
+
   // Initialize edit agency state when orgData changes
   useEffect(() => {
     if (orgData && !isCreatingNew) {
@@ -97,23 +102,52 @@ const AccountSettings = () => {
   // Event handlers
   const handleCreateOrganization = async () => {
     if (!newOrgFormData.organization_name || !newOrgFormData.company_size) {
-      alert("Please fill in all required fields");
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
       return;
     }
 
+    setIsCreatingOrganization(true);
     try {
-      const newOrgId = newOrgFormData.organization_name.toLowerCase().replace(/\s+/g, "-");
-      
-      const res = await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
-        account_id: user?.id,
-        collection: "organizations",
-        document_id: newOrgId,
-        data: {
-          ...newOrgFormData,
+      // Create organization in Neo4j
+      const newOrg = await createOrganization({
+        organization_name: newOrgFormData.organization_name,
+        plan: "Free", // Default plan
+        website: "", // Can be added later
+        company_size: newOrgFormData.company_size,
+        agency: newOrgFormData.agency,
+        child_organizations: newOrgFormData.child_organizations,
+        subscription: {
+          plan_name: "Free Plan",
+          plan_description: "Basic features for getting started",
+          price: 0,
+          currency: "USD",
+          billing_cycle: "monthly",
+          next_billing_date: new Date().toISOString(),
+          features: ["Basic Reports", "1 User"],
+          usage: {
+            reports_generated: 0,
+            reports_limit: 10,
+          },
+        },
+        billing: {
+          payment_method: {
+            last_four: "",
+            brand: "",
+            expires: "",
+          },
+          address: "",
+          tax_id: "",
+        },
+        team: {
+          members_used: 1,
+          members_limit: 1,
+          pending_invitations: 0,
         },
       });
-
-      const newOrg = res.data.data;
 
       // Add the new organization to user's permissions with admin level
       await axios.put(
@@ -121,11 +155,11 @@ const AccountSettings = () => {
         {
           update: {
             // This is a nested field path for dot-notation update
-            field: `permissions.organizations.${newOrgId}`,
+            field: `permissions.organizations.${newOrg.organization_id}`,
             operator: "set",
             value: "admin",
           },
-        }
+        },
       );
 
       // Update user's local permissions state
@@ -134,7 +168,7 @@ const AccountSettings = () => {
           ...user?.permissions,
           organizations: {
             ...user?.permissions?.organizations,
-            [newOrgId]: "admin",
+            [newOrg.organization_id]: "admin",
           },
         },
       });
@@ -150,11 +184,24 @@ const AccountSettings = () => {
         child_organizations: [],
       });
 
-      navigate("/account-settings");
-      alert(`Organization "${newOrg.organization_name}" created successfully!`);
+      // Show success message and redirect to organization selection
+      toast({
+        title: "Organization created successfully!",
+        description: `"${newOrg.organization_name}" has been created. You can now create accounts for this organization.`,
+      });
+
+      // Navigate immediately without blocking
+      navigate("/organization-selection");
     } catch (error) {
       console.error("Error creating organization:", error);
-      alert("Failed to create organization. Please try again.");
+      toast({
+        title: "Failed to create organization",
+        description:
+          "Please try again later. If the problem persists, contact support.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingOrganization(false);
     }
   };
 
@@ -172,7 +219,7 @@ const AccountSettings = () => {
           company_size: orgData.company_size,
           agency: editAgencyData.agency,
           child_organizations: editAgencyData.child_organizations,
-        }
+        },
       );
 
       alert("Organization updated successfully!");
@@ -181,8 +228,6 @@ const AccountSettings = () => {
       alert("Failed to update organization. Please try again.");
     }
   };
-
-
 
   const handleBackToSelection = () => {
     resetWorkspaceSelection();
@@ -202,7 +247,10 @@ const AccountSettings = () => {
           setFormData={setNewOrgFormData}
           editAgencyData={editAgencyData}
           setEditAgencyData={setEditAgencyData}
-          onSubmit={isCreatingNew ? handleCreateOrganization : handleUpdateOrganization}
+          onSubmit={
+            isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
+          }
+          isLoading={isCreatingOrganization}
         />
 
         {/* Conditional sections for existing organizations */}

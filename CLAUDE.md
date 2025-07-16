@@ -46,11 +46,12 @@ ken-e/
 - `uv run jupyter lab` - Launch Jupyter notebooks for prototyping
 
 ### API Service (api/)
-- `cd api && uvicorn src.kene_api.main:app --reload` - Run FastAPI development server
+- `cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000` - Run FastAPI development server
 - `cd api && python run_dev.py` - Alternative dev server launcher
 - `cd api && pytest tests/` - Run API tests
 - `cd api && ./docker.sh dev` - Run API in Docker container
 - `cd api && ./docker.sh test` - Run tests in Docker
+- `cd api && ./scripts/set_environment.sh [development|staging|production]` - Switch API environment
 
 ### Frontend (frontend/)
 - `cd frontend && npm run dev` - Start development server on port 8080
@@ -58,6 +59,7 @@ ken-e/
 - `cd frontend && npm test` - Run Vitest tests
 - `cd frontend && npm run typecheck` - Type checking
 - `cd frontend && npm run format.fix` - Format with Prettier
+- `cd frontend && ./scripts/set_environment.sh [development|staging|production]` - Switch frontend environment
 
 ### Data Ingestion (data_ingestion/)
 - `cd data_ingestion && python data_ingestion_pipeline/submit_pipeline.py` - Submit pipeline to Vertex AI
@@ -215,18 +217,47 @@ ken-e/
 
 ### Environment Configuration
 
+#### Switching Environments
+
+**API Environment Switching:**
+```bash
+cd api
+./scripts/set_environment.sh [development|staging|production]
+```
+
+**Frontend Environment Switching:**
+```bash
+cd frontend
+./scripts/set_environment.sh [development|staging|production]
+```
+
+**Complete Environment Switch Workflow:**
+```bash
+# Switch API environment
+cd api && ./scripts/set_environment.sh staging
+
+# Switch frontend environment
+cd frontend && ./scripts/set_environment.sh staging
+
+# Restart services to pick up new environment
+cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+cd frontend && npm run dev
+```
+
 #### API Environment Variables:
 - `DEBUG`: Enable debug mode
 - `HOST`, `PORT`: Server configuration
 - `CORS_ORIGINS`: Allowed origins
 - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`: Graph database
-- `GOOGLE_CLOUD_PROJECT`: GCP project ID
+- `GOOGLE_CLOUD_PROJECT_ID`: GCP project ID
 - `FIRESTORE_DATABASE_ID`: Firestore instance
 - `LOG_LEVEL`: Logging configuration
+- `ENVIRONMENT`: Environment indicator (development|staging|production)
 
 #### Frontend Environment Variables:
 - `VITE_API_BASE_URL`: Backend API URL
 - `VITE_FIREBASE_*`: Firebase configuration
+- `VITE_ENVIRONMENT`: Environment indicator (development|staging|production)
 - All frontend env vars must be prefixed with `VITE_`
 
 ## Data Architecture

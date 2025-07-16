@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import axios from "axios";
 
 interface User {
@@ -114,12 +120,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [currentOrganizationId, setCurrentOrganizationId] = useState<
     string | null
   >(null);
-  const [selectedOrgAccount, setSelectedOrgAccountState] = useState<SelectedOrgAccount | null>(null);
+  const [selectedOrgAccount, setSelectedOrgAccountState] =
+    useState<SelectedOrgAccount | null>(null);
   const [orgMetadata, setOrgMetadataState] = useState<Record<string, any>>({});
-  const [accountMetadata, setAccountMetadataState] = useState<Record<string, any>>({});
+  const [accountMetadata, setAccountMetadataState] = useState<
+    Record<string, any>
+  >({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSetting[]>([]);
-  const [securitySettings, setSecuritySettings] = useState<SecuritySetting[]>([]);
+  const [notificationSettings, setNotificationSettings] = useState<
+    NotificationSetting[]
+  >([]);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySetting[]>(
+    [],
+  );
 
   // Wrapper functions to persist metadata to localStorage
   const setOrgMetadata = (data: Record<string, any>) => {
@@ -134,19 +147,24 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const fetchNotifications = async (accountId: string) => {
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/query`, {
-        account_id: accountId,
-        collection: "notifications",
-        field: "account_id",
-        operator: "==",
-        value: accountId,
-        limit: 20,
-      });
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/query`,
+        {
+          account_id: accountId,
+          collection: "notifications",
+          field: "account_id",
+          operator: "==",
+          value: accountId,
+          limit: 20,
+        },
+      );
 
       console.log("📬 Notifications fetched in context:", res.data);
       const documents = res.data.documents ?? []; // ✅ fallback to empty array
-      const sorted = [...documents].sort((a, b) =>
-        new Date(b.created_date).getTime() - new Date(a.created_date).getTime()
+      const sorted = [...documents].sort(
+        (a, b) =>
+          new Date(b.created_date).getTime() -
+          new Date(a.created_date).getTime(),
       );
 
       setNotifications(sorted);
@@ -155,7 +173,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-
   const login = (userData: User) => {
     setUser(userData);
     // In a real app, you'd also store the auth token
@@ -163,7 +180,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const updateUser = (updates: Partial<User>) => {
-    setUser(prev => {
+    setUser((prev) => {
       const merged = { ...prev, ...updates };
       localStorage.setItem("user", JSON.stringify(merged));
       return merged;

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import neo4j_service
 from .firestore import get_firestore_service
 from .routers import (
+    accounts,
     activities,
     datasets,
     firestore,
@@ -18,6 +19,7 @@ from .routers import (
     intuitions,
     items,
     metrics,
+    organizations,
     products,
     superset_saved_queries,
 )
@@ -71,6 +73,8 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(organizations.router, prefix="/api/v1/organizations", tags=["organizations"])
+app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"])
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])

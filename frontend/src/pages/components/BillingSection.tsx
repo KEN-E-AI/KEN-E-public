@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { CreditCard, FileText, Calendar, Download } from "lucide-react";
-import { type Organization } from "@/data/organizationData";
+import { type Organization } from "@/data/organizationTypes";
 
 interface BillingSectionProps {
   orgData: Organization;

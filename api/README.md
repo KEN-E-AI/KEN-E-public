@@ -100,18 +100,51 @@ docker run \
 
 ### Running the Application
 
+#### Environment Setup
+
+1. **Set up environment-specific configurations**:
+   ```bash
+   # Copy example to create environment-specific files
+   cp .env.example .env.development
+   cp .env.example .env.staging
+   cp .env.example .env.production
+   
+   # Edit each file with appropriate settings
+   # Then set the active environment:
+   ./scripts/set_environment.sh development
+   ```
+
+2. **Configure Neo4j Aura instances**:
+   - Create separate Neo4j Aura instances for dev/staging/prod
+   - Update each .env file with the appropriate credentials
+
 #### Development Server
 ```bash
-# Using the development runner (with auto-reload)
-uv run python run_dev.py
+# If virtual environment is in project root (not in api/), use --active flag:
+uv run --active uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 
-# Or directly with uvicorn
+# If virtual environment is in api/.venv:
 uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Using the development runner (with auto-reload)
+uv run --active python run_dev.py
 ```
 
 #### Production
 ```bash
-uv run uvicorn src.kene_api.main:app --host 0.0.0.0 --port 8000
+uv run --active uvicorn src.kene_api.main:app --host 0.0.0.0 --port 8000
+```
+
+#### Switching Environments
+```bash
+# Switch to staging
+./scripts/set_environment.sh staging
+
+# Switch to production
+./scripts/set_environment.sh production
+
+# Switch back to development
+./scripts/set_environment.sh development
 ```
 
 The API will be available at:

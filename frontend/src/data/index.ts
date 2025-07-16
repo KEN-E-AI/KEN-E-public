@@ -1,18 +1,34 @@
 export { products } from "./knowledgeConfig";
 export { ACCOUNTS_DATA } from "./accountData";
 export { DEFAULT_STEP_DATA } from "./accountData";
+// Export API functions
 export {
-  organizations,
-  accounts,
+  getOrganizations,
   getOrganizationById,
+  createOrganization,
+  updateOrganization,
+  deleteOrganization,
+  getAccounts,
+  getAllAccounts,
+  getAccountsByOrganizationId,
+  getAccountById,
+  createAccount,
+  updateAccount,
+  deleteAccount,
   createNewOrganization,
   createNewAccount,
+  organizations,
+  accounts,
+} from "./organizationApi";
+
+// Export types and constants
+export {
   INDUSTRY_OPTIONS,
   COMPANY_SIZE_OPTIONS,
   TIMEZONE_OPTIONS,
   type Organization,
   type Account,
-} from "./organizationData";
+} from "./organizationTypes";
 export {
   notifications,
   getNotificationsByAccountId,

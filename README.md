@@ -70,18 +70,30 @@ cd ..
 
 ### 2. Configure Environment
 
+#### Setup Neo4j Instances
+
+For local development with environment separation, set up three Neo4j Aura instances:
+1. Create free instances at [neo4j.com/aura](https://neo4j.com/aura/) for dev, staging, and prod
+2. Download credentials for each instance
+
+#### Configure API Environment
+
 ```bash
-# Set up Google Cloud
-export PROJECT_ID="YOUR_PROJECT_ID"
-export LOCATION="us-central1"
-gcloud config set project $PROJECT_ID
-gcloud auth application-default login
-gcloud auth application-default set-quota-project $PROJECT_ID
-
 # Copy environment files
-cp api/.env.example api/.env
-# Edit api/.env with your configuration
+cd api
+cp .env.example .env.development
+cp .env.example .env.staging  
+cp .env.example .env.production
 
+# Edit each file with appropriate Neo4j credentials and settings
+# Set environment (copies .env.development to .env)
+./scripts/set_environment.sh development
+cd ..
+```
+
+#### Configure Frontend Environment
+
+```bash
 # Create frontend environment
 cat > frontend/.env.local << EOF
 VITE_API_BASE_URL=http://localhost:8000
@@ -98,7 +110,9 @@ EOF
 
 ```bash
 # Terminal 1: Start API server
-cd api && uvicorn src.kene_api.main:app --reload
+cd api
+# Note: If your virtual environment is in the project root, use --active flag
+uv run --active uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: Start frontend
 cd frontend && npm run dev
@@ -106,6 +120,14 @@ cd frontend && npm run dev
 # Access applications:
 # - Frontend: http://localhost:8080
 # - API Docs: http://localhost:8000/docs
+```
+
+### 4. Initialize Neo4j Data (Optional)
+
+```bash
+# Run migration script to populate Neo4j with sample data
+cd api
+uv run --active python scripts/migrate_organizations_to_neo4j.py
 ```
 
 ## Development Commands

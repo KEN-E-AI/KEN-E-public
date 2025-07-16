@@ -41,25 +41,27 @@ export interface FrontendInsight {
 /**
  * Transform API insight data to frontend format
  */
-export function transformAPIInsightToFrontend(apiInsight: APIInsight): FrontendInsight {
+export function transformAPIInsightToFrontend(
+  apiInsight: APIInsight,
+): FrontendInsight {
   // Generate a unique insight ID
   const insight_id = `${apiInsight.activity_log_id}_${apiInsight.metric_id}`;
-  
+
   // Create human-readable description
   const description = createInsightDescription(apiInsight);
-  
+
   // Extract and format evidence
   const evidence = extractEvidenceText(apiInsight.evidence);
-  
+
   // Determine confidence level from evidence
   const confidence_level = determineConfidenceLevel(apiInsight);
-  
+
   // Categorize based on activity and metric
   const category = categorizeInsight(apiInsight);
-  
+
   // Determine impact from relationship type and direction
   const impact = determineImpact(apiInsight);
-  
+
   // Create date range (using current dates as placeholder since API doesn't provide them)
   const date_range = createDateRange();
 
@@ -83,8 +85,11 @@ export function transformAPIInsightToFrontend(apiInsight: APIInsight): FrontendI
  */
 function createInsightDescription(apiInsight: APIInsight): string {
   const direction = apiInsight.direction || "neutral";
-  const relationshipType = apiInsight.relationship_type === "INFLUENCE_CONFIRMED" ? "influenced" : "did not influence";
-  
+  const relationshipType =
+    apiInsight.relationship_type === "INFLUENCE_CONFIRMED"
+      ? "influenced"
+      : "did not influence";
+
   return `Activity "${apiInsight.activity_description}" ${relationshipType} metric "${apiInsight.metric_verbose_name}" in a ${direction} direction.`;
 }
 
@@ -97,10 +102,13 @@ function extractEvidenceText(evidence: any): string {
   }
 
   let evidenceText = "";
-  
+
   // Extract active evidence
   if (evidence.active_evidence) {
-    if (evidence.active_evidence.evidence && Array.isArray(evidence.active_evidence.evidence)) {
+    if (
+      evidence.active_evidence.evidence &&
+      Array.isArray(evidence.active_evidence.evidence)
+    ) {
       evidenceText += "Active Evidence:\n";
       evidenceText += evidence.active_evidence.evidence.join("\n");
       evidenceText += "\n\n";
@@ -115,11 +123,11 @@ function extractEvidenceText(evidence: any): string {
     evidenceText += "Influence Evidence:\n";
     evidenceText += `Influence likely: ${evidence.influence_evidence.influence_likely || false}\n`;
     evidenceText += `Direction aligned: ${evidence.influence_evidence.influence_direction_aligned || false}\n`;
-    
+
     if (evidence.influence_evidence.other_supporting_insights?.length > 0) {
       evidenceText += `Supporting insights: ${evidence.influence_evidence.other_supporting_insights.join(", ")}\n`;
     }
-    
+
     if (evidence.influence_evidence.other_conflicting_insights?.length > 0) {
       evidenceText += `Conflicting insights: ${evidence.influence_evidence.other_conflicting_insights.join(", ")}\n`;
     }
@@ -131,13 +139,16 @@ function extractEvidenceText(evidence: any): string {
 /**
  * Determine confidence level from evidence
  */
-function determineConfidenceLevel(apiInsight: APIInsight): "high" | "medium" | "low" {
+function determineConfidenceLevel(
+  apiInsight: APIInsight,
+): "high" | "medium" | "low" {
   if (!apiInsight.evidence || !apiInsight.evidence.active_evidence) {
     return "low";
   }
 
-  const activeConfidence = apiInsight.evidence.active_evidence.active_confidence;
-  
+  const activeConfidence =
+    apiInsight.evidence.active_evidence.active_confidence;
+
   if (typeof activeConfidence === "string") {
     switch (activeConfidence.toLowerCase()) {
       case "high":
@@ -152,7 +163,9 @@ function determineConfidenceLevel(apiInsight: APIInsight): "high" | "medium" | "
   }
 
   // Default based on relationship type
-  return apiInsight.relationship_type === "INFLUENCE_CONFIRMED" ? "medium" : "low";
+  return apiInsight.relationship_type === "INFLUENCE_CONFIRMED"
+    ? "medium"
+    : "low";
 }
 
 /**
@@ -161,17 +174,34 @@ function determineConfidenceLevel(apiInsight: APIInsight): "high" | "medium" | "
 function categorizeInsight(apiInsight: APIInsight): string {
   const activity = apiInsight.activity_description.toLowerCase();
   const metric = apiInsight.metric_verbose_name.toLowerCase();
-  
+
   // Basic categorization logic - can be enhanced
-  if (activity.includes("promotion") || activity.includes("discount") || activity.includes("sale")) {
+  if (
+    activity.includes("promotion") ||
+    activity.includes("discount") ||
+    activity.includes("sale")
+  ) {
     return "promotional_impact";
-  } else if (activity.includes("content") || activity.includes("blog") || activity.includes("article")) {
+  } else if (
+    activity.includes("content") ||
+    activity.includes("blog") ||
+    activity.includes("article")
+  ) {
     return "content_marketing";
   } else if (activity.includes("email") || activity.includes("newsletter")) {
     return "email_marketing";
-  } else if (activity.includes("social") || activity.includes("facebook") || activity.includes("twitter") || activity.includes("linkedin")) {
+  } else if (
+    activity.includes("social") ||
+    activity.includes("facebook") ||
+    activity.includes("twitter") ||
+    activity.includes("linkedin")
+  ) {
     return "social_media";
-  } else if (activity.includes("campaign") || activity.includes("advertising") || activity.includes("ad")) {
+  } else if (
+    activity.includes("campaign") ||
+    activity.includes("advertising") ||
+    activity.includes("ad")
+  ) {
     return "marketing_campaign";
   } else if (metric.includes("seasonal") || activity.includes("seasonal")) {
     return "seasonal_trend";
@@ -183,11 +213,13 @@ function categorizeInsight(apiInsight: APIInsight): string {
 /**
  * Determine impact from relationship type and direction
  */
-function determineImpact(apiInsight: APIInsight): "positive" | "negative" | "neutral" {
+function determineImpact(
+  apiInsight: APIInsight,
+): "positive" | "negative" | "neutral" {
   if (apiInsight.relationship_type === "NO_INFLUENCE_CONFIRMED") {
     return "neutral";
   }
-  
+
   if (apiInsight.direction === "positive") {
     return "positive";
   } else if (apiInsight.direction === "negative") {
@@ -205,16 +237,18 @@ function createDateRange(): { start: string; end: string } {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(endDate.getDate() - 30); // Default to 30-day range
-  
+
   return {
-    start: startDate.toISOString().split('T')[0],
-    end: endDate.toISOString().split('T')[0],
+    start: startDate.toISOString().split("T")[0],
+    end: endDate.toISOString().split("T")[0],
   };
 }
 
 /**
  * Transform array of API insights to frontend format
  */
-export function transformAPIInsightsToFrontend(apiResponse: APIInsightResponse): FrontendInsight[] {
+export function transformAPIInsightsToFrontend(
+  apiResponse: APIInsightResponse,
+): FrontendInsight[] {
   return apiResponse.insights.map(transformAPIInsightToFrontend);
 }

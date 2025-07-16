@@ -19,11 +19,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
 
   // If not authenticated, show authentication page
   if (!isAuthenticated) {
-    return (
-      <Authentication
-        onAuthenticated={() => {}}
-      />
-    );
+    return <Authentication onAuthenticated={() => {}} />;
   }
 
   // If authenticated but hasn't selected workspace, show organization selection
