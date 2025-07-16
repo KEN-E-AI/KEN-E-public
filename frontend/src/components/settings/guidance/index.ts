@@ -34,3 +34,45 @@ export {
   SettingsSection,
   ScopeNavigation,
 } from "./HierarchicalSettings";
+
+// Phase 6: Permission Management
+export {
+  PermissionAwareContainer,
+  PermissionCheck,
+  ConditionalPermission,
+} from "./PermissionAwareContainer";
+
+// Phase 6: Contextual Actions
+export {
+  ContextualActionBar,
+  QuickActionBar,
+  getOrganizationActions,
+  getAccountActions,
+  getUserActions,
+  type ContextualActionType,
+} from "./ContextualActionBar";
+
+// Phase 6: Enhanced Components
+export {
+  EnhancedEntitySelector,
+  ContextSwitcher,
+} from "../enhanced/EnhancedEntitySelector";
+
+// Phase 6: Status Indicators
+export {
+  ConfigurationStatusBadge,
+  ConfigurationOverview,
+  type ConfigurationStatus,
+} from "../status/ConfigurationStatusBadge";
+
+export {
+  RequiredIndicator,
+  FieldRequiredIndicator,
+  RequiredFieldsOverview,
+} from "../status/RequiredIndicator";
+
+export {
+  UnsavedChangesIndicator,
+  AutoSaveIndicator,
+  FormStateIndicator,
+} from "../status/UnsavedChangesIndicator";

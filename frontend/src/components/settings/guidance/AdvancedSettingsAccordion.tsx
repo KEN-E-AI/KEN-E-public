@@ -1,4 +1,11 @@
-import { Settings, ChevronRight, AlertTriangle } from "lucide-react";
+import {
+  Settings,
+  ChevronRight,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+} from "lucide-react";
 import {
   Accordion,
   AccordionContent,
@@ -7,6 +14,8 @@ import {
 } from "@/components/ui/accordion";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { PermissionAwareContainer } from "./PermissionAwareContainer";
 
 interface AdvancedSettingsAccordionProps {
   children: React.ReactNode;
@@ -15,6 +24,11 @@ interface AdvancedSettingsAccordionProps {
   warningText?: string;
   defaultOpen?: boolean;
   className?: string;
+  requiredPermission?: string;
+  requiredRole?: "admin" | "member" | "viewer";
+  showCompletionStatus?: boolean;
+  completedSteps?: number;
+  totalSteps?: number;
 }
 
 export const AdvancedSettingsAccordion = ({
@@ -24,8 +38,37 @@ export const AdvancedSettingsAccordion = ({
   warningText,
   defaultOpen = false,
   className,
+  requiredPermission,
+  requiredRole = "member",
+  showCompletionStatus = false,
+  completedSteps = 0,
+  totalSteps = 1,
 }: AdvancedSettingsAccordionProps) => {
-  return (
+  const getCompletionStatus = () => {
+    if (totalSteps === 0) return { status: "incomplete", progress: 0 };
+    const progress = (completedSteps / totalSteps) * 100;
+
+    if (progress === 100) return { status: "complete", progress };
+    if (progress > 50) return { status: "warning", progress };
+    return { status: "incomplete", progress };
+  };
+
+  const { status, progress } = getCompletionStatus();
+
+  const getStatusIcon = () => {
+    switch (status) {
+      case "complete":
+        return <CheckCircle className="h-3 w-3 text-green-600" />;
+      case "warning":
+        return <AlertCircle className="h-3 w-3 text-yellow-600" />;
+      case "incomplete":
+        return <Clock className="h-3 w-3 text-gray-600" />;
+      default:
+        return <Clock className="h-3 w-3 text-gray-600" />;
+    }
+  };
+
+  const accordionContent = (
     <Accordion
       type="single"
       collapsible
@@ -37,23 +80,45 @@ export const AdvancedSettingsAccordion = ({
         className="border border-orange-200 rounded-lg"
       >
         <AccordionTrigger className="px-4 py-3 hover:no-underline">
-          <div className="flex items-center gap-3 w-full">
-            <div className="flex items-center gap-2">
-              <Settings className="h-4 w-4 text-orange-600" />
-              <span className="font-medium">{title}</span>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Settings className="h-4 w-4 text-orange-600" />
+                <span className="font-medium">{title}</span>
+              </div>
+              <Badge
+                variant="outline"
+                className="text-orange-600 border-orange-300"
+              >
+                Advanced
+              </Badge>
             </div>
-            <Badge
-              variant="outline"
-              className="text-orange-600 border-orange-300"
-            >
-              Advanced
-            </Badge>
+            {showCompletionStatus && (
+              <div className="flex items-center gap-2 mr-4">
+                {getStatusIcon()}
+                <span className="text-xs text-gray-600">
+                  {completedSteps}/{totalSteps}
+                </span>
+              </div>
+            )}
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-4 pb-4">
           <div className="space-y-4">
             {description && (
               <p className="text-sm text-gray-600 mb-3">{description}</p>
+            )}
+
+            {showCompletionStatus && (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-600">Configuration Progress</span>
+                  <span className="text-gray-900 font-medium">
+                    {Math.round(progress)}%
+                  </span>
+                </div>
+                <Progress value={progress} className="h-2" />
+              </div>
             )}
 
             {warningText && (
@@ -71,6 +136,21 @@ export const AdvancedSettingsAccordion = ({
       </AccordionItem>
     </Accordion>
   );
+
+  // If permission is required, wrap with PermissionAwareContainer
+  if (requiredPermission) {
+    return (
+      <PermissionAwareContainer
+        requiredPermission={requiredPermission}
+        requiredRole={requiredRole}
+        gracefulDegradation={true}
+      >
+        {accordionContent}
+      </PermissionAwareContainer>
+    );
+  }
+
+  return accordionContent;
 };
 
 interface SettingsGroupProps {
@@ -104,6 +184,13 @@ interface ProgressiveDisclosureProps {
   advancedDescription?: string;
   advancedWarning?: string;
   className?: string;
+  requiredPermissionForAdvanced?: string;
+  requiredRoleForAdvanced?: "admin" | "member" | "viewer";
+  showCompletionStatus?: boolean;
+  basicCompletedSteps?: number;
+  basicTotalSteps?: number;
+  advancedCompletedSteps?: number;
+  advancedTotalSteps?: number;
 }
 
 export const ProgressiveDisclosure = ({
@@ -113,17 +200,47 @@ export const ProgressiveDisclosure = ({
   advancedDescription = "Additional configuration options for power users.",
   advancedWarning,
   className,
+  requiredPermissionForAdvanced,
+  requiredRoleForAdvanced = "member",
+  showCompletionStatus = false,
+  basicCompletedSteps = 0,
+  basicTotalSteps = 1,
+  advancedCompletedSteps = 0,
+  advancedTotalSteps = 1,
 }: ProgressiveDisclosureProps) => {
+  const basicProgress =
+    basicTotalSteps > 0 ? (basicCompletedSteps / basicTotalSteps) * 100 : 0;
+
   return (
     <div className={className}>
       {/* Basic Settings */}
-      <div className="space-y-6 mb-6">{basicSettings}</div>
+      <div className="space-y-6 mb-6">
+        {showCompletionStatus && (
+          <div className="bg-gray-50 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-900">
+                Basic Configuration
+              </h3>
+              <span className="text-xs text-gray-600">
+                {basicCompletedSteps}/{basicTotalSteps}
+              </span>
+            </div>
+            <Progress value={basicProgress} className="h-2" />
+          </div>
+        )}
+        {basicSettings}
+      </div>
 
       {/* Advanced Settings */}
       <AdvancedSettingsAccordion
         title={advancedTitle}
         description={advancedDescription}
         warningText={advancedWarning}
+        requiredPermission={requiredPermissionForAdvanced}
+        requiredRole={requiredRoleForAdvanced}
+        showCompletionStatus={showCompletionStatus}
+        completedSteps={advancedCompletedSteps}
+        totalSteps={advancedTotalSteps}
       >
         <div className="space-y-6">{advancedSettings}</div>
       </AdvancedSettingsAccordion>

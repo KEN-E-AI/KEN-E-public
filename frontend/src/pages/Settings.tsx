@@ -6,6 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { EntitySelector } from "@/components/ui/entity-selector";
 import {
+  EnhancedEntitySelector,
+  ContextualActionBar,
+  ConfigurationStatusBadge,
+  ConfigurationOverview,
+  getOrganizationActions,
+  getAccountActions,
+  type ConfigurationStatus,
+} from "@/components/settings/guidance";
+import {
   Building2,
   User,
   Users,
@@ -32,30 +41,34 @@ const Settings = () => {
     switch (cardId) {
       case "organization":
         return {
-          status: "complete" as const,
+          status: "complete" as ConfigurationStatus,
           completedSteps: 4,
           totalSteps: 4,
+          requiredSteps: 3,
           lastUpdated: "2 days ago",
         };
       case "account":
         return {
-          status: "warning" as const,
+          status: "warning" as ConfigurationStatus,
           completedSteps: 2,
           totalSteps: 3,
+          requiredSteps: 2,
           lastUpdated: "1 week ago",
         };
       case "user":
         return {
-          status: "incomplete" as const,
+          status: "incomplete" as ConfigurationStatus,
           completedSteps: 1,
           totalSteps: 3,
+          requiredSteps: 2,
           lastUpdated: "Never",
         };
       default:
         return {
-          status: "incomplete" as const,
+          status: "incomplete" as ConfigurationStatus,
           completedSteps: 0,
           totalSteps: 1,
+          requiredSteps: 1,
           lastUpdated: "Never",
         };
     }
@@ -142,30 +155,42 @@ const Settings = () => {
         </p>
       </div>
 
-      {/* Current Context with Enhanced Entity Selector */}
+      {/* Enhanced Entity Selector with Contextual Actions */}
       {selectedOrgAccount && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="text-lg">Current Context</span>
-              <EntitySelector className="min-w-[300px]" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2 text-dashboard-gray-600">
-              <Building2 className="h-4 w-4" />
-              <span className="font-medium">Active Context:</span>
-              <span>{currentOrgName}</span>
-              {selectedOrgAccount.metadata?.account_name && (
-                <>
-                  <span className="text-dashboard-gray-400">→</span>
-                  <span>{currentAccountName}</span>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <EnhancedEntitySelector
+          layout="card"
+          showContextualActions={true}
+          showCurrentContext={true}
+          availableActions={["switch", "create", "manage"]}
+          onActionClick={(action) => {
+            console.log("Action clicked:", action);
+          }}
+        />
       )}
+
+      {/* Configuration Overview */}
+      <ConfigurationOverview
+        sections={[
+          {
+            id: "organization",
+            title: "Organization Settings",
+            description: "Organization profile, billing, and team management",
+            ...getConfigurationStatus("organization"),
+          },
+          {
+            id: "account",
+            title: "Account Management",
+            description: "Account creation and configuration",
+            ...getConfigurationStatus("account"),
+          },
+          {
+            id: "user",
+            title: "User Settings",
+            description: "Personal profile and preferences",
+            ...getConfigurationStatus("user"),
+          },
+        ]}
+      />
 
       {/* Settings Cards with Status Indicators */}
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
@@ -188,7 +213,14 @@ const Settings = () => {
                         <h3 className="font-semibold text-dashboard-gray-900">
                           {card.title}
                         </h3>
-                        {getStatusBadge(card.status)}
+                        <ConfigurationStatusBadge
+                          status={card.status}
+                          completedSteps={card.completedSteps}
+                          totalSteps={card.totalSteps}
+                          requiredSteps={card.requiredSteps}
+                          lastUpdated={card.lastUpdated}
+                          size="sm"
+                        />
                       </div>
                       <p className="text-sm text-dashboard-gray-600 font-normal">
                         {card.context}
@@ -227,10 +259,23 @@ const Settings = () => {
         })}
       </div>
 
-      {/* Quick Actions */}
+      {/* Quick Actions with Contextual Action Bar */}
       <Card>
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
+          <CardTitle className="flex items-center justify-between">
+            <span>Quick Actions</span>
+            <ContextualActionBar
+              context="settings"
+              actions={[
+                ...getOrganizationActions(selectedOrgAccount?.orgId),
+                ...getAccountActions(selectedOrgAccount?.accountId),
+              ]}
+              dropdownLabel="More Actions"
+              onActionClick={(action) => {
+                console.log("Quick action clicked:", action);
+              }}
+            />
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3">
