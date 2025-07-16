@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Building, Plus, Check, ArrowRight, Settings } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface OrganizationSelectionProps {
   onComplete: () => void;
@@ -34,6 +35,7 @@ interface OrganizationSelectionProps {
 const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     user,
     setSelectedOrgAccount,
@@ -228,10 +230,38 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       // Set the newly created account as selected
       setSelectedAccount(newAccountId);
 
-      // Alert user of successful creation
-      alert(
-        `Account "${newAccount.account_name}" created successfully! Click Continue to proceed to account settings.`,
-      );
+      // Toast user of successful creation
+      toast({
+        title: "Account created successfully!",
+        description: `"${newAccount.account_name}" has been created. Redirecting to account settings...`,
+      });
+
+      // Auto-navigate to account settings after successful account creation
+      setTimeout(() => {
+        // Set the workspace selection data before navigating
+        const org = localOrgMetadata[selectedOrganization];
+        const account =
+          org?.accounts?.find((a: any) => a.account_id === newAccountId) ||
+          newAccount;
+
+        setSelectedOrgAccount({
+          orgId: selectedOrganization,
+          accountId: newAccountId,
+          metadata: {
+            organization_name: org?.organization_name || selectedOrganization,
+            account_name: account?.account_name || newAccount.account_name,
+            industry: account?.industry || newAccount.industry || "Unknown",
+            status: account?.status || newAccount.status || "Active",
+            timezone: account?.timezone || newAccount.timezone,
+            plan: org?.plan,
+          },
+        });
+        setCurrentOrganization(selectedOrganization);
+        completeWorkspaceSelection();
+
+        // Navigate to account settings instead of home
+        navigate("/account-settings");
+      }, 1500); // 1.5 second delay to show the toast
     } catch (err: any) {
       console.error("Failed to create account", err);
       const errorMessage =
