@@ -17,7 +17,7 @@ import {
 import {
   Building2,
   User,
-  Users,
+  Store,
   ArrowRight,
   CheckCircle,
   AlertCircle,
@@ -90,7 +90,7 @@ const Settings = () => {
       id: "account",
       title: "Account Management",
       description: "Create and manage accounts within your organization",
-      icon: Users,
+      icon: Store,
       route: "/settings/account",
       context: "Manage accounts",
       enabled: true,

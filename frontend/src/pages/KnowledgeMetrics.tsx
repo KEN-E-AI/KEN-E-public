@@ -2,7 +2,6 @@ import Layout from "@/components/layout/Layout";
 import { MetricsConfiguration } from "@/components/configuration";
 
 const KnowledgeMetrics = () => {
-
   return (
     <Layout pageTitle="Metrics Configuration">
       <div className="space-y-6">

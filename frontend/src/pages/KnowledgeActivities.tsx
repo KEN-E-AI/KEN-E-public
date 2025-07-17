@@ -2,7 +2,6 @@ import Layout from "@/components/layout/Layout";
 import { ActivitiesConfiguration } from "@/components/configuration";
 
 const KnowledgeActivities = () => {
-
   return (
     <Layout pageTitle="Activities Configuration">
       <div className="space-y-6">

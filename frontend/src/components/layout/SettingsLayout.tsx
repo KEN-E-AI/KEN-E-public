@@ -41,8 +41,8 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   return (
     <Layout pageTitle={pageTitle}>
       <div className={cn("space-y-6", className)}>
-        {/* Back Button */}
-        {showBackButton && currentPage !== "settings" && (
+        {/* Back Button - Only show for account-specific settings */}
+        {showBackButton && currentPage === "account" && (
           <div className="pt-2">
             <Button
               variant="ghost"
@@ -56,12 +56,30 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         )}
 
         {/* Breadcrumb Navigation */}
-        <ContextBreadcrumb currentPage={currentPage} />
+        {currentPage !== "settings" && currentPage !== "organization" && (
+          <ContextBreadcrumb currentPage={currentPage} />
+        )}
 
-        {/* Current Context with Entity Selector */}
+        {/* Organization Selector - Only show for organization settings */}
         {showEntitySelector &&
           selectedOrgAccount &&
-          currentPage !== "settings" && (
+          currentPage === "organization" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <EntitySelector
+                    className="min-w-[300px]"
+                    organizationOnly={true}
+                  />
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          )}
+
+        {/* Current Context with Entity Selector - Show for account-specific settings */}
+        {showEntitySelector &&
+          selectedOrgAccount &&
+          currentPage === "account" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">

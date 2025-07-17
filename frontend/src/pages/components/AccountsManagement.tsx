@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   createAccount,
   getAccountsByOrganizationId,
+  deleteAccount,
 } from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { User, Plus, X, Settings, Check, ChevronDown } from "lucide-react";
+import { User, Plus, X, Settings, Store, AlertTriangle } from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
   TIMEZONE_OPTIONS,
@@ -530,6 +531,78 @@ const AccountsManagement = ({
     }
   };
 
+  const handleDeleteAccount = async (account: Account | null) => {
+    if (!account) {
+      toast({
+        title: "Error",
+        description: "No account selected for deletion",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Show confirmation dialog
+    if (
+      !window.confirm(
+        `Are you sure you want to delete the account "${account.account_name}"? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      console.log("[AccountsManagement] Deleting account:", account.account_id);
+
+      // Delete account from Neo4j
+      await deleteAccount(account.account_id);
+
+      // Remove from local state
+      setOrganizationAccounts((prev) =>
+        prev.filter((acc) => acc.account_id !== account.account_id),
+      );
+
+      // Remove from account metadata
+      const newAccountMetadata = { ...accountMetadata };
+      delete newAccountMetadata[account.account_id];
+      setAccountMetadata(newAccountMetadata);
+
+      // Remove from user permissions
+      if (user?.permissions?.accounts) {
+        const newAccountPermissions = { ...user.permissions.accounts };
+        delete newAccountPermissions[account.account_id];
+        updateUser({
+          permissions: {
+            ...user.permissions,
+            accounts: newAccountPermissions,
+          },
+        });
+      }
+
+      // Close the modal
+      setIsModalOpen(false);
+
+      toast({
+        title: "Account Deleted",
+        description: `"${account.account_name}" has been permanently deleted.`,
+      });
+
+      console.log("[AccountsManagement] Account deleted successfully");
+    } catch (error: any) {
+      console.error("[AccountsManagement] Error deleting account:", error);
+
+      const errorMessage =
+        error.response?.data?.detail ||
+        error.message ||
+        "Failed to delete account";
+
+      toast({
+        title: "Error",
+        description: `Error: ${errorMessage}`,
+        variant: "destructive",
+      });
+    }
+  };
+
   // Website field management
   const addWebsiteField = () => {
     setEditFormData({
@@ -588,7 +661,7 @@ const AccountsManagement = ({
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <User className="h-5 w-5" />
+              <Store className="h-5 w-5" />
               Accounts
             </div>
             <Button
@@ -867,6 +940,37 @@ const AccountsManagement = ({
                 ))}
               </div>
             </div>
+
+            {/* Danger Zone */}
+            <div className="pt-6">
+              <div className="border border-red-200 rounded-lg p-4 bg-red-50/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                  <h3 className="text-sm font-medium text-red-600">
+                    Danger Zone
+                  </h3>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <Label className="text-red-600 text-sm font-medium">
+                      Delete Account
+                    </Label>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Permanently delete this account and all associated data
+                    </p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDeleteAccount(selectedAccount)}
+                    className="ml-4"
+                  >
+                    Delete Account
+                  </Button>
+                </div>
+              </div>
+            </div>
+
             <div className="flex gap-2 pt-4">
               <Button
                 variant="outline"

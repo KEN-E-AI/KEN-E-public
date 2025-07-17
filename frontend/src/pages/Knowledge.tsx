@@ -14,7 +14,6 @@ import { renderConfigurationSection } from "@/lib/knowledgeUtils";
 const Knowledge = () => {
   const navigate = useNavigate();
 
-
   return (
     <Layout pageTitle="Knowledge">
       <div>

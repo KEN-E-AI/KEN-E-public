@@ -232,7 +232,6 @@ const Insights = () => {
   return (
     <Layout pageTitle="Insights">
       <div className="space-y-6 flex flex-col">
-
         {/* Search and Filter Bar */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="flex-1 relative">

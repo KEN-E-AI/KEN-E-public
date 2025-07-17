@@ -14,12 +14,14 @@ interface EntitySelectorProps {
   className?: string;
   onSelectionChange?: (selection: SelectedOrgAccount) => void;
   showUserContext?: boolean;
+  organizationOnly?: boolean;
 }
 
 export const EntitySelector = ({
   className = "",
   onSelectionChange,
   showUserContext = false,
+  organizationOnly = false,
 }: EntitySelectorProps) => {
   const navigate = useNavigate();
   const {
@@ -34,70 +36,92 @@ export const EntitySelector = ({
   // Get organizations the user has access to
   const accessibleOrgIds = Object.keys(user?.permissions?.organizations || {});
 
-  // Build all accessible org/account combinations
-  const combinedOptions = accessibleOrgIds
-    .flatMap((orgId) => {
-      const organization = orgMetadata[orgId];
-      if (!organization) return [];
+  // Build options based on mode
+  const combinedOptions = organizationOnly
+    ? accessibleOrgIds
+        .map((orgId) => {
+          const organization = orgMetadata[orgId];
+          if (!organization) return null;
 
-      // Get all accounts for this organization
-      const orgAccounts = organization.accounts || [];
+          return {
+            value: JSON.stringify({ orgId, accountId: "" }),
+            label: organization.organization_name,
+            orgId,
+            accountId: "",
+            metadata: {
+              organization_name: organization.organization_name,
+              account_name: "",
+              industry: "",
+              status: "Active",
+              timezone: "",
+              plan: organization.plan,
+            },
+          };
+        })
+        .filter(Boolean)
+    : accessibleOrgIds
+        .flatMap((orgId) => {
+          const organization = orgMetadata[orgId];
+          if (!organization) return [];
 
-      // For regular organizations, return all accounts in the organization
-      if (!organization.agency) {
-        return orgAccounts.map((account: any) => ({
-          value: JSON.stringify({ orgId, accountId: account.account_id }),
-          label: `${organization.organization_name} - ${account.account_name}`,
-          orgId,
-          accountId: account.account_id,
-          metadata: {
-            organization_name: organization.organization_name,
-            account_name: account.account_name,
-            industry: account.industry || "Unknown",
-            status: account.status || "Active",
-            timezone: account.timezone,
-            plan: organization.plan,
-          },
-        }));
-      }
+          // Get all accounts for this organization
+          const orgAccounts = organization.accounts || [];
 
-      // For agency organizations, get accounts from child organizations
-      if (organization.agency && organization.child_organizations) {
-        return organization.child_organizations.flatMap(
-          (childOrgId: string) => {
-            const childOrg = orgMetadata[childOrgId];
-            if (!childOrg) return [];
-
-            const childAccounts = childOrg.accounts || [];
-            return childAccounts.map((account: any) => ({
-              value: JSON.stringify({
-                orgId: childOrgId,
-                accountId: account.account_id,
-              }),
-              label: `${childOrg.organization_name} - ${account.account_name}`,
-              orgId: childOrgId,
+          // For regular organizations, return all accounts in the organization
+          if (!organization.agency) {
+            return orgAccounts.map((account: any) => ({
+              value: JSON.stringify({ orgId, accountId: account.account_id }),
+              label: `${organization.organization_name} - ${account.account_name}`,
+              orgId,
               accountId: account.account_id,
               metadata: {
-                organization_name: childOrg.organization_name,
+                organization_name: organization.organization_name,
                 account_name: account.account_name,
                 industry: account.industry || "Unknown",
                 status: account.status || "Active",
                 timezone: account.timezone,
-                plan: childOrg.plan,
+                plan: organization.plan,
               },
             }));
-          },
-        );
-      }
+          }
 
-      return [];
-    })
-    .filter(Boolean);
+          // For agency organizations, get accounts from child organizations
+          if (organization.agency && organization.child_organizations) {
+            return organization.child_organizations.flatMap(
+              (childOrgId: string) => {
+                const childOrg = orgMetadata[childOrgId];
+                if (!childOrg) return [];
+
+                const childAccounts = childOrg.accounts || [];
+                return childAccounts.map((account: any) => ({
+                  value: JSON.stringify({
+                    orgId: childOrgId,
+                    accountId: account.account_id,
+                  }),
+                  label: `${childOrg.organization_name} - ${account.account_name}`,
+                  orgId: childOrgId,
+                  accountId: account.account_id,
+                  metadata: {
+                    organization_name: childOrg.organization_name,
+                    account_name: account.account_name,
+                    industry: account.industry || "Unknown",
+                    status: account.status || "Active",
+                    timezone: account.timezone,
+                    plan: childOrg.plan,
+                  },
+                }));
+              },
+            );
+          }
+
+          return [];
+        })
+        .filter(Boolean);
 
   const currentValue = selectedOrgAccount
     ? JSON.stringify({
         orgId: selectedOrgAccount.orgId,
-        accountId: selectedOrgAccount.accountId,
+        accountId: organizationOnly ? "" : selectedOrgAccount.accountId,
       })
     : "";
 
@@ -116,35 +140,72 @@ export const EntitySelector = ({
     }
 
     const { orgId, accountId } = parsed;
-    const account = accountMetadata[accountId];
     const organization = orgMetadata[orgId];
 
-    if (!account || !organization) {
-      console.warn("⚠️ Invalid selection — no matching org/account.", {
+    if (!organization) {
+      console.warn("⚠️ Invalid selection — no matching org.", {
         orgId,
         accountId,
       });
       return;
     }
 
-    const selection: SelectedOrgAccount = {
-      orgId,
-      accountId,
-      metadata: {
-        organization_name: organization.organization_name,
-        account_name: account.account_name,
-        industry: account.industry,
-        status: account.status,
-        timezone: account.timezone,
-        plan: organization.plan,
-      },
-    };
+    if (organizationOnly) {
+      // For organization-only mode, just set the organization
+      setCurrentOrganization(orgId);
 
-    setSelectedOrgAccount(selection);
-    setCurrentOrganization(orgId);
+      // Find the first account in the organization if we need to set a selection
+      const firstAccount = organization.accounts?.[0];
+      if (firstAccount) {
+        const selection: SelectedOrgAccount = {
+          orgId,
+          accountId: firstAccount.account_id,
+          metadata: {
+            organization_name: organization.organization_name,
+            account_name: firstAccount.account_name,
+            industry: firstAccount.industry,
+            status: firstAccount.status,
+            timezone: firstAccount.timezone,
+            plan: organization.plan,
+          },
+        };
+        setSelectedOrgAccount(selection);
 
-    if (onSelectionChange) {
-      onSelectionChange(selection);
+        if (onSelectionChange) {
+          onSelectionChange(selection);
+        }
+      }
+    } else {
+      // Original logic for org/account selection
+      const account = accountMetadata[accountId];
+
+      if (!account) {
+        console.warn("⚠️ Invalid selection — no matching account.", {
+          orgId,
+          accountId,
+        });
+        return;
+      }
+
+      const selection: SelectedOrgAccount = {
+        orgId,
+        accountId,
+        metadata: {
+          organization_name: organization.organization_name,
+          account_name: account.account_name,
+          industry: account.industry,
+          status: account.status,
+          timezone: account.timezone,
+          plan: organization.plan,
+        },
+      };
+
+      setSelectedOrgAccount(selection);
+      setCurrentOrganization(orgId);
+
+      if (onSelectionChange) {
+        onSelectionChange(selection);
+      }
     }
   };
 
@@ -164,11 +225,17 @@ export const EntitySelector = ({
           <div className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-dashboard-gray-600" />
             <div className="flex flex-col items-start">
-              <div className="flex items-center gap-2 text-sm font-medium text-dashboard-gray-900">
-                <span className="truncate">{currentOrgName}</span>
-                <ChevronRight className="h-3 w-3 text-dashboard-gray-400" />
-                <span className="truncate">{currentAccountName}</span>
-              </div>
+              {organizationOnly ? (
+                <div className="text-sm font-medium text-dashboard-gray-900">
+                  <span className="truncate">{currentOrgName}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm font-medium text-dashboard-gray-900">
+                  <span className="truncate">{currentOrgName}</span>
+                  <ChevronRight className="h-3 w-3 text-dashboard-gray-400" />
+                  <span className="truncate">{currentAccountName}</span>
+                </div>
+              )}
               {showUserContext && (
                 <div className="flex items-center gap-1 text-xs text-dashboard-gray-600 mt-1">
                   <User className="h-3 w-3" />
@@ -188,23 +255,27 @@ export const EntitySelector = ({
                 <div className="font-medium text-sm">
                   {option.metadata.organization_name}
                 </div>
-                <div className="text-xs text-dashboard-gray-600">
-                  {option.metadata.account_name}
-                </div>
+                {!organizationOnly && (
+                  <div className="text-xs text-dashboard-gray-600">
+                    {option.metadata.account_name}
+                  </div>
+                )}
               </div>
             </div>
           </SelectItem>
         ))}
-        <SelectItem
-          key="all-orgs-accounts"
-          value="all-orgs-accounts"
-          className="border-t border-gray-200 mt-1 pt-2"
-        >
-          <div className="flex items-center gap-2">
-            <Building2 className="h-3 w-3 text-dashboard-gray-600" />
-            <div className="truncate">All Organizations & Accounts</div>
-          </div>
-        </SelectItem>
+        {!organizationOnly && (
+          <SelectItem
+            key="all-orgs-accounts"
+            value="all-orgs-accounts"
+            className="border-t border-gray-200 mt-1 pt-2"
+          >
+            <div className="flex items-center gap-2">
+              <Building2 className="h-3 w-3 text-dashboard-gray-600" />
+              <div className="truncate">All Organizations & Accounts</div>
+            </div>
+          </SelectItem>
+        )}
       </SelectContent>
     </Select>
   );
