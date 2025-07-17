@@ -57,13 +57,19 @@ export const UnsavedChangesIndicator = ({
   const getStatusIcon = () => {
     if (isLoading)
       return (
-        <Clock className={cn(iconSizes[size], "text-blue-500 animate-spin")} />
+        <Clock
+          className={cn(iconSizes[size], "text-brand-medium-blue animate-spin")}
+        />
       );
     if (hasUnsavedChanges)
       return (
-        <AlertTriangle className={cn(iconSizes[size], "text-yellow-600")} />
+        <AlertTriangle
+          className={cn(iconSizes[size], "text-brand-dark-blue")}
+        />
       );
-    return <CheckCircle className={cn(iconSizes[size], "text-green-600")} />;
+    return (
+      <CheckCircle className={cn(iconSizes[size], "text-brand-dark-blue")} />
+    );
   };
 
   const getStatusText = () => {
@@ -73,10 +79,11 @@ export const UnsavedChangesIndicator = ({
   };
 
   const getStatusColor = () => {
-    if (isLoading) return "bg-blue-50 text-blue-700 border-blue-200";
+    if (isLoading)
+      return "bg-brand-light-blue/20 text-brand-dark-blue border-brand-light-blue/40";
     if (hasUnsavedChanges)
-      return "bg-yellow-50 text-yellow-700 border-yellow-200";
-    return "bg-green-50 text-green-700 border-green-200";
+      return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
+    return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
   };
 
   if (variant === "badge") {
@@ -99,9 +106,11 @@ export const UnsavedChangesIndicator = ({
     if (!hasUnsavedChanges && !isLoading) return null;
 
     return (
-      <Alert className={cn("border-yellow-200 bg-yellow-50", className)}>
-        <AlertTriangle className="h-4 w-4 text-yellow-600" />
-        <AlertDescription className="text-yellow-800">
+      <Alert
+        className={cn("border-brand-yellow/40 bg-brand-yellow/20", className)}
+      >
+        <AlertTriangle className="h-4 w-4 text-brand-dark-blue" />
+        <AlertDescription className="text-brand-dark-blue">
           <div className="flex items-center justify-between">
             <span>{getStatusText()}</span>
             <div className="flex items-center gap-2 ml-4">
@@ -111,7 +120,7 @@ export const UnsavedChangesIndicator = ({
                   size="sm"
                   onClick={onSave}
                   disabled={saveDisabled || isLoading}
-                  className="h-7 px-3 text-xs bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200"
+                  className="h-7 px-3 text-xs bg-brand-yellow/10 border-brand-yellow/60 text-brand-dark-blue hover:bg-brand-yellow/20"
                 >
                   <Save className="h-3 w-3 mr-1" />
                   Save
@@ -123,7 +132,7 @@ export const UnsavedChangesIndicator = ({
                   size="sm"
                   onClick={onReset}
                   disabled={isLoading}
-                  className="h-7 px-3 text-xs bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200"
+                  className="h-7 px-3 text-xs bg-brand-yellow/10 border-brand-yellow/60 text-brand-dark-blue hover:bg-brand-yellow/20"
                 >
                   <RotateCcw className="h-3 w-3 mr-1" />
                   Reset
@@ -253,9 +262,9 @@ export const AutoSaveIndicator = ({
     <div className={cn("flex items-center gap-3 text-sm", className)}>
       <div className="flex items-center gap-2">
         {isAutoSaving ? (
-          <Clock className="h-4 w-4 text-blue-500 animate-spin" />
+          <Clock className="h-4 w-4 text-brand-medium-blue animate-spin" />
         ) : (
-          <CheckCircle className="h-4 w-4 text-green-500" />
+          <CheckCircle className="h-4 w-4 text-brand-dark-blue" />
         )}
         <span className="text-gray-600">
           {isAutoSaving ? "Auto-saving..." : "Auto-saved"}
@@ -302,19 +311,23 @@ export const FormStateIndicator = ({
 }: FormStateIndicatorProps) => {
   const getFormStatus = () => {
     if (isSubmitting)
-      return { icon: Clock, text: "Saving...", color: "text-blue-600" };
+      return {
+        icon: Clock,
+        text: "Saving...",
+        color: "text-brand-medium-blue",
+      };
     if (hasErrors)
       return { icon: XCircle, text: "Has errors", color: "text-red-600" };
     if (isDirty)
       return {
         icon: AlertTriangle,
         text: "Unsaved changes",
-        color: "text-yellow-600",
+        color: "text-brand-yellow",
       };
     return {
       icon: CheckCircle,
       text: "All changes saved",
-      color: "text-green-600",
+      color: "text-brand-light-green",
     };
   };
 

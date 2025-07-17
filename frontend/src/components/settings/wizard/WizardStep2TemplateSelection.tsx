@@ -58,14 +58,16 @@ export const WizardStep2TemplateSelection = ({
               <Card
                 key={template.id}
                 className={`cursor-pointer transition-all hover:shadow-md ${
-                  isSelected ? "ring-2 ring-blue-500 bg-blue-50" : ""
+                  isSelected
+                    ? "ring-2 ring-brand-medium-blue bg-brand-light-blue/20"
+                    : ""
                 }`}
                 onClick={() => onTemplateSelect(template)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <Icon className="h-5 w-5 text-blue-600" />
+                    <div className="w-10 h-10 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
+                      <Icon className="h-5 w-5 text-brand-medium-blue" />
                     </div>
                     <div>
                       <h3 className="font-semibold">{template.name}</h3>
@@ -74,7 +76,7 @@ export const WizardStep2TemplateSelection = ({
                       </Badge>
                     </div>
                     {isSelected && (
-                      <CheckCircle className="h-5 w-5 text-blue-600 ml-auto" />
+                      <CheckCircle className="h-5 w-5 text-brand-medium-blue ml-auto" />
                     )}
                   </div>
                 </CardHeader>

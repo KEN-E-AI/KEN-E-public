@@ -40,7 +40,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
 
   return (
     <Layout pageTitle={pageTitle}>
-      <div className={cn("max-w-4xl mx-auto space-y-6", className)}>
+      <div className={cn("space-y-6", className)}>
         {/* Back Button */}
         {showBackButton && currentPage !== "settings" && (
           <div className="pt-2">

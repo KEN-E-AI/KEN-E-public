@@ -102,11 +102,11 @@ export const AccountIntegrationsSettings = ({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "connected":
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
+        return <CheckCircle className="h-4 w-4 text-brand-dark-blue" />;
       case "error":
         return <XCircle className="h-4 w-4 text-red-500" />;
       case "pending":
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+        return <AlertCircle className="h-4 w-4 text-brand-dark-blue" />;
       default:
         return <XCircle className="h-4 w-4 text-gray-400" />;
     }
@@ -115,11 +115,11 @@ export const AccountIntegrationsSettings = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case "connected":
-        return "bg-green-50 text-green-700 border-green-200";
+        return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       case "error":
         return "bg-red-50 text-red-700 border-red-200";
       case "pending":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200";
+        return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
       default:
         return "bg-gray-50 text-gray-700 border-gray-200";
     }
@@ -208,8 +208,8 @@ export const AccountIntegrationsSettings = ({
                 <div key={integration.id} className="border rounded-lg p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <Link className="h-5 w-5 text-blue-600" />
+                      <div className="w-10 h-10 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
+                        <Link className="h-5 w-5 text-brand-medium-blue" />
                       </div>
                       <div>
                         <h3 className="font-medium">{integration.name}</h3>

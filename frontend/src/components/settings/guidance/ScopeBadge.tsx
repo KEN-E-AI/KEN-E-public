@@ -20,13 +20,15 @@ export const ScopeBadge = ({
       variant: "outline" as const,
       icon: Building,
       label: "Organization",
-      color: "border-blue-200 text-blue-700 bg-blue-50",
+      color:
+        "border-brand-light-blue/40 text-brand-dark-blue bg-brand-light-blue/20",
     },
     account: {
       variant: "secondary" as const,
       icon: Users,
       label: "Account",
-      color: "border-green-200 text-green-700 bg-green-50",
+      color:
+        "border-brand-light-green/40 text-brand-dark-blue bg-brand-light-green/20",
     },
     user: {
       variant: "default" as const,

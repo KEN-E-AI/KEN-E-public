@@ -143,42 +143,44 @@ const ChatSidebar = ({
 
   return (
     <div
-      className={`fixed left-0 top-0 h-full border-r bg-white border-dashboard-gray-200 flex flex-col z-30 transition-all duration-300 ${isCollapsed ? "w-16" : "w-80 md:w-80"}`}
+      className={`fixed right-0 top-0 h-full border-l bg-white border-dashboard-gray-200 flex flex-col z-30 transition-all duration-300 ${isCollapsed ? "w-16" : "w-80 md:w-80"}`}
     >
-      {/* Chat Heading */}
-      {!isCollapsed && (
-        <h2 className="text-lg font-semibold text-dashboard-gray-900 p-4 border-b border-dashboard-gray-200">
-          Chat
-        </h2>
-      )}
-
-      {/* Collapse Toggle Button */}
-      <div className="absolute top-4 right-2 z-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleCollapse}
-          className="p-1 h-8 w-8 hover:bg-dashboard-gray-100"
-        >
-          {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
-
-      {/* Collapsed State - Show only icon */}
+      {/* Header */}
       {isCollapsed ? (
-        <div className="flex flex-col items-center justify-start pt-16 p-2">
-          <div className="w-8 h-8 rounded-sm flex items-center justify-center mb-4 overflow-hidden" />
+        <div className="h-16 flex items-center justify-center border-b border-dashboard-gray-200">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="h-10 w-10 p-0"
+            aria-label="Toggle chat sidebar"
+          >
+            <MessageSquare className="h-5 w-5" />
+          </Button>
         </div>
       ) : (
+        <div className="h-16 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="h-8 w-8 p-0"
+            aria-label="Toggle chat sidebar"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <h2 className="text-lg font-semibold text-dashboard-gray-900 flex-1 text-center">
+            Chat
+          </h2>
+          <div className="w-8" /> {/* Spacer for balance */}
+        </div>
+      )}
+
+      {/* Main Content */}
+      {!isCollapsed && (
         <>
           {/* Header */}
           <div className="p-4 border-b border-dashboard-gray-200">
-            <div className="mb-3"></div>
-
             {/* Chat Controls */}
             <div className="flex gap-2 mb-4">
               <DropdownMenu>
@@ -199,7 +201,10 @@ const ChatSidebar = ({
                   <DropdownMenuItem>Budget Optimization Talk</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+              <Button
+                size="sm"
+                className="bg-brand-medium-blue hover:bg-brand-medium-blue/90"
+              >
                 New
               </Button>
 
@@ -250,14 +255,14 @@ const ChatSidebar = ({
                   className={cn(
                     "max-w-[80%] rounded-lg px-3 py-2 text-sm",
                     msg.role === "user"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-brand-medium-blue text-white"
                       : "bg-dashboard-gray-100 text-dashboard-gray-900",
                   )}
                 >
                   {msg.content}
                 </div>
                 {msg.role === "user" && (
-                  <div className="w-6 h-6 bg-blue-600 rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
+                  <div className="w-6 h-6 bg-brand-medium-blue rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
                     <User className="h-3 w-3 text-white" />
                   </div>
                 )}
@@ -305,7 +310,7 @@ const ChatSidebar = ({
                       onClick={sendNewMessage}
                       disabled={!newMessage.trim()}
                       size="sm"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+                      className="bg-brand-medium-blue hover:bg-brand-medium-blue/90 text-white px-4"
                     >
                       Send
                     </Button>

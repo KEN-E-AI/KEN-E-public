@@ -188,12 +188,12 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
               <Building className="h-6 w-6 text-white" />
             </div>
           </div>

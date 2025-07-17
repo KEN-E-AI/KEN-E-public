@@ -148,7 +148,7 @@ const HomeChatArea = () => {
           <div className="flex gap-2 w-full sm:w-auto">
             <Button
               size="sm"
-              className="bg-blue-600 hover:bg-blue-700 flex-1 sm:flex-none"
+              className="bg-brand-medium-blue hover:bg-brand-dark-blue flex-1 sm:flex-none"
             >
               New Chat
             </Button>
@@ -198,7 +198,7 @@ const HomeChatArea = () => {
                 className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
                   message.isUser
                     ? "bg-dashboard-gray-100 text-dashboard-gray-900"
-                    : "bg-blue-600 text-white"
+                    : "bg-brand-medium-blue text-white"
                 }`}
               >
                 <p className="text-sm leading-relaxed">{message.content}</p>
@@ -248,7 +248,7 @@ const HomeChatArea = () => {
                   onClick={sendMessage}
                   disabled={!newMessage.trim()}
                   size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+                  className="bg-brand-medium-blue hover:bg-brand-dark-blue text-white px-4"
                 >
                   Send
                 </Button>

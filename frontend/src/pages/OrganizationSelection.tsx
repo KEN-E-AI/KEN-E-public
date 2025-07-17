@@ -498,12 +498,12 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-50 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 p-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8 pt-8">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
               <Building className="h-6 w-6 text-white" />
             </div>
           </div>
@@ -524,7 +524,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                   key={org.organization_id}
                   className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                     selectedOrganization === org.organization_id
-                      ? "border-blue-500 bg-blue-50"
+                      ? "border-brand-medium-blue bg-brand-light-blue/20"
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                   onClick={() => handleOrganizationSelect(org.organization_id)}
@@ -536,7 +536,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           {org.organization_name}
                         </h3>
                         {selectedOrganization === org.organization_id && (
-                          <Check className="h-4 w-4 text-blue-600" />
+                          <Check className="h-4 w-4 text-brand-medium-blue" />
                         )}
                       </div>
                     </div>
@@ -563,8 +563,8 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
             <CardContent className="space-y-4">
               {selectedOrgData ? (
                 <>
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                    <p className="text-sm text-blue-800">
+                  <div className="p-3 bg-brand-light-blue/20 border border-brand-light-blue/40 rounded-lg mb-4">
+                    <p className="text-sm text-brand-dark-blue">
                       <strong>{selectedOrgData.organization_name}</strong>{" "}
                       selected
                     </p>
@@ -589,7 +589,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             key={childOrg.organization_id}
                             className={`p-3 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                               selectedChildOrg === childOrg.organization_id
-                                ? "border-blue-500 bg-blue-50"
+                                ? "border-brand-medium-blue bg-brand-light-blue/20"
                                 : "border-gray-200 hover:border-gray-300"
                             }`}
                             onClick={() =>
@@ -602,7 +602,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                               </h4>
                               {selectedChildOrg ===
                                 childOrg.organization_id && (
-                                <Check className="h-4 w-4 text-blue-600" />
+                                <Check className="h-4 w-4 text-brand-medium-blue" />
                               )}
                             </div>
                           </div>
@@ -620,7 +620,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                               key={account.account_id}
                               className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                                 selectedAccount === account.account_id
-                                  ? "border-blue-500 bg-blue-50"
+                                  ? "border-brand-medium-blue bg-brand-light-blue/20"
                                   : "border-gray-200 hover:border-gray-300"
                               }`}
                               onClick={() =>
@@ -634,7 +634,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                                       {account.account_name}
                                     </h3>
                                     {selectedAccount === account.account_id && (
-                                      <Check className="h-4 w-4 text-blue-600" />
+                                      <Check className="h-4 w-4 text-brand-medium-blue" />
                                     )}
                                   </div>
                                   <div className="flex items-center gap-2 mb-2">
@@ -656,7 +656,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                                     </Badge>
                                     <Badge
                                       variant="outline"
-                                      className="text-xs text-green-600 border-green-200"
+                                      className="text-xs text-brand-light-green border-brand-light-green/40"
                                     >
                                       {account.status}
                                     </Badge>
@@ -685,7 +685,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           key={account.account_id}
                           className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                             selectedAccount === account.account_id
-                              ? "border-blue-500 bg-blue-50"
+                              ? "border-brand-medium-blue bg-brand-light-blue/20"
                               : "border-gray-200 hover:border-gray-300"
                           }`}
                           onClick={() => setSelectedAccount(account.account_id)}
@@ -697,7 +697,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                                   {account.account_name}
                                 </h3>
                                 {selectedAccount === account.account_id && (
-                                  <Check className="h-4 w-4 text-blue-600" />
+                                  <Check className="h-4 w-4 text-brand-medium-blue" />
                                 )}
                               </div>
                               <div className="flex items-center gap-2 mb-2">
@@ -719,7 +719,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                                 </Badge>
                                 <Badge
                                   variant="outline"
-                                  className="text-xs text-green-600 border-green-200"
+                                  className="text-xs text-brand-light-green border-brand-light-green/40"
                                 >
                                   {account.status}
                                 </Badge>

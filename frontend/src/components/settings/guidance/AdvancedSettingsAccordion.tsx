@@ -58,9 +58,9 @@ export const AdvancedSettingsAccordion = ({
   const getStatusIcon = () => {
     switch (status) {
       case "complete":
-        return <CheckCircle className="h-3 w-3 text-green-600" />;
+        return <CheckCircle className="h-3 w-3 text-brand-dark-blue" />;
       case "warning":
-        return <AlertCircle className="h-3 w-3 text-yellow-600" />;
+        return <AlertCircle className="h-3 w-3 text-brand-dark-blue" />;
       case "incomplete":
         return <Clock className="h-3 w-3 text-gray-600" />;
       default:
@@ -122,9 +122,9 @@ export const AdvancedSettingsAccordion = ({
             )}
 
             {warningText && (
-              <Alert className="border-yellow-200 bg-yellow-50">
-                <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                <AlertDescription className="text-yellow-800">
+              <Alert className="border-brand-yellow/40 bg-brand-yellow/20">
+                <AlertTriangle className="h-4 w-4 text-brand-dark-blue" />
+                <AlertDescription className="text-brand-dark-blue">
                   <strong>Warning:</strong> {warningText}
                 </AlertDescription>
               </Alert>

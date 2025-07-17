@@ -918,7 +918,7 @@ const ActivitiesPage = () => {
                 <Filter className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Filter</span>
                 {filterStatus !== "all" && (
-                  <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">
+                  <span className="ml-1 px-1.5 py-0.5 bg-brand-light-blue/30 text-brand-dark-blue text-xs rounded-full">
                     {filterStatus === "internal"
                       ? "Internal"
                       : filterStatus === "known"
@@ -936,12 +936,14 @@ const ActivitiesPage = () => {
                   setFilterStatus("all");
                   setShowFilterDropdown(false);
                 }}
-                className={filterStatus === "all" ? "bg-blue-50" : ""}
+                className={
+                  filterStatus === "all" ? "bg-brand-light-blue/20" : ""
+                }
               >
                 <span className="flex items-center justify-between w-full">
                   All Activities
                   {filterStatus === "all" && (
-                    <span className="text-blue-600">✓</span>
+                    <span className="text-brand-medium-blue">✓</span>
                   )}
                 </span>
               </DropdownMenuItem>
@@ -950,12 +952,14 @@ const ActivitiesPage = () => {
                   setFilterStatus("internal");
                   setShowFilterDropdown(false);
                 }}
-                className={filterStatus === "internal" ? "bg-blue-50" : ""}
+                className={
+                  filterStatus === "internal" ? "bg-brand-light-blue/20" : ""
+                }
               >
                 <span className="flex items-center justify-between w-full">
                   Internal Only
                   {filterStatus === "internal" && (
-                    <span className="text-blue-600">✓</span>
+                    <span className="text-brand-medium-blue">✓</span>
                   )}
                 </span>
               </DropdownMenuItem>
@@ -964,12 +968,14 @@ const ActivitiesPage = () => {
                   setFilterStatus("known");
                   setShowFilterDropdown(false);
                 }}
-                className={filterStatus === "known" ? "bg-blue-50" : ""}
+                className={
+                  filterStatus === "known" ? "bg-brand-light-blue/20" : ""
+                }
               >
                 <span className="flex items-center justify-between w-full">
                   Known Only
                   {filterStatus === "known" && (
-                    <span className="text-blue-600">✓</span>
+                    <span className="text-brand-medium-blue">✓</span>
                   )}
                 </span>
               </DropdownMenuItem>
@@ -978,12 +984,14 @@ const ActivitiesPage = () => {
                   setFilterStatus("both");
                   setShowFilterDropdown(false);
                 }}
-                className={filterStatus === "both" ? "bg-blue-50" : ""}
+                className={
+                  filterStatus === "both" ? "bg-brand-light-blue/20" : ""
+                }
               >
                 <span className="flex items-center justify-between w-full">
                   Internal & Known
                   {filterStatus === "both" && (
-                    <span className="text-blue-600">✓</span>
+                    <span className="text-brand-medium-blue">✓</span>
                   )}
                 </span>
               </DropdownMenuItem>

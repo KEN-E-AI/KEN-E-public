@@ -20,6 +20,7 @@ import BigBets from "./pages/BigBets";
 import Exploration from "./pages/Exploration";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
+import KnowledgeProducts from "./pages/KnowledgeProducts";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
 import Insights from "./pages/Insights";
@@ -80,7 +81,7 @@ const App = () => (
               }
             />
             <Route
-              path="/measurement-strategy"
+              path="/knowledge/strategy"
               element={
                 <ProtectedRoute>
                   <Index />
@@ -112,6 +113,14 @@ const App = () => (
               }
             />
             <Route
+              path="/knowledge/products"
+              element={
+                <ProtectedRoute>
+                  <KnowledgeProducts />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/knowledge/metrics"
               element={
                 <ProtectedRoute>
@@ -128,7 +137,7 @@ const App = () => (
               }
             />
             <Route
-              path="/insights"
+              path="/knowledge/insights"
               element={
                 <ProtectedRoute>
                   <Insights />

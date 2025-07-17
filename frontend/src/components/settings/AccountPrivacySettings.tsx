@@ -119,7 +119,7 @@ export const AccountPrivacySettings = ({
 
   const getComplianceColor = (framework: ComplianceFramework) => {
     return framework.enabled
-      ? "bg-green-50 text-green-700 border-green-200"
+      ? "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40"
       : "bg-gray-50 text-gray-700 border-gray-200";
   };
 
@@ -458,11 +458,11 @@ export const AccountPrivacySettings = ({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-brand-light-blue/20 border border-brand-light-blue/40 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+                <Info className="h-5 w-5 text-brand-medium-blue mt-0.5" />
                 <div>
-                  <p className="text-sm text-blue-800">
+                  <p className="text-sm text-brand-dark-blue">
                     Your privacy settings ensure compliance with data protection
                     regulations. Changes to these settings may affect data
                     collection and user experience.

@@ -116,9 +116,9 @@ export const AccountMarketingSettings = ({
       case "high":
         return "bg-red-50 text-red-700 border-red-200";
       case "medium":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200";
+        return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
       case "low":
-        return "bg-green-50 text-green-700 border-green-200";
+        return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       default:
         return "bg-gray-50 text-gray-700 border-gray-200";
     }
@@ -127,11 +127,11 @@ export const AccountMarketingSettings = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
-        return "bg-green-50 text-green-700 border-green-200";
+        return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       case "paused":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200";
+        return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
       case "completed":
-        return "bg-blue-50 text-blue-700 border-blue-200";
+        return "bg-brand-light-blue/20 text-brand-dark-blue border-brand-light-blue/40";
       default:
         return "bg-gray-50 text-gray-700 border-gray-200";
     }

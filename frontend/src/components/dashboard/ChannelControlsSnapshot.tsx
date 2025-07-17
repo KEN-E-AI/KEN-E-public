@@ -109,14 +109,14 @@ const getRandomColor = () => {
   const colors = [
     { bg: "bg-red-500", border: "border-red-600", hover: "hover:bg-red-600" },
     {
-      bg: "bg-yellow-500",
-      border: "border-yellow-600",
-      hover: "hover:bg-yellow-600",
+      bg: "bg-brand-yellow",
+      border: "border-brand-yellow",
+      hover: "hover:bg-brand-yellow/90",
     },
     {
-      bg: "bg-green-500",
-      border: "border-green-600",
-      hover: "hover:bg-green-600",
+      bg: "bg-brand-dark-green",
+      border: "border-brand-dark-green",
+      hover: "hover:bg-brand-dark-green/90",
     },
   ];
   return colors[Math.floor(Math.random() * colors.length)];
@@ -204,7 +204,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                 <div>
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <div className="w-3 h-3 bg-brand-light-green rounded-full"></div>
                     <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
                       EFFECTIVENESS
                     </h3>
@@ -228,7 +228,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                       <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
                         1,529,204
                       </div>
-                      <div className="text-green-600 font-medium text-center">
+                      <div className="text-brand-light-green font-medium text-center">
                         +20%
                       </div>
                     </div>
@@ -322,7 +322,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                 <div className="mt-4">
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <div className="w-3 h-3 bg-brand-yellow rounded-full"></div>
                     <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
                       EFFICIENCY
                     </h3>
@@ -346,7 +346,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                       <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
                         $2.47
                       </div>
-                      <div className="text-yellow-600 font-medium text-center">
+                      <div className="text-brand-yellow font-medium text-center">
                         -5%
                       </div>
                     </div>
@@ -461,7 +461,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                       sampleValues[index % sampleValues.length];
                     const changeColor =
                       sampleData.trend === "positive"
-                        ? "text-green-600"
+                        ? "text-brand-light-green"
                         : "text-red-600";
 
                     return (

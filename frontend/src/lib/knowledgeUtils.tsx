@@ -70,8 +70,8 @@ export const renderProductCard = (product: Product) => (
         <div className="flex items-center gap-2">
           {product.connected ? (
             <>
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <Badge className="bg-green-50 text-green-700 border-green-200">
+              <CheckCircle className="h-4 w-4 text-brand-dark-blue" />
+              <Badge className="bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40">
                 Connected
               </Badge>
             </>

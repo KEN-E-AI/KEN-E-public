@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import GlobalHeader from "@/components/dashboard/GlobalHeader";
 import ChatSidebar from "@/components/dashboard/ChatSidebar";
+import { IconNavigation } from "@/components/layout/IconNavigation";
+import { ContextSidebar } from "@/components/layout/ContextSidebar";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -40,11 +42,58 @@ const Layout = ({
   hideChatSidebar = false,
 }: LayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [contextSidebarCollapsed, setContextSidebarCollapsed] = useState(() => {
+    // Initialize from localStorage
+    const saved = localStorage.getItem("contextSidebarCollapsed");
+    return saved === "true";
+  });
   const { selectedOrgAccount, setSelectedOrgAccount } = useAuth();
 
   return (
     <div className="min-h-screen bg-dashboard-gray-50">
-      {/* Chat Sidebar - All screen sizes */}
+      {/* Icon Navigation - Fixed left sidebar */}
+      <IconNavigation />
+
+      {/* Context Sidebar - Fixed left sidebar (after IconNavigation) */}
+      <ContextSidebar
+        isCollapsed={contextSidebarCollapsed}
+        onToggleCollapse={() => {
+          const newState = !contextSidebarCollapsed;
+          setContextSidebarCollapsed(newState);
+          localStorage.setItem("contextSidebarCollapsed", newState.toString());
+        }}
+      />
+
+      {/* Main Content */}
+      <div
+        className={`transition-all duration-300 p-4 sm:p-6 space-y-6 min-h-screen ${
+          contextSidebarCollapsed
+            ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
+            : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
+        } ${
+          !hideChatSidebar
+            ? sidebarCollapsed
+              ? "pr-[calc(4rem+1rem)] sm:pr-[calc(4rem+1.5rem)]"
+              : "pr-[calc(20rem+1rem)] sm:pr-[calc(20rem+1.5rem)]"
+            : "pr-4 sm:pr-6"
+        }`}
+      >
+        {/* Header */}
+        <GlobalHeader
+          pageTitle={pageTitle}
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+          comparisonDateRange={comparisonDateRange}
+          setComparisonDateRange={setComparisonDateRange}
+          selectedOrgAccount={selectedOrgAccount}
+          setSelectedOrgAccount={setSelectedOrgAccount}
+        />
+
+        {/* Page Content */}
+        {children}
+      </div>
+
+      {/* Chat Sidebar - Fixed right sidebar */}
       {!hideChatSidebar && (
         <ChatSidebar
           selectedTab={selectedTab}
@@ -54,33 +103,6 @@ const Layout = ({
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
       )}
-
-      {/* Main Content */}
-      <div
-        className={`transition-all duration-300 ${
-          hideChatSidebar
-            ? "pl-4"
-            : sidebarCollapsed
-              ? "pl-16"
-              : "pl-4 md:pl-80"
-        }`}
-      >
-        <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6 h-screen">
-          {/* Header */}
-          <GlobalHeader
-            pageTitle={pageTitle}
-            dateRange={dateRange}
-            setDateRange={setDateRange}
-            comparisonDateRange={comparisonDateRange}
-            setComparisonDateRange={setComparisonDateRange}
-            selectedOrgAccount={selectedOrgAccount}
-            setSelectedOrgAccount={setSelectedOrgAccount}
-          />
-
-          {/* Page Content */}
-          {children}
-        </div>
-      </div>
     </div>
   );
 };

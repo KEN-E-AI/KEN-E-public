@@ -120,7 +120,7 @@ export const WizardStep4Settings = ({
         </div>
 
         {/* Summary */}
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+        <div className="mt-6 p-4 bg-brand-light-blue/20 rounded-lg">
           <h4 className="font-medium mb-2">Account Summary</h4>
           <div className="text-sm text-dashboard-gray-600 space-y-1">
             <p>

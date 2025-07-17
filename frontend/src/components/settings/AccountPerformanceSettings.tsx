@@ -167,7 +167,7 @@ export const AccountPerformanceSettings = ({
   const getTrendIcon = (trend: string) => {
     switch (trend) {
       case "up":
-        return <TrendingUp className="h-4 w-4 text-green-500" />;
+        return <TrendingUp className="h-4 w-4 text-brand-light-green" />;
       case "down":
         return <TrendingUp className="h-4 w-4 text-red-500 rotate-180" />;
       default:
@@ -178,7 +178,7 @@ export const AccountPerformanceSettings = ({
   const getTrendColor = (trend: string) => {
     switch (trend) {
       case "up":
-        return "bg-green-50 text-green-700 border-green-200";
+        return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       case "down":
         return "bg-red-50 text-red-700 border-red-200";
       default:
