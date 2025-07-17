@@ -45,7 +45,8 @@ ken-e/
 - `make backend` - Deploy agent to Google Cloud Agent Engine
 - `uv run jupyter lab` - Launch Jupyter notebooks for prototyping
 
-### API Service (api/)
+### API Service (api/) - Python/FastAPI
+**Note:** The API is a Python project using `pyproject.toml`. Do NOT use npm commands here.
 - `cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000` - Run FastAPI development server
 - `cd api && python run_dev.py` - Alternative dev server launcher
 - `cd api && pytest tests/` - Run API tests
@@ -53,13 +54,16 @@ ken-e/
 - `cd api && ./docker.sh test` - Run tests in Docker
 - `cd api && ./scripts/set_environment.sh [development|staging|production]` - Switch API environment
 
-### Frontend (frontend/)
+### Frontend (frontend/) - React/TypeScript
+**Note:** The frontend is a Node.js project using `package.json`. Use npm commands here.
 - `cd frontend && npm run dev` - Start development server on port 8080
 - `cd frontend && npm run build` - Build for production
 - `cd frontend && npm test` - Run Vitest tests
 - `cd frontend && npm run typecheck` - Type checking
 - `cd frontend && npm run format.fix` - Format with Prettier
 - `cd frontend && ./scripts/set_environment.sh [development|staging|production]` - Switch frontend environment
+
+**Important CSS Note**: The frontend's `src/App.css` file should be kept minimal or empty. Default Vite/React template styles (like `text-align: center` on `#root`) can break dashboard layouts. See frontend/CLAUDE.md for CSS architecture details.
 
 ### Data Ingestion (data_ingestion/)
 - `cd data_ingestion && python data_ingestion_pipeline/submit_pipeline.py` - Submit pipeline to Vertex AI

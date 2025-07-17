@@ -325,7 +325,8 @@ const AccountsManagement = ({
     if (!currentOrgId) {
       toast({
         title: "Error",
-        description: "No organization selected. Please select an organization first.",
+        description:
+          "No organization selected. Please select an organization first.",
         variant: "destructive",
       });
       return;
