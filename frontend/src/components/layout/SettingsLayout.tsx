@@ -61,20 +61,19 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         )}
 
         {/* Organization Selector - Only show for organization settings */}
-        {showEntitySelector &&
-          selectedOrgAccount &&
-          currentPage === "organization" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <EntitySelector
-                    className="min-w-[300px]"
-                    organizationOnly={true}
-                  />
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          )}
+        {showEntitySelector && currentPage === "organization" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="text-lg">Organization Selection</span>
+                <EntitySelector
+                  className="min-w-[300px]"
+                  organizationOnly={true}
+                />
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        )}
 
         {/* Current Context with Entity Selector - Show for account-specific settings */}
         {showEntitySelector &&

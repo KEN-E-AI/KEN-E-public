@@ -12,6 +12,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import type { Organization } from "@/data/organizationTypes";
 import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -69,12 +71,20 @@ const AccountSettings = () => {
     if (isCreatingNew) return null;
 
     console.log(`[AccountSettings] Determining currentOrgId...`);
-    console.log(`[AccountSettings] currentOrganizationId:`, currentOrganizationId);
-    console.log(`[AccountSettings] user permissions:`, user?.permissions?.organizations);
+    console.log(
+      `[AccountSettings] currentOrganizationId:`,
+      currentOrganizationId,
+    );
+    console.log(
+      `[AccountSettings] user permissions:`,
+      user?.permissions?.organizations,
+    );
 
     // If currentOrganizationId is set, use it
     if (currentOrganizationId) {
-      console.log(`[AccountSettings] Using currentOrganizationId: ${currentOrganizationId}`);
+      console.log(
+        `[AccountSettings] Using currentOrganizationId: ${currentOrganizationId}`,
+      );
       return currentOrganizationId;
     }
 
@@ -84,7 +94,10 @@ const AccountSettings = () => {
     );
     const firstOrgId = userOrganizations[0] || null;
 
-    console.log(`[AccountSettings] Available user organizations:`, userOrganizations);
+    console.log(
+      `[AccountSettings] Available user organizations:`,
+      userOrganizations,
+    );
     console.log(`[AccountSettings] Selected firstOrgId: ${firstOrgId}`);
 
     return firstOrgId;
@@ -96,10 +109,11 @@ const AccountSettings = () => {
       currentOrgId,
       hasOrgMetadata: !!orgMetadata[currentOrgId],
       orgDataExists: !!data,
-      orgMetadataKeys: Object.keys(orgMetadata)
+      orgMetadataKeys: Object.keys(orgMetadata),
     });
     return data;
   }, [currentOrgId, orgMetadata]);
+
 
   // Form state
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
@@ -123,8 +137,13 @@ const AccountSettings = () => {
     const loadOrganizationMetadata = async () => {
       if (currentOrgId && !orgMetadata[currentOrgId]) {
         try {
-          console.log(`[AccountSettings] Loading organization metadata for ${currentOrgId}`);
-          console.log(`[AccountSettings] Current orgMetadata:`, Object.keys(orgMetadata));
+          console.log(
+            `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
+          );
+          console.log(
+            `[AccountSettings] Current orgMetadata:`,
+            Object.keys(orgMetadata),
+          );
 
           // Fetch organization details
           const org = await getOrganizationById(currentOrgId);
@@ -136,7 +155,7 @@ const AccountSettings = () => {
 
           if (org) {
             const orgWithAccounts = { ...org, accounts };
-            setOrgMetadata(prev => ({
+            setOrgMetadata((prev) => ({
               ...prev,
               [currentOrgId]: orgWithAccounts,
             }));
@@ -146,13 +165,20 @@ const AccountSettings = () => {
               orgWithAccounts,
             );
           } else {
-            console.warn(`[AccountSettings] Organization ${currentOrgId} not found in Neo4j`);
+            console.warn(
+              `[AccountSettings] Organization ${currentOrgId} not found in Neo4j`,
+            );
           }
         } catch (err) {
-          console.error(`[AccountSettings] Failed to load org metadata for ${currentOrgId}`, err);
+          console.error(
+            `[AccountSettings] Failed to load org metadata for ${currentOrgId}`,
+            err,
+          );
         }
       } else if (currentOrgId && orgMetadata[currentOrgId]) {
-        console.log(`[AccountSettings] Organization metadata already loaded for ${currentOrgId}`);
+        console.log(
+          `[AccountSettings] Organization metadata already loaded for ${currentOrgId}`,
+        );
       }
     };
 
@@ -164,7 +190,7 @@ const AccountSettings = () => {
     isCreatingNew,
     setOrgMetadata,
     // Check if this specific org metadata exists without causing loops
-    orgMetadata[currentOrgId] ? 'loaded' : 'not-loaded',
+    orgMetadata[currentOrgId] ? "loaded" : "not-loaded",
   ]);
 
   // Set current organization if not already set
@@ -445,6 +471,31 @@ const AccountSettings = () => {
       currentPage={getCurrentPage()}
       showBackButton={!isCreatingNew}
     >
+      {/* Organization Settings Header with create button */}
+      {!isCreatingNew && !isAccountSpecific && (
+        <div className="space-y-6 mb-6">
+          {/* Title and Description */}
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold text-dashboard-gray-900">
+                Organization Settings
+              </h1>
+              <p className="text-dashboard-gray-600 mt-1">
+                Manage your organization profile, subscription, and team
+                settings
+              </p>
+            </div>
+            <Button
+              onClick={() => navigate("/create-organization")}
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Create New Organization
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Organization Information */}
       <OrganizationForm
         isCreatingNew={isCreatingNew}

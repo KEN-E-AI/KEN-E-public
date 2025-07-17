@@ -154,26 +154,24 @@ export const EntitySelector = ({
       // For organization-only mode, just set the organization
       setCurrentOrganization(orgId);
 
-      // Find the first account in the organization if we need to set a selection
+      // Find the first account in the organization, or create a selection without an account
       const firstAccount = organization.accounts?.[0];
-      if (firstAccount) {
-        const selection: SelectedOrgAccount = {
-          orgId,
-          accountId: firstAccount.account_id,
-          metadata: {
-            organization_name: organization.organization_name,
-            account_name: firstAccount.account_name,
-            industry: firstAccount.industry,
-            status: firstAccount.status,
-            timezone: firstAccount.timezone,
-            plan: organization.plan,
-          },
-        };
-        setSelectedOrgAccount(selection);
+      const selection: SelectedOrgAccount = {
+        orgId,
+        accountId: firstAccount?.account_id || "",
+        metadata: {
+          organization_name: organization.organization_name,
+          account_name: firstAccount?.account_name || "",
+          industry: firstAccount?.industry || "",
+          status: firstAccount?.status || "Active",
+          timezone: firstAccount?.timezone || "",
+          plan: organization.plan,
+        },
+      };
+      setSelectedOrgAccount(selection);
 
-        if (onSelectionChange) {
-          onSelectionChange(selection);
-        }
+      if (onSelectionChange) {
+        onSelectionChange(selection);
       }
     } else {
       // Original logic for org/account selection
