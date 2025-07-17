@@ -853,7 +853,7 @@ const Performance = () => {
                       className={cn(
                         "text-sm font-medium",
                         metric.changeType === "positive"
-                          ? "text-brand-light-green"
+                          ? "text-brand-dark-green"
                           : "text-red-600",
                       )}
                     >

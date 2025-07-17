@@ -114,9 +114,9 @@ const getRandomColor = () => {
       hover: "hover:bg-brand-yellow/90",
     },
     {
-      bg: "bg-brand-light-green",
-      border: "border-brand-light-green",
-      hover: "hover:bg-brand-light-green/90",
+      bg: "bg-brand-dark-green",
+      border: "border-brand-dark-green",
+      hover: "hover:bg-brand-dark-green/90",
     },
   ];
   return colors[Math.floor(Math.random() * colors.length)];

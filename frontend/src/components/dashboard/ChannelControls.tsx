@@ -1263,7 +1263,7 @@ const ReactFlowComponent = () => {
                       <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
                         1,529,204
                       </div>
-                      <div className="text-brand-light-green font-medium text-center">
+                      <div className="text-brand-dark-green font-medium text-center">
                         +20%
                       </div>
                     </div>
@@ -1498,7 +1498,7 @@ const ReactFlowComponent = () => {
                       sampleValues[index % sampleValues.length];
                     const changeColor =
                       sampleData.trend === "positive"
-                        ? "text-brand-light-green"
+                        ? "text-brand-dark-green"
                         : "text-red-600";
 
                     return (
