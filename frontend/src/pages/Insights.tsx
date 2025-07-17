@@ -42,6 +42,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import {
   transformAPIInsightsToFrontend,
   type APIInsightResponse,
@@ -54,6 +55,7 @@ type Insight = FrontendInsight;
 const Insights = () => {
   const navigate = useNavigate();
   const { selectedOrgAccount } = useAuth();
+  const { toast } = useToast();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +104,11 @@ const Insights = () => {
   // Delete insight function
   const handleDeleteInsight = async (insightId: string) => {
     if (!selectedOrgAccount) {
-      alert("No account selected");
+      toast({
+        title: "Error",
+        description: "No account selected",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -112,7 +118,11 @@ const Insights = () => {
         (insight) => insight.insight_id === insightId,
       );
       if (!insightToDelete) {
-        alert("Insight not found");
+        toast({
+          title: "Error",
+          description: "Insight not found",
+          variant: "destructive",
+        });
         return;
       }
 
@@ -136,7 +146,11 @@ const Insights = () => {
       console.log("Insight deleted successfully:", insightId);
     } catch (err) {
       console.error("Error deleting insight:", err);
-      alert("Failed to delete insight. Please try again.");
+      toast({
+        title: "Error",
+        description: "Failed to delete insight. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 

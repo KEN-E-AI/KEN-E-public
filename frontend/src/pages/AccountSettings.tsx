@@ -212,7 +212,11 @@ const AccountSettings = () => {
 
   const handleUpdateOrganization = async () => {
     if (!orgData?.organization_name || !orgData?.company_size) {
-      alert("Please fill in all required fields");
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -227,10 +231,17 @@ const AccountSettings = () => {
         },
       );
 
-      alert("Organization updated successfully!");
+      toast({
+        title: "Success",
+        description: "Organization updated successfully!",
+      });
     } catch (error) {
       console.error("Error updating organization:", error);
-      alert("Failed to update organization. Please try again.");
+      toast({
+        title: "Error",
+        description: "Failed to update organization. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 

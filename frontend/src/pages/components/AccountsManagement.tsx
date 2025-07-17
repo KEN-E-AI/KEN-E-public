@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import {
   createAccount,
   getAccountsByOrganizationId,
@@ -119,6 +120,7 @@ const AccountsManagement = ({
   currentOrgId,
 }: AccountsManagementProps) => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     accountMetadata,
     setAccountMetadata,
@@ -301,10 +303,17 @@ const AccountsManagement = ({
 
       setIsModalOpen(false);
       setSelectedAccount(null);
-      alert("Account updated successfully.");
+      toast({
+        title: "Success",
+        description: "Account updated successfully.",
+      });
     } catch (error) {
       console.error("Error saving account:", error);
-      alert("Failed to update account. Please try again.");
+      toast({
+        title: "Error",
+        description: "Failed to update account. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -314,7 +323,11 @@ const AccountsManagement = ({
     console.log("[AccountsManagement] Form data:", createAccountFormData);
 
     if (!currentOrgId) {
-      alert("No organization selected. Please select an organization first.");
+      toast({
+        title: "Error",
+        description: "No organization selected. Please select an organization first.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -322,7 +335,11 @@ const AccountsManagement = ({
       !createAccountFormData.account_name ||
       !createAccountFormData.industry
     ) {
-      alert("Please fill in required fields");
+      toast({
+        title: "Validation Error",
+        description: "Please fill in required fields",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -504,7 +521,11 @@ const AccountsManagement = ({
         error.response?.data?.detail ||
         error.message ||
         "Failed to create account";
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: "Error",
+        description: `Error: ${errorMessage}`,
+        variant: "destructive",
+      });
     }
   };
 

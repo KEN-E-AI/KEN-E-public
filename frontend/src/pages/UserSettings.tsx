@@ -18,9 +18,11 @@ import {
 import { User, Bell, Shield, Globe, Moon, Sun, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettingsContext } from "@/hooks/useSettingsContext";
+import { useToast } from "@/hooks/use-toast";
 
 const UserSettings = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     user,
     notificationSettings,
@@ -79,10 +81,17 @@ const UserSettings = () => {
         preferences,
       });
 
-      alert("Profile saved successfully!");
+      toast({
+        title: "Success",
+        description: "Profile saved successfully!",
+      });
     } catch (error) {
       console.error("Error saving profile:", error);
-      alert("Failed to save profile.");
+      toast({
+        title: "Error",
+        description: "Failed to save profile.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -99,10 +108,17 @@ const UserSettings = () => {
 
       setNotificationSettings(localNotificationSettings);
 
-      alert("Notification settings updated successfully!");
+      toast({
+        title: "Success",
+        description: "Notification settings updated successfully!",
+      });
     } catch (error) {
       console.error("Error saving notification settings:", error);
-      alert("Failed to save notification settings.");
+      toast({
+        title: "Error",
+        description: "Failed to save notification settings.",
+        variant: "destructive",
+      });
     }
   };
 

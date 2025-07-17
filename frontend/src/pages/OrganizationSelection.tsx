@@ -163,13 +163,17 @@ function navigateToAccountSettings(
 /**
  * Handles account creation errors
  */
-function handleAccountCreationError(err: any) {
+function handleAccountCreationError(err: any, toast: any) {
   console.error("Failed to create account", err);
   const errorMessage =
     err.response?.data?.detail ||
     err.message ||
     "Error creating account. Please try again.";
-  alert(errorMessage);
+  toast({
+    title: "Error",
+    description: errorMessage,
+    variant: "destructive",
+  });
 }
 
 const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
@@ -379,7 +383,11 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     );
 
     if (!validation.isValid) {
-      alert(validation.errorMessage);
+      toast({
+        title: "Validation Error",
+        description: validation.errorMessage,
+        variant: "destructive",
+      });
       return;
     }
 
@@ -421,7 +429,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         );
       }, ACCOUNT_CREATION_REDIRECT_DELAY);
     } catch (err: any) {
-      handleAccountCreationError(err);
+      handleAccountCreationError(err, toast);
     } finally {
       setIsLoading(false);
     }
