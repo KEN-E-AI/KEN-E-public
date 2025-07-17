@@ -46,22 +46,25 @@ export const ConfigurationStatusBadge = ({
         return {
           icon: CheckCircle,
           label: "Complete",
-          color: "bg-green-50 text-green-700 border-green-200",
-          iconColor: "text-green-600",
+          color:
+            "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40",
+          iconColor: "text-brand-dark-blue",
         };
       case "warning":
         return {
           icon: AlertTriangle,
           label: "Needs Attention",
-          color: "bg-yellow-50 text-yellow-700 border-yellow-200",
-          iconColor: "text-yellow-600",
+          color:
+            "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40",
+          iconColor: "text-brand-dark-blue",
         };
       case "incomplete":
         return {
           icon: Clock,
           label: "In Progress",
-          color: "bg-blue-50 text-blue-700 border-blue-200",
-          iconColor: "text-blue-600",
+          color:
+            "bg-brand-light-blue/20 text-brand-dark-blue border-brand-light-blue/40",
+          iconColor: "text-brand-medium-blue",
         };
       case "error":
         return {

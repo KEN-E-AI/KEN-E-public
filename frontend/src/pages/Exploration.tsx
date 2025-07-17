@@ -423,7 +423,7 @@ const Exploration = () => {
                         </div>
                         <div className="flex items-center gap-1">
                           {chart.favorite && (
-                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                            <Star className="h-3 w-3 text-brand-yellow fill-current" />
                           )}
                           {chart.shared && (
                             <Users className="h-3 w-3 text-dashboard-gray-400" />

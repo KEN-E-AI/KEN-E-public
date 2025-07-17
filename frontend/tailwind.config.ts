@@ -62,13 +62,22 @@ export default {
           border: "var(--sidebar-border)",
           ring: "var(--sidebar-ring)",
         },
+        // Brand colors
+        brand: {
+          "dark-blue": "#163354",
+          "medium-blue": "#468FD0",
+          "light-green": "#B8E2AF",
+          red: "#FF6B6B",
+          yellow: "#EAB946",
+          "light-blue": "#8DC4F9",
+        },
         // Dashboard-specific colors
         effectiveness: {
-          DEFAULT: "#22c55e",
-          foreground: "#ffffff",
+          DEFAULT: "#B8E2AF", // Using brand light green
+          foreground: "#163354",
         },
         efficiency: {
-          DEFAULT: "#ef4444",
+          DEFAULT: "#FF6B6B", // Using brand red
           foreground: "#ffffff",
         },
         dashboard: {

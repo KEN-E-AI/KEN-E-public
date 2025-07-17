@@ -114,7 +114,7 @@ const BillingSection = ({ orgData }: BillingSectionProps) => {
                     <p className="font-medium">{invoice.amount}</p>
                     <Badge
                       variant="secondary"
-                      className="bg-green-100 text-green-800"
+                      className="bg-brand-light-green/30 text-brand-dark-blue"
                     >
                       {invoice.status}
                     </Badge>

@@ -384,8 +384,8 @@ export const AccountProfileSettings = ({
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <template.icon className="h-6 w-6 text-blue-600" />
+                <div className="w-12 h-12 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
+                  <template.icon className="h-6 w-6 text-brand-medium-blue" />
                 </div>
                 <div>
                   <h3 className="font-semibold">{template.name}</h3>

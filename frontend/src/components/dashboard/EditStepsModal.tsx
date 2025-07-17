@@ -220,7 +220,7 @@ const EditStepsModal = ({
                   <Button
                     onClick={handleSaveOrderChanges}
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-brand-light-green hover:bg-brand-light-green/90 text-brand-dark-blue"
                   >
                     Save Order Changes
                   </Button>

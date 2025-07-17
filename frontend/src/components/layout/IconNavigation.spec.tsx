@@ -56,7 +56,7 @@ describe("IconNavigation", () => {
     const performanceButton = screen.getByRole("button", {
       name: "Performance",
     });
-    expect(performanceButton).toHaveClass("bg-blue-600", "text-white");
+    expect(performanceButton).toHaveClass("bg-brand-medium-blue", "text-white");
   });
 
   test("renders brand logo at the top", () => {

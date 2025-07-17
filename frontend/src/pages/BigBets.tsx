@@ -40,33 +40,37 @@ const BigBets = () => {
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-              <h3 className="font-semibold text-blue-900 mb-2">
+            <div className="bg-gradient-to-br from-brand-light-blue/20 to-brand-light-blue/30 rounded-lg p-4 border border-brand-light-blue/40">
+              <h3 className="font-semibold text-brand-dark-blue mb-2">
                 Digital Transformation
               </h3>
-              <p className="text-sm text-blue-700 mb-3">
+              <p className="text-sm text-brand-dark-blue mb-3">
                 Complete migration to cloud-based infrastructure
               </p>
               <div className="flex justify-between items-center">
-                <span className="text-xs text-blue-600 bg-blue-200 px-2 py-1 rounded">
+                <span className="text-xs text-brand-medium-blue bg-brand-light-blue/40 px-2 py-1 rounded">
                   Q2 2025
                 </span>
-                <span className="text-lg font-bold text-blue-900">65%</span>
+                <span className="text-lg font-bold text-brand-dark-blue">
+                  65%
+                </span>
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-              <h3 className="font-semibold text-green-900 mb-2">
+            <div className="bg-gradient-to-br from-brand-light-green/20 to-brand-light-green/30 rounded-lg p-4 border border-brand-light-green/40">
+              <h3 className="font-semibold text-brand-light-green mb-2">
                 Market Expansion
               </h3>
-              <p className="text-sm text-green-700 mb-3">
+              <p className="text-sm text-brand-light-green mb-3">
                 Launch in 3 new international markets
               </p>
               <div className="flex justify-between items-center">
-                <span className="text-xs text-green-600 bg-green-200 px-2 py-1 rounded">
+                <span className="text-xs text-brand-dark-blue bg-brand-light-green/40 px-2 py-1 rounded">
                   Q3 2025
                 </span>
-                <span className="text-lg font-bold text-green-900">42%</span>
+                <span className="text-lg font-bold text-brand-light-green">
+                  42%
+                </span>
               </div>
             </div>
 
@@ -105,7 +109,7 @@ const BigBets = () => {
                 </div>
                 <div className="w-full bg-dashboard-gray-200 rounded-full h-2">
                   <div
-                    className="bg-blue-500 h-2 rounded-full"
+                    className="bg-brand-medium-blue h-2 rounded-full"
                     style={{ width: "45%" }}
                   ></div>
                 </div>
@@ -118,7 +122,7 @@ const BigBets = () => {
                 </div>
                 <div className="w-full bg-dashboard-gray-200 rounded-full h-2">
                   <div
-                    className="bg-green-500 h-2 rounded-full"
+                    className="bg-brand-light-green h-2 rounded-full"
                     style={{ width: "34%" }}
                   ></div>
                 </div>
@@ -147,7 +151,7 @@ const BigBets = () => {
                   <span className="text-sm text-dashboard-gray-600">
                     Revenue Growth
                   </span>
-                  <span className="text-sm font-medium text-green-600">
+                  <span className="text-sm font-medium text-brand-light-green">
                     +12.5%
                   </span>
                 </div>
@@ -155,7 +159,7 @@ const BigBets = () => {
                   <span className="text-sm text-dashboard-gray-600">
                     Market Share
                   </span>
-                  <span className="text-sm font-medium text-blue-600">
+                  <span className="text-sm font-medium text-brand-medium-blue">
                     +3.2%
                   </span>
                 </div>

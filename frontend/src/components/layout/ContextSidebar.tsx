@@ -252,99 +252,37 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   return (
     <div
       className={cn(
-        "fixed top-0 left-14 h-full bg-white border-r border-dashboard-gray-200 z-30 transition-all duration-300",
+        "fixed top-0 left-14 h-full bg-white border-r border-dashboard-gray-200 z-30 transition-all duration-300 flex flex-col",
         isCollapsed ? "w-16" : "w-80 md:w-80",
       )}
     >
       {/* Header with toggle button */}
-      <div className="h-auto min-h-[4rem] flex flex-col border-b border-dashboard-gray-200">
-        {/* Organization dropdown - only show when not collapsed */}
-        {!isCollapsed && combinedOptions.length > 0 && (
-          <div className="px-4 pt-3 pb-2 border-b border-gray-200">
-            <Select value={currentValue} onValueChange={handleOrgAccountChange}>
-              <SelectTrigger className="w-full h-auto py-2 text-sm">
-                <SelectValue placeholder="Select Organization & Account">
-                  {currentValue &&
-                    (() => {
-                      const selected = combinedOptions.find(
-                        (opt) => opt.value === currentValue,
-                      );
-                      if (selected) {
-                        return (
-                          <div className="flex items-start gap-2 text-left">
-                            <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <div className="font-bold">
-                                {selected.orgName}
-                              </div>
-                              <div className="text-xs text-gray-600">
-                                {selected.label}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className="max-w-[300px]">
-                {combinedOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    <div className="flex items-start gap-2">
-                      <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <div className="font-bold">{option.orgName}</div>
-                        <div className="text-xs text-gray-600">
-                          {option.label}
-                        </div>
-                      </div>
-                    </div>
-                  </SelectItem>
-                ))}
-                <SelectItem
-                  key="all-orgs-accounts"
-                  value="all-orgs-accounts"
-                  className="border-t border-gray-200 mt-1 pt-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <Building className="h-4 w-4" />
-                    <div className="truncate">All Orgs and Accounts</div>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      <div className="h-12 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
+        {!isCollapsed && (
+          <h2 className="text-lg font-semibold text-dashboard-gray-900">
+            {isHomePage ? "Notifications" : activeMenu?.config.title || "Menu"}
+          </h2>
         )}
-
-        {/* Title and toggle button */}
-        <div className="h-12 flex items-center justify-between px-4">
-          {!isCollapsed && (
-            <h2 className="text-lg font-semibold text-dashboard-gray-900">
-              {isHomePage
-                ? "Notifications"
-                : activeMenu?.config.title || "Menu"}
-            </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCollapse}
+          className={cn("h-8 w-8 p-0", isCollapsed && "mx-auto")}
+          aria-label="Toggle sidebar"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleCollapse}
-            className={cn("h-8 w-8 p-0", isCollapsed && "mx-auto")}
-            aria-label="Toggle sidebar"
-          >
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+        </Button>
       </div>
 
-      {/* Content */}
+      {/* Content - grows to fill available space */}
       {!isCollapsed && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-20">
+          {" "}
+          {/* Add padding bottom for org dropdown */}
           {isHomePage ? (
             // Notifications content for home page
             <div className="pr-4 pl-0 py-4">
@@ -396,7 +334,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                     className={cn(
                       "w-full text-left px-4 py-2 text-sm transition-colors",
                       isActive
-                        ? "bg-blue-50 text-blue-600 border-r-2 border-blue-600"
+                        ? "bg-brand-light-blue/20 text-brand-medium-blue border-r-2 border-brand-medium-blue"
                         : "text-gray-700 hover:bg-gray-50 hover:text-gray-900",
                     )}
                   >
@@ -411,6 +349,63 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
               No menu items available
             </div>
           )}
+        </div>
+      )}
+
+      {/* Organization dropdown - fixed at bottom */}
+      {!isCollapsed && combinedOptions.length > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
+          <Select value={currentValue} onValueChange={handleOrgAccountChange}>
+            <SelectTrigger className="w-full h-auto py-2 text-sm">
+              <SelectValue placeholder="Select Organization & Account">
+                {currentValue &&
+                  (() => {
+                    const selected = combinedOptions.find(
+                      (opt) => opt.value === currentValue,
+                    );
+                    if (selected) {
+                      return (
+                        <div className="flex items-start gap-2 text-left">
+                          <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <div className="font-bold">{selected.orgName}</div>
+                            <div className="text-xs text-gray-600">
+                              {selected.label}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start" className="max-w-[300px]">
+              {combinedOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <div className="flex items-start gap-2">
+                    <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className="font-bold">{option.orgName}</div>
+                      <div className="text-xs text-gray-600">
+                        {option.label}
+                      </div>
+                    </div>
+                  </div>
+                </SelectItem>
+              ))}
+              <SelectItem
+                key="all-orgs-accounts"
+                value="all-orgs-accounts"
+                className="border-t border-gray-200 mt-1 pt-2"
+              >
+                <div className="flex items-center gap-2">
+                  <Building className="h-4 w-4" />
+                  <div className="truncate">All Orgs and Accounts</div>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       )}
     </div>

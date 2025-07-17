@@ -63,10 +63,10 @@ export function IconNavigation() {
   };
 
   return (
-    <div className="w-14 bg-gray-900 h-screen flex flex-col fixed left-0 top-0 z-40">
+    <div className="w-14 bg-brand-dark-blue h-screen flex flex-col fixed left-0 top-0 z-40">
       {/* Logo/Brand */}
       <div className="h-14 flex items-center justify-center border-b border-gray-700">
-        <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
+        <div className="w-8 h-8 bg-brand-medium-blue rounded flex items-center justify-center">
           <span className="text-white text-xs font-bold">K</span>
         </div>
       </div>
@@ -85,8 +85,8 @@ export function IconNavigation() {
                   className={cn(
                     "w-full h-12 flex items-center justify-center transition-colors",
                     active
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800",
+                      ? "bg-brand-medium-blue text-white"
+                      : "text-gray-400 hover:text-white hover:bg-brand-medium-blue/20",
                   )}
                   aria-label={item.label}
                 >
@@ -94,7 +94,7 @@ export function IconNavigation() {
                 </button>
 
                 {/* Tooltip */}
-                <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-2 px-2 py-1 bg-brand-dark-blue text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700">
                   {item.label}
                 </div>
               </div>
@@ -108,7 +108,7 @@ export function IconNavigation() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition-colors rounded"
+              className="w-full h-12 flex items-center justify-center text-gray-400 hover:text-white hover:bg-brand-medium-blue/20 transition-colors rounded"
               aria-label="User menu"
             >
               <User className="w-5 h-5" />
@@ -148,7 +148,7 @@ export function IconNavigation() {
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuItem
-              className="flex items-center gap-2 cursor-pointer text-red-600"
+              className="flex items-center gap-2 cursor-pointer text-brand-red"
               onClick={() => {
                 logout();
               }}

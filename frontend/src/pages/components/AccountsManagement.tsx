@@ -613,8 +613,8 @@ const AccountsManagement = ({
                 className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-blue-600" />
+                  <div className="w-8 h-8 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
+                    <User className="h-4 w-4 text-brand-medium-blue" />
                   </div>
                   <div>
                     <h4 className="font-medium text-gray-900">

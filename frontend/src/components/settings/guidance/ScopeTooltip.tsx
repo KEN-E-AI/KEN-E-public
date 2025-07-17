@@ -158,7 +158,7 @@ export const ScopeTooltip = ({
             <p className="text-sm text-muted-foreground">
               {tooltipContent.description}
             </p>
-            <div className="text-xs text-blue-600 border-t pt-2">
+            <div className="text-xs text-brand-medium-blue border-t pt-2">
               {tooltipContent.scopeExplanation}
             </div>
             {tooltipContent.location && (

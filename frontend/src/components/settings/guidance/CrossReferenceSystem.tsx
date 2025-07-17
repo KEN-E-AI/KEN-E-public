@@ -73,9 +73,9 @@ export const CrossReferenceIndicator = ({
       case "high":
         return "text-red-600 bg-red-50 border-red-200";
       case "medium":
-        return "text-yellow-600 bg-yellow-50 border-yellow-200";
+        return "text-brand-dark-blue bg-brand-yellow/20 border-brand-yellow/40";
       case "low":
-        return "text-green-600 bg-green-50 border-green-200";
+        return "text-brand-dark-blue bg-brand-light-green/20 border-brand-light-green/40";
       default:
         return "text-gray-600 bg-gray-50 border-gray-200";
     }
@@ -87,7 +87,7 @@ export const CrossReferenceIndicator = ({
         <Button
           variant="ghost"
           size="sm"
-          className="text-blue-600 hover:text-blue-800 h-6 px-2"
+          className="text-brand-medium-blue hover:text-brand-dark-blue h-6 px-2"
         >
           <Link className="h-3 w-3 mr-1" />
           <span className="text-xs">Related ({relatedSettings.length})</span>
@@ -185,19 +185,23 @@ export const DependencyChain = ({
   if (dependencies.length === 0) return null;
 
   return (
-    <div className={`border rounded-lg p-3 bg-blue-50 ${className}`}>
+    <div
+      className={`border rounded-lg p-3 bg-brand-light-blue/20 ${className}`}
+    >
       <div className="flex items-center gap-2 mb-2">
-        <Link className="h-4 w-4 text-blue-600" />
-        <span className="text-sm font-medium text-blue-800">Dependencies</span>
+        <Link className="h-4 w-4 text-brand-medium-blue" />
+        <span className="text-sm font-medium text-brand-dark-blue">
+          Dependencies
+        </span>
       </div>
 
       <div className="space-y-2">
         {dependencies.map((dep, index) => (
           <div key={dep.id} className="flex items-center gap-2 text-sm">
             <ScopeBadge scope={dep.scope} size="sm" />
-            <span className="text-blue-700">{dep.name}</span>
+            <span className="text-brand-dark-blue">{dep.name}</span>
             {index < dependencies.length - 1 && (
-              <ArrowRight className="h-3 w-3 text-blue-400" />
+              <ArrowRight className="h-3 w-3 text-brand-light-blue" />
             )}
           </div>
         ))}

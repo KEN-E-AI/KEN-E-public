@@ -30,15 +30,15 @@ export const HierarchicalSettings = ({
     switch (scope) {
       case "organization":
         return {
-          border: "border-blue-200",
-          background: "bg-blue-50/30",
+          border: "border-brand-light-blue/40",
+          background: "bg-brand-light-blue/10",
           indent: "ml-0",
-          connector: "border-l-blue-300",
+          connector: "border-l-brand-light-blue/60",
         };
       case "account":
         return {
-          border: "border-green-200",
-          background: "bg-green-50/30",
+          border: "border-brand-light-green/40",
+          background: "bg-brand-light-green/10",
           indent: "ml-6",
           connector: "border-l-green-300",
         };
@@ -62,9 +62,9 @@ export const HierarchicalSettings = ({
   const getCompletionColor = (status: string) => {
     switch (status) {
       case "complete":
-        return "text-green-600";
+        return "text-brand-light-green";
       case "warning":
-        return "text-yellow-600";
+        return "text-brand-yellow";
       case "incomplete":
         return "text-red-600";
       default:

@@ -46,7 +46,10 @@ describe("ContextSidebar", () => {
       "/knowledge/metrics",
     );
     const metricsButton = screen.getByRole("button", { name: "Metrics" });
-    expect(metricsButton).toHaveClass("bg-blue-50", "text-blue-600");
+    expect(metricsButton).toHaveClass(
+      "bg-brand-light-blue/20",
+      "text-brand-medium-blue",
+    );
   });
 
   test("navigates when clicking menu items", async () => {

@@ -20,23 +20,23 @@ const SubscriptionCard = ({ orgData }: SubscriptionCardProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <div className="flex items-center justify-between p-4 bg-brand-light-blue/20 rounded-lg border border-brand-light-blue/40">
           <div className="flex items-center gap-3">
-            <Crown className="h-8 w-8 text-blue-600" />
+            <Crown className="h-8 w-8 text-brand-medium-blue" />
             <div>
-              <h3 className="font-semibold text-blue-900">
+              <h3 className="font-semibold text-brand-dark-blue">
                 {orgData.subscription.plan_name}
               </h3>
-              <p className="text-sm text-blue-700">
+              <p className="text-sm text-brand-dark-blue">
                 {orgData.subscription.plan_description}
               </p>
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold text-blue-900">
+            <div className="text-2xl font-bold text-brand-dark-blue">
               ${orgData.subscription.price}
             </div>
-            <div className="text-sm text-blue-700">
+            <div className="text-sm text-brand-dark-blue">
               per{" "}
               {orgData.subscription.billing_cycle === "monthly"
                 ? "month"

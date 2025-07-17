@@ -191,7 +191,7 @@ const Insights = () => {
   const getImpactIcon = (impact: string) => {
     switch (impact) {
       case "positive":
-        return <TrendingUp className="h-4 w-4 text-green-600" />;
+        return <TrendingUp className="h-4 w-4 text-brand-light-green" />;
       case "negative":
         return <TrendingDown className="h-4 w-4 text-red-600" />;
       default:
@@ -202,7 +202,7 @@ const Insights = () => {
   const getImpactColor = (impact: string) => {
     switch (impact) {
       case "positive":
-        return "bg-green-50 text-green-700 border-green-200";
+        return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       case "negative":
         return "bg-red-50 text-red-700 border-red-200";
       default:
@@ -213,9 +213,9 @@ const Insights = () => {
   const getConfidenceColor = (confidence: string) => {
     switch (confidence) {
       case "high":
-        return "bg-blue-50 text-blue-700 border-blue-200";
+        return "bg-brand-light-blue/20 text-brand-dark-blue border-brand-light-blue/40";
       case "medium":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200";
+        return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
       case "low":
         return "bg-gray-50 text-gray-700 border-gray-200";
       default:
@@ -321,7 +321,7 @@ const Insights = () => {
         {loading ? (
           <Card>
             <CardContent className="text-center py-12">
-              <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <div className="animate-spin h-8 w-8 border-2 border-brand-medium-blue border-t-transparent rounded-full mx-auto mb-4"></div>
               <p className="text-gray-500">Loading insights...</p>
             </CardContent>
           </Card>

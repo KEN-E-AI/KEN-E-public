@@ -114,15 +114,15 @@ const Settings = () => {
     switch (status) {
       case "complete":
         return (
-          <Badge className="bg-green-50 text-green-700 border-green-200">
-            <CheckCircle className="h-3 w-3 mr-1" />
+          <Badge className="bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40">
+            <CheckCircle className="h-3 w-3 mr-1 text-brand-dark-blue" />
             Complete
           </Badge>
         );
       case "warning":
         return (
-          <Badge className="bg-yellow-50 text-yellow-700 border-yellow-200">
-            <AlertCircle className="h-3 w-3 mr-1" />
+          <Badge className="bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40">
+            <AlertCircle className="h-3 w-3 mr-1 text-brand-dark-blue" />
             Needs Attention
           </Badge>
         );
@@ -205,8 +205,8 @@ const Settings = () => {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <Icon className="h-5 w-5 text-blue-600" />
+                    <div className="w-10 h-10 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
+                      <Icon className="h-5 w-5 text-brand-medium-blue" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2 mb-1">

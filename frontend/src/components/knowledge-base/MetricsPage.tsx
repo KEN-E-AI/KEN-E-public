@@ -492,7 +492,7 @@ const MetricsPage = () => {
               <Filter className="w-4 h-4 mr-2" />
               <span className="hidden sm:inline">Filter</span>
               {(selectedDataset !== "all" || selectedProduct !== "all") && (
-                <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">
+                <span className="ml-1 px-1.5 py-0.5 bg-brand-light-blue/30 text-brand-dark-blue text-xs rounded-full">
                   {[
                     selectedDataset !== "all" ? "Dataset" : "",
                     selectedProduct !== "all" ? "Product" : "",

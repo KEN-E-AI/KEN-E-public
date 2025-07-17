@@ -254,7 +254,7 @@ export const RequiredFieldsOverview = ({
                   className={cn(
                     "text-xs",
                     field.completed
-                      ? "bg-green-100 text-green-700 border-green-200"
+                      ? "bg-brand-light-green/30 text-brand-dark-blue border-brand-light-green/40"
                       : "bg-gray-100 text-gray-700 border-gray-200",
                   )}
                 >

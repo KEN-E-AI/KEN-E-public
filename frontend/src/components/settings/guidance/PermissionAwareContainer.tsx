@@ -81,9 +81,11 @@ export const PermissionAwareContainer = ({
   // Show permission hint if enabled
   if (showPermissionHint) {
     return (
-      <Alert className={cn("border-yellow-200 bg-yellow-50", className)}>
-        <Info className="h-4 w-4 text-yellow-600" />
-        <AlertDescription className="text-yellow-800">
+      <Alert
+        className={cn("border-brand-yellow/40 bg-brand-yellow/20", className)}
+      >
+        <Info className="h-4 w-4 text-brand-dark-blue" />
+        <AlertDescription className="text-brand-dark-blue">
           <div className="flex items-center justify-between">
             <span>
               You need <strong>{requiredRole}</strong> permissions to access
@@ -91,7 +93,7 @@ export const PermissionAwareContainer = ({
             </span>
             <Badge
               variant="outline"
-              className="ml-2 text-yellow-700 border-yellow-300"
+              className="ml-2 text-brand-yellow border-brand-yellow/60"
             >
               {scope} level
             </Badge>

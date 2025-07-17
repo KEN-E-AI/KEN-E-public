@@ -177,16 +177,24 @@ export const AccountCreationWizard = ({
             <div className="mb-8">
               <Progress value={progress} className="w-full" />
               <div className="flex justify-between mt-2 text-sm text-dashboard-gray-600">
-                <span className={currentStep >= 1 ? "text-blue-600" : ""}>
+                <span
+                  className={currentStep >= 1 ? "text-brand-medium-blue" : ""}
+                >
                   Basic Info
                 </span>
-                <span className={currentStep >= 2 ? "text-blue-600" : ""}>
+                <span
+                  className={currentStep >= 2 ? "text-brand-medium-blue" : ""}
+                >
                   Template
                 </span>
-                <span className={currentStep >= 3 ? "text-blue-600" : ""}>
+                <span
+                  className={currentStep >= 3 ? "text-brand-medium-blue" : ""}
+                >
                   Configuration
                 </span>
-                <span className={currentStep >= 4 ? "text-blue-600" : ""}>
+                <span
+                  className={currentStep >= 4 ? "text-brand-medium-blue" : ""}
+                >
                   Settings
                 </span>
               </div>
