@@ -231,18 +231,7 @@ const Insights = () => {
 
   return (
     <Layout pageTitle="Insights">
-      <div className="max-w-4xl mx-auto space-y-6 flex flex-col">
-        {/* Back to Knowledge Link */}
-        <div className="pt-2 mr-auto">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/knowledge")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Knowledge Base
-          </Button>
-        </div>
+      <div className="space-y-6 flex flex-col">
 
         {/* Search and Filter Bar */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">

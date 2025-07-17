@@ -1,12 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
-import { Button } from "@/components/ui/button";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   BarChart3,
   Activity,
@@ -15,40 +8,16 @@ import {
   Users,
   TrendingUp,
   ExternalLink,
-  Edit,
 } from "lucide-react";
-import { products } from "@/data";
-import {
-  renderConfigurationSection,
-  renderProductCard,
-} from "@/lib/knowledgeUtils";
+import { renderConfigurationSection } from "@/lib/knowledgeUtils";
 
 const Knowledge = () => {
   const navigate = useNavigate();
 
-  const renderProducts = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-dashboard-gray-900">
-            Connected Products
-          </h2>
-          <p className="text-dashboard-gray-600">
-            Link your MarTech products to enable AI-powered insights and
-            automation
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {products.map(renderProductCard)}
-      </div>
-    </div>
-  );
 
   return (
     <Layout pageTitle="Knowledge">
-      <div className="max-w-4xl mx-auto">
+      <div>
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
@@ -62,24 +31,14 @@ const Knowledge = () => {
         {/* Configuration Sections */}
         <div className="space-y-4">
           {/* Products Section */}
-          <Accordion type="single" collapsible>
-            <AccordionItem value="products" className="border rounded-lg">
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center gap-3">
-                  <ExternalLink className="h-5 w-5 text-dashboard-gray-600" />
-                  <div className="text-left">
-                    <div className="font-medium">Products</div>
-                    <div className="text-sm text-dashboard-gray-500">
-                      Link and configure your MarTech products
-                    </div>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-6 pb-6">
-                {renderProducts()}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          {renderConfigurationSection(
+            ExternalLink,
+            "Products",
+            "Link and configure your MarTech products",
+            "",
+            () => navigate("/knowledge/products"),
+            false,
+          )}
 
           {/* Metrics Section */}
           {renderConfigurationSection(
@@ -107,7 +66,7 @@ const Knowledge = () => {
             "Insights",
             "Review and manage the insights that KEN-E has uncovered about your business",
             "",
-            () => navigate("/insights"),
+            () => navigate("/knowledge/insights"),
             false,
           )}
 
@@ -117,7 +76,7 @@ const Knowledge = () => {
             "Measurement Strategy",
             "Define your organizations objectives and KPI's",
             "",
-            () => navigate("/measurement-strategy"),
+            () => navigate("/knowledge/strategy"),
             false,
           )}
 

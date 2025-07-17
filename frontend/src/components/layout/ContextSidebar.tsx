@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Menu,
   Home,
   BarChart3,
   Target,
@@ -256,27 +257,35 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
         isCollapsed ? "w-16" : "w-80 md:w-80",
       )}
     >
-      {/* Header with toggle button */}
-      <div className="h-12 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
-        {!isCollapsed && (
+      {/* Header */}
+      {isCollapsed ? (
+        <div className="h-12 flex items-center justify-center border-b border-dashboard-gray-200">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="h-8 w-8 p-0"
+            aria-label="Toggle sidebar"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <div className="h-12 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
           <h2 className="text-lg font-semibold text-dashboard-gray-900">
             {isHomePage ? "Notifications" : activeMenu?.config.title || "Menu"}
           </h2>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleCollapse}
-          className={cn("h-8 w-8 p-0", isCollapsed && "mx-auto")}
-          aria-label="Toggle sidebar"
-        >
-          {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="h-8 w-8 p-0"
+            aria-label="Toggle sidebar"
+          >
             <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
+          </Button>
+        </div>
+      )}
 
       {/* Content - grows to fill available space */}
       {!isCollapsed && (

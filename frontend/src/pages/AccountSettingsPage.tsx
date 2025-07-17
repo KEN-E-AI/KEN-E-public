@@ -42,7 +42,7 @@ const AccountSettingsPage = () => {
   if (!currentAccount) {
     return (
       <Layout pageTitle="Account Settings">
-        <div className="max-w-4xl mx-auto">
+        <div>
           <div className="text-center py-8">
             <p className="text-gray-500">Account not found</p>
           </div>
@@ -277,7 +277,7 @@ const AccountSettingsPage = () => {
 
   return (
     <Layout pageTitle="Account Settings">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="space-y-8">
         <ContextBreadcrumb currentPage="account" />
 
         {/* Account Header */}

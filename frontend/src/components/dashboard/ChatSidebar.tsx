@@ -145,35 +145,39 @@ const ChatSidebar = ({
     <div
       className={`fixed right-0 top-0 h-full border-l bg-white border-dashboard-gray-200 flex flex-col z-30 transition-all duration-300 ${isCollapsed ? "w-16" : "w-80 md:w-80"}`}
     >
-      {/* Header with toggle button */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggleCollapse}
-          className="h-8 w-8 p-0"
-          aria-label="Toggle chat sidebar"
-        >
-          {isCollapsed ? (
-            <ChevronLeft className="h-4 w-4" />
-          ) : (
+      {/* Header */}
+      {isCollapsed ? (
+        <div className="h-16 flex items-center justify-center border-b border-dashboard-gray-200">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="h-10 w-10 p-0"
+            aria-label="Toggle chat sidebar"
+          >
+            <MessageSquare className="h-5 w-5" />
+          </Button>
+        </div>
+      ) : (
+        <div className="h-16 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleCollapse}
+            className="h-8 w-8 p-0"
+            aria-label="Toggle chat sidebar"
+          >
             <ChevronRight className="h-4 w-4" />
-          )}
-        </Button>
-        {!isCollapsed && (
+          </Button>
           <h2 className="text-lg font-semibold text-dashboard-gray-900 flex-1 text-center">
             Chat
           </h2>
-        )}
-        {!isCollapsed && <div className="w-8" />} {/* Spacer for balance */}
-      </div>
-
-      {/* Collapsed State - Show only icon */}
-      {isCollapsed ? (
-        <div className="flex flex-col items-center justify-start pt-4 p-2">
-          <MessageSquare className="w-5 h-5 text-gray-600" />
+          <div className="w-8" /> {/* Spacer for balance */}
         </div>
-      ) : (
+      )}
+
+      {/* Main Content */}
+      {!isCollapsed && (
         <>
           {/* Header */}
           <div className="p-4 border-b border-dashboard-gray-200">
