@@ -162,14 +162,6 @@ const App = () => (
               }
             />
             <Route
-              path="/settings/account"
-              element={
-                <ProtectedRoute>
-                  <AccountSettings />
-                </ProtectedRoute>
-              }
-            />
-            <Route
               path="/settings/account/:accountId"
               element={
                 <ProtectedRoute>

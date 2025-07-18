@@ -87,16 +87,6 @@ const Settings = () => {
       ...getConfigurationStatus("organization"),
     },
     {
-      id: "account",
-      title: "Account Management",
-      description: "Create and manage accounts within your organization",
-      icon: Store,
-      route: "/settings/account",
-      context: "Manage accounts",
-      enabled: true,
-      ...getConfigurationStatus("account"),
-    },
-    {
       id: "user",
       title: "User Settings",
       description:
@@ -176,12 +166,6 @@ const Settings = () => {
             title: "Organization Settings",
             description: "Organization profile, billing, and team management",
             ...getConfigurationStatus("organization"),
-          },
-          {
-            id: "account",
-            title: "Account Management",
-            description: "Account creation and configuration",
-            ...getConfigurationStatus("account"),
           },
           {
             id: "user",

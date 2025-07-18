@@ -104,7 +104,6 @@ const menuConfigurations: Record<string, MenuSection> = {
         label: "Organization",
         route: "/settings/organization",
       },
-      { id: "account", label: "Account", route: "/settings/account" },
       { id: "user", label: "User", route: "/settings/user" },
     ],
   },

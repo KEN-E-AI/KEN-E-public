@@ -56,8 +56,8 @@ describe("ContextSidebar", () => {
     const user = userEvent.setup();
     renderWithProviders(<ContextSidebar {...defaultProps} />, "/settings");
 
-    await user.click(screen.getByText("Account"));
-    expect(window.location.pathname).toBe("/settings/account");
+    await user.click(screen.getByText("Organization"));
+    expect(window.location.pathname).toBe("/settings/organization");
   });
 
   test("toggles collapsed state", async () => {
