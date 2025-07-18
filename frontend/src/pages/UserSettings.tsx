@@ -128,12 +128,9 @@ const UserSettings = () => {
       currentPage="user"
       showEntitySelector={false}
     >
-      {/* Header */}
+      {/* Header Description */}
       <div>
-        <h1 className="text-3xl font-bold text-dashboard-gray-900">
-          User Settings
-        </h1>
-        <p className="text-dashboard-gray-600 mt-2">
+        <p className="text-dashboard-gray-600">
           Manage your personal preferences and user settings
         </p>
       </div>

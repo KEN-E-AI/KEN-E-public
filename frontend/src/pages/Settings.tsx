@@ -38,10 +38,9 @@ const Settings = () => {
       showBackButton={false}
       showEntitySelector={false}
     >
-      {/* Header */}
+      {/* Header Description */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-dashboard-gray-900">Settings</h1>
-        <p className="text-dashboard-gray-600 mt-2">
+        <p className="text-dashboard-gray-600">
           Manage your organization and personal settings
         </p>
       </div>

@@ -473,13 +473,10 @@ const AccountSettings = () => {
       {/* Organization Settings Header with create button */}
       {!isCreatingNew && !isAccountSpecific && (
         <div className="space-y-6 mb-6">
-          {/* Title and Description */}
+          {/* Description */}
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-2xl font-bold text-dashboard-gray-900">
-                Organization Settings
-              </h1>
-              <p className="text-dashboard-gray-600 mt-1">
+              <p className="text-dashboard-gray-600">
                 Manage your organization profile, subscription, and team
                 settings
               </p>

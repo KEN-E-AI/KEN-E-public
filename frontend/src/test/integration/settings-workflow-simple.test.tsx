@@ -143,15 +143,15 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
       // Wait for component to render
       await waitFor(() => {
         expect(
-          screen.getByText(
-            "Manage your organization and personal settings",
-          ),
+          screen.getByText("Manage your organization and personal settings"),
         ).toBeInTheDocument();
       });
 
       // Verify settings sections are present
       expect(screen.getByText("Organization Settings")).toBeInTheDocument();
-      expect(screen.getByText("Select an organization to manage its settings")).toBeInTheDocument();
+      expect(
+        screen.getByText("Select an organization to manage its settings"),
+      ).toBeInTheDocument();
       expect(screen.getByText("Personal Settings")).toBeInTheDocument();
       expect(screen.getByText("User Settings")).toBeInTheDocument();
     });
@@ -191,7 +191,9 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
         .closest(".cursor-pointer");
 
       // Find and click the organization card
-      const orgCard = screen.getByText("Test Organization").closest(".cursor-pointer");
+      const orgCard = screen
+        .getByText("Test Organization")
+        .closest(".cursor-pointer");
       expect(orgCard).toBeInTheDocument();
       if (settingsCards) {
         await user.click(settingsCards);
@@ -500,9 +502,7 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(
-            "Manage your organization and personal settings",
-          ),
+          screen.getByText("Manage your organization and personal settings"),
         ).toBeInTheDocument();
       });
 

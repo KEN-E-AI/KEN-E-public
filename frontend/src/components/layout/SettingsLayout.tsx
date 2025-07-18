@@ -11,13 +11,20 @@ import { cn } from "@/lib/utils";
 
 interface SettingsLayoutProps {
   children: React.ReactNode;
-  pageTitle: string;
+  pageTitle: string; // This title is rendered as h1 by GlobalHeader - do not add h1 in page content
   currentPage: "settings" | "organization" | "account" | "user";
   showBackButton?: boolean;
   showEntitySelector?: boolean;
   className?: string;
 }
 
+/**
+ * SettingsLayout - Layout wrapper for all settings pages
+ *
+ * IMPORTANT: The pageTitle prop is rendered as an h1 element by GlobalHeader.
+ * Do NOT add another h1 element in your page content to avoid duplicate h1 tags.
+ * Use h2 or other heading levels for section titles within your page.
+ */
 export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   children,
   pageTitle,
@@ -56,7 +63,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         )}
 
         {/* Breadcrumb Navigation */}
-        {currentPage !== "settings" && currentPage !== "organization" && (
+        {currentPage !== "settings" && currentPage !== "organization" && currentPage !== "user" && (
           <ContextBreadcrumb currentPage={currentPage} />
         )}
 
