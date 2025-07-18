@@ -145,9 +145,7 @@ describe("Organization Selector", () => {
 
     renderAccountSettings(mockUserWithMultipleOrgs, orgMetadata);
 
-    expect(
-      screen.getByText("Organization Selection"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Organization Selection")).toBeInTheDocument();
   });
 
   test("should show organization selector even when user has only one organization", () => {
@@ -158,9 +156,7 @@ describe("Organization Selector", () => {
     renderAccountSettings(mockUserWithSingleOrg, orgMetadata);
 
     // The organization selector should always be shown in the layout
-    expect(
-      screen.getByText("Organization Selection"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Organization Selection")).toBeInTheDocument();
   });
 
   test("should show organization selector with current organization selected", () => {
@@ -185,9 +181,7 @@ describe("Organization Selector", () => {
 
     // Verify the page structure
     expect(screen.getByText("Organization Settings")).toBeInTheDocument();
-    expect(
-      screen.getByText("Organization Selection"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Organization Selection")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Create New Organization" }),
     ).toBeInTheDocument();
@@ -202,9 +196,7 @@ describe("Organization Selector", () => {
 
     // Verify the page structure with selector (now always shown)
     expect(screen.getByText("Organization Settings")).toBeInTheDocument();
-    expect(
-      screen.getByText("Organization Selection"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Organization Selection")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Create New Organization" }),
     ).toBeInTheDocument();

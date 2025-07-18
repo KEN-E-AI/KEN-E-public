@@ -3,6 +3,7 @@
 import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,6 +24,37 @@ router = APIRouter(tags=["organizations"])
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def generate_unique_organization_id() -> str:
+    """
+    Generate a unique organization ID using UUID4.
+
+    Returns:
+        str: A unique organization ID in the format 'org_<uuid>'
+
+    Example:
+        'org_550e8400e29b41d4a716446655440000'
+    """
+    # Generate UUID4 and remove hyphens for cleaner format
+    unique_id = str(uuid.uuid4()).replace("-", "")
+    return f"org_{unique_id}"
+
+
+def generate_timestamp_organization_id() -> str:
+    """
+    Generate a unique organization ID using timestamp and UUID.
+
+    Returns:
+        str: A unique organization ID in the format 'org_<timestamp>_<uuid_suffix>'
+
+    Example:
+        'org_1705123456789_a1b2c3d4'
+    """
+    timestamp = int(datetime.now().timestamp() * 1000)
+    uuid_suffix = str(uuid.uuid4()).replace("-", "")[:8]
+    return f"org_{timestamp}_{uuid_suffix}"
+
 
 # Constants
 DATABASE_UNAVAILABLE_MESSAGE = "Database service unavailable. Please try again later."
@@ -197,18 +229,23 @@ async def create_organization(
         if not request.team:
             raise HTTPException(status_code=400, detail="team is required")
 
-        # Generate organization_id from name
-        organization_id = (
-            request.organization_name.lower().replace(" ", "-").replace("_", "-")
-        )
+        # Generate unique organization_id using UUID
+        organization_id = generate_unique_organization_id()
 
-        # Check if organization already exists
+        # Check if organization already exists (extremely unlikely with UUID4)
         existing_org = await _check_organization_exists(db, organization_id)
         if existing_org:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Organization with ID {organization_id} already exists",
+            logger.warning(
+                f"UUID collision detected for organization_id: {organization_id}"
             )
+            # Generate a new UUID if collision occurs (extremely rare)
+            organization_id = generate_unique_organization_id()
+            existing_org = await _check_organization_exists(db, organization_id)
+            if existing_org:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unable to generate unique organization ID. Please try again.",
+                )
 
         # Create organization node
         create_query = """
@@ -362,6 +399,176 @@ async def update_organization(
         )
 
 
+@router.put("/{organization_id}/move-account/{account_id}", response_model=SuccessResponse)
+async def move_account_to_organization(
+    organization_id: str,
+    account_id: str,
+    request: Dict[str, str],
+    db: Neo4jService = Depends(get_neo4j_service),
+) -> SuccessResponse:
+    """
+    Move an account from one organization to another.
+
+    **Parameters:**
+    - `organization_id` (path): The current organization ID that owns the account
+    - `account_id` (path): The account ID to move
+    - `new_organization_id` (body): The target organization ID to move the account to
+
+    **Request Body:**
+    ```json
+    {
+        "new_organization_id": "target-org-id"
+    }
+    ```
+
+    **Returns:**
+    - Success response with move details
+
+    **Example:**
+    ```
+    PUT /api/v1/organizations/current-org/move-account/acc-123
+    {
+        "new_organization_id": "target-org"
+    }
+    ```
+    """
+    try:
+        # Check Neo4j connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Get new organization ID from request body
+        new_organization_id = request.get("new_organization_id")
+        if not new_organization_id:
+            raise HTTPException(status_code=400, detail="new_organization_id is required in request body")
+
+        # Validate that source and target organizations are different
+        if organization_id == new_organization_id:
+            raise HTTPException(status_code=400, detail="Cannot move account to the same organization")
+
+        # Check if current organization exists
+        current_org_exists = await _check_organization_exists(db, organization_id)
+        if not current_org_exists:
+            raise HTTPException(status_code=404, detail=f"Current organization {organization_id} not found")
+
+        # Check if target organization exists
+        target_org_exists = await _check_organization_exists(db, new_organization_id)
+        if not target_org_exists:
+            raise HTTPException(status_code=404, detail=f"Target organization {new_organization_id} not found")
+
+        # Check if account exists and belongs to current organization
+        account_check_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization {organization_id: $organization_id})
+        RETURN count(acc) > 0 as account_exists
+        """
+        result = await db.execute_query(account_check_query, {
+            "account_id": account_id,
+            "organization_id": organization_id
+        })
+        account_exists = result[0]["account_exists"] if result else False
+
+        if not account_exists:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Account {account_id} not found in organization {organization_id}"
+            )
+
+        # Move the account by updating the BELONGS_TO relationship
+        move_query = """
+        MATCH (acc:Account {account_id: $account_id})-[old_rel:BELONGS_TO]->(old_org:Organization {organization_id: $old_organization_id})
+        MATCH (new_org:Organization {organization_id: $new_organization_id})
+        DELETE old_rel
+        CREATE (acc)-[:BELONGS_TO]->(new_org)
+        SET acc.organization_id = $new_organization_id
+        RETURN acc, old_org.organization_name as old_org_name, new_org.organization_name as new_org_name
+        """
+
+        result = await db.execute_write_query(move_query, {
+            "account_id": account_id,
+            "old_organization_id": organization_id,
+            "new_organization_id": new_organization_id
+        })
+
+        # Check if the result is a list of records or a summary
+        if isinstance(result, list) and len(result) > 0:
+            # Get organization names from the returned records
+            record = result[0]
+            old_org_name = record.get("old_org_name", organization_id)
+            new_org_name = record.get("new_org_name", new_organization_id)
+        elif isinstance(result, dict):
+            # Result is a summary (when no changes made), get org names separately
+            # Check if any changes were actually made
+            changes_made = (
+                result.get("relationships_created", 0) > 0 or 
+                result.get("relationships_deleted", 0) > 0 or 
+                result.get("properties_set", 0) > 0
+            )
+            
+            if not changes_made:
+                # Account might already be in the target organization or doesn't exist
+                # Verify the current state
+                verify_query = """
+                MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+                RETURN org.organization_id as current_org_id, org.organization_name as current_org_name
+                """
+                verify_result = await db.execute_query(verify_query, {"account_id": account_id})
+                
+                if verify_result:
+                    current_org_id = verify_result[0].get("current_org_id")
+                    current_org_name = verify_result[0].get("current_org_name")
+                    
+                    if current_org_id == new_organization_id:
+                        # Account is already in the target organization
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"Account {account_id} is already in organization {current_org_name or new_organization_id}"
+                        )
+                    else:
+                        # Account is in a different organization than expected
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"Account {account_id} is currently in organization {current_org_name or current_org_id}, not {organization_id}"
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Account {account_id} not found or has no organization relationship"
+                    )
+            
+            # If changes were made, get organization names separately
+            old_org_query = "MATCH (org:Organization {organization_id: $org_id}) RETURN org.organization_name as name"
+            new_org_query = "MATCH (org:Organization {organization_id: $org_id}) RETURN org.organization_name as name"
+            
+            old_result = await db.execute_query(old_org_query, {"org_id": organization_id})
+            new_result = await db.execute_query(new_org_query, {"org_id": new_organization_id})
+            
+            old_org_name = old_result[0]["name"] if old_result else organization_id
+            new_org_name = new_result[0]["name"] if new_result else new_organization_id
+        else:
+            raise HTTPException(status_code=500, detail="Failed to move account")
+
+        return SuccessResponse(
+            message=f"Account {account_id} moved successfully from {old_org_name} to {new_org_name}",
+            data={
+                "account_id": account_id,
+                "old_organization_id": organization_id,
+                "new_organization_id": new_organization_id,
+                "old_organization_name": old_org_name,
+                "new_organization_name": new_org_name,
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "Neo4j" in str(e) or "connect" in str(e).lower():
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+        raise HTTPException(
+            status_code=500, detail=f"Error moving account: {str(e)}"
+        )
+
+
 @router.delete("/{organization_id}", response_model=SuccessResponse)
 async def delete_organization(
     organization_id: str,
@@ -475,12 +682,12 @@ def _create_organization_from_record(org_data: Dict[str, Any]) -> Organization:
         payment_method = PaymentMethod(
             last_four=payment_method_data.get("last_four", ""),
             brand=payment_method_data.get("brand", ""),
-            expires=payment_method_data.get("expires", "")
+            expires=payment_method_data.get("expires", ""),
         )
     else:
         # Handle case where payment_method might be a string or other type
         payment_method = PaymentMethod(last_four="", brand="", expires="")
-    
+
     billing = Billing(
         payment_method=payment_method,
         address=billing_data.get("address", ""),
@@ -496,14 +703,16 @@ def _create_organization_from_record(org_data: Dict[str, Any]) -> Organization:
         billing_cycle=subscription_data.get("billing_cycle", "monthly"),
         next_billing_date=subscription_data.get("next_billing_date", ""),
         features=subscription_data.get("features", []),
-        usage=subscription_data.get("usage", {"reports_generated": 0, "reports_limit": 0})
+        usage=subscription_data.get(
+            "usage", {"reports_generated": 0, "reports_limit": 0}
+        ),
     )
-    
+
     # Handle team with defaults
     team = Team(
         members_used=team_data.get("members_used", 0),
         members_limit=team_data.get("members_limit", 1),
-        pending_invitations=team_data.get("pending_invitations", 0)
+        pending_invitations=team_data.get("pending_invitations", 0),
     )
 
     # Create organization object
@@ -519,4 +728,3 @@ def _create_organization_from_record(org_data: Dict[str, Any]) -> Organization:
         billing=billing,
         team=team,
     )
-

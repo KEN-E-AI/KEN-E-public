@@ -31,7 +31,7 @@ async def run_insight_analysis(
 
     Search insights with filters using the search insight utility.
     This endpoint has been moved from the insights router and adapted for funnel analysis.
-    
+
     **Parameters (in request body):**
     - `account_id` (required): The unique identifier for the account
     - `metric_id` (required): The unique identifier for the metric to analyze
@@ -40,11 +40,11 @@ async def run_insight_analysis(
     - `evaluation_date_end` (required): End date for evaluation period (YYYY-MM-DD)
     - `comparison_date_start` (required): Start date for comparison period (YYYY-MM-DD)
     - `comparison_date_end` (required): End date for comparison period (YYYY-MM-DD)
-    
+
     **Returns:**
     - `insights`: List of insights from the analysis
     - `total`: Total number of insights found
-    
+
     **Example:**
     ```json
     POST /api/v1/funnel-reports/analysis
@@ -67,12 +67,23 @@ async def run_insight_analysis(
 
         # Convert date strings to datetime.date objects for the main function
         try:
-            evaluation_start_date = datetime.strptime(request.evaluation_date_start, '%Y-%m-%d').date()
-            evaluation_end_date = datetime.strptime(request.evaluation_date_end, '%Y-%m-%d').date()
-            comparison_start_date = datetime.strptime(request.comparison_date_start, '%Y-%m-%d').date()
-            comparison_end_date = datetime.strptime(request.comparison_date_end, '%Y-%m-%d').date()
+            evaluation_start_date = datetime.strptime(
+                request.evaluation_date_start, "%Y-%m-%d"
+            ).date()
+            evaluation_end_date = datetime.strptime(
+                request.evaluation_date_end, "%Y-%m-%d"
+            ).date()
+            comparison_start_date = datetime.strptime(
+                request.comparison_date_start, "%Y-%m-%d"
+            ).date()
+            comparison_end_date = datetime.strptime(
+                request.comparison_date_end, "%Y-%m-%d"
+            ).date()
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid date format. Expected YYYY-MM-DD: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid date format. Expected YYYY-MM-DD: {str(e)}",
+            )
 
         # Call the main function from search_insight_util without activity_id
         result = search_main(
@@ -83,14 +94,16 @@ async def run_insight_analysis(
             comparison_start_date=comparison_start_date,
             comparison_end_date=comparison_end_date,
             input_metric_id=request.metric_id,
-            input_direction=request.direction.value
+            input_direction=request.direction.value,
         )
 
         # The result is a dictionary of activities with their analysis data
         # For now, return the raw result - you may want to transform this to match your Insight model
         insights = []  # Transform result into Insight objects as needed
-        
-        return InsightSearchResponse(insights=insights, total=len(result) if result else 0)
+
+        return InsightSearchResponse(
+            insights=insights, total=len(result) if result else 0
+        )
 
     except HTTPException:
         raise

@@ -35,14 +35,14 @@ async def get_activities(
     Returns a list of all Activity nodes that have been created with a BELONGS_TO
     relationship to the Account node in neo4j, along with all properties and
     ActivityLog notes with a LOGGED relationship.
-    
+
     **Parameters:**
     - `account_id` (required): The unique identifier for the account
-    
+
     **Returns:**
     - `activities`: List of Activity objects with their associated logs
     - `total`: Total number of activities found
-    
+
     **Example:**
     ```
     GET /api/v1/activities/?account_id=a000001
@@ -121,19 +121,19 @@ async def create_activity(
 
     Creates an Activity node in neo4j. All new nodes will have a BELONGS_TO
     relationship to the Account node.
-    
+
     **Parameters (in request body):**
     - `account_id` (required): The unique identifier for the account
     - `activity_description` (required): A description of the activity
     - `expected_impact` (optional): Expected impact of the activity
     - `internal` (optional): Boolean indicating if activity is internal (default: false)
     - `known_activity` (optional): Boolean indicating if activity is known (default: false)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains the generated activity ID
-    
+
     **Example:**
     ```json
     POST /api/v1/activities/
@@ -228,7 +228,7 @@ async def update_activity(
     Update an existing activity.
 
     Edit an Activity node in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity to update
     - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
@@ -236,12 +236,12 @@ async def update_activity(
     - `expected_impact` (optional): Updated expected impact of the activity
     - `internal` (optional): Updated boolean indicating if activity is internal
     - `known_activity` (optional): Updated boolean indicating if activity is known
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains summary of the update operation
-    
+
     **Example:**
     ```json
     PUT /api/v1/activities/
@@ -273,7 +273,8 @@ async def update_activity(
         RETURN activity
         """
         activity_result = await db.execute_query(
-            check_activity_query, {"activity_id": request.activity_id, "account_id": request.account_id}
+            check_activity_query,
+            {"activity_id": request.activity_id, "account_id": request.account_id},
         )
 
         if not activity_result:
@@ -284,7 +285,10 @@ async def update_activity(
 
         # Build update query dynamically based on provided fields
         update_fields = []
-        parameters: Dict[str, Any] = {"activity_id": request.activity_id, "account_id": request.account_id}
+        parameters: Dict[str, Any] = {
+            "activity_id": request.activity_id,
+            "account_id": request.account_id,
+        }
 
         if request.activity_description is not None:
             update_fields.append(
@@ -310,7 +314,7 @@ async def update_activity(
         # Execute update query with account validation
         update_query = f"""
         MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity {{activity_id: $activity_id}})
-        SET {', '.join(update_fields)}
+        SET {", ".join(update_fields)}
         RETURN activity
         """
 
@@ -338,16 +342,16 @@ async def delete_activity(
     Delete an activity.
 
     Delete an Activity node in neo4j along with its relationships.
-    
+
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity to delete
     - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains summary of the delete operation
-    
+
     **Example:**
     ```json
     DELETE /api/v1/activities/
@@ -376,7 +380,8 @@ async def delete_activity(
         RETURN activity
         """
         activity_result = await db.execute_query(
-            check_activity_query, {"activity_id": request.activity_id, "account_id": request.account_id}
+            check_activity_query,
+            {"activity_id": request.activity_id, "account_id": request.account_id},
         )
 
         if not activity_result:
@@ -391,7 +396,10 @@ async def delete_activity(
         DETACH DELETE activity
         """
 
-        result = await db.execute_write_query(delete_activity_query, {"activity_id": request.activity_id, "account_id": request.account_id})
+        result = await db.execute_write_query(
+            delete_activity_query,
+            {"activity_id": request.activity_id, "account_id": request.account_id},
+        )
 
         return SuccessResponse(
             success=True,
@@ -417,19 +425,19 @@ async def create_activity_log(
 
     Creates an ActivityLog node in neo4j with a LOGGED relationship to the
     provided Activity node and a BELONGS_TO relationship to the Account node.
-    
+
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity to log
     - `account_id` (required): The unique identifier for the account
     - `start_date` (optional): Start date of the activity log
     - `end_date` (optional): End date of the activity log
     - `description` (optional): Description of the activity log entry
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains the generated activity log ID
-    
+
     **Example:**
     ```json
     POST /api/v1/activities/logs
@@ -522,7 +530,7 @@ async def update_activity_log(
     Update an existing activity log.
 
     Edit an ActivityLog node in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log to update
     - `activity_id` (required): The unique identifier of the activity (ensures log belongs to this activity)
@@ -530,12 +538,12 @@ async def update_activity_log(
     - `start_date` (optional): Updated start date of the activity log
     - `end_date` (optional): Updated end date of the activity log
     - `description` (optional): Updated description of the activity log entry
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains summary of the update operation
-    
+
     **Example:**
     ```json
     PUT /api/v1/activities/logs
@@ -575,11 +583,14 @@ async def update_activity_log(
         MATCH (activity)-[:LOGGED]->(log:ActivityLog {activity_log_id: $activity_log_id})
         RETURN log
         """
-        log_result = await db.execute_query(check_log_query, {
-            "activity_log_id": request.activity_log_id,
-            "activity_id": request.activity_id,
-            "account_id": request.account_id
-        })
+        log_result = await db.execute_query(
+            check_log_query,
+            {
+                "activity_log_id": request.activity_log_id,
+                "activity_id": request.activity_id,
+                "account_id": request.account_id,
+            },
+        )
 
         if not log_result:
             raise HTTPException(
@@ -592,7 +603,7 @@ async def update_activity_log(
         parameters: Dict[str, Any] = {
             "activity_log_id": request.activity_log_id,
             "activity_id": request.activity_id,
-            "account_id": request.account_id
+            "account_id": request.account_id,
         }
 
         if request.start_date is not None:
@@ -614,7 +625,7 @@ async def update_activity_log(
         update_query = f"""
         MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(activity:Activity {{activity_id: $activity_id}})
         MATCH (activity)-[:LOGGED]->(log:ActivityLog {{activity_log_id: $activity_log_id}})
-        SET {', '.join(update_fields)}
+        SET {", ".join(update_fields)}
         RETURN log
         """
 
@@ -642,17 +653,17 @@ async def delete_activity_log(
     Delete an activity log.
 
     Delete an ActivityLog node in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log to delete
     - `activity_id` (required): The unique identifier of the activity (ensures log belongs to this activity)
     - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains summary of the delete operation
-    
+
     **Example:**
     ```json
     DELETE /api/v1/activities/logs
@@ -689,11 +700,14 @@ async def delete_activity_log(
         MATCH (activity)-[:LOGGED]->(log:ActivityLog {activity_log_id: $activity_log_id})
         RETURN log
         """
-        log_result = await db.execute_query(check_log_query, {
-            "activity_log_id": request.activity_log_id,
-            "activity_id": request.activity_id,
-            "account_id": request.account_id
-        })
+        log_result = await db.execute_query(
+            check_log_query,
+            {
+                "activity_log_id": request.activity_log_id,
+                "activity_id": request.activity_id,
+                "account_id": request.account_id,
+            },
+        )
 
         if not log_result:
             raise HTTPException(
@@ -708,11 +722,14 @@ async def delete_activity_log(
         DETACH DELETE log
         """
 
-        result = await db.execute_write_query(delete_log_query, {
-            "activity_log_id": request.activity_log_id,
-            "activity_id": request.activity_id,
-            "account_id": request.account_id
-        })
+        result = await db.execute_write_query(
+            delete_log_query,
+            {
+                "activity_log_id": request.activity_log_id,
+                "activity_id": request.activity_id,
+                "account_id": request.account_id,
+            },
+        )
 
         return SuccessResponse(
             success=True,
@@ -737,15 +754,15 @@ async def create_test_account(
     """
     Create a test Account node for testing activity operations.
     This is a helper endpoint for development and testing.
-    
+
     **Parameters (query parameter):**
     - `account_id` (required): The unique identifier for the account to create
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains the created account ID
-    
+
     **Example:**
     ```
     POST /api/v1/activities/test/create-account?account_id=a000001

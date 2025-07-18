@@ -33,14 +33,14 @@ async def get_datasets(
 
     Returns a list of all datasets that have been created for the account,
     along with all properties.
-    
+
     **Parameters (query parameter):**
     - `account_id` (required): The unique identifier for the account
-    
+
     **Returns:**
     - `datasets`: List of dataset objects with their properties
     - `total`: Total number of datasets found
-    
+
     **Example:**
     ```
     GET /api/v1/datasets/?account_id=a000001
@@ -76,10 +76,14 @@ async def get_datasets(
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching datasets: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching datasets: {str(e)}"
+        )
 
 
-async def _create_dataset_from_record(dataset_data: Dict[str, Any], account_id: str) -> Dataset:
+async def _create_dataset_from_record(
+    dataset_data: Dict[str, Any], account_id: str
+) -> Dataset:
     """Create a Dataset object from a database record."""
     if not dataset_data:
         raise ValueError("No dataset data found in record")
@@ -89,6 +93,7 @@ async def _create_dataset_from_record(dataset_data: Dict[str, Any], account_id: 
     if isinstance(products, str):
         try:
             import ast
+
             products = ast.literal_eval(products)
         except (ValueError, SyntaxError):
             products = []
@@ -126,7 +131,7 @@ async def create_dataset(
     Create a new dataset.
 
     Creates a new Dataset node in Neo4j with a BELONGS_TO relationship to the Account node.
-    
+
     **Parameters (in request body):**
     - `account_id` (required): The unique identifier for the account
     - `dataset_id` (required): A unique identifier for the dataset
@@ -134,12 +139,12 @@ async def create_dataset(
     - `products` (required): List of products that collect the data used in this dataset
     - `default_datetime` (required): Name of the datetime column used to aggregate data by date
     - `description` (required): Description of the dataset and its usefulness
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: Contains the dataset ID
-    
+
     **Example:**
     ```json
     POST /api/v1/datasets/
@@ -184,7 +189,8 @@ async def create_dataset(
         )
         if existing_dataset:
             raise HTTPException(
-                status_code=409, detail=f"Dataset with ID {request.dataset_id} already exists"
+                status_code=409,
+                detail=f"Dataset with ID {request.dataset_id} already exists",
             )
 
         # Create Dataset node with BELONGS_TO relationship to Account
@@ -210,7 +216,9 @@ async def create_dataset(
             "description": request.description,
         }
 
-        dataset_result = await db.execute_write_query(create_dataset_query, dataset_params)
+        dataset_result = await db.execute_write_query(
+            create_dataset_query, dataset_params
+        )
 
         if not dataset_result:
             raise HTTPException(status_code=500, detail="Failed to create dataset")
@@ -238,7 +246,7 @@ async def update_dataset(
     Update an existing dataset.
 
     Updates Dataset node properties in Neo4j.
-    
+
     **Parameters (in request body):**
     - `account_id` (required): The unique identifier for the account
     - `dataset_name` (required): The unique name of the dataset to update
@@ -246,12 +254,12 @@ async def update_dataset(
     - `products` (optional): Updated list of products
     - `default_datetime` (optional): Updated default datetime column name
     - `description` (optional): Updated description
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: null
-    
+
     **Example:**
     ```json
     PUT /api/v1/datasets/
@@ -279,17 +287,21 @@ async def update_dataset(
         RETURN dataset
         """
         dataset_result = await db.execute_query(
-            dataset_check_query, 
-            {"account_id": request.account_id, "dataset_name": request.dataset_name}
+            dataset_check_query,
+            {"account_id": request.account_id, "dataset_name": request.dataset_name},
         )
         if not dataset_result:
             raise HTTPException(
-                status_code=404, detail=f"Dataset {request.dataset_name} not found for account {request.account_id}"
+                status_code=404,
+                detail=f"Dataset {request.dataset_name} not found for account {request.account_id}",
             )
 
         # Build update parameters
         set_clauses = []
-        params = {"account_id": request.account_id, "dataset_name": request.dataset_name}
+        params = {
+            "account_id": request.account_id,
+            "dataset_name": request.dataset_name,
+        }
 
         if request.dataset_id is not None:
             set_clauses.append("dataset.dataset_id = $dataset_id")
@@ -313,7 +325,7 @@ async def update_dataset(
         # Execute update query
         update_query = f"""
         MATCH (account:Account {{account_id: $account_id}})<-[:BELONGS_TO]-(dataset:Dataset {{dataset_name: $dataset_name}})
-        SET {', '.join(set_clauses)}
+        SET {", ".join(set_clauses)}
         RETURN dataset
         """
 
@@ -337,18 +349,18 @@ async def delete_dataset(
     """
     Delete a dataset.
 
-    Removes Dataset node from Neo4j along with all Metric nodes that have a 
+    Removes Dataset node from Neo4j along with all Metric nodes that have a
     CALCULATED_FROM relationship to the dataset.
-    
+
     **Parameters (in request body):**
     - `account_id` (required): The unique identifier for the account
     - `dataset_name` (required): The unique name of the dataset to delete
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message including count of deleted metrics
     - `data`: null
-    
+
     **Example:**
     ```json
     DELETE /api/v1/datasets/
@@ -376,12 +388,13 @@ async def delete_dataset(
         RETURN dataset, count(metric) as metric_count
         """
         dataset_result = await db.execute_query(
-            dataset_check_query, 
-            {"account_id": request.account_id, "dataset_name": request.dataset_name}
+            dataset_check_query,
+            {"account_id": request.account_id, "dataset_name": request.dataset_name},
         )
         if not dataset_result or not dataset_result[0]["dataset"]:
             raise HTTPException(
-                status_code=404, detail=f"Dataset {request.dataset_name} not found for account {request.account_id}"
+                status_code=404,
+                detail=f"Dataset {request.dataset_name} not found for account {request.account_id}",
             )
 
         metric_count = dataset_result[0]["metric_count"]
@@ -394,17 +407,15 @@ async def delete_dataset(
         """
 
         await db.execute_write_query(
-            delete_query, 
-            {"account_id": request.account_id, "dataset_name": request.dataset_name}
+            delete_query,
+            {"account_id": request.account_id, "dataset_name": request.dataset_name},
         )
 
         response_message = f"Dataset deleted successfully"
         if metric_count > 0:
             response_message += f" (also deleted {metric_count} related metrics)"
 
-        return SuccessResponse(
-            success=True, data=None, message=response_message
-        )
+        return SuccessResponse(success=True, data=None, message=response_message)
 
     except HTTPException:
         raise

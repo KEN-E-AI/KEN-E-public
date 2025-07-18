@@ -50,14 +50,14 @@ async def get_intuitions(
 
     Returns intuition relationships for the account.
     Fetches Activities for an account, then finds INFLUENCE_LIKELY relationships from Activity to Metric nodes.
-    
+
     **Parameters (query parameter):**
     - `account_id` (required): The unique identifier for the account
-    
+
     **Returns:**
     - `intuitions`: List of intuition objects showing likely influences
     - `total`: Total number of intuitions found
-    
+
     **Example:**
     ```
     GET /api/v1/intuitions/?account_id=a000001
@@ -118,18 +118,18 @@ async def create_intuition(
 
     Creates an intuition record linking an activity and metric with descriptive text.
     Prevents creation of duplicate relationships between the same activity and metric.
-    
+
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity
     - `metric_id` (required): The unique identifier of the metric
     - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `direction` (optional): Direction of influence (positive or negative)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: null
-    
+
     **Example:**
     ```json
     POST /api/v1/intuitions/
@@ -162,17 +162,20 @@ async def create_intuition(
         MATCH (activity)-[r:INFLUENCE_LIKELY]->(metric)
         RETURN r
         """
-        
-        check_result = await neo4j.execute_query(check_query, {
-            "account_id": request.account_id,
-            "activity_id": request.activity_id,
-            "metric_id": request.metric_id,
-        })
-        
+
+        check_result = await neo4j.execute_query(
+            check_query,
+            {
+                "account_id": request.account_id,
+                "activity_id": request.activity_id,
+                "metric_id": request.metric_id,
+            },
+        )
+
         if check_result:
             raise HTTPException(
-                status_code=409, 
-                detail=f"Intuition relationship already exists between activity {request.activity_id} and metric {request.metric_id}"
+                status_code=409,
+                detail=f"Intuition relationship already exists between activity {request.activity_id} and metric {request.metric_id}",
             )
 
         # Neo4j query to create intuition relationship with account validation
@@ -197,7 +200,10 @@ async def create_intuition(
 
         # Check if the relationship was actually created
         if result.get("relationships_created", 0) == 0:
-            raise HTTPException(status_code=404, detail="Activity or Metric not found for the specified account, or they don't belong to the same account")
+            raise HTTPException(
+                status_code=404,
+                detail="Activity or Metric not found for the specified account, or they don't belong to the same account",
+            )
 
         return SuccessResponse(
             success=True, data=None, message="Intuition created successfully"
@@ -226,18 +232,18 @@ async def update_intuition(
     Update an existing intuition.
 
     Updates intuition properties in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity
     - `metric_id` (required): The unique identifier of the metric
     - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `direction` (optional): Updated direction of influence (positive or negative)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: null
-    
+
     **Example:**
     ```json
     PUT /api/v1/intuitions/
@@ -284,7 +290,8 @@ async def update_intuition(
         # Check if any properties were actually set (meaning the relationship was found)
         if result.get("properties_set", 0) == 0:
             raise HTTPException(
-                status_code=404, detail="Intuition relationship not found for the specified account, or the Activity and Metric don't belong to the same account"
+                status_code=404,
+                detail="Intuition relationship not found for the specified account, or the Activity and Metric don't belong to the same account",
             )
 
         return SuccessResponse(
@@ -314,17 +321,17 @@ async def delete_intuition(
     Delete an intuition.
 
     Removes an intuition record from neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity
     - `metric_id` (required): The unique identifier of the metric
     - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: null
-    
+
     **Example:**
     ```json
     DELETE /api/v1/intuitions/
@@ -369,7 +376,8 @@ async def delete_intuition(
         # Check if any relationships were actually deleted
         if result.get("relationships_deleted", 0) == 0:
             raise HTTPException(
-                status_code=404, detail="Intuition relationship not found for the specified account, or the Activity and Metric don't belong to the same account"
+                status_code=404,
+                detail="Intuition relationship not found for the specified account, or the Activity and Metric don't belong to the same account",
             )
 
         return SuccessResponse(

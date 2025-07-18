@@ -114,7 +114,6 @@ const AccountSettings = () => {
     return data;
   }, [currentOrgId, orgMetadata]);
 
-
   // Form state
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
     organization_name: "",

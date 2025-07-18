@@ -159,8 +159,6 @@ async def _create_insight_from_record(record: Dict[str, Any]) -> Insight:
     )
 
 
-
-
 def _determine_relationship_type(evidence: Optional[Evidence] = None) -> str:
     """Determine the relationship type based on evidence."""
     if evidence and evidence.influence_evidence:
@@ -191,14 +189,14 @@ async def get_insights(
     Returns insight relationships for the account.
     Fetches Activities for an account, then ActivityLog nodes linked to those Activities,
     then finds INFLUENCE_CONFIRMED and NO_INFLUENCE_CONFIRMED relationships from ActivityLog to Metric nodes.
-    
+
     **Parameters (query parameter):**
     - `account_id` (required): The unique identifier for the account
-    
+
     **Returns:**
     - `insights`: List of insight objects with relationship data and evidence
     - `total`: Total number of insights found
-    
+
     **Example:**
     ```
     GET /api/v1/insights/?account_id=a000001
@@ -263,7 +261,7 @@ async def create_insight(
 
     Creates an INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship
     between an ActivityLog node and a Metric node in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log
     - `metric_id` (required): The unique identifier of the metric
@@ -271,12 +269,12 @@ async def create_insight(
     - `relationship_type` (optional): Type of relationship (INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED)
     - `direction` (optional): Direction of influence (positive or negative)
     - `evidence` (optional): Evidence object containing active and influence evidence
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message with relationship type
     - `data`: null
-    
+
     **Example:**
     ```json
     POST /api/v1/insights/
@@ -313,7 +311,11 @@ async def create_insight(
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
         # Use the explicit relationship type from the request
-        relationship_type = request.relationship_type.value if request.relationship_type else "INFLUENCE_CONFIRMED"
+        relationship_type = (
+            request.relationship_type.value
+            if request.relationship_type
+            else "INFLUENCE_CONFIRMED"
+        )
         evidence_data = _prepare_evidence_data(request.evidence)
 
         # Neo4j query to create insight relationship with account validation
@@ -339,7 +341,8 @@ async def create_insight(
         result = await neo4j.execute_write_query(query, parameters)
         if result["relationships_created"] == 0:
             raise HTTPException(
-                status_code=404, detail="ActivityLog or Metric not found for the specified account, or they don't belong to the same account"
+                status_code=404,
+                detail="ActivityLog or Metric not found for the specified account, or they don't belong to the same account",
             )
 
         return SuccessResponse(
@@ -366,19 +369,19 @@ async def update_insight(
     Update an existing insight relationship.
 
     Updates properties of an INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log
     - `metric_id` (required): The unique identifier of the metric
     - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
     - `direction` (optional): Updated direction of influence (positive or negative)
     - `evidence` (optional): Updated evidence object containing active and influence evidence
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: null
-    
+
     **Example:**
     ```json
     PUT /api/v1/insights/
@@ -441,7 +444,8 @@ async def update_insight(
         result = await neo4j.execute_write_query(query, parameters)
         if result["properties_set"] == 0:
             raise HTTPException(
-                status_code=404, detail="Insight relationship not found for the specified account, or the ActivityLog and Metric don't belong to the same account"
+                status_code=404,
+                detail="Insight relationship not found for the specified account, or the ActivityLog and Metric don't belong to the same account",
             )
 
         return SuccessResponse(
@@ -467,17 +471,17 @@ async def delete_insight(
 
     Removes an INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship
     between ActivityLog and Metric nodes in neo4j.
-    
+
     **Parameters (in request body):**
     - `activity_log_id` (required): The unique identifier of the activity log
     - `metric_id` (required): The unique identifier of the metric
     - `account_id` (required): The unique identifier for the account (ensures both metric and activity belong to this account)
-    
+
     **Returns:**
     - `success`: Boolean indicating operation success
     - `message`: Success message
     - `data`: null
-    
+
     **Example:**
     ```json
     DELETE /api/v1/insights/
@@ -524,7 +528,8 @@ async def delete_insight(
         result = await neo4j.execute_write_query(query, parameters)
         if result["relationships_deleted"] == 0:
             raise HTTPException(
-                status_code=404, detail="Insight relationship not found for the specified account, or the ActivityLog and Metric don't belong to the same account"
+                status_code=404,
+                detail="Insight relationship not found for the specified account, or the ActivityLog and Metric don't belong to the same account",
             )
 
         return SuccessResponse(

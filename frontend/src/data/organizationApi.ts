@@ -159,6 +159,20 @@ export async function deleteAccount(accountId: string): Promise<void> {
   });
 }
 
+export async function moveAccount(
+  currentOrganizationId: string,
+  accountId: string,
+  newOrganizationId: string,
+): Promise<void> {
+  await apiCall(
+    `/api/v1/organizations/${currentOrganizationId}/move-account/${accountId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ new_organization_id: newOrganizationId }),
+    },
+  );
+}
+
 // Helper functions to maintain compatibility with existing code
 export async function createNewOrganization(orgData: {
   organization_name: string;

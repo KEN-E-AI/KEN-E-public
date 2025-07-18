@@ -55,7 +55,10 @@ class TestInsightsRouter:
         """Test getting insights with sample data."""
         # Mock insight data
         insight_record = {
-            "activity": {"activity_id": "activity_001", "activity_description": "Test activity"},
+            "activity": {
+                "activity_id": "activity_001",
+                "activity_description": "Test activity",
+            },
             "metric": {"metric_id": "metric_001", "metric_name": "Test Metric"},
             "activity_log": {"activity_log_id": "log_001"},
             "dataset": {"product": "HubSpot,Salesforce"},
@@ -108,22 +111,28 @@ class TestInsightsRouter:
         """Test getting insights with different relationship types."""
         # Mock insight with INFLUENCE_CONFIRMED
         influence_confirmed_record = {
-            "activity": {"activity_id": "activity_001", "activity_description": "Test activity"},
+            "activity": {
+                "activity_id": "activity_001",
+                "activity_description": "Test activity",
+            },
             "metric": {"metric_id": "metric_001", "metric_name": "Test Metric"},
             "activity_log": {"activity_log_id": "log_001"},
             "dataset": {"product": "HubSpot,Salesforce"},
             "relationship": {"direction": "positive"},
-            "relationship_type": "INFLUENCE_CONFIRMED"
+            "relationship_type": "INFLUENCE_CONFIRMED",
         }
-        
+
         # Mock insight with NO_INFLUENCE_CONFIRMED
         no_influence_record = {
-            "activity": {"activity_id": "activity_002", "activity_description": "Test activity 2"},
+            "activity": {
+                "activity_id": "activity_002",
+                "activity_description": "Test activity 2",
+            },
             "metric": {"metric_id": "metric_002", "metric_name": "Test Metric 2"},
             "activity_log": {"activity_log_id": "log_002"},
             "dataset": {"product": "Analytics"},
             "relationship": {},
-            "relationship_type": "NO_INFLUENCE_CONFIRMED"
+            "relationship_type": "NO_INFLUENCE_CONFIRMED",
         }
 
         mock_neo4j_service.execute_query.side_effect = [
@@ -145,7 +154,7 @@ class TestInsightsRouter:
         assert insight1["relationship_type"] == "INFLUENCE_CONFIRMED"
         assert insight1["direction"] == "positive"
 
-        # Verify second insight has NO_INFLUENCE_CONFIRMED  
+        # Verify second insight has NO_INFLUENCE_CONFIRMED
         insight2 = data["insights"][1]
         assert insight2["relationship_type"] == "NO_INFLUENCE_CONFIRMED"
         assert insight2["direction"] is None  # Should be None for no influence
