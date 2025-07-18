@@ -44,6 +44,7 @@ const mockAuthContext: AuthContextType = {
   user: mockUser,
   isAuthenticated: true,
   isLoading: false,
+  notifications: [],
   orgMetadata: {
     "org-123": {
       organization_id: "org-123",
@@ -143,26 +144,19 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            "Manage your organization, accounts, and personal settings",
+            "Manage your organization and personal settings",
           ),
         ).toBeInTheDocument();
       });
 
-      // Verify settings cards are present
+      // Verify settings sections are present
       expect(screen.getByText("Organization Settings")).toBeInTheDocument();
-      expect(screen.getByText("Account Management")).toBeInTheDocument();
+      expect(screen.getByText("Select an organization to manage its settings")).toBeInTheDocument();
+      expect(screen.getByText("Personal Settings")).toBeInTheDocument();
       expect(screen.getByText("User Settings")).toBeInTheDocument();
-
-      // Verify current context section
-      expect(screen.getByText("Current Context")).toBeInTheDocument();
-
-      // Verify quick actions
-      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
-      expect(screen.getByText("Switch Organization")).toBeInTheDocument();
-      expect(screen.getByText("Create Organization")).toBeInTheDocument();
     });
 
-    test("should display configuration status indicators", async () => {
+    test("should display organization list with permissions", async () => {
       render(
         <TestWrapper>
           <Settings />
@@ -173,10 +167,9 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
         expect(screen.getByText("Organization Settings")).toBeInTheDocument();
       });
 
-      // Check for status badges
-      expect(screen.getByText("Complete")).toBeInTheDocument();
-      expect(screen.getByText("Needs Attention")).toBeInTheDocument();
-      expect(screen.getByText("Incomplete")).toBeInTheDocument();
+      // Check for organization with admin permission
+      expect(screen.getByText("Test Organization")).toBeInTheDocument();
+      expect(screen.getByText("Administrator")).toBeInTheDocument();
     });
 
     test("should handle card clicks for navigation", async () => {
@@ -197,10 +190,9 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
         .getAllByText("Organization Settings")[0]
         .closest(".cursor-pointer");
 
-      // Verify cards are clickable by checking for cursor-pointer class
-      expect(settingsCards).toBeInTheDocument();
-
-      // Test clicking on the card
+      // Find and click the organization card
+      const orgCard = screen.getByText("Test Organization").closest(".cursor-pointer");
+      expect(orgCard).toBeInTheDocument();
       if (settingsCards) {
         await user.click(settingsCards);
         expect(settingsCards).toHaveClass("cursor-pointer");
@@ -509,17 +501,17 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            "Manage your organization, accounts, and personal settings",
+            "Manage your organization and personal settings",
           ),
         ).toBeInTheDocument();
       });
 
       // Verify layout structure is present
-      expect(screen.getByText("Current Context")).toBeInTheDocument();
-      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
+      expect(screen.getByText("Organization Settings")).toBeInTheDocument();
+      expect(screen.getByText("Personal Settings")).toBeInTheDocument();
     });
 
-    test("should show entity selector appropriately", async () => {
+    test("should show organization selector", async () => {
       render(
         <TestWrapper>
           <Settings />
@@ -527,13 +519,12 @@ describe("Settings Workflow Integration Tests - Simplified", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText("Current Context")).toBeInTheDocument();
+        expect(screen.getByText("Organization Settings")).toBeInTheDocument();
       });
 
-      // Main settings should show entity selector
-      expect(screen.getAllByText("Test Organization").length).toBeGreaterThan(
-        0,
-      );
+      // Should display organizations the user can manage
+      expect(screen.getByText("Test Organization")).toBeInTheDocument();
+      expect(screen.getByText("Administrator")).toBeInTheDocument();
     });
   });
 });
