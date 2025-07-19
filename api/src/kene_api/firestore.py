@@ -1,14 +1,14 @@
 """Firestore service for database operations."""
 
 import os
-from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta, timezone
-from google.cloud import firestore
-from google.cloud.firestore_v1.base_query import FieldFilter
-from google.cloud.firestore_v1 import DELETE_FIELD
-from google.cloud.exceptions import NotFound
-from google.auth import default
+from typing import Any
+
 from dotenv import load_dotenv
+from google.auth import default
+from google.cloud import firestore
+from google.cloud.exceptions import NotFound
+from google.cloud.firestore_v1 import DELETE_FIELD
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Load environment variables
 load_dotenv()
@@ -24,7 +24,7 @@ class FirestoreService:
 
     def __init__(self):
         """Initialize Firestore service with credentials."""
-        self._db: Optional[firestore.Client] = None
+        self._db: firestore.Client | None = None
         self._initialized = False
 
     def initialize(self) -> bool:
@@ -138,8 +138,8 @@ class FirestoreService:
     def create_document(
         self,
         collection: str,
-        document_id: Optional[str] = None,
-        data: Optional[Dict[str, Any]] = None,
+        document_id: str | None = None,
+        data: dict[str, Any] | None = None,
     ) -> str:
         """
         Create a document in Firestore.
@@ -170,7 +170,7 @@ class FirestoreService:
 
     def get_document(
         self, collection: str, document_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a document from Firestore.
 
@@ -192,7 +192,7 @@ class FirestoreService:
         return None
 
     def update_document(
-        self, collection: str, document_id: str, data: Dict[str, Any]
+        self, collection: str, document_id: str, data: dict[str, Any]
     ) -> bool:
         """
         Update a document in Firestore.
@@ -239,9 +239,9 @@ class FirestoreService:
     def list_documents(
         self,
         collection: str,
-        limit: Optional[int] = None,
-        where_filters: Optional[List[tuple]] = None,
-    ) -> List[Dict[str, Any]]:
+        limit: int | None = None,
+        where_filters: list[tuple] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         List documents from a collection.
 
@@ -286,8 +286,8 @@ class FirestoreService:
         field: str,
         operator: str,
         value: Any,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Query documents from a collection.
 
@@ -307,7 +307,7 @@ class FirestoreService:
 
     def get_kpi_setting(
         self, organization_id: str, account_id: str, kpi_name: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Get a specific KPI setting for an account.
 
@@ -407,7 +407,7 @@ class FirestoreService:
 
     def get_all_kpi_settings(
         self, organization_id: str, account_id: str
-    ) -> Optional[Dict[str, str]]:
+    ) -> dict[str, str] | None:
         """
         Get all KPI settings for an account.
 
@@ -453,9 +453,9 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
-        funnel_step_data: Dict[str, Any],
+        funnel_step_data: dict[str, Any],
     ) -> bool:
         """
         Create a funnel step, handling step number conflicts by incrementing subsequent steps.
@@ -530,9 +530,9 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a specific funnel step.
 
@@ -584,8 +584,8 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        big_bet_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         List all funnel steps for a specific funnel.
 
@@ -645,9 +645,9 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
-        funnel_step_data: Dict[str, Any],
+        funnel_step_data: dict[str, Any],
     ) -> bool:
         """
         Update a funnel step.
@@ -697,7 +697,7 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
     ) -> bool:
         """
@@ -777,11 +777,11 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
-        channel_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        channel_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         Create a channel within a funnel step.
 
@@ -843,10 +843,10 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a specific channel from a funnel step.
 
@@ -902,9 +902,9 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List all channels in a funnel step.
 
@@ -968,11 +968,11 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
-        channel_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        channel_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         Update a channel in a funnel step.
 
@@ -1030,7 +1030,7 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
     ) -> bool:
@@ -1089,12 +1089,12 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
         tactic_name: str,
-        tactic_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        tactic_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         Create a tactic within a channel.
 
@@ -1163,11 +1163,11 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
         tactic_name: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a specific tactic from a channel.
 
@@ -1226,10 +1226,10 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List all tactics in a channel.
 
@@ -1294,12 +1294,12 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
         tactic_name: str,
-        tactic_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        tactic_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """
         Update a tactic in a channel.
 
@@ -1359,7 +1359,7 @@ class FirestoreService:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str],
+        big_bet_name: str | None,
         funnel_step_num: int,
         channel_name: str,
         tactic_name: str,
@@ -1447,7 +1447,7 @@ class FirestoreService:
         field: str,
         match_field: str,
         match_value: Any,
-        new_value: Dict[str, Any],
+        new_value: dict[str, Any],
     ) -> bool:
         """
         Replace an element in an array field where a sub-field matches a value.
@@ -1505,7 +1505,7 @@ class FirestoreService:
 
     def get_subcollection_document(
         self, collection: str, document_id: str, subcollection: str, subdocument_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Get a document from a subcollection.
 
@@ -1544,7 +1544,7 @@ class FirestoreService:
         document_id: str,
         subcollection: str,
         subdocument_id: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ) -> bool:
         """
         Update a document in a subcollection.
@@ -1579,8 +1579,8 @@ class FirestoreService:
         collection: str,
         document_id: str,
         subcollection: str,
-        subdocument_id: Optional[str],
-        data: Dict[str, Any],
+        subdocument_id: str | None,
+        data: dict[str, Any],
     ) -> str:
         """
         Create a document in a subcollection.
@@ -1844,7 +1844,7 @@ class FirestoreService:
 
 
 # Global service instance
-_firestore_service: Optional[FirestoreService] = None
+_firestore_service: FirestoreService | None = None
 
 
 def get_firestore_service() -> FirestoreService:

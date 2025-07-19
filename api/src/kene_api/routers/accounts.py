@@ -1,10 +1,9 @@
 """Accounts router for CRUD operations on account entities."""
 
-import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -60,7 +59,7 @@ ORGANIZATION_NOT_FOUND_MESSAGE = "Organization not found"
 
 @router.get("/", response_model=AccountListResponse)
 async def get_accounts(
-    organization_id: Optional[str] = Query(
+    organization_id: str | None = Query(
         None, description="Filter accounts by organization ID"
     ),
     db: Neo4jService = Depends(get_neo4j_service),
@@ -120,7 +119,7 @@ async def get_accounts(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error fetching accounts: {str(e)}"
+            status_code=500, detail=f"Error fetching accounts: {e!s}"
         )
 
 
@@ -170,7 +169,7 @@ async def get_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching account: {e!s}")
 
 
 @router.post("/", response_model=Account)
@@ -289,7 +288,7 @@ async def create_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error creating account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating account: {e!s}")
 
 
 @router.put("/{account_id}", response_model=Account)
@@ -389,7 +388,7 @@ async def update_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error updating account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating account: {e!s}")
 
 
 @router.delete("/{account_id}", response_model=SuccessResponse)
@@ -460,7 +459,7 @@ async def delete_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error deleting account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting account: {e!s}")
 
 
 @router.get(
@@ -509,7 +508,7 @@ async def _check_organization_exists(db: Neo4jService, organization_id: str) -> 
     return result[0]["exists"] if result else False
 
 
-def _create_account_from_record(acc_data: Dict[str, Any]) -> Account:
+def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
     """Create an Account object from a Neo4j record."""
     return Account(
         account_id=acc_data.get("account_id"),

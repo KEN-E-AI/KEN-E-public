@@ -8,15 +8,13 @@ through the Kene API with confirmation steps and rich console output.
 
 import json
 import sys
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import requests
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
-from rich.text import Text
 
 console = Console()
 
@@ -39,7 +37,7 @@ class KeneAPIClient:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
 
-    def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+    def _make_request(self, method: str, endpoint: str, **kwargs) -> dict[str, Any]:
         """Make a request to the API with error handling."""
         url = f"{self.base_url}{endpoint}"
         try:
@@ -57,85 +55,85 @@ class KeneAPIClient:
             raise
 
     # Activities methods
-    def get_activities(self, account_id: str) -> Dict[str, Any]:
+    def get_activities(self, account_id: str) -> dict[str, Any]:
         """Get all activities for an account."""
         return self._make_request(
             "GET", f"{self.ACTIVITIES_ENDPOINT}?account_id={account_id}"
         )
 
-    def create_activity(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_activity(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new activity."""
         return self._make_request("POST", self.ACTIVITIES_ENDPOINT, json=data)
 
-    def update_activity(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update_activity(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing activity."""
         return self._make_request("PUT", self.ACTIVITIES_ENDPOINT, json=data)
 
-    def delete_activity(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def delete_activity(self, data: dict[str, Any]) -> dict[str, Any]:
         """Delete an activity."""
         return self._make_request("DELETE", self.ACTIVITIES_ENDPOINT, json=data)
 
     # Metrics methods
-    def get_metrics(self, account_id: str) -> Dict[str, Any]:
+    def get_metrics(self, account_id: str) -> dict[str, Any]:
         """Get all metrics for an account."""
         return self._make_request(
             "GET", f"{self.METRICS_ENDPOINT}?account_id={account_id}"
         )
 
-    def create_metric(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_metric(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new metric."""
         return self._make_request("POST", self.METRICS_ENDPOINT, json=data)
 
-    def update_metric(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update_metric(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing metric."""
         return self._make_request("PUT", self.METRICS_ENDPOINT, json=data)
 
-    def delete_metric(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def delete_metric(self, data: dict[str, Any]) -> dict[str, Any]:
         """Delete a metric."""
         return self._make_request("DELETE", self.METRICS_ENDPOINT, json=data)
 
     # Insights methods
-    def get_insights(self, account_id: str) -> Dict[str, Any]:
+    def get_insights(self, account_id: str) -> dict[str, Any]:
         """Get all insights for an account."""
         return self._make_request(
             "GET", f"{self.INSIGHTS_ENDPOINT}?account_id={account_id}"
         )
 
-    def create_insight(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_insight(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new insight."""
         return self._make_request("POST", self.INSIGHTS_ENDPOINT, json=data)
 
-    def update_insight(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update_insight(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing insight."""
         return self._make_request("PUT", self.INSIGHTS_ENDPOINT, json=data)
 
-    def delete_insight(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def delete_insight(self, data: dict[str, Any]) -> dict[str, Any]:
         """Delete an insight."""
         return self._make_request("DELETE", self.INSIGHTS_ENDPOINT, json=data)
 
     # Intuitions methods
-    def get_intuitions(self, account_id: str) -> Dict[str, Any]:
+    def get_intuitions(self, account_id: str) -> dict[str, Any]:
         """Get all intuitions for an account."""
         return self._make_request(
             "GET", f"{self.INTUITIONS_ENDPOINT}?account_id={account_id}"
         )
 
-    def create_intuition(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_intuition(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new intuition."""
         return self._make_request("POST", self.INTUITIONS_ENDPOINT, json=data)
 
-    def update_intuition(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def update_intuition(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update an existing intuition."""
         return self._make_request("PUT", self.INTUITIONS_ENDPOINT, json=data)
 
-    def delete_intuition(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def delete_intuition(self, data: dict[str, Any]) -> dict[str, Any]:
         """Delete an intuition."""
         return self._make_request("DELETE", self.INTUITIONS_ENDPOINT, json=data)
 
     # KPI Settings methods
     def get_kpi_setting(
         self, organization_id: str, account_id: str, kpi_name: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get a specific KPI setting."""
         return self._make_request(
             "GET",
@@ -143,8 +141,8 @@ class KeneAPIClient:
         )
 
     def update_kpi_setting(
-        self, organization_id: str, data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, organization_id: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Update a KPI setting."""
         # Ensure organization_id is in the data
         data["organization_id"] = organization_id
@@ -152,14 +150,14 @@ class KeneAPIClient:
 
     def get_all_kpi_settings(
         self, organization_id: str, account_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get all KPI settings for an account."""
         return self._make_request(
             "GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{organization_id}/{account_id}"
         )
 
     # Funnel Steps methods
-    def create_funnel_step(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_funnel_step(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new funnel step."""
         return self._make_request(
             "POST", self.FIRESTORE_FUNNEL_STEPS_ENDPOINT, json=data
@@ -170,8 +168,8 @@ class KeneAPIClient:
         organization_id: str,
         account_id: str,
         funnel_type: str,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Get all funnel steps for a funnel."""
         params = ""
         if big_bet_name:
@@ -187,8 +185,8 @@ class KeneAPIClient:
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Get a specific funnel step."""
         params = ""
         if big_bet_name:
@@ -204,9 +202,9 @@ class KeneAPIClient:
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        data: Dict[str, Any],
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        data: dict[str, Any],
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Update a funnel step."""
         params = ""
         if big_bet_name:
@@ -223,8 +221,8 @@ class KeneAPIClient:
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Delete a funnel step."""
         params = ""
         if big_bet_name:
@@ -238,12 +236,12 @@ class KeneAPIClient:
     def create_channel(
         self,
         organization_id: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Create a new channel."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
         if big_bet_name:
@@ -260,8 +258,8 @@ class KeneAPIClient:
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Get all channels in a funnel step."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
         if big_bet_name:
@@ -277,8 +275,8 @@ class KeneAPIClient:
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Get a specific channel."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
         if big_bet_name:
@@ -292,12 +290,12 @@ class KeneAPIClient:
         self,
         organization_id: str,
         channel_name: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Update a channel."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
         if big_bet_name:
@@ -315,8 +313,8 @@ class KeneAPIClient:
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Delete a channel."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
         if big_bet_name:
@@ -330,13 +328,13 @@ class KeneAPIClient:
     def create_tactic(
         self,
         organization_id: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
         channel_name: str,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Create a new tactic."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
         if big_bet_name:
@@ -354,8 +352,8 @@ class KeneAPIClient:
         funnel_type: str,
         funnel_step_num: int,
         channel_name: str,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Get all tactics in a channel."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
         if big_bet_name:
@@ -372,8 +370,8 @@ class KeneAPIClient:
         funnel_type: str,
         funnel_step_num: int,
         channel_name: str,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Get a specific tactic."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
         if big_bet_name:
@@ -387,13 +385,13 @@ class KeneAPIClient:
         self,
         organization_id: str,
         tactic_name: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
         channel_name: str,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Update a tactic."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
         if big_bet_name:
@@ -412,8 +410,8 @@ class KeneAPIClient:
         funnel_type: str,
         funnel_step_num: int,
         channel_name: str,
-        big_bet_name: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        big_bet_name: str | None = None,
+    ) -> dict[str, Any]:
         """Delete a tactic."""
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
         if big_bet_name:
@@ -1889,7 +1887,7 @@ class KeneCLI:
     def _manage_kpi_settings(self):
         """Manage KPI settings."""
         while True:
-            console.print(f"\n[bold]KPI Settings Management:[/bold]")
+            console.print("\n[bold]KPI Settings Management:[/bold]")
             console.print("1. View All KPI Settings")
             console.print("2. Update KPI Setting")
             console.print("3. Back to Main Menu")
@@ -2609,8 +2607,8 @@ class KeneCLI:
                 console.print(f"[red]Failed to delete tactic: {e}[/red]")
 
     def _prompt_for_list_input(
-        self, prompt: str, default: Optional[List[str]] = None
-    ) -> List[str]:
+        self, prompt: str, default: list[str] | None = None
+    ) -> list[str]:
         """Prompt for list input with comma separation."""
         if default is None:
             default = []
@@ -2624,7 +2622,7 @@ class KeneCLI:
         return [item.strip() for item in input_str.split(",") if item.strip()]
 
     # Utility methods
-    def _show_data_preview(self, title: str, data: Dict[str, Any]):
+    def _show_data_preview(self, title: str, data: dict[str, Any]):
         """Show a preview of data before confirmation."""
         console.print(f"\n[bold]{title} Preview:[/bold]")
 
@@ -2640,8 +2638,8 @@ class KeneCLI:
         console.print(table)
 
     def _get_list_input(
-        self, prompt: str, default: Optional[List[str]] = None
-    ) -> List[str]:
+        self, prompt: str, default: list[str] | None = None
+    ) -> list[str]:
         """Get a list input from user."""
         if default is None:
             default = []

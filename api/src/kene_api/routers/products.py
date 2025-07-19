@@ -1,21 +1,19 @@
 """Products router for managing product-based dataset and metric creation/deletion."""
 
 import logging
-from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
-from ..superset import SupersetClient, get_superset_client
 from ..models.kene_models import (
-    ACCOUNT_ID_DESCRIPTION,
     DatasetRequest,
     MetricRequest,
     ProductAddResponse,
     ProductDeleteResponse,
     ProductRequest,
 )
+from ..superset import SupersetClient, get_superset_client
 from .datasets import create_dataset, delete_dataset
 from .metrics import create_metric
 
@@ -83,7 +81,7 @@ async def add_product(
             logger.error(f"Error fetching product from Firestore: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Error fetching product configuration: {str(e)}",
+                detail=f"Error fetching product configuration: {e!s}",
             )
 
         # Extract datasets from product configuration
@@ -194,7 +192,7 @@ async def add_product(
                                 f"Error creating metric {metric_config.get('metric_name')}: {e}"
                             )
                             errors.append(
-                                f"Error creating metric '{metric_config.get('metric_name')}': {str(e)}"
+                                f"Error creating metric '{metric_config.get('metric_name')}': {e!s}"
                             )
 
                 else:
@@ -207,7 +205,7 @@ async def add_product(
                     f"Error processing dataset {dataset_config.get('dataset_name')}: {e}"
                 )
                 errors.append(
-                    f"Error processing dataset '{dataset_config.get('dataset_name')}': {str(e)}"
+                    f"Error processing dataset '{dataset_config.get('dataset_name')}': {e!s}"
                 )
 
         # Generate response
@@ -232,7 +230,7 @@ async def add_product(
         raise
     except Exception as e:
         logger.error(f"Error in add_product: {e}")
-        raise HTTPException(status_code=500, detail=f"Error adding product: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error adding product: {e!s}")
 
 
 @router.delete("/", response_model=ProductDeleteResponse)
@@ -339,7 +337,7 @@ async def delete_product(
 
             except Exception as e:
                 logger.error(f"Error deleting dataset {dataset_name}: {e}")
-                errors.append(f"Error deleting dataset '{dataset_name}': {str(e)}")
+                errors.append(f"Error deleting dataset '{dataset_name}': {e!s}")
 
         # Generate response
         response_data = {
@@ -366,4 +364,4 @@ async def delete_product(
         raise
     except Exception as e:
         logger.error(f"Error in delete_product: {e}")
-        raise HTTPException(status_code=500, detail=f"Error deleting product: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting product: {e!s}")

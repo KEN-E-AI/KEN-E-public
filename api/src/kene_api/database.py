@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from neo4j.exceptions import Neo4jError
@@ -17,7 +17,7 @@ class Neo4jService:
 
     def __init__(self):
         """Initialize the Neo4j service."""
-        self.driver: Optional[AsyncDriver] = None
+        self.driver: AsyncDriver | None = None
 
     async def connect(self) -> None:
         """Establish connection to Neo4j database."""
@@ -52,8 +52,8 @@ class Neo4jService:
             await session.close()
 
     async def execute_query(
-        self, query: str, parameters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, parameters: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """
         Execute a Cypher query and return results.
 
@@ -81,8 +81,8 @@ class Neo4jService:
             raise
 
     async def execute_write_query(
-        self, query: str, parameters: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        self, query: str, parameters: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Execute a write query (CREATE, UPDATE, DELETE) and return summary.
 

@@ -1,19 +1,17 @@
 """Superset saved queries router for CRUD operations on Superset saved queries."""
 
 import logging
-from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
-from ..superset import SupersetClient, SupersetClientError, get_superset_client
 from ..models.kene_models import (
-    ACCOUNT_ID_DESCRIPTION,
+    QueryExecutionResponse,
+    SavedQueryListResponse,
     SavedQueryRequest,
     SavedQueryResponse,
-    SavedQueryListResponse,
-    QueryExecutionResponse,
     SuccessResponse,
 )
+from ..superset import SupersetClient, SupersetClientError, get_superset_client
 
 router = APIRouter(tags=["superset-saved-queries"])
 

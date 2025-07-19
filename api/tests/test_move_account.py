@@ -1,11 +1,11 @@
 """Tests for move account endpoint."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
-from src.kene_api.main import app
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.database import get_neo4j_service
+from src.kene_api.main import app
 
 # Create test client
 client = TestClient(app)
@@ -141,7 +141,9 @@ def test_move_account_target_org_not_found(mock_neo4j_service):
     )
 
     assert response.status_code == 404
-    assert "Target organization nonexistent-target not found" in response.json()["detail"]
+    assert (
+        "Target organization nonexistent-target not found" in response.json()["detail"]
+    )
 
     # Clean up
     app.dependency_overrides.clear()
@@ -167,7 +169,10 @@ def test_move_account_account_not_found(mock_neo4j_service):
     )
 
     assert response.status_code == 404
-    assert "Account nonexistent-account not found in organization current-org" in response.json()["detail"]
+    assert (
+        "Account nonexistent-account not found in organization current-org"
+        in response.json()["detail"]
+    )
 
     # Clean up
     app.dependency_overrides.clear()

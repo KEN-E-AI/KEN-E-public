@@ -28,6 +28,7 @@ import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
 import Settings from "./pages/Settings";
 import OrganizationSelection from "./pages/OrganizationSelection";
+import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,8 +46,9 @@ const App = () => (
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            {/* Unprotected route for organization creation */}
+            {/* Unprotected routes */}
             <Route path="/create-organization" element={<AccountSettings />} />
+            <Route path="/invite/:token" element={<AcceptInvitation />} />
             {/* Protected routes */}
             <Route
               path="/"

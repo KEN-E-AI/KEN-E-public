@@ -56,6 +56,7 @@ const AccountSettings = () => {
     completeWorkspaceSelection,
     currentOrganizationId,
     setCurrentOrganization,
+    setSelectedOrgAccount,
     orgMetadata,
     setOrgMetadata,
   } = useAuth();
@@ -114,6 +115,36 @@ const AccountSettings = () => {
     return data;
   }, [currentOrgId, orgMetadata]);
 
+  // Load organization data if not in metadata
+  useEffect(() => {
+    const loadOrganizationData = async () => {
+      if (currentOrgId && !orgMetadata[currentOrgId] && !isCreatingNew) {
+        console.log(`[AccountSettings] Loading organization data for ${currentOrgId}`);
+        setIsLoadingOrgData(true);
+        try {
+          const orgData = await getOrganizationById(currentOrgId);
+          if (orgData) {
+            setOrgMetadata({
+              ...orgMetadata,
+              [currentOrgId]: orgData,
+            });
+          }
+        } catch (error) {
+          console.error("[AccountSettings] Error loading organization:", error);
+          toast({
+            title: "Error loading organization",
+            description: "Failed to load organization data. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsLoadingOrgData(false);
+        }
+      }
+    };
+
+    loadOrganizationData();
+  }, [currentOrgId, isCreatingNew]);
+
   // Form state
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
     organization_name: "",
@@ -130,6 +161,7 @@ const AccountSettings = () => {
   const [editOrgName, setEditOrgName] = useState<string>("");
 
   const [isCreatingOrganization, setIsCreatingOrganization] = useState(false);
+  const [isLoadingOrgData, setIsLoadingOrgData] = useState(false);
 
   // Load organization metadata if not already loaded
   useEffect(() => {
@@ -338,8 +370,24 @@ const AccountSettings = () => {
     });
   };
 
-  const completeOrganizationSetup = (organizationId: string) => {
+  const completeOrganizationSetup = (organizationId: string, organization: Organization) => {
     setCurrentOrganization(organizationId);
+    
+    // Also update the selectedOrgAccount to show in the dropdown
+    const firstAccount = organization.accounts?.[0];
+    setSelectedOrgAccount({
+      orgId: organizationId,
+      accountId: firstAccount?.account_id || "",
+      metadata: {
+        organization_name: organization.organization_name,
+        account_name: firstAccount?.account_name || "",
+        industry: firstAccount?.industry || "",
+        status: firstAccount?.status || "Active",
+        timezone: firstAccount?.timezone || "",
+        plan: organization.plan,
+      },
+    });
+    
     completeWorkspaceSelection();
   };
 
@@ -395,7 +443,7 @@ const AccountSettings = () => {
       // Update local state
       updateLocalUserState(newOrg.organization_id);
       updateOrganizationMetadata(newOrg);
-      completeOrganizationSetup(newOrg.organization_id);
+      completeOrganizationSetup(newOrg.organization_id, newOrg);
 
       // Reset form and show success
       resetOrganizationForm();
@@ -508,8 +556,18 @@ const AccountSettings = () => {
         isLoading={isCreatingOrganization}
       />
 
+      {/* Show loading state while fetching organization data */}
+      {isLoadingOrgData && !isCreatingNew && (
+        <div className="text-center py-8">
+          <div className="inline-flex items-center space-x-2">
+            <div className="w-4 h-4 border-2 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
+            <span className="text-gray-600">Loading organization data...</span>
+          </div>
+        </div>
+      )}
+
       {/* Conditional sections for existing organizations */}
-      {orgData && (
+      {orgData && !isLoadingOrgData && (
         <>
           <SubscriptionCard orgData={orgData} />
           <AccountsManagement orgData={orgData} currentOrgId={currentOrgId!} />

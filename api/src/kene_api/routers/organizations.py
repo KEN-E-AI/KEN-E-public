@@ -4,19 +4,19 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import Neo4jService, get_neo4j_service
 from ..models.kene_models import (
+    Billing,
     Organization,
     OrganizationListResponse,
     OrganizationRequest,
-    SuccessResponse,
-    Billing,
     PaymentMethod,
     Subscription,
+    SuccessResponse,
     Team,
 )
 
@@ -113,7 +113,7 @@ async def get_organizations(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error fetching organizations: {str(e)}"
+            status_code=500, detail=f"Error fetching organizations: {e!s}"
         )
 
 
@@ -166,7 +166,7 @@ async def get_organization(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error fetching organization: {str(e)}"
+            status_code=500, detail=f"Error fetching organization: {e!s}"
         )
 
 
@@ -288,7 +288,7 @@ async def create_organization(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error creating organization: {str(e)}"
+            status_code=500, detail=f"Error creating organization: {e!s}"
         )
 
 
@@ -395,15 +395,17 @@ async def update_organization(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error updating organization: {str(e)}"
+            status_code=500, detail=f"Error updating organization: {e!s}"
         )
 
 
-@router.put("/{organization_id}/move-account/{account_id}", response_model=SuccessResponse)
+@router.put(
+    "/{organization_id}/move-account/{account_id}", response_model=SuccessResponse
+)
 async def move_account_to_organization(
     organization_id: str,
     account_id: str,
-    request: Dict[str, str],
+    request: dict[str, str],
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> SuccessResponse:
     """
@@ -441,37 +443,48 @@ async def move_account_to_organization(
         # Get new organization ID from request body
         new_organization_id = request.get("new_organization_id")
         if not new_organization_id:
-            raise HTTPException(status_code=400, detail="new_organization_id is required in request body")
+            raise HTTPException(
+                status_code=400,
+                detail="new_organization_id is required in request body",
+            )
 
         # Validate that source and target organizations are different
         if organization_id == new_organization_id:
-            raise HTTPException(status_code=400, detail="Cannot move account to the same organization")
+            raise HTTPException(
+                status_code=400, detail="Cannot move account to the same organization"
+            )
 
         # Check if current organization exists
         current_org_exists = await _check_organization_exists(db, organization_id)
         if not current_org_exists:
-            raise HTTPException(status_code=404, detail=f"Current organization {organization_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Current organization {organization_id} not found",
+            )
 
         # Check if target organization exists
         target_org_exists = await _check_organization_exists(db, new_organization_id)
         if not target_org_exists:
-            raise HTTPException(status_code=404, detail=f"Target organization {new_organization_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Target organization {new_organization_id} not found",
+            )
 
         # Check if account exists and belongs to current organization
         account_check_query = """
         MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization {organization_id: $organization_id})
         RETURN count(acc) > 0 as account_exists
         """
-        result = await db.execute_query(account_check_query, {
-            "account_id": account_id,
-            "organization_id": organization_id
-        })
+        result = await db.execute_query(
+            account_check_query,
+            {"account_id": account_id, "organization_id": organization_id},
+        )
         account_exists = result[0]["account_exists"] if result else False
 
         if not account_exists:
             raise HTTPException(
-                status_code=404, 
-                detail=f"Account {account_id} not found in organization {organization_id}"
+                status_code=404,
+                detail=f"Account {account_id} not found in organization {organization_id}",
             )
 
         # Move the account by updating the BELONGS_TO relationship
@@ -484,11 +497,14 @@ async def move_account_to_organization(
         RETURN acc, old_org.organization_name as old_org_name, new_org.organization_name as new_org_name
         """
 
-        result = await db.execute_write_query(move_query, {
-            "account_id": account_id,
-            "old_organization_id": organization_id,
-            "new_organization_id": new_organization_id
-        })
+        result = await db.execute_write_query(
+            move_query,
+            {
+                "account_id": account_id,
+                "old_organization_id": organization_id,
+                "new_organization_id": new_organization_id,
+            },
+        )
 
         # Check if the result is a list of records or a summary
         if isinstance(result, list) and len(result) > 0:
@@ -500,11 +516,11 @@ async def move_account_to_organization(
             # Result is a summary (when no changes made), get org names separately
             # Check if any changes were actually made
             changes_made = (
-                result.get("relationships_created", 0) > 0 or 
-                result.get("relationships_deleted", 0) > 0 or 
-                result.get("properties_set", 0) > 0
+                result.get("relationships_created", 0) > 0
+                or result.get("relationships_deleted", 0) > 0
+                or result.get("properties_set", 0) > 0
             )
-            
+
             if not changes_made:
                 # Account might already be in the target organization or doesn't exist
                 # Verify the current state
@@ -512,37 +528,43 @@ async def move_account_to_organization(
                 MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
                 RETURN org.organization_id as current_org_id, org.organization_name as current_org_name
                 """
-                verify_result = await db.execute_query(verify_query, {"account_id": account_id})
-                
+                verify_result = await db.execute_query(
+                    verify_query, {"account_id": account_id}
+                )
+
                 if verify_result:
                     current_org_id = verify_result[0].get("current_org_id")
                     current_org_name = verify_result[0].get("current_org_name")
-                    
+
                     if current_org_id == new_organization_id:
                         # Account is already in the target organization
                         raise HTTPException(
-                            status_code=400, 
-                            detail=f"Account {account_id} is already in organization {current_org_name or new_organization_id}"
+                            status_code=400,
+                            detail=f"Account {account_id} is already in organization {current_org_name or new_organization_id}",
                         )
                     else:
                         # Account is in a different organization than expected
                         raise HTTPException(
-                            status_code=400, 
-                            detail=f"Account {account_id} is currently in organization {current_org_name or current_org_id}, not {organization_id}"
+                            status_code=400,
+                            detail=f"Account {account_id} is currently in organization {current_org_name or current_org_id}, not {organization_id}",
                         )
                 else:
                     raise HTTPException(
-                        status_code=404, 
-                        detail=f"Account {account_id} not found or has no organization relationship"
+                        status_code=404,
+                        detail=f"Account {account_id} not found or has no organization relationship",
                     )
-            
+
             # If changes were made, get organization names separately
             old_org_query = "MATCH (org:Organization {organization_id: $org_id}) RETURN org.organization_name as name"
             new_org_query = "MATCH (org:Organization {organization_id: $org_id}) RETURN org.organization_name as name"
-            
-            old_result = await db.execute_query(old_org_query, {"org_id": organization_id})
-            new_result = await db.execute_query(new_org_query, {"org_id": new_organization_id})
-            
+
+            old_result = await db.execute_query(
+                old_org_query, {"org_id": organization_id}
+            )
+            new_result = await db.execute_query(
+                new_org_query, {"org_id": new_organization_id}
+            )
+
             old_org_name = old_result[0]["name"] if old_result else organization_id
             new_org_name = new_result[0]["name"] if new_result else new_organization_id
         else:
@@ -564,9 +586,7 @@ async def move_account_to_organization(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(
-            status_code=500, detail=f"Error moving account: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error moving account: {e!s}")
 
 
 @router.delete("/{organization_id}", response_model=SuccessResponse)
@@ -640,7 +660,7 @@ async def delete_organization(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error deleting organization: {str(e)}"
+            status_code=500, detail=f"Error deleting organization: {e!s}"
         )
 
 
@@ -654,7 +674,7 @@ async def _check_organization_exists(db: Neo4jService, organization_id: str) -> 
     return result[0]["exists"] if result else False
 
 
-def _create_organization_from_record(org_data: Dict[str, Any]) -> Organization:
+def _create_organization_from_record(org_data: dict[str, Any]) -> Organization:
     """Create an Organization object from a Neo4j record."""
     # Parse nested objects
     subscription_data = org_data.get("subscription", {})

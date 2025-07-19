@@ -1,10 +1,11 @@
-from datetime import date, datetime
+import os
+from datetime import datetime
+from pprint import pprint
+
+import requests
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from pprint import pprint
-import os
-import requests
 
 # Load .env and initialize Neo4j driver
 load_dotenv()

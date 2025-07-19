@@ -1,9 +1,9 @@
 """Tests for the Firestore router."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 

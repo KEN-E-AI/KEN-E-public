@@ -1,9 +1,9 @@
 """Tests for Superset client integration."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-import requests
+from unittest.mock import MagicMock
 
+import pytest
+import requests
 from src.kene_api.superset import SupersetClient, SupersetClientError
 
 

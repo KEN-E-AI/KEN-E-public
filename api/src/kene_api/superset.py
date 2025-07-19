@@ -1,7 +1,7 @@
 """Apache Superset client for managing datasets and metrics."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -80,7 +80,7 @@ class SupersetClient:
         if not self.access_token:
             await self.authenticate()
 
-    async def get_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
+    async def get_dataset(self, dataset_id: int) -> dict[str, Any] | None:
         """Get dataset information by ID."""
         await self._ensure_authenticated()
 
@@ -100,8 +100,8 @@ class SupersetClient:
             raise SupersetClientError(f"Failed to get dataset: {e}")
 
     async def create_metric(
-        self, dataset_id: int, metric_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, dataset_id: int, metric_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Create a new metric in a Superset dataset by updating the dataset."""
         await self._ensure_authenticated()
 
@@ -187,8 +187,8 @@ class SupersetClient:
             raise SupersetClientError(f"Failed to create metric: {e}")
 
     async def update_metric(
-        self, dataset_id: int, metric_id: int, metric_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, dataset_id: int, metric_id: int, metric_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Update an existing metric in a Superset dataset."""
         await self._ensure_authenticated()
 
@@ -254,7 +254,7 @@ class SupersetClient:
             )
             return False
 
-    async def get_metrics_for_dataset(self, dataset_id: int) -> List[Dict[str, Any]]:
+    async def get_metrics_for_dataset(self, dataset_id: int) -> list[dict[str, Any]]:
         """Get all metrics for a specific dataset."""
         await self._ensure_authenticated()
 
@@ -273,7 +273,7 @@ class SupersetClient:
 
     async def find_metric_by_name(
         self, dataset_id: int, metric_name: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Find a metric by name within a dataset."""
         metrics = await self.get_metrics_for_dataset(dataset_id)
 
@@ -295,7 +295,7 @@ class SupersetClient:
 
     async def get_saved_queries_by_schema_pattern(
         self, schema_pattern: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get all saved queries where the schema name matches the given pattern.
 
@@ -333,7 +333,7 @@ class SupersetClient:
             logger.error(f"Failed to get saved queries: {e}")
             raise SupersetClientError(f"Failed to get saved queries: {e}")
 
-    async def create_saved_query(self, query_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_saved_query(self, query_data: dict[str, Any]) -> dict[str, Any]:
         """
         Create a new saved query in Superset.
 
@@ -362,8 +362,8 @@ class SupersetClient:
             raise SupersetClientError(f"Failed to create saved query: {e}")
 
     async def update_saved_query(
-        self, query_id: int, query_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, query_id: int, query_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Update an existing saved query in Superset.
 
@@ -417,7 +417,7 @@ class SupersetClient:
             logger.error(f"Failed to delete saved query {query_id}: {e}")
             raise SupersetClientError(f"Failed to delete saved query: {e}")
 
-    async def get_saved_query_by_label(self, label: str) -> Optional[Dict[str, Any]]:
+    async def get_saved_query_by_label(self, label: str) -> dict[str, Any] | None:
         """
         Get a saved query by its label.
 
@@ -449,7 +449,7 @@ class SupersetClient:
             logger.error(f"Failed to get saved query by label '{label}': {e}")
             raise SupersetClientError(f"Failed to get saved query: {e}")
 
-    async def execute_saved_query(self, query_label: str) -> Dict[str, Any]:
+    async def execute_saved_query(self, query_label: str) -> dict[str, Any]:
         """
         Execute a saved query and return the results.
 

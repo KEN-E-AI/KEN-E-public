@@ -1,16 +1,12 @@
 """Funnel reports router for analysis workflows and reporting operations."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import Neo4jService, get_neo4j_service
 from ..models.kene_models import (
-    ACCOUNT_ID_DESCRIPTION,
     AnalysisSearchRequest,
-    DirectionType,
-    Insight,
     InsightSearchResponse,
 )
 from .search_insight_util import main as search_main
@@ -82,7 +78,7 @@ async def run_insight_analysis(
         except ValueError as e:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid date format. Expected YYYY-MM-DD: {str(e)}",
+                detail=f"Invalid date format. Expected YYYY-MM-DD: {e!s}",
             )
 
         # Call the main function from search_insight_util without activity_id
@@ -112,5 +108,5 @@ async def run_insight_analysis(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error running analysis workflow: {str(e)}"
+            status_code=500, detail=f"Error running analysis workflow: {e!s}"
         )

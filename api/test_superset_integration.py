@@ -4,8 +4,8 @@ Test script to validate Superset integration implementation.
 This script checks that our code is syntactically correct and imports work.
 """
 
-import sys
 import os
+import sys
 
 # Add the API source directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))

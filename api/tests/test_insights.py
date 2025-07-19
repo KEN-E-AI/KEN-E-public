@@ -1,18 +1,11 @@
 """Tests for the insights router."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.database import Neo4jService, get_neo4j_service
 from src.kene_api.main import app
-from src.kene_api.models.kene_models import (
-    ActiveConfidenceLevel,
-    ActiveEvidence,
-    DirectionType,
-    Evidence,
-    InfluenceEvidence,
-)
 
 
 @pytest.fixture

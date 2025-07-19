@@ -15,7 +15,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.kene_api.database import Neo4jService
 from src.kene_api.firestore import FirestoreService
-from src.kene_api.config import settings
 
 # Configure logging
 logging.basicConfig(

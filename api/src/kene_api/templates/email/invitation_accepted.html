@@ -1,0 +1,24 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2>Invitation Accepted</h2>
+
+<p>Hi {{ inviter_name }},</p>
+
+<p>Good news! <strong>{{ accepted_by_name }}</strong> ({{ accepted_by_email }}) has accepted your invitation to join <strong>{{ organization_name }}</strong>.</p>
+
+<div class="info-box">
+    <strong>New Team Member:</strong> {{ accepted_by_name }}
+    <strong>Email:</strong> {{ accepted_by_email }}
+    <strong>Access Level:</strong> {{ access_level }}
+    <strong>Joined:</strong> {{ accepted_date }}
+</div>
+
+<p>They now have {{ access_level }} access to your organization and can start collaborating with your team.</p>
+
+<div style="text-align: center;">
+    <a href="{{ organization_url }}" class="button" style="color: white;">View Team Members</a>
+</div>
+
+<p>You can manage team members and their access levels at any time from your organization settings.</p>
+{% endblock %}

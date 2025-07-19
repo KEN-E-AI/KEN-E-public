@@ -1,14 +1,11 @@
 """Test organization ID generation functions."""
 
 import re
-import uuid
 from datetime import datetime
 
-import pytest
-
 from src.kene_api.routers.organizations import (
-    generate_unique_organization_id,
     generate_timestamp_organization_id,
+    generate_unique_organization_id,
 )
 
 

@@ -1,11 +1,11 @@
 """Integration tests for organization deletion constraints."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 
-from src.kene_api.main import app
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.database import get_neo4j_service
+from src.kene_api.main import app
 
 
 class TestOrganizationDeletionConstraints:

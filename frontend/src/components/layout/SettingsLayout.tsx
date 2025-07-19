@@ -63,9 +63,11 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         )}
 
         {/* Breadcrumb Navigation */}
-        {currentPage !== "settings" && currentPage !== "organization" && currentPage !== "user" && (
-          <ContextBreadcrumb currentPage={currentPage} />
-        )}
+        {currentPage !== "settings" &&
+          currentPage !== "organization" &&
+          currentPage !== "user" && (
+            <ContextBreadcrumb currentPage={currentPage} />
+          )}
 
         {/* Organization Selector - Only show for organization settings */}
         {showEntitySelector && currentPage === "organization" && (

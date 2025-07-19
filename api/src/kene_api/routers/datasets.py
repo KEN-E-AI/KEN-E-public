@@ -1,7 +1,7 @@
 """Datasets router for CRUD operations on dataset entities."""
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -77,12 +77,12 @@ async def get_datasets(
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
         raise HTTPException(
-            status_code=500, detail=f"Error fetching datasets: {str(e)}"
+            status_code=500, detail=f"Error fetching datasets: {e!s}"
         )
 
 
 async def _create_dataset_from_record(
-    dataset_data: Dict[str, Any], account_id: str
+    dataset_data: dict[str, Any], account_id: str
 ) -> Dataset:
     """Create a Dataset object from a database record."""
     if not dataset_data:
@@ -234,7 +234,7 @@ async def create_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating dataset: {e!s}")
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -338,7 +338,7 @@ async def update_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating dataset: {e!s}")
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -411,7 +411,7 @@ async def delete_dataset(
             {"account_id": request.account_id, "dataset_name": request.dataset_name},
         )
 
-        response_message = f"Dataset deleted successfully"
+        response_message = "Dataset deleted successfully"
         if metric_count > 0:
             response_message += f" (also deleted {metric_count} related metrics)"
 
@@ -420,4 +420,4 @@ async def delete_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting dataset: {e!s}")

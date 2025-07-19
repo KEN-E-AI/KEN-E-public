@@ -8,7 +8,6 @@ and creates corresponding nodes in Neo4j with proper relationships.
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -16,7 +15,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.kene_api.database import Neo4jService
-from src.kene_api.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -393,7 +391,7 @@ async def main():
         logger.info("Migration completed successfully!")
 
     except Exception as e:
-        logger.error(f"Migration failed: {str(e)}")
+        logger.error(f"Migration failed: {e!s}")
         raise
     finally:
         # Close connection

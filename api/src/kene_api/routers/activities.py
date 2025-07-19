@@ -1,23 +1,18 @@
 """Activities router for CRUD operations on activity and activity log entities."""
 
 import uuid
-from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..database import Neo4jService, get_neo4j_service
 from ..models.kene_models import (
     ACCOUNT_ID_DESCRIPTION,
-    ActiveConfidenceLevel,
-    ActiveEvidence,
     Activity,
     ActivityListResponse,
     ActivityLog,
     ActivityLogRequest,
     ActivityRequest,
-    Evidence,
-    InfluenceEvidence,
     SuccessResponse,
 )
 
@@ -108,7 +103,7 @@ async def get_activities(
                 detail="Database service unavailable. Please try again later.",
             )
         raise HTTPException(
-            status_code=500, detail=f"Error fetching activities: {str(e)}"
+            status_code=500, detail=f"Error fetching activities: {e!s}"
         )
 
 
@@ -216,7 +211,7 @@ async def create_activity(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error creating activity: {str(e)}"
+            status_code=500, detail=f"Error creating activity: {e!s}"
         )
 
 
@@ -285,7 +280,7 @@ async def update_activity(
 
         # Build update query dynamically based on provided fields
         update_fields = []
-        parameters: Dict[str, Any] = {
+        parameters: dict[str, Any] = {
             "activity_id": request.activity_id,
             "account_id": request.account_id,
         }
@@ -330,7 +325,7 @@ async def update_activity(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating activity: {str(e)}"
+            status_code=500, detail=f"Error updating activity: {e!s}"
         )
 
 
@@ -411,7 +406,7 @@ async def delete_activity(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error deleting activity: {str(e)}"
+            status_code=500, detail=f"Error deleting activity: {e!s}"
         )
 
 
@@ -518,7 +513,7 @@ async def create_activity_log(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error creating activity log: {str(e)}"
+            status_code=500, detail=f"Error creating activity log: {e!s}"
         )
 
 
@@ -600,7 +595,7 @@ async def update_activity_log(
 
         # Build update query dynamically based on provided fields
         update_fields = []
-        parameters: Dict[str, Any] = {
+        parameters: dict[str, Any] = {
             "activity_log_id": request.activity_log_id,
             "activity_id": request.activity_id,
             "account_id": request.account_id,
@@ -641,7 +636,7 @@ async def update_activity_log(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating activity log: {str(e)}"
+            status_code=500, detail=f"Error updating activity log: {e!s}"
         )
 
 
@@ -741,7 +736,7 @@ async def delete_activity_log(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error deleting activity log: {str(e)}"
+            status_code=500, detail=f"Error deleting activity log: {e!s}"
         )
 
 
@@ -813,5 +808,5 @@ async def create_test_account(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error creating test account: {str(e)}"
+            status_code=500, detail=f"Error creating test account: {e!s}"
         )

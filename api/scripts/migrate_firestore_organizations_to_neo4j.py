@@ -12,18 +12,16 @@ This script:
 import asyncio
 import json
 import logging
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Add parent directory to path to import API modules
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.kene_api.database import Neo4jService
 from src.kene_api.firestore import FirestoreService
-from src.kene_api.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -85,7 +83,7 @@ class FirestoreToNeo4jMigrator:
             logger.error(f"Failed to initialize services: {e}")
             return False
 
-    async def read_organizations_from_firestore(self) -> List[Dict[str, Any]]:
+    async def read_organizations_from_firestore(self) -> list[dict[str, Any]]:
         """Read all organizations from Firestore."""
         logger.info("Reading organizations from Firestore...")
 
@@ -138,7 +136,7 @@ class FirestoreToNeo4jMigrator:
         )
         return result[0]["exists"] if result else False
 
-    async def create_organization_in_neo4j(self, org_data: Dict[str, Any]) -> bool:
+    async def create_organization_in_neo4j(self, org_data: dict[str, Any]) -> bool:
         """Create a new organization in Neo4j."""
         try:
             # Prepare data for Neo4j
@@ -208,7 +206,7 @@ class FirestoreToNeo4jMigrator:
             )
             return False
 
-    async def update_organization_in_neo4j(self, org_data: Dict[str, Any]) -> bool:
+    async def update_organization_in_neo4j(self, org_data: dict[str, Any]) -> bool:
         """Update an existing organization in Neo4j."""
         try:
             organization_id = org_data.get("organization_id")
@@ -333,7 +331,7 @@ class FirestoreToNeo4jMigrator:
         except Exception as e:
             logger.error(f"Failed to create parent relationships: {e}")
 
-    async def migrate_organization(self, org_data: Dict[str, Any]) -> None:
+    async def migrate_organization(self, org_data: dict[str, Any]) -> None:
         """Migrate a single organization to Neo4j."""
         organization_id = org_data.get("organization_id", org_data.get("id"))
         organization_name = org_data.get("organization_name", "Unknown")

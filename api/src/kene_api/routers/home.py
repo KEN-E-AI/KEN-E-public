@@ -1,7 +1,6 @@
 """Home router for notifications and activity scanning operations."""
 
 from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -64,16 +63,16 @@ async def scan_activities(request: ActivityScanRequest) -> ActivityScanResponse:
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error scanning activities: {str(e)}"
+            status_code=500, detail=f"Error scanning activities: {e!s}"
         )
 
 
-@router.get("/notifications", response_model=List[Notification])
+@router.get("/notifications", response_model=list[Notification])
 async def get_notifications(
     account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
     limit: int = Query(10, description="Maximum number of notifications to return"),
     unread_only: bool = Query(False, description="Return only unread notifications"),
-) -> List[Notification]:
+) -> list[Notification]:
     """
     Get notifications for an account.
 
@@ -124,7 +123,7 @@ async def get_notifications(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching notifications: {str(e)}"
+            status_code=500, detail=f"Error fetching notifications: {e!s}"
         )
 
 
@@ -170,7 +169,7 @@ async def create_notification(request: NotificationRequest) -> SuccessResponse:
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error creating notification: {str(e)}"
+            status_code=500, detail=f"Error creating notification: {e!s}"
         )
 
 
@@ -210,7 +209,7 @@ async def mark_notification_read(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error updating notification: {str(e)}"
+            status_code=500, detail=f"Error updating notification: {e!s}"
         )
 
 
@@ -250,7 +249,7 @@ async def delete_notification(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error deleting notification: {str(e)}"
+            status_code=500, detail=f"Error deleting notification: {e!s}"
         )
 
 
@@ -305,5 +304,5 @@ async def get_dashboard_data(
 
     except Exception as e:
         raise HTTPException(
-            status_code=500, detail=f"Error fetching dashboard data: {str(e)}"
+            status_code=500, detail=f"Error fetching dashboard data: {e!s}"
         )

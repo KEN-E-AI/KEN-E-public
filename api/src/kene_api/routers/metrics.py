@@ -2,13 +2,11 @@
 
 import logging
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..database import Neo4jService, get_neo4j_service
-from ..superset import SupersetClient, SupersetClientError, get_superset_client
 from ..models.kene_models import (
     ACCOUNT_ID_DESCRIPTION,
     Metric,
@@ -16,6 +14,7 @@ from ..models.kene_models import (
     MetricRequest,
     SuccessResponse,
 )
+from ..superset import SupersetClient, SupersetClientError, get_superset_client
 
 router = APIRouter(tags=["metrics"])
 
@@ -81,10 +80,10 @@ async def get_metrics(
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching metrics: {e!s}")
 
 
-def _parse_list_field(field_value: Any) -> List[Any]:
+def _parse_list_field(field_value: Any) -> list[Any]:
     """Parse a field that might be a string representation of a list."""
     import ast
 
@@ -99,7 +98,7 @@ def _parse_list_field(field_value: Any) -> List[Any]:
         return []
 
 
-def _parse_comma_separated_field(field_value: Any) -> List[str]:
+def _parse_comma_separated_field(field_value: Any) -> list[str]:
     """Parse a field that is a comma-separated string into a list of strings."""
     if isinstance(field_value, list):
         return [str(item).strip() for item in field_value]
@@ -112,7 +111,7 @@ def _parse_comma_separated_field(field_value: Any) -> List[str]:
         return []
 
 
-async def _create_metric_from_record(record: Dict[str, Any], account_id: str) -> Metric:
+async def _create_metric_from_record(record: dict[str, Any], account_id: str) -> Metric:
     """Create a Metric object from a database record."""
     metric_data = record.get("metric")
     dataset_data = record.get("dataset")
@@ -173,7 +172,7 @@ async def _verify_dataset_exists(db: Neo4jService, dataset_id: int) -> None:
 
 
 async def _create_metric_node(
-    db: Neo4jService, request: MetricRequest, superset_metric_id: Optional[int] = None
+    db: Neo4jService, request: MetricRequest, superset_metric_id: int | None = None
 ) -> str:
     """Create the Metric node with BELONGS_TO relationship to Account.
 
@@ -299,10 +298,10 @@ async def _sync_metric_to_superset(
 
 async def _build_neo4j_update_params(
     request: MetricRequest,
-) -> tuple[List[str], Dict[str, Any]]:
+) -> tuple[list[str], dict[str, Any]]:
     """Build update parameters for Neo4j query."""
     set_clauses = []
-    params: Dict[str, Any] = {"metric_id": request.metric_id}
+    params: dict[str, Any] = {"metric_id": request.metric_id}
 
     if request.account_components is not None:
         set_clauses.append("metric.account_components = $account_components")
@@ -463,7 +462,7 @@ async def create_metric(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating metric: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating metric: {e!s}")
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -577,7 +576,7 @@ async def update_metric(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating metric: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating metric: {e!s}")
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -673,4 +672,4 @@ async def delete_metric(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting metric: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting metric: {e!s}")

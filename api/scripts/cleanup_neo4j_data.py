@@ -10,13 +10,12 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Any
 
 # Add parent directory to path to import API modules
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.kene_api.database import Neo4jService
-from src.kene_api.config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -41,7 +40,7 @@ class Neo4jDataCleanup:
         await self.db.close()
         logger.info("Closed Neo4j connection")
 
-    async def inspect_organizations(self) -> List[Dict[str, Any]]:
+    async def inspect_organizations(self) -> list[dict[str, Any]]:
         """Inspect organization data and identify issues."""
         query = """
         MATCH (org:Organization)
@@ -94,7 +93,7 @@ class Neo4jDataCleanup:
 
         return issues
 
-    async def inspect_accounts(self) -> List[Dict[str, Any]]:
+    async def inspect_accounts(self) -> list[dict[str, Any]]:
         """Inspect account data and identify issues."""
         query = """
         MATCH (acc:Account)

@@ -5,7 +5,7 @@ This script shows how to use the CLI programmatically for testing purposes.
 """
 
 import sys
-import time
+
 from cli_manager import KeneAPIClient, console
 
 

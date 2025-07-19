@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test script to verify Firestore integration is working correctly."""
 
-import os
 import sys
 from pathlib import Path
 
@@ -12,8 +11,8 @@ try:
     # Test imports
     print("Testing imports...")
     from src.kene_api.firestore import FirestoreService, get_firestore_service
-    from src.kene_api.routers.firestore import router
     from src.kene_api.main import app
+    from src.kene_api.routers.firestore import router
 
     print("✅ All imports successful!")
 

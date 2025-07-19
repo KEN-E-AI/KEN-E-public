@@ -1,9 +1,9 @@
 """Tests for activity operations with Neo4j integration."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from httpx import AsyncClient, ASGITransport
 
+import pytest
+from httpx import ASGITransport, AsyncClient
 from src.kene_api.main import app
 
 
