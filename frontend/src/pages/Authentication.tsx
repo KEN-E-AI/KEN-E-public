@@ -3,9 +3,19 @@ import axios from "axios";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithPopup,
+  type User as FirebaseAuthUser,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
+import type {
+  FirebaseUser,
+  FirestoreUserData,
+  UserDataResponse,
+  AuthHelperDeps,
+  NotificationSettings,
+  SecuritySettings,
+} from "@/types/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +62,127 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const [isSignInCaptchaVerified, setIsSignInCaptchaVerified] = useState(false);
   const [isSignUpCaptchaVerified, setIsSignUpCaptchaVerified] = useState(false);
 
+  // Helper function to fetch user data and settings from Firestore
+  const fetchUserDataAndSettings = async (
+    uid: string,
+    apiBaseUrl: string,
+  ): Promise<UserDataResponse> => {
+    const [userRes, notificationsRes, securityRes] = await Promise.all([
+      axios.get<{ data: FirestoreUserData }>(
+        `${apiBaseUrl}/api/v1/firestore/documents/users/${uid}`,
+      ),
+      axios.post<{ documents: Array<{ data: NotificationSettings }> }>(
+        `${apiBaseUrl}/api/v1/firestore/documents/query`,
+        {
+          account_id: uid,
+          collection: `users/${uid}/notifications`,
+          limit: 20,
+        },
+      ),
+      axios.post<{ documents: Array<{ data: SecuritySettings }> }>(
+        `${apiBaseUrl}/api/v1/firestore/documents/query`,
+        {
+          account_id: uid,
+          collection: `users/${uid}/security`,
+          limit: 20,
+        },
+      ),
+    ]);
+
+    return {
+      userData: userRes.data.data,
+      notificationsData: notificationsRes.data.documents || [],
+      securityData: securityRes.data.documents || [],
+    };
+  };
+
+  // Helper function to process login after authentication
+  const processUserLogin = (
+    firebaseUser: FirebaseUser,
+    firestoreData: FirestoreUserData,
+    notificationsData: Array<{ data: NotificationSettings }>,
+    securityData: Array<{ data: SecuritySettings }>,
+    deps: AuthHelperDeps,
+  ): void => {
+    deps.login({
+      id: firebaseUser.uid,
+      email: firestoreData.profile?.email || firebaseUser.email || "",
+      firstName: firestoreData.profile?.first_name || "",
+      lastName: firestoreData.profile?.last_name || "",
+      jobTitle: firestoreData.profile?.job_title || "",
+      permissions: firestoreData.permissions || {
+        organizations: {},
+        accounts: {},
+      },
+      preferences: firestoreData.preferences || {},
+    });
+
+    // Set notification and security settings
+    if (notificationsData.length > 0) {
+      const notificationSettings = notificationsData[0].data;
+      deps.setNotificationSettings(notificationSettings);
+    }
+
+    if (securityData.length > 0) {
+      const securitySettings = securityData[0].data;
+      deps.setSecuritySettings(securitySettings);
+    }
+  };
+
+  // Helper function to create a new user in Firestore
+  const createUserInFirestore = async (
+    firebaseUser: FirebaseUser,
+    apiBaseUrl: string,
+  ): Promise<FirestoreUserData> => {
+    const displayName = firebaseUser.displayName || "";
+    const [firstName, ...lastNameParts] = displayName.split(" ");
+    const lastName = lastNameParts.join(" ");
+
+    const newUserData: FirestoreUserData = {
+      profile: {
+        email: firebaseUser.email || "",
+        first_name: firstName || "",
+        last_name: lastName || "",
+        job_title: "",
+        uid: firebaseUser.uid,
+      },
+      permissions: {
+        organizations: {},
+        accounts: {},
+      },
+      preferences: {},
+      metadata: {
+        createdAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+      },
+    };
+
+    await axios.post(`${apiBaseUrl}/api/v1/firestore/documents`, {
+      account_id: firebaseUser.uid,
+      collection: "users",
+      document_id: firebaseUser.uid,
+      data: newUserData,
+    });
+
+    return newUserData;
+  };
+
+  // Helper function to handle API errors
+  const handleApiError = (error: unknown): string => {
+    if (!axios.isAxiosError(error)) throw error;
+
+    switch (error.response?.status) {
+      case 404:
+        return ""; // User doesn't exist, not an error
+      case 403:
+        return "Access denied. Please contact support.";
+      case 500:
+        return "Server error. Please try again later.";
+      default:
+        return "Failed to retrieve user data. Please try again.";
+    }
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -74,39 +205,23 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       );
       const firebaseUser = result.user;
 
-      const [userRes, notificationsRes, securityRes] = await Promise.all([
-        axios.get(
-          `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
-        ),
-        axios.post(`${API_BASE_URL}/api/v1/firestore/documents/query`, {
-          account_id: firebaseUser.uid,
-          collection: `users/${firebaseUser.uid}/notifications`,
-          limit: 20,
-        }),
-        axios.post(`${API_BASE_URL}/api/v1/firestore/documents/query`, {
-          account_id: firebaseUser.uid,
-          collection: `users/${firebaseUser.uid}/security`,
-          limit: 20,
-        }),
-      ]);
+      const { userData, notificationsData, securityData } =
+        await fetchUserDataAndSettings(firebaseUser.uid, API_BASE_URL);
 
-      const firestoreData = userRes.data.data;
-      const notificationsData = notificationsRes.data.documents || [];
-      const securityData = securityRes.data.documents || [];
+      const authDeps: AuthHelperDeps = {
+        apiBaseUrl: API_BASE_URL,
+        login,
+        setNotificationSettings,
+        setSecuritySettings,
+      };
 
-      login({
-        id: firebaseUser.uid,
-        email: firestoreData.profile?.email || firebaseUser.email || "",
-        firstName: firestoreData.profile?.first_name || "",
-        lastName: firestoreData.profile?.last_name || "",
-        jobTitle: firestoreData.profile?.job_title,
-        permissions: firestoreData.permissions || {},
-        preferences: firestoreData.preferences || {},
-      });
-
-      setNotificationSettings(notificationsData);
-      setSecuritySettings(securityData);
-
+      processUserLogin(
+        firebaseUser as FirebaseUser,
+        userData,
+        notificationsData,
+        securityData,
+        authDeps,
+      );
       onAuthenticated();
     } catch (error: any) {
       // handle errors...
@@ -203,6 +318,82 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           break;
         default:
           setErrorMessage("Failed to create account. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      // Authenticate with Google
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user as FirebaseUser;
+
+      const authDeps: AuthHelperDeps = {
+        apiBaseUrl: API_BASE_URL,
+        login,
+        setNotificationSettings,
+        setSecuritySettings,
+      };
+
+      try {
+        // Try to fetch existing user data
+        const { userData, notificationsData, securityData } =
+          await fetchUserDataAndSettings(firebaseUser.uid, API_BASE_URL);
+
+        // User exists, process login
+        processUserLogin(
+          firebaseUser,
+          userData,
+          notificationsData,
+          securityData,
+          authDeps,
+        );
+        onAuthenticated();
+      } catch (error) {
+        const errorMessage = handleApiError(error);
+
+        if (errorMessage === "") {
+          // User doesn't exist (404), create new user
+          const newUserData = await createUserInFirestore(
+            firebaseUser,
+            API_BASE_URL,
+          );
+          processUserLogin(firebaseUser, newUserData, [], [], authDeps);
+          onAuthenticated();
+        } else {
+          // Other API errors
+          console.error("API error during Google sign-in:", error);
+          setErrorMessage(errorMessage);
+        }
+      }
+    } catch (error: any) {
+      console.error("Google sign-in error:", error);
+
+      // Handle Firebase auth errors
+      if (error.code === "auth/popup-closed-by-user") {
+        setErrorMessage("Sign-in cancelled. Please try again.");
+      } else if (error.code === "auth/popup-blocked") {
+        setErrorMessage("Pop-up blocked. Please allow pop-ups for this site.");
+      } else if (
+        error.code === "auth/account-exists-with-different-credential"
+      ) {
+        setErrorMessage("An account already exists with this email address.");
+      } else if (error.code === "auth/invalid-credential") {
+        setErrorMessage("Invalid credentials. Please try again.");
+      } else if (error.code === "auth/operation-not-allowed") {
+        setErrorMessage(
+          "Google sign-in is not enabled. Please contact support.",
+        );
+      } else if (error.code === "auth/network-request-failed") {
+        setErrorMessage("Network error. Please check your connection.");
+      } else if (!error.response) {
+        // Don't show error if it was already handled by API error block
+        setErrorMessage("Failed to sign in with Google. Please try again.");
       }
     } finally {
       setIsLoading(false);
@@ -369,8 +560,13 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button variant="outline" className="w-full">
+                  <div className="w-full">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleGoogleSignIn}
+                      disabled={isLoading}
+                    >
                       <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
                         <path
                           fill="currentColor"
@@ -390,16 +586,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
                         />
                       </svg>
                       Google
-                    </Button>
-                    <Button variant="outline" className="w-full">
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                      </svg>
-                      Facebook
                     </Button>
                   </div>
                 </TabsContent>
