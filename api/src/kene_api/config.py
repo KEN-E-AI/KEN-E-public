@@ -32,5 +32,9 @@ class Settings:
     allowed_methods: list[str] = ["*"]
     allowed_headers: list[str] = ["*"]
 
+    # reCAPTCHA settings
+    RECAPTCHA_SITE_KEY: str = os.getenv("RECAPTCHA_SITE_KEY", "")
+    RECAPTCHA_SECRET_KEY: str = os.getenv("RECAPTCHA_SECRET_KEY", "")
+
 
 settings = Settings()

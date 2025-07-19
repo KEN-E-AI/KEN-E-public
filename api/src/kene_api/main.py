@@ -11,6 +11,7 @@ from .firestore import get_firestore_service
 from .routers import (
     accounts,
     activities,
+    auth,
     datasets,
     firestore,
     funnel_reports,
@@ -73,6 +74,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router)  # Auth router already has its prefix
 app.include_router(
     organizations.router, prefix="/api/v1/organizations", tags=["organizations"]
 )

@@ -119,7 +119,9 @@ const AccountSettings = () => {
   useEffect(() => {
     const loadOrganizationData = async () => {
       if (currentOrgId && !orgMetadata[currentOrgId] && !isCreatingNew) {
-        console.log(`[AccountSettings] Loading organization data for ${currentOrgId}`);
+        console.log(
+          `[AccountSettings] Loading organization data for ${currentOrgId}`,
+        );
         setIsLoadingOrgData(true);
         try {
           const orgData = await getOrganizationById(currentOrgId);
@@ -370,9 +372,12 @@ const AccountSettings = () => {
     });
   };
 
-  const completeOrganizationSetup = (organizationId: string, organization: Organization) => {
+  const completeOrganizationSetup = (
+    organizationId: string,
+    organization: Organization,
+  ) => {
     setCurrentOrganization(organizationId);
-    
+
     // Also update the selectedOrgAccount to show in the dropdown
     const firstAccount = organization.accounts?.[0];
     setSelectedOrgAccount({
@@ -387,7 +392,7 @@ const AccountSettings = () => {
         plan: organization.plan,
       },
     });
-    
+
     completeWorkspaceSelection();
   };
 

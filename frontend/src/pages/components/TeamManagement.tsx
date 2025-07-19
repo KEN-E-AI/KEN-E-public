@@ -298,7 +298,9 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                 await cancelInvitation(invitation.id, user!.id);
 
                 // Update local state
-                setInvitations(invitations.filter((i) => i.id !== invitation.id));
+                setInvitations(
+                  invitations.filter((i) => i.id !== invitation.id),
+                );
 
                 toast({
                   title: "Success",

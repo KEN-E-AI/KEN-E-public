@@ -93,7 +93,7 @@ export async function inviteMemberToOrganization(
         organization_name: organizationName,
       },
     });
-    
+
     const response = await axios.post(
       `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/members/invite`,
       data,
