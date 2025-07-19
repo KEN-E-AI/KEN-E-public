@@ -32,8 +32,7 @@ const ReCaptchaV3 = ({
 
   const handleReCaptchaVerify = async () => {
     if (!executeRecaptcha) {
-      setError("reCAPTCHA not available");
-      onError?.("reCAPTCHA not available");
+      console.warn("reCAPTCHA not available yet");
       return;
     }
 
@@ -58,14 +57,22 @@ const ReCaptchaV3 = ({
         setIsVerified(true);
         onVerify(true);
       } else {
-        setError("Security verification failed. Please refresh and try again.");
+        const errorCodes = response.data.error_codes || [];
+        console.error("reCAPTCHA verification failed:", {
+          error_codes: errorCodes,
+          message: response.data.message,
+          action: action
+        });
+        setError(`Security verification failed: ${errorCodes.join(", ") || "Unknown error"}. Please refresh and try again.`);
         onVerify(false);
-        onError?.("Security verification failed");
+        onError?.(`Security verification failed: ${errorCodes.join(", ")}`);
       }
-    } catch (err) {
-      setError("Security verification error. Please refresh the page.");
+    } catch (err: any) {
+      console.error("reCAPTCHA verification error:", err);
+      const errorMessage = err.response?.data?.detail || err.message || "Unknown error";
+      setError(`Security verification error: ${errorMessage}. Please refresh the page.`);
       onVerify(false);
-      onError?.("Security verification error");
+      onError?.(`Security verification error: ${errorMessage}`);
     } finally {
       setIsVerifying(false);
     }

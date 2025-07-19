@@ -64,9 +64,13 @@ async def verify_recaptcha(
             success=True, message="reCAPTCHA verification successful"
         )
     else:
-        # Log the failure but don't expose detailed error messages to the client
-        logger.warning(
-            f"reCAPTCHA verification failed from IP {client_ip}: {result.error_codes}"
+        # Log the failure with more detail for debugging
+        logger.error(
+            f"reCAPTCHA verification failed from IP {client_ip}: "
+            f"error_codes={result.error_codes}, "
+            f"score={result.score}, "
+            f"action={result.action}, "
+            f"expected_action={verification_request.action}"
         )
         return RecaptchaVerificationResponse(
             success=False,

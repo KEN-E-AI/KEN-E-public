@@ -20,8 +20,13 @@ The KEN-E frontend is a modern React TypeScript application built with Vite, fea
 
 ## Common Development Commands
 
-- `npm run dev` - Start development server on port 8080
+- `npm run dev` - Start development server on port 8080 (uses default development mode)
+- `npm run dev:development` - Start development server with development environment
+- `npm run dev:staging` - Start development server with staging environment
+- `npm run dev:production` - Start development server with production environment (use with caution!)
 - `npm run build` - Build for production
+- `npm run build:staging` - Build for staging environment
+- `npm run build:production` - Build for production environment
 - `npm run test` - Run Vitest tests
 - `npm run typecheck` - Run TypeScript type checking
 - `npm run format.fix` - Format code with Prettier

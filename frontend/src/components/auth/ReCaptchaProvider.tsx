@@ -15,18 +15,21 @@ const ReCaptchaProvider = ({ children }: ReCaptchaProviderProps) => {
   useEffect(() => {
     // Use environment variable if available, otherwise fetch from backend
     if (RECAPTCHA_SITE_KEY) {
+      console.log("ReCaptchaProvider: Using environment site key:", RECAPTCHA_SITE_KEY.substring(0, 20) + "...");
       setSiteKey(RECAPTCHA_SITE_KEY);
       setLoading(false);
     } else {
+      console.log("ReCaptchaProvider: No environment key found, fetching from backend...");
       // Fetch the site key from the backend
       const fetchSiteKey = async () => {
         try {
           const response = await axios.get(
             `${API_BASE_URL}/api/v1/auth/recaptcha-site-key`,
           );
+          console.log("ReCaptchaProvider: Fetched site key from backend:", response.data.site_key.substring(0, 20) + "...");
           setSiteKey(response.data.site_key);
         } catch (err) {
-          // Silently fail - component will render without provider
+          console.error("ReCaptchaProvider: Failed to fetch site key from backend:", err);
         } finally {
           setLoading(false);
         }
@@ -36,7 +39,14 @@ const ReCaptchaProvider = ({ children }: ReCaptchaProviderProps) => {
     }
   }, [API_BASE_URL, RECAPTCHA_SITE_KEY]);
 
-  if (loading || !siteKey) {
+  if (loading) {
+    // While loading, render children without provider
+    // ReCaptchaV3 component will handle this gracefully
+    return <>{children}</>;
+  }
+
+  if (!siteKey) {
+    console.warn("ReCaptcha site key not configured. Authentication will proceed without reCAPTCHA.");
     // Return children without provider if no key available
     return <>{children}</>;
   }

@@ -33,7 +33,7 @@ import {
   ArrowRight,
   CheckCircle,
 } from "lucide-react";
-import ReCaptchaProvider from "@/components/auth/ReCaptchaProvider";
+import ReCaptchaWrapper from "@/components/auth/ReCaptchaWrapper";
 import ReCaptchaV3 from "@/components/auth/ReCaptchaV3";
 
 interface AuthenticationProps {
@@ -401,7 +401,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   };
 
   return (
-    <ReCaptchaProvider>
+    <ReCaptchaWrapper>
       <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           {/* Header */}
@@ -777,7 +777,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           </div>
         </div>
       </div>
-    </ReCaptchaProvider>
+    </ReCaptchaWrapper>
   );
 };
 

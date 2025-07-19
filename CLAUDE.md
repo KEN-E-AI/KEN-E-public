@@ -56,8 +56,12 @@ ken-e/
 
 ### Frontend (frontend/) - React/TypeScript
 **Note:** The frontend is a Node.js project using `package.json`. Use npm commands here.
-- `cd frontend && npm run dev` - Start development server on port 8080
+- `cd frontend && npm run dev:development` - Start development server on port 8080 (development env)
+- `cd frontend && npm run dev:staging` - Start development server on port 8080 (staging env)
+- `cd frontend && npm run dev:production` - Start development server on port 8080 (production env)
 - `cd frontend && npm run build` - Build for production
+- `cd frontend && npm run build:staging` - Build for staging
+- `cd frontend && npm run build:production` - Build for production
 - `cd frontend && npm test` - Run Vitest tests
 - `cd frontend && npm run typecheck` - Type checking
 - `cd frontend && npm run format.fix` - Format with Prettier
@@ -157,7 +161,10 @@ ken-e/
 2. Define TypeScript types in `frontend/src/types/`
 3. Add pages in `frontend/src/pages/`
 4. Use existing UI components from `frontend/src/components/ui/`
-5. Test with `npm run dev` (port 8080)
+5. Test with appropriate environment:
+   - Development: `npm run dev:development` (port 8080)
+   - Staging: `npm run dev:staging` (port 8080)
+   - Production: `npm run dev:production` (port 8080)
 
 ### Data Pipeline Development
 1. Define pipeline components in `data_ingestion/data_ingestion_pipeline/`
@@ -245,7 +252,7 @@ cd frontend && ./scripts/set_environment.sh staging
 
 # Restart services to pick up new environment
 cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-cd frontend && npm run dev
+cd frontend && npm run dev:staging  # or dev:development / dev:production
 ```
 
 #### API Environment Variables:
@@ -361,7 +368,7 @@ cd frontend && npm run dev
    - Create `frontend/.env.local` with required vars
 5. Start services:
    - API: `cd api && uvicorn src.kene_api.main:app --reload`
-   - Frontend: `cd frontend && npm run dev`
+   - Frontend: `cd frontend && npm run dev:development` (or dev:staging/dev:production)
 6. Access applications:
    - Frontend: http://localhost:8080
    - API Docs: http://localhost:8000/docs

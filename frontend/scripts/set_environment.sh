@@ -20,6 +20,8 @@ case $ENV in
         echo "✅ Switched to DEVELOPMENT environment"
         echo "   API: http://localhost:8000"
         echo "   Firebase: ken-e-dev"
+        echo ""
+        echo "   Run the dev server with: npm run dev:development"
         ;;
     staging|stage)
         if [ ! -f .env.staging ]; then
@@ -30,6 +32,8 @@ case $ENV in
         echo "✅ Switched to STAGING environment"
         echo "   API: http://localhost:8000"
         echo "   Firebase: ken-e-staging"
+        echo ""
+        echo "   Run the dev server with: npm run dev:staging"
         ;;
     production|prod)
         if [ ! -f .env.production ]; then
@@ -41,6 +45,8 @@ case $ENV in
         echo "   API: https://api.ken-e.ai"
         echo "   Firebase: ken-e-production"
         echo "   WARNING: You are now connected to PRODUCTION!"
+        echo ""
+        echo "   Run the dev server with: npm run dev:production"
         ;;
     *)
         echo "❌ Invalid environment: $ENV"
@@ -49,6 +55,7 @@ case $ENV in
         ;;
 esac
 
-# Show current API URL and Firebase project
+# Show current API URL, Firebase project, and reCAPTCHA status
 echo "   API URL: $(grep VITE_API_BASE_URL .env.local | cut -d'=' -f2)"
 echo "   Firebase Project: $(grep VITE_FIREBASE_PROJECT_ID .env.local | cut -d'=' -f2)"
+echo "   reCAPTCHA: $([ -n "$(grep VITE_RECAPTCHA_SITE_KEY .env.local | cut -d'=' -f2)" ] && echo 'Configured' || echo 'Not configured')"
