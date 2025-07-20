@@ -5,23 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Building } from "lucide-react";
-import {
-  getOrganizations,
-  COMPANY_SIZE_OPTIONS,
-  type Organization,
-} from "@/data";
+import { getOrganizations, type Organization } from "@/data";
 
 interface NewOrgFormData {
   organization_name: string;
-  company_size: string;
+  company_size?: string;
   agency: boolean;
   child_organizations: string[];
 }
@@ -147,39 +136,6 @@ const OrganizationForm = ({
               }}
               placeholder="Enter organization name"
             />
-          </div>
-
-          {/* Company Size */}
-          <div className="space-y-2">
-            <Label htmlFor="company-size">Company Size</Label>
-            <Select
-              value={
-                isCreatingNew
-                  ? formData.company_size
-                  : orgData?.company_size || ""
-              }
-              onValueChange={(value) => {
-                if (isCreatingNew) {
-                  setFormData({
-                    ...formData,
-                    company_size: value,
-                  });
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={isCreatingNew ? "Select company size" : ""}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {COMPANY_SIZE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
 

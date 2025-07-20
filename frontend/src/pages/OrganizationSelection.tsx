@@ -253,7 +253,6 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const [newOrgData, setNewOrgData] = useState({
     name: "",
     industry: "",
-    size: "",
   });
 
   const [newAccountData, setNewAccountData] = useState({
@@ -364,7 +363,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     setTimeout(() => {
       setIsLoading(false);
       setShowCreateOrg(false);
-      setNewOrgData({ name: "", industry: "", size: "" });
+      setNewOrgData({ name: "", industry: "" });
     }, 1500);
   };
 
@@ -816,26 +815,6 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-size">Company Size</Label>
-                <Select
-                  value={newOrgData.size}
-                  onValueChange={(value) =>
-                    setNewOrgData({ ...newOrgData, size: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select company size" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1-10">1-10 employees</SelectItem>
-                    <SelectItem value="11-50">11-50 employees</SelectItem>
-                    <SelectItem value="51-200">51-200 employees</SelectItem>
-                    <SelectItem value="201-1000">201-1000 employees</SelectItem>
-                    <SelectItem value="1000+">1000+ employees</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="flex gap-2 pt-4">
                 <Button
                   variant="outline"
@@ -847,10 +826,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                 <Button
                   onClick={handleCreateOrganization}
                   disabled={
-                    !newOrgData.name ||
-                    !newOrgData.industry ||
-                    !newOrgData.size ||
-                    isLoading
+                    !newOrgData.name || !newOrgData.industry || isLoading
                   }
                   className="flex-1"
                 >

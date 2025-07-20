@@ -8,7 +8,7 @@ export interface Organization {
   organization_name: string;
   plan: string;
   website: string;
-  company_size: string;
+  company_size?: string;
   agency: boolean;
   child_organizations?: string[];
   subscription: {

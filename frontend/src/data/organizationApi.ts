@@ -176,7 +176,7 @@ export async function moveAccount(
 // Helper functions to maintain compatibility with existing code
 export async function createNewOrganization(orgData: {
   organization_name: string;
-  company_size: string;
+  company_size?: string;
   agency?: boolean;
   child_organizations?: string[];
 }): Promise<Organization> {
@@ -185,7 +185,7 @@ export async function createNewOrganization(orgData: {
     organization_name: orgData.organization_name,
     plan: "Free",
     website: "",
-    company_size: orgData.company_size,
+    company_size: orgData.company_size, // Optional field
     agency: orgData.agency || false,
     child_organizations: orgData.child_organizations || [],
     subscription: {

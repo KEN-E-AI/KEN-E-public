@@ -9,9 +9,12 @@ interface ReCaptchaWrapperProps {
 // It reads the site key directly from environment variables
 const ReCaptchaWrapper = ({ children }: ReCaptchaWrapperProps) => {
   const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || "";
-  
-  console.log("ReCaptchaWrapper initialized with site key:", siteKey ? siteKey.substring(0, 20) + "..." : "NO KEY");
-  
+
+  console.log(
+    "ReCaptchaWrapper initialized with site key:",
+    siteKey ? siteKey.substring(0, 20) + "..." : "NO KEY",
+  );
+
   if (!siteKey) {
     console.warn("ReCAPTCHA site key not found in environment variables");
     // Return children without provider - authentication will work without reCAPTCHA

@@ -4,6 +4,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  sendEmailVerification,
   type User as FirebaseAuthUser,
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
@@ -32,6 +33,8 @@ import {
   Building,
   ArrowRight,
   CheckCircle,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import ReCaptchaWrapper from "@/components/auth/ReCaptchaWrapper";
 import ReCaptchaV3 from "@/components/auth/ReCaptchaV3";
@@ -61,6 +64,8 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   });
   const [isSignInCaptchaVerified, setIsSignInCaptchaVerified] = useState(false);
   const [isSignUpCaptchaVerified, setIsSignUpCaptchaVerified] = useState(false);
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [showResendButton, setShowResendButton] = useState(false);
 
   // Helper function to fetch user data and settings from Firestore
   const fetchUserDataAndSettings = async (
@@ -205,8 +210,35 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       );
       const firebaseUser = result.user;
 
+      // Check if email is verified
+      if (!firebaseUser.emailVerified) {
+        setErrorMessage(
+          "Please verify your email before signing in. Check your inbox for the verification link.",
+        );
+        setShowResendButton(true);
+        // Sign out the user since they can't access the app without verification
+        await auth.signOut();
+        return;
+      }
+
       const { userData, notificationsData, securityData } =
         await fetchUserDataAndSettings(firebaseUser.uid, API_BASE_URL);
+
+      // Update email verification status in Firestore if needed
+      if (userData.profile && !userData.profile.email_verified) {
+        await axios.patch(
+          `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
+          {
+            account_id: firebaseUser.uid,
+            data: {
+              profile: {
+                ...userData.profile,
+                email_verified: true,
+              },
+            },
+          },
+        );
+      }
 
       const authDeps: AuthHelperDeps = {
         apiBaseUrl: API_BASE_URL,
@@ -266,6 +298,10 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       );
       const firebaseUser = result.user;
 
+      // Send email verification
+      await sendEmailVerification(firebaseUser);
+      setEmailVerificationSent(true);
+
       await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
         account_id: firebaseUser.uid, // Using user ID as account_id
         collection: "users",
@@ -276,6 +312,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             first_name: signUpData.firstName,
             last_name: signUpData.lastName,
             job_title: "", // Default empty
+            email_verified: false, // Track email verification status
           },
           permissions: {
             organizations: {},
@@ -289,24 +326,19 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         },
       });
 
-      // 🔥 Fetch the created Firestore document for login context
-      const res = await axios.get(
-        `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
-      );
-      const firestoreData = res.data.data;
+      // Show success message instead of logging in immediately
+      setErrorMessage("");
+      setShowResendButton(true);
 
-      // Call login() to update AuthContext state
-      login({
-        id: firebaseUser.uid,
-        email: firestoreData.profile?.email || firebaseUser.email || "",
-        firstName: firestoreData.profile?.first_name || "",
-        lastName: firestoreData.profile?.last_name || "",
-        jobTitle: firestoreData.profile?.job_title,
-        permissions: firestoreData.permissions || {},
-        preferences: firestoreData.preferences || {},
+      // Clear form data
+      setSignUpData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        agreeToTerms: false,
       });
-
-      onAuthenticated();
     } catch (error: any) {
       console.error("Sign-up error:", error);
       switch (error.code) {
@@ -318,6 +350,35 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           break;
         default:
           setErrorMessage("Failed to create account. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendVerificationEmail = async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser && !currentUser.emailVerified) {
+        await sendEmailVerification(currentUser);
+        setErrorMessage("Verification email sent! Please check your inbox.");
+        setTimeout(() => setErrorMessage(""), 5000); // Clear message after 5 seconds
+      } else {
+        setErrorMessage("No user session found. Please sign up again.");
+      }
+    } catch (error: any) {
+      console.error("Resend verification error:", error);
+      if (error.code === "auth/too-many-requests") {
+        setErrorMessage(
+          "Too many requests. Please wait a moment before trying again.",
+        );
+      } else {
+        setErrorMessage(
+          "Failed to resend verification email. Please try again.",
+        );
       }
     } finally {
       setIsLoading(false);
@@ -363,7 +424,31 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             firebaseUser,
             API_BASE_URL,
           );
-          processUserLogin(firebaseUser, newUserData, [], [], authDeps);
+
+          // For Google sign-in, email is already verified by Google
+          // Update the email_verified status in the created user data
+          const updatedUserData = {
+            ...newUserData,
+            profile: {
+              ...newUserData.profile,
+              email_verified: true,
+            },
+          };
+
+          await axios.patch(
+            `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
+            {
+              account_id: firebaseUser.uid,
+              data: {
+                profile: {
+                  ...newUserData.profile,
+                  email_verified: true,
+                },
+              },
+            },
+          );
+
+          processUserLogin(firebaseUser, updatedUserData, [], [], authDeps);
           onAuthenticated();
         } else {
           // Other API errors
@@ -417,8 +502,53 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
 
           <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
             {errorMessage && (
-              <div className="text-red-600 text-sm font-medium pt-4">
-                {errorMessage}
+              <div
+                className={`text-sm font-medium pt-4 px-6 ${
+                  errorMessage.includes("sent!")
+                    ? "text-green-600"
+                    : "text-red-600"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {errorMessage.includes("sent!") ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4" />
+                  )}
+                  {errorMessage}
+                </div>
+              </div>
+            )}
+            {emailVerificationSent && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mx-6 mt-4">
+                <div className="flex items-start gap-3">
+                  <Mail className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-blue-900">
+                      Verify your email
+                    </h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      We've sent a verification email to{" "}
+                      {signUpData.email || "your email address"}. Please check
+                      your inbox and click the verification link to complete
+                      your registration.
+                    </p>
+                    {showResendButton && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={handleResendVerificationEmail}
+                        disabled={isLoading}
+                      >
+                        <RefreshCw
+                          className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`}
+                        />
+                        Resend verification email
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             <CardHeader className="space-y-1 pb-4">

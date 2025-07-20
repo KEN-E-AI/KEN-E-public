@@ -26,7 +26,7 @@ import DangerZone from "./components/DangerZone";
 // Types
 interface NewOrgFormData {
   organization_name: string;
-  company_size: string;
+  company_size?: string;
   agency: boolean;
   child_organizations: string[];
 }
@@ -150,7 +150,6 @@ const AccountSettings = () => {
   // Form state
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
     organization_name: "",
-    company_size: "",
     agency: false,
     child_organizations: [],
   });
@@ -286,12 +285,12 @@ const AccountSettings = () => {
   const validateOrganizationData = (
     formData: NewOrgFormData,
   ): ValidationResult => {
-    if (!formData.organization_name || !formData.company_size) {
+    if (!formData.organization_name) {
       return {
         isValid: false,
         error: {
           title: "Missing required fields",
-          description: "Please fill in all required fields",
+          description: "Please enter an organization name",
         },
       };
     }
@@ -303,7 +302,7 @@ const AccountSettings = () => {
       organization_name: formData.organization_name,
       plan: "Free", // Default plan
       website: "", // Can be added later
-      company_size: formData.company_size,
+      company_size: formData.company_size, // Optional field
       agency: formData.agency,
       child_organizations: formData.child_organizations,
       subscription: {
@@ -399,7 +398,6 @@ const AccountSettings = () => {
   const resetOrganizationForm = () => {
     setNewOrgFormData({
       organization_name: "",
-      company_size: "",
       agency: false,
       child_organizations: [],
     });
@@ -464,10 +462,10 @@ const AccountSettings = () => {
   };
 
   const handleUpdateOrganization = async () => {
-    if (!editOrgName || !orgData || !orgData.company_size) {
+    if (!editOrgName || !orgData) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please enter an organization name",
         variant: "destructive",
       });
       return;

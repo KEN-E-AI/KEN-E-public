@@ -1,5 +1,5 @@
 import type React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Layout from "./Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EntitySelector } from "@/components/ui/entity-selector";
@@ -34,6 +34,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   className,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { selectedOrgAccount } = useAuth();
 
   const currentOrgName =
@@ -69,20 +70,22 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
             <ContextBreadcrumb currentPage={currentPage} />
           )}
 
-        {/* Organization Selector - Only show for organization settings */}
-        {showEntitySelector && currentPage === "organization" && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span className="text-lg">Organization Selection</span>
-                <EntitySelector
-                  className="min-w-[300px]"
-                  organizationOnly={true}
-                />
-              </CardTitle>
-            </CardHeader>
-          </Card>
-        )}
+        {/* Organization Selector - Only show for organization settings, but not on create-organization page */}
+        {showEntitySelector &&
+          currentPage === "organization" &&
+          location.pathname !== "/create-organization" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="text-lg">Organization Selection</span>
+                  <EntitySelector
+                    className="min-w-[300px]"
+                    organizationOnly={true}
+                  />
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          )}
 
         {/* Current Context with Entity Selector - Show for account-specific settings */}
         {showEntitySelector &&

@@ -182,7 +182,7 @@ async def create_organization(
     - `organization_name` (required): Name of the organization
     - `plan` (required): Subscription plan tier
     - `website` (optional): Organization website URL
-    - `company_size` (required): Size category of the company
+    - `company_size` (optional): Size category of the company
     - `agency` (required): Whether the organization is an agency
     - `child_organizations` (optional): List of child organization IDs
     - `subscription` (required): Subscription details object
@@ -218,8 +218,6 @@ async def create_organization(
             raise HTTPException(status_code=400, detail="organization_name is required")
         if not request.plan:
             raise HTTPException(status_code=400, detail="plan is required")
-        if not request.company_size:
-            raise HTTPException(status_code=400, detail="company_size is required")
         if request.agency is None:
             raise HTTPException(status_code=400, detail="agency is required")
         if not request.subscription:
@@ -269,7 +267,9 @@ async def create_organization(
             "organization_name": request.organization_name,
             "plan": request.plan,
             "website": request.website or "",
-            "company_size": request.company_size,
+            # Neo4j doesn't distinguish between NULL and empty string for string properties,
+            # so we convert None to empty string to avoid potential query issues
+            "company_size": request.company_size or "",
             "agency": request.agency,
             "child_organizations": request.child_organizations or [],
             "subscription": json.dumps(request.subscription.model_dump()),

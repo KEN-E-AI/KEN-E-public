@@ -141,14 +141,17 @@ uv run --active uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 800
 
 # Terminal 2: Start frontend
 cd frontend
-# Switch to desired environment first
-./scripts/set_environment.sh [development|staging|production]
-# Then run the appropriate dev server
-npm run dev:development  # For development environment
-# OR
-npm run dev:staging     # For staging environment
-# OR
-npm run dev:production  # For production environment (use with caution!)
+# Option 1: Use predefined environment scripts (recommended)
+npm run dev:development  # Uses .env.development (port 8080)
+npm run dev:staging     # Uses .env.staging (port 8080)
+npm run dev:production  # Uses .env.production (port 8080)
+
+# Option 2: Use base command with mode flag
+npm run dev             # Uses default .env file
+npm run dev -- --mode staging  # Uses .env.staging
+
+# Note: The predefined scripts (dev:development, dev:staging, dev:production) are cleaner 
+# and avoid the need for the double dash (--) syntax
 
 # Access applications:
 # - Frontend: http://localhost:8080
@@ -186,16 +189,28 @@ pytest tests/                            # Run tests
 ### Frontend Development
 ```bash
 cd frontend
-./scripts/set_environment.sh [development|staging|production]
-npm run dev:development  # Start dev server with development env (port 8080)
-npm run dev:staging     # Start dev server with staging env (port 8080)
-npm run dev:production  # Start dev server with production env (port 8080)
+
+# Environment-specific dev servers (recommended)
+npm run dev:development  # Start dev server with .env.development (port 8080)
+npm run dev:staging     # Start dev server with .env.staging (port 8080)
+npm run dev:production  # Start dev server with .env.production (port 8080)
+
+# Alternative: Base command with mode flag
+npm run dev             # Uses default .env file
+npm run dev -- --mode staging  # Uses .env.staging (requires -- before flags)
+
+# Build commands
 npm run build          # Build for production
-npm run build:staging  # Build for staging
-npm run build:production # Build for production
-npm test              # Run tests
-npm run typecheck     # Type checking
-npm run format.fix    # Format code
+npm run build:staging  # Build for staging environment
+npm run build:production # Build for production environment
+
+# Testing and tooling
+npm test              # Run Vitest tests
+npm run typecheck     # TypeScript type checking
+npm run format.fix    # Format code with Prettier
+
+# Environment switching
+./scripts/set_environment.sh [development|staging|production]  # Switch environment files
 ```
 
 ### Data Pipeline

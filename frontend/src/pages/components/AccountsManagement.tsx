@@ -1476,7 +1476,8 @@ const AccountsManagement = ({
                         <div className="flex flex-col">
                           <span>{org.organization_name}</span>
                           <span className="text-xs text-gray-500">
-                            {org.plan} • {org.company_size}
+                            {org.plan}
+                            {org.company_size ? ` • ${org.company_size}` : ""}
                           </span>
                         </div>
                       </SelectItem>

@@ -790,7 +790,7 @@ class Organization(BaseModel):
     organization_name: str = Field(..., description="Name of the organization")
     plan: str = Field(..., description="Subscription plan tier")
     website: str = Field(..., description="Organization website URL")
-    company_size: str = Field(..., description="Size category of the company")
+    company_size: str | None = Field(None, description="Size category of the company")
     agency: bool = Field(..., description="Whether the organization is an agency")
     child_organizations: list[str] = Field(
         default_factory=list, description="List of child organization IDs"

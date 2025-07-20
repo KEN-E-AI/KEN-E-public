@@ -405,6 +405,10 @@ This project follows FastAPI best practices:
 - Use appropriate HTTP status codes
 - Implement proper error handling
 
+## Breaking Changes
+
+See [BREAKING_CHANGES.md](./BREAKING_CHANGES.md) for a list of breaking changes and migration guides.
+
 ### Creating New Endpoints
 
 1. Define Pydantic models in `src/kene_api/models/schemas.py`

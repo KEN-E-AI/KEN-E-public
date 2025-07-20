@@ -61,16 +61,21 @@ const ReCaptchaV3 = ({
         console.error("reCAPTCHA verification failed:", {
           error_codes: errorCodes,
           message: response.data.message,
-          action: action
+          action: action,
         });
-        setError(`Security verification failed: ${errorCodes.join(", ") || "Unknown error"}. Please refresh and try again.`);
+        setError(
+          `Security verification failed: ${errorCodes.join(", ") || "Unknown error"}. Please refresh and try again.`,
+        );
         onVerify(false);
         onError?.(`Security verification failed: ${errorCodes.join(", ")}`);
       }
     } catch (err: any) {
       console.error("reCAPTCHA verification error:", err);
-      const errorMessage = err.response?.data?.detail || err.message || "Unknown error";
-      setError(`Security verification error: ${errorMessage}. Please refresh the page.`);
+      const errorMessage =
+        err.response?.data?.detail || err.message || "Unknown error";
+      setError(
+        `Security verification error: ${errorMessage}. Please refresh the page.`,
+      );
       onVerify(false);
       onError?.(`Security verification error: ${errorMessage}`);
     } finally {
