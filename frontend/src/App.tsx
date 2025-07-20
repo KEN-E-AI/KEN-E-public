@@ -30,6 +30,7 @@ import Settings from "./pages/Settings";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
+import EmailActionHandler from "./components/auth/EmailActionHandler";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,7 @@ const App = () => (
             {/* Unprotected routes */}
             <Route path="/create-organization" element={<AccountSettings />} />
             <Route path="/invite/:token" element={<AcceptInvitation />} />
+            <Route path="/auth/action" element={<EmailActionHandler />} />
             {/* Protected routes */}
             <Route
               path="/"

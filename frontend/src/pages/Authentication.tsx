@@ -225,16 +225,18 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         await fetchUserDataAndSettings(firebaseUser.uid, API_BASE_URL);
 
       // Update email verification status in Firestore if needed
-      if (userData.profile && !userData.profile.email_verified) {
-        await axios.patch(
-          `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
+      if (
+        userData.profile &&
+        !userData.profile.email_verified &&
+        firebaseUser.emailVerified
+      ) {
+        await axios.put(
+          `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
           {
-            account_id: firebaseUser.uid,
-            data: {
-              profile: {
-                ...userData.profile,
-                email_verified: true,
-              },
+            update: {
+              field: "profile.email_verified",
+              operator: "set",
+              value: true,
             },
           },
         );
@@ -435,15 +437,13 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             },
           };
 
-          await axios.patch(
-            `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}`,
+          await axios.put(
+            `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
             {
-              account_id: firebaseUser.uid,
-              data: {
-                profile: {
-                  ...newUserData.profile,
-                  email_verified: true,
-                },
+              update: {
+                field: "profile.email_verified",
+                operator: "set",
+                value: true,
               },
             },
           );
