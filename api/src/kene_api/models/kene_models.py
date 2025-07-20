@@ -1,8 +1,7 @@
 """Kene API data models based on Excel specifications."""
 
-from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -64,7 +63,7 @@ class ActiveConfidenceLevel(str, Enum):
 class BaseEntity(BaseModel):
     """Base entity with common fields."""
 
-    id: Optional[str] = Field(None, description="Unique identifier")
+    id: str | None = Field(None, description="Unique identifier")
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
 
 
@@ -77,8 +76,8 @@ class BaseRequest(BaseModel):
 class BaseCRUDRequest(BaseRequest):
     """Base CRUD request with common fields."""
 
-    name: Optional[str] = Field(None, description="Name of the entity")
-    description: Optional[str] = Field(None, description="Description of the entity")
+    name: str | None = Field(None, description="Name of the entity")
+    description: str | None = Field(None, description="Description of the entity")
 
 
 # Metric Models
@@ -105,7 +104,7 @@ class Metric(BaseEntity):
         ...,
         description="The currency code for the metric (e.g., USD, EUR, GBP). Used for formatting monetary values",
     )
-    account_components: List[str] = Field(
+    account_components: list[str] = Field(
         ...,
         description="A list of components that the metric can be used to assist with in an analysis. An account must include at least one component from the list for the metric to be relevant",
     )
@@ -117,7 +116,7 @@ class Metric(BaseEntity):
         ...,
         description="The name of the dataset that is used to calculate the metric. In neo4j the Dataset node will have a CALCULATED_FROM relationship to the Metric node",
     )
-    related_dataset_products: List[str] = Field(
+    related_dataset_products: list[str] = Field(
         ...,
         description="The name of the martech products that were used to calculate the metric. In neo4j this value is stored on the Dataset node that has a CALCULATED_FROM relationship to the Metric node",
     )
@@ -138,52 +137,54 @@ class Metric(BaseEntity):
 class MetricRequest(BaseRequest):
     """Request model for metric operations."""
 
-    metric_id: Optional[str] = Field(None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION)
-    d3_format: Optional[str] = Field(
+    metric_id: str | None = Field(
+        None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION
+    )
+    d3_format: str | None = Field(
         None,
         description="The d3 formatting guidelines that define how the metric should be presented",
     )
-    verbose_name: Optional[str] = Field(
+    verbose_name: str | None = Field(
         None,
         description="The unique identifier for the metric in this account, created by the application",
     )
-    expression: Optional[str] = Field(
+    expression: str | None = Field(
         None,
         description="The SQL expression used to calculate this metric. Should be identical to the value stored in Superset",
     )
-    metric_name: Optional[str] = Field(
+    metric_name: str | None = Field(
         None,
         description="The snake_case representation of the metric name. Should be identical to the value stored in Superset",
     )
-    currency: Optional[str] = Field(
+    currency: str | None = Field(
         None,
         description="The currency code for the metric (e.g., USD, EUR, GBP). Used for formatting monetary values",
     )
-    account_components: Optional[List[str]] = Field(
+    account_components: list[str] | None = Field(
         None,
         description="A list of components that the metric can be used to assist with in an analysis. An account must include at least one component from the list for the metric to be relevant",
     )
-    related_dataset_id: Optional[int] = Field(
+    related_dataset_id: int | None = Field(
         None,
         description="A unique identifier for the dataset that is used to calculate the metric. In neo4j the Dataset node will have a CALCULATED_FROM relationship to the Metric node. This is created by Superset, where it is known as the 'dataset_id'",
     )
-    related_dataset_name: Optional[str] = Field(
+    related_dataset_name: str | None = Field(
         None,
         description="The name of the dataset that is used to calculate the metric. In neo4j the Dataset node will have a CALCULATED_FROM relationship to the Metric node",
     )
-    related_dataset_products: Optional[List[str]] = Field(
+    related_dataset_products: list[str] | None = Field(
         None,
         description="The name of the martech products that were used to calculate the metric. In neo4j this value is stored on the Dataset node that has a CALCULATED_FROM relationship to the Metric node",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None,
         description="A friendly description of the metric and how it is used. Should be identical to the value stored in Superset",
     )
-    below_zero: Optional[bool] = Field(
+    below_zero: bool | None = Field(
         None,
         description="Indicates whether the metric can return a result below 0",
     )
-    is_kpi: Optional[bool] = Field(
+    is_kpi: bool | None = Field(
         None,
         description="Indicates whether the metric has been flagged as a Key Performance Indicator",
     )
@@ -192,7 +193,7 @@ class MetricRequest(BaseRequest):
 class MetricListResponse(BaseModel):
     """Response model for metric list."""
 
-    metrics: List[Metric] = Field(..., description="List of metrics")
+    metrics: list[Metric] = Field(..., description="List of metrics")
     total: int = Field(..., description="Total number of metrics")
 
 
@@ -215,10 +216,10 @@ class ActiveEvidence(BaseModel):
     active_confidence: ActiveConfidenceLevel = Field(
         ..., description="Confidence level for the active evidence"
     )
-    evidence: Union[List[str], Literal["data"]] = Field(
+    evidence: list[str] | Literal["data"] = Field(
         ..., description="Either a list of strings or fixed value 'data'"
     )
-    data: Optional[SupersetMetricValue] = Field(
+    data: SupersetMetricValue | None = Field(
         None,
         description="Provides the metric value on the comparison date and evaluation date, along with the metric information",
     )
@@ -233,19 +234,19 @@ class InfluenceEvidence(BaseModel):
     influence_likely: bool = Field(
         ..., description="Whether there is an influence_likely connection already"
     )
-    other_conflicting_insights: List["ActivityLog"] = Field(
+    other_conflicting_insights: list["ActivityLog"] = Field(
         default_factory=list,
         description="List of ActivityLog instances that conflict with this insight",
     )
-    other_supporting_insights: List["ActivityLog"] = Field(
+    other_supporting_insights: list["ActivityLog"] = Field(
         default_factory=list,
         description="List of ActivityLog instances that support this insight",
     )
-    overlapping_conflicting_insights: List["ActivityLog"] = Field(
+    overlapping_conflicting_insights: list["ActivityLog"] = Field(
         default_factory=list,
         description="List of ActivityLog instances with overlapping time periods that conflict",
     )
-    overlapping_supporting_insights: List["ActivityLog"] = Field(
+    overlapping_supporting_insights: list["ActivityLog"] = Field(
         default_factory=list,
         description="List of ActivityLog instances with overlapping time periods that support",
     )
@@ -273,10 +274,10 @@ class ActivityLog(BaseEntity):
         ...,
         description="The date when the activity was last known to be active in format 'YYYY-MM-DD'",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None, description="A description of the specific instance of the activity"
     )
-    evidence: Optional[Evidence] = Field(
+    evidence: Evidence | None = Field(
         None,
         description="The results from the Activity Scan that indicate that the Activity was active during the time period",
     )
@@ -298,7 +299,7 @@ class Activity(BaseEntity):
         ...,
         description="Set to TRUE when every occurrence of this activity will exist as an ActivityLog node",
     )
-    logs: Optional[List[ActivityLog]] = Field(
+    logs: list[ActivityLog] | None = Field(
         default_factory=list,
         description="A list of ActivityLog nodes with a LOGGED relationship to the Activity node",
     )
@@ -307,19 +308,21 @@ class Activity(BaseEntity):
 class ActivityRequest(BaseRequest):
     """Request model for activity operations."""
 
-    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION)
-    activity_description: Optional[str] = Field(
+    activity_id: str | None = Field(
+        None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION
+    )
+    activity_description: str | None = Field(
         None, description=ACTIVITY_DESCRIPTION_DESCRIPTION
     )
-    expected_impact: Optional[str] = Field(
+    expected_impact: str | None = Field(
         None,
         description="A description of the impact that this activity is likely to have on the business",
     )
-    internal: Optional[bool] = Field(
+    internal: bool | None = Field(
         None,
         description="Set to TRUE when the company can choose to activate this activity to influence metrics",
     )
-    known_activity: Optional[bool] = Field(
+    known_activity: bool | None = Field(
         None,
         description="Set to TRUE when every occurrence of this activity will exist as an ActivityLog node",
     )
@@ -328,21 +331,21 @@ class ActivityRequest(BaseRequest):
 class ActivityLogRequest(BaseRequest):
     """Request model for activity log operations."""
 
-    activity_id: Optional[str] = Field(
+    activity_id: str | None = Field(
         None, description="Activity ID (required for associating logs)"
     )
-    activity_log_id: Optional[str] = Field(
+    activity_log_id: str | None = Field(
         None, description="Activity log ID (required for edit/delete)"
     )
-    start_date: Optional[str] = Field(
+    start_date: str | None = Field(
         None,
         description="The date when the activity was first known to be active in format 'YYYY-MM-DD'",
     )
-    end_date: Optional[str] = Field(
+    end_date: str | None = Field(
         None,
         description="The date when the activity was last known to be active in format 'YYYY-MM-DD'",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None, description="A description of the specific instance of the activity"
     )
 
@@ -350,7 +353,7 @@ class ActivityLogRequest(BaseRequest):
 class ActivityListResponse(BaseModel):
     """Response model for activity list."""
 
-    activities: List[Activity] = Field(..., description="List of activities")
+    activities: list[Activity] = Field(..., description="List of activities")
     total: int = Field(..., description="Total number of activities")
 
 
@@ -362,20 +365,21 @@ class Insight(BaseModel):
     metric_id: str = Field(..., description=METRIC_ID_DESCRIPTION)
     activity_log_id: str = Field(..., description=ACTIVITY_LOG_ID_DESCRIPTION)
     relationship_type: RelationshipType = Field(
-        ..., description="Type of relationship (INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED)"
+        ...,
+        description="Type of relationship (INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED)",
     )
-    direction: Optional[DirectionType] = Field(
+    direction: DirectionType | None = Field(
         None, description="Direction of influence (positive or negative)"
     )
     metric_verbose_name: str = Field(
         ...,
         description=METRIC_VERBOSE_NAME_DESCRIPTION,
     )
-    related_dataset_products: List[str] = Field(
+    related_dataset_products: list[str] = Field(
         ...,
         description=RELATED_DATASET_PRODUCTS_DESCRIPTION,
     )
-    evidence: Optional[Evidence] = Field(
+    evidence: Evidence | None = Field(
         None,
         description=EVIDENCE_DESCRIPTION,
     )
@@ -387,39 +391,35 @@ class Intuition(BaseModel):
 
     activity_id: str = Field(..., description=ACTIVITY_ID_DESCRIPTION)
     metric_id: str = Field(..., description=METRIC_ID_DESCRIPTION)
-    direction: DirectionType = Field(
-        ..., description=DIRECTION_DESCRIPTION
-    )
+    direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
 
 
 class InsightRequest(BaseRequest):
     """Request model for insight operations."""
 
-    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_DESCRIPTION)
-    metric_id: Optional[str] = Field(None, description=METRIC_ID_DESCRIPTION)
-    activity_log_id: Optional[str] = Field(
+    activity_id: str | None = Field(None, description=ACTIVITY_ID_DESCRIPTION)
+    metric_id: str | None = Field(None, description=METRIC_ID_DESCRIPTION)
+    activity_log_id: str | None = Field(
         None, description=ACTIVITY_LOG_ID_DESCRIPTION
     )
-    relationship_type: Optional[RelationshipType] = Field(
+    relationship_type: RelationshipType | None = Field(
         RelationshipType.INFLUENCE_CONFIRMED,
-        description="The type of relationship between activity log and metric"
+        description="The type of relationship between activity log and metric",
     )
-    direction: Optional[DirectionType] = Field(
-        None, description=DIRECTION_DESCRIPTION
-    )
-    metric_verbose_name: Optional[str] = Field(
+    direction: DirectionType | None = Field(None, description=DIRECTION_DESCRIPTION)
+    metric_verbose_name: str | None = Field(
         None,
         description=METRIC_VERBOSE_NAME_DESCRIPTION,
     )
-    related_dataset_products: Optional[List[str]] = Field(
+    related_dataset_products: list[str] | None = Field(
         None,
         description=RELATED_DATASET_PRODUCTS_DESCRIPTION,
     )
-    evidence: Optional[Evidence] = Field(
+    evidence: Evidence | None = Field(
         None,
         description=EVIDENCE_DESCRIPTION,
     )
-    activity_description: Optional[str] = Field(
+    activity_description: str | None = Field(
         None, description=ACTIVITY_DESCRIPTION_DESCRIPTION
     )
 
@@ -427,11 +427,9 @@ class InsightRequest(BaseRequest):
 class IntuitionRequest(BaseRequest):
     """Request model for intuition operations."""
 
-    activity_id: Optional[str] = Field(None, description=ACTIVITY_ID_DESCRIPTION)
-    metric_id: Optional[str] = Field(None, description=METRIC_ID_DESCRIPTION)
-    direction: Optional[DirectionType] = Field(
-        None, description=DIRECTION_DESCRIPTION
-    )
+    activity_id: str | None = Field(None, description=ACTIVITY_ID_DESCRIPTION)
+    metric_id: str | None = Field(None, description=METRIC_ID_DESCRIPTION)
+    direction: DirectionType | None = Field(None, description=DIRECTION_DESCRIPTION)
 
 
 class InsightSearchRequest(BaseModel):
@@ -440,32 +438,40 @@ class InsightSearchRequest(BaseModel):
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
     metric_id: str = Field(..., description=METRIC_ID_FILTER_DESCRIPTION)
     activity_id: str = Field(..., description=ACTIVITY_ID_FILTER_DESCRIPTION)
-    evaluation_date_start: str = Field(..., description="Start date for evaluation period (YYYY-MM-DD)")
-    evaluation_date_end: str = Field(..., description="End date for evaluation period (YYYY-MM-DD)")
-    comparison_date_start: str = Field(..., description="Start date for comparison period (YYYY-MM-DD)")
-    comparison_date_end: str = Field(..., description="End date for comparison period (YYYY-MM-DD)")
+    evaluation_date_start: str = Field(
+        ..., description="Start date for evaluation period (YYYY-MM-DD)"
+    )
+    evaluation_date_end: str = Field(
+        ..., description="End date for evaluation period (YYYY-MM-DD)"
+    )
+    comparison_date_start: str = Field(
+        ..., description="Start date for comparison period (YYYY-MM-DD)"
+    )
+    comparison_date_end: str = Field(
+        ..., description="End date for comparison period (YYYY-MM-DD)"
+    )
     direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
 
 
 class InsightSearchResponse(BaseModel):
     """Response model for insight search."""
 
-    insights: List[Insight] = Field(..., description="List of insights")
+    insights: list[Insight] = Field(..., description="List of insights")
     total: int = Field(..., description="Total number of insights")
 
 
 class InsightListResponse(BaseModel):
     """Response model for insight list."""
 
-    insights: List[Insight] = Field(..., description="List of insights")
-    intuitions: List[Intuition] = Field(..., description="List of intuitions")
+    insights: list[Insight] = Field(..., description="List of insights")
+    intuitions: list[Intuition] = Field(..., description="List of intuitions")
     total: int = Field(..., description="Total number of items")
 
 
 class IntuitionListResponse(BaseModel):
     """Response model for intuition list."""
 
-    intuitions: List[Intuition] = Field(..., description="List of intuitions")
+    intuitions: list[Intuition] = Field(..., description="List of intuitions")
     total: int = Field(..., description="Total number of intuitions")
 
 
@@ -476,26 +482,26 @@ class Notification(BaseEntity):
     title: str = Field(..., description="Notification title")
     message: str = Field(..., description="Notification message")
     notification_type: str = Field(..., description="Type of notification")
-    priority: Optional[str] = Field(None, description=PRIORITY_LEVEL_DESCRIPTION)
+    priority: str | None = Field(None, description=PRIORITY_LEVEL_DESCRIPTION)
     read_status: bool = Field(False, description="Read status")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
 
 
 class NotificationRequest(BaseRequest):
     """Request model for notification operations."""
 
-    title: Optional[str] = Field(None, description="Notification title")
-    message: Optional[str] = Field(None, description="Notification message")
-    notification_type: Optional[str] = Field(None, description="Type of notification")
-    priority: Optional[str] = Field(None, description=PRIORITY_LEVEL_DESCRIPTION)
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    title: str | None = Field(None, description="Notification title")
+    message: str | None = Field(None, description="Notification message")
+    notification_type: str | None = Field(None, description="Type of notification")
+    priority: str | None = Field(None, description=PRIORITY_LEVEL_DESCRIPTION)
+    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
 
 
 class ActivityScanRequest(BaseModel):
     """Request model for activity scanning."""
 
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
-    scan_depth: Optional[int] = Field(
+    scan_depth: int | None = Field(
         10, description="Number of recent activities to scan"
     )
     include_logs: bool = Field(True, description="Include activity logs in scan")
@@ -518,7 +524,7 @@ class AnalysisWorkflowRequest(BaseModel):
 
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
     workflow_type: str = Field(..., description="Type of analysis workflow")
-    parameters: Dict[str, Any] = Field(..., description="Analysis parameters")
+    parameters: dict[str, Any] = Field(..., description="Analysis parameters")
     save_results: bool = Field(True, description="Whether to save results")
 
 
@@ -527,8 +533,8 @@ class AnalysisResult(BaseModel):
 
     result_id: str = Field(..., description="Unique result identifier")
     workflow_type: str = Field(..., description="Type of analysis workflow")
-    results: Dict[str, Any] = Field(..., description="Analysis results")
-    metadata: Dict[str, Any] = Field(..., description="Result metadata")
+    results: dict[str, Any] = Field(..., description="Analysis results")
+    metadata: dict[str, Any] = Field(..., description="Result metadata")
 
 
 class Recommendation(BaseModel):
@@ -540,11 +546,11 @@ class Recommendation(BaseModel):
     priority: str = Field(..., description=PRIORITY_LEVEL_DESCRIPTION)
     category: str = Field(..., description="Recommendation category")
     confidence_score: float = Field(..., description=CONFIDENCE_SCORE_DESCRIPTION)
-    impact_score: Optional[float] = Field(None, description="Expected impact score")
-    related_metrics: List[str] = Field(
+    impact_score: float | None = Field(None, description="Expected impact score")
+    related_metrics: list[str] = Field(
         default_factory=list, description="Related metric IDs"
     )
-    related_activities: List[str] = Field(
+    related_activities: list[str] = Field(
         default_factory=list, description="Related activity IDs"
     )
 
@@ -554,8 +560,8 @@ class AnalysisWorkflowResponse(BaseModel):
 
     workflow_id: str = Field(..., description="Workflow execution ID")
     status: str = Field(..., description="Execution status")
-    results: List[AnalysisResult] = Field(..., description="Analysis results")
-    recommendations: List[Recommendation] = Field(
+    results: list[AnalysisResult] = Field(..., description="Analysis results")
+    recommendations: list[Recommendation] = Field(
         ..., description="Generated recommendations"
     )
     execution_time: float = Field(..., description="Execution time in seconds")
@@ -566,10 +572,18 @@ class AnalysisSearchRequest(BaseModel):
 
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
     metric_id: str = Field(..., description=METRIC_ID_FILTER_DESCRIPTION)
-    evaluation_date_start: str = Field(..., description="Start date for evaluation period (YYYY-MM-DD)")
-    evaluation_date_end: str = Field(..., description="End date for evaluation period (YYYY-MM-DD)")
-    comparison_date_start: str = Field(..., description="Start date for comparison period (YYYY-MM-DD)")
-    comparison_date_end: str = Field(..., description="End date for comparison period (YYYY-MM-DD)")
+    evaluation_date_start: str = Field(
+        ..., description="Start date for evaluation period (YYYY-MM-DD)"
+    )
+    evaluation_date_end: str = Field(
+        ..., description="End date for evaluation period (YYYY-MM-DD)"
+    )
+    comparison_date_start: str = Field(
+        ..., description="Start date for comparison period (YYYY-MM-DD)"
+    )
+    comparison_date_end: str = Field(
+        ..., description="End date for comparison period (YYYY-MM-DD)"
+    )
     direction: DirectionType = Field(..., description=DIRECTION_DESCRIPTION)
 
 
@@ -579,7 +593,7 @@ class SuccessResponse(BaseModel):
 
     success: bool = True
     message: str
-    data: Optional[Dict[str, Any]] = None
+    data: dict[str, Any] | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -587,15 +601,17 @@ class ErrorResponse(BaseModel):
 
     success: bool = False
     error: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 # Superset Saved Queries Models
 class SavedQueryRequest(BaseRequest):
     """Request model for creating/updating saved queries."""
-    
+
     label: str = Field(..., description="Label/name of the saved query")
-    description: Optional[str] = Field(None, description="Description of the saved query")
+    description: str | None = Field(
+        None, description="Description of the saved query"
+    )
     database_id: int = Field(..., description="Database ID for the saved query")
     schema_name: str = Field(..., description="Schema name for the saved query")
     sql: str = Field(..., description="SQL query text")
@@ -603,95 +619,124 @@ class SavedQueryRequest(BaseRequest):
 
 class SavedQueryResponse(BaseModel):
     """Response model for saved query operations."""
-    
+
     id: int = Field(..., description="Saved query ID")
     label: str = Field(..., description="Label/name of the saved query")
-    description: Optional[str] = Field(None, description="Description of the saved query")
+    description: str | None = Field(
+        None, description="Description of the saved query"
+    )
     database_id: int = Field(..., description="Database ID")
     schema_name: str = Field(..., description="Schema name")
     sql: str = Field(..., description="SQL query text")
-    created_on: Optional[str] = Field(None, description="Creation timestamp")
-    changed_on: Optional[str] = Field(None, description="Last modification timestamp")
+    created_on: str | None = Field(None, description="Creation timestamp")
+    changed_on: str | None = Field(None, description="Last modification timestamp")
 
 
 class SavedQueryListResponse(BaseModel):
     """Response model for saved query list."""
-    
-    saved_queries: List[SavedQueryResponse] = Field(..., description="List of saved queries")
+
+    saved_queries: list[SavedQueryResponse] = Field(
+        ..., description="List of saved queries"
+    )
     total: int = Field(..., description="Total number of saved queries")
 
 
 class QueryExecutionResponse(BaseModel):
     """Response model for query execution results."""
-    
-    query_id: Optional[int] = Field(None, description="Query execution ID")
+
+    query_id: int | None = Field(None, description="Query execution ID")
     status: str = Field(..., description="Execution status")
-    data: Optional[List[Dict[str, Any]]] = Field(None, description="Query result data")
-    columns: Optional[List[Dict[str, Any]]] = Field(None, description="Column metadata")
-    error: Optional[str] = Field(None, description="Error message if execution failed")
-    query: Optional[Dict[str, Any]] = Field(None, description="Query metadata object containing execution details")
+    data: list[dict[str, Any]] | None = Field(None, description="Query result data")
+    columns: list[dict[str, Any]] | None = Field(None, description="Column metadata")
+    error: str | None = Field(None, description="Error message if execution failed")
+    query: dict[str, Any] | None = Field(
+        None, description="Query metadata object containing execution details"
+    )
 
 
 # Dataset Models
 
+
 class Dataset(BaseModel):
     """Response model for dataset data."""
-    
+
     id: int = Field(..., description="The unique identifier for the dataset")
     account_id: str = Field(..., description=ACCOUNT_ID_DESCRIPTION)
     dataset_id: int = Field(..., description="Unique identifier for the dataset")
     dataset_name: str = Field(..., description="Unique name for the dataset")
-    products: List[str] = Field(..., description="List of products that collect the data used in this dataset")
-    default_datetime: str = Field(..., description="Name of the datetime column used to aggregate data by date")
-    description: str = Field(..., description="Description of the dataset and its usefulness")
+    products: list[str] = Field(
+        ..., description="List of products that collect the data used in this dataset"
+    )
+    default_datetime: str = Field(
+        ..., description="Name of the datetime column used to aggregate data by date"
+    )
+    description: str = Field(
+        ..., description="Description of the dataset and its usefulness"
+    )
 
 
 class DatasetRequest(BaseRequest):
     """Request model for dataset operations."""
-    
-    dataset_id: Optional[int] = Field(None, description="Unique identifier for the dataset (required for create)")
-    dataset_name: Optional[str] = Field(None, description="Unique name for the dataset (required for create/update/delete)")
-    products: Optional[List[str]] = Field(None, description="List of products that collect the data used in this dataset")
-    default_datetime: Optional[str] = Field(None, description="Name of the datetime column used to aggregate data by date")
-    description: Optional[str] = Field(None, description="Description of the dataset and its usefulness")
+
+    dataset_id: int | None = Field(
+        None, description="Unique identifier for the dataset (required for create)"
+    )
+    dataset_name: str | None = Field(
+        None,
+        description="Unique name for the dataset (required for create/update/delete)",
+    )
+    products: list[str] | None = Field(
+        None, description="List of products that collect the data used in this dataset"
+    )
+    default_datetime: str | None = Field(
+        None, description="Name of the datetime column used to aggregate data by date"
+    )
+    description: str | None = Field(
+        None, description="Description of the dataset and its usefulness"
+    )
 
 
 class DatasetListResponse(BaseModel):
     """Response model for dataset list."""
-    
-    datasets: List[Dataset] = Field(..., description="List of datasets")
+
+    datasets: list[Dataset] = Field(..., description="List of datasets")
     total: int = Field(..., description="Total number of datasets")
 
 
 # Product Models
 
+
 class ProductRequest(BaseRequest):
     """Request model for product operations."""
-    
-    product: str = Field(..., description="Name of the product (corresponds to document ID in Firestore product-metrics collection)")
+
+    product: str = Field(
+        ...,
+        description="Name of the product (corresponds to document ID in Firestore product-metrics collection)",
+    )
 
 
 class ProductAddResponse(BaseModel):
     """Response model for add_product operation."""
-    
+
     success: bool = True
     message: str = Field(..., description="Success message")
-    data: Dict[str, Any] = Field(..., description="Product processing results")
+    data: dict[str, Any] = Field(..., description="Product processing results")
 
 
 class ProductDeleteResponse(BaseModel):
     """Response model for delete_product operation."""
-    
+
     success: bool = True
     message: str = Field(..., description="Success message")
-    data: Dict[str, Any] = Field(..., description="Deletion results")
+    data: dict[str, Any] = Field(..., description="Deletion results")
 
 
 # Organization and Account Models
 
+
 class PaymentMethod(BaseModel):
     """Payment method details."""
-    
+
     last_four: str = Field(..., description="Last four digits of payment method")
     brand: str = Field(..., description="Payment method brand (e.g., Visa, Mastercard)")
     expires: str = Field(..., description="Expiration date (MM/YY)")
@@ -699,7 +744,7 @@ class PaymentMethod(BaseModel):
 
 class Billing(BaseModel):
     """Billing information for an organization."""
-    
+
     payment_method: PaymentMethod = Field(..., description="Payment method details")
     address: str = Field(..., description="Billing address")
     tax_id: str = Field(..., description="Tax identification number")
@@ -707,35 +752,49 @@ class Billing(BaseModel):
 
 class Subscription(BaseModel):
     """Subscription details for an organization."""
-    
+
     plan_name: str = Field(..., description="Name of the subscription plan")
-    plan_description: str = Field(..., description="Description of the subscription plan")
+    plan_description: str = Field(
+        ..., description="Description of the subscription plan"
+    )
     price: float = Field(..., description="Price of the subscription")
     currency: str = Field(..., description="Currency code (e.g., USD)")
     billing_cycle: str = Field(..., description="Billing cycle (e.g., monthly, yearly)")
     next_billing_date: str = Field(..., description="Next billing date")
-    features: List[str] = Field(..., description="List of features included in the plan")
-    usage: Dict[str, int] = Field(..., description="Usage statistics (e.g., reports_generated, reports_limit)")
+    features: list[str] = Field(
+        ..., description="List of features included in the plan"
+    )
+    usage: dict[str, int] = Field(
+        ..., description="Usage statistics (e.g., reports_generated, reports_limit)"
+    )
 
 
 class Team(BaseModel):
     """Team information for an organization."""
-    
+
     members_used: int = Field(..., description="Number of team members currently used")
-    members_limit: int = Field(..., description="Maximum number of team members allowed")
-    pending_invitations: int = Field(..., description="Number of pending team invitations")
+    members_limit: int = Field(
+        ..., description="Maximum number of team members allowed"
+    )
+    pending_invitations: int = Field(
+        ..., description="Number of pending team invitations"
+    )
 
 
 class Organization(BaseModel):
     """Organization entity model."""
-    
-    organization_id: str = Field(..., description="Unique identifier for the organization")
+
+    organization_id: str = Field(
+        ..., description="Unique identifier for the organization"
+    )
     organization_name: str = Field(..., description="Name of the organization")
     plan: str = Field(..., description="Subscription plan tier")
     website: str = Field(..., description="Organization website URL")
-    company_size: str = Field(..., description="Size category of the company")
+    company_size: str | None = Field(None, description="Size category of the company")
     agency: bool = Field(..., description="Whether the organization is an agency")
-    child_organizations: List[str] = Field(default_factory=list, description="List of child organization IDs")
+    child_organizations: list[str] = Field(
+        default_factory=list, description="List of child organization IDs"
+    )
     subscription: Subscription = Field(..., description="Subscription details")
     billing: Billing = Field(..., description="Billing information")
     team: Team = Field(..., description="Team information")
@@ -743,56 +802,80 @@ class Organization(BaseModel):
 
 class Account(BaseModel):
     """Account entity model."""
-    
+
     account_id: str = Field(..., description="Unique identifier for the account")
     account_name: str = Field(..., description="Name of the account")
-    organization_id: str = Field(..., description="ID of the organization this account belongs to")
+    organization_id: str = Field(
+        ..., description="ID of the organization this account belongs to"
+    )
     industry: str = Field(..., description="Industry category")
     status: str = Field(..., description="Account status (e.g., Active, Inactive)")
-    websites: List[str] = Field(..., description="List of websites associated with the account")
+    websites: list[str] = Field(
+        ..., description="List of websites associated with the account"
+    )
     timezone: str = Field(..., description="Timezone for the account")
     data_region: str = Field(default="", description="Data region for the account")
-    region: List[str] = Field(default_factory=list, description="List of regions for the account")
+    region: list[str] = Field(
+        default_factory=list, description="List of regions for the account"
+    )
 
 
 class OrganizationRequest(BaseModel):
     """Request model for organization operations."""
-    
-    organization_id: Optional[str] = Field(None, description="Organization ID (required for update/delete)")
-    organization_name: Optional[str] = Field(None, description="Name of the organization")
-    plan: Optional[str] = Field(None, description="Subscription plan tier")
-    website: Optional[str] = Field(None, description="Organization website URL")
-    company_size: Optional[str] = Field(None, description="Size category of the company")
-    agency: Optional[bool] = Field(None, description="Whether the organization is an agency")
-    child_organizations: Optional[List[str]] = Field(None, description="List of child organization IDs")
-    subscription: Optional[Subscription] = Field(None, description="Subscription details")
-    billing: Optional[Billing] = Field(None, description="Billing information")
-    team: Optional[Team] = Field(None, description="Team information")
+
+    organization_id: str | None = Field(
+        None, description="Organization ID (required for update/delete)"
+    )
+    organization_name: str | None = Field(
+        None, description="Name of the organization"
+    )
+    plan: str | None = Field(None, description="Subscription plan tier")
+    website: str | None = Field(None, description="Organization website URL")
+    company_size: str | None = Field(
+        None, description="Size category of the company"
+    )
+    agency: bool | None = Field(
+        None, description="Whether the organization is an agency"
+    )
+    child_organizations: list[str] | None = Field(
+        None, description="List of child organization IDs"
+    )
+    subscription: Subscription | None = Field(
+        None, description="Subscription details"
+    )
+    billing: Billing | None = Field(None, description="Billing information")
+    team: Team | None = Field(None, description="Team information")
 
 
 class AccountRequest(BaseModel):
     """Request model for account operations."""
-    
-    account_id: Optional[str] = Field(None, description="Account ID (required for update/delete)")
-    account_name: Optional[str] = Field(None, description="Name of the account")
-    organization_id: Optional[str] = Field(None, description="ID of the organization (required for create)")
-    industry: Optional[str] = Field(None, description="Industry category")
-    status: Optional[str] = Field(None, description="Account status")
-    websites: Optional[List[str]] = Field(None, description="List of websites")
-    timezone: Optional[str] = Field(None, description="Timezone for the account")
-    data_region: Optional[str] = Field(None, description="Data region for the account")
-    region: Optional[List[str]] = Field(None, description="List of regions for the account")
+
+    account_id: str | None = Field(
+        None, description="Account ID (required for update/delete)"
+    )
+    account_name: str | None = Field(None, description="Name of the account")
+    organization_id: str | None = Field(
+        None, description="ID of the organization (required for create)"
+    )
+    industry: str | None = Field(None, description="Industry category")
+    status: str | None = Field(None, description="Account status")
+    websites: list[str] | None = Field(None, description="List of websites")
+    timezone: str | None = Field(None, description="Timezone for the account")
+    data_region: str | None = Field(None, description="Data region for the account")
+    region: list[str] | None = Field(
+        None, description="List of regions for the account"
+    )
 
 
 class OrganizationListResponse(BaseModel):
     """Response model for organization list."""
-    
-    organizations: List[Organization] = Field(..., description="List of organizations")
+
+    organizations: list[Organization] = Field(..., description="List of organizations")
     total: int = Field(..., description="Total number of organizations")
 
 
 class AccountListResponse(BaseModel):
     """Response model for account list."""
-    
-    accounts: List[Account] = Field(..., description="List of accounts")
+
+    accounts: list[Account] = Field(..., description="List of accounts")
     total: int = Field(..., description="Total number of accounts")

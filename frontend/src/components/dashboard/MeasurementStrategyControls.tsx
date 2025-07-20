@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Edit2, ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Edit2 } from "lucide-react";
 import EditChannelsModal from "./EditChannelsModal";
 import EditTacticsModal from "./EditTacticsModal";
 import ChannelControls from "./ChannelControls";
@@ -101,22 +99,8 @@ const MeasurementStrategyControls = ({
     onChannelsChange(newChannels);
   };
 
-  const navigate = useNavigate();
-
   return (
     <>
-      {/* Back to Knowledge Base Link */}
-      <div className="mb-4">
-        <Button
-          variant="ghost"
-          onClick={() => navigate("/knowledge")}
-          className="flex items-center gap-2 text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Knowledge Base
-        </Button>
-      </div>
-
       <div className="rounded-lg bg-white border border-dashboard-gray-200 my-6">
         <div className="flex flex-col rounded-xl overflow-hidden h-screen mb-6">
           {/* React Flow Channel Controls */}

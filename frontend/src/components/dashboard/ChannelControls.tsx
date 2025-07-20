@@ -61,8 +61,8 @@ import "reactflow/dist/style.css";
 // Helper function to get blue color for all nodes
 const getRandomColor = () => {
   return {
-    bg: "bg-blue-500",
-    border: "border-blue-600",
+    bg: "bg-brand-medium-blue",
+    border: "border-brand-dark-blue",
     text: "text-white",
   };
 };
@@ -1239,7 +1239,7 @@ const ReactFlowComponent = () => {
                 <div>
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <div className="w-3 h-3 bg-brand-light-green rounded-full"></div>
                     <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
                       EFFECTIVENESS
                     </h3>
@@ -1263,7 +1263,7 @@ const ReactFlowComponent = () => {
                       <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
                         1,529,204
                       </div>
-                      <div className="text-green-600 font-medium text-center">
+                      <div className="text-brand-dark-green font-medium text-center">
                         +20%
                       </div>
                     </div>
@@ -1357,7 +1357,7 @@ const ReactFlowComponent = () => {
                 <div className="mt-4">
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <div className="w-3 h-3 bg-brand-yellow rounded-full"></div>
                     <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
                       EFFICIENCY
                     </h3>
@@ -1381,7 +1381,7 @@ const ReactFlowComponent = () => {
                       <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
                         $2.47
                       </div>
-                      <div className="text-yellow-600 font-medium text-center">
+                      <div className="text-brand-yellow font-medium text-center">
                         -5%
                       </div>
                     </div>
@@ -1498,7 +1498,7 @@ const ReactFlowComponent = () => {
                       sampleValues[index % sampleValues.length];
                     const changeColor =
                       sampleData.trend === "positive"
-                        ? "text-green-600"
+                        ? "text-brand-dark-green"
                         : "text-red-600";
 
                     return (

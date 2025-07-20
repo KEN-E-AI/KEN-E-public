@@ -1,7 +1,9 @@
 """Accounts router for CRUD operations on account entities."""
 
 import logging
-from typing import Any, Dict, Optional
+import uuid
+from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -18,6 +20,37 @@ router = APIRouter(tags=["accounts"])
 # Logger
 logger = logging.getLogger(__name__)
 
+
+def generate_unique_account_id() -> str:
+    """
+    Generate a unique account ID using UUID4.
+
+    Returns:
+        str: A unique account ID in the format 'acc_<uuid>'
+
+    Example:
+        'acc_550e8400e29b41d4a716446655440000'
+    """
+    # Generate UUID4 and remove hyphens for cleaner format
+    unique_id = str(uuid.uuid4()).replace("-", "")
+    return f"acc_{unique_id}"
+
+
+def generate_timestamp_account_id() -> str:
+    """
+    Generate a unique account ID using timestamp and UUID.
+
+    Returns:
+        str: A unique account ID in the format 'acc_<timestamp>_<uuid_suffix>'
+
+    Example:
+        'acc_1705123456789_a1b2c3d4'
+    """
+    timestamp = int(datetime.now().timestamp() * 1000)
+    uuid_suffix = str(uuid.uuid4()).replace("-", "")[:8]
+    return f"acc_{timestamp}_{uuid_suffix}"
+
+
 # Constants
 DATABASE_UNAVAILABLE_MESSAGE = "Database service unavailable. Please try again later."
 ACCOUNT_NOT_FOUND_MESSAGE = "Account not found"
@@ -26,7 +59,9 @@ ORGANIZATION_NOT_FOUND_MESSAGE = "Organization not found"
 
 @router.get("/", response_model=AccountListResponse)
 async def get_accounts(
-    organization_id: Optional[str] = Query(None, description="Filter accounts by organization ID"),
+    organization_id: str | None = Query(
+        None, description="Filter accounts by organization ID"
+    ),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> AccountListResponse:
     """
@@ -34,11 +69,11 @@ async def get_accounts(
 
     **Parameters (query):**
     - `organization_id` (optional): Filter accounts by organization ID
-    
+
     **Returns:**
     - `accounts`: List of account objects with all properties
     - `total`: Total number of accounts found
-    
+
     **Example:**
     ```
     GET /api/v1/accounts/
@@ -83,7 +118,9 @@ async def get_accounts(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching accounts: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching accounts: {e!s}"
+        )
 
 
 @router.get("/{account_id}", response_model=Account)
@@ -96,10 +133,10 @@ async def get_account(
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
-    
+
     **Returns:**
     - Account object with all properties
-    
+
     **Example:**
     ```
     GET /api/v1/accounts/intellipure-b2c
@@ -132,7 +169,7 @@ async def get_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching account: {e!s}")
 
 
 @router.post("/", response_model=Account)
@@ -150,10 +187,10 @@ async def create_account(
     - `status` (required): Account status (e.g., Active, Inactive)
     - `websites` (required): List of websites associated with the account
     - `timezone` (required): Timezone for the account
-    
+
     **Returns:**
     - Created account object with generated account_id
-    
+
     **Example:**
     ```
     POST /api/v1/accounts/
@@ -190,15 +227,26 @@ async def create_account(
         # Check if organization exists
         org_exists = await _check_organization_exists(db, request.organization_id)
         if not org_exists:
-            raise HTTPException(status_code=404, detail=f"Organization {request.organization_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Organization {request.organization_id} not found",
+            )
 
-        # Generate account_id from organization_id and account_name
-        account_id = f"{request.organization_id}-{request.account_name.lower().replace(' ', '-').replace('_', '-')}"
-        
-        # Check if account already exists
+        # Generate unique account_id using UUID
+        account_id = generate_unique_account_id()
+
+        # Check if account already exists (extremely unlikely with UUID4)
         existing_acc = await _check_account_exists(db, account_id)
         if existing_acc:
-            raise HTTPException(status_code=409, detail=f"Account with ID {account_id} already exists")
+            logger.warning(f"UUID collision detected for account_id: {account_id}")
+            # Generate a new UUID if collision occurs (extremely rare)
+            account_id = generate_unique_account_id()
+            existing_acc = await _check_account_exists(db, account_id)
+            if existing_acc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unable to generate unique account ID. Please try again.",
+                )
 
         # Create account node and BELONGS_TO relationship
         create_query = """
@@ -231,7 +279,7 @@ async def create_account(
         }
 
         await db.execute_write_query(create_query, params)
-        
+
         # Fetch the created account
         return await get_account(account_id, db)
 
@@ -240,7 +288,7 @@ async def create_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error creating account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error creating account: {e!s}")
 
 
 @router.put("/{account_id}", response_model=Account)
@@ -254,14 +302,14 @@ async def update_account(
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
-    
+
     **Request Body:**
     - All fields are optional, only provided fields will be updated
     - Note: organization_id cannot be updated
-    
+
     **Returns:**
     - Updated account object
-    
+
     **Example:**
     ```
     PUT /api/v1/accounts/intellipure-b2c
@@ -292,7 +340,9 @@ async def update_account(
 
         # organization_id cannot be updated
         if request.organization_id is not None:
-            logger.warning(f"Attempt to update organization_id for account {account_id} ignored")
+            logger.warning(
+                f"Attempt to update organization_id for account {account_id} ignored"
+            )
 
         if request.industry is not None:
             update_clauses.append("acc.industry = $industry")
@@ -324,12 +374,12 @@ async def update_account(
         # Execute update query
         update_query = f"""
         MATCH (acc:Account {{account_id: $account_id}})
-        SET {', '.join(update_clauses)}
+        SET {", ".join(update_clauses)}
         RETURN acc
         """
 
         await db.execute_write_query(update_query, params)
-        
+
         # Return updated account
         return await get_account(account_id, db)
 
@@ -338,7 +388,7 @@ async def update_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error updating account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating account: {e!s}")
 
 
 @router.delete("/{account_id}", response_model=SuccessResponse)
@@ -351,10 +401,10 @@ async def delete_account(
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
-    
+
     **Returns:**
     - Success response with deletion details
-    
+
     **Example:**
     ```
     DELETE /api/v1/accounts/intellipure-b2c
@@ -383,8 +433,8 @@ async def delete_account(
 
         if related_count > 0:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Cannot delete account with {related_count} related entities. Delete related entities first."
+                status_code=400,
+                detail=f"Cannot delete account with {related_count} related entities. Delete related entities first.",
             )
 
         # Delete account and BELONGS_TO relationship
@@ -401,7 +451,7 @@ async def delete_account(
                 "account_id": account_id,
                 "nodes_deleted": summary.get("nodes_deleted", 0),
                 "relationships_deleted": summary.get("relationships_deleted", 0),
-            }
+            },
         )
 
     except HTTPException:
@@ -409,10 +459,12 @@ async def delete_account(
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error deleting account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting account: {e!s}")
 
 
-@router.get("/organization/{organization_id}/accounts", response_model=AccountListResponse)
+@router.get(
+    "/organization/{organization_id}/accounts", response_model=AccountListResponse
+)
 async def get_accounts_by_organization(
     organization_id: str,
     db: Neo4jService = Depends(get_neo4j_service),
@@ -422,11 +474,11 @@ async def get_accounts_by_organization(
 
     **Parameters:**
     - `organization_id` (path): The unique identifier for the organization
-    
+
     **Returns:**
     - `accounts`: List of account objects for the organization
     - `total`: Total number of accounts found
-    
+
     **Example:**
     ```
     GET /api/v1/accounts/organization/healthway/accounts
@@ -456,7 +508,7 @@ async def _check_organization_exists(db: Neo4jService, organization_id: str) -> 
     return result[0]["exists"] if result else False
 
 
-def _create_account_from_record(acc_data: Dict[str, Any]) -> Account:
+def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
     """Create an Account object from a Neo4j record."""
     return Account(
         account_id=acc_data.get("account_id"),

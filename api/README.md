@@ -2,6 +2,8 @@
 
 A modern FastAPI web service built with Python, featuring automatic API documentation, request/response validation, and async support.
 
+> **⚠️ Important:** This is a Python project that uses `pyproject.toml` for dependency management. There is no `package.json` file. Do not use npm/node commands in this directory. Use `uv` or `python` commands as described below.
+
 ## Features
 
 - **FastAPI Framework**: High-performance, easy-to-use web framework
@@ -119,16 +121,26 @@ docker run \
    - Update each .env file with the appropriate credentials
 
 #### Development Server
+
+**Option 1: Using uv directly (recommended)**
 ```bash
-# If virtual environment is in project root (not in api/), use --active flag:
-uv run --active uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-
-# If virtual environment is in api/.venv:
-uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-
-# Using the development runner (with auto-reload)
-uv run --active python run_dev.py
+# From the api directory:
+cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+**Option 2: Using the Python development script**
+```bash
+# From the api directory:
+cd api && python run_dev.py
+```
+
+**Option 3: Using Docker**
+```bash
+# From the api directory:
+cd api && ./docker.sh dev
+```
+
+**Note:** This is a Python project using `pyproject.toml`. There is no `package.json` file - do not use npm commands in this directory.
 
 #### Production
 ```bash
@@ -392,6 +404,10 @@ This project follows FastAPI best practices:
 - Include comprehensive docstrings
 - Use appropriate HTTP status codes
 - Implement proper error handling
+
+## Breaking Changes
+
+See [BREAKING_CHANGES.md](./BREAKING_CHANGES.md) for a list of breaking changes and migration guides.
 
 ### Creating New Endpoints
 

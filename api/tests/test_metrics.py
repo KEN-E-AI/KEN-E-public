@@ -1,9 +1,9 @@
 """Tests for metrics router."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from httpx import AsyncClient, ASGITransport
 
+import pytest
+from httpx import ASGITransport, AsyncClient
 from src.kene_api.main import app
 
 
@@ -67,7 +67,9 @@ class TestMetricsRouter:
     @pytest.mark.asyncio
     @patch("src.kene_api.superset.superset_client")
     @patch("src.kene_api.database.neo4j_service")
-    async def test_create_metric_success(self, mock_neo4j_service, mock_superset_client):
+    async def test_create_metric_success(
+        self, mock_neo4j_service, mock_superset_client
+    ):
         """Test successful metric creation."""
         # Mock successful account and dataset checks
         mock_neo4j_service.health_check = AsyncMock(return_value=True)
@@ -139,13 +141,21 @@ class TestMetricsRouter:
     @pytest.mark.asyncio
     @patch("src.kene_api.superset.superset_client")
     @patch("src.kene_api.database.neo4j_service")
-    async def test_update_metric_success(self, mock_neo4j_service, mock_superset_client):
+    async def test_update_metric_success(
+        self, mock_neo4j_service, mock_superset_client
+    ):
         """Test successful metric update."""
         # Mock metric exists and update successful
         mock_neo4j_service.health_check = AsyncMock(return_value=True)
         mock_neo4j_service.execute_query = AsyncMock(
             side_effect=[
-                [{"metric": {"id": "test_metric"}, "dataset": {"dataset_id": 1}, "superset_metric_id": 123}],  # Metric exists with superset info
+                [
+                    {
+                        "metric": {"id": "test_metric"},
+                        "dataset": {"dataset_id": 1},
+                        "superset_metric_id": 123,
+                    }
+                ],  # Metric exists with superset info
             ]
         )
         mock_neo4j_service.execute_write_query = AsyncMock(
@@ -197,13 +207,21 @@ class TestMetricsRouter:
     @pytest.mark.asyncio
     @patch("src.kene_api.superset.superset_client")
     @patch("src.kene_api.database.neo4j_service")
-    async def test_delete_metric_success(self, mock_neo4j_service, mock_superset_client):
+    async def test_delete_metric_success(
+        self, mock_neo4j_service, mock_superset_client
+    ):
         """Test successful metric deletion."""
         # Mock metric exists and deletion successful
         mock_neo4j_service.health_check = AsyncMock(return_value=True)
         mock_neo4j_service.execute_query = AsyncMock(
             side_effect=[
-                [{"metric": {"id": "test_metric"}, "dataset": {"dataset_id": 1}, "superset_metric_id": 123}],  # Metric exists with superset info
+                [
+                    {
+                        "metric": {"id": "test_metric"},
+                        "dataset": {"dataset_id": 1},
+                        "superset_metric_id": 123,
+                    }
+                ],  # Metric exists with superset info
             ]
         )
         mock_neo4j_service.execute_write_query = AsyncMock(

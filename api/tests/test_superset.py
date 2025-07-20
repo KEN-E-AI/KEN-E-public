@@ -1,9 +1,9 @@
 """Tests for Superset client integration."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-import requests
+from unittest.mock import MagicMock
 
+import pytest
+import requests
 from src.kene_api.superset import SupersetClient, SupersetClientError
 
 
@@ -62,7 +62,7 @@ class TestSupersetClient:
     async def test_get_dataset_success(self, superset_client, mock_session):
         """Test successful dataset retrieval."""
         superset_client.access_token = "test_token"
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"result": {"id": 1, "name": "test_dataset"}}
@@ -73,15 +73,14 @@ class TestSupersetClient:
 
         assert result == {"id": 1, "name": "test_dataset"}
         mock_session.get.assert_called_once_with(
-            "http://test-superset.com/api/v1/dataset/1",
-            timeout=30
+            "http://test-superset.com/api/v1/dataset/1", timeout=30
         )
 
     @pytest.mark.asyncio
     async def test_get_dataset_not_found(self, superset_client, mock_session):
         """Test dataset not found."""
         superset_client.access_token = "test_token"
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_session.get.return_value = mock_response
@@ -94,19 +93,23 @@ class TestSupersetClient:
     async def test_create_metric_success(self, superset_client, mock_session):
         """Test successful metric creation."""
         superset_client.access_token = "test_token"
-        
+
         # Mock get_dataset call
         dataset_response = MagicMock()
         dataset_response.status_code = 200
-        dataset_response.json.return_value = {"result": {"id": 1, "name": "test_dataset"}}
+        dataset_response.json.return_value = {
+            "result": {"id": 1, "name": "test_dataset"}
+        }
         dataset_response.raise_for_status = MagicMock()
-        
+
         # Mock create_metric call
         metric_response = MagicMock()
         metric_response.status_code = 201
-        metric_response.json.return_value = {"result": {"id": 123, "metric_name": "test_metric"}}
+        metric_response.json.return_value = {
+            "result": {"id": 123, "metric_name": "test_metric"}
+        }
         metric_response.raise_for_status = MagicMock()
-        
+
         mock_session.get.return_value = dataset_response
         mock_session.post.return_value = metric_response
 
@@ -114,7 +117,7 @@ class TestSupersetClient:
             "metric_name": "test_metric",
             "verbose_name": "Test Metric",
             "expression": "COUNT(*)",
-            "description": "Test metric description"
+            "description": "Test metric description",
         }
 
         result = await superset_client.create_metric(1, metric_data)
@@ -126,16 +129,13 @@ class TestSupersetClient:
     async def test_create_metric_dataset_not_found(self, superset_client, mock_session):
         """Test metric creation when dataset doesn't exist."""
         superset_client.access_token = "test_token"
-        
+
         # Mock dataset not found
         dataset_response = MagicMock()
         dataset_response.status_code = 404
         mock_session.get.return_value = dataset_response
 
-        metric_data = {
-            "metric_name": "test_metric",
-            "expression": "COUNT(*)"
-        }
+        metric_data = {"metric_name": "test_metric", "expression": "COUNT(*)"}
 
         with pytest.raises(SupersetClientError, match="Dataset 999 not found"):
             await superset_client.create_metric(999, metric_data)
@@ -144,16 +144,18 @@ class TestSupersetClient:
     async def test_update_metric_success(self, superset_client, mock_session):
         """Test successful metric update."""
         superset_client.access_token = "test_token"
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"result": {"id": 123, "metric_name": "updated_metric"}}
+        mock_response.json.return_value = {
+            "result": {"id": 123, "metric_name": "updated_metric"}
+        }
         mock_response.raise_for_status = MagicMock()
         mock_session.put.return_value = mock_response
 
         metric_data = {
             "metric_name": "updated_metric",
-            "description": "Updated description"
+            "description": "Updated description",
         }
 
         result = await superset_client.update_metric(1, 123, metric_data)
@@ -162,14 +164,14 @@ class TestSupersetClient:
         mock_session.put.assert_called_once_with(
             "http://test-superset.com/api/v1/dataset/1/metric/123",
             json=metric_data,
-            timeout=30
+            timeout=30,
         )
 
     @pytest.mark.asyncio
     async def test_delete_metric_success(self, superset_client, mock_session):
         """Test successful metric deletion."""
         superset_client.access_token = "test_token"
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
@@ -179,15 +181,14 @@ class TestSupersetClient:
 
         assert result is True
         mock_session.delete.assert_called_once_with(
-            "http://test-superset.com/api/v1/dataset/1/metric/123",
-            timeout=30
+            "http://test-superset.com/api/v1/dataset/1/metric/123", timeout=30
         )
 
     @pytest.mark.asyncio
     async def test_delete_metric_not_found(self, superset_client, mock_session):
         """Test metric deletion when metric doesn't exist."""
         superset_client.access_token = "test_token"
-        
+
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_session.delete.return_value = mock_response
@@ -200,7 +201,7 @@ class TestSupersetClient:
     async def test_delete_metric_failure(self, superset_client, mock_session):
         """Test metric deletion failure."""
         superset_client.access_token = "test_token"
-        
+
         mock_session.delete.side_effect = requests.RequestException("Delete failed")
 
         result = await superset_client.delete_metric(1, 123)
@@ -218,8 +219,7 @@ class TestSupersetClient:
 
         assert result is True
         mock_session.get.assert_called_once_with(
-            "http://test-superset.com/health",
-            timeout=10
+            "http://test-superset.com/health", timeout=10
         )
 
     @pytest.mark.asyncio

@@ -2,9 +2,13 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import {
   createAccount,
   getAccountsByOrganizationId,
+  deleteAccount,
+  moveAccount,
+  getOrganizations,
 } from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -31,7 +35,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { User, Plus, X, Settings, Check, ChevronDown } from "lucide-react";
+import {
+  User,
+  Plus,
+  X,
+  Settings,
+  Store,
+  AlertTriangle,
+  MoveRight,
+} from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
   TIMEZONE_OPTIONS,
@@ -119,6 +131,7 @@ const AccountsManagement = ({
   currentOrgId,
 }: AccountsManagementProps) => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     accountMetadata,
     setAccountMetadata,
@@ -140,6 +153,14 @@ const AccountsManagement = ({
     [],
   );
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+
+  // State for move account functionality
+  const [isMoveAccountDialogOpen, setIsMoveAccountDialogOpen] = useState(false);
+  const [targetOrganizationId, setTargetOrganizationId] = useState("");
+  const [availableOrganizations, setAvailableOrganizations] = useState<
+    Organization[]
+  >([]);
+  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
 
   // Refs for click-outside handling
   const editRegionDropdownRef = useRef<HTMLDivElement>(null);
@@ -301,10 +322,17 @@ const AccountsManagement = ({
 
       setIsModalOpen(false);
       setSelectedAccount(null);
-      alert("Account updated successfully.");
+      toast({
+        title: "Success",
+        description: "Account updated successfully.",
+      });
     } catch (error) {
       console.error("Error saving account:", error);
-      alert("Failed to update account. Please try again.");
+      toast({
+        title: "Error",
+        description: "Failed to update account. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -314,7 +342,12 @@ const AccountsManagement = ({
     console.log("[AccountsManagement] Form data:", createAccountFormData);
 
     if (!currentOrgId) {
-      alert("No organization selected. Please select an organization first.");
+      toast({
+        title: "Error",
+        description:
+          "No organization selected. Please select an organization first.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -322,7 +355,11 @@ const AccountsManagement = ({
       !createAccountFormData.account_name ||
       !createAccountFormData.industry
     ) {
-      alert("Please fill in required fields");
+      toast({
+        title: "Validation Error",
+        description: "Please fill in required fields",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -504,7 +541,241 @@ const AccountsManagement = ({
         error.response?.data?.detail ||
         error.message ||
         "Failed to create account";
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: "Error",
+        description: `Error: ${errorMessage}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Fetch organizations when move dialog opens
+  useEffect(() => {
+    if (isMoveAccountDialogOpen) {
+      const fetchOrganizations = async () => {
+        setIsLoadingOrganizations(true);
+        try {
+          const orgs = await getOrganizations();
+          // Filter out current organization and only show orgs where user has admin/owner permissions
+          const filteredOrgs = orgs.filter(
+            (org) =>
+              org.organization_id !== currentOrgId &&
+              (user?.permissions?.organizations?.[org.organization_id] ===
+                "admin" ||
+                user?.permissions?.organizations?.[org.organization_id] ===
+                  "owner"),
+          );
+          setAvailableOrganizations(filteredOrgs);
+        } catch (error) {
+          console.error(
+            "[AccountsManagement] Error fetching organizations:",
+            error,
+          );
+          toast({
+            title: "Error",
+            description: "Failed to load organizations. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsLoadingOrganizations(false);
+        }
+      };
+      fetchOrganizations();
+    }
+  }, [
+    isMoveAccountDialogOpen,
+    currentOrgId,
+    user?.permissions?.organizations,
+    toast,
+  ]);
+
+  const handleMoveAccount = async () => {
+    if (!selectedAccount || !targetOrganizationId) {
+      toast({
+        title: "Error",
+        description: "Please select a destination organization",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const targetOrg = availableOrganizations.find(
+      (org) => org.organization_id === targetOrganizationId,
+    );
+
+    if (!targetOrg) {
+      toast({
+        title: "Error",
+        description: "Invalid organization selected",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Show confirmation toast
+    toast({
+      title: "Confirm Move",
+      description: `Are you sure you want to move "${selectedAccount.account_name}" to "${targetOrg.organization_name}"?`,
+      action: (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              // User cancelled - just close the toast
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={async () => {
+              try {
+                console.log(
+                  "[AccountsManagement] Moving account:",
+                  selectedAccount.account_id,
+                  "to organization:",
+                  targetOrganizationId,
+                );
+
+                // Call the move API
+                await moveAccount(
+                  currentOrgId,
+                  selectedAccount.account_id,
+                  targetOrganizationId,
+                );
+
+                // Update local state - remove from current accounts list
+                setOrganizationAccounts((prev) =>
+                  prev.filter(
+                    (acc) => acc.account_id !== selectedAccount.account_id,
+                  ),
+                );
+
+                // Remove from account metadata
+                const newAccountMetadata = { ...accountMetadata };
+                delete newAccountMetadata[selectedAccount.account_id];
+                setAccountMetadata(newAccountMetadata);
+
+                // Update org metadata to remove account from current org
+                setOrgMetadata((prev) => ({
+                  ...prev,
+                  [currentOrgId]: {
+                    ...prev[currentOrgId],
+                    accounts:
+                      prev[currentOrgId]?.accounts?.filter(
+                        (acc) => acc.account_id !== selectedAccount.account_id,
+                      ) || [],
+                  },
+                }));
+
+                // Close dialogs
+                setIsMoveAccountDialogOpen(false);
+                setIsModalOpen(false);
+                setSelectedAccount(null);
+                setTargetOrganizationId("");
+
+                toast({
+                  title: "Account Moved",
+                  description: `"${selectedAccount.account_name}" has been moved to "${targetOrg.organization_name}" successfully.`,
+                });
+
+                console.log("[AccountsManagement] Account moved successfully");
+              } catch (error: any) {
+                console.error(
+                  "[AccountsManagement] Error moving account:",
+                  error,
+                );
+
+                const errorMessage =
+                  error.response?.data?.detail ||
+                  error.message ||
+                  "Failed to move account";
+
+                toast({
+                  title: "Error",
+                  description: `Error: ${errorMessage}`,
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Confirm
+          </Button>
+        </div>
+      ),
+    });
+  };
+
+  const handleDeleteAccount = async (account: Account | null) => {
+    if (!account) {
+      toast({
+        title: "Error",
+        description: "No account selected for deletion",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Show confirmation dialog
+    if (
+      !window.confirm(
+        `Are you sure you want to delete the account "${account.account_name}"? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      console.log("[AccountsManagement] Deleting account:", account.account_id);
+
+      // Delete account from Neo4j
+      await deleteAccount(account.account_id);
+
+      // Remove from local state
+      setOrganizationAccounts((prev) =>
+        prev.filter((acc) => acc.account_id !== account.account_id),
+      );
+
+      // Remove from account metadata
+      const newAccountMetadata = { ...accountMetadata };
+      delete newAccountMetadata[account.account_id];
+      setAccountMetadata(newAccountMetadata);
+
+      // Remove from user permissions
+      if (user?.permissions?.accounts) {
+        const newAccountPermissions = { ...user.permissions.accounts };
+        delete newAccountPermissions[account.account_id];
+        updateUser({
+          permissions: {
+            ...user.permissions,
+            accounts: newAccountPermissions,
+          },
+        });
+      }
+
+      // Close the modal
+      setIsModalOpen(false);
+
+      toast({
+        title: "Account Deleted",
+        description: `"${account.account_name}" has been permanently deleted.`,
+      });
+
+      console.log("[AccountsManagement] Account deleted successfully");
+    } catch (error: any) {
+      console.error("[AccountsManagement] Error deleting account:", error);
+
+      const errorMessage =
+        error.response?.data?.detail ||
+        error.message ||
+        "Failed to delete account";
+
+      toast({
+        title: "Error",
+        description: `Error: ${errorMessage}`,
+        variant: "destructive",
+      });
     }
   };
 
@@ -566,7 +837,7 @@ const AccountsManagement = ({
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <User className="h-5 w-5" />
+              <Store className="h-5 w-5" />
               Accounts
             </div>
             <Button
@@ -591,8 +862,8 @@ const AccountsManagement = ({
                 className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-blue-600" />
+                  <div className="w-8 h-8 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
+                    <User className="h-4 w-4 text-brand-medium-blue" />
                   </div>
                   <div>
                     <h4 className="font-medium text-gray-900">
@@ -845,6 +1116,61 @@ const AccountsManagement = ({
                 ))}
               </div>
             </div>
+
+            {/* Danger Zone */}
+            <div className="pt-6">
+              <div className="border border-red-200 rounded-lg p-4 bg-red-50/50">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                  <h3 className="text-sm font-medium text-red-600">
+                    Danger Zone
+                  </h3>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <Label className="text-blue-600 text-sm font-medium">
+                        Move Account
+                      </Label>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Move this account to a different organization
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setIsMoveAccountDialogOpen(true);
+                        setTargetOrganizationId("");
+                      }}
+                      className="ml-4 text-blue-600 border-blue-200 hover:bg-blue-50"
+                    >
+                      <MoveRight className="h-4 w-4 mr-1" />
+                      Move Account
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <Label className="text-red-600 text-sm font-medium">
+                        Delete Account
+                      </Label>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Permanently delete this account and all associated data
+                      </p>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDeleteAccount(selectedAccount)}
+                      className="ml-4"
+                    >
+                      Delete Account
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="flex gap-2 pt-4">
               <Button
                 variant="outline"
@@ -1091,6 +1417,102 @@ const AccountsManagement = ({
               </Button>
               <Button onClick={handleCreateAccount} className="flex-1">
                 Create Account
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move Account Dialog */}
+      <Dialog
+        open={isMoveAccountDialogOpen}
+        onOpenChange={(open) => {
+          setIsMoveAccountDialogOpen(open);
+          if (!open) {
+            setTargetOrganizationId("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move Account to Another Organization</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <p className="text-sm text-gray-600">
+              Select the organization you want to move "
+              {selectedAccount?.account_name}" to:
+            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="target-organization">
+                Destination Organization
+              </Label>
+              <Select
+                value={targetOrganizationId}
+                onValueChange={setTargetOrganizationId}
+                disabled={isLoadingOrganizations}
+              >
+                <SelectTrigger id="target-organization">
+                  <SelectValue
+                    placeholder={
+                      isLoadingOrganizations
+                        ? "Loading..."
+                        : "Select an organization"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableOrganizations.length === 0 &&
+                  !isLoadingOrganizations ? (
+                    <div className="p-2 text-sm text-gray-500 text-center">
+                      No organizations available
+                    </div>
+                  ) : (
+                    availableOrganizations.map((org) => (
+                      <SelectItem
+                        key={org.organization_id}
+                        value={org.organization_id}
+                      >
+                        <div className="flex flex-col">
+                          <span>{org.organization_name}</span>
+                          <span className="text-xs text-gray-500">
+                            {org.plan}
+                            {org.company_size ? ` • ${org.company_size}` : ""}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {targetOrganizationId && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-sm text-amber-800">
+                  <strong>Note:</strong> Moving this account will transfer all
+                  associated data to the new organization.
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsMoveAccountDialogOpen(false);
+                  setTargetOrganizationId("");
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleMoveAccount}
+                disabled={!targetOrganizationId || isLoadingOrganizations}
+                className="flex-1"
+              >
+                Move Account
               </Button>
             </div>
           </div>

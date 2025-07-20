@@ -70,11 +70,13 @@ cd ..
 
 ### 2. Configure Environment
 
-#### Setup Neo4j Instances
+#### Setup Required Services
 
-For local development with environment separation, set up three Neo4j Aura instances:
-1. Create free instances at [neo4j.com/aura](https://neo4j.com/aura/) for dev, staging, and prod
-2. Download credentials for each instance
+Before configuring the application, set up these external services:
+
+1. **Neo4j Aura Instances**: Create free instances at [neo4j.com/aura](https://neo4j.com/aura/) for dev, staging, and prod
+2. **Firebase Projects**: Set up Firebase projects for authentication
+3. **reCAPTCHA Keys**: Create reCAPTCHA v3 keys at [google.com/recaptcha/admin](https://www.google.com/recaptcha/admin)
 
 #### Configure API Environment
 
@@ -85,7 +87,12 @@ cp .env.example .env.development
 cp .env.example .env.staging  
 cp .env.example .env.production
 
-# Edit each file with appropriate Neo4j credentials and settings
+# Edit each file with:
+# - Neo4j credentials for each environment
+# - Google Cloud project IDs
+# - reCAPTCHA site and secret keys (different for each environment)
+# - Firebase service account paths
+
 # Set environment (copies .env.development to .env)
 ./scripts/set_environment.sh development
 cd ..
@@ -94,17 +101,35 @@ cd ..
 #### Configure Frontend Environment
 
 ```bash
-# Create frontend environment
-cat > frontend/.env.local << EOF
-VITE_API_BASE_URL=http://localhost:8000
-VITE_FIREBASE_API_KEY=your-firebase-api-key
-VITE_FIREBASE_AUTH_DOMAIN=your-auth-domain
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-storage-bucket
-VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
-VITE_FIREBASE_APP_ID=your-app-id
-EOF
+# Copy environment files
+cd frontend
+cp .env.example .env.development
+cp .env.example .env.staging
+cp .env.example .env.production
+
+# Edit each file with:
+# - Firebase configuration for each environment
+# - reCAPTCHA site keys (must match API environment)
+# - API base URLs
+
+# Set environment (copies .env.development to .env.local)
+./scripts/set_environment.sh development
+cd ..
 ```
+
+#### reCAPTCHA Configuration
+
+**Important**: Each environment requires its own reCAPTCHA v3 keys:
+
+1. Go to [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin)
+2. Create separate v3 keys for each environment:
+   - **Development**: Add `localhost`, `127.0.0.1` as domains
+   - **Staging**: Add your staging domain
+   - **Production**: Add your production domain
+3. Add the site key to frontend `.env.*` files as `VITE_RECAPTCHA_SITE_KEY`
+4. Add both site and secret keys to API `.env.*` files as `RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY`
+
+**Note**: The site key must match between frontend and API for each environment.
 
 ### 3. Start Development Servers
 
@@ -115,7 +140,18 @@ cd api
 uv run --active uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: Start frontend
-cd frontend && npm run dev
+cd frontend
+# Option 1: Use predefined environment scripts (recommended)
+npm run dev:development  # Uses .env.development (port 8080)
+npm run dev:staging     # Uses .env.staging (port 8080)
+npm run dev:production  # Uses .env.production (port 8080)
+
+# Option 2: Use base command with mode flag
+npm run dev             # Uses default .env file
+npm run dev -- --mode staging  # Uses .env.staging
+
+# Note: The predefined scripts (dev:development, dev:staging, dev:production) are cleaner 
+# and avoid the need for the double dash (--) syntax
 
 # Access applications:
 # - Frontend: http://localhost:8080
@@ -153,11 +189,28 @@ pytest tests/                            # Run tests
 ### Frontend Development
 ```bash
 cd frontend
-npm run dev          # Start dev server (port 8080)
-npm run build        # Build for production
-npm test            # Run tests
-npm run typecheck   # Type checking
-npm run format.fix  # Format code
+
+# Environment-specific dev servers (recommended)
+npm run dev:development  # Start dev server with .env.development (port 8080)
+npm run dev:staging     # Start dev server with .env.staging (port 8080)
+npm run dev:production  # Start dev server with .env.production (port 8080)
+
+# Alternative: Base command with mode flag
+npm run dev             # Uses default .env file
+npm run dev -- --mode staging  # Uses .env.staging (requires -- before flags)
+
+# Build commands
+npm run build          # Build for production
+npm run build:staging  # Build for staging environment
+npm run build:production # Build for production environment
+
+# Testing and tooling
+npm test              # Run Vitest tests
+npm run typecheck     # TypeScript type checking
+npm run format.fix    # Format code with Prettier
+
+# Environment switching
+./scripts/set_environment.sh [development|staging|production]  # Switch environment files
 ```
 
 ### Data Pipeline

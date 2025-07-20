@@ -853,7 +853,7 @@ const Performance = () => {
                       className={cn(
                         "text-sm font-medium",
                         metric.changeType === "positive"
-                          ? "text-green-600"
+                          ? "text-brand-dark-green"
                           : "text-red-600",
                       )}
                     >
@@ -960,7 +960,7 @@ const Performance = () => {
                       <div>
                         <div className="flex items-center gap-4 text-sm">
                           <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                            <div className="w-3 h-3 bg-brand-medium-blue rounded-full"></div>
                             <span className="font-medium">
                               {
                                 objectiveData[selectedObjective]
@@ -969,7 +969,7 @@ const Performance = () => {
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                            <div className="w-3 h-3 bg-brand-light-green rounded-full"></div>
                             <span className="font-medium">
                               {objectiveData[selectedObjective].efficiencyKPI}
                             </span>

@@ -2,7 +2,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+} from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import "./App.css";
@@ -14,13 +20,17 @@ import BigBets from "./pages/BigBets";
 import Exploration from "./pages/Exploration";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
+import KnowledgeProducts from "./pages/KnowledgeProducts";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
+import Settings from "./pages/Settings";
 import OrganizationSelection from "./pages/OrganizationSelection";
+import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
+import EmailActionHandler from "./components/auth/EmailActionHandler";
 
 const queryClient = new QueryClient();
 
@@ -37,8 +47,10 @@ const App = () => (
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            {/* Unprotected route for organization creation */}
+            {/* Unprotected routes */}
             <Route path="/create-organization" element={<AccountSettings />} />
+            <Route path="/invite/:token" element={<AcceptInvitation />} />
+            <Route path="/auth/action" element={<EmailActionHandler />} />
             {/* Protected routes */}
             <Route
               path="/"
@@ -73,7 +85,7 @@ const App = () => (
               }
             />
             <Route
-              path="/measurement-strategy"
+              path="/knowledge/strategy"
               element={
                 <ProtectedRoute>
                   <Index />
@@ -105,6 +117,14 @@ const App = () => (
               }
             />
             <Route
+              path="/knowledge/products"
+              element={
+                <ProtectedRoute>
+                  <KnowledgeProducts />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/knowledge/metrics"
               element={
                 <ProtectedRoute>
@@ -121,7 +141,7 @@ const App = () => (
               }
             />
             <Route
-              path="/insights"
+              path="/knowledge/insights"
               element={
                 <ProtectedRoute>
                   <Insights />
@@ -129,7 +149,16 @@ const App = () => (
               }
             />
             <Route
-              path="/account-settings"
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Settings />
+                </ProtectedRoute>
+              }
+            />
+            {/* New organized settings routes */}
+            <Route
+              path="/settings/organization"
               element={
                 <ProtectedRoute>
                   <AccountSettings />
@@ -137,12 +166,33 @@ const App = () => (
               }
             />
             <Route
-              path="/user-settings"
+              path="/settings/account/:accountId"
+              element={
+                <ProtectedRoute>
+                  <AccountSettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/user"
               element={
                 <ProtectedRoute>
                   <UserSettings />
                 </ProtectedRoute>
               }
+            />
+            {/* Backward compatibility routes */}
+            <Route
+              path="/organization-settings"
+              element={<Navigate to="/settings/organization" replace />}
+            />
+            <Route
+              path="/account-settings"
+              element={<Navigate to="/settings/organization" replace />}
+            />
+            <Route
+              path="/user-settings"
+              element={<Navigate to="/settings/user" replace />}
             />
             <Route
               path="/organization-selection"

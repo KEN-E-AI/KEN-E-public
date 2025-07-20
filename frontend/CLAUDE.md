@@ -20,8 +20,13 @@ The KEN-E frontend is a modern React TypeScript application built with Vite, fea
 
 ## Common Development Commands
 
-- `npm run dev` - Start development server on port 8080
+- `npm run dev` - Start development server on port 8080 (uses default development mode)
+- `npm run dev:development` - Start development server with development environment
+- `npm run dev:staging` - Start development server with staging environment
+- `npm run dev:production` - Start development server with production environment (use with caution!)
 - `npm run build` - Build for production
+- `npm run build:staging` - Build for staging environment
+- `npm run build:production` - Build for production environment
 - `npm run test` - Run Vitest tests
 - `npm run typecheck` - Run TypeScript type checking
 - `npm run format.fix` - Format code with Prettier
@@ -67,6 +72,30 @@ Key routes:
 - `/account-settings`, `/user-settings` - Settings pages
 
 ## Styling System
+
+### CSS File Structure
+
+**IMPORTANT**: Be aware of the CSS cascade and file hierarchy:
+
+1. **`src/App.css`**: This file should be kept minimal or empty. Default Vite/React templates include global styles here that can interfere with the dashboard layout:
+
+   ```css
+   /* AVOID these common template styles that break dashboard layouts: */
+   #root {
+     text-align: center; /* Centers ALL text globally */
+     max-width: 1280px; /* Constrains app width */
+     margin: 0 auto; /* Centers the entire app */
+     padding: 2rem; /* Adds unwanted padding */
+   }
+   ```
+
+2. **`src/index.css`**: Contains Tailwind directives and CSS custom properties (variables). This is where global styles should go:
+
+   - CSS variables for colors (using oklch color space)
+   - Base styles using `@layer base`
+   - Component-specific overrides
+
+3. **Component styles**: Use Tailwind utility classes directly in components. Avoid inline styles or separate CSS files.
 
 ### TailwindCSS Configuration
 
@@ -459,6 +488,23 @@ const handleClick = useCallback(
 ```
 
 ## Common Patterns & Solutions
+
+### Layout Troubleshooting
+
+When debugging layout issues (centered content, unexpected spacing, etc.):
+
+1. **Check App.css first** - Default Vite templates include problematic global styles
+2. **Inspect CSS cascade** - Use browser DevTools to see which styles are being applied
+3. **Look for container constraints**:
+   - `max-w-*` classes that limit width
+   - `mx-auto` that centers content
+   - `text-center` that centers text alignment
+4. **Verify padding calculations** - The Layout components calculate padding based on sidebar widths:
+   - IconNavigation: `w-14` (3.5rem = 56px)
+   - ContextSidebar collapsed: `w-16` (4rem = 64px)
+   - ContextSidebar expanded: `w-80` (20rem = 320px)
+   - Total when collapsed: 120px (7.5rem)
+   - Total when expanded: 376px (23.5rem)
 
 ### Loading States
 

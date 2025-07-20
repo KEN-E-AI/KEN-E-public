@@ -1,19 +1,17 @@
 """Superset saved queries router for CRUD operations on Superset saved queries."""
 
 import logging
-from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
-from ..superset import SupersetClient, SupersetClientError, get_superset_client
 from ..models.kene_models import (
-    ACCOUNT_ID_DESCRIPTION,
+    QueryExecutionResponse,
+    SavedQueryListResponse,
     SavedQueryRequest,
     SavedQueryResponse,
-    SavedQueryListResponse,
-    QueryExecutionResponse,
     SuccessResponse,
 )
+from ..superset import SupersetClient, SupersetClientError, get_superset_client
 
 router = APIRouter(tags=["superset-saved-queries"])
 
@@ -32,7 +30,7 @@ async def get_saved_queries_by_account(
 ) -> SavedQueryListResponse:
     """
     Get all saved queries where the schema name matches the pattern '<account_id>_output'.
-    
+
     This endpoint retrieves all saved queries in Superset that belong to a specific account
     based on the schema naming convention.
     """
@@ -44,8 +42,10 @@ async def get_saved_queries_by_account(
 
         # Get saved queries matching the account pattern
         schema_pattern = f"{account_id}_output"
-        saved_queries_data = await superset.get_saved_queries_by_schema_pattern(schema_pattern)
-        
+        saved_queries_data = await superset.get_saved_queries_by_schema_pattern(
+            schema_pattern
+        )
+
         # Convert to response model
         saved_queries = []
         for query_data in saved_queries_data:
@@ -57,22 +57,27 @@ async def get_saved_queries_by_account(
                 schema_name=query_data.get("schema", ""),
                 sql=query_data.get("sql", ""),
                 created_on=query_data.get("created_on"),
-                changed_on=query_data.get("changed_on")
+                changed_on=query_data.get("changed_on"),
             )
             saved_queries.append(saved_query)
-        
-        logger.info(f"Retrieved {len(saved_queries)} saved queries for account {account_id}")
-        
+
+        logger.info(
+            f"Retrieved {len(saved_queries)} saved queries for account {account_id}"
+        )
+
         return SavedQueryListResponse(
-            saved_queries=saved_queries,
-            total=len(saved_queries)
+            saved_queries=saved_queries, total=len(saved_queries)
         )
 
     except SupersetClientError as e:
-        logger.error(f"Superset error while getting saved queries for account {account_id}: {e}")
+        logger.error(
+            f"Superset error while getting saved queries for account {account_id}: {e}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error while getting saved queries for account {account_id}: {e}")
+        logger.error(
+            f"Unexpected error while getting saved queries for account {account_id}: {e}"
+        )
         raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE)
 
 
@@ -83,7 +88,7 @@ async def create_saved_query(
 ) -> SavedQueryResponse:
     """
     Create a new saved query in Superset.
-    
+
     Creates a new saved query with the provided SQL, schema, and metadata.
     """
     try:
@@ -98,14 +103,16 @@ async def create_saved_query(
             "description": request.description,
             "db_id": request.database_id,  # Superset expects 'db_id' not 'database_id'
             "schema": request.schema_name,  # Convert back to 'schema' for Superset API
-            "sql": request.sql
+            "sql": request.sql,
         }
-        
+
         # Create the saved query
         created_query = await superset.create_saved_query(query_data)
-        
-        logger.info(f"Created saved query '{request.label}' with ID {created_query.get('id')}")
-        
+
+        logger.info(
+            f"Created saved query '{request.label}' with ID {created_query.get('id')}"
+        )
+
         return SavedQueryResponse(
             id=created_query.get("id", 0),
             label=created_query.get("label", ""),
@@ -114,14 +121,18 @@ async def create_saved_query(
             schema_name=created_query.get("schema", ""),
             sql=created_query.get("sql", ""),
             created_on=created_query.get("created_on"),
-            changed_on=created_query.get("changed_on")
+            changed_on=created_query.get("changed_on"),
         )
 
     except SupersetClientError as e:
-        logger.error(f"Superset error while creating saved query '{request.label}': {e}")
+        logger.error(
+            f"Superset error while creating saved query '{request.label}': {e}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error while creating saved query '{request.label}': {e}")
+        logger.error(
+            f"Unexpected error while creating saved query '{request.label}': {e}"
+        )
         raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE)
 
 
@@ -133,7 +144,7 @@ async def update_saved_query(
 ) -> SavedQueryResponse:
     """
     Update an existing saved query in Superset.
-    
+
     Updates the saved query with the provided ID using the new data.
     """
     try:
@@ -148,14 +159,14 @@ async def update_saved_query(
             "description": request.description,
             "db_id": request.database_id,  # Superset expects 'db_id' not 'database_id'
             "schema": request.schema_name,  # Convert back to 'schema' for Superset API
-            "sql": request.sql
+            "sql": request.sql,
         }
-        
+
         # Update the saved query
         updated_query = await superset.update_saved_query(query_id, query_data)
-        
+
         logger.info(f"Updated saved query {query_id} with label '{request.label}'")
-        
+
         return SavedQueryResponse(
             id=updated_query.get("id", query_id),
             label=updated_query.get("label", ""),
@@ -164,7 +175,7 @@ async def update_saved_query(
             schema_name=updated_query.get("schema", ""),
             sql=updated_query.get("sql", ""),
             created_on=updated_query.get("created_on"),
-            changed_on=updated_query.get("changed_on")
+            changed_on=updated_query.get("changed_on"),
         )
 
     except SupersetClientError as e:
@@ -182,7 +193,7 @@ async def delete_saved_query(
 ) -> SuccessResponse:
     """
     Delete a saved query from Superset.
-    
+
     Permanently removes the saved query with the specified ID.
     """
     try:
@@ -193,15 +204,16 @@ async def delete_saved_query(
 
         # Delete the saved query
         success = await superset.delete_saved_query(query_id)
-        
+
         if not success:
-            raise HTTPException(status_code=404, detail=f"Saved query {query_id} not found")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Saved query {query_id} not found"
+            )
+
         logger.info(f"Deleted saved query {query_id}")
-        
+
         return SuccessResponse(
-            success=True,
-            message=f"Saved query {query_id} deleted successfully"
+            success=True, message=f"Saved query {query_id} deleted successfully"
         )
 
     except SupersetClientError as e:
@@ -219,7 +231,7 @@ async def execute_saved_query(
 ) -> QueryExecutionResponse:
     """
     Execute a saved query and return the results.
-    
+
     Finds the saved query by label and executes it, returning the query results.
     """
     try:
@@ -230,16 +242,16 @@ async def execute_saved_query(
 
         # Execute the saved query
         execution_result = await superset.execute_saved_query(query_label)
-        
+
         logger.info(f"Executed saved query '{query_label}'")
-        
+
         return QueryExecutionResponse(
             query_id=execution_result.get("query_id"),
             status=execution_result.get("status", "unknown"),
             data=execution_result.get("data"),
             columns=execution_result.get("columns"),
             error=execution_result.get("error"),
-            query=execution_result.get("query")
+            query=execution_result.get("query"),
         )
 
     except SupersetClientError as e:
@@ -248,7 +260,9 @@ async def execute_saved_query(
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error while executing saved query '{query_label}': {e}")
+        logger.error(
+            f"Unexpected error while executing saved query '{query_label}': {e}"
+        )
         raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE)
 
 
@@ -259,7 +273,7 @@ async def execute_saved_query_get(
 ) -> QueryExecutionResponse:
     """
     Execute a saved query and return the results (GET method).
-    
+
     Alternative GET endpoint for executing saved queries by label.
     """
     return await execute_saved_query(query_label, superset)

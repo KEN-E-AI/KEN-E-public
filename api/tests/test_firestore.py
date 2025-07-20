@@ -1,9 +1,9 @@
 """Tests for the Firestore router."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 
@@ -33,16 +33,22 @@ def mock_firestore_service():
     mock_service.get_all_kpi_settings.return_value = {
         "income_kpi": "metric123",
         "marketing_cost_kpi": "metric456",
-        "net_income_kpi": "metric789"
+        "net_income_kpi": "metric789",
     }
     # Add channel method mocks
-    mock_service.create_channel.return_value = {"channel_name": "test", "effectiveness_kpi": "metric123"}
+    mock_service.create_channel.return_value = {
+        "channel_name": "test",
+        "effectiveness_kpi": "metric123",
+    }
     mock_service.get_channel.return_value = {"effectiveness_kpi": "metric123"}
     mock_service.list_channels.return_value = []
     mock_service.update_channel.return_value = {"effectiveness_kpi": "metric123"}
     mock_service.delete_channel.return_value = True
     # Add tactic method mocks
-    mock_service.create_tactic.return_value = {"tactic_name": "test", "effectiveness_kpi": "metric123"}
+    mock_service.create_tactic.return_value = {
+        "tactic_name": "test",
+        "effectiveness_kpi": "metric123",
+    }
     mock_service.get_tactic.return_value = {"effectiveness_kpi": "metric123"}
     mock_service.list_tactics.return_value = []
     mock_service.update_tactic.return_value = {"effectiveness_kpi": "metric123"}
@@ -70,7 +76,7 @@ class TestFirestoreRouter:
             "account_id": "test_account",
             "collection": "test_collection",
             "document_id": "test_doc",
-            "data": {"field1": "value1", "field2": "value2"}
+            "data": {"field1": "value1", "field2": "value2"},
         }
 
         response = client.post("/api/v1/firestore/documents", json=create_request)
@@ -85,13 +91,15 @@ class TestFirestoreRouter:
         mock_firestore_service.create_document.assert_called_once_with(
             collection="test_collection",
             document_id="test_doc",
-            data={"field1": "value1", "field2": "value2"}
+            data={"field1": "value1", "field2": "value2"},
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_create_document_firestore_unavailable(self, client, mock_firestore_service):
+    def test_create_document_firestore_unavailable(
+        self, client, mock_firestore_service
+    ):
         """Test creating a document when Firestore is unavailable."""
         mock_firestore_service.health_check.return_value = False
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -99,7 +107,7 @@ class TestFirestoreRouter:
         create_request = {
             "account_id": "test_account",
             "collection": "test_collection",
-            "data": {"field1": "value1"}
+            "data": {"field1": "value1"},
         }
 
         response = client.post("/api/v1/firestore/documents", json=create_request)
@@ -116,7 +124,7 @@ class TestFirestoreRouter:
 
         response = client.get(
             "/api/v1/firestore/documents/test_collection/test_doc",
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
@@ -127,8 +135,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_document.assert_called_once_with(
-            collection="test_collection",
-            document_id="test_doc"
+            collection="test_collection", document_id="test_doc"
         )
 
         # Clean up
@@ -141,7 +148,7 @@ class TestFirestoreRouter:
 
         response = client.get(
             "/api/v1/firestore/documents/test_collection/nonexistent_doc",
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 404
@@ -159,7 +166,7 @@ class TestFirestoreRouter:
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
@@ -169,9 +176,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.update_document.assert_called_once_with(
-            collection="test_collection",
-            document_id="test_doc",
-            data=update_data
+            collection="test_collection", document_id="test_doc", data=update_data
         )
 
         # Clean up
@@ -187,7 +192,7 @@ class TestFirestoreRouter:
         response = client.put(
             "/api/v1/firestore/documents/test_collection/nonexistent_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 404
@@ -204,14 +209,14 @@ class TestFirestoreRouter:
             "update": {
                 "operator": "arrayUnion",
                 "field": "accounts",
-                "value": {"account_id": "new_account", "name": "New Account"}
+                "value": {"account_id": "new_account", "name": "New Account"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
@@ -224,7 +229,7 @@ class TestFirestoreRouter:
             collection="test_collection",
             document_id="test_doc",
             field="accounts",
-            value={"account_id": "new_account", "name": "New Account"}
+            value={"account_id": "new_account", "name": "New Account"},
         )
 
         # Clean up
@@ -235,20 +240,20 @@ class TestFirestoreRouter:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         update_data = {
-            "update": {
-                "operator": "arrayUnion",
-                "value": {"account_id": "new_account"}
-            }
+            "update": {"operator": "arrayUnion", "value": {"account_id": "new_account"}}
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "arrayUnion operation requires 'field' and 'value' parameters" in response.json()["detail"]
+        assert (
+            "arrayUnion operation requires 'field' and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -257,21 +262,19 @@ class TestFirestoreRouter:
         """Test arrayUnion operation with missing value parameter."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_data = {
-            "update": {
-                "operator": "arrayUnion",
-                "field": "accounts"
-            }
-        }
+        update_data = {"update": {"operator": "arrayUnion", "field": "accounts"}}
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "arrayUnion operation requires 'field' and 'value' parameters" in response.json()["detail"]
+        assert (
+            "arrayUnion operation requires 'field' and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -286,20 +289,27 @@ class TestFirestoreRouter:
                 "field": "accounts",
                 "matchField": "account_id",
                 "matchValue": "acc_001",
-                "value": {"account_id": "acc_001", "name": "Updated Account", "status": "premium"}
+                "value": {
+                    "account_id": "acc_001",
+                    "name": "Updated Account",
+                    "status": "premium",
+                },
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Replace operation on field 'accounts' where account_id=acc_001" in data["message"]
+        assert (
+            "Replace operation on field 'accounts' where account_id=acc_001"
+            in data["message"]
+        )
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.replace_array_element.assert_called_once_with(
@@ -308,7 +318,11 @@ class TestFirestoreRouter:
             field="accounts",
             match_field="account_id",
             match_value="acc_001",
-            new_value={"account_id": "acc_001", "name": "Updated Account", "status": "premium"}
+            new_value={
+                "account_id": "acc_001",
+                "name": "Updated Account",
+                "status": "premium",
+            },
         )
 
         # Clean up
@@ -322,7 +336,7 @@ class TestFirestoreRouter:
             "update": {
                 "operator": "replaceOne",
                 "field": "accounts",
-                "matchField": "account_id"
+                "matchField": "account_id",
                 # Missing matchValue and value
             }
         }
@@ -330,11 +344,14 @@ class TestFirestoreRouter:
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters" in response.json()["detail"]
+        assert (
+            "replaceOne operation requires 'field', 'matchField', 'matchValue', and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -350,14 +367,14 @@ class TestFirestoreRouter:
                 "field": "accounts",
                 "matchField": "account_id",
                 "matchValue": "nonexistent_id",
-                "value": {"account_id": "nonexistent_id", "name": "Updated Account"}
+                "value": {"account_id": "nonexistent_id", "name": "Updated Account"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 404
@@ -374,19 +391,24 @@ class TestFirestoreRouter:
             "update": {
                 "operator": "invalidOperator",
                 "field": "accounts",
-                "value": {"test": "value"}
+                "value": {"test": "value"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "Unsupported update operator: invalidOperator" in response.json()["detail"]
-        assert "Supported operators: arrayUnion, replaceOne, set" in response.json()["detail"]
+        assert (
+            "Unsupported update operator: invalidOperator" in response.json()["detail"]
+        )
+        assert (
+            "Supported operators: arrayUnion, replaceOne, set"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -400,14 +422,14 @@ class TestFirestoreRouter:
             "update": {
                 "operator": "arrayUnion",
                 "field": "accounts",
-                "value": {"account_id": "new_account"}
+                "value": {"account_id": "new_account"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 503
@@ -425,14 +447,14 @@ class TestFirestoreRouter:
             "update": {
                 "operator": "arrayUnion",
                 "field": "accounts",
-                "value": {"account_id": "new_account"}
+                "value": {"account_id": "new_account"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 404
@@ -447,7 +469,7 @@ class TestFirestoreRouter:
 
         response = client.delete(
             "/api/v1/firestore/documents/test_collection/test_doc",
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
@@ -457,14 +479,15 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.delete_document.assert_called_once_with(
-            collection="test_collection",
-            document_id="test_doc"
+            collection="test_collection", document_id="test_doc"
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_create_subcollection_document_success(self, client, mock_firestore_service):
+    def test_create_subcollection_document_success(
+        self, client, mock_firestore_service
+    ):
         """Test creating a subcollection document successfully."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -473,7 +496,10 @@ class TestFirestoreRouter:
         response = client.post(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications",
             json=create_data,
-            params={"subdocument_id": "email_notifications", "account_id": "test_account"}
+            params={
+                "subdocument_id": "email_notifications",
+                "account_id": "test_account",
+            },
         )
 
         assert response.status_code == 200
@@ -488,7 +514,7 @@ class TestFirestoreRouter:
             document_id="test_doc",
             subcollection="notifications",
             subdocument_id="email_notifications",
-            data=create_data
+            data=create_data,
         )
 
         # Clean up
@@ -513,7 +539,7 @@ class TestFirestoreRouter:
             collection="test_collection",
             document_id="test_doc",
             subcollection="notifications",
-            subdocument_id="email_notifications"
+            subdocument_id="email_notifications",
         )
 
         # Clean up
@@ -534,7 +560,9 @@ class TestFirestoreRouter:
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_success(self, client, mock_firestore_service):
+    def test_update_subcollection_document_success(
+        self, client, mock_firestore_service
+    ):
         """Test updating a subcollection document successfully."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -543,13 +571,16 @@ class TestFirestoreRouter:
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Subcollection document email_notifications updated successfully" in data["message"]
+        assert (
+            "Subcollection document email_notifications updated successfully"
+            in data["message"]
+        )
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.update_subcollection_document.assert_called_once_with(
@@ -557,13 +588,15 @@ class TestFirestoreRouter:
             document_id="test_doc",
             subcollection="notifications",
             subdocument_id="email_notifications",
-            data=update_data
+            data=update_data,
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_array_union(self, client, mock_firestore_service):
+    def test_update_subcollection_document_array_union(
+        self, client, mock_firestore_service
+    ):
         """Test updating a subcollection document with arrayUnion operation."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -571,14 +604,14 @@ class TestFirestoreRouter:
             "update": {
                 "operator": "arrayUnion",
                 "field": "subscriptions",
-                "value": {"type": "newsletter", "status": "active"}
+                "value": {"type": "newsletter", "status": "active"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
@@ -593,13 +626,15 @@ class TestFirestoreRouter:
             subcollection="notifications",
             subdocument_id="email_notifications",
             field="subscriptions",
-            value={"type": "newsletter", "status": "active"}
+            value={"type": "newsletter", "status": "active"},
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_replace_one(self, client, mock_firestore_service):
+    def test_update_subcollection_document_replace_one(
+        self, client, mock_firestore_service
+    ):
         """Test updating a subcollection document with replaceOne operation."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -609,20 +644,27 @@ class TestFirestoreRouter:
                 "field": "subscriptions",
                 "matchField": "type",
                 "matchValue": "newsletter",
-                "value": {"type": "newsletter", "status": "inactive", "updated": "2025-07-02"}
+                "value": {
+                    "type": "newsletter",
+                    "status": "inactive",
+                    "updated": "2025-07-02",
+                },
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Replace operation on field 'subscriptions' where type=newsletter" in data["message"]
+        assert (
+            "Replace operation on field 'subscriptions' where type=newsletter"
+            in data["message"]
+        )
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.replace_array_element_subcollection.assert_called_once_with(
@@ -633,32 +675,41 @@ class TestFirestoreRouter:
             field="subscriptions",
             match_field="type",
             match_value="newsletter",
-            new_value={"type": "newsletter", "status": "inactive", "updated": "2025-07-02"}
+            new_value={
+                "type": "newsletter",
+                "status": "inactive",
+                "updated": "2025-07-02",
+            },
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_delete_subcollection_document_success(self, client, mock_firestore_service):
+    def test_delete_subcollection_document_success(
+        self, client, mock_firestore_service
+    ):
         """Test deleting a subcollection document successfully."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         response = client.delete(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Subcollection document email_notifications deleted successfully" in data["message"]
+        assert (
+            "Subcollection document email_notifications deleted successfully"
+            in data["message"]
+        )
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.delete_subcollection_document.assert_called_once_with(
             collection="test_collection",
             document_id="test_doc",
             subcollection="notifications",
-            subdocument_id="email_notifications"
+            subdocument_id="email_notifications",
         )
 
         # Clean up
@@ -674,7 +725,7 @@ class TestFirestoreRouter:
             "field": "status",
             "operator": "==",
             "value": "active",
-            "limit": 10
+            "limit": 10,
         }
 
         response = client.post("/api/v1/firestore/documents/query", json=query_request)
@@ -691,7 +742,7 @@ class TestFirestoreRouter:
             field="status",
             operator="==",
             value="active",
-            limit=10
+            limit=10,
         )
 
         # Clean up
@@ -703,7 +754,7 @@ class TestFirestoreRouter:
 
         response = client.get(
             "/api/v1/firestore/collections/test_collection/documents",
-            params={"account_id": "test_account", "limit": 5}
+            params={"account_id": "test_account", "limit": 5},
         )
 
         assert response.status_code == 200
@@ -714,8 +765,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.list_documents.assert_called_once_with(
-            collection="test_collection",
-            limit=5
+            collection="test_collection", limit=5
         )
 
         # Clean up
@@ -755,7 +805,9 @@ class TestFirestoreRouter:
         mock_firestore_service.get_kpi_setting.return_value = "metric123"
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/org123/account123/income_kpi")
+        response = client.get(
+            "/api/v1/firestore/kpi-settings/org123/account123/income_kpi"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -766,9 +818,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_kpi_setting.assert_called_once_with(
-            organization_id="org123",
-            account_id="account123",
-            kpi_name="income_kpi"
+            organization_id="org123", account_id="account123", kpi_name="income_kpi"
         )
 
         # Clean up
@@ -779,7 +829,9 @@ class TestFirestoreRouter:
         mock_firestore_service.get_kpi_setting.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/org123/account123/income_kpi")
+        response = client.get(
+            "/api/v1/firestore/kpi-settings/org123/account123/income_kpi"
+        )
 
         assert response.status_code == 404
         assert "KPI setting not found" in response.json()["detail"]
@@ -791,7 +843,9 @@ class TestFirestoreRouter:
         """Test getting a KPI setting with invalid KPI name."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/kpi-settings/org123/account123/invalid_kpi")
+        response = client.get(
+            "/api/v1/firestore/kpi-settings/org123/account123/invalid_kpi"
+        )
 
         assert response.status_code == 400
         assert "Invalid kpi_name" in response.json()["detail"]
@@ -808,7 +862,7 @@ class TestFirestoreRouter:
             "organization_id": "org123",
             "account_id": "account123",
             "kpi_name": "marketing_cost_kpi",
-            "metric_id": "metric456"
+            "metric_id": "metric456",
         }
 
         response = client.put("/api/v1/firestore/kpi-settings", json=update_request)
@@ -823,7 +877,7 @@ class TestFirestoreRouter:
             organization_id="org123",
             account_id="account123",
             kpi_name="marketing_cost_kpi",
-            metric_id="metric456"
+            metric_id="metric456",
         )
 
         # Clean up
@@ -837,7 +891,7 @@ class TestFirestoreRouter:
             "organization_id": "org123",
             "account_id": "account123",
             "kpi_name": "invalid_kpi",
-            "metric_id": "metric456"
+            "metric_id": "metric456",
         }
 
         response = client.put("/api/v1/firestore/kpi-settings", json=update_request)
@@ -857,7 +911,7 @@ class TestFirestoreRouter:
             "organization_id": "org123",
             "account_id": "account123",
             "kpi_name": "net_income_kpi",
-            "metric_id": "metric789"
+            "metric_id": "metric789",
         }
 
         response = client.put("/api/v1/firestore/kpi-settings", json=update_request)
@@ -873,7 +927,7 @@ class TestFirestoreRouter:
         mock_kpi_settings = {
             "income_kpi": "metric123",
             "marketing_cost_kpi": "metric456",
-            "net_income_kpi": "metric789"
+            "net_income_kpi": "metric789",
         }
         mock_firestore_service.get_all_kpi_settings.return_value = mock_kpi_settings
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -888,8 +942,7 @@ class TestFirestoreRouter:
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.get_all_kpi_settings.assert_called_once_with(
-            organization_id="org123",
-            account_id="account123"
+            organization_id="org123", account_id="account123"
         )
 
         # Clean up
@@ -924,10 +977,12 @@ class TestFirestoreRouter:
             "funnel_step_name": "awareness",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "objective": "Increase brand awareness"
+            "objective": "Increase brand awareness",
         }
 
-        response = client.post("/api/v1/firestore/funnel-steps", json=funnel_step_request)
+        response = client.post(
+            "/api/v1/firestore/funnel-steps", json=funnel_step_request
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -954,10 +1009,12 @@ class TestFirestoreRouter:
             "funnel_step_name": "consideration",
             "effectiveness_kpi": "metric789",
             "efficiency_kpi": "metric101",
-            "objective": "Drive product consideration"
+            "objective": "Drive product consideration",
         }
 
-        response = client.post("/api/v1/firestore/funnel-steps", json=funnel_step_request)
+        response = client.post(
+            "/api/v1/firestore/funnel-steps", json=funnel_step_request
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -966,7 +1023,9 @@ class TestFirestoreRouter:
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_create_funnel_step_invalid_funnel_type(self, client, mock_firestore_service):
+    def test_create_funnel_step_invalid_funnel_type(
+        self, client, mock_firestore_service
+    ):
         """Test creating a funnel step with invalid funnel type."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -978,10 +1037,12 @@ class TestFirestoreRouter:
             "funnel_step_name": "awareness",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "objective": "Test objective"
+            "objective": "Test objective",
         }
 
-        response = client.post("/api/v1/firestore/funnel-steps", json=funnel_step_request)
+        response = client.post(
+            "/api/v1/firestore/funnel-steps", json=funnel_step_request
+        )
 
         assert response.status_code == 400
         assert "Invalid funnel_type" in response.json()["detail"]
@@ -989,7 +1050,9 @@ class TestFirestoreRouter:
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_create_funnel_step_big_bet_missing_name(self, client, mock_firestore_service):
+    def test_create_funnel_step_big_bet_missing_name(
+        self, client, mock_firestore_service
+    ):
         """Test creating a big bet funnel step without big_bet_name."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -1001,10 +1064,12 @@ class TestFirestoreRouter:
             "funnel_step_name": "awareness",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "objective": "Test objective"
+            "objective": "Test objective",
         }
 
-        response = client.post("/api/v1/firestore/funnel-steps", json=funnel_step_request)
+        response = client.post(
+            "/api/v1/firestore/funnel-steps", json=funnel_step_request
+        )
 
         assert response.status_code == 400
         assert "big_bet_name is required" in response.json()["detail"]
@@ -1020,20 +1085,22 @@ class TestFirestoreRouter:
                 "funnel_step_name": "awareness",
                 "effectiveness_kpi": "metric123",
                 "efficiency_kpi": "metric456",
-                "objective": "Increase awareness"
+                "objective": "Increase awareness",
             },
             {
                 "funnel_step_num": 2,
                 "funnel_step_name": "consideration",
                 "effectiveness_kpi": "metric789",
                 "efficiency_kpi": "metric101",
-                "objective": "Drive consideration"
-            }
+                "objective": "Drive consideration",
+            },
         ]
         mock_firestore_service.list_funnel_steps.return_value = mock_funnel_steps
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/funnel-steps/org123/account123/organization")
+        response = client.get(
+            "/api/v1/firestore/funnel-steps/org123/account123/organization"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1048,7 +1115,7 @@ class TestFirestoreRouter:
             organization_id="org123",
             account_id="account123",
             funnel_type="organization",
-            big_bet_name=None
+            big_bet_name=None,
         )
 
         # Clean up
@@ -1060,12 +1127,14 @@ class TestFirestoreRouter:
             "funnel_step_name": "conversion",
             "effectiveness_kpi": "metric999",
             "efficiency_kpi": "metric888",
-            "objective": "Drive conversions"
+            "objective": "Drive conversions",
         }
         mock_firestore_service.get_funnel_step.return_value = mock_funnel_step
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/funnel-steps/org123/account123/organization/3")
+        response = client.get(
+            "/api/v1/firestore/funnel-steps/org123/account123/organization/3"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1081,7 +1150,7 @@ class TestFirestoreRouter:
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
-            funnel_step_num=3
+            funnel_step_num=3,
         )
 
         # Clean up
@@ -1092,7 +1161,9 @@ class TestFirestoreRouter:
         mock_firestore_service.get_funnel_step.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.get("/api/v1/firestore/funnel-steps/org123/account123/organization/999")
+        response = client.get(
+            "/api/v1/firestore/funnel-steps/org123/account123/organization/999"
+        )
 
         assert response.status_code == 404
         assert "Funnel step not found" in response.json()["detail"]
@@ -1113,12 +1184,12 @@ class TestFirestoreRouter:
             "funnel_step_name": "loyalty",
             "effectiveness_kpi": "metric111",
             "efficiency_kpi": "metric222",
-            "objective": "Build customer loyalty"
+            "objective": "Build customer loyalty",
         }
 
         response = client.put(
             "/api/v1/firestore/funnel-steps/org123/account123/organization/2",
-            json=funnel_step_request
+            json=funnel_step_request,
         )
 
         assert response.status_code == 200
@@ -1137,7 +1208,9 @@ class TestFirestoreRouter:
         mock_firestore_service.delete_funnel_step.return_value = True
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        response = client.delete("/api/v1/firestore/funnel-steps/org123/account123/organization/2")
+        response = client.delete(
+            "/api/v1/firestore/funnel-steps/org123/account123/organization/2"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -1150,7 +1223,7 @@ class TestFirestoreRouter:
             account_id="account123",
             funnel_type="organization",
             big_bet_name=None,
-            funnel_step_num=2
+            funnel_step_num=2,
         )
 
         # Clean up
@@ -1165,8 +1238,8 @@ class TestChannelEndpoints:
         mock_channel_data = {
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
-            "efficiency_kpi": "metric456", 
-            "supporting_metrics": ["metric789", "metric101"]
+            "efficiency_kpi": "metric456",
+            "supporting_metrics": ["metric789", "metric101"],
         }
         mock_firestore_service.create_channel.return_value = mock_channel_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1175,12 +1248,12 @@ class TestChannelEndpoints:
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789", "metric101"]
+            "supporting_metrics": ["metric789", "metric101"],
         }
 
         response = client.post(
             "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=organization&funnel_step_num=1",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 200
@@ -1200,7 +1273,7 @@ class TestChannelEndpoints:
             big_bet_name=None,
             funnel_step_num=1,
             channel_name="email",
-            channel_data=create_request
+            channel_data=create_request,
         )
 
         # Clean up
@@ -1215,12 +1288,12 @@ class TestChannelEndpoints:
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
 
         response = client.post(
             "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=organization&funnel_step_num=1",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 400
@@ -1234,7 +1307,7 @@ class TestChannelEndpoints:
         mock_channel_data = {
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789", "metric101"]
+            "supporting_metrics": ["metric789", "metric101"],
         }
         mock_firestore_service.get_channel.return_value = mock_channel_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1259,7 +1332,7 @@ class TestChannelEndpoints:
             funnel_type="organization",
             big_bet_name=None,
             funnel_step_num=1,
-            channel_name="email"
+            channel_name="email",
         )
 
         # Clean up
@@ -1287,14 +1360,14 @@ class TestChannelEndpoints:
                 "channel_name": "email",
                 "effectiveness_kpi": "metric123",
                 "efficiency_kpi": "metric456",
-                "supporting_metrics": ["metric789"]
+                "supporting_metrics": ["metric789"],
             },
             {
                 "channel_name": "social",
-                "effectiveness_kpi": "metric234", 
+                "effectiveness_kpi": "metric234",
                 "efficiency_kpi": "metric567",
-                "supporting_metrics": ["metric890"]
-            }
+                "supporting_metrics": ["metric890"],
+            },
         ]
         mock_firestore_service.list_channels.return_value = mock_channels
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1316,18 +1389,16 @@ class TestChannelEndpoints:
         mock_updated_data = {
             "effectiveness_kpi": "metric999",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789", "metric101"]
+            "supporting_metrics": ["metric789", "metric101"],
         }
         mock_firestore_service.update_channel.return_value = mock_updated_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_request = {
-            "effectiveness_kpi": "metric999"
-        }
+        update_request = {"effectiveness_kpi": "metric999"}
 
         response = client.put(
             "/api/v1/firestore/channels/org123/email?account_id=account123&funnel_type=organization&funnel_step_num=1",
-            json=update_request
+            json=update_request,
         )
 
         assert response.status_code == 200
@@ -1347,7 +1418,7 @@ class TestChannelEndpoints:
             big_bet_name=None,
             funnel_step_num=1,
             channel_name="email",
-            channel_data=update_request
+            channel_data=update_request,
         )
 
         # Clean up
@@ -1358,13 +1429,11 @@ class TestChannelEndpoints:
         mock_firestore_service.update_channel.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_request = {
-            "effectiveness_kpi": "metric999"
-        }
+        update_request = {"effectiveness_kpi": "metric999"}
 
         response = client.put(
             "/api/v1/firestore/channels/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1",
-            json=update_request
+            json=update_request,
         )
 
         assert response.status_code == 404
@@ -1394,7 +1463,7 @@ class TestChannelEndpoints:
             funnel_type="organization",
             big_bet_name=None,
             funnel_step_num=1,
-            channel_name="email"
+            channel_name="email",
         )
 
         # Clean up
@@ -1421,7 +1490,7 @@ class TestChannelEndpoints:
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
         mock_firestore_service.create_channel.return_value = mock_channel_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1430,12 +1499,12 @@ class TestChannelEndpoints:
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
 
         response = client.post(
             "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=big_bet&funnel_step_num=1&big_bet_name=expansion",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 200
@@ -1451,7 +1520,7 @@ class TestChannelEndpoints:
             big_bet_name="expansion",
             funnel_step_num=1,
             channel_name="email",
-            channel_data=create_request
+            channel_data=create_request,
         )
 
         # Clean up
@@ -1465,12 +1534,12 @@ class TestChannelEndpoints:
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
 
         response = client.post(
             "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=invalid&funnel_step_num=1",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 400
@@ -1487,12 +1556,12 @@ class TestChannelEndpoints:
             "channel_name": "email",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
 
         response = client.post(
             "/api/v1/firestore/channels/org123?account_id=account123&funnel_type=big_bet&funnel_step_num=1",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 400
@@ -1511,7 +1580,7 @@ class TestTacticEndpoints:
             "tactic_name": "email_campaign",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
         mock_firestore_service.create_tactic.return_value = mock_created_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1520,12 +1589,12 @@ class TestTacticEndpoints:
             "tactic_name": "email_campaign",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
 
         response = client.post(
             "/api/v1/firestore/tactics/org123?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 200
@@ -1547,7 +1616,7 @@ class TestTacticEndpoints:
             funnel_step_num=1,
             channel_name="email",
             tactic_name="email_campaign",
-            tactic_data=create_request
+            tactic_data=create_request,
         )
 
         # Clean up
@@ -1562,12 +1631,12 @@ class TestTacticEndpoints:
             "tactic_name": "existing_tactic",
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
 
         response = client.post(
             "/api/v1/firestore/tactics/org123?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
-            json=create_request
+            json=create_request,
         )
 
         assert response.status_code == 400
@@ -1582,7 +1651,7 @@ class TestTacticEndpoints:
         mock_tactic_data = {
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
         mock_firestore_service.get_tactic.return_value = mock_tactic_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1605,7 +1674,7 @@ class TestTacticEndpoints:
             big_bet_name=None,
             funnel_step_num=1,
             channel_name="email",
-            tactic_name="email_campaign"
+            tactic_name="email_campaign",
         )
 
         # Clean up
@@ -1634,14 +1703,14 @@ class TestTacticEndpoints:
                 "tactic_name": "email_campaign",
                 "effectiveness_kpi": "metric123",
                 "efficiency_kpi": "metric456",
-                "supporting_metrics": ["metric789"]
+                "supporting_metrics": ["metric789"],
             },
             {
                 "tactic_name": "social_media",
                 "effectiveness_kpi": "metric234",
                 "efficiency_kpi": "metric567",
-                "supporting_metrics": ["metric890"]
-            }
+                "supporting_metrics": ["metric890"],
+            },
         ]
         mock_firestore_service.list_tactics.return_value = mock_tactics
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1662,7 +1731,7 @@ class TestTacticEndpoints:
             funnel_type="organization",
             big_bet_name=None,
             funnel_step_num=1,
-            channel_name="email"
+            channel_name="email",
         )
 
         # Clean up
@@ -1673,18 +1742,16 @@ class TestTacticEndpoints:
         mock_updated_data = {
             "effectiveness_kpi": "metric999",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789", "metric101"]
+            "supporting_metrics": ["metric789", "metric101"],
         }
         mock_firestore_service.update_tactic.return_value = mock_updated_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_request = {
-            "effectiveness_kpi": "metric999"
-        }
+        update_request = {"effectiveness_kpi": "metric999"}
 
         response = client.put(
             "/api/v1/firestore/tactics/org123/email_campaign?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
-            json=update_request
+            json=update_request,
         )
 
         assert response.status_code == 200
@@ -1702,7 +1769,7 @@ class TestTacticEndpoints:
             funnel_step_num=1,
             channel_name="email",
             tactic_name="email_campaign",
-            tactic_data=update_request
+            tactic_data=update_request,
         )
 
         # Clean up
@@ -1713,13 +1780,11 @@ class TestTacticEndpoints:
         mock_firestore_service.update_tactic.return_value = None
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_request = {
-            "effectiveness_kpi": "metric999"
-        }
+        update_request = {"effectiveness_kpi": "metric999"}
 
         response = client.put(
             "/api/v1/firestore/tactics/org123/nonexistent?account_id=account123&funnel_type=organization&funnel_step_num=1&channel_name=email",
-            json=update_request
+            json=update_request,
         )
 
         assert response.status_code == 404
@@ -1751,7 +1816,7 @@ class TestTacticEndpoints:
             big_bet_name=None,
             funnel_step_num=1,
             channel_name="email",
-            tactic_name="email_campaign"
+            tactic_name="email_campaign",
         )
 
         # Clean up
@@ -1778,7 +1843,7 @@ class TestTacticEndpoints:
         mock_tactic_data = {
             "effectiveness_kpi": "metric123",
             "efficiency_kpi": "metric456",
-            "supporting_metrics": ["metric789"]
+            "supporting_metrics": ["metric789"],
         }
         mock_firestore_service.get_tactic.return_value = mock_tactic_data
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -1800,7 +1865,7 @@ class TestTacticEndpoints:
             big_bet_name="new_product",
             funnel_step_num=1,
             channel_name="email",
-            tactic_name="test_tactic"
+            tactic_name="test_tactic",
         )
 
         # Clean up
@@ -1844,27 +1909,30 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "set",
                 "field": "permissions.accounts.newAccountId",
-                "value": "admin"
+                "value": "admin",
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Document test_doc updated successfully - Set nested field operation on 'permissions.accounts.newAccountId'" in data["message"]
+        assert (
+            "Document test_doc updated successfully - Set nested field operation on 'permissions.accounts.newAccountId'"
+            in data["message"]
+        )
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.set_nested_field.assert_called_once_with(
             collection="test_collection",
             document_id="test_doc",
             field_path="permissions.accounts.newAccountId",
-            value="admin"
+            value="admin",
         )
 
         # Clean up
@@ -1875,35 +1943,38 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         complex_value = {
-            "role": "admin", 
-            "permissions": ["read", "write"], 
-            "created_at": "2025-01-01T00:00:00Z"
+            "role": "admin",
+            "permissions": ["read", "write"],
+            "created_at": "2025-01-01T00:00:00Z",
         }
-        
+
         update_data = {
             "update": {
                 "operator": "set",
                 "field": "user_data.profile.settings",
-                "value": complex_value
+                "value": complex_value,
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Document test_doc updated successfully - Set nested field operation on 'user_data.profile.settings'" in data["message"]
+        assert (
+            "Document test_doc updated successfully - Set nested field operation on 'user_data.profile.settings'"
+            in data["message"]
+        )
 
         mock_firestore_service.set_nested_field.assert_called_once_with(
             collection="test_collection",
             document_id="test_doc",
             field_path="user_data.profile.settings",
-            value=complex_value
+            value=complex_value,
         )
 
         # Clean up
@@ -1913,21 +1984,19 @@ class TestTacticEndpoints:
         """Test set operation with missing field parameter."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_data = {
-            "update": {
-                "operator": "set",
-                "value": "admin"
-            }
-        }
+        update_data = {"update": {"operator": "set", "value": "admin"}}
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+        assert (
+            "set operation requires 'field' and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -1937,20 +2006,20 @@ class TestTacticEndpoints:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         update_data = {
-            "update": {
-                "operator": "set",
-                "field": "permissions.accounts.newAccountId"
-            }
+            "update": {"operator": "set", "field": "permissions.accounts.newAccountId"}
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+        assert (
+            "set operation requires 'field' and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -1959,22 +2028,19 @@ class TestTacticEndpoints:
         """Test set operation with empty field path."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_data = {
-            "update": {
-                "operator": "set",
-                "field": "",
-                "value": "admin"
-            }
-        }
+        update_data = {"update": {"operator": "set", "field": "", "value": "admin"}}
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+        assert (
+            "set operation requires 'field' and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
@@ -1987,26 +2053,29 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "set",
                 "field": "permissions.accounts.removedAccountId",
-                "value": None
+                "value": None,
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Document test_doc updated successfully - Set nested field operation on 'permissions.accounts.removedAccountId'" in data["message"]
+        assert (
+            "Document test_doc updated successfully - Set nested field operation on 'permissions.accounts.removedAccountId'"
+            in data["message"]
+        )
 
         mock_firestore_service.set_nested_field.assert_called_once_with(
             collection="test_collection",
             document_id="test_doc",
             field_path="permissions.accounts.removedAccountId",
-            value=None
+            value=None,
         )
 
         # Clean up
@@ -2021,14 +2090,14 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "set",
                 "field": "permissions.accounts.newAccountId",
-                "value": "admin"
+                "value": "admin",
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 503
@@ -2046,14 +2115,14 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "set",
                 "field": "permissions.accounts.newAccountId",
-                "value": "admin"
+                "value": "admin",
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 404
@@ -2070,24 +2139,31 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "invalidOperator",
                 "field": "accounts",
-                "value": {"test": "value"}
+                "value": {"test": "value"},
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "Unsupported update operator: invalidOperator" in response.json()["detail"]
-        assert "Supported operators: arrayUnion, replaceOne, set" in response.json()["detail"]
+        assert (
+            "Unsupported update operator: invalidOperator" in response.json()["detail"]
+        )
+        assert (
+            "Supported operators: arrayUnion, replaceOne, set"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_set_nested_field(self, client, mock_firestore_service):
+    def test_update_subcollection_document_set_nested_field(
+        self, client, mock_firestore_service
+    ):
         """Test set operation on subcollection document for nested field."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
@@ -2095,20 +2171,23 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "set",
                 "field": "config.notification_settings.email_enabled",
-                "value": True
+                "value": True,
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Subcollection document email_notifications updated successfully - Set nested field operation on 'config.notification_settings.email_enabled'" in data["message"]
+        assert (
+            "Subcollection document email_notifications updated successfully - Set nested field operation on 'config.notification_settings.email_enabled'"
+            in data["message"]
+        )
 
         mock_firestore_service.health_check.assert_called_once()
         mock_firestore_service.set_nested_field_subcollection.assert_called_once_with(
@@ -2117,43 +2196,45 @@ class TestTacticEndpoints:
             subcollection="notifications",
             subdocument_id="email_notifications",
             field_path="config.notification_settings.email_enabled",
-            value=True
+            value=True,
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_set_complex_object(self, client, mock_firestore_service):
+    def test_update_subcollection_document_set_complex_object(
+        self, client, mock_firestore_service
+    ):
         """Test set operation on subcollection document with complex object."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         complex_config = {
             "frequency": "daily",
- "templates": ["welcome", "reminder"],
-            "settings": {
-                "html_enabled": True,
-                "tracking_enabled": False
-            }
+            "templates": ["welcome", "reminder"],
+            "settings": {"html_enabled": True, "tracking_enabled": False},
         }
 
         update_data = {
             "update": {
                 "operator": "set",
                 "field": "notification_config.email",
-                "value": complex_config
+                "value": complex_config,
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert "Subcollection document email_notifications updated successfully - Set nested field operation on 'notification_config.email'" in data["message"]
+        assert (
+            "Subcollection document email_notifications updated successfully - Set nested field operation on 'notification_config.email'"
+            in data["message"]
+        )
 
         mock_firestore_service.set_nested_field_subcollection.assert_called_once_with(
             collection="test_collection",
@@ -2161,36 +2242,38 @@ class TestTacticEndpoints:
             subcollection="notifications",
             subdocument_id="email_notifications",
             field_path="notification_config.email",
-            value=complex_config
+            value=complex_config,
         )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_set_missing_field(self, client, mock_firestore_service):
+    def test_update_subcollection_document_set_missing_field(
+        self, client, mock_firestore_service
+    ):
         """Test set operation on subcollection document with missing field parameter."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
-        update_data = {
-            "update": {
-                "operator": "set",
-                "value": True
-            }
-        }
+        update_data = {"update": {"operator": "set", "value": True}}
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 400
-        assert "set operation requires 'field' and 'value' parameters" in response.json()["detail"]
+        assert (
+            "set operation requires 'field' and 'value' parameters"
+            in response.json()["detail"]
+        )
 
         # Clean up
         app.dependency_overrides.clear()
 
-    def test_update_subcollection_document_set_operation_failed(self, client, mock_firestore_service):
+    def test_update_subcollection_document_set_operation_failed(
+        self, client, mock_firestore_service
+    ):
         """Test set operation on subcollection document when operation fails."""
         mock_firestore_service.set_nested_field_subcollection.return_value = False
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
@@ -2199,14 +2282,14 @@ class TestTacticEndpoints:
             "update": {
                 "operator": "set",
                 "field": "config.notification_settings.email_enabled",
-                "value": True
+                "value": True,
             }
         }
 
         response = client.put(
             "/api/v1/firestore/documents/test_collection/test_doc/notifications/email_notifications",
             json=update_data,
-            params={"account_id": "test_account"}
+            params={"account_id": "test_account"},
         )
 
         assert response.status_code == 404

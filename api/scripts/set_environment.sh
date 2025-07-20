@@ -54,6 +54,7 @@ case $ENV in
         ;;
 esac
 
-# Show current Neo4j URI and Google Cloud Project
+# Show current Neo4j URI, Google Cloud Project, and reCAPTCHA status
 echo "   Neo4j URI: $(grep NEO4J_URI .env | cut -d'=' -f2)"
 echo "   GCP Project: $(grep GOOGLE_CLOUD_PROJECT_ID .env | cut -d'=' -f2)"
+echo "   reCAPTCHA: $([ -n "$(grep RECAPTCHA_SITE_KEY .env | cut -d'=' -f2)" ] && echo 'Configured' || echo 'Not configured')"

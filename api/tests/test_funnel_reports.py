@@ -1,9 +1,9 @@
 """Tests for the Funnel Reports router."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.database import get_neo4j_service
 from src.kene_api.main import app
 
@@ -12,9 +12,11 @@ from src.kene_api.main import app
 def mock_neo4j_service():
     """Mock Neo4j service for testing."""
     mock_service = MagicMock()
+
     # Make health_check async
     async def mock_health_check():
         return True
+
     mock_service.health_check = mock_health_check
     mock_service.execute_query.return_value = []
     mock_service.execute_write_query.return_value = {
@@ -36,7 +38,7 @@ def client():
 class TestFunnelReportsRouter:
     """Test class for funnel reports router endpoints."""
 
-    @patch('src.kene_api.routers.funnel_reports.search_main')
+    @patch("src.kene_api.routers.funnel_reports.search_main")
     def test_analysis_search(self, mock_search_main, client, mock_neo4j_service):
         """Test the analysis endpoint (moved from insights search)."""
         # Mock the search_main function to return test data
@@ -49,9 +51,9 @@ class TestFunnelReportsRouter:
             "metric_id": "metric_001",
             "evaluation_date_start": "2024-01-01",
             "evaluation_date_end": "2024-01-31",
-            "comparison_date_start": "2023-12-01", 
+            "comparison_date_start": "2023-12-01",
             "comparison_date_end": "2023-12-31",
-            "direction": "positive"
+            "direction": "positive",
         }
 
         response = client.post("/api/v1/funnel-reports/analysis", json=search_request)
@@ -64,15 +66,17 @@ class TestFunnelReportsRouter:
         # Verify search_main was called with correct parameters (including activity_id=None)
         mock_search_main.assert_called_once()
         call_args = mock_search_main.call_args
-        assert call_args.kwargs['account_id'] == "test_account"
-        assert call_args.kwargs['activity_id'] is None  # This is the key change
-        assert call_args.kwargs['input_metric_id'] == "metric_001"
-        assert call_args.kwargs['input_direction'] == "positive"
+        assert call_args.kwargs["account_id"] == "test_account"
+        assert call_args.kwargs["activity_id"] is None  # This is the key change
+        assert call_args.kwargs["input_metric_id"] == "metric_001"
+        assert call_args.kwargs["input_direction"] == "positive"
 
         app.dependency_overrides.clear()
 
-    @patch('src.kene_api.routers.funnel_reports.search_main')
-    def test_analysis_search_invalid_date_format(self, mock_search_main, client, mock_neo4j_service):
+    @patch("src.kene_api.routers.funnel_reports.search_main")
+    def test_analysis_search_invalid_date_format(
+        self, mock_search_main, client, mock_neo4j_service
+    ):
         """Test analysis endpoint with invalid date format."""
         app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
@@ -81,9 +85,9 @@ class TestFunnelReportsRouter:
             "metric_id": "metric_001",
             "evaluation_date_start": "invalid-date",
             "evaluation_date_end": "2024-01-31",
-            "comparison_date_start": "2023-12-01", 
+            "comparison_date_start": "2023-12-01",
             "comparison_date_end": "2023-12-31",
-            "direction": "positive"
+            "direction": "positive",
         }
 
         response = client.post("/api/v1/funnel-reports/analysis", json=search_request)
@@ -97,12 +101,16 @@ class TestFunnelReportsRouter:
 
         app.dependency_overrides.clear()
 
-    @patch('src.kene_api.routers.funnel_reports.search_main')
-    def test_analysis_search_database_unavailable(self, mock_search_main, client, mock_neo4j_service):
+    @patch("src.kene_api.routers.funnel_reports.search_main")
+    def test_analysis_search_database_unavailable(
+        self, mock_search_main, client, mock_neo4j_service
+    ):
         """Test analysis endpoint when database is unavailable."""
+
         # Override the health_check to return False
         async def mock_health_check_unavailable():
             return False
+
         mock_neo4j_service.health_check = mock_health_check_unavailable
 
         app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
@@ -112,9 +120,9 @@ class TestFunnelReportsRouter:
             "metric_id": "metric_001",
             "evaluation_date_start": "2024-01-01",
             "evaluation_date_end": "2024-01-31",
-            "comparison_date_start": "2023-12-01", 
+            "comparison_date_start": "2023-12-01",
             "comparison_date_end": "2023-12-31",
-            "direction": "positive"
+            "direction": "positive",
         }
 
         response = client.post("/api/v1/funnel-reports/analysis", json=search_request)

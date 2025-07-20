@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,7 +7,7 @@ class ItemBase(BaseModel):
     """Base model for items."""
 
     name: str = Field(..., description="The name of the item")
-    description: Optional[str] = Field(None, description="Description of the item")
+    description: str | None = Field(None, description="Description of the item")
     price: float = Field(..., gt=0, description="Price must be greater than 0")
 
 

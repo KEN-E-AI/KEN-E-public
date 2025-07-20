@@ -1,9 +1,9 @@
 """Tests for the intuitions router."""
 
-import pytest
-from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from httpx import ASGITransport, AsyncClient
 from src.kene_api.main import app
 
 

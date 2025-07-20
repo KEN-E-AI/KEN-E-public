@@ -11,6 +11,7 @@ from .firestore import get_firestore_service
 from .routers import (
     accounts,
     activities,
+    auth,
     datasets,
     firestore,
     funnel_reports,
@@ -73,7 +74,10 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(organizations.router, prefix="/api/v1/organizations", tags=["organizations"])
+app.include_router(auth.router)  # Auth router already has its prefix
+app.include_router(
+    organizations.router, prefix="/api/v1/organizations", tags=["organizations"]
+)
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"])
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
@@ -88,9 +92,9 @@ app.include_router(
 )
 app.include_router(firestore.router, prefix="/api/v1/firestore", tags=["firestore"])
 app.include_router(
-    superset_saved_queries.router, 
-    prefix="/api/v1/superset/saved-queries", 
-    tags=["superset-saved-queries"]
+    superset_saved_queries.router,
+    prefix="/api/v1/superset/saved-queries",
+    tags=["superset-saved-queries"],
 )
 
 
@@ -125,6 +129,6 @@ async def health_check():
         "message": "API is running",
         "services": {
             "neo4j": "healthy" if neo4j_healthy else "unhealthy",
-            "firestore": "healthy" if firestore_healthy else "unhealthy"
+            "firestore": "healthy" if firestore_healthy else "unhealthy",
         },
     }

@@ -12,5 +12,5 @@ if __name__ == "__main__":
         host=settings.host,
         port=settings.port,
         reload=True,  # Enable auto-reload for development
-        log_level="info"
+        log_level="info",
     )

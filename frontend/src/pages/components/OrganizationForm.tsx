@@ -5,23 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Building } from "lucide-react";
-import {
-  getOrganizations,
-  COMPANY_SIZE_OPTIONS,
-  type Organization,
-} from "@/data";
+import { getOrganizations, type Organization } from "@/data";
 
 interface NewOrgFormData {
   organization_name: string;
-  company_size: string;
+  company_size?: string;
   agency: boolean;
   child_organizations: string[];
 }
@@ -38,6 +27,8 @@ interface OrganizationFormProps {
   setFormData: (data: NewOrgFormData) => void;
   editAgencyData: EditAgencyData;
   setEditAgencyData: (data: EditAgencyData) => void;
+  editOrgName?: string;
+  setEditOrgName?: (name: string) => void;
   onSubmit: () => void;
   isLoading?: boolean;
 }
@@ -49,6 +40,8 @@ const OrganizationForm = ({
   setFormData,
   editAgencyData,
   setEditAgencyData,
+  editOrgName,
+  setEditOrgName,
   onSubmit,
   isLoading = false,
 }: OrganizationFormProps) => {
@@ -118,7 +111,7 @@ const OrganizationForm = ({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Building className="h-5 w-5" />
-          Information
+          Organization Info
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -129,118 +122,88 @@ const OrganizationForm = ({
             <Input
               id="org-name"
               value={
-                isCreatingNew
-                  ? formData.organization_name
-                  : orgData?.organization_name || ""
+                isCreatingNew ? formData.organization_name : editOrgName || ""
               }
-              onChange={(e) =>
-                isCreatingNew &&
-                setFormData({
-                  ...formData,
-                  organization_name: e.target.value,
-                })
-              }
-              disabled={!isCreatingNew}
-              placeholder="Enter organization name"
-            />
-          </div>
-
-          {/* Company Size */}
-          <div className="space-y-2">
-            <Label htmlFor="company-size">Company Size</Label>
-            <Select
-              value={
-                isCreatingNew
-                  ? formData.company_size
-                  : orgData?.company_size || ""
-              }
-              onValueChange={(value) => {
+              onChange={(e) => {
                 if (isCreatingNew) {
                   setFormData({
                     ...formData,
-                    company_size: value,
+                    organization_name: e.target.value,
                   });
+                } else if (setEditOrgName) {
+                  setEditOrgName(e.target.value);
                 }
               }}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={isCreatingNew ? "Select company size" : ""}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {COMPANY_SIZE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Agency Configuration */}
-        <div className="space-y-4 border-t border-gray-200 pt-6">
-          <h3 className="text-lg font-medium text-gray-900">
-            Agency Configuration
-          </h3>
-
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="agency-switch"
-              checked={currentAgencyValue}
-              onCheckedChange={handleAgencyChange}
+              placeholder="Enter organization name"
             />
-            <Label htmlFor="agency-switch" className="text-sm font-medium">
-              This organization is an agency that manages other organizations
-            </Label>
           </div>
-
-          {currentAgencyValue && (
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">
-                Organizations this agency can manage:
-              </Label>
-              <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3">
-                {loading ? (
-                  <p className="text-sm text-gray-500">
-                    Loading organizations...
-                  </p>
-                ) : (
-                  allOrganizations
-                    .filter(
-                      (org) => org.organization_id !== orgData?.organization_id,
-                    )
-                    .map((org) => (
-                      <div
-                        key={org.organization_id}
-                        className="flex items-center space-x-2"
-                      >
-                        <Checkbox
-                          id={`org-${org.organization_id}`}
-                          checked={currentChildOrgs.includes(
-                            org.organization_id,
-                          )}
-                          onCheckedChange={(checked) =>
-                            handleChildOrgChange(
-                              org.organization_id,
-                              checked as boolean,
-                            )
-                          }
-                        />
-                        <Label
-                          htmlFor={`org-${org.organization_id}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {org.organization_name}
-                        </Label>
-                      </div>
-                    ))
-                )}
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Agency Configuration - Only show if organization has no linked accounts */}
+        {(!orgData?.accounts || orgData.accounts.length === 0) && (
+          <div className="space-y-4 border-t border-gray-200 pt-6">
+            <h3 className="text-lg font-medium text-gray-900">
+              Agency Configuration
+            </h3>
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="agency-switch"
+                checked={currentAgencyValue}
+                onCheckedChange={handleAgencyChange}
+              />
+              <Label htmlFor="agency-switch" className="text-sm font-medium">
+                This organization is an agency that manages other organizations
+              </Label>
+            </div>
+
+            {currentAgencyValue && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">
+                  Organizations this agency can manage:
+                </Label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3">
+                  {loading ? (
+                    <p className="text-sm text-gray-500">
+                      Loading organizations...
+                    </p>
+                  ) : (
+                    allOrganizations
+                      .filter(
+                        (org) =>
+                          org.organization_id !== orgData?.organization_id,
+                      )
+                      .map((org) => (
+                        <div
+                          key={org.organization_id}
+                          className="flex items-center space-x-2"
+                        >
+                          <Checkbox
+                            id={`org-${org.organization_id}`}
+                            checked={currentChildOrgs.includes(
+                              org.organization_id,
+                            )}
+                            onCheckedChange={(checked) =>
+                              handleChildOrgChange(
+                                org.organization_id,
+                                checked as boolean,
+                              )
+                            }
+                          />
+                          <Label
+                            htmlFor={`org-${org.organization_id}`}
+                            className="text-sm font-normal cursor-pointer"
+                          >
+                            {org.organization_name}
+                          </Label>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Submit Button */}
         <div className="flex justify-end pt-6">

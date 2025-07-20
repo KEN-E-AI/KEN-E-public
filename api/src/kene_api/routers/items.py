@@ -1,5 +1,3 @@
-from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, HTTPException
 
@@ -33,7 +31,7 @@ async def create_item(item: ItemCreate):
     return new_item
 
 
-@router.get("/", response_model=List[ItemResponse])
+@router.get("/", response_model=list[ItemResponse])
 async def get_items():
     """
     Retrieve all items.

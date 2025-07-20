@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from src.kene_api.database import Neo4jService
 
 
