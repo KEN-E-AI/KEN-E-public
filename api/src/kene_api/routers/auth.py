@@ -1,7 +1,6 @@
 """Authentication-related endpoints."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -19,15 +18,15 @@ class RecaptchaVerificationRequest(BaseModel):
     """Request model for reCAPTCHA verification."""
 
     token: str
-    action: Optional[str] = None  # For v3
+    action: str | None = None  # For v3
 
 
 class RecaptchaVerificationResponse(BaseModel):
     """Response model for reCAPTCHA verification."""
 
     success: bool
-    message: Optional[str] = None
-    error_codes: Optional[list[str]] = None
+    message: str | None = None
+    error_codes: list[str] | None = None
 
 
 class RecaptchaSiteKeyResponse(BaseModel):
@@ -48,13 +47,13 @@ async def verify_recaptcha(
     """
     # Apply rate limiting
     recaptcha_rate_limiter.check_rate_limit(request)
-    
+
     # Get client IP address
     client_ip = request.client.host if request.client else None
 
     # Verify the token
     result = await recaptcha_service.verify_token(
-        verification_request.token, 
+        verification_request.token,
         remote_ip=client_ip,
         expected_action=verification_request.action
     )

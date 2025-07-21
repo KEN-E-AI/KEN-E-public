@@ -1,8 +1,6 @@
 """Firestore service for database operations."""
 
-import json
 import os
-import tempfile
 from typing import Any
 
 from dotenv import load_dotenv
@@ -83,12 +81,12 @@ class FirestoreService:
             # Method 2: Use credentials from Secret Manager or file (fallback or local development)
             if credentials_path:
                 credentials = None
-                
+
                 # Check if credentials_path is a Secret Manager path
-                if (credentials_path.startswith("projects/") and 
-                    "/secrets/" in credentials_path and 
+                if (credentials_path.startswith("projects/") and
+                    "/secrets/" in credentials_path and
                     "/versions/" in credentials_path):
-                    
+
                     print(f"Loading service account credentials from Secret Manager: {credentials_path}")
                     try:
                         # Get service account JSON from Secret Manager
@@ -103,7 +101,7 @@ class FirestoreService:
                     except Exception as e:
                         print(f"Failed to load credentials from Secret Manager: {e}")
                         raise
-                        
+
                 else:
                     # Traditional file-based credentials
                     # Ensure the credentials path is a file path, not raw JSON
@@ -122,7 +120,7 @@ class FirestoreService:
 
                 # Initialize Firestore client with explicit credentials
                 self._db = firestore.Client(
-                    project=project_id, 
+                    project=project_id,
                     database=database_id,
                     credentials=credentials
                 )

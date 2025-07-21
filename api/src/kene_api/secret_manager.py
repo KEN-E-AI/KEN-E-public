@@ -33,7 +33,7 @@ def get_secret(secret_path: str) -> str:
         return secret_value
 
     except Exception as e:
-        raise Exception(f"Failed to retrieve secret from {secret_path}: {e}")
+        raise Exception(f"Failed to retrieve secret from {secret_path}: {e}") from e
 
 
 def get_secret_json(secret_path: str) -> dict[str, Any]:
@@ -53,9 +53,11 @@ def get_secret_json(secret_path: str) -> dict[str, Any]:
         secret_value = get_secret(secret_path)
         return json.loads(secret_value)
     except json.JSONDecodeError as e:
-        raise Exception(f"Failed to parse JSON from secret {secret_path}: {e}")
+        raise Exception(f"Failed to parse JSON from secret {secret_path}: {e}") from e
     except Exception as e:
-        raise Exception(f"Failed to retrieve JSON secret from {secret_path}: {e}")
+        raise Exception(
+            f"Failed to retrieve JSON secret from {secret_path}: {e}"
+        ) from e
 
 
 def get_env_var_or_secret(env_var: str, default: str = "") -> str:
@@ -71,16 +73,20 @@ def get_env_var_or_secret(env_var: str, default: str = "") -> str:
         str: The resolved value (either from env var directly or from Secret Manager)
     """
     env_value = os.getenv(env_var, default)
-    
+
     # Check if the environment variable value looks like a Secret Manager path
-    if env_value.startswith("projects/") and "/secrets/" in env_value and "/versions/" in env_value:
+    if (
+        env_value.startswith("projects/")
+        and "/secrets/" in env_value
+        and "/versions/" in env_value
+    ):
         try:
             return get_secret(env_value)
         except Exception as e:
             print(f"Warning: Failed to get secret for {env_var}: {e}")
             # Fall back to the original env value in case of error
             return env_value
-    
+
     return env_value
 
 
@@ -96,16 +102,20 @@ def get_env_var_or_secret_json(env_var: str) -> dict[str, Any] | None:
         dict[str, Any] | None: The parsed JSON value or None if not available
     """
     env_value = os.getenv(env_var)
-    
+
     if not env_value:
         return None
-    
+
     # Check if the environment variable value looks like a Secret Manager path
-    if env_value.startswith("projects/") and "/secrets/" in env_value and "/versions/" in env_value:
+    if (
+        env_value.startswith("projects/")
+        and "/secrets/" in env_value
+        and "/versions/" in env_value
+    ):
         try:
             return get_secret_json(env_value)
         except Exception as e:
             print(f"Warning: Failed to get JSON secret for {env_var}: {e}")
             return None
-    
+
     return None

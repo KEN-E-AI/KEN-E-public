@@ -2,14 +2,13 @@
 
 import time
 from collections import defaultdict
-from typing import Dict, Optional
 
 from fastapi import HTTPException, Request, status
 
 
 class RateLimiter:
     """Simple in-memory rate limiter."""
-    
+
     # Time windows in seconds
     MINUTE_WINDOW = 60
     HOUR_WINDOW = 3600
@@ -17,8 +16,8 @@ class RateLimiter:
     def __init__(self, requests_per_minute: int = 10, requests_per_hour: int = 100):
         self.requests_per_minute = requests_per_minute
         self.requests_per_hour = requests_per_hour
-        self.minute_requests: Dict[str, list[float]] = defaultdict(list)
-        self.hour_requests: Dict[str, list[float]] = defaultdict(list)
+        self.minute_requests: dict[str, list[float]] = defaultdict(list)
+        self.hour_requests: dict[str, list[float]] = defaultdict(list)
 
     def _clean_old_requests(self, requests: list[float], window_seconds: int) -> list[float]:
         """Remove requests older than the time window."""
@@ -76,7 +75,7 @@ class RateLimiter:
         # All checks passed, now add the current request
         minute_requests.append(current_time)
         hour_requests.append(current_time)
-        
+
         # Update the stored lists
         self.minute_requests[client_id] = minute_requests
         self.hour_requests[client_id] = hour_requests
