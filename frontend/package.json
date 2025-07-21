@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "vite",
     "dev:development": "vite --mode development",
-    "dev:staging": "vite --mode staging",
-    "dev:production": "vite --mode production",
+    "dev:staging": "node scripts/resolve-secrets.js .env.staging && vite --mode staging",
+    "dev:production": "node scripts/resolve-secrets.js .env.production && vite --mode production",
     "build": "vite build",
-    "build:staging": "vite build --mode staging",
-    "build:production": "vite build --mode production",
+    "build:staging": "node scripts/resolve-secrets.js .env.staging && vite build --mode staging",
+    "build:production": "node scripts/resolve-secrets.js .env.production && vite build --mode production",
+    "resolve-secrets": "node scripts/resolve-secrets.js",
     "test": "vitest --run",
     "format.fix": "prettier --write .",
     "typecheck": "tsc"
@@ -78,6 +79,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@google-cloud/secret-manager": "^6.1.0",
     "@tailwindcss/typography": "^0.5.15",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
