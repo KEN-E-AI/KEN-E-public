@@ -1,7 +1,6 @@
 """Google reCAPTCHA verification service."""
 
 import logging
-from typing import Optional
 
 import httpx
 from pydantic import BaseModel
@@ -17,11 +16,11 @@ class RecaptchaVerificationResult(BaseModel):
     """Result of reCAPTCHA verification."""
 
     success: bool
-    challenge_ts: Optional[str] = None
-    hostname: Optional[str] = None
-    error_codes: Optional[list[str]] = None
-    score: Optional[float] = None  # For reCAPTCHA v3
-    action: Optional[str] = None  # For reCAPTCHA v3
+    challenge_ts: str | None = None
+    hostname: str | None = None
+    error_codes: list[str] | None = None
+    score: float | None = None  # For reCAPTCHA v3
+    action: str | None = None  # For reCAPTCHA v3
 
 
 class RecaptchaService:
@@ -31,10 +30,10 @@ class RecaptchaService:
         self.secret_key = settings.RECAPTCHA_SECRET_KEY
         if not self.secret_key:
             logger.warning("RECAPTCHA_SECRET_KEY not configured")
-    
+
     def _validate_v3_response(
-        self, result: RecaptchaVerificationResult, 
-        expected_action: Optional[str], 
+        self, result: RecaptchaVerificationResult,
+        expected_action: str | None,
         min_score: float
     ) -> RecaptchaVerificationResult:
         """
@@ -57,7 +56,7 @@ class RecaptchaService:
                 action=result.action,
                 error_codes=["score-too-low"]
             )
-        
+
         # Check if action matches expected action
         if expected_action and result.action != expected_action:
             logger.warning(f"reCAPTCHA v3 action mismatch: expected {expected_action}, got {result.action}")
@@ -67,11 +66,11 @@ class RecaptchaService:
                 action=result.action,
                 error_codes=["action-mismatch"]
             )
-        
+
         return result
 
     async def verify_token(
-        self, token: str, remote_ip: Optional[str] = None, expected_action: Optional[str] = None,
+        self, token: str, remote_ip: str | None = None, expected_action: str | None = None,
         min_score: float = 0.5
     ) -> RecaptchaVerificationResult:
         """
@@ -96,7 +95,7 @@ class RecaptchaService:
             return RecaptchaVerificationResult(
                 success=False, error_codes=["missing-input-response"]
             )
-        
+
         logger.info(f"Verifying reCAPTCHA token for action: {expected_action}, IP: {remote_ip}")
 
         try:
@@ -113,7 +112,7 @@ class RecaptchaService:
 
                 result_data = response.json()
                 logger.info(f"reCAPTCHA API response: {result_data}")
-                
+
                 # Convert error-codes to error_codes for Pydantic model
                 if "error-codes" in result_data:
                     result_data["error_codes"] = result_data.pop("error-codes")

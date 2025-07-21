@@ -306,6 +306,62 @@ python -m pytest tests/load_test/          # Load tests
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## Secret Manager Integration
+
+KEN-E uses Google Cloud Secret Manager for secure credential storage. All sensitive data (passwords, API keys, service account JSON) are stored in Secret Manager and referenced by their paths in environment files.
+
+### Secret Manager Structure
+
+**Production (Project: 395770269870)**
+- `projects/395770269870/secrets/neo4j-password/versions/latest`
+- `projects/395770269870/secrets/sendgrid-api-key/versions/latest`
+- `projects/395770269870/secrets/superset-password/versions/latest`
+- `projects/395770269870/secrets/recaptcha-secret-key/versions/latest`
+- `projects/395770269870/secrets/api-service-account-json/versions/latest`
+- `projects/395770269870/secrets/firebase-api-key/versions/latest`
+- `projects/395770269870/secrets/recaptcha-site-key/versions/latest`
+
+**Staging (Project: 391472102753)** and **Development (Project: 525657242938)** follow the same pattern.
+
+### How It Works
+
+#### API Backend
+- **Automatic Resolution**: Environment variables containing Secret Manager paths are automatically resolved at runtime
+- **Service Account JSON**: Firestore authentication supports both Secret Manager JSON and file-based credentials
+- **Fallback Support**: Falls back to original values if Secret Manager access fails
+
+#### Frontend
+- **Build-Time Resolution**: Secrets are resolved during the build process using `scripts/resolve-secrets.js`
+- **Environment-Specific**: Each environment (dev/staging/prod) has its own secret paths
+- **Secure Builds**: Resolved secrets are stored in `.env.resolved` (git-ignored) during builds
+
+### Authentication Setup
+
+For local development and secret resolution:
+```bash
+# Authenticate with Google Cloud
+gcloud auth application-default login
+
+# Install frontend dependencies (includes Secret Manager client)
+cd frontend && npm install
+```
+
+**Important**: Before running staging or production environments locally, you need proper authentication to access Secret Manager.
+
+For production deployments, ensure service accounts have the `Secret Manager Secret Accessor` role:
+```bash
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### Migration Benefits
+- **Enhanced Security**: No plaintext secrets in version control
+- **Centralized Management**: All secrets managed through Google Cloud Console
+- **Audit Trail**: Complete access logs and versioning
+- **Easy Rotation**: Update secrets without code changes
+- **Environment Isolation**: Each environment has separate secret instances
+
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) - AI assistant guidance for the codebase

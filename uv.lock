@@ -1106,6 +1106,22 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud-secret-manager"
+version = "2.24.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpc-google-iam-v1" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/58/7a/2fa6735ec693d822fe08a76709c4d95d9b5b4c02e83e720497355039d2ee/google_cloud_secret_manager-2.24.0.tar.gz", hash = "sha256:ce573d40ffc2fb7d01719243a94ee17aa243ea642a6ae6c337501e58fbf642b5", size = 269516 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/af/db1217cae1809e69a4527ee6293b82a9af2a1fb2313ad110c775e8f3c820/google_cloud_secret_manager-2.24.0-py3-none-any.whl", hash = "sha256:9bea1254827ecc14874bc86c63b899489f8f50bfe1442bfb2517530b30b3a89b", size = 218050 },
+]
+
+[[package]]
 name = "google-cloud-storage"
 version = "2.19.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1891,6 +1907,7 @@ dependencies = [
     { name = "firebase-admin" },
     { name = "google-cloud-aiplatform", extra = ["evaluation", "langchain", "reasoningengine"] },
     { name = "google-cloud-logging" },
+    { name = "google-cloud-secret-manager" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-core" },
@@ -1915,6 +1932,7 @@ lint = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "codespell" },
     { name = "nest-asyncio" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1927,6 +1945,7 @@ requires-dist = [
     { name = "firebase-admin", specifier = "~=6.7.0" },
     { name = "google-cloud-aiplatform", extras = ["evaluation", "langchain", "reasoningengine"], specifier = "~=1.81.0" },
     { name = "google-cloud-logging", specifier = "~=3.11.4" },
+    { name = "google-cloud-secret-manager", specifier = ">=2.24.0" },
     { name = "jupyter", marker = "extra == 'jupyter'", specifier = "~=1.0.0" },
     { name = "langchain", specifier = "~=0.3.14" },
     { name = "langchain-community", specifier = "~=0.3.17" },
@@ -1945,6 +1964,7 @@ provides-extras = ["jupyter", "lint"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "codespell", specifier = ">=2.2.6" },
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.23.8" },

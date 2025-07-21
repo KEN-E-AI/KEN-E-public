@@ -7,6 +7,7 @@ from python_http_client.exceptions import HTTPError
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Content, Email, Mail, To
 
+from .secret_manager import get_env_var_or_secret
 from .templates.template_loader import template_loader
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ class EmailService:
 
     def __init__(self):
         """Initialize the SendGrid client."""
-        self.api_key = os.getenv("SENDGRID_API_KEY")
+        self.api_key = get_env_var_or_secret("SENDGRID_API_KEY")
         self.from_email = os.getenv("EMAIL_FROM_ADDRESS", "noreply@ken-e.ai")
         self.from_name = os.getenv("EMAIL_FROM_NAME", "KEN-E Team")
         self.app_base_url = os.getenv("APP_BASE_URL", "http://localhost:8080")

@@ -9,6 +9,9 @@ from google.cloud import firestore
 from google.cloud.exceptions import NotFound
 from google.cloud.firestore_v1 import DELETE_FIELD
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.oauth2 import service_account
+
+from .secret_manager import get_env_var_or_secret_json
 
 # Load environment variables
 load_dotenv()
@@ -75,26 +78,55 @@ class FirestoreService:
                     if not credentials_path:
                         raise
 
-            # Method 2: Use credentials file (fallback or local development)
+            # Method 2: Use credentials from Secret Manager or file (fallback or local development)
             if credentials_path:
-                # Ensure the credentials path is a file path, not raw JSON
-                if credentials_path.strip().startswith("{"):
-                    raise ValueError(
-                        "GOOGLE_APPLICATION_CREDENTIALS appears to be a raw JSON string. Expected a file path. This usually means it was incorrectly passed via --set-env-vars instead of --set-secrets."
-                    )
+                credentials = None
 
-                if not os.path.isfile(credentials_path):
-                    raise ValueError(
-                        f"Credentials file not found at: {credentials_path}"
-                    )
+                # Check if credentials_path is a Secret Manager path
+                if (credentials_path.startswith("projects/") and
+                    "/secrets/" in credentials_path and
+                    "/versions/" in credentials_path):
 
-                print(f"Using Firestore credentials from file: {credentials_path}")
+                    print(f"Loading service account credentials from Secret Manager: {credentials_path}")
+                    try:
+                        # Get service account JSON from Secret Manager
+                        service_account_info = get_env_var_or_secret_json("GOOGLE_APPLICATION_CREDENTIALS")
+                        if service_account_info:
+                            credentials = service_account.Credentials.from_service_account_info(
+                                service_account_info
+                            )
+                            print("Successfully loaded service account credentials from Secret Manager")
+                        else:
+                            raise ValueError("Failed to retrieve service account JSON from Secret Manager")
+                    except Exception as e:
+                        print(f"Failed to load credentials from Secret Manager: {e}")
+                        raise
 
-                # Initialize Firestore client with explicit credentials file
-                self._db = firestore.Client(project=project_id, database=database_id)
+                else:
+                    # Traditional file-based credentials
+                    # Ensure the credentials path is a file path, not raw JSON
+                    if credentials_path.strip().startswith("{"):
+                        raise ValueError(
+                            "GOOGLE_APPLICATION_CREDENTIALS appears to be a raw JSON string. Expected a file path. This usually means it was incorrectly passed via --set-env-vars instead of --set-secrets."
+                        )
+
+                    if not os.path.isfile(credentials_path):
+                        raise ValueError(
+                            f"Credentials file not found at: {credentials_path}"
+                        )
+
+                    print(f"Using Firestore credentials from file: {credentials_path}")
+                    credentials = service_account.Credentials.from_service_account_file(credentials_path)
+
+                # Initialize Firestore client with explicit credentials
+                self._db = firestore.Client(
+                    project=project_id,
+                    database=database_id,
+                    credentials=credentials
+                )
 
                 print(
-                    f"Successfully initialized Firestore with credentials file for project: {project_id}"
+                    f"Successfully initialized Firestore with service account credentials for project: {project_id}"
                 )
                 self._initialized = True
                 return True
