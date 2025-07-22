@@ -220,6 +220,89 @@ def test_create_account_organization_not_found(mock_neo4j_service):
     app.dependency_overrides.clear()
 
 
+def test_create_account_agency_organization_forbidden(mock_neo4j_service):
+    """Test that agency organizations cannot create accounts."""
+    # Mock organization exists and is an agency
+    def mock_execute_query(query, parameters=None):
+        if "Organization" in query and "exists" in query:
+            return [{"exists": True}]  # Organization exists
+        elif "org.agency" in query:
+            return [{"agency": True}]  # Organization is an agency
+        else:
+            return []
+
+    mock_neo4j_service.execute_query.side_effect = mock_execute_query
+
+    # Override dependency
+    app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
+
+    new_account_data = {
+        "account_name": "New Account",
+        "organization_id": "agency-org",
+        "industry": "Technology",
+        "status": "Active",
+        "websites": ["https://new.com"],
+        "timezone": "America/New_York",
+    }
+
+    response = client.post("/api/v1/accounts/", json=new_account_data)
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Account creation is not permitted for agency organizations"
+
+    # Clean up
+    app.dependency_overrides.clear()
+
+
+def test_create_account_non_agency_organization_allowed(mock_neo4j_service):
+    """Test that non-agency organizations can create accounts."""
+    # Mock organization exists and is NOT an agency
+    def mock_execute_query(query, parameters=None):
+        if "Organization" in query and "exists" in query:
+            return [{"exists": True}]  # Organization exists
+        elif "org.agency" in query:
+            return [{"agency": False}]  # Organization is NOT an agency
+        elif "Account" in query and "exists" in query:
+            return [{"exists": False}]  # Account doesn't exist (UUID collision check)
+        elif "MATCH (acc:Account" in query and "RETURN acc" in query:
+            # Handle get_account query
+            return [
+                {
+                    "acc": {
+                        "account_id": parameters["account_id"],
+                        "account_name": "New Account",
+                        "organization_id": "regular-org",
+                        "industry": "Technology",
+                        "status": "Active",
+                        "websites": ["https://new.com"],
+                        "timezone": "America/New_York",
+                    }
+                }
+            ]
+        else:
+            return []
+
+    mock_neo4j_service.execute_query.side_effect = mock_execute_query
+
+    # Override dependency
+    app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
+
+    new_account_data = {
+        "account_name": "New Account",
+        "organization_id": "regular-org",
+        "industry": "Technology",
+        "status": "Active",
+        "websites": ["https://new.com"],
+        "timezone": "America/New_York",
+    }
+
+    response = client.post("/api/v1/accounts/", json=new_account_data)
+    assert response.status_code == 200
+    assert response.json()["account_name"] == "New Account"
+
+    # Clean up
+    app.dependency_overrides.clear()
+
+
 def test_update_account(mock_neo4j_service):
     """Test updating an account."""
     # Mock the checks

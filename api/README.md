@@ -248,6 +248,15 @@ uv run pytest tests/ -v
 - `GET /api/v1/metrics/` - Get all metrics
 - `POST /api/v1/metrics/` - Create a new metric
 
+### Accounts API
+- `GET /api/v1/accounts/` - Get all accounts
+- `GET /api/v1/accounts/{account_id}` - Get a specific account
+- `POST /api/v1/accounts/` - Create a new account (restricted for agency organizations)
+- `PUT /api/v1/accounts/{account_id}` - Update an account
+- `DELETE /api/v1/accounts/{account_id}` - Delete an account
+
+**Note:** Account creation is restricted for agency organizations. Only regular organizations (where `agency=false`) can create accounts. Agency organizations will receive a 403 Forbidden error when attempting to create accounts.
+
 ### Insights API
 - `GET /api/v1/insights/` - Get all insights
 - `POST /api/v1/insights/search` - Search insights with filters

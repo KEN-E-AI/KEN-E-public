@@ -191,6 +191,11 @@ async def create_account(
     **Returns:**
     - Created account object with generated account_id
 
+    **Errors:**
+    - `403 Forbidden`: If the organization is an agency (agency=true). Agency organizations cannot create accounts.
+    - `404 Not Found`: If the organization does not exist
+    - `400 Bad Request`: If required fields are missing
+
     **Example:**
     ```
     POST /api/v1/accounts/
@@ -203,6 +208,8 @@ async def create_account(
         "timezone": "America/New_York"
     }
     ```
+    
+    **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
     try:
         # Check Neo4j connectivity
@@ -230,6 +237,14 @@ async def create_account(
             raise HTTPException(
                 status_code=404,
                 detail=f"Organization {request.organization_id} not found",
+            )
+
+        # Check if organization is an agency (agency organizations cannot create accounts)
+        is_agency = await _get_organization_agency_status(db, request.organization_id)
+        if is_agency is True:
+            raise HTTPException(
+                status_code=403,
+                detail="Account creation is not permitted for agency organizations",
             )
 
         # Generate unique account_id using UUID
@@ -506,6 +521,18 @@ async def _check_organization_exists(db: Neo4jService, organization_id: str) -> 
     """
     result = await db.execute_query(query, {"organization_id": organization_id})
     return result[0]["exists"] if result else False
+
+
+async def _get_organization_agency_status(
+    db: Neo4jService, organization_id: str
+) -> bool | None:
+    """Get the agency status of an organization. Returns None if organization not found."""
+    query = """
+    MATCH (org:Organization {organization_id: $organization_id})
+    RETURN org.agency as agency
+    """
+    result = await db.execute_query(query, {"organization_id": organization_id})
+    return result[0]["agency"] if result else None
 
 
 def _create_account_from_record(acc_data: dict[str, Any]) -> Account:

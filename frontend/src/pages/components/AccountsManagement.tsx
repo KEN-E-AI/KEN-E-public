@@ -840,17 +840,25 @@ const AccountsManagement = ({
               <Store className="h-5 w-5" />
               Accounts
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsCreateAccountModalOpen(true)}
-              className="h-8 w-8 p-0"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            {!orgData.agency && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsCreateAccountModalOpen(true)}
+                className="h-8 w-8 p-0"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {orgData.agency && (
+            <div className="rounded-md bg-muted p-4 text-sm text-muted-foreground flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Agency organizations cannot create accounts.
+            </div>
+          )}
           {isLoadingAccounts ? (
             <div className="text-center py-8 text-gray-500">
               <p>Loading accounts...</p>

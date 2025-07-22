@@ -390,7 +390,10 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
             </SelectTrigger>
             <SelectContent align="start" className="max-w-[300px]">
               {combinedOptions.map((option, index) => (
-                <SelectItem key={`${option.orgId}-${option.accountId}-${index}`} value={option.value}>
+                <SelectItem
+                  key={`${option.orgId}-${option.accountId}-${index}`}
+                  value={option.value}
+                >
                   <div className="flex items-start gap-2">
                     <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
                     <div>
