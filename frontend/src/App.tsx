@@ -8,6 +8,8 @@ import {
   Route,
   Navigate,
   useNavigate,
+  useLocation,
+  useSearchParams,
 } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -31,6 +33,7 @@ import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
+import Authentication from "./pages/Authentication";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +44,34 @@ const OrganizationSelectionPage = () => {
   return <OrganizationSelection onComplete={() => navigate("/")} />;
 };
 
+// Wrapper component for Authentication with navigation
+const AuthenticationPage = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  const handleAuthenticated = () => {
+    try {
+      // Check if there's an invitation token
+      const invitationToken = searchParams.get("invitation");
+      if (invitationToken) {
+        // Redirect to invitation acceptance page after authentication
+        navigate(`/invite/${invitationToken}`);
+      } else {
+        // Check if there's a redirect location in state
+        const from = location.state?.from || "/";
+        navigate(from);
+      }
+    } catch (error) {
+      console.error("[AuthenticationPage] Navigation error:", error);
+      // Fallback to home page if navigation fails
+      navigate("/");
+    }
+  };
+
+  return <Authentication onAuthenticated={handleAuthenticated} />;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -48,6 +79,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             {/* Unprotected routes */}
+            <Route path="/auth/signin" element={<AuthenticationPage />} />
+            <Route path="/auth/signup" element={<AuthenticationPage />} />
             <Route path="/create-organization" element={<AccountSettings />} />
             <Route path="/invite/:token" element={<AcceptInvitation />} />
             <Route path="/auth/action" element={<EmailActionHandler />} />
@@ -182,6 +215,14 @@ const App = () => (
               }
             />
             {/* Backward compatibility routes */}
+            <Route
+              path="/login"
+              element={<Navigate to="/auth/signin" replace />}
+            />
+            <Route
+              path="/signup"
+              element={<Navigate to="/auth/signup" replace />}
+            />
             <Route
               path="/organization-settings"
               element={<Navigate to="/settings/organization" replace />}

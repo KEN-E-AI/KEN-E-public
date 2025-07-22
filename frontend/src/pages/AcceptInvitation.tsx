@@ -139,52 +139,23 @@ const AcceptInvitation = () => {
     );
   }
 
+  // Redirect unauthenticated users to the new authentication flow
+  useEffect(() => {
+    if (!user && token) {
+      navigate(`/auth/signin?invitation=${token}`, { replace: true });
+    }
+  }, [user, token, navigate]);
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
-                <Building className="h-6 w-6 text-white" />
+          <CardContent className="pt-8 pb-8">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="w-16 h-16 bg-brand-medium-blue/10 rounded-full flex items-center justify-center animate-pulse">
+                <Mail className="h-8 w-8 text-brand-medium-blue" />
               </div>
-            </div>
-            <CardTitle className="text-2xl">Sign In Required</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-center text-gray-600">
-              You need to sign in or create an account to accept this
-              invitation.
-            </p>
-            {invitation && (
-              <Alert>
-                <Mail className="h-4 w-4" />
-                <AlertDescription>
-                  You've been invited to join{" "}
-                  <strong>{invitation.organization_name}</strong> with{" "}
-                  <strong>{invitation.access_level}</strong> access.
-                </AlertDescription>
-              </Alert>
-            )}
-            <div className="flex gap-3">
-              <Button
-                className="flex-1"
-                onClick={() =>
-                  navigate("/login", { state: { from: `/invite/${token}` } })
-                }
-              >
-                Sign In
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() =>
-                  navigate("/signup", { state: { from: `/invite/${token}` } })
-                }
-              >
-                Create Account
-              </Button>
+              <p className="text-gray-600">Redirecting to sign in...</p>
             </div>
           </CardContent>
         </Card>
