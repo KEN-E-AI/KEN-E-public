@@ -45,7 +45,15 @@ htmlcov/
 # FastAPI
 .uvicorn.pid
 
-# API Keys
-.ken-e-production-e6cbb5681ea3.json
-.ken-e-staging-5e3ac0cc75e0.json
-.ken-e-dev-b2808a955c59.json
+# Service Account Keys and Credentials
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!google-cloud-service-account-key.json.template
+
+# Specific service account files (in case they exist)
+ken-e-*.json
+*-service-account.json
+*-sa.json
+credentials.json
