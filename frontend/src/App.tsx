@@ -64,8 +64,20 @@ const AuthenticationPage = () => {
       }
     } catch (error) {
       console.error("[AuthenticationPage] Navigation error:", error);
-      // Fallback to home page if navigation fails
-      navigate("/");
+
+      // Only fallback for specific navigation-related errors
+      if (
+        error instanceof TypeError ||
+        (error instanceof Error && error.message.includes("navigate"))
+      ) {
+        console.warn(
+          "[AuthenticationPage] Falling back to home page due to navigation error",
+        );
+        navigate("/");
+      } else {
+        // Re-throw unexpected errors for proper error handling
+        throw error;
+      }
     }
   };
 

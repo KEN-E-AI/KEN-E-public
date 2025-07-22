@@ -1,7 +1,31 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import fs from "fs";
+
+// Custom plugin to handle SPA fallback for client-side routing
+const spaFallbackPlugin = (): Plugin => ({
+  name: "spa-fallback",
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      if (req.url) {
+        // Check if request is for a file (has extension at the end of the path)
+        const isFileRequest = /\.[^/]+$/.test(req.url);
+        // Check if it's a Vite internal request
+        const isViteRequest =
+          req.url.startsWith("/@") || req.url.startsWith("/node_modules");
+        // Check if it's an API request (adjust pattern based on your API routes)
+        const isApiRequest = req.url.startsWith("/api/");
+
+        // If it's not a file, Vite internal, or API request, serve index.html
+        if (!isFileRequest && !isViteRequest && !isApiRequest) {
+          req.url = "/index.html";
+        }
+      }
+      next();
+    });
+  },
+});
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -34,7 +58,7 @@ export default defineConfig(({ mode }) => {
       host: "::",
       port: 8080,
     },
-    plugins: [react()],
+    plugins: [react(), spaFallbackPlugin()],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
