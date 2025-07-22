@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -18,6 +18,47 @@ vi.mock("@/lib/firebase", () => ({
     createUserWithEmailAndPassword: vi.fn(),
     signOut: vi.fn(),
     onAuthStateChanged: vi.fn(),
+  },
+}));
+
+// Mock organizationApi to prevent fetch errors
+vi.mock("@/data/organizationApi", () => ({
+  getOrganizations: vi.fn().mockResolvedValue([]),
+  getAccountsByOrganizationId: vi.fn().mockResolvedValue([]),
+  getOrganizationById: vi.fn().mockResolvedValue(null),
+  getAccountById: vi.fn().mockResolvedValue(null),
+  getAllAccounts: vi.fn().mockResolvedValue([]),
+  organizations: Promise.resolve([]),
+  accounts: Promise.resolve([]),
+}));
+
+// Mock axios to prevent real network requests
+vi.mock("axios", () => ({
+  default: {
+    create: vi.fn(() => ({
+      get: vi.fn().mockResolvedValue({ data: {} }),
+      post: vi.fn().mockResolvedValue({ data: {} }),
+      put: vi.fn().mockResolvedValue({ data: {} }),
+      delete: vi.fn().mockResolvedValue({ data: {} }),
+      interceptors: {
+        request: { use: vi.fn() },
+        response: { use: vi.fn() },
+      },
+    })),
+    get: vi.fn().mockResolvedValue({ data: {} }),
+    post: vi.fn().mockResolvedValue({ data: {} }),
+    put: vi.fn().mockResolvedValue({ data: {} }),
+    delete: vi.fn().mockResolvedValue({ data: {} }),
+  },
+}));
+
+// Mock the API configuration
+vi.mock("@/lib/api", () => ({
+  default: {
+    get: vi.fn().mockResolvedValue({ data: {} }),
+    post: vi.fn().mockResolvedValue({ data: {} }),
+    put: vi.fn().mockResolvedValue({ data: {} }),
+    delete: vi.fn().mockResolvedValue({ data: {} }),
   },
 }));
 
@@ -54,7 +95,28 @@ const mockSelectedOrgAccount = {
 };
 
 // Create test app component
-const TestApp = ({ authContext }: { authContext: AuthContextType }) => {
+// Set test environment variables
+(globalThis as any).import = {
+  meta: {
+    env: {
+      VITE_API_BASE_URL: "http://test-api.com",
+      VITE_FIREBASE_API_KEY: "test-key",
+      VITE_FIREBASE_AUTH_DOMAIN: "test.firebaseapp.com",
+      VITE_FIREBASE_PROJECT_ID: "test-project",
+      VITE_FIREBASE_STORAGE_BUCKET: "test.appspot.com",
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789",
+      VITE_FIREBASE_APP_ID: "test-app-id",
+    },
+  },
+};
+
+const TestApp = ({ 
+  authContext, 
+  initialEntries = ["/"] 
+}: { 
+  authContext: AuthContextType;
+  initialEntries?: string[];
+}) => {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -64,7 +126,7 @@ const TestApp = ({ authContext }: { authContext: AuthContextType }) => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <AuthContext.Provider value={authContext}>
           <Routes>
             <Route path="/login" element={<Authentication />} />
@@ -95,10 +157,36 @@ const TestApp = ({ authContext }: { authContext: AuthContextType }) => {
             />
           </Routes>
         </AuthContext.Provider>
-      </BrowserRouter>
+      </MemoryRouter>
     </QueryClientProvider>
   );
 };
+
+// Helper function to create auth context
+const createAuthContext = (overrides: Partial<AuthContextType> = {}): AuthContextType => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  orgMetadata: {},
+  selectedOrgAccount: null,
+  currentOrganizationId: null,
+  notifications: [],
+  setNotifications: vi.fn(),
+  notificationSettings: [],
+  securitySettings: [],
+  setCurrentOrganization: vi.fn(),
+  setOrgMetadata: vi.fn(),
+  updateUser: vi.fn(),
+  setNotificationSettings: vi.fn(),
+  signOut: vi.fn(),
+  resetWorkspaceSelection: vi.fn(),
+  completeWorkspaceSelection: vi.fn(),
+  getUserOrganizations: vi.fn(),
+  getOrganizationData: vi.fn(),
+  refetchUser: vi.fn(),
+  clearUserData: vi.fn(),
+  ...overrides,
+});
 
 describe("Authentication and Navigation Workflow Integration Tests", () => {
   beforeEach(() => {
@@ -112,35 +200,23 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
         pathname: "/",
         search: "",
         hash: "",
+        origin: "http://localhost:3000",
         assign: vi.fn(),
         replace: vi.fn(),
       },
+    });
+
+    // Mock global fetch
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
     });
   });
 
   describe("Authentication Flow", () => {
     test("should redirect unauthenticated users to login", async () => {
-      const unauthenticatedContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      const unauthenticatedContext = createAuthContext();
 
       render(<TestApp authContext={unauthenticatedContext} />);
 
@@ -151,27 +227,13 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
     });
 
     test("should allow authenticated users to access protected routes", async () => {
-      const authenticatedContext: AuthContextType = {
+      const authenticatedContext = createAuthContext({
         user: mockUser,
         isAuthenticated: true,
-        isLoading: false,
         orgMetadata: mockOrgMetadata,
         selectedOrgAccount: mockSelectedOrgAccount,
         currentOrganizationId: "org-123",
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      });
 
       render(<TestApp authContext={authenticatedContext} />);
 
@@ -182,27 +244,9 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
     });
 
     test("should handle loading states during authentication", async () => {
-      const loadingContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
+      const loadingContext = createAuthContext({
         isLoading: true,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      });
 
       render(<TestApp authContext={loadingContext} />);
 
@@ -215,27 +259,7 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
 
   describe("Login Workflow", () => {
     test("should render login form", async () => {
-      const unauthenticatedContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      const unauthenticatedContext = createAuthContext();
 
       // Start at login page
       window.location.pathname = "/login";
@@ -300,27 +324,7 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
     test("should display login validation errors", async () => {
       const user = userEvent.setup();
 
-      const unauthenticatedContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      const unauthenticatedContext = createAuthContext();
 
       window.location.pathname = "/login";
 
@@ -340,27 +344,7 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
 
   describe("Signup Workflow", () => {
     test("should render signup form", async () => {
-      const unauthenticatedContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      const unauthenticatedContext = createAuthContext();
 
       window.location.pathname = "/signup";
 
@@ -384,27 +368,7 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
     test("should handle signup form submission", async () => {
       const user = userEvent.setup();
 
-      const unauthenticatedContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      const unauthenticatedContext = createAuthContext();
 
       window.location.pathname = "/signup";
 
@@ -435,27 +399,13 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
     test("should navigate between protected routes when authenticated", async () => {
       const user = userEvent.setup();
 
-      const authenticatedContext: AuthContextType = {
+      const authenticatedContext = createAuthContext({
         user: mockUser,
         isAuthenticated: true,
-        isLoading: false,
         orgMetadata: mockOrgMetadata,
         selectedOrgAccount: mockSelectedOrgAccount,
         currentOrganizationId: "org-123",
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      });
 
       render(<TestApp authContext={authenticatedContext} />);
 
@@ -603,27 +553,9 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
 
   describe("Error Handling", () => {
     test("should handle authentication errors", async () => {
-      const errorContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
+      const errorContext = createAuthContext({
         signOut: vi.fn().mockRejectedValue(new Error("Auth error")),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      });
 
       render(<TestApp authContext={errorContext} />);
 
@@ -643,27 +575,7 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
         new Error("Network error"),
       );
 
-      const unauthenticatedContext: AuthContextType = {
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        orgMetadata: {},
-        selectedOrgAccount: null,
-        currentOrganizationId: null,
-        notificationSettings: [],
-        securitySettings: [],
-        setCurrentOrganization: vi.fn(),
-        setOrgMetadata: vi.fn(),
-        updateUser: vi.fn(),
-        setNotificationSettings: vi.fn(),
-        signOut: vi.fn(),
-        resetWorkspaceSelection: vi.fn(),
-        completeWorkspaceSelection: vi.fn(),
-        getUserOrganizations: vi.fn(),
-        getOrganizationData: vi.fn(),
-        refetchUser: vi.fn(),
-        clearUserData: vi.fn(),
-      };
+      const unauthenticatedContext = createAuthContext();
 
       window.location.pathname = "/login";
 
