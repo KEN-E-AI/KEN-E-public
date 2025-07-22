@@ -30,7 +30,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Building,
   ArrowRight,
   CheckCircle,
   AlertCircle,
@@ -492,12 +491,13 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           {/* Header */}
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
-                <Building className="h-6 w-6 text-white" />
-              </div>
+              <img 
+                src="/KEN-E Logo Full.png" 
+                alt="KEN-E Logo" 
+                className="h-32 w-auto"
+              />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">KEN-E</h1>
-            <p className="text-gray-600">AI-Powered Analytics for Marketers</p>
+            <p className="text-gray-600">Marketing Assistant</p>
           </div>
 
           <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
