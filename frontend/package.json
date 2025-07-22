@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:development": "vite --mode development",
+    "dev:development": "node scripts/resolve-secrets.js .env.development && vite --mode development",
     "dev:staging": "node scripts/resolve-secrets.js .env.staging && vite --mode staging",
     "dev:production": "node scripts/resolve-secrets.js .env.production && vite --mode production",
     "build": "vite build",
