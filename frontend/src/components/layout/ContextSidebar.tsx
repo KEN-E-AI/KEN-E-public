@@ -295,17 +295,18 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
             // Notifications content for home page
             <div className="pr-4 pl-0 py-4">
               <div className="rounded-r-lg overflow-hidden border border-[#E2E8F0]">
-                {notifications.map((notification, index) => {
-                  const iconName = notification.data.icon;
-                  const IconComponent = iconMap[iconName] || Home;
-                  return (
-                    <div
-                      key={notification.id}
-                      className={cn(
-                        "flex items-start gap-3 p-4 hover:bg-gray-50 transition-colors cursor-pointer",
-                        index !== notifications.length - 1 && "border-b",
-                      )}
-                    >
+                {notifications && notifications.length > 0 ? (
+                  notifications.map((notification, index) => {
+                    const iconName = notification.data.icon;
+                    const IconComponent = iconMap[iconName] || Home;
+                    return (
+                      <div
+                        key={notification.id}
+                        className={cn(
+                          "flex items-start gap-3 p-4 hover:bg-gray-50 transition-colors cursor-pointer",
+                          index !== notifications.length - 1 && "border-b",
+                        )}
+                      >
                       <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
                         <IconComponent className="w-5 h-5 text-gray-600" />
                       </div>
@@ -327,7 +328,12 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                       )}
                     </div>
                   );
-                })}
+                })
+                ) : (
+                  <div className="p-4 text-gray-500 text-center">
+                    No notifications
+                  </div>
+                )}
               </div>
             </div>
           ) : activeMenu ? (

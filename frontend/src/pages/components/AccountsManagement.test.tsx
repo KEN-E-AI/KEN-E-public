@@ -14,7 +14,12 @@ import {
 // Mock dependencies
 vi.mock("@/contexts/AuthContext");
 vi.mock("@/hooks/use-toast");
-vi.mock("@/data/organizationApi");
+vi.mock("@/data/organizationApi", () => ({
+  createAccount: vi.fn(),
+  getAccountsByOrganizationId: vi.fn(),
+  deleteAccount: vi.fn(),
+  updateAccount: vi.fn(),
+}));
 vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
 }));

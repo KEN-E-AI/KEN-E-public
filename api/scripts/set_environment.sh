@@ -25,6 +25,14 @@ case $ENV in
         echo "✅ Switched to DEVELOPMENT environment"
         echo "   Neo4j: Development Aura instance"
         echo "   Debug: Enabled"
+        
+        # Try to resolve secrets from Google Secret Manager
+        if command -v python3 &> /dev/null; then
+            echo "🔐 Resolving secrets from Google Secret Manager..."
+            python3 scripts/resolve_secrets.py .env.development
+        else
+            echo "⚠️  Python not found, skipping secret resolution"
+        fi
         ;;
     staging|stage)
         if [ ! -f .env.staging ]; then

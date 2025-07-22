@@ -88,7 +88,7 @@ async def test_update_activity_success(mock_neo4j_service):
             "/api/v1/activities/",
             json={
                 "account_id": "test123",
-                "id": "test-id",
+                "activity_id": "test-id",
                 "activity_description": "Updated description",
                 "expected_impact": "Updated impact",
             },
@@ -118,7 +118,7 @@ async def test_delete_activity_success(mock_neo4j_service):
         response = await ac.request(
             "DELETE",
             "/api/v1/activities/",
-            json={"account_id": "test123", "id": "test-activity"},
+            json={"account_id": "test123", "activity_id": "test-activity"},
         )
 
     assert response.status_code == 200

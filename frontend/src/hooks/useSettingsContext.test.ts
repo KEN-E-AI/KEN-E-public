@@ -3,7 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { useSettingsContext } from "./useSettingsContext";
 
 // Mock the AuthContext
-const mockAuthContext = {
+let mockAuthContext = {
   user: {
     id: "user-1",
     firstName: "John",
@@ -96,8 +96,8 @@ describe("useSettingsContext", () => {
   });
 
   test("returns correct permissions for regular user", () => {
-    // Mock a regular user
-    const mockUserAuthContext = {
+    // Update the mock to use org-2 where user has "user" role
+    mockAuthContext = {
       ...mockAuthContext,
       selectedOrgAccount: {
         ...mockAuthContext.selectedOrgAccount,
@@ -105,9 +105,6 @@ describe("useSettingsContext", () => {
       },
       currentOrganizationId: "org-2",
     };
-
-    vi.mocked(vi.importActual("@/contexts/AuthContext")).useAuth = () =>
-      mockUserAuthContext;
 
     const { result } = renderHook(() => useSettingsContext());
 
@@ -117,6 +114,10 @@ describe("useSettingsContext", () => {
       canManageUsers: false,
       organizationRole: "user",
     });
+    
+    // Reset mock for other tests
+    mockAuthContext.currentOrganizationId = "org-1";
+    mockAuthContext.selectedOrgAccount.orgId = "org-1";
   });
 
   test("returns correct authentication status", () => {
@@ -127,7 +128,11 @@ describe("useSettingsContext", () => {
   });
 
   test("handles null user gracefully", () => {
-    const mockNullUserContext = {
+    // Save original mock
+    const originalMock = { ...mockAuthContext };
+    
+    // Update mock to null user
+    mockAuthContext = {
       ...mockAuthContext,
       user: null,
       selectedOrgAccount: null,
@@ -135,9 +140,6 @@ describe("useSettingsContext", () => {
       hasSelectedWorkspace: false,
       isAuthenticated: false,
     };
-
-    vi.mocked(vi.importActual("@/contexts/AuthContext")).useAuth = () =>
-      mockNullUserContext;
 
     const { result } = renderHook(() => useSettingsContext());
 
@@ -155,5 +157,8 @@ describe("useSettingsContext", () => {
       canManageUsers: false,
       organizationRole: null,
     });
+    
+    // Restore original mock
+    mockAuthContext = originalMock;
   });
 });

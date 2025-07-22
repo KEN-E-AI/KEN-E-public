@@ -1,13 +1,28 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BrowserRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 import Performance from "@/pages/Performance";
 import Home from "@/pages/Home";
 import BigBets from "@/pages/BigBets";
 import Insights from "@/pages/Insights";
+import axios from "axios";
+
+// Mock axios at the top level
+vi.mock("axios");
+
+// Mock organizationApi
+vi.mock("@/data/organizationApi", () => ({
+  getOrganizations: vi.fn().mockResolvedValue([]),
+  getAccountsByOrganizationId: vi.fn().mockResolvedValue([]),
+  getOrganizationById: vi.fn().mockResolvedValue(null),
+  getAccountById: vi.fn().mockResolvedValue(null),
+  getAllAccounts: vi.fn().mockResolvedValue([]),
+  organizations: Promise.resolve([]),
+  accounts: Promise.resolve([]),
+}));
 
 // Mock data
 const mockUser = {
@@ -94,6 +109,8 @@ const mockAuthContext: AuthContextType = {
   orgMetadata: mockOrgMetadata,
   selectedOrgAccount: mockSelectedOrgAccount,
   currentOrganizationId: "org-123",
+  notifications: [], // Add notifications array
+  setNotifications: vi.fn(),
   notificationSettings: [],
   securitySettings: [],
   setCurrentOrganization: vi.fn(),
@@ -120,11 +137,11 @@ const TestWrapper = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <MemoryRouter>
         <AuthContext.Provider value={mockAuthContext}>
           {children}
         </AuthContext.Provider>
-      </BrowserRouter>
+      </MemoryRouter>
     </QueryClientProvider>
   );
 };
@@ -133,19 +150,15 @@ describe("Dashboard Workflow Integration Tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Mock API calls
-    vi.mock("axios", () => ({
-      default: {
-        get: vi.fn().mockResolvedValue({
-          data: {
-            metrics: mockMetrics,
-            insights: mockInsights,
-          },
-        }),
-        post: vi.fn().mockResolvedValue({ data: {} }),
-        put: vi.fn().mockResolvedValue({ data: {} }),
+    // Configure axios mock
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        metrics: mockMetrics,
+        insights: mockInsights,
       },
-    }));
+    });
+    vi.mocked(axios.post).mockResolvedValue({ data: {} });
+    vi.mocked(axios.put).mockResolvedValue({ data: {} });
   });
 
   describe("Home Dashboard Flow", () => {
@@ -528,10 +541,9 @@ describe("Dashboard Workflow Integration Tests", () => {
 
   describe("Data Loading and Error Handling", () => {
     test("should handle loading states", async () => {
-      const mockAxios = vi.mocked(await import("axios"));
 
       // Mock slow loading
-      mockAxios.default.get.mockImplementation(
+      vi.mocked(axios.get).mockImplementation(
         () => new Promise((resolve) => setTimeout(resolve, 100)),
       );
 
@@ -551,10 +563,9 @@ describe("Dashboard Workflow Integration Tests", () => {
     });
 
     test("should handle API errors gracefully", async () => {
-      const mockAxios = vi.mocked(await import("axios"));
 
       // Mock API error
-      mockAxios.default.get.mockRejectedValue(new Error("API Error"));
+      vi.mocked(axios.get).mockRejectedValue(new Error("API Error"));
 
       render(
         <TestWrapper>
@@ -572,10 +583,9 @@ describe("Dashboard Workflow Integration Tests", () => {
     });
 
     test("should handle network connectivity issues", async () => {
-      const mockAxios = vi.mocked(await import("axios"));
 
       // Mock network error
-      mockAxios.default.get.mockRejectedValue(new Error("Network Error"));
+      vi.mocked(axios.get).mockRejectedValue(new Error("Network Error"));
 
       render(
         <TestWrapper>
@@ -616,8 +626,7 @@ describe("Dashboard Workflow Integration Tests", () => {
       ];
 
       // Mock updated API response
-      const mockAxios = vi.mocked(await import("axios"));
-      mockAxios.default.get.mockResolvedValue({
+      vi.mocked(axios.get).mockResolvedValue({
         data: { metrics: updatedMetrics },
       });
 
@@ -660,8 +669,7 @@ describe("Dashboard Workflow Integration Tests", () => {
       };
 
       // Mock updated API response
-      const mockAxios = vi.mocked(await import("axios"));
-      mockAxios.default.get.mockResolvedValue({
+      vi.mocked(axios.get).mockResolvedValue({
         data: { insights: [...mockInsights, newInsight] },
       });
 
