@@ -79,7 +79,7 @@ describe("AccountsManagement", () => {
     account_id: "acc-123",
     account_name: "Test Account",
     organization_id: "org-123",
-    industry: "Technology",
+    industry: "Enterprise Software and SaaS [B2B]",
     status: "Active",
     websites: ["https://example.com"],
     timezone: "America/New_York",
@@ -343,7 +343,7 @@ describe("AccountsManagement", () => {
   describe("Account Update Functionality", () => {
     test("should successfully update account details", async () => {
       const user = userEvent.setup();
-      const updatedAccount = { ...mockAccount, industry: "Healthcare" };
+      const updatedAccount = { ...mockAccount, industry: "Health Care and Social Assistance" };
       mockUpdateAccount.mockResolvedValue(updatedAccount);
 
       renderAccountsManagement();
@@ -362,7 +362,7 @@ describe("AccountsManagement", () => {
       // Change industry
       const industrySelect = screen.getByRole("combobox");
       await user.click(industrySelect);
-      await user.click(screen.getByText("Healthcare"));
+      await user.click(screen.getByText("Health Care and Social Assistance"));
 
       // Save changes
       const saveButton = screen.getByRole("button", { name: /save changes/i });
@@ -373,7 +373,7 @@ describe("AccountsManagement", () => {
         expect(mockUpdateAccount).toHaveBeenCalledWith(
           "acc-123",
           expect.objectContaining({
-            industry: "Healthcare",
+            industry: "Health Care and Social Assistance",
           }),
         );
         expect(mockSetAccountMetadata).toHaveBeenCalled();
@@ -381,6 +381,53 @@ describe("AccountsManagement", () => {
           title: "Success",
           description: "Account updated successfully.",
         });
+      });
+    });
+
+    test("should call updateAccount API instead of Firestore when saving account changes", async () => {
+      const user = userEvent.setup();
+      const updatedAccountData = {
+        account_name: "Updated Account Name",
+        industry: "Finance and Insurance",
+        websites: ["https://updated.com"],
+        timezone: "America/Los_Angeles",
+      };
+      const updatedAccount = { ...mockAccount, ...updatedAccountData };
+      mockUpdateAccount.mockResolvedValue(updatedAccount);
+
+      renderAccountsManagement();
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Account")).toBeInTheDocument();
+      });
+
+      // Open edit modal
+      const buttons = screen.getAllByRole("button");
+      const gearButton = buttons.find((button) =>
+        button.querySelector(".lucide-settings"),
+      );
+      await user.click(gearButton!);
+
+      // Update various fields
+      const nameInput = screen.getByLabelText(/account name/i);
+      await user.clear(nameInput);
+      await user.type(nameInput, updatedAccountData.account_name);
+
+      // Save changes
+      const saveButton = screen.getByRole("button", { name: /save changes/i });
+      await user.click(saveButton);
+
+      // Verify updateAccount from organizationApi was called (not Firestore)
+      await waitFor(() => {
+        expect(mockUpdateAccount).toHaveBeenCalledWith(
+          "acc-123",
+          expect.objectContaining({
+            account_name: updatedAccountData.account_name,
+            industry: mockAccount.industry, // Should keep existing value since we didn't change it
+          }),
+        );
+        // Verify it's using the Neo4j API by checking the import
+        expect(mockUpdateAccount).toBe(updateAccount);
       });
     });
 

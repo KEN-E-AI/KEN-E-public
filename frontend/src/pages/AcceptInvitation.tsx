@@ -30,7 +30,7 @@ const AcceptInvitation = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Log component state for debugging
   useEffect(() => {
     console.log("[AcceptInvitation] Component state:", {
@@ -38,7 +38,7 @@ const AcceptInvitation = () => {
       user: user?.email,
       isLoading,
       error,
-      invitation: invitation?.organization_name
+      invitation: invitation?.organization_name,
     });
   }, [token, user, isLoading, error, invitation]);
 
@@ -55,14 +55,17 @@ const AcceptInvitation = () => {
         setInvitation(inviteData);
       } catch (error: any) {
         console.error("[AcceptInvitation] Error verifying invitation:", error);
-        console.error("[AcceptInvitation] Error response:", error.response?.data);
-        
+        console.error(
+          "[AcceptInvitation] Error response:",
+          error.response?.data,
+        );
+
         if (error.response?.status === 404) {
           setError("Invalid invitation link");
         } else if (error.response?.status === 400) {
           const detail = error.response.data?.detail;
           console.error("[AcceptInvitation] 400 error detail:", detail);
-          
+
           if (detail?.includes("expired")) {
             setError("This invitation has expired");
           } else if (detail?.includes("already been accepted")) {
@@ -319,7 +322,9 @@ const AcceptInvitation = () => {
   }
 
   // Fallback render - this should never be reached, but ensures we always display something
-  console.error("[AcceptInvitation] Unexpected state - no condition matched for rendering");
+  console.error(
+    "[AcceptInvitation] Unexpected state - no condition matched for rendering",
+  );
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm">
@@ -332,10 +337,7 @@ const AcceptInvitation = () => {
             </AlertDescription>
           </Alert>
           <div className="mt-6 text-center">
-            <Button
-              variant="outline"
-              onClick={() => window.location.reload()}
-            >
+            <Button variant="outline" onClick={() => window.location.reload()}>
               Refresh Page
             </Button>
           </div>

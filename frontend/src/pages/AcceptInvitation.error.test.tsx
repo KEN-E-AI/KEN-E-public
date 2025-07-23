@@ -18,7 +18,8 @@ vi.mock("react-router-dom", async () => {
 });
 
 const mockUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
-const mockVerifyInvitationToken = teamApi.verifyInvitationToken as unknown as ReturnType<typeof vi.fn>;
+const mockVerifyInvitationToken =
+  teamApi.verifyInvitationToken as unknown as ReturnType<typeof vi.fn>;
 
 describe("AcceptInvitation - Error Scenarios", () => {
   beforeEach(() => {
@@ -48,20 +49,26 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Should show loading state initially
-    expect(screen.getByText("Verifying your invitation...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Verifying your invitation..."),
+    ).toBeInTheDocument();
 
     // Wait for error to be displayed
     await waitFor(() => {
       expect(screen.getByText("Invalid Invitation")).toBeInTheDocument();
-      expect(screen.getByText("This invitation has expired")).toBeInTheDocument();
+      expect(
+        screen.getByText("This invitation has expired"),
+      ).toBeInTheDocument();
     });
 
     // Should NOT show blank page
-    expect(screen.getByRole("button", { name: /go to login/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /go to login/i }),
+    ).toBeInTheDocument();
   });
 
   test("displays error UI when invitation has already been accepted (400 error)", async () => {
@@ -85,12 +92,14 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Invalid Invitation")).toBeInTheDocument();
-      expect(screen.getByText("This invitation has already been accepted")).toBeInTheDocument();
+      expect(
+        screen.getByText("This invitation has already been accepted"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -115,12 +124,14 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Invalid Invitation")).toBeInTheDocument();
-      expect(screen.getByText("Some other validation error")).toBeInTheDocument();
+      expect(
+        screen.getByText("Some other validation error"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -145,7 +156,7 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
@@ -175,12 +186,16 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Invalid Invitation")).toBeInTheDocument();
-      expect(screen.getByText("Failed to verify invitation. Please try again later.")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Failed to verify invitation. Please try again later.",
+        ),
+      ).toBeInTheDocument();
     });
   });
 
@@ -210,15 +225,20 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Should show loading initially
-    expect(screen.getByText("Verifying your invitation...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Verifying your invitation..."),
+    ).toBeInTheDocument();
 
     // Should redirect after verification succeeds
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith("/auth/signin?invitation=test-token-123", { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/auth/signin?invitation=test-token-123",
+        { replace: true },
+      );
     });
   });
 
@@ -248,23 +268,33 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Email Mismatch")).toBeInTheDocument();
-      expect(screen.getByText(/This invitation was sent to correct@example.com/)).toBeInTheDocument();
-      expect(screen.getByText(/you're signed in as wrong@example.com/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/This invitation was sent to correct@example.com/),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/you're signed in as wrong@example.com/),
+      ).toBeInTheDocument();
     });
 
     // Should show options to switch accounts
-    expect(screen.getByRole("button", { name: /sign in with different account/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /go to dashboard/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /sign in with different account/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /go to dashboard/i }),
+    ).toBeInTheDocument();
   });
 
   test("renders fallback UI if no conditions match", async () => {
     // Mock console.error to verify it's called
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
     mockUseAuth.mockReturnValue({
       user: {
@@ -285,17 +315,21 @@ describe("AcceptInvitation - Error Scenarios", () => {
     render(
       <MemoryRouter initialEntries={["/invite/test-token-123"]}>
         <AcceptInvitation />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Unexpected Error")).toBeInTheDocument();
-      expect(screen.getByText("An unexpected error occurred. Please try refreshing the page.")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "An unexpected error occurred. Please try refreshing the page.",
+        ),
+      ).toBeInTheDocument();
     });
 
     // Verify error was logged
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "[AcceptInvitation] Unexpected state - no condition matched for rendering"
+      "[AcceptInvitation] Unexpected state - no condition matched for rendering",
     );
 
     consoleErrorSpy.mockRestore();

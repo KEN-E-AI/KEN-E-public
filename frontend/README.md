@@ -49,6 +49,7 @@ npm --version
    The frontend requires environment configuration to connect to the correct backend API and Firebase project. You have two options:
 
    **Option A: Use the environment switching script (recommended)**
+
    ```bash
    # Switch to development environment
    ./scripts/set_environment.sh development
@@ -61,10 +62,11 @@ npm --version
    ```
 
    **Option B: Manually create .env.local**
+
    ```bash
    # Copy from example file
    cp .env.example .env.local
-   
+
    # Then edit .env.local with your configuration
    ```
 
@@ -89,11 +91,11 @@ npm --version
 
 ### Environment Details
 
-| Environment | API URL | Firebase Project | Usage |
-|------------|---------|------------------|-------|
-| Development | http://localhost:8000 | ken-e-dev | Local development |
-| Staging | http://localhost:8000 | ken-e-staging | Testing with staging data |
-| Production | https://api.ken-e.ai | ken-e-production | Production data (careful!) |
+| Environment | API URL               | Firebase Project | Usage                      |
+| ----------- | --------------------- | ---------------- | -------------------------- |
+| Development | http://localhost:8000 | ken-e-dev        | Local development          |
+| Staging     | http://localhost:8000 | ken-e-staging    | Testing with staging data  |
+| Production  | https://api.ken-e.ai  | ken-e-production | Production data (careful!) |
 
 ### Switching Between Environments
 
@@ -115,7 +117,7 @@ npm run dev:[environment]
 The project uses the following environment files:
 
 - `.env.development` - Development environment configuration
-- `.env.staging` - Staging environment configuration  
+- `.env.staging` - Staging environment configuration
 - `.env.production` - Production environment configuration
 - `.env.local` - Active environment (created by set_environment.sh, gitignored)
 - `.env.example` - Template with all required environment variables
@@ -124,18 +126,18 @@ The project uses the following environment files:
 
 ## 📋 Available Scripts
 
-| Command              | Description                                           |
-| -------------------- | ----------------------------------------------------- |
-| `npm run dev`        | Start dev server on port 8080 (default development)  |
-| `npm run dev:development` | Start dev server on port 8080 (development env) |
-| `npm run dev:staging` | Start dev server on port 8080 (staging env)        |
-| `npm run dev:production` | Start dev server on port 8080 (production env)  |
-| `npm run build`      | Build for production                                  |
-| `npm run build:staging` | Build for staging environment                      |
-| `npm run build:production` | Build for production environment               |
-| `npm run test`       | Run Vitest unit tests                                 |
-| `npm run typecheck`  | Check TypeScript types                                |
-| `npm run format.fix` | Format code with Prettier                             |
+| Command                    | Description                                         |
+| -------------------------- | --------------------------------------------------- |
+| `npm run dev`              | Start dev server on port 8080 (default development) |
+| `npm run dev:development`  | Start dev server on port 8080 (development env)     |
+| `npm run dev:staging`      | Start dev server on port 8080 (staging env)         |
+| `npm run dev:production`   | Start dev server on port 8080 (production env)      |
+| `npm run build`            | Build for production                                |
+| `npm run build:staging`    | Build for staging environment                       |
+| `npm run build:production` | Build for production environment                    |
+| `npm run test`             | Run Vitest unit tests                               |
+| `npm run typecheck`        | Check TypeScript types                              |
+| `npm run format.fix`       | Format code with Prettier                           |
 
 ## 🛠 Tech Stack
 

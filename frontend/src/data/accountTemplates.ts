@@ -57,7 +57,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/New_York",
       data_region: "United States",
-      industry: "Retail",
+      industry: "Retail Trade [B2C]",
     },
   },
   saas: {
@@ -89,7 +89,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/Los_Angeles",
       data_region: "United States",
-      industry: "Software",
+      industry: "Enterprise Software and SaaS [B2B]",
     },
   },
   "b2b-services": {
@@ -121,7 +121,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/New_York",
       data_region: "United States",
-      industry: "Professional Services",
+      industry: "Professional, Scientific, and Technical Services [B2B]",
     },
   },
   healthcare: {
@@ -153,7 +153,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/Chicago",
       data_region: "United States",
-      industry: "Healthcare Services",
+      industry: "Health Care and Social Assistance",
     },
   },
   education: {
@@ -185,7 +185,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/New_York",
       data_region: "United States",
-      industry: "Education",
+      industry: "Educational Services",
     },
   },
   automotive: {
@@ -217,7 +217,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/Detroit",
       data_region: "United States",
-      industry: "Automotive",
+      industry: "Retail Trade [B2C]",
     },
   },
   "real-estate": {
@@ -249,7 +249,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/New_York",
       data_region: "United States",
-      industry: "Real Estate",
+      industry: "Real Estate and Rental and Leasing",
     },
   },
   gaming: {
@@ -281,7 +281,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/Los_Angeles",
       data_region: "United States",
-      industry: "Entertainment",
+      industry: "Arts, Entertainment, and Recreation",
     },
   },
   "food-beverage": {
@@ -313,7 +313,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/New_York",
       data_region: "United States",
-      industry: "Food & Beverage",
+      industry: "Hospitality, Accommodation and Food Services",
     },
   },
   nonprofit: {
@@ -345,7 +345,7 @@ export const ACCOUNT_TEMPLATES: Record<string, AccountTemplate> = {
     recommendedSettings: {
       timezone: "America/New_York",
       data_region: "United States",
-      industry: "Non-Profit",
+      industry: "Nonprofit Organizations and NGOs",
     },
   },
 };

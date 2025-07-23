@@ -2,15 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Building2 } from "lucide-react";
 import { AccountCreationData } from "../AccountCreationWizard";
+import { IndustrySelectDropdown as IndustrySelect } from "@/components/ui/industry-select-dropdown";
 
 interface WizardStep1BasicInfoProps {
   formData: AccountCreationData;
@@ -66,29 +60,13 @@ export const WizardStep1BasicInfo = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="industry">Industry *</Label>
-            <Select
+            <IndustrySelect
               value={formData.industry}
               onValueChange={(value) =>
                 setFormData({ ...formData, industry: value })
               }
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select industry" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Technology">Technology</SelectItem>
-                <SelectItem value="Healthcare">Healthcare</SelectItem>
-                <SelectItem value="Finance">Finance</SelectItem>
-                <SelectItem value="Education">Education</SelectItem>
-                <SelectItem value="Retail">Retail</SelectItem>
-                <SelectItem value="Manufacturing">Manufacturing</SelectItem>
-                <SelectItem value="Professional Services">
-                  Professional Services
-                </SelectItem>
-                <SelectItem value="Non-Profit">Non-Profit</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+              className="mt-1"
+            />
           </div>
 
           <div>

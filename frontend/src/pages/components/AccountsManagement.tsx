@@ -9,6 +9,7 @@ import {
   deleteAccount,
   moveAccount,
   getOrganizations,
+  updateAccount,
 } from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { IndustrySelectDropdown as IndustrySelect } from "@/components/ui/industry-select-dropdown";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +38,12 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   User,
   Plus,
   X,
@@ -43,6 +51,7 @@ import {
   Store,
   AlertTriangle,
   MoveRight,
+  Info,
 } from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
@@ -50,6 +59,10 @@ import {
   type Organization,
   type Account,
 } from "@/data/organizationTypes";
+import {
+  migrateIndustryValue,
+  getIndustryDisplayName,
+} from "@/lib/industryMigration";
 
 const REGION_OPTIONS = [
   { value: "Global", label: "Global" },
@@ -277,9 +290,12 @@ const AccountsManagement = ({
       regionArray = [existingRegion];
     }
 
+    // Migrate industry value if needed
+    const migratedIndustry = migrateIndustryValue(account.industry);
+
     setEditFormData({
       account_name: account.account_name,
-      industry: account.industry,
+      industry: migratedIndustry,
       status: account.status,
       websites:
         account.websites && account.websites.length > 0
@@ -296,29 +312,43 @@ const AccountsManagement = ({
     if (!selectedAccount) return;
 
     try {
-      const updatedAccount = {
-        ...selectedAccount,
-        ...editFormData,
-      };
+      // Update account in Neo4j (source of truth)
+      const updatedAccount = await updateAccount(selectedAccount.account_id, {
+        account_name: editFormData.account_name,
+        industry: editFormData.industry,
+        status: editFormData.status,
+        websites: editFormData.websites,
+        timezone: editFormData.timezone,
+        data_region: editFormData.data_region,
+        region: editFormData.region,
+      });
 
-      await axios.put(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/organizations/${currentOrgId}?account_id=${currentOrgId}`,
-        {
-          update: {
-            field: "accounts",
-            operator: "replaceOne",
-            matchField: "account_id",
-            matchValue: selectedAccount.account_id,
-            value: updatedAccount,
-          },
-        },
-      );
-
-      // Optionally update local accountMetadata context
+      // Update local accountMetadata context
       setAccountMetadata((prev) => ({
         ...prev,
         [selectedAccount.account_id]: updatedAccount,
       }));
+
+      // Update organization metadata to reflect the change
+      setOrgMetadata((prev) => ({
+        ...prev,
+        [currentOrgId]: {
+          ...prev[currentOrgId],
+          accounts:
+            prev[currentOrgId]?.accounts?.map((acc) =>
+              acc.account_id === selectedAccount.account_id
+                ? updatedAccount
+                : acc,
+            ) || [],
+        },
+      }));
+
+      // Update the local accounts list
+      setOrganizationAccounts((prev) =>
+        prev.map((acc) =>
+          acc.account_id === selectedAccount.account_id ? updatedAccount : acc,
+        ),
+      );
 
       setIsModalOpen(false);
       setSelectedAccount(null);
@@ -879,7 +909,7 @@ const AccountsManagement = ({
                     </h4>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="outline" className="text-xs">
-                        {account.industry}
+                        {getIndustryDisplayName(account.industry)}
                       </Badge>
                       <Badge
                         variant={
@@ -934,7 +964,7 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="account-industry">Industry</Label>
-              <Select
+              <IndustrySelect
                 value={editFormData.industry}
                 onValueChange={(value) =>
                   setEditFormData({
@@ -942,25 +972,7 @@ const AccountsManagement = ({
                     industry: value,
                   })
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select industry" />
-                </SelectTrigger>
-                <SelectContent>
-                  {INDUSTRY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="Retail">Retail</SelectItem>
-                  <SelectItem value="Healthcare Services">
-                    Healthcare Services
-                  </SelectItem>
-                  <SelectItem value="Financial Services">
-                    Financial Services
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="account-status">Status</Label>
@@ -1221,7 +1233,7 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="create-account-industry">Industry</Label>
-              <Select
+              <IndustrySelect
                 value={createAccountFormData.industry}
                 onValueChange={(value) =>
                   setCreateAccountFormData({
@@ -1229,25 +1241,7 @@ const AccountsManagement = ({
                     industry: value,
                   })
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select industry" />
-                </SelectTrigger>
-                <SelectContent>
-                  {INDUSTRY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="Retail">Retail</SelectItem>
-                  <SelectItem value="Healthcare Services">
-                    Healthcare Services
-                  </SelectItem>
-                  <SelectItem value="Financial Services">
-                    Financial Services
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="create-account-status">Status</Label>
