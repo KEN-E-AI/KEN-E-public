@@ -879,3 +879,41 @@ class AccountListResponse(BaseModel):
 
     accounts: list[Account] = Field(..., description="List of accounts")
     total: int = Field(..., description="Total number of accounts")
+
+
+# Subscription Plan Models
+class SubscriptionPlanFeatures(BaseModel):
+    """Features included in a subscription plan."""
+
+    max_users: int = Field(..., description="Maximum number of team members allowed")
+    max_reports: int = Field(..., description="Maximum number of reports per month")
+    features: list[str] = Field(..., description="List of features included in the plan")
+
+
+class SubscriptionPlanDefinition(BaseModel):
+    """Subscription plan definition model."""
+
+    plan_id: str = Field(..., description="Unique identifier for the plan")
+    plan_name: str = Field(..., description="Name of the subscription plan")
+    plan_description: str = Field(..., description="Description of the subscription plan")
+    price: float = Field(..., description="Price of the subscription")
+    currency: str = Field(..., description="Currency code (e.g., USD)")
+    billing_cycle: str = Field(..., description="Billing cycle (e.g., monthly, yearly)")
+    features: SubscriptionPlanFeatures = Field(..., description="Plan features and limits")
+    is_default: bool = Field(False, description="Whether this is the default plan for new organizations")
+    is_active: bool = Field(True, description="Whether this plan is currently available")
+    created_at: str = Field(..., description="Plan creation timestamp")
+    updated_at: str = Field(..., description="Last update timestamp")
+
+
+class SubscriptionPlanListResponse(BaseModel):
+    """Response model for subscription plan list."""
+
+    plans: list[SubscriptionPlanDefinition] = Field(..., description="List of subscription plans")
+    total: int = Field(..., description="Total number of plans")
+
+
+class ChangeSubscriptionRequest(BaseModel):
+    """Request model for changing organization subscription plan."""
+
+    plan_id: str = Field(..., description="The ID of the new subscription plan")

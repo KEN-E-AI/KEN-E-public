@@ -3,6 +3,7 @@
  */
 
 import type { Organization, Account } from "./organizationTypes";
+import { getDefaultPlan } from "./subscriptionPlansApi";
 
 // Get API base URL from environment
 const API_BASE_URL =
@@ -83,6 +84,20 @@ export async function updateOrganization(
     method: "PUT",
     body: JSON.stringify(updates),
   });
+}
+
+export async function updateOrganizationSubscription(
+  organizationId: string,
+  planId: string,
+  accountId: string,
+): Promise<Organization> {
+  return apiCall<Organization>(
+    `/api/v1/organizations/${organizationId}/subscription?account_id=${accountId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ plan_id: planId }),
+    },
+  );
 }
 
 export async function deleteOrganization(
@@ -180,42 +195,90 @@ export async function createNewOrganization(orgData: {
   agency?: boolean;
   child_organizations?: string[];
 }): Promise<Organization> {
-  // Create a default organization with minimal data
-  const newOrg = await createOrganization({
-    organization_name: orgData.organization_name,
-    plan: "Free",
-    website: "",
-    company_size: orgData.company_size, // Optional field
-    agency: orgData.agency || false,
-    child_organizations: orgData.child_organizations || [],
-    subscription: {
-      plan_name: "Free Plan",
-      plan_description: "Basic features for getting started",
-      price: 0,
-      currency: "USD",
-      billing_cycle: "monthly",
-      next_billing_date: new Date().toISOString(),
-      features: ["Basic Reports", "1 User"],
-      usage: {
-        reports_generated: 0,
-        reports_limit: 10,
+  try {
+    // Fetch the default plan from API
+    const defaultPlan = await getDefaultPlan();
+
+    // Create organization with default plan
+    const newOrg = await createOrganization({
+      organization_name: orgData.organization_name,
+      plan: defaultPlan.plan_name,
+      website: "",
+      company_size: orgData.company_size, // Optional field
+      agency: orgData.agency || false,
+      child_organizations: orgData.child_organizations || [],
+      subscription: {
+        plan_name: defaultPlan.plan_name,
+        plan_description: defaultPlan.plan_description,
+        price: defaultPlan.price,
+        currency: defaultPlan.currency,
+        billing_cycle: defaultPlan.billing_cycle,
+        next_billing_date: new Date().toISOString(),
+        features: defaultPlan.features.features,
+        usage: {
+          reports_generated: 0,
+          reports_limit: defaultPlan.features.max_reports,
+        },
       },
-    },
-    billing: {
-      payment_method: {
-        last_four: "",
-        brand: "",
-        expires: "",
+      billing: {
+        payment_method: {
+          last_four: "",
+          brand: "",
+          expires: "",
+        },
+        address: "",
+        tax_id: "",
       },
-      address: "",
-      tax_id: "",
-    },
-    team: {
-      members_used: 1,
-      members_limit: 1,
-      pending_invitations: 0,
-    },
-  });
+      team: {
+        members_used: 1,
+        members_limit: defaultPlan.features.max_users,
+        pending_invitations: 0,
+      },
+    });
+
+    return newOrg;
+  } catch (error) {
+    console.error("Failed to fetch default plan, using fallback:", error);
+
+    // Fallback to hardcoded values if API fails
+    const newOrg = await createOrganization({
+      organization_name: orgData.organization_name,
+      plan: "Free",
+      website: "",
+      company_size: orgData.company_size,
+      agency: orgData.agency || false,
+      child_organizations: orgData.child_organizations || [],
+      subscription: {
+        plan_name: "Free Plan",
+        plan_description: "Basic features for getting started",
+        price: 0,
+        currency: "USD",
+        billing_cycle: "monthly",
+        next_billing_date: new Date().toISOString(),
+        features: ["Basic Reports", "1 User"],
+        usage: {
+          reports_generated: 0,
+          reports_limit: 10,
+        },
+      },
+      billing: {
+        payment_method: {
+          last_four: "",
+          brand: "",
+          expires: "",
+        },
+        address: "",
+        tax_id: "",
+      },
+      team: {
+        members_used: 1,
+        members_limit: 1,
+        pending_invitations: 0,
+      },
+    });
+
+    return newOrg;
+  }
 
   return newOrg;
 }

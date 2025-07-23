@@ -348,7 +348,10 @@ describe("AccountsManagement", () => {
   describe("Account Update Functionality", () => {
     test("should successfully update account details", async () => {
       const user = userEvent.setup();
-      const updatedAccount = { ...mockAccount, industry: "Health Care and Social Assistance" };
+      const updatedAccount = {
+        ...mockAccount,
+        industry: "Health Care and Social Assistance",
+      };
       mockUpdateAccount.mockResolvedValue(updatedAccount);
 
       renderAccountsManagement();
