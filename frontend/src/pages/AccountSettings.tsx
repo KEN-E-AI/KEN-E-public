@@ -575,7 +575,10 @@ const AccountSettings = () => {
           <SubscriptionCard orgData={orgData} />
           <AccountsManagement orgData={orgData} currentOrgId={currentOrgId!} />
           <BillingSection orgData={orgData} />
-          <TeamManagement orgData={orgData} />
+          {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||
+            user?.permissions?.organizations?.[currentOrgId!] === "owner") && (
+            <TeamManagement orgData={orgData} />
+          )}
           <DangerZone orgData={orgData} />
         </>
       )}

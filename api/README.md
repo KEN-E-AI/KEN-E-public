@@ -1,4 +1,4 @@
-# Kene API
+# KEN-E API
 
 A modern FastAPI web service built with Python, featuring automatic API documentation, request/response validation, and async support.
 
@@ -36,26 +36,105 @@ tests/
 └── test_main.py         # Test suite
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
-- Neo4j database (local installation or cloud instance)
+- **Python 3.12+**
+- **[uv](https://docs.astral.sh/uv/)** - Fast Python package manager
+- **Neo4j database** - Local installation or cloud instance (Neo4j Aura)
+- **Google Cloud Project** - For Firestore and other GCP services
 
-### Installation
+### Local Development Setup
 
-1. Clone the repository and navigate to the project directory
-2. Install dependencies:
+1. **Clone the repository and navigate to the API directory**
+   ```bash
+   git clone <repository-url>
+   cd ken-e/api
+   ```
+
+2. **Install dependencies**
    ```bash
    uv sync
    ```
-3. Set up environment variables:
+
+3. **Configure environment**
+
+   The API requires environment configuration for database connections and services. You have two options:
+
+   **Option A: Use the environment switching script (recommended)**
    ```bash
-   cp .env.example .env
-   # Edit .env with your Neo4j connection details
+   # Switch to development environment
+   ./scripts/set_environment.sh development
+
+   # Or switch to staging environment
+   ./scripts/set_environment.sh staging
+
+   # Or switch to production environment (use with caution!)
+   ./scripts/set_environment.sh production
    ```
+
+   **Option B: Manually create .env**
+   ```bash
+   # Copy from example file
+   cp .env.example .env
+   
+   # Then edit .env with your configuration
+   ```
+
+4. **Start the development server**
+
+   After setting your environment, start the API server:
+
+   ```bash
+   # Option 1: Using uv directly (recommended)
+   uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+
+   # Option 2: Using the Python script
+   python run_dev.py
+
+   # Option 3: Using Docker
+   ./docker.sh dev
+   ```
+
+5. **Access the API**
+   - API endpoints: `http://localhost:8000`
+   - Interactive docs: `http://localhost:8000/docs`
+   - Alternative docs: `http://localhost:8000/redoc`
+
+### Environment Details
+
+| Environment | Neo4j Instance | Debug Mode | Usage |
+|------------|----------------|------------|-------|
+| Development | Dev Aura instance | Enabled | Local development |
+| Staging | Staging Aura instance | Disabled | Testing with staging data |
+| Production | Production Aura instance | Disabled | Production data (careful!) |
+
+### Switching Between Environments
+
+To switch between environments during development:
+
+```bash
+# Check current environment
+./scripts/set_environment.sh
+
+# Switch to a different environment
+./scripts/set_environment.sh [development|staging|production]
+
+# Restart the API server to use the new environment
+```
+
+### Environment Files
+
+The project uses the following environment files:
+
+- `.env.development` - Development environment configuration
+- `.env.staging` - Staging environment configuration  
+- `.env.production` - Production environment configuration
+- `.env` - Active environment (created by set_environment.sh, gitignored)
+- `.env.example` - Template with all required environment variables
+
+**Note:** Never commit `.env` or any file containing actual credentials to version control.
 
 ### Neo4j Setup
 
@@ -102,67 +181,13 @@ docker run \
 
 ### Running the Application
 
-#### Environment Setup
+For running the application, please refer to the [Quick Start](#-quick-start) section above.
 
-1. **Set up environment-specific configurations**:
-   ```bash
-   # Copy example to create environment-specific files
-   cp .env.example .env.development
-   cp .env.example .env.staging
-   cp .env.example .env.production
-   
-   # Edit each file with appropriate settings
-   # Then set the active environment:
-   ./scripts/set_environment.sh development
-   ```
-
-2. **Configure Neo4j Aura instances**:
-   - Create separate Neo4j Aura instances for dev/staging/prod
-   - Update each .env file with the appropriate credentials
-
-#### Development Server
-
-**Option 1: Using uv directly (recommended)**
+#### Production Deployment
 ```bash
-# From the api directory:
-cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Option 2: Using the Python development script**
-```bash
-# From the api directory:
-cd api && python run_dev.py
-```
-
-**Option 3: Using Docker**
-```bash
-# From the api directory:
-cd api && ./docker.sh dev
-```
-
-**Note:** This is a Python project using `pyproject.toml`. There is no `package.json` file - do not use npm commands in this directory.
-
-#### Production
-```bash
+# For production deployment (without auto-reload)
 uv run --active uvicorn src.kene_api.main:app --host 0.0.0.0 --port 8000
 ```
-
-#### Switching Environments
-```bash
-# Switch to staging
-./scripts/set_environment.sh staging
-
-# Switch to production
-./scripts/set_environment.sh production
-
-# Switch back to development
-./scripts/set_environment.sh development
-```
-
-The API will be available at:
-- **Application**: http://localhost:8000
-- **Interactive API docs**: http://localhost:8000/docs
-- **Alternative docs**: http://localhost:8000/redoc
 
 ## Command Line Interface (CLI)
 
@@ -248,6 +273,15 @@ uv run pytest tests/ -v
 - `GET /api/v1/metrics/` - Get all metrics
 - `POST /api/v1/metrics/` - Create a new metric
 
+### Accounts API
+- `GET /api/v1/accounts/` - Get all accounts
+- `GET /api/v1/accounts/{account_id}` - Get a specific account
+- `POST /api/v1/accounts/` - Create a new account (restricted for agency organizations)
+- `PUT /api/v1/accounts/{account_id}` - Update an account
+- `DELETE /api/v1/accounts/{account_id}` - Delete an account
+
+**Note:** Account creation is restricted for agency organizations. Only regular organizations (where `agency=false`) can create accounts. Agency organizations will receive a 403 Forbidden error when attempting to create accounts.
+
 ### Insights API
 - `GET /api/v1/insights/` - Get all insights
 - `POST /api/v1/insights/search` - Search insights with filters
@@ -268,28 +302,65 @@ uv run pytest tests/ -v
 - `PUT /api/v1/items/{item_id}` - Update an item
 - `DELETE /api/v1/items/{item_id}` - Delete an item
 
-## Configuration
+## ⚙️ Configuration
 
-The application can be configured using environment variables:
+The application is configured using environment variables. Use the environment switching script or manually edit your `.env` file.
 
-### Application Settings
-- `DEBUG`: Enable debug mode (default: false)
+### Core Environment Variables
+
+#### Application Settings
+- `ENVIRONMENT`: Current environment (development|staging|production)
+- `DEBUG`: Enable debug mode (true for development, false for staging/production)
 - `HOST`: Server host (default: 0.0.0.0)
 - `PORT`: Server port (default: 8000)
-- `RELOAD`: Enable auto-reload in development (default: false)
+- `LOG_LEVEL`: Logging level (DEBUG|INFO|WARNING|ERROR)
 
-### Neo4j Database Settings
-- `NEO4J_URI`: Neo4j connection URI (default: bolt://localhost:7687)
-- `NEO4J_USERNAME`: Database username (default: neo4j)
+#### Neo4j Database Settings
+- `NEO4J_URI`: Neo4j connection URI (e.g., `neo4j+s://your-instance.databases.neo4j.io`)
+- `NEO4J_USER`: Database username (typically: neo4j)
 - `NEO4J_PASSWORD`: Database password (required)
 - `NEO4J_DATABASE`: Database name (default: neo4j)
 
-Copy `.env.example` to `.env` and adjust the values as needed for your environment.
+#### Google Cloud Settings
+- `GOOGLE_CLOUD_PROJECT_ID`: Your GCP project ID
+- `FIRESTORE_DATABASE_ID`: Firestore database ID (default: "(default)")
 
-### CORS Settings
-- `ALLOWED_ORIGINS`: Comma-separated list of allowed origins
-- `ALLOWED_METHODS`: Comma-separated list of allowed HTTP methods
-- `ALLOWED_HEADERS`: Allowed headers (* for all)
+#### CORS Settings
+- `CORS_ORIGINS`: Comma-separated list of allowed origins (e.g., `http://localhost:8080,https://app.ken-e.ai`)
+
+#### Optional Settings
+- `RECAPTCHA_SITE_KEY`: Google reCAPTCHA site key (if using reCAPTCHA)
+- `RECAPTCHA_SECRET_KEY`: Google reCAPTCHA secret key (if using reCAPTCHA)
+
+### Example .env File
+
+```env
+# Environment
+ENVIRONMENT=development
+
+# Application
+DEBUG=true
+HOST=0.0.0.0
+PORT=8000
+LOG_LEVEL=DEBUG
+
+# Neo4j
+NEO4J_URI=neo4j+s://your-dev-instance.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-secure-password
+NEO4J_DATABASE=neo4j
+
+# Google Cloud
+GOOGLE_CLOUD_PROJECT_ID=ken-e-dev
+FIRESTORE_DATABASE_ID=(default)
+
+# CORS
+CORS_ORIGINS=http://localhost:8080,http://localhost:5173
+
+# Optional
+RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET_KEY=
+```
 
 ## Docker Deployment
 
@@ -404,6 +475,71 @@ This project follows FastAPI best practices:
 - Include comprehensive docstrings
 - Use appropriate HTTP status codes
 - Implement proper error handling
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**Environment configuration not working:**
+
+```bash
+# Make sure the script is executable
+chmod +x ./scripts/set_environment.sh
+
+# Check if environment files exist
+ls -la .env.*
+
+# Manually check current environment
+cat .env | grep ENVIRONMENT
+```
+
+**Neo4j connection errors:**
+
+- Verify Neo4j credentials in your `.env` file
+- For Neo4j Aura, ensure you're using the correct URI format: `neo4j+s://`
+- Check that your IP address is whitelisted in Neo4j Aura settings
+- Test connection with Neo4j Browser first
+
+**Module import errors:**
+
+```bash
+# Ensure you're in the api directory
+cd api
+
+# Reinstall dependencies
+uv sync
+
+# Check Python version
+python --version  # Should be 3.12+
+```
+
+**Port already in use:**
+
+```bash
+# Find process using port 8000
+lsof -i :8000
+
+# Kill the process
+kill -9 <PID>
+
+# Or use a different port
+uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8001
+```
+
+**CORS errors from frontend:**
+
+- Check `CORS_ORIGINS` in your `.env` file includes `http://localhost:8080`
+- Ensure the API is running on the expected port
+- Verify no proxy is interfering with requests
+
+**Google Cloud authentication errors:**
+
+- Ensure `GOOGLE_CLOUD_PROJECT_ID` is set correctly
+- Check that you have the necessary credentials configured
+- For local development, you may need to set up Application Default Credentials:
+  ```bash
+  gcloud auth application-default login
+  ```
 
 ## Breaking Changes
 

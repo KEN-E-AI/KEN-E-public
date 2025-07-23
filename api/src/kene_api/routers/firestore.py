@@ -2247,9 +2247,9 @@ async def get_organization_members(
                 access_level = org_permissions[organization_id]
                 member = OrganizationMember(
                     user_id=user_id,
-                    email=user_doc.get("email", ""),
-                    first_name=user_doc.get("firstName"),
-                    last_name=user_doc.get("lastName"),
+                    email=user_doc.get("profile", {}).get("email", ""),
+                    first_name=user_doc.get("profile", {}).get("first_name"),
+                    last_name=user_doc.get("profile", {}).get("last_name"),
                     access_level=access_level,
                     added_date=user_doc.get("created_at"),
                 )
@@ -2912,7 +2912,7 @@ async def accept_invitation(
                 document_id=invitation["invited_by"],
             )
             if inviter_doc:
-                inviter_email = inviter_doc.get("email")
+                inviter_email = inviter_doc.get("profile", {}).get("email")
 
         if inviter_email:
             email_service.send_invitation_accepted_notification(

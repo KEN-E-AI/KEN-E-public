@@ -1,6 +1,6 @@
-# Data Analytics Dashboard
+# KEN-E Frontend
 
-A modern, production-ready data analytics dashboard built with React, TypeScript, and TailwindCSS. Features interactive charts, AI-powered chat assistant, and comprehensive data visualization tools.
+A modern React TypeScript application for marketing analytics and insights, built with Vite, TailwindCSS, and Radix UI.
 
 ## ✨ Features
 
@@ -9,7 +9,7 @@ A modern, production-ready data analytics dashboard built with React, TypeScript
 - 🤖 **AI Chat Assistant** - Multi-agent chat interface with conversation management
 - 🔄 **Dynamic Filtering** - Channel and tactic-based data filtering
 - 📱 **Responsive Design** - Optimized for desktop, tablet, and mobile
-- 🎨 **Modern UI** - Clean interface built with Radix UI components
+- 🎨 **Modern UI** - Clean interface built with Radix UI components (~50 components)
 - 🌙 **Dark Mode Ready** - Built-in theme support
 - ♿ **Accessibility** - WCAG compliant with keyboard navigation
 
@@ -29,13 +29,13 @@ node --version
 npm --version
 ```
 
-### Installation
+### Local Development Setup
 
 1. **Clone the repository**
 
    ```bash
    git clone <repository-url>
-   cd fusion-starter
+   cd ken-e/frontend
    ```
 
 2. **Install dependencies**
@@ -44,25 +44,100 @@ npm --version
    npm install
    ```
 
-3. **Start the development server**
+3. **Configure environment**
+
+   The frontend requires environment configuration to connect to the correct backend API and Firebase project. You have two options:
+
+   **Option A: Use the environment switching script (recommended)**
 
    ```bash
-   npm run dev
+   # Switch to development environment
+   ./scripts/set_environment.sh development
+
+   # Or switch to staging environment
+   ./scripts/set_environment.sh staging
+
+   # Or switch to production environment (use with caution!)
+   ./scripts/set_environment.sh production
    ```
 
-4. **Open your browser**
-   - Navigate to `http://localhost:5173`
-   - The dashboard should load automatically
+   **Option B: Manually create .env.local**
+
+   ```bash
+   # Copy from example file
+   cp .env.example .env.local
+
+   # Then edit .env.local with your configuration
+   ```
+
+4. **Start the development server**
+
+   After setting your environment, start the dev server:
+
+   ```bash
+   # For development environment (default)
+   npm run dev:development
+
+   # For staging environment
+   npm run dev:staging
+
+   # For production environment (use with caution!)
+   npm run dev:production
+   ```
+
+5. **Open your browser**
+   - Navigate to `http://localhost:8080`
+   - The application will load with the selected environment configuration
+
+### Environment Details
+
+| Environment | API URL               | Firebase Project | Usage                      |
+| ----------- | --------------------- | ---------------- | -------------------------- |
+| Development | http://localhost:8000 | ken-e-dev        | Local development          |
+| Staging     | http://localhost:8000 | ken-e-staging    | Testing with staging data  |
+| Production  | https://api.ken-e.ai  | ken-e-production | Production data (careful!) |
+
+### Switching Between Environments
+
+To switch between environments during development:
+
+```bash
+# Check current environment
+./scripts/set_environment.sh
+
+# Switch to a different environment
+./scripts/set_environment.sh [development|staging|production]
+
+# Restart the dev server with the appropriate command
+npm run dev:[environment]
+```
+
+### Environment Files
+
+The project uses the following environment files:
+
+- `.env.development` - Development environment configuration
+- `.env.staging` - Staging environment configuration
+- `.env.production` - Production environment configuration
+- `.env.local` - Active environment (created by set_environment.sh, gitignored)
+- `.env.example` - Template with all required environment variables
+
+**Note:** Never commit `.env.local` or any file containing actual credentials to version control.
 
 ## 📋 Available Scripts
 
-| Command              | Description                              |
-| -------------------- | ---------------------------------------- |
-| `npm run dev`        | Start development server with hot reload |
-| `npm run build`      | Build for production                     |
-| `npm run test`       | Run unit tests                           |
-| `npm run typecheck`  | Check TypeScript types                   |
-| `npm run format.fix` | Format code with Prettier                |
+| Command                    | Description                                         |
+| -------------------------- | --------------------------------------------------- |
+| `npm run dev`              | Start dev server on port 8080 (default development) |
+| `npm run dev:development`  | Start dev server on port 8080 (development env)     |
+| `npm run dev:staging`      | Start dev server on port 8080 (staging env)         |
+| `npm run dev:production`   | Start dev server on port 8080 (production env)      |
+| `npm run build`            | Build for production                                |
+| `npm run build:staging`    | Build for staging environment                       |
+| `npm run build:production` | Build for production environment                    |
+| `npm run test`             | Run Vitest unit tests                               |
+| `npm run typecheck`        | Check TypeScript types                              |
+| `npm run format.fix`       | Format code with Prettier                           |
 
 ## 🛠 Tech Stack
 
@@ -226,12 +301,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Common Issues
 
+**Environment configuration not working:**
+
+```bash
+# Make sure the script is executable
+chmod +x ./scripts/set_environment.sh
+
+# Check if environment files exist
+ls -la .env.*
+
+# Manually check current environment
+cat .env.local | grep VITE_ENVIRONMENT
+```
+
 **Port already in use:**
 
 ```bash
-# Kill process on port 5173
-npx kill-port 5173
-npm run dev
+# Kill process on port 8080
+npx kill-port 8080
+npm run dev:[environment]
 ```
 
 **Module not found errors:**
@@ -256,6 +344,12 @@ npm run typecheck
 npm run format.fix
 npm run build
 ```
+
+**API connection issues:**
+
+- Ensure the backend API is running on port 8000 for local development
+- Check that CORS is properly configured in the API
+- Verify Firebase credentials match the selected environment
 
 ### Getting Help
 

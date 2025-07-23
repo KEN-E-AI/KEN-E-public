@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import {
   signInWithEmailAndPassword,
@@ -9,6 +10,7 @@ import {
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
+import { verifyInvitationToken, type Invitation } from "@/data/teamApi";
 import type {
   FirebaseUser,
   FirestoreUserData,
@@ -45,9 +47,12 @@ interface AuthenticationProps {
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const { login, setNotificationSettings, setSecuritySettings } = useAuth();
+  const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [invitationData, setInvitationData] = useState<Invitation | null>(null);
+  const [invitationError, setInvitationError] = useState<string | null>(null);
   const [signInData, setSignInData] = useState({
     email: "",
     password: "",
@@ -65,6 +70,55 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const [isSignUpCaptchaVerified, setIsSignUpCaptchaVerified] = useState(false);
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
   const [showResendButton, setShowResendButton] = useState(false);
+
+  // Check for invitation token in URL
+  const invitationToken = searchParams.get("invitation");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const verifyInvitation = async () => {
+      if (!invitationToken) return;
+
+      try {
+        const invitation = await verifyInvitationToken(invitationToken);
+
+        // Only update state if component is still mounted
+        if (mounted) {
+          setInvitationData(invitation);
+          // Pre-fill email if available
+          setSignInData((prev) => ({ ...prev, email: invitation.email }));
+          setSignUpData((prev) => ({ ...prev, email: invitation.email }));
+        }
+      } catch (error: any) {
+        // Only update state if component is still mounted
+        if (mounted) {
+          console.error("[Authentication] Error verifying invitation:", error);
+          if (error.response?.status === 404) {
+            setInvitationError("Invalid invitation link");
+          } else if (error.response?.status === 400) {
+            const detail = error.response.data?.detail;
+            if (detail?.includes("expired")) {
+              setInvitationError("This invitation has expired");
+            } else if (detail?.includes("already been accepted")) {
+              setInvitationError("This invitation has already been accepted");
+            } else {
+              setInvitationError(detail || "Invalid invitation");
+            }
+          } else {
+            setInvitationError("Failed to verify invitation");
+          }
+        }
+      }
+    };
+
+    verifyInvitation();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      mounted = false;
+    };
+  }, [invitationToken]);
 
   // Helper function to fetch user data and settings from Firestore
   const fetchUserDataAndSettings = async (
@@ -501,6 +555,39 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           </div>
 
           <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+            {invitationData && !invitationError && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mx-6 mt-4">
+                <div className="flex items-start gap-3">
+                  <Mail className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-blue-900">
+                      You've been invited!
+                    </h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Sign in or create an account to accept your invitation to
+                      join <strong>{invitationData.organization_name}</strong>{" "}
+                      with <strong>{invitationData.access_level}</strong>{" "}
+                      access.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {invitationError && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-4 mx-6 mt-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-red-900">
+                      Invalid Invitation
+                    </h4>
+                    <p className="text-sm text-red-700 mt-1">
+                      {invitationError}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {errorMessage && (
               <div
                 className={`text-sm font-medium pt-4 px-6 ${

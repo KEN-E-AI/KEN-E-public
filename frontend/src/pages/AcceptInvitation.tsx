@@ -31,6 +31,17 @@ const AcceptInvitation = () => {
   const [isAccepting, setIsAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Log component state for debugging
+  useEffect(() => {
+    console.log("[AcceptInvitation] Component state:", {
+      token,
+      user: user?.email,
+      isLoading,
+      error,
+      invitation: invitation?.organization_name,
+    });
+  }, [token, user, isLoading, error, invitation]);
+
   useEffect(() => {
     const verifyInvite = async () => {
       if (!token) {
@@ -44,10 +55,17 @@ const AcceptInvitation = () => {
         setInvitation(inviteData);
       } catch (error: any) {
         console.error("[AcceptInvitation] Error verifying invitation:", error);
+        console.error(
+          "[AcceptInvitation] Error response:",
+          error.response?.data,
+        );
+
         if (error.response?.status === 404) {
           setError("Invalid invitation link");
         } else if (error.response?.status === 400) {
           const detail = error.response.data?.detail;
+          console.error("[AcceptInvitation] 400 error detail:", detail);
+
           if (detail?.includes("expired")) {
             setError("This invitation has expired");
           } else if (detail?.includes("already been accepted")) {
@@ -139,52 +157,20 @@ const AcceptInvitation = () => {
     );
   }
 
-  if (!user) {
+  // Redirect unauthenticated users to the new authentication flow
+  // This must happen before any conditional returns
+  if (!user && token && !error && !isLoading) {
+    // Only redirect if we haven't encountered an error and we're not loading
+    navigate(`/auth/signin?invitation=${token}`, { replace: true });
     return (
       <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader className="text-center">
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
-                <Building className="h-6 w-6 text-white" />
+          <CardContent className="pt-8 pb-8">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="w-16 h-16 bg-brand-medium-blue/10 rounded-full flex items-center justify-center animate-pulse">
+                <Mail className="h-8 w-8 text-brand-medium-blue" />
               </div>
-            </div>
-            <CardTitle className="text-2xl">Sign In Required</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-center text-gray-600">
-              You need to sign in or create an account to accept this
-              invitation.
-            </p>
-            {invitation && (
-              <Alert>
-                <Mail className="h-4 w-4" />
-                <AlertDescription>
-                  You've been invited to join{" "}
-                  <strong>{invitation.organization_name}</strong> with{" "}
-                  <strong>{invitation.access_level}</strong> access.
-                </AlertDescription>
-              </Alert>
-            )}
-            <div className="flex gap-3">
-              <Button
-                className="flex-1"
-                onClick={() =>
-                  navigate("/login", { state: { from: `/invite/${token}` } })
-                }
-              >
-                Sign In
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() =>
-                  navigate("/signup", { state: { from: `/invite/${token}` } })
-                }
-              >
-                Create Account
-              </Button>
+              <p className="text-gray-600">Redirecting to sign in...</p>
             </div>
           </CardContent>
         </Card>
@@ -231,106 +217,130 @@ const AcceptInvitation = () => {
     );
   }
 
+  // If we have an invitation, show the accept UI
+  if (invitation) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-brand-medium-blue rounded-lg flex items-center justify-center">
+                <Building className="h-8 w-8 text-white" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl">You're Invited!</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="text-center space-y-2">
+              <p className="text-lg text-gray-700">
+                <strong>{invitation.inviter_name}</strong> has invited you to
+                join
+              </p>
+              <h3 className="text-2xl font-bold text-brand-medium-blue">
+                {invitation.organization_name}
+              </h3>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-light-blue/30 rounded-full flex items-center justify-center">
+                  <Mail className="h-5 w-5 text-brand-medium-blue" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Your email</p>
+                  <p className="font-medium">{invitation.email}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-light-blue/30 rounded-full flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-brand-medium-blue" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Access level</p>
+                  <p className="font-medium capitalize">
+                    {invitation.access_level}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-light-blue/30 rounded-full flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-brand-medium-blue" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Expires</p>
+                  <p className="font-medium">
+                    {new Date(invitation.expires_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Alert>
+              <CheckCircle className="h-4 w-4" />
+              <AlertDescription>
+                By accepting this invitation, you'll gain{" "}
+                <strong>{invitation.access_level}</strong> access to{" "}
+                {invitation.organization_name}'s KEN-E workspace.
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => navigate("/")}
+                disabled={isAccepting}
+              >
+                Decline
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleAcceptInvitation}
+                disabled={isAccepting}
+              >
+                {isAccepting ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Accepting...
+                  </div>
+                ) : (
+                  <>
+                    Accept Invitation
+                    <CheckCircle className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Fallback render - this should never be reached, but ensures we always display something
+  console.error(
+    "[AcceptInvitation] Unexpected state - no condition matched for rendering",
+  );
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-        <CardHeader className="text-center">
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-16 h-16 bg-brand-medium-blue rounded-lg flex items-center justify-center">
-              <Building className="h-8 w-8 text-white" />
-            </div>
+      <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <CardContent className="pt-8 pb-8">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Unexpected Error</AlertTitle>
+            <AlertDescription>
+              An unexpected error occurred. Please try refreshing the page.
+            </AlertDescription>
+          </Alert>
+          <div className="mt-6 text-center">
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Refresh Page
+            </Button>
           </div>
-          <CardTitle className="text-2xl">You're Invited!</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {invitation && (
-            <>
-              <div className="text-center space-y-2">
-                <p className="text-lg text-gray-700">
-                  <strong>{invitation.inviter_name}</strong> has invited you to
-                  join
-                </p>
-                <h3 className="text-2xl font-bold text-brand-medium-blue">
-                  {invitation.organization_name}
-                </h3>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-brand-light-blue/30 rounded-full flex items-center justify-center">
-                    <Mail className="h-5 w-5 text-brand-medium-blue" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Your email</p>
-                    <p className="font-medium">{invitation.email}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-brand-light-blue/30 rounded-full flex items-center justify-center">
-                    <Shield className="h-5 w-5 text-brand-medium-blue" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Access level</p>
-                    <p className="font-medium capitalize">
-                      {invitation.access_level}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-brand-light-blue/30 rounded-full flex items-center justify-center">
-                    <Clock className="h-5 w-5 text-brand-medium-blue" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Expires</p>
-                    <p className="font-medium">
-                      {new Date(invitation.expires_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <Alert>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription>
-                  By accepting this invitation, you'll gain{" "}
-                  <strong>{invitation.access_level}</strong> access to{" "}
-                  {invitation.organization_name}'s KEN-E workspace.
-                </AlertDescription>
-              </Alert>
-
-              <div className="flex gap-3 pt-4">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => navigate("/")}
-                  disabled={isAccepting}
-                >
-                  Decline
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={handleAcceptInvitation}
-                  disabled={isAccepting}
-                >
-                  {isAccepting ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Accepting...
-                    </div>
-                  ) : (
-                    <>
-                      Accept Invitation
-                      <CheckCircle className="ml-2 h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </>
-          )}
         </CardContent>
       </Card>
     </div>

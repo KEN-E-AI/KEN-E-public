@@ -75,6 +75,50 @@ class TestEmailService:
             assert call_args.personalizations[0].tos[0]["email"] == "test@example.com"
 
     @patch("src.kene_api.email_service.SendGridAPIClient")
+    @patch("src.kene_api.email_service.template_loader")
+    def test_invitation_url_format(self, mock_template_loader, mock_sendgrid):
+        """Test that invitation URL uses new auth/signin format."""
+        # Setup mocks
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.status_code = 202
+        mock_client.send.return_value = mock_response
+        mock_sendgrid.return_value = mock_client
+        mock_template_loader.get_invitation_email_html.return_value = "<html>test</html>"
+
+        with patch.dict(
+            os.environ,
+            {
+                "SENDGRID_API_KEY": "test-key",
+                "APP_BASE_URL": "https://app.example.com",
+            },
+        ):
+            service = EmailService()
+
+            result = service.send_invitation_email(
+                to_email="test@example.com",
+                inviter_name="John Doe",
+                organization_name="Test Org",
+                access_level="admin",
+                invitation_token="test-token-123",
+            )
+
+            assert result is True
+            
+            # Verify the template loader was called with the correct URL format
+            mock_template_loader.get_invitation_email_html.assert_called_once_with(
+                inviter_name="John Doe",
+                organization_name="Test Org",
+                access_level="admin",
+                invitation_url="https://app.example.com/auth/signin?invitation=test-token-123",
+            )
+            
+            # Also verify the plain text content contains the new URL
+            call_args = mock_client.send.call_args[0][0]
+            plain_text = str(call_args.contents[0].content)
+            assert "https://app.example.com/auth/signin?invitation=test-token-123" in plain_text
+
+    @patch("src.kene_api.email_service.SendGridAPIClient")
     def test_send_invitation_email_no_client(self, mock_sendgrid):
         """Test sending email when client is not initialized."""
         with patch.dict(os.environ, {}, clear=True):

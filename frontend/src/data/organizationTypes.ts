@@ -61,16 +61,165 @@ export interface Account {
   updated_at?: string;
 }
 
+// Option types
+export interface IndustryOption {
+  value: string;
+  label: string;
+  definition: string;
+}
+
 // Constants
-export const INDUSTRY_OPTIONS = [
-  { value: "Technology", label: "Technology" },
-  { value: "Healthcare", label: "Healthcare" },
-  { value: "Finance", label: "Finance" },
-  { value: "Education", label: "Education" },
-  { value: "Retail", label: "Retail" },
-  { value: "Manufacturing", label: "Manufacturing" },
-  { value: "Services", label: "Services" },
-  { value: "Other", label: "Other" },
+export const INDUSTRY_OPTIONS: IndustryOption[] = [
+  {
+    value: "Agriculture, Forestry, Fishing and Hunting",
+    label: "Agriculture, Forestry, Fishing and Hunting",
+    definition:
+      "Growing crops, raising livestock, logging, and harvesting wild resources (fish, game, sap, etc.).",
+  },
+  {
+    value: "Utilities",
+    label: "Utilities",
+    definition:
+      "Providing electric power, natural gas, steam supply, water supply, and sewage removal services.",
+  },
+  {
+    value: "Construction",
+    label: "Construction",
+    definition:
+      "Building, repairing, and renovating residential, commercial, and civil structures and infrastructure.",
+  },
+  {
+    value: "Manufacturing",
+    label: "Manufacturing",
+    definition:
+      "Transforming raw materials into finished goods by mechanical, chemical, or electronic processes.",
+  },
+  {
+    value: "Wholesale Trade [B2B]",
+    label: "Wholesale Trade [B2B]",
+    definition:
+      "Buying and selling goods in bulk—typically to retailers, other merchants, or institutional users.",
+  },
+  {
+    value: "Retail Trade [B2C]",
+    label: "Retail Trade [B2C]",
+    definition:
+      "Selling goods directly to consumers through stores, online, or other direct channels.",
+  },
+  {
+    value: "Transportation and Warehousing",
+    label: "Transportation and Warehousing",
+    definition:
+      "Moving people or goods by road, rail, air, or water, plus storage and logistics services.",
+  },
+  {
+    value: "Finance and Insurance",
+    label: "Finance and Insurance",
+    definition:
+      "Facilitating financial transactions: banking, investment, securities, insurance carriers, and related services.",
+  },
+  {
+    value: "Real Estate and Rental and Leasing",
+    label: "Real Estate and Rental and Leasing",
+    definition:
+      "Selling, renting, and managing real property (land and buildings) and leasing machinery, equipment, and vehicles.",
+  },
+  {
+    value: "Professional, Scientific, and Technical Services [B2B]",
+    label: "Professional, Scientific, and Technical Services [B2B]",
+    definition:
+      "Specialized services provided to businesses. Services require high intellectual effort and training: legal, accounting, engineering, design, consulting, R&D, and advertising.",
+  },
+  {
+    value: "Professional, Scientific, and Technical Services [B2C]",
+    label: "Professional, Scientific, and Technical Services [B2C]",
+    definition:
+      "Specialized services provided to consumers. Services require high intellectual effort and training: legal, accounting, engineering, design, consulting, R&D, and advertising.",
+  },
+  {
+    value: "Educational Services",
+    label: "Educational Services",
+    definition:
+      "Providing instruction and training at the high school level or below: schools or tutoring centers.",
+  },
+  {
+    value: "Higher Educational Services",
+    label: "Higher Educational Services",
+    definition:
+      "Providing instruction and training above the high school level, such as colleges, universities, and technical centers.",
+  },
+  {
+    value: "Health Care and Social Assistance",
+    label: "Health Care and Social Assistance",
+    definition:
+      "Delivering medical, dental, and mental health services, plus social assistance (child care, community services).",
+  },
+  {
+    value: "Arts, Entertainment, and Recreation",
+    label: "Arts, Entertainment, and Recreation",
+    definition:
+      "Performing arts, spectator sports, museums, heritage sites, amusement parks, and recreational facilities.",
+  },
+  {
+    value: "Hospitality, Accommodation and Food Services",
+    label: "Hospitality, Accommodation and Food Services",
+    definition:
+      "Lodging (hotels, motels) and food/beverage preparation and serving (restaurants, bars, catering).",
+  },
+  {
+    value: "Public Administration",
+    label: "Public Administration",
+    definition:
+      "Government agencies at the federal, state, and local levels, including legislative, judicial, and executive functions.",
+  },
+  {
+    value: "Media and Publishing",
+    label: "Media and Publishing",
+    definition:
+      "Producing, curating and distributing editorial content across print, digital and broadcast channels—newspapers, magazines, websites, newsletters, podcasts and streaming platforms focused on news, lifestyle and entertainment.",
+  },
+  {
+    value: "Pharmaceuticals and Biotechnology [Direct to Consumer]",
+    label: "Pharmaceuticals and Biotechnology [Direct to Consumer]",
+    definition:
+      "Researching, developing, manufacturing, and distributing medicinal drugs, biologics, vaccines, and therapies—covering drug discovery, clinical trials, regulatory approval, and commercialization. Marketed directly to consumers.",
+  },
+  {
+    value: "Pharmaceuticals and Biotechnology [Healthcare Professionals]",
+    label: "Pharmaceuticals and Biotechnology [Healthcare Professionals]",
+    definition:
+      "Researching, developing, manufacturing, and distributing medicinal drugs, biologics, vaccines, and therapies—covering drug discovery, clinical trials, regulatory approval, and commercialization. Marketed to healthcare professionals.",
+  },
+  {
+    value: "Enterprise Software and SaaS [B2B]",
+    label: "Enterprise Software and SaaS [B2B]",
+    definition:
+      "Developing and providing subscription-based, cloud-hosted software applications and platforms to businesses—CRM, ERP, analytics, collaboration, and developer tools delivered over the internet.",
+  },
+  {
+    value: "Consumer Software and SaaS [B2C]",
+    label: "Consumer Software and SaaS [B2C]",
+    definition:
+      "Developing and providing subscription-based, cloud-hosted software applications and platforms to consumers.",
+  },
+  {
+    value: "Nonprofit Organizations and NGOs",
+    label: "Nonprofit Organizations and NGOs",
+    definition:
+      "Charitable, philanthropic, and non-governmental organizations operating on a not-for-profit basis—advocacy, grantmaking, research, social services, and community development in areas such as health, education, the environment, and human rights.",
+  },
+  {
+    value: "Other Services (except Public Administration)",
+    label: "Other Services (except Public Administration)",
+    definition:
+      "Personal and laundry services, repair and maintenance, religious organizations, civic and social advocacy.",
+  },
+  {
+    value: "Other",
+    label: "Other",
+    definition:
+      "Businesses that do not fit clearly into any of the other categories.",
+  },
 ];
 
 export const COMPANY_SIZE_OPTIONS = [

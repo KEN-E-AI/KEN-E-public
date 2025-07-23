@@ -245,8 +245,11 @@ export const EntitySelector = ({
         </SelectValue>
       </SelectTrigger>
       <SelectContent align="start" className="max-w-[400px]">
-        {combinedOptions.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
+        {combinedOptions.map((option, index) => (
+          <SelectItem
+            key={`${option.orgId}-${option.accountId}-${index}`}
+            value={option.value}
+          >
             <div className="flex items-center gap-2 py-1">
               <Building2 className="h-3 w-3 text-dashboard-gray-600" />
               <div className="flex flex-col">
