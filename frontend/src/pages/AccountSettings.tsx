@@ -9,8 +9,10 @@ import {
   getOrganizationById,
   getAccountsByOrganizationId,
 } from "@/data/organizationApi";
+import { getDefaultPlan } from "@/data/subscriptionPlansApi";
 import { useToast } from "@/hooks/use-toast";
 import type { Organization } from "@/data/organizationTypes";
+import type { SubscriptionPlanDefinition } from "@/types/subscription";
 import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
@@ -297,42 +299,83 @@ const AccountSettings = () => {
     return { isValid: true };
   };
 
-  const generateOrganizationPayload = (formData: NewOrgFormData) => {
-    return {
-      organization_name: formData.organization_name,
-      plan: "Free", // Default plan
-      website: "", // Can be added later
-      company_size: formData.company_size, // Optional field
-      agency: formData.agency,
-      child_organizations: formData.child_organizations,
-      subscription: {
-        plan_name: "Free Plan",
-        plan_description: "Basic features for getting started",
-        price: 0,
-        currency: "USD",
-        billing_cycle: "monthly",
-        next_billing_date: new Date().toISOString(),
-        features: ["Basic Reports", "1 User"],
-        usage: {
-          reports_generated: 0,
-          reports_limit: 10,
+  const generateOrganizationPayload = async (formData: NewOrgFormData) => {
+    try {
+      const defaultPlan = await getDefaultPlan();
+      return {
+        organization_name: formData.organization_name,
+        plan: defaultPlan.plan_name,
+        website: "", // Can be added later
+        company_size: formData.company_size, // Optional field
+        agency: formData.agency,
+        child_organizations: formData.child_organizations,
+        subscription: {
+          plan_name: defaultPlan.plan_name,
+          plan_description: defaultPlan.plan_description,
+          price: defaultPlan.price,
+          currency: defaultPlan.currency,
+          billing_cycle: defaultPlan.billing_cycle,
+          next_billing_date: new Date().toISOString(),
+          features: defaultPlan.features.features,
+          usage: {
+            reports_generated: 0,
+            reports_limit: defaultPlan.features.max_reports,
+          },
         },
-      },
-      billing: {
-        payment_method: {
-          last_four: "",
-          brand: "",
-          expires: "",
+        billing: {
+          payment_method: {
+            last_four: "",
+            brand: "",
+            expires: "",
+          },
+          address: "",
+          tax_id: "",
         },
-        address: "",
-        tax_id: "",
-      },
-      team: {
-        members_used: 1,
-        members_limit: 1,
-        pending_invitations: 0,
-      },
-    };
+        team: {
+          members_used: 1,
+          members_limit: defaultPlan.features.max_users,
+          pending_invitations: 0,
+        },
+      };
+    } catch (error) {
+      console.error("Failed to fetch default plan:", error);
+      // Fallback to hardcoded values if API fails
+      return {
+        organization_name: formData.organization_name,
+        plan: "Free",
+        website: "",
+        company_size: formData.company_size,
+        agency: formData.agency,
+        child_organizations: formData.child_organizations,
+        subscription: {
+          plan_name: "Free Plan",
+          plan_description: "Basic features for getting started",
+          price: 0,
+          currency: "USD",
+          billing_cycle: "monthly",
+          next_billing_date: new Date().toISOString(),
+          features: ["Basic Reports", "1 User"],
+          usage: {
+            reports_generated: 0,
+            reports_limit: 10,
+          },
+        },
+        billing: {
+          payment_method: {
+            last_four: "",
+            brand: "",
+            expires: "",
+          },
+          address: "",
+          tax_id: "",
+        },
+        team: {
+          members_used: 1,
+          members_limit: 1,
+          pending_invitations: 0,
+        },
+      };
+    }
   };
 
   const updateUserPermissions = async (
@@ -435,7 +478,7 @@ const AccountSettings = () => {
     setIsCreatingOrganization(true);
     try {
       // Generate organization payload (backend will generate organization_id)
-      const payload = generateOrganizationPayload(newOrgFormData);
+      const payload = await generateOrganizationPayload(newOrgFormData);
 
       // Create organization in Neo4j
       const newOrg = await createOrganization(payload);
@@ -572,7 +615,15 @@ const AccountSettings = () => {
       {/* Conditional sections for existing organizations */}
       {orgData && !isLoadingOrgData && (
         <>
-          <SubscriptionCard orgData={orgData} />
+          <SubscriptionCard 
+            orgData={orgData} 
+            onOrganizationUpdate={(updatedOrg) => {
+              setOrgMetadata({
+                ...orgMetadata,
+                [updatedOrg.organization_id]: updatedOrg,
+              });
+            }}
+          />
           <AccountsManagement orgData={orgData} currentOrgId={currentOrgId!} />
           <BillingSection orgData={orgData} />
           {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||

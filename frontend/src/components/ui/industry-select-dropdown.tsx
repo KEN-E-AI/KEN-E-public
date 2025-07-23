@@ -33,12 +33,12 @@ export const IndustrySelectDropdown = React.forwardRef<
 
     const filteredOptions = React.useMemo(() => {
       if (!search) return INDUSTRY_OPTIONS;
-      
+
       const searchLower = search.toLowerCase();
       return INDUSTRY_OPTIONS.filter(
         (opt) =>
           opt.label.toLowerCase().includes(searchLower) ||
-          opt.definition.toLowerCase().includes(searchLower)
+          opt.definition.toLowerCase().includes(searchLower),
       );
     }, [search]);
 
@@ -59,7 +59,6 @@ export const IndustrySelectDropdown = React.forwardRef<
       }
     }, [open]);
 
-
     // Close on outside click
     React.useEffect(() => {
       if (!open) return;
@@ -76,7 +75,8 @@ export const IndustrySelectDropdown = React.forwardRef<
       };
 
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }, [open]);
 
     const handleSelect = (optionValue: string) => {
@@ -93,8 +93,8 @@ export const IndustrySelectDropdown = React.forwardRef<
         case "ArrowDown":
           e.preventDefault();
           e.stopPropagation();
-          setHighlightedIndex((prev) => 
-            prev < filteredOptions.length - 1 ? prev + 1 : prev
+          setHighlightedIndex((prev) =>
+            prev < filteredOptions.length - 1 ? prev + 1 : prev,
           );
           break;
         case "ArrowUp":
@@ -122,7 +122,7 @@ export const IndustrySelectDropdown = React.forwardRef<
       if (!open || !dropdownRef.current) return;
 
       const highlightedElement = dropdownRef.current.querySelector(
-        `[data-index="${highlightedIndex}"]`
+        `[data-index="${highlightedIndex}"]`,
       );
 
       if (highlightedElement && highlightedElement.scrollIntoView) {
@@ -149,7 +149,7 @@ export const IndustrySelectDropdown = React.forwardRef<
           </span>
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
-        
+
         {open && (
           <div
             ref={dropdownRef}
@@ -167,11 +167,11 @@ export const IndustrySelectDropdown = React.forwardRef<
                 className="h-11 border-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
               />
             </div>
-            <div 
+            <div
               className="max-h-[300px] overflow-y-auto"
-              style={{ 
-                overscrollBehavior: 'contain',
-                WebkitOverflowScrolling: 'touch'
+              style={{
+                overscrollBehavior: "contain",
+                WebkitOverflowScrolling: "touch",
               }}
             >
               {filteredOptions.length === 0 ? (
@@ -186,8 +186,9 @@ export const IndustrySelectDropdown = React.forwardRef<
                       data-index={index}
                       className={cn(
                         "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground",
-                        highlightedIndex === index && "bg-accent text-accent-foreground",
-                        value === option.value && "font-medium"
+                        highlightedIndex === index &&
+                          "bg-accent text-accent-foreground",
+                        value === option.value && "font-medium",
                       )}
                       onClick={() => handleSelect(option.value)}
                       onMouseEnter={() => setHighlightedIndex(index)}
@@ -203,7 +204,7 @@ export const IndustrySelectDropdown = React.forwardRef<
                       <Check
                         className={cn(
                           "ml-2 h-4 w-4 flex-shrink-0",
-                          value === option.value ? "opacity-100" : "opacity-0"
+                          value === option.value ? "opacity-100" : "opacity-0",
                         )}
                       />
                     </div>

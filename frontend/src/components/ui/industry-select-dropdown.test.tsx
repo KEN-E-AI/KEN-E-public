@@ -17,14 +17,18 @@ describe("IndustrySelectDropdown", () => {
         value=""
         onValueChange={mockOnValueChange}
         placeholder="Choose an industry"
-      />
+      />,
     );
 
-    expect(screen.getByRole("combobox")).toHaveTextContent("Choose an industry");
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      "Choose an industry",
+    );
   });
 
   test("renders with default placeholder when not provided", () => {
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     expect(screen.getByRole("combobox")).toHaveTextContent("Select industry");
   });
@@ -35,15 +39,19 @@ describe("IndustrySelectDropdown", () => {
       <IndustrySelectDropdown
         value={selectedIndustry.value}
         onValueChange={mockOnValueChange}
-      />
+      />,
     );
 
-    expect(screen.getByRole("combobox")).toHaveTextContent(selectedIndustry.label);
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      selectedIndustry.label,
+    );
   });
 
   test("opens dropdown when button is clicked", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     const trigger = screen.getByRole("combobox");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -51,31 +59,41 @@ describe("IndustrySelectDropdown", () => {
     await user.click(trigger);
 
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByPlaceholderText("Search industries...")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Search industries..."),
+    ).toBeInTheDocument();
   });
 
   test("filters industries based on search input", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
-    
+
     const searchInput = screen.getByPlaceholderText("Search industries...");
     await user.type(searchInput, "software");
 
     // Should show software-related industry
-    expect(screen.getByText("Enterprise Software and SaaS [B2B]")).toBeInTheDocument();
-    
+    expect(
+      screen.getByText("Enterprise Software and SaaS [B2B]"),
+    ).toBeInTheDocument();
+
     // Should not show unrelated industries
-    expect(screen.queryByText("Agriculture, Forestry, Fishing and Hunting")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Agriculture, Forestry, Fishing and Hunting"),
+    ).not.toBeInTheDocument();
   });
 
   test("calls onValueChange when an industry is selected", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
-    
+
     const firstIndustry = screen.getByText(INDUSTRY_OPTIONS[0].label);
     await user.click(firstIndustry);
 
@@ -84,13 +102,15 @@ describe("IndustrySelectDropdown", () => {
 
   test("closes dropdown after selection", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     const trigger = screen.getByRole("combobox");
     await user.click(trigger);
-    
+
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    
+
     const firstIndustry = screen.getByText(INDUSTRY_OPTIONS[0].label);
     await user.click(firstIndustry);
 
@@ -99,20 +119,22 @@ describe("IndustrySelectDropdown", () => {
 
   test("keyboard navigation moves one item at a time", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
-    
+
     // Wait for dropdown to be ready
     await screen.findByPlaceholderText("Search industries...");
-    
+
     // Focus the search input to ensure keyboard events work
     const searchInput = screen.getByPlaceholderText("Search industries...");
     await user.click(searchInput);
-    
+
     // Get option elements by role
     const options = screen.getAllByRole("option");
-    
+
     // First item should be highlighted by default
     expect(options[0]).toHaveClass("bg-accent");
 
@@ -135,18 +157,20 @@ describe("IndustrySelectDropdown", () => {
   // Edge case tests
   test("handles keyboard navigation at list boundaries", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
-    
+
     // Navigate to the last item
     for (let i = 0; i < INDUSTRY_OPTIONS.length - 1; i++) {
       await user.keyboard("{ArrowDown}");
     }
-    
+
     // Get fresh reference to options after navigation
     let options = screen.getAllByRole("option");
-    
+
     // Should be at the last item
     expect(options[INDUSTRY_OPTIONS.length - 1]).toHaveClass("bg-accent");
 
@@ -162,7 +186,7 @@ describe("IndustrySelectDropdown", () => {
 
     // Get fresh reference again
     options = screen.getAllByRole("option");
-    
+
     // Should be at the first item
     expect(options[0]).toHaveClass("bg-accent");
 
@@ -174,14 +198,18 @@ describe("IndustrySelectDropdown", () => {
 
   test("handles special characters in search", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
     const searchInput = screen.getByPlaceholderText("Search industries...");
 
     // Test with special characters
     await user.type(searchInput, "[B2B]");
-    expect(screen.getByText("Enterprise Software and SaaS [B2B]")).toBeInTheDocument();
+    expect(
+      screen.getByText("Enterprise Software and SaaS [B2B]"),
+    ).toBeInTheDocument();
 
     await user.clear(searchInput);
     await user.type(searchInput, "&");
@@ -192,7 +220,9 @@ describe("IndustrySelectDropdown", () => {
 
   test("clears search on close and reopen", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     // Open and search
     await user.click(screen.getByRole("combobox"));
@@ -205,7 +235,7 @@ describe("IndustrySelectDropdown", () => {
     // Reopen
     await user.click(screen.getByRole("combobox"));
     const newSearchInput = screen.getByPlaceholderText("Search industries...");
-    
+
     // Search should be cleared
     expect(newSearchInput).toHaveValue("");
     // All options should be visible
@@ -214,36 +244,44 @@ describe("IndustrySelectDropdown", () => {
 
   test("handles escape key to close dropdown", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     const trigger = screen.getByRole("combobox");
     await user.click(trigger);
-    
+
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    
+
     // Focus search input and press Escape
-    const searchInput = await screen.findByPlaceholderText("Search industries...");
+    const searchInput = await screen.findByPlaceholderText(
+      "Search industries...",
+    );
     await user.click(searchInput);
     await user.keyboard("{Escape}");
-    
+
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByPlaceholderText("Search industries...")).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText("Search industries..."),
+    ).not.toBeInTheDocument();
   });
 
   test("maintains highlighted index when filtering", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
-    
+
     // Navigate down a few items
     await user.keyboard("{ArrowDown}");
     await user.keyboard("{ArrowDown}");
-    
+
     // Start searching
     const searchInput = screen.getByPlaceholderText("Search industries...");
     await user.type(searchInput, "a");
-    
+
     // First filtered item should be highlighted
     const filteredOptions = screen.getAllByRole("option");
     expect(filteredOptions[0]).toHaveClass("bg-accent");
@@ -251,7 +289,9 @@ describe("IndustrySelectDropdown", () => {
 
   test("handles mouse and keyboard interaction together", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
     const options = screen.getAllByRole("option");
@@ -272,7 +312,9 @@ describe("IndustrySelectDropdown", () => {
 
   test("handles rapid search input changes", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
     const searchInput = screen.getByPlaceholderText("Search industries...");
@@ -285,12 +327,16 @@ describe("IndustrySelectDropdown", () => {
     await user.type(searchInput, "software");
 
     // Should show correct filtered results
-    expect(screen.getByText("Enterprise Software and SaaS [B2B]")).toBeInTheDocument();
+    expect(
+      screen.getByText("Enterprise Software and SaaS [B2B]"),
+    ).toBeInTheDocument();
   });
 
   test("handles empty search results gracefully", async () => {
     const user = userEvent.setup();
-    render(<IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />);
+    render(
+      <IndustrySelectDropdown value="" onValueChange={mockOnValueChange} />,
+    );
 
     await user.click(screen.getByRole("combobox"));
     const searchInput = screen.getByPlaceholderText("Search industries...");
@@ -304,7 +350,7 @@ describe("IndustrySelectDropdown", () => {
     // Keyboard navigation should do nothing
     await user.keyboard("{ArrowDown}");
     await user.keyboard("{Enter}");
-    
+
     // Should not call onValueChange
     expect(mockOnValueChange).not.toHaveBeenCalled();
   });
@@ -313,20 +359,20 @@ describe("IndustrySelectDropdown", () => {
     const user = userEvent.setup();
     const selectedIndustry = INDUSTRY_OPTIONS[5];
     const { rerender } = render(
-      <IndustrySelectDropdown 
-        value={selectedIndustry.value} 
-        onValueChange={mockOnValueChange} 
-      />
+      <IndustrySelectDropdown
+        value={selectedIndustry.value}
+        onValueChange={mockOnValueChange}
+      />,
     );
 
     // Open dropdown
     await user.click(screen.getByRole("combobox"));
-    
+
     // Selected item should have checkmark visible
     const selectedOptions = screen.getAllByText(selectedIndustry.label);
     // Get the one in the dropdown (not the button)
     const selectedOption = selectedOptions[1].parentElement?.parentElement;
-    const checkIcon = selectedOption?.querySelector('svg.opacity-100');
+    const checkIcon = selectedOption?.querySelector("svg.opacity-100");
     expect(checkIcon).toBeInTheDocument();
 
     // Close and reopen
@@ -335,8 +381,10 @@ describe("IndustrySelectDropdown", () => {
 
     // Selection should be preserved
     const stillSelectedOptions = screen.getAllByText(selectedIndustry.label);
-    const stillSelectedOption = stillSelectedOptions[1].parentElement?.parentElement;
-    const stillCheckIcon = stillSelectedOption?.querySelector('svg.opacity-100');
+    const stillSelectedOption =
+      stillSelectedOptions[1].parentElement?.parentElement;
+    const stillCheckIcon =
+      stillSelectedOption?.querySelector("svg.opacity-100");
     expect(stillCheckIcon).toBeInTheDocument();
   });
 });

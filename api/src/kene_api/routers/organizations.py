@@ -3,14 +3,16 @@
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import Neo4jService, get_neo4j_service
+from ..firestore import get_firestore_service
 from ..models.kene_models import (
     Billing,
+    ChangeSubscriptionRequest,
     Organization,
     OrganizationListResponse,
     OrganizationRequest,
@@ -51,7 +53,7 @@ def generate_timestamp_organization_id() -> str:
     Example:
         'org_1705123456789_a1b2c3d4'
     """
-    timestamp = int(datetime.now().timestamp() * 1000)
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
     uuid_suffix = str(uuid.uuid4()).replace("-", "")[:8]
     return f"org_{timestamp}_{uuid_suffix}"
 
@@ -397,6 +399,388 @@ async def update_organization(
         raise HTTPException(
             status_code=500, detail=f"Error updating organization: {e!s}"
         )
+
+
+async def check_user_organization_permission(
+    account_id: str,
+    organization_id: str,
+    required_roles: list[str],
+    firestore_service,
+) -> bool:
+    """
+    Check if a user has the required permission for an organization.
+    
+    Args:
+        account_id: The user's account ID
+        organization_id: The organization ID
+        required_roles: List of acceptable roles (e.g., ["admin", "owner"])
+        firestore_service: Firestore service instance
+    
+    Returns:
+        bool: True if user has permission, False otherwise
+        
+    Raises:
+        HTTPException: If there's an error accessing Firestore
+    """
+    try:
+        user_doc = firestore_service.get_document("users", account_id)
+        if not user_doc:
+            logger.warning(f"User document not found for account_id: {account_id}")
+            return False
+        
+        permissions = user_doc.get("permissions", {})
+        org_permissions = permissions.get("organizations", {})
+        user_role = org_permissions.get(organization_id)
+        
+        has_permission = user_role in required_roles
+        if not has_permission:
+            logger.info(
+                f"User {account_id} lacks required permission for org {organization_id}. "
+                f"User role: {user_role}, Required: {required_roles}"
+            )
+        
+        return has_permission
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Error checking user permissions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to verify user permissions"
+        )
+
+
+async def validate_plan_change(
+    existing_org: Organization,
+    new_plan: dict[str, Any],
+) -> None:
+    """
+    Validate that a plan change is allowed.
+    
+    Args:
+        existing_org: Current organization data
+        new_plan: New subscription plan data
+        
+    Raises:
+        HTTPException: If validation fails
+    """
+    # Check if downgrading would violate current usage
+    max_users = new_plan["features"]["max_users"]
+    current_users = existing_org.team.members_used
+    
+    if max_users < current_users:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot change to this plan: Plan supports {max_users} users but organization has {current_users} active members. Please remove users before downgrading.",
+        )
+    
+    # Check if reports usage would be exceeded
+    max_reports = new_plan["features"]["max_reports"]
+    current_reports = existing_org.subscription.usage.get("reports_generated", 0)
+    
+    if max_reports < current_reports:
+        logger.warning(
+            f"Organization {existing_org.organization_id} changing to plan with lower report limit. "
+            f"Current usage: {current_reports}, new limit: {max_reports}"
+        )
+
+
+async def verify_subscription_prerequisites(
+    db: Neo4jService,
+    firestore_service,
+    account_id: str,
+    organization_id: str,
+) -> Organization:
+    """
+    Verify all prerequisites for changing subscription.
+    
+    Args:
+        db: Neo4j service instance
+        firestore_service: Firestore service instance
+        account_id: User's account ID
+        organization_id: Organization ID
+        
+    Returns:
+        Organization: The existing organization
+        
+    Raises:
+        HTTPException: If any prerequisite check fails
+    """
+    # Check database health
+    is_healthy = await db.health_check()
+    if not is_healthy:
+        raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+    
+    # Check Firestore health
+    if not firestore_service.health_check():
+        raise HTTPException(status_code=503, detail="Firestore service unavailable")
+    
+    # Check user permissions
+    has_permission = await check_user_organization_permission(
+        account_id, organization_id, ["admin", "owner"], firestore_service
+    )
+    if not has_permission:
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to change this organization's subscription",
+        )
+    
+    # Verify organization exists
+    existing_org = await get_organization(organization_id, db)
+    if not existing_org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    return existing_org
+
+
+async def fetch_and_validate_plan(
+    firestore_service,
+    plan_id: str,
+) -> dict[str, Any]:
+    """
+    Fetch and validate a subscription plan.
+    
+    Args:
+        firestore_service: Firestore service instance
+        plan_id: The plan ID to fetch
+        
+    Returns:
+        dict: The plan data
+        
+    Raises:
+        HTTPException: If plan not found or invalid
+    """
+    plan_data = firestore_service.get_document(
+        collection="subscription-plans",
+        document_id=plan_id,
+    )
+    
+    if not plan_data:
+        raise HTTPException(status_code=404, detail="Subscription plan not found")
+    
+    if not plan_data.get("is_active", True):
+        raise HTTPException(status_code=400, detail="Subscription plan is not active")
+    
+    return plan_data
+
+
+def build_subscription_from_plan(
+    plan_data: dict[str, Any],
+    existing_subscription: Subscription,
+) -> dict[str, Any]:
+    """
+    Build a subscription object from plan data.
+    
+    Args:
+        plan_data: Subscription plan data from Firestore
+        existing_subscription: Current subscription to preserve some fields
+        
+    Returns:
+        dict: New subscription data
+    """
+    return {
+        "plan_name": plan_data["plan_name"],
+        "plan_description": plan_data["plan_description"],
+        "price": plan_data["price"],
+        "currency": plan_data["currency"],
+        "billing_cycle": plan_data["billing_cycle"],
+        "next_billing_date": existing_subscription.next_billing_date,  # Preserve billing date
+        "features": plan_data["features"]["features"],
+        "usage": {
+            "reports_generated": existing_subscription.usage.get("reports_generated", 0),  # Preserve usage
+            "reports_limit": plan_data["features"]["max_reports"],
+        },
+    }
+
+
+@router.put("/{organization_id}/subscription", response_model=Organization)
+async def change_organization_subscription(
+    organization_id: str,
+    request: ChangeSubscriptionRequest,
+    account_id: str,
+    db: Neo4jService = Depends(get_neo4j_service),
+) -> Organization:
+    """
+    Change an organization's subscription plan.
+
+    **Parameters:**
+    - `organization_id` (path): The unique identifier for the organization
+    - `plan_id` (body): The ID of the new subscription plan
+    - `account_id` (query): The account ID of the user making the request
+
+    **Returns:**
+    - Updated organization object with new subscription details
+
+    **Authorization:**
+    - User must have admin or owner permissions for the organization
+    """
+    try:
+        # Get Firestore service
+        firestore_service = get_firestore_service()
+        
+        # Verify all prerequisites
+        existing_org = await verify_subscription_prerequisites(
+            db, firestore_service, account_id, organization_id
+        )
+        
+        # Fetch and validate the new plan
+        plan_data = await fetch_and_validate_plan(firestore_service, request.plan_id)
+        
+        # Validate the plan change is allowed
+        await validate_plan_change(existing_org, plan_data)
+        
+        # Build the new subscription
+        new_subscription = build_subscription_from_plan(
+            plan_data, existing_org.subscription
+        )
+        
+        # Update organization in database
+        await update_organization_subscription_in_db(
+            db, organization_id, new_subscription, plan_data
+        )
+        
+        # Log the change
+        logger.info(
+            f"Organization {organization_id} subscription changed to {request.plan_id} "
+            f"by account {account_id}"
+        )
+        
+        # Return updated organization
+        return await get_organization(organization_id, db)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error changing subscription: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail="An unexpected error occurred while changing the subscription"
+        )
+
+
+async def get_organization_team(
+    db: Neo4jService,
+    organization_id: str,
+) -> dict[str, Any]:
+    """
+    Get the current team data for an organization.
+    
+    Args:
+        db: Neo4j service instance
+        organization_id: Organization ID
+        
+    Returns:
+        dict: Team data
+        
+    Raises:
+        ValueError: If organization not found
+    """
+    query = """
+    MATCH (o:Organization {organization_id: $organization_id})
+    RETURN o.team as team
+    """
+    
+    result = await db.execute_query(query, {"organization_id": organization_id})
+    if not result:
+        raise ValueError(f"Organization {organization_id} not found")
+    
+    # Parse team data
+    team_data = result[0]["team"]
+    if isinstance(team_data, str):
+        team_data = json.loads(team_data)
+    
+    return team_data
+
+
+def update_team_member_limit(
+    team_data: dict[str, Any],
+    new_member_limit: int,
+) -> dict[str, Any]:
+    """
+    Update the member limit in team data.
+    
+    Args:
+        team_data: Existing team data
+        new_member_limit: New member limit
+        
+    Returns:
+        dict: Updated team data
+    """
+    updated_team = team_data.copy()
+    updated_team["members_limit"] = new_member_limit
+    return updated_team
+
+
+async def save_organization_subscription_updates(
+    db: Neo4jService,
+    organization_id: str,
+    subscription_data: dict[str, Any],
+    team_data: dict[str, Any],
+    plan_name: str,
+) -> None:
+    """
+    Save organization updates to the database.
+    
+    Args:
+        db: Neo4j service instance
+        organization_id: Organization ID
+        subscription_data: New subscription data
+        team_data: Updated team data
+        plan_name: New plan name
+    """
+    query = """
+    MATCH (o:Organization {organization_id: $organization_id})
+    SET o.subscription = $subscription,
+        o.team = $team,
+        o.plan = $plan_name,
+        o.updated_at = datetime()
+    RETURN o
+    """
+    
+    await db.execute_write_query(
+        query,
+        parameters={
+            "organization_id": organization_id,
+            "subscription": json.dumps(subscription_data),
+            "team": json.dumps(team_data),
+            "plan_name": plan_name,
+        },
+    )
+
+
+async def update_organization_subscription_in_db(
+    db: Neo4jService,
+    organization_id: str,
+    subscription_data: dict[str, Any],
+    plan_data: dict[str, Any],
+) -> None:
+    """
+    Update organization subscription in the database.
+    
+    Args:
+        db: Neo4j service instance
+        organization_id: Organization ID
+        subscription_data: New subscription data
+        plan_data: Plan data for additional fields
+    """
+    # Get current team data
+    existing_team = await get_organization_team(db, organization_id)
+    
+    # Update team with new member limit
+    updated_team = update_team_member_limit(
+        existing_team, 
+        plan_data["features"]["max_users"]
+    )
+    
+    # Save all updates to database
+    await save_organization_subscription_updates(
+        db,
+        organization_id,
+        subscription_data,
+        updated_team,
+        plan_data["plan_name"]
+    )
 
 
 @router.put(

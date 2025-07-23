@@ -37,12 +37,12 @@ export const IndustrySelectSearchable = React.forwardRef<
 
     const filteredOptions = React.useMemo(() => {
       if (!search) return INDUSTRY_OPTIONS;
-      
+
       const searchLower = search.toLowerCase();
       return INDUSTRY_OPTIONS.filter(
         (opt) =>
           opt.label.toLowerCase().includes(searchLower) ||
-          opt.definition.toLowerCase().includes(searchLower)
+          opt.definition.toLowerCase().includes(searchLower),
       );
     }, [search]);
 
@@ -74,8 +74,8 @@ export const IndustrySelectSearchable = React.forwardRef<
         case "ArrowDown":
           e.preventDefault();
           e.stopPropagation();
-          setHighlightedIndex((prev) => 
-            prev < filteredOptions.length - 1 ? prev + 1 : prev
+          setHighlightedIndex((prev) =>
+            prev < filteredOptions.length - 1 ? prev + 1 : prev,
           );
           break;
         case "ArrowUp":
@@ -103,7 +103,7 @@ export const IndustrySelectSearchable = React.forwardRef<
       if (!open || !scrollAreaRef.current) return;
 
       const highlightedElement = scrollAreaRef.current.querySelector(
-        `[data-index="${highlightedIndex}"]`
+        `[data-index="${highlightedIndex}"]`,
       );
 
       if (highlightedElement && highlightedElement.scrollIntoView) {
@@ -131,10 +131,10 @@ export const IndustrySelectSearchable = React.forwardRef<
             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent 
-          className="p-0 overflow-hidden" 
+        <PopoverContent
+          className="p-0 overflow-hidden"
           align="start"
-          style={{ width: 'var(--radix-popover-trigger-width)' }}
+          style={{ width: "var(--radix-popover-trigger-width)" }}
         >
           <div className="flex items-center border-b px-3">
             <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
@@ -147,10 +147,10 @@ export const IndustrySelectSearchable = React.forwardRef<
               className="h-11 border-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
             />
           </div>
-          <div 
-            className="max-h-[300px] overflow-y-auto overflow-x-hidden" 
+          <div
+            className="max-h-[300px] overflow-y-auto overflow-x-hidden"
             ref={scrollAreaRef}
-            style={{ overscrollBehavior: 'contain' }}
+            style={{ overscrollBehavior: "contain" }}
           >
             {filteredOptions.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
@@ -164,8 +164,9 @@ export const IndustrySelectSearchable = React.forwardRef<
                     data-index={index}
                     className={cn(
                       "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
-                      highlightedIndex === index && "bg-accent text-accent-foreground",
-                      value === option.value && "font-medium"
+                      highlightedIndex === index &&
+                        "bg-accent text-accent-foreground",
+                      value === option.value && "font-medium",
                     )}
                     onClick={() => handleSelect(option.value)}
                     onMouseEnter={() => setHighlightedIndex(index)}
@@ -181,7 +182,7 @@ export const IndustrySelectSearchable = React.forwardRef<
                     <Check
                       className={cn(
                         "ml-2 h-4 w-4",
-                        value === option.value ? "opacity-100" : "opacity-0"
+                        value === option.value ? "opacity-100" : "opacity-0",
                       )}
                     />
                   </div>

@@ -9,39 +9,39 @@ describe("industryMigration", () => {
   describe("migrateIndustryValue", () => {
     test("migrates legacy simple industry values", () => {
       expect(migrateIndustryValue("Technology")).toBe(
-        "Enterprise Software and SaaS [B2B]"
+        "Enterprise Software and SaaS [B2B]",
       );
       expect(migrateIndustryValue("Healthcare")).toBe(
-        "Health Care and Social Assistance"
+        "Health Care and Social Assistance",
       );
       expect(migrateIndustryValue("Finance")).toBe("Finance and Insurance");
       expect(migrateIndustryValue("Education")).toBe("Educational Services");
       expect(migrateIndustryValue("Retail")).toBe("Retail Trade [B2C]");
       expect(migrateIndustryValue("Manufacturing")).toBe("Manufacturing");
       expect(migrateIndustryValue("Services")).toBe(
-        "Professional, Scientific, and Technical Services [B2B]"
+        "Professional, Scientific, and Technical Services [B2B]",
       );
     });
 
     test("migrates legacy template industry values", () => {
       expect(migrateIndustryValue("Software")).toBe(
-        "Enterprise Software and SaaS [B2B]"
+        "Enterprise Software and SaaS [B2B]",
       );
       expect(migrateIndustryValue("Healthcare Services")).toBe(
-        "Health Care and Social Assistance"
+        "Health Care and Social Assistance",
       );
       expect(migrateIndustryValue("Automotive")).toBe("Retail Trade [B2C]");
       expect(migrateIndustryValue("Real Estate")).toBe(
-        "Real Estate and Rental and Leasing"
+        "Real Estate and Rental and Leasing",
       );
       expect(migrateIndustryValue("Entertainment")).toBe(
-        "Arts, Entertainment, and Recreation"
+        "Arts, Entertainment, and Recreation",
       );
       expect(migrateIndustryValue("Food & Beverage")).toBe(
-        "Hospitality, Accommodation and Food Services"
+        "Hospitality, Accommodation and Food Services",
       );
       expect(migrateIndustryValue("Non-Profit")).toBe(
-        "Nonprofit Organizations and NGOs"
+        "Nonprofit Organizations and NGOs",
       );
     });
 
@@ -55,27 +55,27 @@ describe("industryMigration", () => {
       expect(migrateIndustryValue("Utilities")).toBe("Utilities");
       expect(migrateIndustryValue("Construction")).toBe("Construction");
       expect(migrateIndustryValue("Transportation and Warehousing")).toBe(
-        "Transportation and Warehousing"
+        "Transportation and Warehousing",
       );
       expect(migrateIndustryValue("Public Administration")).toBe(
-        "Public Administration"
+        "Public Administration",
       );
       expect(migrateIndustryValue("Media and Publishing")).toBe(
-        "Media and Publishing"
+        "Media and Publishing",
       );
       expect(migrateIndustryValue("Enterprise Software and SaaS [B2B]")).toBe(
-        "Enterprise Software and SaaS [B2B]"
+        "Enterprise Software and SaaS [B2B]",
       );
     });
 
     test("returns 'Other' for unrecognized values with console warning", () => {
       const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      
+
       expect(migrateIndustryValue("Unknown Industry")).toBe("Other");
       expect(consoleSpy).toHaveBeenCalledWith(
-        'Unknown industry value "Unknown Industry" - defaulting to "Other"'
+        'Unknown industry value "Unknown Industry" - defaulting to "Other"',
       );
-      
+
       consoleSpy.mockRestore();
     });
 
@@ -97,7 +97,7 @@ describe("industryMigration", () => {
       expect(needsIndustryMigration("Utilities")).toBe(false);
       expect(needsIndustryMigration("Construction")).toBe(false);
       expect(needsIndustryMigration("Enterprise Software and SaaS [B2B]")).toBe(
-        false
+        false,
       );
       // Note: "Other" is in the migration map, so it returns true
       expect(needsIndustryMigration("Unknown New Industry")).toBe(false);
@@ -113,37 +113,35 @@ describe("industryMigration", () => {
   describe("getIndustryDisplayName", () => {
     test("returns shortened display names for long industry values", () => {
       expect(
-        getIndustryDisplayName("Agriculture, Forestry, Fishing and Hunting")
+        getIndustryDisplayName("Agriculture, Forestry, Fishing and Hunting"),
       ).toBe("Agriculture & Natural Resources");
       expect(
         getIndustryDisplayName(
-          "Professional, Scientific, and Technical Services"
-        )
+          "Professional, Scientific, and Technical Services",
+        ),
       ).toBe("Professional Services");
       expect(
-        getIndustryDisplayName("Hospitality, Accommodation and Food Services")
+        getIndustryDisplayName("Hospitality, Accommodation and Food Services"),
       ).toBe("Hospitality & Food");
+      expect(getIndustryDisplayName("Pharmaceuticals and Biotechnology")).toBe(
+        "Pharma & Biotech",
+      );
       expect(
-        getIndustryDisplayName("Pharmaceuticals and Biotechnology")
-      ).toBe("Pharma & Biotech");
-      expect(
-        getIndustryDisplayName("Other Services (except Public Administration)")
+        getIndustryDisplayName("Other Services (except Public Administration)"),
       ).toBe("Other Services");
       expect(getIndustryDisplayName("Nonprofit Organizations and NGOs")).toBe(
-        "Nonprofit & NGOs"
+        "Nonprofit & NGOs",
       );
     });
 
     test("removes bracketed suffixes from display names", () => {
       expect(getIndustryDisplayName("Enterprise Software and SaaS [B2B]")).toBe(
-        "Enterprise Software and SaaS"
+        "Enterprise Software and SaaS",
       );
-      expect(getIndustryDisplayName("Retail Trade [B2C]")).toBe(
-        "Retail Trade"
-      );
-      expect(getIndustryDisplayName("Consumer Goods and E-commerce [D2C]")).toBe(
-        "Consumer Goods and E-commerce"
-      );
+      expect(getIndustryDisplayName("Retail Trade [B2C]")).toBe("Retail Trade");
+      expect(
+        getIndustryDisplayName("Consumer Goods and E-commerce [D2C]"),
+      ).toBe("Consumer Goods and E-commerce");
     });
 
     test("returns original name without brackets if no mapping exists", () => {

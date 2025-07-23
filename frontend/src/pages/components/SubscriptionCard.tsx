@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -5,13 +6,31 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Crown } from "lucide-react";
 import { type Organization } from "@/data/organizationTypes";
+import { PlanSelectionModal } from "@/components/subscription";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SubscriptionCardProps {
   orgData: Organization;
+  onOrganizationUpdate?: (updatedOrg: Organization) => void;
 }
 
-const SubscriptionCard = ({ orgData }: SubscriptionCardProps) => {
+const SubscriptionCard = ({ orgData, onOrganizationUpdate }: SubscriptionCardProps) => {
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const { user } = useAuth();
+  
+  // Check if user has permission to change subscription
+  const canChangeSubscription = 
+    user?.permissions?.organizations?.[orgData.organization_id] === "admin" ||
+    user?.permissions?.organizations?.[orgData.organization_id] === "owner";
+  
+  const handleSubscriptionChanged = (updatedOrg: Organization) => {
+    if (onOrganizationUpdate) {
+      onOrganizationUpdate(updatedOrg);
+    }
+  };
+  
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -69,9 +88,16 @@ const SubscriptionCard = ({ orgData }: SubscriptionCardProps) => {
                 {orgData.subscription.next_billing_date}
               </p>
             </div>
-            <Button variant="outline" size="sm">
-              Change Plan
-            </Button>
+            {canChangeSubscription && (
+              <Button variant="outline" size="sm" onClick={() => {
+                if (!user?.id) {
+                  return;
+                }
+                setShowPlanModal(true);
+              }}>
+                Change Plan
+              </Button>
+            )}
           </div>
           <Separator />
           <div className="flex items-center justify-between">
@@ -90,6 +116,17 @@ const SubscriptionCard = ({ orgData }: SubscriptionCardProps) => {
         </div>
       </CardContent>
     </Card>
+    
+    {canChangeSubscription && (
+      <PlanSelectionModal
+        open={showPlanModal}
+        onOpenChange={setShowPlanModal}
+        currentOrganization={orgData}
+        accountId={user?.id || ""}
+        onSubscriptionChanged={handleSubscriptionChanged}
+      />
+    )}
+    </>
   );
 };
 

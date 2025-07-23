@@ -22,6 +22,7 @@ from .routers import (
     metrics,
     organizations,
     products,
+    subscription_plans,
     superset_saved_queries,
 )
 
@@ -95,6 +96,11 @@ app.include_router(
     superset_saved_queries.router,
     prefix="/api/v1/superset/saved-queries",
     tags=["superset-saved-queries"],
+)
+app.include_router(
+    subscription_plans.router,
+    prefix="/api/v1",
+    tags=["subscription-plans"],
 )
 
 

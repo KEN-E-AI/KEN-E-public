@@ -76,7 +76,11 @@ function TestForm({ onSubmit }: { onSubmit: (data: any) => void }) {
             <FormItem>
               <FormLabel>Website</FormLabel>
               <FormControl>
-                <Input {...field} type="url" placeholder="https://example.com" />
+                <Input
+                  {...field}
+                  type="url"
+                  placeholder="https://example.com"
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -101,13 +105,19 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     render(<TestForm onSubmit={mockSubmit} />);
 
     // Fill out the form
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Test Company");
-    
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Test Company",
+    );
+
     // Select an industry
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByText(INDUSTRY_OPTIONS[0].label));
 
-    await user.type(screen.getByPlaceholderText("https://example.com"), "https://test.com");
+    await user.type(
+      screen.getByPlaceholderText("https://example.com"),
+      "https://test.com",
+    );
 
     // Submit the form
     await user.click(screen.getByRole("button", { name: "Submit" }));
@@ -128,7 +138,10 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     render(<TestForm onSubmit={mockSubmit} />);
 
     // Fill out only name
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Test Company");
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Test Company",
+    );
 
     // Submit without selecting industry
     await user.click(screen.getByRole("button", { name: "Submit" }));
@@ -155,7 +168,10 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     });
 
     // Fill the name field
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Test Company");
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Test Company",
+    );
 
     // Select an industry
     await user.click(screen.getByRole("combobox"));
@@ -163,7 +179,9 @@ describe("IndustrySelectDropdown Integration Tests", () => {
 
     // Validation error should be cleared
     await waitFor(() => {
-      expect(screen.queryByText("Please select an industry")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Please select an industry"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -172,8 +190,11 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     render(<TestForm onSubmit={mockSubmit} />);
 
     // Fill out the form
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Test Company");
-    
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Test Company",
+    );
+
     // Select an industry
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByText(INDUSTRY_OPTIONS[3].label));
@@ -183,8 +204,12 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     await user.click(document.body); // Close
 
     // Verify form still has the values
-    expect(screen.getByPlaceholderText("Enter company name")).toHaveValue("Test Company");
-    expect(screen.getByRole("combobox")).toHaveTextContent(INDUSTRY_OPTIONS[3].label);
+    expect(screen.getByPlaceholderText("Enter company name")).toHaveValue(
+      "Test Company",
+    );
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      INDUSTRY_OPTIONS[3].label,
+    );
 
     // Submit to verify data is intact
     await user.click(screen.getByRole("button", { name: "Submit" }));
@@ -207,17 +232,23 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     // Select first industry
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByText(INDUSTRY_OPTIONS[0].label));
-    expect(screen.getByRole("combobox")).toHaveTextContent(INDUSTRY_OPTIONS[0].label);
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      INDUSTRY_OPTIONS[0].label,
+    );
 
     // Change to different industry
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByText(INDUSTRY_OPTIONS[5].label));
-    expect(screen.getByRole("combobox")).toHaveTextContent(INDUSTRY_OPTIONS[5].label);
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      INDUSTRY_OPTIONS[5].label,
+    );
 
     // Change again
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByText(INDUSTRY_OPTIONS[10].label));
-    expect(screen.getByRole("combobox")).toHaveTextContent(INDUSTRY_OPTIONS[10].label);
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      INDUSTRY_OPTIONS[10].label,
+    );
   });
 
   test("works with keyboard navigation in form context", async () => {
@@ -227,7 +258,10 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     // Tab to name field
     await user.tab();
     expect(screen.getByPlaceholderText("Enter company name")).toHaveFocus();
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Test Co");
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Test Co",
+    );
 
     // Tab to industry dropdown
     await user.tab();
@@ -235,7 +269,9 @@ describe("IndustrySelectDropdown Integration Tests", () => {
 
     // Open with Enter key
     await user.keyboard("{Enter}");
-    expect(screen.getByPlaceholderText("Search industries...")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Search industries..."),
+    ).toBeInTheDocument();
 
     // Navigate and select with keyboard
     await user.keyboard("{ArrowDown}");
@@ -243,13 +279,17 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     await user.keyboard("{Enter}");
 
     // Should have selected third item
-    expect(screen.getByRole("combobox")).toHaveTextContent(INDUSTRY_OPTIONS[2].label);
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      INDUSTRY_OPTIONS[2].label,
+    );
 
     // Tab to next field (wait for dropdown to close)
     await waitFor(() => {
-      expect(screen.queryByPlaceholderText("Search industries...")).not.toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText("Search industries..."),
+      ).not.toBeInTheDocument();
     });
-    
+
     await user.tab();
     expect(screen.getByPlaceholderText("https://example.com")).toHaveFocus();
   });
@@ -267,10 +307,15 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     await user.click(screen.getByText("Enterprise Software and SaaS [B2B]"));
 
     // Verify selection
-    expect(screen.getByRole("combobox")).toHaveTextContent("Enterprise Software and SaaS [B2B]");
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      "Enterprise Software and SaaS [B2B]",
+    );
 
     // Fill other fields and submit
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Tech Corp");
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Tech Corp",
+    );
     await user.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => {
@@ -286,9 +331,13 @@ describe("IndustrySelectDropdown Integration Tests", () => {
 
   test("handles form reset correctly", async () => {
     const user = userEvent.setup();
-    
+
     // Extended form with reset button
-    function TestFormWithReset({ onSubmit }: { onSubmit: (data: any) => void }) {
+    function TestFormWithReset({
+      onSubmit,
+    }: {
+      onSubmit: (data: any) => void;
+    }) {
       const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -317,7 +366,9 @@ describe("IndustrySelectDropdown Integration Tests", () => {
               )}
             />
             <Button type="submit">Submit</Button>
-            <Button type="button" onClick={() => form.reset()}>Reset</Button>
+            <Button type="button" onClick={() => form.reset()}>
+              Reset
+            </Button>
           </form>
         </Form>
       );
@@ -328,7 +379,9 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     // Select an industry
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByText(INDUSTRY_OPTIONS[2].label));
-    expect(screen.getByRole("combobox")).toHaveTextContent(INDUSTRY_OPTIONS[2].label);
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      INDUSTRY_OPTIONS[2].label,
+    );
 
     // Reset form
     await user.click(screen.getByRole("button", { name: "Reset" }));
@@ -349,10 +402,12 @@ describe("IndustrySelectDropdown Integration Tests", () => {
 
     // Open dropdown with Enter
     await user.keyboard("{Enter}");
-    
+
     // Wait for dropdown to open
     await waitFor(() => {
-      expect(screen.getByPlaceholderText("Search industries...")).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText("Search industries..."),
+      ).toBeInTheDocument();
     });
 
     // Search input should be focused (wait for async focus)
@@ -361,7 +416,10 @@ describe("IndustrySelectDropdown Integration Tests", () => {
     });
 
     // Type to search
-    await user.type(screen.getByPlaceholderText("Search industries..."), "health");
+    await user.type(
+      screen.getByPlaceholderText("Search industries..."),
+      "health",
+    );
 
     // Select with Enter
     await user.keyboard("{ArrowDown}");
@@ -381,15 +439,21 @@ describe("IndustrySelectDropdown Integration Tests", () => {
 
     // Fill form using keyboard
     await user.tab();
-    await user.type(screen.getByPlaceholderText("Enter company name"), "Quick Entry");
-    
+    await user.type(
+      screen.getByPlaceholderText("Enter company name"),
+      "Quick Entry",
+    );
+
     await user.tab();
     await user.keyboard("{Enter}"); // Open dropdown
     await user.keyboard("{ArrowDown}");
     await user.keyboard("{Enter}"); // Select item
 
     await user.tab();
-    await user.type(screen.getByPlaceholderText("https://example.com"), "https://quick.com");
+    await user.type(
+      screen.getByPlaceholderText("https://example.com"),
+      "https://quick.com",
+    );
 
     // Submit with Enter
     await user.keyboard("{Enter}");
