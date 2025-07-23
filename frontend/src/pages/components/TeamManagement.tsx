@@ -81,6 +81,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
           orgData.organization_id,
           user.id,
         );
+        console.log("[TeamManagement] Loaded members:", response.members);
         setMembers(response.members);
       } catch (error) {
         console.error("[TeamManagement] Error loading members:", error);
@@ -228,7 +229,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
     // Show confirmation toast with action
     toast({
       title: "Remove Team Member",
-      description: `Are you sure you want to remove ${member.email} from the organization?`,
+      description: `Are you sure you want to remove ${member.email || `this user`} from the organization?`,
       action: (
         <div className="flex gap-2">
           <Button
@@ -256,7 +257,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
 
                 toast({
                   title: "Success",
-                  description: `Removed ${member.email} from the organization`,
+                  description: `Removed ${member.email || `user`} from the organization`,
                 });
               } catch (error) {
                 toast({
@@ -372,8 +373,12 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                       <Mail className="h-5 w-5 text-brand-medium-blue" />
                     </div>
                     <div>
+                      {/* TODO: Backend should return email from Firebase Auth, not Firestore */}
                       <h4 className="font-medium text-gray-900">
-                        {member.email}
+                        {member.email ||
+                          (member.user_id === user?.id
+                            ? user.email
+                            : `User (${member.user_id.slice(0, 8)}...)`)}
                       </h4>
                       <div className="flex items-center gap-2 mt-1">
                         {member.first_name && member.last_name && (
