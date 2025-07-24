@@ -82,6 +82,7 @@ async def get_activities(
                 activity = Activity(
                     id=activity_data.get("activity_id", ""),
                     account_id=account_id,
+                    activity_name=activity_data.get("activity_name", ""),
                     activity_description=activity_data.get("activity_description", ""),
                     expected_impact=activity_data.get("expected_impact", ""),
                     internal=activity_data.get("internal", False),
@@ -102,9 +103,7 @@ async def get_activities(
                 status_code=503,
                 detail="Database service unavailable. Please try again later.",
             )
-        raise HTTPException(
-            status_code=500, detail=f"Error fetching activities: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error fetching activities: {e!s}")
 
 
 @router.post("/", response_model=SuccessResponse)
@@ -119,6 +118,7 @@ async def create_activity(
 
     **Parameters (in request body):**
     - `account_id` (required): The unique identifier for the account
+    - `activity_name` (optional): The name of the activity
     - `activity_description` (required): A description of the activity
     - `expected_impact` (optional): Expected impact of the activity
     - `internal` (optional): Boolean indicating if activity is internal (default: false)
@@ -134,6 +134,7 @@ async def create_activity(
     POST /api/v1/activities/
     {
         "account_id": "a000001",
+        "activity_name": "Q4 Product Launch",
         "activity_description": "Launch new product campaign",
         "expected_impact": "Increase brand awareness and sales",
         "internal": true,
@@ -179,6 +180,7 @@ async def create_activity(
         MATCH (account:Account {account_id: $account_id})
         CREATE (activity:Activity {
             activity_id: $activity_id,
+            activity_name: $activity_name,
             activity_description: $activity_description,
             expected_impact: $expected_impact,
             internal: $internal,
@@ -191,6 +193,7 @@ async def create_activity(
         parameters = {
             "account_id": request.account_id,
             "activity_id": activity_id,
+            "activity_name": request.activity_name or "",
             "activity_description": request.activity_description,
             "expected_impact": request.expected_impact or "",
             "internal": request.internal if request.internal is not None else False,
@@ -210,9 +213,7 @@ async def create_activity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error creating activity: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error creating activity: {e!s}")
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -227,6 +228,7 @@ async def update_activity(
     **Parameters (in request body):**
     - `activity_id` (required): The unique identifier of the activity to update
     - `account_id` (required): The unique identifier for the account (ensures activity belongs to this account)
+    - `activity_name` (optional): Updated name of the activity
     - `activity_description` (optional): Updated description of the activity
     - `expected_impact` (optional): Updated expected impact of the activity
     - `internal` (optional): Updated boolean indicating if activity is internal
@@ -243,6 +245,7 @@ async def update_activity(
     {
         "activity_id": "ccc333",
         "account_id": "a000001",
+        "activity_name": "Holiday Email Campaign",
         "activity_description": "Updated promotional email campaign",
         "expected_impact": "Enhanced customer engagement and retention",
         "internal": true
@@ -285,6 +288,10 @@ async def update_activity(
             "account_id": request.account_id,
         }
 
+        if request.activity_name is not None:
+            update_fields.append("activity.activity_name = $activity_name")
+            parameters["activity_name"] = request.activity_name
+
         if request.activity_description is not None:
             update_fields.append(
                 "activity.activity_description = $activity_description"
@@ -324,9 +331,7 @@ async def update_activity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error updating activity: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error updating activity: {e!s}")
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -405,9 +410,7 @@ async def delete_activity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting activity: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error deleting activity: {e!s}")
 
 
 # Activity Log endpoints
