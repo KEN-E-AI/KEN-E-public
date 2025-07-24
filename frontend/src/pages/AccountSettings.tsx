@@ -615,8 +615,8 @@ const AccountSettings = () => {
       {/* Conditional sections for existing organizations */}
       {orgData && !isLoadingOrgData && (
         <>
-          <SubscriptionCard 
-            orgData={orgData} 
+          <SubscriptionCard
+            orgData={orgData}
             onOrganizationUpdate={(updatedOrg) => {
               setOrgMetadata({
                 ...orgMetadata,
