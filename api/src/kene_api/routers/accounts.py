@@ -117,10 +117,10 @@ async def get_accounts(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching accounts: {e!s}"
-        )
+        ) from e
 
 
 @router.get("/{account_id}", response_model=Account)
@@ -168,8 +168,8 @@ async def get_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching account: {e!s}")
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(status_code=500, detail=f"Error fetching account: {e!s}") from e
 
 
 @router.post("/", response_model=Account)
@@ -302,8 +302,8 @@ async def create_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error creating account: {e!s}")
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(status_code=500, detail=f"Error creating account: {e!s}") from e
 
 
 @router.put("/{account_id}", response_model=Account)
@@ -402,8 +402,8 @@ async def update_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error updating account: {e!s}")
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(status_code=500, detail=f"Error updating account: {e!s}") from e
 
 
 @router.delete("/{account_id}", response_model=SuccessResponse)
@@ -473,8 +473,8 @@ async def delete_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error deleting account: {e!s}")
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(status_code=500, detail=f"Error deleting account: {e!s}") from e
 
 
 @router.get(

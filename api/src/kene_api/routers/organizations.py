@@ -113,7 +113,7 @@ async def get_organizations(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching organizations: {e!s}"
         )
@@ -166,7 +166,7 @@ async def get_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching organization: {e!s}"
         )
@@ -288,7 +288,7 @@ async def create_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error creating organization: {e!s}"
         )
@@ -395,7 +395,7 @@ async def update_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error updating organization: {e!s}"
         )
@@ -427,18 +427,18 @@ async def check_user_organization_permission(
         if not user_doc:
             logger.warning(f"User document not found for account_id: {account_id}")
             return False
-        
+
         permissions = user_doc.get("permissions", {})
         org_permissions = permissions.get("organizations", {})
         user_role = org_permissions.get(organization_id)
-        
+
         has_permission = user_role in required_roles
         if not has_permission:
             logger.info(
                 f"User {account_id} lacks required permission for org {organization_id}. "
                 f"User role: {user_role}, Required: {required_roles}"
             )
-        
+
         return has_permission
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -468,17 +468,17 @@ async def validate_plan_change(
     # Check if downgrading would violate current usage
     max_users = new_plan["features"]["max_users"]
     current_users = existing_org.team.members_used
-    
+
     if max_users < current_users:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot change to this plan: Plan supports {max_users} users but organization has {current_users} active members. Please remove users before downgrading.",
         )
-    
+
     # Check if reports usage would be exceeded
     max_reports = new_plan["features"]["max_reports"]
     current_reports = existing_org.subscription.usage.get("reports_generated", 0)
-    
+
     if max_reports < current_reports:
         logger.warning(
             f"Organization {existing_org.organization_id} changing to plan with lower report limit. "
@@ -511,11 +511,11 @@ async def verify_subscription_prerequisites(
     is_healthy = await db.health_check()
     if not is_healthy:
         raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-    
+
     # Check Firestore health
     if not firestore_service.health_check():
         raise HTTPException(status_code=503, detail="Firestore service unavailable")
-    
+
     # Check user permissions
     has_permission = await check_user_organization_permission(
         account_id, organization_id, ["admin", "owner"], firestore_service
@@ -525,12 +525,12 @@ async def verify_subscription_prerequisites(
             status_code=403,
             detail="You do not have permission to change this organization's subscription",
         )
-    
+
     # Verify organization exists
     existing_org = await get_organization(organization_id, db)
     if not existing_org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    
+
     return existing_org
 
 
@@ -555,13 +555,13 @@ async def fetch_and_validate_plan(
         collection="subscription-plans",
         document_id=plan_id,
     )
-    
+
     if not plan_data:
         raise HTTPException(status_code=404, detail="Subscription plan not found")
-    
+
     if not plan_data.get("is_active", True):
         raise HTTPException(status_code=400, detail="Subscription plan is not active")
-    
+
     return plan_data
 
 
@@ -618,34 +618,34 @@ async def change_organization_subscription(
     try:
         # Get Firestore service
         firestore_service = get_firestore_service()
-        
+
         # Verify all prerequisites
         existing_org = await verify_subscription_prerequisites(
             db, firestore_service, account_id, organization_id
         )
-        
+
         # Fetch and validate the new plan
         plan_data = await fetch_and_validate_plan(firestore_service, request.plan_id)
-        
+
         # Validate the plan change is allowed
         await validate_plan_change(existing_org, plan_data)
-        
+
         # Build the new subscription
         new_subscription = build_subscription_from_plan(
             plan_data, existing_org.subscription
         )
-        
+
         # Update organization in database
         await update_organization_subscription_in_db(
             db, organization_id, new_subscription, plan_data
         )
-        
+
         # Log the change
         logger.info(
             f"Organization {organization_id} subscription changed to {request.plan_id} "
             f"by account {account_id}"
         )
-        
+
         # Return updated organization
         return await get_organization(organization_id, db)
 
@@ -654,7 +654,7 @@ async def change_organization_subscription(
     except Exception as e:
         logger.error(f"Unexpected error changing subscription: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="An unexpected error occurred while changing the subscription"
         )
 
@@ -680,16 +680,16 @@ async def get_organization_team(
     MATCH (o:Organization {organization_id: $organization_id})
     RETURN o.team as team
     """
-    
+
     result = await db.execute_query(query, {"organization_id": organization_id})
     if not result:
         raise ValueError(f"Organization {organization_id} not found")
-    
+
     # Parse team data
     team_data = result[0]["team"]
     if isinstance(team_data, str):
         team_data = json.loads(team_data)
-    
+
     return team_data
 
 
@@ -737,7 +737,7 @@ async def save_organization_subscription_updates(
         o.updated_at = datetime()
     RETURN o
     """
-    
+
     await db.execute_write_query(
         query,
         parameters={
@@ -766,13 +766,13 @@ async def update_organization_subscription_in_db(
     """
     # Get current team data
     existing_team = await get_organization_team(db, organization_id)
-    
+
     # Update team with new member limit
     updated_team = update_team_member_limit(
-        existing_team, 
+        existing_team,
         plan_data["features"]["max_users"]
     )
-    
+
     # Save all updates to database
     await save_organization_subscription_updates(
         db,
@@ -969,8 +969,8 @@ async def move_account_to_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error moving account: {e!s}")
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(status_code=500, detail=f"Error moving account: {e!s}") from e
 
 
 @router.delete("/{organization_id}", response_model=SuccessResponse)
@@ -1042,7 +1042,7 @@ async def delete_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error deleting organization: {e!s}"
         )

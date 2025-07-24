@@ -1,4 +1,5 @@
 import os
+from typing import ClassVar
 
 from dotenv import load_dotenv
 
@@ -30,9 +31,9 @@ class Settings:
     superset_database_id: int = int(os.getenv("SUPERSET_DATABASE_ID", "2"))
 
     # CORS settings
-    allowed_origins: list[str] = ["*"]  # Configure for production
-    allowed_methods: list[str] = ["*"]
-    allowed_headers: list[str] = ["*"]
+    allowed_origins: ClassVar[list[str]] = ["*"]  # Configure for production
+    allowed_methods: ClassVar[list[str]] = ["*"]
+    allowed_headers: ClassVar[list[str]] = ["*"]
 
     # reCAPTCHA settings
     RECAPTCHA_SITE_KEY: str = get_env_var_or_secret("RECAPTCHA_SITE_KEY", "")

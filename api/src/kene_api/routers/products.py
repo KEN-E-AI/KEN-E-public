@@ -230,7 +230,7 @@ async def add_product(
         raise
     except Exception as e:
         logger.error(f"Error in add_product: {e}")
-        raise HTTPException(status_code=500, detail=f"Error adding product: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error adding product: {e!s}") from e
 
 
 @router.delete("/", response_model=ProductDeleteResponse)
@@ -364,4 +364,4 @@ async def delete_product(
         raise
     except Exception as e:
         logger.error(f"Error in delete_product: {e}")
-        raise HTTPException(status_code=500, detail=f"Error deleting product: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting product: {e!s}") from e

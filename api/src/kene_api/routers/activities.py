@@ -102,8 +102,8 @@ async def get_activities(
             raise HTTPException(
                 status_code=503,
                 detail="Database service unavailable. Please try again later.",
-            )
-        raise HTTPException(status_code=500, detail=f"Error fetching activities: {e!s}")
+            ) from e
+        raise HTTPException(status_code=500, detail=f"Error fetching activities: {e!s}") from e
 
 
 @router.post("/", response_model=SuccessResponse)
@@ -213,7 +213,7 @@ async def create_activity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating activity: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error creating activity: {e!s}") from e
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -331,7 +331,7 @@ async def update_activity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating activity: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error updating activity: {e!s}") from e
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -410,7 +410,7 @@ async def delete_activity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting activity: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting activity: {e!s}") from e
 
 
 # Activity Log endpoints
@@ -517,7 +517,7 @@ async def create_activity_log(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error creating activity log: {e!s}"
-        )
+        ) from e
 
 
 @router.put("/logs", response_model=SuccessResponse)
@@ -640,7 +640,7 @@ async def update_activity_log(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error updating activity log: {e!s}"
-        )
+        ) from e
 
 
 @router.delete("/logs", response_model=SuccessResponse)
@@ -740,7 +740,7 @@ async def delete_activity_log(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error deleting activity log: {e!s}"
-        )
+        ) from e
 
 
 # Helper endpoint for testing - Create Account nodes
@@ -812,4 +812,4 @@ async def create_test_account(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error creating test account: {e!s}"
-        )
+        ) from e
