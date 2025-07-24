@@ -1,10 +1,11 @@
 """Tests for accounts endpoints."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
 from src.kene_api.database import get_neo4j_service
+from src.kene_api.firestore import FirestoreService, get_firestore_service
 from src.kene_api.main import app
 
 # Create test client
@@ -27,6 +28,15 @@ def mock_neo4j_service():
         }
     )
     return mock_service
+
+
+@pytest.fixture
+def mock_firestore_service():
+    """Create a mock Firestore service."""
+    service = Mock(spec=FirestoreService)
+    service.health_check = Mock(return_value=True)
+    service.list_documents = Mock(return_value=[])
+    return service
 
 
 def test_get_accounts(mock_neo4j_service):
@@ -597,7 +607,7 @@ def test_get_accounts_with_special_characters_in_org_id(mock_neo4j_service):
     app.dependency_overrides.clear()
 
 
-def test_create_account_uuid_collision_detection(mock_neo4j_service):
+def test_create_account_uuid_collision_detection(mock_neo4j_service, mock_firestore_service):
     """Test account creation UUID collision detection (extremely rare scenario)."""
     account_data = {
         "account_name": "Test Account",
@@ -611,6 +621,7 @@ def test_create_account_uuid_collision_detection(mock_neo4j_service):
     # Mock organization exists check passes, but first UUID collides, second succeeds
     mock_neo4j_service.execute_query.side_effect = [
         [{"exists": True}],  # Organization exists
+        [{"agency": False}],  # Organization is not an agency
         [{"exists": True}],  # First UUID collision (extremely rare)
         [{"exists": False}],  # Second UUID is unique
         [
@@ -628,8 +639,9 @@ def test_create_account_uuid_collision_detection(mock_neo4j_service):
         ],
     ]
 
-    # Override dependency
+    # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
+    app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
     response = client.post("/api/v1/accounts/", json=account_data)
 

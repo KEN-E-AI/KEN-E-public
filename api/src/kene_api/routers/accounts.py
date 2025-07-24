@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..database import Neo4jService, get_neo4j_service
+from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
     Account,
     AccountListResponse,
@@ -117,7 +118,9 @@ async def get_accounts(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching accounts: {e!s}"
         ) from e
@@ -168,14 +171,102 @@ async def get_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error fetching account: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching account: {e!s}"
+        ) from e
+
+
+async def _create_initial_activities(
+    db: Neo4jService, firestore: FirestoreService, account_id: str
+) -> int:
+    """
+    Create initial activities for a new account from Firestore template.
+
+    Args:
+        db: Neo4j database service
+        firestore: Firestore service
+        account_id: ID of the newly created account
+
+    Returns:
+        int: Number of activities created
+    """
+    try:
+        # Fetch all documents from initial-activities collection
+        initial_activities = firestore.list_documents("initial-activities")
+
+        if not initial_activities:
+            logger.info(
+                f"No initial activities found in Firestore for account {account_id}"
+            )
+            return 0
+
+        # Prepare activities for batch creation
+        activities_data = []
+        for activity_doc in initial_activities:
+            # Use the activity_id from Firestore document
+            activity_data = {
+                "activity_id": activity_doc.get("activity_id"),
+                "activity_name": activity_doc.get("activity_name", ""),
+                "activity_description": activity_doc.get("activity_description", ""),
+                "expected_impact": activity_doc.get("expected_impact", ""),
+                "internal": activity_doc.get("internal", False),
+                "known_activity": activity_doc.get("known_activity", False),
+            }
+
+            # Only add if activity_id exists
+            if activity_data["activity_id"]:
+                activities_data.append(activity_data)
+            else:
+                logger.warning(
+                    "Skipping activity without activity_id in initial-activities collection"
+                )
+
+        if not activities_data:
+            logger.warning(f"No valid activities to create for account {account_id}")
+            return 0
+
+        # Create activities in batch using UNWIND
+        create_query = """
+        UNWIND $activities AS activity
+        MATCH (account:Account {account_id: $account_id})
+        CREATE (a:Activity {
+            activity_id: activity.activity_id,
+            activity_name: activity.activity_name,
+            activity_description: activity.activity_description,
+            expected_impact: activity.expected_impact,
+            internal: activity.internal,
+            known_activity: activity.known_activity
+        })
+        CREATE (a)-[:BELONGS_TO]->(account)
+        RETURN count(a) as created_count
+        """
+
+        params = {"account_id": account_id, "activities": activities_data}
+
+        result = await db.execute_write_query(create_query, params)
+        created_count = result[0]["created_count"] if result else 0
+
+        logger.info(
+            f"Created {created_count} initial activities for account {account_id}"
+        )
+        return created_count
+
+    except Exception as e:
+        logger.error(
+            f"Error creating initial activities for account {account_id}: {e!s}"
+        )
+        # Don't raise - let account creation succeed even if initial activities fail
+        return 0
 
 
 @router.post("/", response_model=Account)
 async def create_account(
     request: AccountRequest,
     db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
 ) -> Account:
     """
     Create a new account.
@@ -208,7 +299,7 @@ async def create_account(
         "timezone": "America/New_York"
     }
     ```
-    
+
     **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
     try:
@@ -295,6 +386,13 @@ async def create_account(
 
         await db.execute_write_query(create_query, params)
 
+        # Create initial activities for the new account
+        activities_created = await _create_initial_activities(db, firestore, account_id)
+        if activities_created > 0:
+            logger.info(
+                f"Successfully created {activities_created} initial activities for account {account_id}"
+            )
+
         # Fetch the created account
         return await get_account(account_id, db)
 
@@ -302,8 +400,12 @@ async def create_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error creating account: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error creating account: {e!s}"
+        ) from e
 
 
 @router.put("/{account_id}", response_model=Account)
@@ -402,8 +504,12 @@ async def update_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error updating account: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error updating account: {e!s}"
+        ) from e
 
 
 @router.delete("/{account_id}", response_model=SuccessResponse)
@@ -473,8 +579,12 @@ async def delete_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error deleting account: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting account: {e!s}"
+        ) from e
 
 
 @router.get(
