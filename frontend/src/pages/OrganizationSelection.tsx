@@ -503,9 +503,11 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         {/* Header */}
         <div className="text-center mb-8 pt-8">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
-              <Building className="h-6 w-6 text-white" />
-            </div>
+            <img 
+              src="/KEN-E Logo E Small.png" 
+              alt="KEN-E Logo" 
+              className="h-16 w-auto"
+            />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Select An Account
