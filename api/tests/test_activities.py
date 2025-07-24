@@ -160,7 +160,7 @@ async def test_delete_activity_success(mock_neo4j_service):
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
-    assert "Activity deleted successfully" in data["message"]
+    assert "Activity and associated logs deleted successfully" in data["message"]
 
 
 @pytest.mark.asyncio

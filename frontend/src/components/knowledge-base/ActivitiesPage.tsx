@@ -516,7 +516,12 @@ const ActivitiesPage = () => {
   };
 
   const handleSaveActivity = async () => {
-    if (!editingActivity || !editingActivity.name.trim() || !editingActivity.description.trim()) return;
+    if (
+      !editingActivity ||
+      !editingActivity.name.trim() ||
+      !editingActivity.description.trim()
+    )
+      return;
 
     if (isCreating || !editingActivity.id || editingActivity.id === "") {
       await createActivity(editingActivity);

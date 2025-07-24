@@ -39,17 +39,17 @@ export function renderWithProviders(
     authContext = {},
     routerProps = { initialEntries: ["/"] },
     ...renderOptions
-  }: CustomRenderOptions = {}
+  }: CustomRenderOptions = {},
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { 
+      queries: {
         retry: false,
         staleTime: 0,
         gcTime: 0,
       },
-      mutations: { 
-        retry: false 
+      mutations: {
+        retry: false,
       },
     },
   });

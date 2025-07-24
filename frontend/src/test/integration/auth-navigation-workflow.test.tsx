@@ -110,10 +110,10 @@ const mockSelectedOrgAccount = {
   },
 };
 
-const TestApp = ({ 
-  authContext, 
-  initialEntries = ["/"] 
-}: { 
+const TestApp = ({
+  authContext,
+  initialEntries = ["/"],
+}: {
   authContext: AuthContextType;
   initialEntries?: string[];
 }) => {
@@ -163,7 +163,9 @@ const TestApp = ({
 };
 
 // Helper function to create auth context
-const createAuthContext = (overrides: Partial<AuthContextType> = {}): AuthContextType => ({
+const createAuthContext = (
+  overrides: Partial<AuthContextType> = {},
+): AuthContextType => ({
   user: null,
   isAuthenticated: false,
   isLoading: false,

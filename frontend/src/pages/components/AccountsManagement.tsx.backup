@@ -4,15 +4,13 @@ import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
-  useAccounts,
-  useCreateAccount,
-  useDeleteAccount,
-  useUpdateAccount,
-} from "@/queries/accounts";
-import { useSyncHolidayActivityLogs } from "@/queries/activities";
-import type { HolidaySyncError } from "@/types/activities";
-import type { AxiosError } from "axios";
-import { moveAccount, getOrganizations } from "@/data/organizationApi";
+  createAccount,
+  getAccountsByOrganizationId,
+  deleteAccount,
+  moveAccount,
+  getOrganizations,
+  updateAccount,
+} from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -166,14 +164,6 @@ const AccountsManagement = ({
     setOrgMetadata,
     setSelectedOrgAccount,
   } = useAuth();
-  // React Query hooks
-  const { data: accounts = [], isLoading: isLoadingAccounts } =
-    useAccounts(currentOrgId);
-  const createAccountMutation = useCreateAccount();
-  const deleteAccountMutation = useDeleteAccount();
-  const updateAccountMutation = useUpdateAccount();
-  const syncHolidayMutation = useSyncHolidayActivityLogs();
-
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -182,7 +172,12 @@ const AccountsManagement = ({
   const [isEditRegionPopoverOpen, setIsEditRegionPopoverOpen] = useState(false);
   const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
     useState(false);
+  const [organizationAccounts, setOrganizationAccounts] = useState<Account[]>(
+    [],
+  );
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // State for move account functionality
   const [isMoveAccountDialogOpen, setIsMoveAccountDialogOpen] = useState(false);
@@ -239,12 +234,36 @@ const AccountsManagement = ({
     region: [] as string[],
   });
 
-  // Filter accounts based on user permissions
-  const organizationAccounts = useMemo(() => {
-    return accounts.filter(
-      (account) => user?.permissions?.accounts?.[account.account_id],
-    );
-  }, [accounts, user?.permissions?.accounts]);
+  // Fetch accounts from Neo4j when component mounts or org changes
+  useEffect(() => {
+    const loadAccounts = async () => {
+      if (!currentOrgId) return;
+
+      setIsLoadingAccounts(true);
+      try {
+        console.log(
+          "[AccountsManagement] Fetching accounts for org:",
+          currentOrgId,
+        );
+        const accounts = await getAccountsByOrganizationId(currentOrgId);
+        console.log("[AccountsManagement] Fetched accounts:", accounts);
+
+        // Filter accounts based on user permissions
+        const permittedAccounts = accounts.filter(
+          (account) => user?.permissions?.accounts?.[account.account_id],
+        );
+
+        setOrganizationAccounts(permittedAccounts);
+      } catch (error) {
+        console.error("[AccountsManagement] Error loading accounts:", error);
+        setOrganizationAccounts([]);
+      } finally {
+        setIsLoadingAccounts(false);
+      }
+    };
+
+    loadAccounts();
+  }, [currentOrgId, user?.permissions?.accounts]);
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
@@ -305,60 +324,16 @@ const AccountsManagement = ({
     if (!selectedAccount) return;
 
     try {
-      // Check if region is changing
-      const regionChanged =
-        JSON.stringify(selectedAccount.region) !==
-        JSON.stringify(editFormData.region);
-
       // Update account in Neo4j (source of truth)
-      const updatedAccount = await updateAccountMutation.mutateAsync({
-        accountId: selectedAccount.account_id,
-        updates: {
-          account_name: editFormData.account_name,
-          industry: editFormData.industry,
-          status: editFormData.status,
-          websites: editFormData.websites,
-          timezone: editFormData.timezone,
-          data_region: editFormData.data_region,
-          region: editFormData.region,
-        },
+      const updatedAccount = await updateAccount(selectedAccount.account_id, {
+        account_name: editFormData.account_name,
+        industry: editFormData.industry,
+        status: editFormData.status,
+        websites: editFormData.websites,
+        timezone: editFormData.timezone,
+        data_region: editFormData.data_region,
+        region: editFormData.region,
       });
-
-      // If region changed, sync holiday activity logs
-      if (regionChanged) {
-        try {
-          const syncResult = await syncHolidayMutation.mutateAsync(
-            selectedAccount.account_id,
-          );
-
-          // Check for partial success
-          if (syncResult.data.errors && syncResult.data.errors.length > 0) {
-            toast({
-              title: "Partial Sync",
-              description: `Holiday activities synced with ${syncResult.data.errors.length} warnings. ${syncResult.data.new_logs_created} created, ${syncResult.data.logs_deleted} deleted.`,
-              variant: "default",
-            });
-          } else {
-            toast({
-              title: "Holiday Activities Synced",
-              description: `Updated ${syncResult.data.new_logs_created} holidays for ${syncResult.data.regions.join(", ")}.`,
-            });
-          }
-        } catch (error) {
-          const syncError = error as AxiosError<HolidaySyncError>;
-          console.error("Error syncing holiday activities:", syncError);
-
-          const errorMessage =
-            syncError.response?.data?.message ||
-            "Holiday sync failed. You may need to sync manually.";
-
-          toast({
-            title: "Sync Warning",
-            description: `Account updated successfully. ${errorMessage}`,
-            variant: "destructive",
-          });
-        }
-      }
 
       // Update local accountMetadata context
       setAccountMetadata((prev) => ({
@@ -379,6 +354,13 @@ const AccountsManagement = ({
             ) || [],
         },
       }));
+
+      // Update the local accounts list
+      setOrganizationAccounts((prev) =>
+        prev.map((acc) =>
+          acc.account_id === selectedAccount.account_id ? updatedAccount : acc,
+        ),
+      );
 
       setIsModalOpen(false);
       setSelectedAccount(null);
@@ -424,14 +406,26 @@ const AccountsManagement = ({
     }
 
     try {
-      // Create account in Neo4j (source of truth)
-      const newAccount = await createAccountMutation.mutateAsync({
-        accountName: createAccountFormData.account_name,
-        organizationId: currentOrgId,
+      console.log("[AccountsManagement] Creating account with data:", {
+        account_name: createAccountFormData.account_name,
+        organization_id: currentOrgId,
         industry: createAccountFormData.industry,
+        status: createAccountFormData.status,
         websites: createAccountFormData.websites,
         timezone: createAccountFormData.timezone,
-        dataRegion: createAccountFormData.data_region,
+        data_region: createAccountFormData.data_region,
+        region: createAccountFormData.region,
+      });
+
+      // Create account in Neo4j (source of truth)
+      const newAccount = await createAccount({
+        account_name: createAccountFormData.account_name,
+        organization_id: currentOrgId,
+        industry: createAccountFormData.industry,
+        status: createAccountFormData.status,
+        websites: createAccountFormData.websites,
+        timezone: createAccountFormData.timezone,
+        data_region: createAccountFormData.data_region,
         region: createAccountFormData.region,
       });
 
@@ -440,25 +434,6 @@ const AccountsManagement = ({
         newAccount,
       );
       const newAccountId = newAccount.account_id;
-
-      // If the new account has a region, sync holiday activity logs
-      if (
-        createAccountFormData.region &&
-        createAccountFormData.region.length > 0
-      ) {
-        try {
-          await syncHolidayMutation.mutateAsync(newAccountId);
-          console.log(
-            "[AccountsManagement] Holiday activities synced for new account",
-          );
-        } catch (syncError) {
-          console.error(
-            "Error syncing holiday activities for new account:",
-            syncError,
-          );
-          // Don't block account creation due to sync failure
-        }
-      }
 
       // Get user's permission level for the organization to apply same level to new account
       console.log("[AccountsManagement] User object:", user);
@@ -539,6 +514,26 @@ const AccountsManagement = ({
           accounts: [...(prev[currentOrgId]?.accounts || []), newAccount],
         },
       }));
+
+      // Refresh the accounts list from Neo4j
+      console.log(
+        "[AccountsManagement] Refreshing accounts list after creation",
+      );
+      const updatedAccounts = await getAccountsByOrganizationId(currentOrgId);
+
+      // Since we might not have updated Firestore permissions, show all accounts for now
+      // In production, you'd want to handle this more gracefully
+      if (firestoreUpdateFailed) {
+        console.log(
+          "[AccountsManagement] Showing all accounts due to Firestore error",
+        );
+        setOrganizationAccounts(updatedAccounts);
+      } else {
+        const permittedAccounts = updatedAccounts.filter(
+          (account) => user?.permissions?.accounts?.[account.account_id],
+        );
+        setOrganizationAccounts(permittedAccounts);
+      }
 
       setIsCreateAccountModalOpen(false);
       setCreateAccountFormData({
@@ -756,7 +751,7 @@ const AccountsManagement = ({
 
   const handleDeleteAccount = async () => {
     const account = selectedAccount;
-    if (!account || deleteAccountMutation.isPending) {
+    if (!account || isDeleting) {
       if (!account) {
         toast({
           title: "Error",
@@ -771,15 +766,19 @@ const AccountsManagement = ({
     const accountId = account.account_id;
     const accountName = account.account_name;
 
-    // Close dialogs immediately to prevent UI issues
-    setIsDeleteDialogOpen(false);
-    setIsModalOpen(false);
+    setIsDeleting(true);
 
     try {
-      await deleteAccountMutation.mutateAsync({
-        orgId: currentOrgId!,
-        accountId: accountId,
-      });
+      console.log("[AccountsManagement] Deleting account:", accountId);
+      
+      // Close dialogs immediately to prevent UI issues
+      setIsDeleteDialogOpen(false);
+      setIsModalOpen(false);
+      
+      // Delete account from Neo4j
+      await deleteAccount(accountId);
+      
+      console.log("[AccountsManagement] Account deleted successfully");
 
       // Show success message
       toast({
@@ -787,12 +786,11 @@ const AccountsManagement = ({
         description: `"${accountName}" and all related entities have been permanently deleted.`,
       });
 
-      // If we deleted the current account, redirect to workspace selection
-      if (accountId === accountMetadata?.account_id) {
-        setTimeout(() => {
-          navigate("/workspace-selection");
-        }, 1500);
-      }
+      // Refresh the page after a short delay to ensure the toast is shown
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+
     } catch (error: any) {
       console.error("[AccountsManagement] Error deleting account:", error);
 
@@ -806,6 +804,8 @@ const AccountsManagement = ({
         description: `Error: ${errorMessage}`,
         variant: "destructive",
       });
+      
+      setIsDeleting(false);
     }
   };
 
@@ -1199,12 +1199,8 @@ const AccountsManagement = ({
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleSaveAccount}
-                className="flex-1"
-                disabled={updateAccountMutation.isPending}
-              >
-                {updateAccountMutation.isPending ? "Saving..." : "Save Changes"}
+              <Button onClick={handleSaveAccount} className="flex-1">
+                Save Changes
               </Button>
             </div>
           </div>
@@ -1421,14 +1417,8 @@ const AccountsManagement = ({
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handleCreateAccount}
-                className="flex-1"
-                disabled={createAccountMutation.isPending}
-              >
-                {createAccountMutation.isPending
-                  ? "Creating..."
-                  : "Create Account"}
+              <Button onClick={handleCreateAccount} className="flex-1">
+                Create Account
               </Button>
             </div>
           </div>
@@ -1562,18 +1552,14 @@ const AccountsManagement = ({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteAccountMutation.isPending}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <Button
               onClick={handleDeleteAccount}
-              disabled={deleteAccountMutation.isPending}
+              disabled={isDeleting}
               className="bg-red-600 hover:bg-red-700 focus:ring-red-600 text-white"
               variant="destructive"
             >
-              {deleteAccountMutation.isPending
-                ? "Deleting..."
-                : "Delete Permanently"}
+              {isDeleting ? "Deleting..." : "Delete Account"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

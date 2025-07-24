@@ -2,15 +2,17 @@
  * Types and constants for organizations and accounts
  */
 
+import type { OrganizationId, AccountId } from "@/lib/branded-types";
+
 // Organization types
 export interface Organization {
-  organization_id: string;
+  organization_id: OrganizationId;
   organization_name: string;
   plan: string;
   website: string;
   company_size?: string;
   agency: boolean;
-  child_organizations?: string[];
+  child_organizations?: OrganizationId[];
   subscription: {
     plan_name: string;
     plan_description: string;
@@ -39,7 +41,7 @@ export interface Organization {
     pending_invitations: number;
   };
   accounts: Array<{
-    account_id: string;
+    account_id: AccountId;
     account_name: string;
   }>;
   created_at?: string;
@@ -48,9 +50,9 @@ export interface Organization {
 
 // Account types
 export interface Account {
-  account_id: string;
+  account_id: AccountId;
   account_name: string;
-  organization_id: string;
+  organization_id: OrganizationId;
   industry: string;
   status: string;
   websites: string[];

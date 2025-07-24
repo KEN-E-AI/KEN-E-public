@@ -545,9 +545,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           {/* Header */}
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <img 
-                src="/KEN-E Logo Full.png" 
-                alt="KEN-E Logo" 
+              <img
+                src="/KEN-E Logo Full.png"
+                alt="KEN-E Logo"
                 className="h-32 w-auto"
               />
             </div>

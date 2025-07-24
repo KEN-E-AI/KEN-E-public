@@ -541,7 +541,6 @@ describe("Dashboard Workflow Integration Tests", () => {
 
   describe("Data Loading and Error Handling", () => {
     test("should handle loading states", async () => {
-
       // Mock slow loading
       vi.mocked(axios.get).mockImplementation(
         () => new Promise((resolve) => setTimeout(resolve, 100)),
@@ -563,7 +562,6 @@ describe("Dashboard Workflow Integration Tests", () => {
     });
 
     test("should handle API errors gracefully", async () => {
-
       // Mock API error
       vi.mocked(axios.get).mockRejectedValue(new Error("API Error"));
 
@@ -583,7 +581,6 @@ describe("Dashboard Workflow Integration Tests", () => {
     });
 
     test("should handle network connectivity issues", async () => {
-
       // Mock network error
       vi.mocked(axios.get).mockRejectedValue(new Error("Network Error"));
 

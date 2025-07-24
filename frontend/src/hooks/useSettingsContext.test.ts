@@ -114,7 +114,7 @@ describe("useSettingsContext", () => {
       canManageUsers: false,
       organizationRole: "user",
     });
-    
+
     // Reset mock for other tests
     mockAuthContext.currentOrganizationId = "org-1";
     mockAuthContext.selectedOrgAccount.orgId = "org-1";
@@ -130,7 +130,7 @@ describe("useSettingsContext", () => {
   test("handles null user gracefully", () => {
     // Save original mock
     const originalMock = { ...mockAuthContext };
-    
+
     // Update mock to null user
     mockAuthContext = {
       ...mockAuthContext,
@@ -157,7 +157,7 @@ describe("useSettingsContext", () => {
       canManageUsers: false,
       organizationRole: null,
     });
-    
+
     // Restore original mock
     mockAuthContext = originalMock;
   });

@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ..bigquery import BigQueryService, get_bigquery_service
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
@@ -262,6 +263,106 @@ async def _create_initial_activities(
         return 0
 
 
+async def _create_initial_activity_logs(
+    db: Neo4jService,
+    bigquery: BigQueryService,
+    account_id: str,
+    organization_id: str,
+    regions: list[str],
+) -> int:
+    """
+    Create initial activity logs for act_00 from BigQuery holiday data.
+
+    Args:
+        db: Neo4j database service
+        bigquery: BigQuery service
+        account_id: ID of the newly created account
+        organization_id: ID of the organization (used to get GCP project)
+        regions: List of regions for the account
+
+    Returns:
+        int: Number of activity logs created
+    """
+    try:
+        # Get GCP project ID from environment
+        import os
+
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+        if not project_id:
+            logger.warning(
+                "GOOGLE_CLOUD_PROJECT_ID not set, skipping holiday activity logs"
+            )
+            return 0
+
+        # Check if act_00 activity exists for this account
+        check_query = """
+        MATCH (a:Activity {activity_id: "act_00"})-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        RETURN a
+        """
+        result = await db.execute_query(check_query, {"account_id": account_id})
+        if not result:
+            logger.warning(f"Activity act_00 not found for account {account_id}")
+            return 0
+
+        # Query holiday activities from BigQuery
+        logger.info(
+            f"Querying BigQuery for holidays in project {project_id} for regions {regions}"
+        )
+        holidays = bigquery.query_holiday_activities(project_id, regions)
+        if not holidays:
+            logger.info(f"No holiday activities found for regions {regions}")
+            return 0
+        logger.info(f"Found {len(holidays)} holiday activities from BigQuery")
+
+        # Create activity logs in batch
+        activity_logs_data = []
+        for holiday in holidays:
+            log_id = str(uuid.uuid4())
+            activity_logs_data.append(
+                {
+                    "activity_log_id": f"log_{log_id}",
+                    "activity_id": "act_00",
+                    "account_id": account_id,
+                    "start_date": holiday["start_date"],
+                    "end_date": holiday["end_date"],
+                    "description": holiday["description"],
+                    # Omit evidence field - Neo4j doesn't accept empty dicts
+                }
+            )
+
+        # Create activity logs with LOGGED relationships
+        create_query = """
+        UNWIND $logs AS log
+        MATCH (activity:Activity {activity_id: log.activity_id})-[:BELONGS_TO]->(account:Account {account_id: log.account_id})
+        CREATE (al:ActivityLog {
+            activity_log_id: log.activity_log_id,
+            account_id: log.account_id,
+            start_date: log.start_date,
+            end_date: log.end_date,
+            description: log.description
+        })
+        CREATE (al)-[:LOGGED]->(activity)
+        CREATE (al)-[:BELONGS_TO]->(account)
+        RETURN count(al) as created_count
+        """
+
+        params = {"logs": activity_logs_data}
+        result = await db.execute_write_query(create_query, params)
+        created_count = result[0]["created_count"] if result else 0
+
+        logger.info(
+            f"Created {created_count} holiday activity logs for account {account_id}"
+        )
+        return created_count
+
+    except Exception as e:
+        logger.error(
+            f"Error creating initial activity logs for account {account_id}: {e!s}"
+        )
+        # Don't raise - let account creation succeed even if activity logs fail
+        return 0
+
+
 @router.post("/", response_model=Account)
 async def create_account(
     request: AccountRequest,
@@ -393,6 +494,24 @@ async def create_account(
                 f"Successfully created {activities_created} initial activities for account {account_id}"
             )
 
+        # Create initial activity logs for act_00 if regions are specified
+        if request.region:
+            logger.info(
+                f"Account {account_id} has regions: {request.region}, attempting to create holiday activity logs"
+            )
+            bigquery = get_bigquery_service()
+            logs_created = await _create_initial_activity_logs(
+                db, bigquery, account_id, request.organization_id, request.region
+            )
+            if logs_created > 0:
+                logger.info(
+                    f"Successfully created {logs_created} holiday activity logs for account {account_id}"
+                )
+            else:
+                logger.info(
+                    f"No holiday activity logs created for account {account_id}"
+                )
+
         # Fetch the created account
         return await get_account(account_id, db)
 
@@ -518,13 +637,18 @@ async def delete_account(
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> SuccessResponse:
     """
-    Delete an account.
+    Delete an account and all related entities.
+
+    This endpoint performs a cascade delete of:
+    - The account node itself
+    - All entities with BELONGS_TO relationship to the account
+    - All ActivityLog nodes with LOGGED relationship to deleted Activity nodes
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
 
     **Returns:**
-    - Success response with deletion details
+    - Success response with deletion details including counts of deleted entities
 
     **Example:**
     ```
@@ -542,36 +666,56 @@ async def delete_account(
         if not existing_acc:
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
 
-        # Check if account has related entities (metrics, activities, etc.)
-        check_related_query = """
-        MATCH (acc:Account {account_id: $account_id})
-        OPTIONAL MATCH (acc)<-[:BELONGS_TO]-(entity)
-        WHERE entity:Metric OR entity:Activity OR entity:Dataset
-        RETURN count(entity) as related_count
+        # Delete everything in multiple simpler queries
+        total_nodes_deleted = 0
+        total_relationships_deleted = 0
+
+        # First, delete all ActivityLog nodes
+        delete_logs_query = """
+        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog)
+        DETACH DELETE log
         """
-        result = await db.execute_query(check_related_query, {"account_id": account_id})
-        related_count = result[0]["related_count"] if result else 0
+        logs_summary = await db.execute_write_query(
+            delete_logs_query, {"account_id": account_id}
+        )
+        total_nodes_deleted += logs_summary.get("nodes_deleted", 0)
+        total_relationships_deleted += logs_summary.get("relationships_deleted", 0)
 
-        if related_count > 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot delete account with {related_count} related entities. Delete related entities first.",
-            )
+        # Then delete all entities with BELONGS_TO relationship
+        delete_entities_query = """
+        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(entity)
+        DETACH DELETE entity
+        """
+        entities_summary = await db.execute_write_query(
+            delete_entities_query, {"account_id": account_id}
+        )
+        total_nodes_deleted += entities_summary.get("nodes_deleted", 0)
+        total_relationships_deleted += entities_summary.get("relationships_deleted", 0)
 
-        # Delete account and BELONGS_TO relationship
-        delete_query = """
+        # Finally delete the account itself
+        delete_account_query = """
         MATCH (acc:Account {account_id: $account_id})
         DETACH DELETE acc
         """
+        account_summary = await db.execute_write_query(
+            delete_account_query, {"account_id": account_id}
+        )
+        total_nodes_deleted += account_summary.get("nodes_deleted", 0)
+        total_relationships_deleted += account_summary.get("relationships_deleted", 0)
 
-        summary = await db.execute_write_query(delete_query, {"account_id": account_id})
+        # Log the deletion for auditing
+        logger.info(
+            f"Deleted account {account_id} with cascade delete: "
+            f"{total_nodes_deleted} nodes, "
+            f"{total_relationships_deleted} relationships"
+        )
 
         return SuccessResponse(
-            message=f"Account {account_id} deleted successfully",
+            message=f"Account {account_id} and all related entities deleted successfully",
             data={
                 "account_id": account_id,
-                "nodes_deleted": summary.get("nodes_deleted", 0),
-                "relationships_deleted": summary.get("relationships_deleted", 0),
+                "nodes_deleted": total_nodes_deleted,
+                "relationships_deleted": total_relationships_deleted,
             },
         )
 
