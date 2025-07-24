@@ -64,6 +64,7 @@ interface Log {
 interface ApiActivity {
   id: string;
   account_id: string;
+  activity_name: string;
   activity_description: string;
   expected_impact: string;
   internal: boolean;
@@ -82,6 +83,7 @@ interface ApiLog {
 
 interface Activity {
   id: string;
+  name: string;
   description: string;
   internal: boolean;
   known: boolean;
@@ -124,6 +126,7 @@ const ActivitiesPage = () => {
   // Convert API activity to component format
   const convertApiActivity = (apiActivity: ApiActivity): Activity => ({
     id: apiActivity.id,
+    name: apiActivity.activity_name,
     description: apiActivity.activity_description,
     internal: apiActivity.internal,
     known: apiActivity.known_activity,
@@ -149,6 +152,7 @@ const ActivitiesPage = () => {
   // Convert component activity to API format
   const convertToApiActivity = (activity: Activity): Partial<ApiActivity> => ({
     account_id: selectedOrgAccount?.accountId || "",
+    activity_name: activity.name,
     activity_description: activity.description,
     expected_impact: activity.expectedImpact,
     internal: activity.internal,
@@ -512,7 +516,7 @@ const ActivitiesPage = () => {
   };
 
   const handleSaveActivity = async () => {
-    if (!editingActivity || !editingActivity.description.trim()) return;
+    if (!editingActivity || !editingActivity.name.trim() || !editingActivity.description.trim()) return;
 
     if (isCreating || !editingActivity.id || editingActivity.id === "") {
       await createActivity(editingActivity);
@@ -861,6 +865,7 @@ const ActivitiesPage = () => {
             onClick={() => {
               setEditingActivity({
                 id: "",
+                name: "",
                 description: "",
                 internal: false,
                 known: false,
@@ -1051,7 +1056,7 @@ const ActivitiesPage = () => {
                         </div>
                         <div className="text-left flex-1 min-w-0">
                           <p className="text-sm text-dashboard-gray-900 break-words leading-relaxed">
-                            {activity.description}
+                            {activity.name}
                           </p>
                         </div>
                       </AccordionTrigger>
@@ -1556,6 +1561,21 @@ const ActivitiesPage = () => {
               <DialogTitle>{isCreating ? "Add" : "Edit"} Activity</DialogTitle>
             </DialogHeader>
             <div className="space-y-6">
+              {/* Name */}
+              <div>
+                <Label htmlFor="activity-name">Name *</Label>
+                <Input
+                  id="activity-name"
+                  value={editingActivity?.name || ""}
+                  onChange={(e) =>
+                    setEditingActivity((prev) =>
+                      prev ? { ...prev, name: e.target.value } : null,
+                    )
+                  }
+                  placeholder="Enter activity name..."
+                />
+              </div>
+
               {/* Description */}
               <div>
                 <Label htmlFor="activity-description">Description *</Label>
