@@ -9,6 +9,8 @@ import type {
   HolidaySyncResponse,
 } from "@/types/activities";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 // Query keys factory
 export const activityKeys = {
   all: ["activities"] as const,

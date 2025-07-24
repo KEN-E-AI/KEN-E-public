@@ -149,11 +149,13 @@ const REGION_OPTIONS = [
 interface AccountsManagementProps {
   orgData: Organization;
   currentOrgId: string;
+  openCreateModal?: boolean;
 }
 
 const AccountsManagement = ({
   orgData,
   currentOrgId,
+  openCreateModal = false,
 }: AccountsManagementProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -596,6 +598,16 @@ const AccountsManagement = ({
     }
   };
 
+  // organizationAccounts is already synced with accounts through useMemo
+  // No need for a separate useEffect to update it
+
+  // Open create account modal if requested via prop
+  useEffect(() => {
+    if (openCreateModal && !orgData.agency) {
+      setIsCreateAccountModalOpen(true);
+    }
+  }, [openCreateModal, orgData.agency]);
+
   // Fetch organizations when move dialog opens
   useEffect(() => {
     if (isMoveAccountDialogOpen) {
@@ -692,12 +704,8 @@ const AccountsManagement = ({
                   targetOrganizationId,
                 );
 
-                // Update local state - remove from current accounts list
-                setOrganizationAccounts((prev) =>
-                  prev.filter(
-                    (acc) => acc.account_id !== selectedAccount.account_id,
-                  ),
-                );
+                // organizationAccounts will automatically update when accounts query is refetched
+                // No need to manually update it since it's computed from accounts data
 
                 // Remove from account metadata
                 const newAccountMetadata = { ...accountMetadata };
@@ -770,10 +778,25 @@ const AccountsManagement = ({
     // Store account info before deletion
     const accountId = account.account_id;
     const accountName = account.account_name;
+    const isDeletingCurrentAccount = accountId === accountMetadata?.account_id;
 
     // Close dialogs immediately to prevent UI issues
     setIsDeleteDialogOpen(false);
     setIsModalOpen(false);
+
+    // Clear selected account state to prevent accessing stale data
+    setSelectedAccount(null);
+
+    // If deleting the current account, clear auth state immediately to prevent freeze
+    if (isDeletingCurrentAccount) {
+      // Clear account metadata immediately
+      const newAccountMetadata = { ...accountMetadata };
+      delete newAccountMetadata[accountId];
+      setAccountMetadata(newAccountMetadata);
+
+      // Clear selected org account if it matches
+      setSelectedOrgAccount(null);
+    }
 
     try {
       await deleteAccountMutation.mutateAsync({
@@ -788,10 +811,9 @@ const AccountsManagement = ({
       });
 
       // If we deleted the current account, redirect to workspace selection
-      if (accountId === accountMetadata?.account_id) {
-        setTimeout(() => {
-          navigate("/workspace-selection");
-        }, 1500);
+      if (isDeletingCurrentAccount) {
+        // Navigate immediately instead of with timeout to prevent accessing deleted data
+        navigate("/workspace-selection");
       }
     } catch (error: any) {
       console.error("[AccountsManagement] Error deleting account:", error);

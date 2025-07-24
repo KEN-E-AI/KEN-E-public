@@ -191,7 +191,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [showCreateOrg, setShowCreateOrg] = useState(false);
-  const [showCreateAccount, setShowCreateAccount] = useState(false);
+  // const [showCreateAccount, setShowCreateAccount] = useState(false); // Removed - using redirect instead
   const [isLoading, setIsLoading] = useState(false);
   const [orgsFromFirestore, setOrgsFromFirestore] = useState<
     Record<string, string>
@@ -371,7 +371,8 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     navigate("/create-organization");
   };
 
-  const handleCreateAccount = async () => {
+  // Removed - now redirecting to complete form instead
+  /* const handleCreateAccount = async () => {
     // Validate account creation requirements
     const validation = validateAccountCreationRequirements(
       selectedOrganization,
@@ -432,7 +433,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }; */
 
   const handleContinue = () => {
     if (selectedOrganization && selectedAccount) {
@@ -668,7 +669,18 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           <Button
                             variant="outline"
                             className="w-full"
-                            onClick={() => setShowCreateAccount(true)}
+                            onClick={() => {
+                              // Set the organization as current
+                              setCurrentOrganization(selectedOrganization);
+                              
+                              // Complete workspace selection to allow navigation
+                              completeWorkspaceSelection();
+                              
+                              // Navigate to organization settings with create account flag
+                              navigate(
+                                "/settings/organization?openCreateAccount=true",
+                              );
+                            }}
                           >
                             <Plus className="h-4 w-4 mr-2" />
                             Create New Account
@@ -731,7 +743,31 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                       <Button
                         variant="outline"
                         className="w-full"
-                        onClick={() => setShowCreateAccount(true)}
+                        onClick={() => {
+                          const orgToSet = selectedOrgData.agency
+                            ? selectedChildOrg || selectedOrganization
+                            : selectedOrganization;
+                          
+                          if (!orgToSet) {
+                            toast({
+                              title: "No organization selected",
+                              description: "Please select an organization first",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          
+                          // Set the organization as current
+                          setCurrentOrganization(orgToSet);
+                          
+                          // Complete workspace selection to allow navigation
+                          completeWorkspaceSelection();
+                          
+                          // Navigate to organization settings with create account flag
+                          navigate(
+                            "/settings/organization?openCreateAccount=true",
+                          );
+                        }}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Create New Account
@@ -841,85 +877,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
           </DialogContent>
         </Dialog>
 
-        {/* Create Account Dialog */}
-        <Dialog open={showCreateAccount} onOpenChange={setShowCreateAccount}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Create New Account</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="account-name">Account Name</Label>
-                <Input
-                  id="account-name"
-                  placeholder="Enter account name"
-                  value={newAccountData.name}
-                  onChange={(e) =>
-                    setNewAccountData({
-                      ...newAccountData,
-                      name: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="account-type">Account Type</Label>
-                <Select
-                  value={newAccountData.type}
-                  onValueChange={(value) =>
-                    setNewAccountData({ ...newAccountData, type: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="production">Production</SelectItem>
-                    <SelectItem value="development">Development</SelectItem>
-                    <SelectItem value="staging">Staging</SelectItem>
-                    <SelectItem value="analytics">Analytics</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="account-description">Description</Label>
-                <Input
-                  id="account-description"
-                  placeholder="Brief description (optional)"
-                  value={newAccountData.description}
-                  onChange={(e) =>
-                    setNewAccountData({
-                      ...newAccountData,
-                      description: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="flex gap-2 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowCreateAccount(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleCreateAccount}
-                  disabled={
-                    !newAccountData.name || !newAccountData.type || isLoading
-                  }
-                  className="flex-1"
-                >
-                  {isLoading ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    "Create"
-                  )}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {/* Create Account Dialog - Removed in favor of redirecting to the complete form */}
       </div>
     </div>
   );
