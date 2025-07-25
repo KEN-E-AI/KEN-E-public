@@ -546,10 +546,6 @@ class UserNotificationPreferences(BaseModel):
     updated_at: str = Field(..., description="ISO timestamp of last update")
 
 
-class CreateNotificationResponse(SuccessResponse):
-    """Response model for notification creation."""
-    
-    notification_id: str = Field(..., description="Created notification ID")
 
 
 class ActivityScanRequest(BaseModel):
@@ -657,6 +653,12 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: str
     details: dict[str, Any] | None = None
+
+
+class CreateNotificationResponse(SuccessResponse):
+    """Response model for notification creation."""
+    
+    notification_id: str = Field(..., description="Created notification ID")
 
 
 # Superset Saved Queries Models
