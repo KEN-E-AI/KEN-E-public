@@ -503,9 +503,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         {/* Header */}
         <div className="text-center mb-8 pt-8">
           <div className="flex items-center justify-center mb-4">
-            <img 
-              src="/KEN-E Logo E Small.png" 
-              alt="KEN-E Logo" 
+            <img
+              src="/KEN-E Logo E Small.png"
+              alt="KEN-E Logo"
               className="h-16 w-auto"
             />
           </div>
@@ -674,10 +674,10 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             onClick={() => {
                               // Set the organization as current
                               setCurrentOrganization(selectedOrganization);
-                              
+
                               // Complete workspace selection to allow navigation
                               completeWorkspaceSelection();
-                              
+
                               // Navigate to organization settings with create account flag
                               navigate(
                                 "/settings/organization?openCreateAccount=true",
@@ -749,22 +749,23 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           const orgToSet = selectedOrgData.agency
                             ? selectedChildOrg || selectedOrganization
                             : selectedOrganization;
-                          
+
                           if (!orgToSet) {
                             toast({
                               title: "No organization selected",
-                              description: "Please select an organization first",
+                              description:
+                                "Please select an organization first",
                               variant: "destructive",
                             });
                             return;
                           }
-                          
+
                           // Set the organization as current
                           setCurrentOrganization(orgToSet);
-                          
+
                           // Complete workspace selection to allow navigation
                           completeWorkspaceSelection();
-                          
+
                           // Navigate to organization settings with create account flag
                           navigate(
                             "/settings/organization?openCreateAccount=true",

@@ -2,8 +2,8 @@
  * NotificationHandler - Placeholder component for handling notification clicks
  */
 
-import React from 'react';
-import type { NotificationWithStatus } from '@/types/notification.types';
+import React from "react";
+import type { NotificationWithStatus } from "@/types/notification.types";
 
 interface NotificationHandlerProps {
   notification: NotificationWithStatus | null;
@@ -35,7 +35,9 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
 
             {notification.data && Object.keys(notification.data).length > 0 && (
               <div>
-                <h3 className="font-medium text-gray-900 mb-1">Additional Information</h3>
+                <h3 className="font-medium text-gray-900 mb-1">
+                  Additional Information
+                </h3>
                 <div className="bg-gray-50 rounded-md p-4">
                   <pre className="text-sm text-gray-700 whitespace-pre-wrap">
                     {JSON.stringify(notification.data, null, 2)}
@@ -45,7 +47,9 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
             )}
 
             <div className="text-sm text-gray-500">
-              <p>Created: {new Date(notification.created_at).toLocaleString()}</p>
+              <p>
+                Created: {new Date(notification.created_at).toLocaleString()}
+              </p>
               {notification.read_at && (
                 <p>Read: {new Date(notification.read_at).toLocaleString()}</p>
               )}
@@ -55,9 +59,9 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
           {/* Placeholder message */}
           <div className="mt-6 p-4 bg-blue-50 rounded-md">
             <p className="text-blue-700 text-sm">
-              <strong>Note:</strong> This is a placeholder for notification actions. 
-              In a production environment, this would trigger specific actions based on 
-              the notification type and data.
+              <strong>Note:</strong> This is a placeholder for notification
+              actions. In a production environment, this would trigger specific
+              actions based on the notification type and data.
             </p>
           </div>
         </div>

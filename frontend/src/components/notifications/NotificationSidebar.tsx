@@ -2,27 +2,30 @@
  * NotificationSidebar component for displaying notifications
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { 
-  AlertTriangle, 
-  Newspaper, 
-  Globe, 
-  Users, 
-  FileText, 
-  TrendingUp, 
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  Newspaper,
+  Globe,
+  Users,
+  FileText,
+  TrendingUp,
   Sparkles,
   X,
   Archive,
   Circle,
   CheckCircle,
-} from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { notificationApi } from '@/api/notifications';
-import type { NotificationWithStatus, NotificationCategory } from '@/types/notification.types';
-import { 
-  NOTIFICATION_CATEGORY_COLORS, 
-  NOTIFICATION_CATEGORY_BG_COLORS 
-} from '@/types/notification.types';
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { notificationApi } from "@/api/notifications";
+import type {
+  NotificationWithStatus,
+  NotificationCategory,
+} from "@/types/notification.types";
+import {
+  NOTIFICATION_CATEGORY_COLORS,
+  NOTIFICATION_CATEGORY_BG_COLORS,
+} from "@/types/notification.types";
 
 interface NotificationSidebarProps {
   accountId: string;
@@ -33,13 +36,13 @@ interface NotificationSidebarProps {
 
 // Icon mapping
 const NOTIFICATION_ICONS: Record<NotificationCategory, React.ReactNode> = {
-  'Data Quality Alert': <AlertTriangle className="h-5 w-5" />,
-  'News & Press': <Newspaper className="h-5 w-5" />,
-  'Industry News': <Globe className="h-5 w-5" />,
-  'Competitor Activities': <Users className="h-5 w-5" />,
-  'Scheduled Report Status': <FileText className="h-5 w-5" />,
-  'KPI Performance': <TrendingUp className="h-5 w-5" />,
-  'New Features': <Sparkles className="h-5 w-5" />,
+  "Data Quality Alert": <AlertTriangle className="h-5 w-5" />,
+  "News & Press": <Newspaper className="h-5 w-5" />,
+  "Industry News": <Globe className="h-5 w-5" />,
+  "Competitor Activities": <Users className="h-5 w-5" />,
+  "Scheduled Report Status": <FileText className="h-5 w-5" />,
+  "KPI Performance": <TrendingUp className="h-5 w-5" />,
+  "New Features": <Sparkles className="h-5 w-5" />,
 };
 
 export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
@@ -48,22 +51,24 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
   onClose,
   onNotificationClick,
 }) => {
-  const [notifications, setNotifications] = useState<NotificationWithStatus[]>([]);
+  const [notifications, setNotifications] = useState<NotificationWithStatus[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch notifications
   const fetchNotifications = useCallback(async () => {
     if (!accountId) return;
-    
+
     try {
       setLoading(true);
       setError(null);
       const data = await notificationApi.getNotifications(accountId, false);
       setNotifications(data);
     } catch (err) {
-      console.error('Error fetching notifications:', err);
-      setError('Failed to load notifications');
+      console.error("Error fetching notifications:", err);
+      setError("Failed to load notifications");
     } finally {
       setLoading(false);
     }
@@ -77,29 +82,34 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
 
   // Mark notification as read
   const handleMarkAsRead = async (notification: NotificationWithStatus) => {
-    if (notification.status === 'read') return;
-    
+    if (notification.status === "read") return;
+
     try {
       await notificationApi.markAsRead(notification.id, accountId);
-      setNotifications(prev =>
-        prev.map(n =>
-          n.id === notification.id ? { ...n, status: 'read', read_at: new Date().toISOString() } : n
-        )
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notification.id
+            ? { ...n, status: "read", read_at: new Date().toISOString() }
+            : n,
+        ),
       );
     } catch (err) {
-      console.error('Error marking notification as read:', err);
+      console.error("Error marking notification as read:", err);
     }
   };
 
   // Archive notification
-  const handleArchive = async (notification: NotificationWithStatus, e: React.MouseEvent) => {
+  const handleArchive = async (
+    notification: NotificationWithStatus,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation();
-    
+
     try {
       await notificationApi.archiveNotification(notification.id, accountId);
-      setNotifications(prev => prev.filter(n => n.id !== notification.id));
+      setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
     } catch (err) {
-      console.error('Error archiving notification:', err);
+      console.error("Error archiving notification:", err);
     }
   };
 
@@ -135,11 +145,15 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading notifications...</div>
+            <div className="p-4 text-center text-gray-500">
+              Loading notifications...
+            </div>
           ) : error ? (
             <div className="p-4 text-center text-red-500">{error}</div>
           ) : notifications.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">No notifications</div>
+            <div className="p-4 text-center text-gray-500">
+              No notifications
+            </div>
           ) : (
             <div className="divide-y">
               {notifications.map((notification) => (
@@ -169,7 +183,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   onClick,
   onArchive,
 }) => {
-  const isUnread = notification.status === 'unread';
+  const isUnread = notification.status === "unread";
   const icon = NOTIFICATION_ICONS[notification.category];
   const colorClass = NOTIFICATION_CATEGORY_COLORS[notification.category];
   const bgColorClass = NOTIFICATION_CATEGORY_BG_COLORS[notification.category];
@@ -177,13 +191,15 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
   return (
     <div
       className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
-        isUnread ? 'bg-blue-50/30' : ''
+        isUnread ? "bg-blue-50/30" : ""
       }`}
       onClick={onClick}
     >
       <div className="flex items-start gap-3">
         {/* Icon */}
-        <div className={`${bgColorClass} ${colorClass} p-2 rounded-lg flex-shrink-0`}>
+        <div
+          className={`${bgColorClass} ${colorClass} p-2 rounded-lg flex-shrink-0`}
+        >
           {icon}
         </div>
 
@@ -198,13 +214,16 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
                 )}
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                {notification.category} • {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                {notification.category} •{" "}
+                {formatDistanceToNow(new Date(notification.created_at), {
+                  addSuffix: true,
+                })}
               </p>
             </div>
 
             {/* Actions */}
             <div className="flex items-center gap-1">
-              {notification.status === 'read' && (
+              {notification.status === "read" && (
                 <CheckCircle className="h-4 w-4 text-green-500" />
               )}
               <button
@@ -220,11 +239,13 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
           {/* Additional data preview if available */}
           {notification.data && Object.keys(notification.data).length > 0 && (
             <div className="mt-2 text-xs text-gray-600 bg-gray-100 rounded p-2">
-              {Object.entries(notification.data).slice(0, 2).map(([key, value]) => (
-                <div key={key}>
-                  <span className="font-medium">{key}:</span> {String(value)}
-                </div>
-              ))}
+              {Object.entries(notification.data)
+                .slice(0, 2)
+                .map(([key, value]) => (
+                  <div key={key}>
+                    <span className="font-medium">{key}:</span> {String(value)}
+                  </div>
+                ))}
               {Object.keys(notification.data).length > 2 && (
                 <div className="text-gray-400">...</div>
               )}

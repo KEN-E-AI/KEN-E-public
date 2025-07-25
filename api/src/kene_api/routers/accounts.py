@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ..auth import UserContext, get_current_user_context
 from ..bigquery import BigQueryService, get_bigquery_service
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
@@ -65,10 +66,11 @@ async def get_accounts(
     organization_id: str | None = Query(
         None, description="Filter accounts by organization ID"
     ),
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> AccountListResponse:
     """
-    Get all accounts, optionally filtered by organization.
+    Get accounts accessible to the current user, optionally filtered by organization.
 
     **Parameters (query):**
     - `organization_id` (optional): Filter accounts by organization ID
@@ -82,6 +84,8 @@ async def get_accounts(
     GET /api/v1/accounts/
     GET /api/v1/accounts/?organization_id=healthway
     ```
+    
+    **Note:** User must have access to the accounts and organization (if specified).
     """
     try:
         # Check Neo4j connectivity
@@ -89,21 +93,40 @@ async def get_accounts(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
+        # Get account IDs the user has access to
+        accessible_account_ids = user.accessible_accounts
+        
+        if not accessible_account_ids:
+            # User has no account access
+            return AccountListResponse(accounts=[], total=0)
+
         # Build query based on filter
         if organization_id:
+            # Verify user has access to the organization
+            if not user.has_organization_access(organization_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied to organization {organization_id}"
+                )
+                
             accounts_query = """
             MATCH (org:Organization {organization_id: $organization_id})<-[:BELONGS_TO]-(acc:Account)
+            WHERE acc.account_id IN $account_ids
             RETURN acc
             ORDER BY acc.account_name
             """
-            params = {"organization_id": organization_id}
+            params = {
+                "organization_id": organization_id,
+                "account_ids": accessible_account_ids
+            }
         else:
             accounts_query = """
             MATCH (acc:Account)
+            WHERE acc.account_id IN $account_ids
             RETURN acc
             ORDER BY acc.account_name
             """
-            params = {}
+            params = {"account_ids": accessible_account_ids}
 
         result = await db.execute_query(accounts_query, params)
 
@@ -131,6 +154,7 @@ async def get_accounts(
 @router.get("/{account_id}", response_model=Account)
 async def get_account(
     account_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Account:
     """
@@ -146,8 +170,17 @@ async def get_account(
     ```
     GET /api/v1/accounts/intellipure-b2c
     ```
+    
+    **Note:** User must have access to the account.
     """
     try:
+        # Check if user has access to this account
+        if not user.has_account_access(account_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied to account {account_id}"
+            )
+            
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:

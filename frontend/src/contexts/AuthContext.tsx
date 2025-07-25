@@ -5,7 +5,9 @@ import {
   useEffect,
   ReactNode,
 } from "react";
-import axios from "axios";
+import api from "@/lib/api";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
 import {
   toUserId,
@@ -50,21 +52,27 @@ interface Notification {
   id: string;
   account_id: AccountId;
   category: string;
-  created_date: string;
-  data: {
-    hasIndicator: boolean;
-    icon: string;
-    metadata: {
+  created_at: string;
+  created_date?: string; // For backward compatibility
+  data?: {
+    hasIndicator?: boolean;
+    icon?: string;
+    metadata?: {
       priority: string;
       source: string;
       tags: string[];
     };
-    title: string;
-    type: string;
+    title?: string;
+    type?: string;
+    badge?: string;
+    [key: string]: any;
   };
   description: string;
-  modified_timestamp: number;
+  modified_timestamp?: number;
   status: string;
+  read_at?: string;
+  user_archived_at?: string;
+  archived_at?: string;
 }
 
 interface NotificationSetting {
@@ -156,24 +164,42 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const fetchNotifications = async (accountId: AccountId) => {
     try {
-      const res = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/query`,
-        {
-          account_id: accountId,
-          collection: "notifications",
-          field: "account_id",
-          operator: "==",
-          value: accountId,
-          limit: 20,
+      // Use the proper notifications API endpoint that includes user-specific status
+      const res = await api.get(`/api/v1/notifications/`, {
+        params: {
+          include_archived: false,
         },
-      );
+      });
 
       console.log("📬 Notifications fetched in context:", res.data);
-      const documents = res.data.documents ?? []; // ✅ fallback to empty array
-      const sorted = [...documents].sort(
-        (a, b) =>
-          new Date(b.created_date).getTime() -
-          new Date(a.created_date).getTime(),
+      const notifications = res.data ?? []; // ✅ fallback to empty array
+
+      // Filter by account_id since the API returns all notifications for the user
+      const accountNotifications = notifications.filter(
+        (n: any) => n.account_id === accountId,
+      );
+
+      console.log(
+        "📬 Filtered notifications for account:",
+        accountId,
+        accountNotifications,
+      );
+      console.log(
+        "📬 Individual notification statuses:",
+        accountNotifications.map((doc: any) => ({
+          id: doc.id,
+          status: doc.status,
+          statusType: typeof doc.status,
+          statusValue: JSON.stringify(doc.status),
+          hasStatusField: "status" in doc,
+          allFields: Object.keys(doc),
+        })),
+      );
+
+      const sorted = [...accountNotifications].sort(
+        (a: any, b: any) =>
+          new Date(b.created_at || b.created_date).getTime() -
+          new Date(a.created_at || a.created_date).getTime(),
       );
 
       setNotifications(sorted);
@@ -241,9 +267,40 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     fetchNotifications(account.accountId);
   };
 
+  // Sync with Firebase auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
+        // User is signed out - clear all state
+        setUser(null);
+        setHasSelectedWorkspace(false);
+        setSelectedOrgAccountState(null);
+        setOrgMetadataState({});
+        setAccountMetadataState({});
+        localStorage.removeItem("user");
+        localStorage.removeItem("hasSelectedWorkspace");
+        localStorage.removeItem("selectedOrgAccount");
+        localStorage.removeItem("orgMetadata");
+        localStorage.removeItem("accountMetadata");
+      } else {
+        // User is signed in, restore state from localStorage if available
+        const savedUser = localStorage.getItem("user");
+        if (savedUser) {
+          try {
+            const parsedUser = JSON.parse(savedUser);
+            setUser(parsedUser);
+          } catch (error) {
+            console.error("Failed to parse saved user:", error);
+          }
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Initialize auth state from localStorage on component mount
   useEffect(() => {
-    const savedUser = localStorage.getItem("user");
     const savedWorkspaceSelection = localStorage.getItem(
       "hasSelectedWorkspace",
     );
@@ -252,14 +309,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const savedOrgMetadata = localStorage.getItem("orgMetadata");
     const savedAccountMetadata = localStorage.getItem("accountMetadata");
 
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      // Convert id to branded type
-      if (userData.id) {
-        userData.id = toUserId(userData.id);
-      }
-      setUser(userData);
-    }
+    // User state is now handled by Firebase auth state listener
 
     if (savedWorkspaceSelection === "true") {
       setHasSelectedWorkspace(true);

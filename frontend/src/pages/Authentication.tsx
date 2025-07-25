@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import axios from "axios";
+import api from "@/lib/api";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -75,6 +75,13 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   const invitationToken = searchParams.get("invitation");
 
   useEffect(() => {
+    // Sign out any existing Firebase user when landing on auth page
+    auth.signOut().catch((error) => {
+      console.error("Error signing out:", error);
+    });
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
 
     const verifyInvitation = async () => {
@@ -126,19 +133,19 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     apiBaseUrl: string,
   ): Promise<UserDataResponse> => {
     const [userRes, notificationsRes, securityRes] = await Promise.all([
-      axios.get<{ data: FirestoreUserData }>(
-        `${apiBaseUrl}/api/v1/firestore/documents/users/${uid}`,
+      api.get<{ data: FirestoreUserData }>(
+        `/api/v1/firestore/documents/users/${uid}`,
       ),
-      axios.post<{ documents: Array<{ data: NotificationSettings }> }>(
-        `${apiBaseUrl}/api/v1/firestore/documents/query`,
+      api.post<{ documents: Array<{ data: NotificationSettings }> }>(
+        `/api/v1/firestore/documents/query`,
         {
           account_id: uid,
           collection: `users/${uid}/notifications`,
           limit: 20,
         },
       ),
-      axios.post<{ documents: Array<{ data: SecuritySettings }> }>(
-        `${apiBaseUrl}/api/v1/firestore/documents/query`,
+      api.post<{ documents: Array<{ data: SecuritySettings }> }>(
+        `/api/v1/firestore/documents/query`,
         {
           account_id: uid,
           collection: `users/${uid}/security`,
@@ -215,7 +222,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       },
     };
 
-    await axios.post(`${apiBaseUrl}/api/v1/firestore/documents`, {
+    await api.post(`/api/v1/firestore/documents`, {
       account_id: firebaseUser.uid,
       collection: "users",
       document_id: firebaseUser.uid,
@@ -227,9 +234,13 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
 
   // Helper function to handle API errors
   const handleApiError = (error: unknown): string => {
-    if (!axios.isAxiosError(error)) throw error;
+    // Check if it's an axios-like error with a response property
+    if (!error || typeof error !== "object" || !("response" in error)) {
+      throw error;
+    }
 
-    switch (error.response?.status) {
+    const axiosError = error as any;
+    switch (axiosError.response?.status) {
       case 404:
         return ""; // User doesn't exist, not an error
       case 403:
@@ -283,8 +294,8 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         !userData.profile.email_verified &&
         firebaseUser.emailVerified
       ) {
-        await axios.put(
-          `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
+        await api.put(
+          `/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
           {
             update: {
               field: "profile.email_verified",
@@ -357,7 +368,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       await sendEmailVerification(firebaseUser);
       setEmailVerificationSent(true);
 
-      await axios.post(`${API_BASE_URL}/api/v1/firestore/documents`, {
+      await api.post(`/api/v1/firestore/documents`, {
         account_id: firebaseUser.uid, // Using user ID as account_id
         collection: "users",
         document_id: firebaseUser.uid,
@@ -490,8 +501,8 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             },
           };
 
-          await axios.put(
-            `${API_BASE_URL}/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
+          await api.put(
+            `/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
             {
               update: {
                 field: "profile.email_verified",

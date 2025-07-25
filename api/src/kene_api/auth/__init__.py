@@ -1,7 +1,7 @@
 """Authentication and authorization module."""
 
+from .models import UserContext
 from .user_context import (
-    UserContext,
     get_current_user_context,
     get_optional_user_context,
     require_account_access,

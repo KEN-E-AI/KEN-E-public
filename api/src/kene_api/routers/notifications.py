@@ -4,14 +4,12 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from google.cloud import firestore
 
-from ..database import get_firestore_service
+from ..auth import UserContext, get_current_user_context
+from ..firestore import get_firestore_service
 from ..models.kene_models import (
-    ACCOUNT_ID_DESCRIPTION,
     CreateNotificationRequest,
     CreateNotificationResponse,
-    NotificationStatus,
     NotificationWithStatus,
     SuccessResponse,
     UpdateNotificationStatusRequest,
@@ -24,32 +22,19 @@ logger = logging.getLogger(__name__)
 
 
 def get_notification_service(
-    firestore_db: firestore.Client = Depends(get_firestore_service),
+    firestore_service = Depends(get_firestore_service),
 ) -> NotificationService:
     """Get notification service instance."""
-    return NotificationService(firestore_db)
+    # Get the actual Firestore client from the service
+    return NotificationService(firestore_service.get_client())
 
 
-async def get_user_accounts(
-    user_id: str,
-    firestore_db: firestore.Client = Depends(get_firestore_service),
-) -> list[str]:
-    """Get list of account IDs the user has access to."""
-    user_doc = firestore_db.collection("users").document(user_id).get()
-    
-    if not user_doc.exists:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    user_data = user_doc.to_dict()
-    permissions = user_data.get("permissions", {})
-    account_permissions = permissions.get("accounts", {})
-    
-    return list(account_permissions.keys())
 
 
 @router.post("/", response_model=CreateNotificationResponse)
 async def create_notification(
     request: CreateNotificationRequest,
+    user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
 ) -> CreateNotificationResponse:
     """
@@ -78,8 +63,17 @@ async def create_notification(
         }
     }
     ```
+    
+    **Note:** User must have appropriate permissions to create notifications for the specified account.
     """
     try:
+        # Verify user has write access to the account
+        if not user.has_account_access(request.account_id, required_roles=["owner", "admin", "editor"]):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permissions to create notifications for account {request.account_id}"
+            )
+        
         notification_id = await service.create_notification(
             account_id=request.account_id,
             category=request.category,
@@ -93,6 +87,8 @@ async def create_notification(
             notification_id=notification_id,
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating notification: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error creating notification: {e!s}")
@@ -100,35 +96,47 @@ async def create_notification(
 
 @router.get("/", response_model=list[NotificationWithStatus])
 async def get_notifications(
-    account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
     include_archived: bool = Query(False, description="Include archived notifications"),
+    account_id: str | None = Query(None, description="Filter by specific account (optional)"),
+    user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
-    firestore_db: firestore.Client = Depends(get_firestore_service),
 ) -> list[NotificationWithStatus]:
     """
-    Get notifications for an account.
+    Get notifications for the current user across all accessible accounts.
     
     **Parameters:**
-    - `account_id` (required): The unique identifier for the account
     - `include_archived` (optional): Whether to include archived notifications (default: false)
+    - `account_id` (optional): Filter by specific account ID
     
     **Returns:**
     - List of notifications with user-specific status
     
     **Example:**
     ```
-    GET /api/v1/notifications?account_id=acc_123&include_archived=false
+    GET /api/v1/notifications?include_archived=false
+    GET /api/v1/notifications?account_id=acc_123
     ```
     
     **Note:** This endpoint returns notifications based on the requesting user's preferences.
     Each user may see different statuses for the same notification.
     """
     try:
-        # For now, return notifications for the specific account
-        # In production, you would verify the user has access to this account
+        # Determine which accounts to fetch notifications for
+        if account_id:
+            # Verify user has access to the specified account
+            if not user.has_account_access(account_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied to account {account_id}"
+                )
+            account_ids = [account_id]
+        else:
+            # Get all accessible accounts
+            account_ids = user.accessible_accounts
+        
         notifications = await service.get_user_notifications(
-            user_id=account_id,  # Using account_id as user_id temporarily
-            account_ids=[account_id],
+            user_id=user.user_id,
+            account_ids=account_ids,
             include_archived=include_archived,
         )
         
@@ -145,7 +153,7 @@ async def get_notifications(
 async def update_notification_status(
     notification_id: str,
     request: UpdateNotificationStatusRequest,
-    account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
+    user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
 ) -> SuccessResponse:
     """
@@ -170,7 +178,7 @@ async def update_notification_status(
     """
     try:
         await service.update_user_notification_status(
-            user_id=account_id,  # Using account_id as user_id temporarily
+            user_id=user.user_id,
             notification_id=notification_id,
             status=request.status,
         )
@@ -187,7 +195,7 @@ async def update_notification_status(
 
 @router.get("/preferences", response_model=UserNotificationPreferences)
 async def get_notification_preferences(
-    account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
+    user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
 ) -> UserNotificationPreferences:
     """
@@ -202,18 +210,20 @@ async def get_notification_preferences(
     ```
     """
     try:
-        preferences = await service.get_user_preferences(account_id)  # Using account_id as user_id temporarily
+        logger.info(f"Fetching notification preferences for user: {user.user_id}")
+        preferences = await service.get_user_preferences(user.user_id)
+        logger.info(f"Successfully fetched preferences: {preferences}")
         return preferences
         
     except Exception as e:
-        logger.error(f"Error fetching notification preferences: {e}", exc_info=True)
+        logger.error(f"Error fetching notification preferences for user {user.user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching notification preferences: {e!s}")
 
 
 @router.put("/preferences", response_model=SuccessResponse)
 async def update_notification_preferences(
     preferences: UserNotificationPreferences,
-    account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
+    user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
 ) -> SuccessResponse:
     """
@@ -236,7 +246,7 @@ async def update_notification_preferences(
     ```
     """
     try:
-        await service.update_user_preferences(account_id, preferences)  # Using account_id as user_id temporarily
+        await service.update_user_preferences(user.user_id, preferences)
         
         return SuccessResponse(
             success=True,
@@ -250,12 +260,15 @@ async def update_notification_preferences(
 
 @router.get("/unread-count", response_model=dict[str, int])
 async def get_unread_count(
-    account_id: str = Query(..., description=ACCOUNT_ID_DESCRIPTION),
+    account_id: str | None = Query(None, description="Filter by specific account (optional)"),
+    user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
-    firestore_db: firestore.Client = Depends(get_firestore_service),
 ) -> dict[str, int]:
     """
     Get count of unread notifications for the current user.
+    
+    **Parameters:**
+    - `account_id` (optional): Filter by specific account ID
     
     **Returns:**
     - Object with unread_count field
@@ -263,11 +276,24 @@ async def get_unread_count(
     **Example:**
     ```
     GET /api/v1/notifications/unread-count
+    GET /api/v1/notifications/unread-count?account_id=acc_123
     ```
     """
     try:
-        # For now, return count for the specific account
-        unread_count = await service.get_unread_count(account_id, [account_id])  # Using account_id as user_id temporarily
+        # Determine which accounts to count notifications for
+        if account_id:
+            # Verify user has access to the specified account
+            if not user.has_account_access(account_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied to account {account_id}"
+                )
+            account_ids = [account_id]
+        else:
+            # Get all accessible accounts
+            account_ids = user.accessible_accounts
+            
+        unread_count = await service.get_unread_count(user.user_id, account_ids)
         
         return {"unread_count": unread_count}
         

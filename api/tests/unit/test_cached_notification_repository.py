@@ -5,13 +5,13 @@ from datetime import datetime
 
 import pytest
 
-from kene_api.models.kene_models import (
+from src.kene_api.models.kene_models import (
     NotificationCategory,
     NotificationChannel,
     NotificationStatus,
     UserNotificationPreferences,
 )
-from kene_api.repositories import CachedNotificationRepository, InMemoryNotificationRepository
+from src.kene_api.repositories import CachedNotificationRepository, InMemoryNotificationRepository
 
 
 class TestCachedNotificationRepository:

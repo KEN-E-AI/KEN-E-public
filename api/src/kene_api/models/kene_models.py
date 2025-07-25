@@ -543,7 +543,7 @@ class UserNotificationPreferences(BaseModel):
     
     categories: list[NotificationCategory] = Field(..., description="Selected notification categories")
     channels: list[NotificationChannel] = Field(..., description="Selected notification channels")
-    updated_at: str = Field(..., description="ISO timestamp of last update")
+    updated_at: str | None = Field(None, description="ISO timestamp of last update")
 
 
 

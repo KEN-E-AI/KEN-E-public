@@ -1,13 +1,11 @@
 import { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -15,47 +13,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { User, Bell, Shield, Globe, Moon, Sun, ArrowLeft } from "lucide-react";
+import { User, Bell, Shield, Globe } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSettingsContext } from "@/hooks/useSettingsContext";
 import { useToast } from "@/hooks/use-toast";
+import { NotificationPreferences } from "@/components/notifications/NotificationPreferences";
 
 const UserSettings = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const {
-    user,
-    notificationSettings,
-    securitySettings,
-    updateUser,
-    setNotificationSettings,
-  } = useAuth();
+  const { user, securitySettings, updateUser } = useAuth();
   const [profile, setProfile] = useState({
     firstName: user?.firstName || "",
     lastName: user?.lastName || "",
     email: user?.email || "",
     jobTitle: user?.jobTitle || "",
   });
-  const [preferences, setPreferences] = useState(user?.preferences || {});
-  const [localNotificationSettings, setLocalNotificationSettings] =
-    useState(notificationSettings);
 
   if (!user) return <div>Loading...</div>;
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setProfile({ ...profile, [e.target.id]: e.target.value });
-  };
-
-  const handlePreferenceChange = (key: string, value: string) => {
-    setPreferences({ ...preferences, [key]: value });
-  };
-
-  const handleNotificationChange = (id: string, enabled: boolean) => {
-    setLocalNotificationSettings((prevSettings) =>
-      prevSettings.map((setting) =>
-        setting.id === id ? { ...setting, enabled } : setting,
-      ),
-    );
   };
 
   const saveProfile = async () => {
@@ -69,7 +45,6 @@ const UserSettings = () => {
             email: profile.email,
             job_title: profile.jobTitle,
           },
-          preferences,
         },
       );
 
@@ -78,7 +53,6 @@ const UserSettings = () => {
         lastName: profile.lastName,
         email: profile.email,
         jobTitle: profile.jobTitle,
-        preferences,
       });
 
       toast({
@@ -90,33 +64,6 @@ const UserSettings = () => {
       toast({
         title: "Error",
         description: "Failed to save profile.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const saveNotificationSettings = async () => {
-    try {
-      await Promise.all(
-        localNotificationSettings.map((setting) =>
-          axios.put(
-            `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}/notifications/${setting.id}?account_id=${user.id}`,
-            { enabled: setting.enabled },
-          ),
-        ),
-      );
-
-      setNotificationSettings(localNotificationSettings);
-
-      toast({
-        title: "Success",
-        description: "Notification settings updated successfully!",
-      });
-    } catch (error) {
-      console.error("Error saving notification settings:", error);
-      toast({
-        title: "Error",
-        description: "Failed to save notification settings.",
         variant: "destructive",
       });
     }
@@ -198,31 +145,15 @@ const UserSettings = () => {
             <Bell className="h-5 w-5" /> Notification Preferences
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            {localNotificationSettings.map((setting, index) => (
-              <div key={setting.id}>
-                <div className="flex items-center justify-between gap-4 mb-2">
-                  <div>
-                    <Label>{setting.label}</Label>
-                    <p className="text-sm text-dashboard-gray-600">
-                      {setting.description}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={setting.enabled}
-                    onCheckedChange={(checked) =>
-                      handleNotificationChange(setting.id, checked as boolean)
-                    }
-                  />
-                </div>
-                {index < localNotificationSettings.length - 1 && <Separator />}
-              </div>
-            ))}
-            <Button onClick={saveNotificationSettings}>
-              Save Notification Changes
-            </Button>
-          </div>
+        <CardContent>
+          <NotificationPreferences
+            onSave={() => {
+              toast({
+                title: "Success",
+                description: "Notification preferences updated successfully!",
+              });
+            }}
+          />
         </CardContent>
       </Card>
 
@@ -278,66 +209,21 @@ const UserSettings = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
-            <Label>Language</Label>
-            <Select
-              defaultValue={preferences.language || "en"}
-              onValueChange={(value) =>
-                handlePreferenceChange("language", value)
-              }
-            >
-              <SelectTrigger className="w-[150px]">
+            <div className="flex items-center gap-2">
+              <Label className="text-gray-500">Language</Label>
+              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                Coming Soon
+              </span>
+            </div>
+            <Select defaultValue="en" disabled={true}>
+              <SelectTrigger className="w-[150px] opacity-50 cursor-not-allowed">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="en">English</SelectItem>
-                <SelectItem value="es">Español</SelectItem>
-                <SelectItem value="fr">Français</SelectItem>
-                <SelectItem value="de">Deutsch</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <Label>Theme</Label>
-            <Select
-              defaultValue={preferences.theme || "light"}
-              onValueChange={(value) => handlePreferenceChange("theme", value)}
-            >
-              <SelectTrigger className="w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="light">
-                  <Sun className="inline h-4 w-4 mr-2" />
-                  Light
-                </SelectItem>
-                <SelectItem value="dark">
-                  <Moon className="inline h-4 w-4 mr-2" />
-                  Dark
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <Label>Date Format</Label>
-            <Select
-              defaultValue={preferences.date_format || "mm-dd-yyyy"}
-              onValueChange={(value) =>
-                handlePreferenceChange("date_format", value)
-              }
-            >
-              <SelectTrigger className="w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="mm-dd-yyyy">MM/DD/YYYY</SelectItem>
-                <SelectItem value="dd-mm-yyyy">DD/MM/YYYY</SelectItem>
-                <SelectItem value="yyyy-mm-dd">YYYY-MM-DD</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Button onClick={saveProfile}>Save Changes</Button>
         </CardContent>
       </Card>
     </SettingsLayout>

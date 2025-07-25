@@ -1,6 +1,5 @@
-import axios from "axios";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import api from "@/lib/api";
+import apiPublic from "@/lib/api-public";
 
 export interface TeamMember {
   user_id: string;
@@ -60,8 +59,8 @@ export async function getOrganizationMembers(
   accountId: string,
 ): Promise<TeamMembersResponse> {
   try {
-    const response = await axios.get(
-      `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/members`,
+    const response = await api.get(
+      `/api/v1/firestore/organizations/${organizationId}/members`,
       {
         params: { account_id: accountId },
       },
@@ -85,7 +84,7 @@ export async function inviteMemberToOrganization(
 ): Promise<{ success: boolean; message: string }> {
   try {
     console.log("[teamApi] Inviting member with data:", {
-      url: `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/members/invite`,
+      url: `/api/v1/firestore/organizations/${organizationId}/members/invite`,
       body: data,
       params: {
         current_user_id: currentUserId,
@@ -94,8 +93,8 @@ export async function inviteMemberToOrganization(
       },
     });
 
-    const response = await axios.post(
-      `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/members/invite`,
+    const response = await api.post(
+      `/api/v1/firestore/organizations/${organizationId}/members/invite`,
       data,
       {
         params: {
@@ -129,8 +128,8 @@ export async function updateMemberAccessLevel(
   accountId: string,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await axios.put(
-      `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/members/${userId}`,
+    const response = await api.put(
+      `/api/v1/firestore/organizations/${organizationId}/members/${userId}`,
       data,
       {
         params: { account_id: accountId },
@@ -152,8 +151,8 @@ export async function removeMemberFromOrganization(
   accountId: string,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await axios.delete(
-      `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/members/${userId}`,
+    const response = await api.delete(
+      `/api/v1/firestore/organizations/${organizationId}/members/${userId}`,
       {
         params: { account_id: accountId },
       },
@@ -174,8 +173,8 @@ export async function getOrganizationInvitations(
   status?: "pending" | "accepted" | "expired",
 ): Promise<InvitationListResponse> {
   try {
-    const response = await axios.get(
-      `${API_BASE_URL}/api/v1/firestore/organizations/${organizationId}/invitations`,
+    const response = await api.get(
+      `/api/v1/firestore/organizations/${organizationId}/invitations`,
       {
         params: {
           account_id: accountId,
@@ -197,7 +196,7 @@ export async function verifyInvitationToken(
   token: string,
 ): Promise<Invitation> {
   try {
-    const response = await axios.get(
+    const response = await api.get(
       `${API_BASE_URL}/api/v1/firestore/invitations/verify/${token}`,
     );
     return response.data;
@@ -215,8 +214,8 @@ export async function acceptInvitation(
   data: AcceptInvitationData,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await axios.post(
-      `${API_BASE_URL}/api/v1/firestore/invitations/accept/${token}`,
+    const response = await apiPublic.post(
+      `/api/v1/firestore/invitations/accept/${token}`,
       data,
     );
     return response.data;
@@ -234,7 +233,7 @@ export async function cancelInvitation(
   accountId: string,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await axios.delete(
+    const response = await api.delete(
       `${API_BASE_URL}/api/v1/firestore/invitations/${invitationId}`,
       {
         params: { account_id: accountId },

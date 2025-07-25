@@ -2,30 +2,29 @@
  * NotificationPreferences component for managing notification settings
  */
 
-import React, { useEffect, useState } from 'react';
-import { 
-  AlertTriangle, 
-  Newspaper, 
-  Globe, 
-  Users, 
-  FileText, 
-  TrendingUp, 
+import React, { useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  Newspaper,
+  Globe,
+  Users,
+  FileText,
+  TrendingUp,
   Sparkles,
   Monitor,
   Mail,
   MessageSquare,
   Check,
   Loader2,
-} from 'lucide-react';
-import { notificationApi } from '@/api/notifications';
-import type { 
-  NotificationCategory, 
-  NotificationChannel, 
-  UserNotificationPreferences 
-} from '@/types/notification.types';
+} from "lucide-react";
+import { notificationApi } from "@/api/notifications";
+import type {
+  NotificationCategory,
+  NotificationChannel,
+  UserNotificationPreferences,
+} from "@/types/notification.types";
 
 interface NotificationPreferencesProps {
-  accountId: string;
   onSave?: () => void;
 }
 
@@ -37,45 +36,45 @@ const NOTIFICATION_CATEGORIES: {
   icon: React.ReactNode;
 }[] = [
   {
-    value: 'Data Quality Alert',
-    label: 'Data Quality Alerts',
-    description: 'Notifications about data quality issues and anomalies',
+    value: "Data Quality Alert",
+    label: "Data Quality Alerts",
+    description: "Notifications about data quality issues and anomalies",
     icon: <AlertTriangle className="h-5 w-5" />,
   },
   {
-    value: 'News & Press',
-    label: 'News & Press',
-    description: 'Updates about company news and press releases',
+    value: "News & Press",
+    label: "News & Press",
+    description: "Updates about company news and press releases",
     icon: <Newspaper className="h-5 w-5" />,
   },
   {
-    value: 'Industry News',
-    label: 'Industry News',
-    description: 'Relevant industry news and market updates',
+    value: "Industry News",
+    label: "Industry News",
+    description: "Relevant industry news and market updates",
     icon: <Globe className="h-5 w-5" />,
   },
   {
-    value: 'Competitor Activities',
-    label: 'Competitor Activities',
-    description: 'Updates about competitor actions and strategies',
+    value: "Competitor Activities",
+    label: "Competitor Activities",
+    description: "Updates about competitor actions and strategies",
     icon: <Users className="h-5 w-5" />,
   },
   {
-    value: 'Scheduled Report Status',
-    label: 'Scheduled Report Status',
-    description: 'Notifications about scheduled report generation',
+    value: "Scheduled Report Status",
+    label: "Scheduled Report Status",
+    description: "Notifications about scheduled report generation",
     icon: <FileText className="h-5 w-5" />,
   },
   {
-    value: 'KPI Performance',
-    label: 'KPI Performance',
-    description: 'Alerts about KPI changes and performance metrics',
+    value: "KPI Performance",
+    label: "KPI Performance",
+    description: "Alerts about KPI changes and performance metrics",
     icon: <TrendingUp className="h-5 w-5" />,
   },
   {
-    value: 'New Features',
-    label: 'New Features',
-    description: 'Announcements about new features and updates',
+    value: "New Features",
+    label: "New Features",
+    description: "Announcements about new features and updates",
     icon: <Sparkles className="h-5 w-5" />,
   },
 ];
@@ -88,32 +87,32 @@ const NOTIFICATION_CHANNELS: {
   icon: React.ReactNode;
 }[] = [
   {
-    value: 'ui',
-    label: 'UI Only',
-    description: 'Show notifications in the application interface',
+    value: "ui",
+    label: "UI Only",
+    description: "Show notifications in the application interface",
     icon: <Monitor className="h-5 w-5" />,
   },
   {
-    value: 'email',
-    label: 'Email',
-    description: 'Send notifications to your email address',
+    value: "email",
+    label: "Email",
+    description: "Send notifications to your email address",
     icon: <Mail className="h-5 w-5" />,
   },
   {
-    value: 'slack',
-    label: 'Slack',
-    description: 'Send notifications to your Slack workspace',
+    value: "slack",
+    label: "Slack",
+    description: "Send notifications to your Slack workspace",
     icon: <MessageSquare className="h-5 w-5" />,
   },
 ];
 
-export const NotificationPreferences: React.FC<NotificationPreferencesProps> = ({
-  accountId,
-  onSave,
-}) => {
+export const NotificationPreferences: React.FC<
+  NotificationPreferencesProps
+> = ({ onSave }) => {
   const [preferences, setPreferences] = useState<UserNotificationPreferences>({
     categories: [],
-    channels: ['ui'],
+    channels: ["ui"],
+    updated_at: new Date().toISOString(),
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -123,30 +122,39 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
   // Fetch current preferences
   useEffect(() => {
     const fetchPreferences = async () => {
-      if (!accountId) return;
-      
       try {
         setLoading(true);
         setError(null);
-        const data = await notificationApi.getPreferences(accountId);
+        const data = await notificationApi.getPreferences();
         setPreferences(data);
-      } catch (err) {
-        console.error('Error fetching preferences:', err);
-        setError('Failed to load preferences');
+      } catch (err: any) {
+        console.error("Error fetching preferences:", err);
+
+        // If preferences don't exist yet (404), use defaults
+        if (err?.response?.status === 404) {
+          console.log("No preferences found, using defaults");
+          setPreferences({
+            categories: NOTIFICATION_CATEGORIES.map((c) => c.value), // All categories selected by default
+            channels: ["ui"],
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          setError("Failed to load preferences");
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchPreferences();
-  }, [accountId]);
+  }, []);
 
   // Toggle category
   const toggleCategory = (category: NotificationCategory) => {
-    setPreferences(prev => ({
+    setPreferences((prev) => ({
       ...prev,
       categories: prev.categories.includes(category)
-        ? prev.categories.filter(c => c !== category)
+        ? prev.categories.filter((c) => c !== category)
         : [...prev.categories, category],
     }));
     setSuccess(false);
@@ -154,10 +162,10 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
 
   // Toggle channel
   const toggleChannel = (channel: NotificationChannel) => {
-    setPreferences(prev => ({
+    setPreferences((prev) => ({
       ...prev,
       channels: prev.channels.includes(channel)
-        ? prev.channels.filter(c => c !== channel)
+        ? prev.channels.filter((c) => c !== channel)
         : [...prev.channels, channel],
     }));
     setSuccess(false);
@@ -165,38 +173,40 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
 
   // Select/deselect all categories
   const toggleAllCategories = () => {
-    setPreferences(prev => ({
+    setPreferences((prev) => ({
       ...prev,
-      categories: prev.categories.length === NOTIFICATION_CATEGORIES.length
-        ? []
-        : NOTIFICATION_CATEGORIES.map(c => c.value),
+      categories:
+        prev.categories.length === NOTIFICATION_CATEGORIES.length
+          ? []
+          : NOTIFICATION_CATEGORIES.map((c) => c.value),
     }));
     setSuccess(false);
   };
 
   // Save preferences
   const handleSave = async () => {
-    if (!accountId) return;
-    
     // Validate at least one channel is selected
     if (preferences.channels.length === 0) {
-      setError('Please select at least one notification channel');
+      setError("Please select at least one notification channel");
       return;
     }
-    
+
     try {
       setSaving(true);
       setError(null);
       setSuccess(false);
-      await notificationApi.updatePreferences(accountId, preferences);
+      await notificationApi.updatePreferences({
+        categories: preferences.categories,
+        channels: preferences.channels,
+      });
       setSuccess(true);
       onSave?.();
-      
+
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      console.error('Error saving preferences:', err);
-      setError('Failed to save preferences');
+      console.error("Error saving preferences:", err);
+      setError("Failed to save preferences");
     } finally {
       setSaving(false);
     }
@@ -228,17 +238,19 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
       {/* Categories Section */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900">Notification Categories</h3>
+          <h3 className="text-lg font-medium text-gray-900">
+            Notification Categories
+          </h3>
           <button
             onClick={toggleAllCategories}
             className="text-sm text-blue-600 hover:text-blue-700"
           >
             {preferences.categories.length === NOTIFICATION_CATEGORIES.length
-              ? 'Deselect all'
-              : 'Select all'}
+              ? "Deselect all"
+              : "Select all"}
           </button>
         </div>
-        
+
         <div className="space-y-3">
           {NOTIFICATION_CATEGORIES.map((category) => (
             <label
@@ -256,7 +268,9 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
                   {category.icon}
                   {category.label}
                 </div>
-                <p className="text-sm text-gray-600 mt-1">{category.description}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {category.description}
+                </p>
               </div>
             </label>
           ))}
@@ -265,29 +279,49 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
 
       {/* Channels Section */}
       <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Notification Channels</h3>
-        
+        <h3 className="text-lg font-medium text-gray-900 mb-4">
+          Notification Channels
+        </h3>
+
         <div className="space-y-3">
-          {NOTIFICATION_CHANNELS.map((channel) => (
-            <label
-              key={channel.value}
-              className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={preferences.channels.includes(channel.value)}
-                onChange={() => toggleChannel(channel.value)}
-                className="mt-1"
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-2 font-medium text-gray-900">
-                  {channel.icon}
-                  {channel.label}
+          {NOTIFICATION_CHANNELS.map((channel) => {
+            const isDisabled = channel.value !== "ui";
+            const isComingSoon =
+              channel.value === "email" || channel.value === "slack";
+
+            return (
+              <label
+                key={channel.value}
+                className={`flex items-start gap-3 p-3 border rounded-lg transition-colors ${
+                  isDisabled
+                    ? "opacity-50 cursor-not-allowed bg-gray-50"
+                    : "hover:bg-gray-50 cursor-pointer"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={preferences.channels.includes(channel.value)}
+                  onChange={() => !isDisabled && toggleChannel(channel.value)}
+                  disabled={isDisabled}
+                  className="mt-1"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 font-medium text-gray-900">
+                    {channel.icon}
+                    {channel.label}
+                    {isComingSoon && (
+                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                        Coming Soon
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {channel.description}
+                  </p>
                 </div>
-                <p className="text-sm text-gray-600 mt-1">{channel.description}</p>
-              </div>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </div>
       </div>
 
@@ -304,7 +338,7 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
               Saving...
             </>
           ) : (
-            'Save Preferences'
+            "Save Preferences"
           )}
         </button>
       </div>

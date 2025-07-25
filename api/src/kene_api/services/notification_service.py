@@ -256,26 +256,56 @@ class NotificationService:
         Returns:
             User's notification preferences
         """
-        pref_ref = (
-            self.db.collection("users")
-            .document(user_id)
-            .collection("preferences")
-            .document("notifications")
-        )
-        
-        pref_doc = pref_ref.get()
+        try:
+            pref_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("preferences")
+                .document("notifications")
+            )
+            
+            pref_doc = pref_ref.get()
+        except Exception as e:
+            logger.error(f"Error accessing Firestore for user {user_id}: {e}")
+            raise
         
         if pref_doc.exists:
             pref_data = pref_doc.to_dict()
+            
+            # Validate and convert categories
+            valid_categories = []
+            for cat in pref_data.get("categories", []):
+                try:
+                    valid_categories.append(NotificationCategory(cat))
+                except ValueError:
+                    logger.warning(f"Invalid notification category: {cat}")
+            
+            # Validate and convert channels
+            valid_channels = []
+            for ch in pref_data.get("channels", ["ui"]):
+                try:
+                    valid_channels.append(NotificationChannel(ch))
+                except ValueError:
+                    logger.warning(f"Invalid notification channel: {ch}")
+            
+            # Ensure at least one channel is selected
+            if not valid_channels:
+                valid_channels = [NotificationChannel.UI]
+            
             return UserNotificationPreferences(
-                categories=[NotificationCategory(cat) for cat in pref_data.get("categories", [])],
-                channels=[NotificationChannel(ch) for ch in pref_data.get("channels", ["ui"])],
+                categories=valid_categories,
+                channels=valid_channels,
                 updated_at=pref_data.get("updated_at", datetime.now().isoformat()),
             )
         else:
             # Return default preferences if not set
+            logger.info(f"No preferences found for user {user_id}, creating defaults")
+            
+            # Create default preferences with all categories selected
+            default_categories = list(NotificationCategory)
+            
             default_prefs = UserNotificationPreferences(
-                categories=list(NotificationCategory),  # All categories enabled by default
+                categories=default_categories,
                 channels=[NotificationChannel.UI],  # UI only by default
                 updated_at=datetime.now().isoformat(),
             )
@@ -303,9 +333,24 @@ class NotificationService:
             .document("notifications")
         )
         
+        # Handle both enum instances and string values
+        categories = []
+        for cat in preferences.categories:
+            if isinstance(cat, NotificationCategory):
+                categories.append(cat.value)
+            else:
+                categories.append(cat)
+        
+        channels = []
+        for ch in preferences.channels:
+            if isinstance(ch, NotificationChannel):
+                channels.append(ch.value)
+            else:
+                channels.append(ch)
+        
         pref_data = {
-            "categories": [cat.value for cat in preferences.categories],
-            "channels": [ch.value for ch in preferences.channels],
+            "categories": categories,
+            "channels": channels,
             "updated_at": datetime.now().isoformat(),
         }
         

@@ -10,6 +10,16 @@ import {
   BookOpen,
   Settings,
   Building,
+  Check,
+  Archive,
+  CircleDot,
+  AlertTriangle,
+  Newspaper,
+  Globe,
+  Users,
+  FileText,
+  TrendingUp,
+  Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,12 +35,28 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { iconMap } from "@/lib/iconMap";
+import api from "@/lib/api";
+import type { NotificationCategory } from "@/types/notification.types";
 
 interface SubMenuItem {
   id: string;
   label: string;
   route: string;
 }
+
+// Notification category icon mapping matching NotificationPreferences.tsx
+const NOTIFICATION_CATEGORY_ICONS: Record<
+  NotificationCategory,
+  React.ComponentType<{ className?: string }>
+> = {
+  "Data Quality Alert": AlertTriangle,
+  "News & Press": Newspaper,
+  "Industry News": Globe,
+  "Competitor Activities": Users,
+  "Scheduled Report Status": FileText,
+  "KPI Performance": TrendingUp,
+  "New Features": Sparkles,
+};
 
 interface MenuSection {
   title: string;
@@ -120,6 +146,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
 }) => {
   const {
     notifications,
+    setNotifications,
     user,
     orgMetadata,
     accountMetadata,
@@ -129,6 +156,59 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Mark notification as read
+  const markAsRead = async (notificationId: string) => {
+    try {
+      // Use the proper notifications API endpoint
+      await api.put(`/api/v1/notifications/${notificationId}/status`, {
+        status: "read",
+      });
+
+      // Update local state
+      setNotifications(
+        notifications.map((n) =>
+          n.id === notificationId ? { ...n, status: "read" } : n,
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error);
+    }
+  };
+
+  // Mark notification as unread
+  const markAsUnread = async (notificationId: string) => {
+    try {
+      // Use the proper notifications API endpoint
+      await api.put(`/api/v1/notifications/${notificationId}/status`, {
+        status: "unread",
+      });
+
+      // Update local state
+      setNotifications(
+        notifications.map((n) =>
+          n.id === notificationId ? { ...n, status: "unread" } : n,
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to mark notification as unread:", error);
+    }
+  };
+
+  // Archive notification
+  const archiveNotification = async (notificationId: string) => {
+    try {
+      // Use the proper notifications API endpoint
+      await api.put(`/api/v1/notifications/${notificationId}/status`, {
+        status: "archived",
+      });
+
+      // Remove from local state (or update status to archived)
+      setNotifications(notifications.filter((n) => n.id !== notificationId));
+    } catch (error) {
+      console.error("Failed to archive notification:", error);
+    }
+  };
 
   // Determine which menu to show based on current route
   const getActiveMenu = () => {
@@ -297,31 +377,117 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
               <div className="rounded-r-lg overflow-hidden border border-[#E2E8F0]">
                 {notifications && notifications.length > 0 ? (
                   notifications.map((notification, index) => {
-                    const iconName = notification.data.icon;
-                    const IconComponent = iconMap[iconName] || Home;
+                    console.log("🔍 Notification debug:", {
+                      id: notification.id,
+                      status: notification.status,
+                      fullNotification: notification,
+                    });
+                    // Use category-based icon mapping instead of icon field
+                    const IconComponent =
+                      NOTIFICATION_CATEGORY_ICONS[
+                        notification.category as NotificationCategory
+                      ] || Home;
+                    const isUnread = notification.status === "unread";
+                    console.log("🔍 isUnread check:", {
+                      id: notification.id,
+                      status: notification.status,
+                      isUnread,
+                      statusType: typeof notification.status,
+                      statusValue: JSON.stringify(notification.status),
+                    });
                     return (
                       <div
                         key={notification.id}
                         className={cn(
-                          "flex items-start gap-3 p-4 hover:bg-gray-50 transition-colors cursor-pointer",
+                          "flex items-start gap-3 p-4 hover:bg-gray-50 transition-colors",
                           index !== notifications.length - 1 && "border-b",
                         )}
                       >
-                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                          <IconComponent className="w-5 h-5 text-gray-600" />
+                        <div className="relative">
+                          <div
+                            className={cn(
+                              "w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0",
+                              isUnread ? "bg-[#B8E2AF]" : "bg-gray-100",
+                            )}
+                          >
+                            <IconComponent
+                              className={cn(
+                                "w-5 h-5",
+                                isUnread ? "text-green-700" : "text-gray-600",
+                              )}
+                            />
+                          </div>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">
-                            {notification.data.title}
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {notification.data.description}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-2">
-                            {new Date(notification.timestamp).toLocaleString()}
-                          </p>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <p
+                                className={cn(
+                                  "text-sm font-medium",
+                                  isUnread ? "text-gray-900" : "text-gray-600",
+                                )}
+                              >
+                                {notification.data?.title ||
+                                  notification.category}
+                              </p>
+                              <p className="text-sm text-gray-500 mt-1">
+                                {notification.description}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-2">
+                                {notification.created_at ||
+                                notification.created_date
+                                  ? new Date(
+                                      notification.created_at ||
+                                        notification.created_date ||
+                                        "",
+                                    ).toLocaleString()
+                                  : ""}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {isUnread ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markAsRead(notification.id);
+                                  }}
+                                  title="Mark as read"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    markAsUnread(notification.id);
+                                  }}
+                                  title="Mark as unread"
+                                >
+                                  <CircleDot className="h-4 w-4" />
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  archiveNotification(notification.id);
+                                }}
+                                title="Archive"
+                              >
+                                <Archive className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                        {notification.data.badge && (
+                        {notification.data?.badge && (
                           <Badge variant="secondary" className="flex-shrink-0">
                             {notification.data.badge}
                           </Badge>

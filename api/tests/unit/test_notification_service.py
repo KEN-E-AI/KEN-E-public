@@ -4,14 +4,14 @@ from datetime import datetime
 
 import pytest
 
-from kene_api.models.kene_models import (
+from src.kene_api.models.kene_models import (
     NotificationCategory,
     NotificationChannel,
     NotificationStatus,
     UserNotificationPreferences,
 )
-from kene_api.repositories import InMemoryNotificationRepository
-from kene_api.services.notification_service_v2 import NotificationService
+from src.kene_api.repositories import InMemoryNotificationRepository
+from src.kene_api.services.notification_service_v2 import NotificationService
 
 
 class TestNotificationService:

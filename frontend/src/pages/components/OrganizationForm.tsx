@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Building } from "lucide-react";
 import { getOrganizations, type Organization } from "@/data";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NewOrgFormData {
   organization_name: string;
@@ -45,10 +46,17 @@ const OrganizationForm = ({
   onSubmit,
   isLoading = false,
 }: OrganizationFormProps) => {
+  const { isAuthenticated } = useAuth();
   const [allOrganizations, setAllOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Only load organizations if user is authenticated
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     const loadOrganizations = async () => {
       try {
         const orgs = await getOrganizations();
@@ -61,7 +69,7 @@ const OrganizationForm = ({
     };
 
     loadOrganizations();
-  }, []);
+  }, [isAuthenticated]);
 
   const currentAgencyValue = isCreatingNew
     ? formData.agency

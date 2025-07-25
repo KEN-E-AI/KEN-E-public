@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ..auth import UserContext, get_current_user_context
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import get_firestore_service
 from ..models.kene_models import (
@@ -65,13 +66,15 @@ ORGANIZATION_NOT_FOUND_MESSAGE = "Organization not found"
 
 @router.get("/", response_model=OrganizationListResponse)
 async def get_organizations(
+    request: Request,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> OrganizationListResponse:
     """
-    Get all organizations.
+    Get organizations accessible to the current user.
 
-    Returns a list of all organizations with their properties including
-    subscription, billing, and team information.
+    Returns a list of organizations the user has access to with their properties
+    including subscription, billing, and team information.
 
     **Returns:**
     - `organizations`: List of organization objects with all properties
@@ -88,14 +91,25 @@ async def get_organizations(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        # Query to fetch all organizations
+        # Get organization IDs the user has access to
+        accessible_org_ids = list(user.organization_permissions.keys())
+        
+        if not accessible_org_ids:
+            # User has no organization access
+            return OrganizationListResponse(organizations=[], total=0)
+
+        # Query to fetch only organizations the user has access to
         organizations_query = """
         MATCH (org:Organization)
+        WHERE org.organization_id IN $org_ids
         RETURN org
         ORDER BY org.organization_name
         """
 
-        result = await db.execute_query(organizations_query)
+        result = await db.execute_query(
+            organizations_query,
+            {"org_ids": accessible_org_ids}
+        )
 
         organizations = []
         for record in result:
@@ -122,6 +136,7 @@ async def get_organizations(
 @router.get("/{organization_id}", response_model=Organization)
 async def get_organization(
     organization_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Organization:
     """
@@ -137,8 +152,17 @@ async def get_organization(
     ```
     GET /api/v1/organizations/healthway
     ```
+    
+    **Note:** User must have access to the organization.
     """
     try:
+        # Check if user has access to this organization
+        if not user.has_organization_access(organization_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied to organization {organization_id}"
+            )
+        
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:

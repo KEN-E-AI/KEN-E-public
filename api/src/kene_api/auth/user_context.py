@@ -1,102 +1,163 @@
 """User context and authentication utilities."""
 
-from dataclasses import dataclass
-from typing import Any
+import logging
+from typing import Optional
 
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.cloud import firestore
 
-from ..database import get_firestore_service
+from ..firestore import get_firestore_service
+from .audit_logger import SecurityEventType, get_audit_logger
+from .cached_user_context import get_cached_user_context_service
+from .firebase_admin import initialize_firebase_admin, verify_id_token
+from .models import UserContext
+from .rate_limiting import token_rate_limiter
+from .token_revocation import get_token_revocation_service
 
+logger = logging.getLogger(__name__)
 
-@dataclass
-class UserContext:
-    """User context containing authentication and authorization information."""
-    
-    user_id: str
-    email: str
-    accessible_accounts: list[str]
-    permissions: dict[str, str]  # account_id -> role
-    organization_permissions: dict[str, str]  # organization_id -> role
-    
-    def has_account_access(self, account_id: str, required_roles: list[str] | None = None) -> bool:
-        """Check if user has access to an account with optional role check.
-        
-        Args:
-            account_id: The account ID to check
-            required_roles: Optional list of required roles
-            
-        Returns:
-            True if user has access, False otherwise
-        """
-        if account_id not in self.permissions:
-            return False
-        
-        if required_roles:
-            user_role = self.permissions.get(account_id, "")
-            return user_role in required_roles
-        
-        return True
-    
-    def has_organization_access(self, organization_id: str, required_roles: list[str] | None = None) -> bool:
-        """Check if user has access to an organization with optional role check.
-        
-        Args:
-            organization_id: The organization ID to check
-            required_roles: Optional list of required roles
-            
-        Returns:
-            True if user has access, False otherwise
-        """
-        if organization_id not in self.organization_permissions:
-            return False
-        
-        if required_roles:
-            user_role = self.organization_permissions.get(organization_id, "")
-            return user_role in required_roles
-        
-        return True
+# Initialize Firebase Admin on module load
+initialize_firebase_admin()
+
+# Security scheme for Bearer tokens
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user_context(
-    x_user_id: str | None = Header(None, description="User ID header for authentication"),
-    firestore_db: firestore.Client = Depends(get_firestore_service),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    firestore_service = Depends(get_firestore_service),
 ) -> UserContext:
-    """Get the current user context from headers.
+    """Get the current user context from Firebase auth token.
     
-    This is a simplified implementation. In production, you would:
-    1. Extract and verify a JWT token from Authorization header
-    2. Load user data from cache/database
-    3. Check for token expiry and revocation
+    Extracts and verifies the Firebase ID token from the Authorization header,
+    then loads user permissions from Firestore.
     
     Args:
-        x_user_id: User ID from header (temporary implementation)
-        firestore_db: Firestore client
+        request: The FastAPI request object
+        credentials: HTTP Bearer credentials containing Firebase ID token
+        firestore_service: Firestore service instance
         
     Returns:
-        UserContext object
+        UserContext object with user info and permissions
         
     Raises:
-        HTTPException: If authentication fails
+        HTTPException: If authentication fails or rate limit exceeded
     """
-    # Temporary implementation using header
-    if not x_user_id:
+    # Get client info for audit logging
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("User-Agent")
+    audit_logger = get_audit_logger()
+    
+    # Apply rate limiting
+    try:
+        token_rate_limiter.check_rate_limit(request)
+    except HTTPException as e:
+        if e.status_code == 429:
+            await audit_logger.log_rate_limit_exceeded(
+                ip_address=client_ip or "unknown",
+                endpoint=str(request.url),
+            )
+        raise
+    
+    if not credentials:
+        await audit_logger.log_login_failure(
+            ip_address=client_ip,
+            user_agent=user_agent,
+            reason="Missing authentication credentials",
+        )
         raise HTTPException(
             status_code=401,
-            detail="Missing authentication header",
+            detail="Missing authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Load user data from Firestore
-    user_doc = firestore_db.collection("users").document(x_user_id).get()
-    
-    if not user_doc.exists:
+    try:
+        # Verify the Firebase ID token
+        decoded_token = verify_id_token(credentials.credentials)
+        user_id = decoded_token["uid"]
+        email = decoded_token.get("email", "")
+        
+        # Check if token is revoked
+        token_revocation = get_token_revocation_service()
+        token_id = decoded_token.get("jti") or decoded_token.get("sub", "") + str(decoded_token.get("iat", ""))
+        issued_at = decoded_token.get("iat")
+        
+        if await token_revocation.is_token_revoked(token_id, user_id, issued_at):
+            await audit_logger.log_event(
+                event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
+                user_id=user_id,
+                ip_address=client_ip,
+                user_agent=user_agent,
+                details={"reason": "Token has been revoked"},
+                severity="WARNING",
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Failed to verify token: {e}")
+        await audit_logger.log_event(
+            event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            details={"error": str(e)},
+            severity="WARNING",
+        )
         raise HTTPException(
             status_code=401,
-            detail="Invalid user credentials",
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user_data = user_doc.to_dict()
+    # Try to get from cache first
+    cached_user_service = get_cached_user_context_service()
+    cached_context = cached_user_service.get_user_context(user_id)
+    if cached_context:
+        logger.debug(f"Found cached user context for {user_id}")
+        return cached_context
+    
+    # Get Firestore client
+    firestore_db = firestore_service.get_client()
+    
+    # Load user data from Firestore
+    user_doc = firestore_db.collection("users").document(user_id).get()
+    
+    if not user_doc.exists:
+        # Create basic user document if it doesn't exist
+        logger.info(f"Creating user document for {user_id}")
+        user_data = {
+            "uid": user_id,
+            "email": email,
+            "profile": {
+                "email": email,
+            },
+            "permissions": {
+                "accounts": {},
+                "organizations": {},
+            },
+            "created_at": firestore.SERVER_TIMESTAMP,
+        }
+        firestore_db.collection("users").document(user_id).set(user_data)
+        
+        # Log user creation
+        await audit_logger.log_event(
+            event_type=SecurityEventType.USER_CREATED,
+            user_id=user_id,
+            email=email,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            severity="INFO",
+        )
+    else:
+        user_data = user_doc.to_dict()
     
     # Extract permissions
     permissions = user_data.get("permissions", {})
@@ -104,35 +165,50 @@ async def get_current_user_context(
     organization_permissions = permissions.get("organizations", {})
     
     # Build user context
-    return UserContext(
-        user_id=x_user_id,
-        email=user_data.get("profile", {}).get("email", ""),
+    user_context = UserContext(
+        user_id=user_id,
+        email=email,
         accessible_accounts=list(account_permissions.keys()),
         permissions=account_permissions,
         organization_permissions=organization_permissions,
     )
+    
+    # Cache the user context
+    cached_user_service.set_user_context(user_context)
+    
+    # Log successful authentication
+    await audit_logger.log_login_success(
+        user_id=user_id,
+        email=email,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+    
+    return user_context
 
 
 async def get_optional_user_context(
-    x_user_id: str | None = Header(None, description="Optional user ID header"),
-    firestore_db: firestore.Client = Depends(get_firestore_service),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    firestore_service = Depends(get_firestore_service),
 ) -> UserContext | None:
-    """Get optional user context from headers.
+    """Get optional user context from Firebase auth token.
     
-    Returns None if no authentication header is present.
+    Returns None if no authentication token is present or if token is invalid.
     
     Args:
-        x_user_id: Optional user ID from header
-        firestore_db: Firestore client
+        request: The FastAPI request object
+        credentials: Optional HTTP Bearer credentials
+        firestore_service: Firestore service instance
         
     Returns:
         UserContext object or None
     """
-    if not x_user_id:
+    if not credentials:
         return None
     
     try:
-        return await get_current_user_context(x_user_id, firestore_db)
+        return await get_current_user_context(request, credentials, firestore_service)
     except HTTPException:
         return None
 
@@ -155,6 +231,19 @@ def require_account_access(
     def check_access(user: UserContext):
         if not user.has_account_access(account_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
+            
+            # Log access denied - this is synchronous but we'll log it anyway
+            import asyncio
+            audit_logger = get_audit_logger()
+            asyncio.create_task(
+                audit_logger.log_access_denied(
+                    user_id=user.user_id,
+                    resource_type="account",
+                    resource_id=account_id,
+                    required_permission=str(required_roles) if required_roles else None,
+                )
+            )
+            
             raise HTTPException(
                 status_code=403,
                 detail=f"Access denied to account {account_id}{role_msg}",
@@ -181,6 +270,19 @@ def require_organization_access(
     def check_access(user: UserContext):
         if not user.has_organization_access(organization_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
+            
+            # Log access denied - this is synchronous but we'll log it anyway
+            import asyncio
+            audit_logger = get_audit_logger()
+            asyncio.create_task(
+                audit_logger.log_access_denied(
+                    user_id=user.user_id,
+                    resource_type="organization",
+                    resource_id=organization_id,
+                    required_permission=str(required_roles) if required_roles else None,
+                )
+            )
+            
             raise HTTPException(
                 status_code=403,
                 detail=f"Access denied to organization {organization_id}{role_msg}",
