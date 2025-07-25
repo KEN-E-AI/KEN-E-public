@@ -79,8 +79,8 @@ async def get_metrics(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching metrics: {e!s}")
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(status_code=500, detail=f"Error fetching metrics: {e!s}") from e
 
 
 def _parse_list_field(field_value: Any) -> list[Any]:
@@ -462,7 +462,7 @@ async def create_metric(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating metric: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error creating metric: {e!s}") from e
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -576,7 +576,7 @@ async def update_metric(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating metric: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error updating metric: {e!s}") from e
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -672,4 +672,4 @@ async def delete_metric(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting metric: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting metric: {e!s}") from e

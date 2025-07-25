@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, User, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Building2, User, ArrowRight, Plus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
@@ -47,9 +48,25 @@ const Settings = () => {
 
       {/* Organization Settings Section */}
       <div className="mb-8">
-        <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-2">
-          Organization Settings
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-semibold text-dashboard-gray-900">
+            Organization Settings
+          </h2>
+          {editableOrganizations.length > 0 && (
+            <Button
+              onClick={() => {
+                const firstOrgId = editableOrganizations[0].id;
+                setCurrentOrganization(firstOrgId);
+                navigate("/settings/organization?openCreateAccount=true");
+              }}
+              className="flex items-center gap-2"
+              size="sm"
+            >
+              <Plus className="h-4 w-4" />
+              Create New Account
+            </Button>
+          )}
+        </div>
         <p className="text-dashboard-gray-600 mb-4">
           Select an organization to manage its settings
         </p>

@@ -75,7 +75,7 @@ async def get_datasets(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching datasets: {e!s}"
         )
@@ -234,7 +234,7 @@ async def create_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating dataset: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error creating dataset: {e!s}") from e
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -338,7 +338,7 @@ async def update_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating dataset: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error updating dataset: {e!s}") from e
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -420,4 +420,4 @@ async def delete_dataset(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting dataset: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting dataset: {e!s}") from e

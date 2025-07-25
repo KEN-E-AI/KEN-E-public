@@ -137,9 +137,7 @@ class Metric(BaseEntity):
 class MetricRequest(BaseRequest):
     """Request model for metric operations."""
 
-    metric_id: str | None = Field(
-        None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION
-    )
+    metric_id: str | None = Field(None, description=METRIC_ID_EDIT_DELETE_DESCRIPTION)
     d3_format: str | None = Field(
         None,
         description="The d3 formatting guidelines that define how the metric should be presented",
@@ -286,6 +284,10 @@ class ActivityLog(BaseEntity):
 class Activity(BaseEntity):
     """Activity entity model."""
 
+    activity_name: str = Field(
+        ...,
+        description="The name of the activity",
+    )
     activity_description: str = Field(..., description=ACTIVITY_DESCRIPTION_DESCRIPTION)
     expected_impact: str = Field(
         ...,
@@ -311,6 +313,7 @@ class ActivityRequest(BaseRequest):
     activity_id: str | None = Field(
         None, description=ACTIVITY_ID_EDIT_DELETE_DESCRIPTION
     )
+    activity_name: str | None = Field(None, description="The name of the activity")
     activity_description: str | None = Field(
         None, description=ACTIVITY_DESCRIPTION_DESCRIPTION
     )
@@ -399,9 +402,7 @@ class InsightRequest(BaseRequest):
 
     activity_id: str | None = Field(None, description=ACTIVITY_ID_DESCRIPTION)
     metric_id: str | None = Field(None, description=METRIC_ID_DESCRIPTION)
-    activity_log_id: str | None = Field(
-        None, description=ACTIVITY_LOG_ID_DESCRIPTION
-    )
+    activity_log_id: str | None = Field(None, description=ACTIVITY_LOG_ID_DESCRIPTION)
     relationship_type: RelationshipType | None = Field(
         RelationshipType.INFLUENCE_CONFIRMED,
         description="The type of relationship between activity log and metric",
@@ -663,9 +664,7 @@ class SavedQueryRequest(BaseRequest):
     """Request model for creating/updating saved queries."""
 
     label: str = Field(..., description="Label/name of the saved query")
-    description: str | None = Field(
-        None, description="Description of the saved query"
-    )
+    description: str | None = Field(None, description="Description of the saved query")
     database_id: int = Field(..., description="Database ID for the saved query")
     schema_name: str = Field(..., description="Schema name for the saved query")
     sql: str = Field(..., description="SQL query text")
@@ -676,9 +675,7 @@ class SavedQueryResponse(BaseModel):
 
     id: int = Field(..., description="Saved query ID")
     label: str = Field(..., description="Label/name of the saved query")
-    description: str | None = Field(
-        None, description="Description of the saved query"
-    )
+    description: str | None = Field(None, description="Description of the saved query")
     database_id: int = Field(..., description="Database ID")
     schema_name: str = Field(..., description="Schema name")
     sql: str = Field(..., description="SQL query text")
@@ -880,23 +877,17 @@ class OrganizationRequest(BaseModel):
     organization_id: str | None = Field(
         None, description="Organization ID (required for update/delete)"
     )
-    organization_name: str | None = Field(
-        None, description="Name of the organization"
-    )
+    organization_name: str | None = Field(None, description="Name of the organization")
     plan: str | None = Field(None, description="Subscription plan tier")
     website: str | None = Field(None, description="Organization website URL")
-    company_size: str | None = Field(
-        None, description="Size category of the company"
-    )
+    company_size: str | None = Field(None, description="Size category of the company")
     agency: bool | None = Field(
         None, description="Whether the organization is an agency"
     )
     child_organizations: list[str] | None = Field(
         None, description="List of child organization IDs"
     )
-    subscription: Subscription | None = Field(
-        None, description="Subscription details"
-    )
+    subscription: Subscription | None = Field(None, description="Subscription details")
     billing: Billing | None = Field(None, description="Billing information")
     team: Team | None = Field(None, description="Team information")
 
@@ -941,7 +932,9 @@ class SubscriptionPlanFeatures(BaseModel):
 
     max_users: int = Field(..., description="Maximum number of team members allowed")
     max_reports: int = Field(..., description="Maximum number of reports per month")
-    features: list[str] = Field(..., description="List of features included in the plan")
+    features: list[str] = Field(
+        ..., description="List of features included in the plan"
+    )
 
 
 class SubscriptionPlanDefinition(BaseModel):
@@ -949,13 +942,21 @@ class SubscriptionPlanDefinition(BaseModel):
 
     plan_id: str = Field(..., description="Unique identifier for the plan")
     plan_name: str = Field(..., description="Name of the subscription plan")
-    plan_description: str = Field(..., description="Description of the subscription plan")
+    plan_description: str = Field(
+        ..., description="Description of the subscription plan"
+    )
     price: float = Field(..., description="Price of the subscription")
     currency: str = Field(..., description="Currency code (e.g., USD)")
     billing_cycle: str = Field(..., description="Billing cycle (e.g., monthly, yearly)")
-    features: SubscriptionPlanFeatures = Field(..., description="Plan features and limits")
-    is_default: bool = Field(False, description="Whether this is the default plan for new organizations")
-    is_active: bool = Field(True, description="Whether this plan is currently available")
+    features: SubscriptionPlanFeatures = Field(
+        ..., description="Plan features and limits"
+    )
+    is_default: bool = Field(
+        False, description="Whether this is the default plan for new organizations"
+    )
+    is_active: bool = Field(
+        True, description="Whether this plan is currently available"
+    )
     created_at: str = Field(..., description="Plan creation timestamp")
     updated_at: str = Field(..., description="Last update timestamp")
 
@@ -963,7 +964,9 @@ class SubscriptionPlanDefinition(BaseModel):
 class SubscriptionPlanListResponse(BaseModel):
     """Response model for subscription plan list."""
 
-    plans: list[SubscriptionPlanDefinition] = Field(..., description="List of subscription plans")
+    plans: list[SubscriptionPlanDefinition] = Field(
+        ..., description="List of subscription plans"
+    )
     total: int = Field(..., description="Total number of plans")
 
 

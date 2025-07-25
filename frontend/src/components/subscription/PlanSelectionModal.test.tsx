@@ -80,7 +80,12 @@ const mockPlans: SubscriptionPlanDefinition[] = [
     features: {
       max_users: 5,
       max_reports: 50,
-      features: ["Advanced Reports", "Up to 5 Users", "Priority Email Support", "API Access"],
+      features: [
+        "Advanced Reports",
+        "Up to 5 Users",
+        "Priority Email Support",
+        "API Access",
+      ],
     },
     is_default: false,
     is_active: true,
@@ -97,7 +102,12 @@ const mockPlans: SubscriptionPlanDefinition[] = [
     features: {
       max_users: 20,
       max_reports: 200,
-      features: ["Premium Reports", "Up to 20 Users", "24/7 Phone Support", "Advanced API Access"],
+      features: [
+        "Premium Reports",
+        "Up to 20 Users",
+        "24/7 Phone Support",
+        "Advanced API Access",
+      ],
     },
     is_default: false,
     is_active: true,
@@ -112,7 +122,9 @@ describe("PlanSelectionModal", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(subscriptionApi.getSubscriptionPlans).mockResolvedValue(mockPlans);
+    vi.mocked(subscriptionApi.getSubscriptionPlans).mockResolvedValue(
+      mockPlans,
+    );
   });
 
   test("renders modal with subscription plans", async () => {
@@ -123,11 +135,13 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Choose Your Subscription Plan")).toBeInTheDocument();
+      expect(
+        screen.getByText("Choose Your Subscription Plan"),
+      ).toBeInTheDocument();
     });
 
     // Check all plans are displayed
@@ -147,7 +161,7 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -165,7 +179,7 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -177,7 +191,7 @@ describe("PlanSelectionModal", () => {
 
   test("allows selecting a different plan", async () => {
     const user = userEvent.setup();
-    
+
     render(
       <PlanSelectionModal
         open={true}
@@ -185,7 +199,7 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -193,7 +207,9 @@ describe("PlanSelectionModal", () => {
     });
 
     // Click on Starter Plan radio button
-    const starterPlanRadio = screen.getByRole("radio", { name: /starter-plan/i });
+    const starterPlanRadio = screen.getByRole("radio", {
+      name: /starter-plan/i,
+    });
     await user.click(starterPlanRadio);
 
     expect(starterPlanRadio).toBeChecked();
@@ -207,18 +223,20 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
-      const changePlanButton = screen.getByRole("button", { name: /change plan/i });
+      const changePlanButton = screen.getByRole("button", {
+        name: /change plan/i,
+      });
       expect(changePlanButton).toBeDisabled();
     });
   });
 
   test("enables Change Plan button when different plan is selected", async () => {
     const user = userEvent.setup();
-    
+
     render(
       <PlanSelectionModal
         open={true}
@@ -226,26 +244,32 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
       expect(screen.getByText("Starter Plan")).toBeInTheDocument();
     });
 
-    const starterPlanRadio = screen.getByRole("radio", { name: /starter-plan/i });
+    const starterPlanRadio = screen.getByRole("radio", {
+      name: /starter-plan/i,
+    });
     await user.click(starterPlanRadio);
 
-    const changePlanButton = screen.getByRole("button", { name: /change plan/i });
+    const changePlanButton = screen.getByRole("button", {
+      name: /change plan/i,
+    });
     expect(changePlanButton).toBeEnabled();
   });
 
   test("handles plan change successfully", async () => {
     const user = userEvent.setup();
     const updatedOrg = { ...mockOrganization, plan: "Starter Plan" };
-    
-    vi.mocked(organizationApi.updateOrganizationSubscription).mockResolvedValue(updatedOrg);
-    
+
+    vi.mocked(organizationApi.updateOrganizationSubscription).mockResolvedValue(
+      updatedOrg,
+    );
+
     render(
       <PlanSelectionModal
         open={true}
@@ -253,7 +277,7 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -261,18 +285,21 @@ describe("PlanSelectionModal", () => {
     });
 
     // Select starter plan
-    const starterPlanRadio = screen.getByRole("radio", { name: /starter-plan/i });
+    const starterPlanRadio = screen.getByRole("radio", {
+      name: /starter-plan/i,
+    });
     await user.click(starterPlanRadio);
 
     // Click change plan
-    const changePlanButton = screen.getByRole("button", { name: /change plan/i });
+    const changePlanButton = screen.getByRole("button", {
+      name: /change plan/i,
+    });
     await user.click(changePlanButton);
 
     await waitFor(() => {
-      expect(organizationApi.updateOrganizationSubscription).toHaveBeenCalledWith(
-        "org_test123",
-        "starter-plan"
-      );
+      expect(
+        organizationApi.updateOrganizationSubscription,
+      ).toHaveBeenCalledWith("org_test123", "starter-plan");
       expect(mockOnSubscriptionChanged).toHaveBeenCalledWith(updatedOrg);
       expect(mockOnOpenChange).toHaveBeenCalledWith(false);
     });
@@ -280,12 +307,14 @@ describe("PlanSelectionModal", () => {
 
   test("handles plan change error", async () => {
     const user = userEvent.setup();
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     vi.mocked(organizationApi.updateOrganizationSubscription).mockRejectedValue(
-      new Error("Failed to update")
+      new Error("Failed to update"),
     );
-    
+
     render(
       <PlanSelectionModal
         open={true}
@@ -293,7 +322,7 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
@@ -301,17 +330,21 @@ describe("PlanSelectionModal", () => {
     });
 
     // Select starter plan
-    const starterPlanRadio = screen.getByRole("radio", { name: /starter-plan/i });
+    const starterPlanRadio = screen.getByRole("radio", {
+      name: /starter-plan/i,
+    });
     await user.click(starterPlanRadio);
 
     // Click change plan
-    const changePlanButton = screen.getByRole("button", { name: /change plan/i });
+    const changePlanButton = screen.getByRole("button", {
+      name: /change plan/i,
+    });
     await user.click(changePlanButton);
 
     await waitFor(() => {
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         "Failed to change subscription plan:",
-        expect.any(Error)
+        expect.any(Error),
       );
     });
 
@@ -320,9 +353,9 @@ describe("PlanSelectionModal", () => {
 
   test("shows loading state while fetching plans", () => {
     vi.mocked(subscriptionApi.getSubscriptionPlans).mockImplementation(
-      () => new Promise(() => {}) // Never resolves
+      () => new Promise(() => {}), // Never resolves
     );
-    
+
     render(
       <PlanSelectionModal
         open={true}
@@ -330,19 +363,21 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     expect(screen.getByRole("status")).toBeInTheDocument(); // Loading spinner
   });
 
   test("handles API error when loading plans", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     vi.mocked(subscriptionApi.getSubscriptionPlans).mockRejectedValue(
-      new Error("Failed to load plans")
+      new Error("Failed to load plans"),
     );
-    
+
     render(
       <PlanSelectionModal
         open={true}
@@ -350,13 +385,13 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         "Failed to load subscription plans:",
-        expect.any(Error)
+        expect.any(Error),
       );
     });
 
@@ -365,7 +400,7 @@ describe("PlanSelectionModal", () => {
 
   test("closes modal when cancel button is clicked", async () => {
     const user = userEvent.setup();
-    
+
     render(
       <PlanSelectionModal
         open={true}
@@ -373,11 +408,13 @@ describe("PlanSelectionModal", () => {
         currentOrganization={mockOrganization}
         accountId="test-user-123"
         onSubscriptionChanged={mockOnSubscriptionChanged}
-      />
+      />,
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Choose Your Subscription Plan")).toBeInTheDocument();
+      expect(
+        screen.getByText("Choose Your Subscription Plan"),
+      ).toBeInTheDocument();
     });
 
     const cancelButton = screen.getByRole("button", { name: /cancel/i });

@@ -307,28 +307,28 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                           index !== notifications.length - 1 && "border-b",
                         )}
                       >
-                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <IconComponent className="w-5 h-5 text-gray-600" />
+                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <IconComponent className="w-5 h-5 text-gray-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">
+                            {notification.data.title}
+                          </p>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {notification.data.description}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-2">
+                            {new Date(notification.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                        {notification.data.badge && (
+                          <Badge variant="secondary" className="flex-shrink-0">
+                            {notification.data.badge}
+                          </Badge>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">
-                          {notification.data.title}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {notification.data.description}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-2">
-                          {new Date(notification.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                      {notification.data.badge && (
-                        <Badge variant="secondary" className="flex-shrink-0">
-                          {notification.data.badge}
-                        </Badge>
-                      )}
-                    </div>
-                  );
-                })
+                    );
+                  })
                 ) : (
                   <div className="p-4 text-gray-500 text-center">
                     No notifications

@@ -254,7 +254,7 @@ export const getAccountActions = (accountId?: string): ActionConfig[] => [
     type: "create_account",
     label: "Create Account",
     icon: Plus,
-    route: "/settings/organization",
+    route: "/settings/organization?openCreateAccount=true",
     variant: "default",
     requiredRole: "admin",
   },

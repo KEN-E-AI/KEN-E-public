@@ -6,9 +6,17 @@ import {
   ReactNode,
 } from "react";
 import axios from "axios";
+import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
+import {
+  toUserId,
+  toOrganizationId,
+  toAccountId,
+  tryOrganizationId,
+  tryAccountId,
+} from "@/lib/branded-types";
 
 interface User {
-  id: string;
+  id: UserId;
   email: string;
   firstName: string;
   lastName: string;
@@ -25,8 +33,8 @@ interface User {
 }
 
 export interface SelectedOrgAccount {
-  orgId: string;
-  accountId: string;
+  orgId: OrganizationId;
+  accountId: AccountId;
   metadata: {
     organization_name: string;
     account_name: string;
@@ -40,7 +48,7 @@ export interface SelectedOrgAccount {
 
 interface Notification {
   id: string;
-  account_id: string;
+  account_id: AccountId;
   category: string;
   created_date: string;
   data: {
@@ -79,14 +87,14 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   hasSelectedWorkspace: boolean;
-  currentOrganizationId: string | null;
+  currentOrganizationId: OrganizationId | null;
   selectedOrgAccount: SelectedOrgAccount | null;
   login: (user: User) => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
-  setCurrentOrganization: (orgId: string) => void;
+  setCurrentOrganization: (orgId: OrganizationId) => void;
   setSelectedOrgAccount: (account: SelectedOrgAccount) => void;
   orgMetadata: Record<string, any>;
   accountMetadata: Record<string, any>;
@@ -119,9 +127,8 @@ interface AuthProviderProps {
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [hasSelectedWorkspace, setHasSelectedWorkspace] = useState(false);
-  const [currentOrganizationId, setCurrentOrganizationId] = useState<
-    string | null
-  >(null);
+  const [currentOrganizationId, setCurrentOrganizationId] =
+    useState<OrganizationId | null>(null);
   const [selectedOrgAccount, setSelectedOrgAccountState] =
     useState<SelectedOrgAccount | null>(null);
   const [orgMetadata, setOrgMetadataState] = useState<Record<string, any>>({});
@@ -147,7 +154,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.setItem("accountMetadata", JSON.stringify(data));
   };
 
-  const fetchNotifications = async (accountId: string) => {
+  const fetchNotifications = async (accountId: AccountId) => {
     try {
       const res = await axios.post(
         `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/query`,
@@ -220,7 +227,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.removeItem("accountMetadata");
   };
 
-  const setCurrentOrganization = (orgId: string) => {
+  const setCurrentOrganization = (orgId: OrganizationId) => {
     setCurrentOrganizationId(orgId);
     localStorage.setItem("currentOrganizationId", orgId);
   };
@@ -246,7 +253,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const savedAccountMetadata = localStorage.getItem("accountMetadata");
 
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      const userData = JSON.parse(savedUser);
+      // Convert id to branded type
+      if (userData.id) {
+        userData.id = toUserId(userData.id);
+      }
+      setUser(userData);
     }
 
     if (savedWorkspaceSelection === "true") {
@@ -254,12 +266,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
 
     if (savedOrganizationId) {
-      setCurrentOrganizationId(savedOrganizationId);
+      const orgId = tryOrganizationId(savedOrganizationId);
+      if (orgId) {
+        setCurrentOrganizationId(orgId);
+      }
     }
 
     if (savedOrgAccount) {
       try {
         const parsedOrgAccount = JSON.parse(savedOrgAccount);
+        // Convert IDs to branded types
+        if (parsedOrgAccount.orgId) {
+          parsedOrgAccount.orgId = toOrganizationId(parsedOrgAccount.orgId);
+        }
+        if (parsedOrgAccount.accountId) {
+          parsedOrgAccount.accountId = toAccountId(parsedOrgAccount.accountId);
+        }
         setSelectedOrgAccountState(parsedOrgAccount);
         // Fetch notifications for the restored account
         fetchNotifications(parsedOrgAccount.accountId);

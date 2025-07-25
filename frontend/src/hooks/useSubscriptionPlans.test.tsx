@@ -1,7 +1,10 @@
 import { describe, test, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useSubscriptionPlans, usePlanComparison } from "./useSubscriptionPlans";
+import {
+  useSubscriptionPlans,
+  usePlanComparison,
+} from "./useSubscriptionPlans";
 import * as subscriptionApi from "@/data/subscriptionPlansApi";
 import type { SubscriptionPlanDefinition } from "@/types/subscription";
 
@@ -70,7 +73,7 @@ const createWrapper = () => {
       },
     },
   });
-  
+
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -79,7 +82,9 @@ const createWrapper = () => {
 describe("useSubscriptionPlans", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(subscriptionApi.getSubscriptionPlans).mockResolvedValue(mockPlans);
+    vi.mocked(subscriptionApi.getSubscriptionPlans).mockResolvedValue(
+      mockPlans,
+    );
   });
 
   test("fetches and returns subscription plans", async () => {
@@ -119,7 +124,7 @@ describe("useSubscriptionPlans", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    const prices = result.current.sortedPlans.map(p => p.price);
+    const prices = result.current.sortedPlans.map((p) => p.price);
     expect(prices).toEqual([0, 49, 149]);
   });
 
@@ -151,7 +156,9 @@ describe("useSubscriptionPlans", () => {
 
   test("handles API error", async () => {
     const mockError = new Error("API Error");
-    vi.mocked(subscriptionApi.getSubscriptionPlans).mockRejectedValue(mockError);
+    vi.mocked(subscriptionApi.getSubscriptionPlans).mockRejectedValue(
+      mockError,
+    );
 
     const { result } = renderHook(() => useSubscriptionPlans(), {
       wrapper: createWrapper(),
@@ -179,7 +186,9 @@ describe("useSubscriptionPlans", () => {
 describe("usePlanComparison", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(subscriptionApi.getSubscriptionPlans).mockResolvedValue(mockPlans);
+    vi.mocked(subscriptionApi.getSubscriptionPlans).mockResolvedValue(
+      mockPlans,
+    );
   });
 
   test("compares plans correctly", async () => {
@@ -193,7 +202,7 @@ describe("usePlanComparison", () => {
 
     const { result } = renderHook(
       () => usePlanComparison("free-plan", "starter-plan"),
-      { wrapper: createWrapper() }
+      { wrapper: createWrapper() },
     );
 
     await waitFor(() => {
@@ -220,7 +229,7 @@ describe("usePlanComparison", () => {
 
     const { result } = renderHook(
       () => usePlanComparison("pro-plan", "starter-plan"),
-      { wrapper: createWrapper() }
+      { wrapper: createWrapper() },
     );
 
     await waitFor(() => {
@@ -243,7 +252,7 @@ describe("usePlanComparison", () => {
 
     const { result } = renderHook(
       () => usePlanComparison("invalid-plan", "starter-plan"),
-      { wrapper: createWrapper() }
+      { wrapper: createWrapper() },
     );
 
     expect(result.current).toBeNull();
@@ -252,7 +261,7 @@ describe("usePlanComparison", () => {
   test("returns null when plans are undefined", () => {
     const { result } = renderHook(
       () => usePlanComparison(undefined, undefined),
-      { wrapper: createWrapper() }
+      { wrapper: createWrapper() },
     );
 
     expect(result.current).toBeNull();
