@@ -64,7 +64,7 @@ def test_sync_holiday_activity_logs_success(mock_neo4j_service, mock_bigquery_se
     ]
 
     # Mock successful creation
-    mock_neo4j_service.execute_write_query.return_value = [{"created_count": 2}]
+    mock_neo4j_service.execute_write_query.return_value = {"nodes_created": 2}
 
     # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
@@ -146,7 +146,7 @@ def test_sync_holiday_activity_logs_no_regions(
     data = response.json()
     assert data["success"] is True
     assert data["message"] == "No regions configured for account"
-    assert data["data"]["logs_created"] == 0
+    assert data["data"]["new_logs_created"] == 0
     assert data["data"]["logs_deleted"] == 0
 
     # Verify BigQuery was not called
@@ -326,7 +326,7 @@ def test_sync_holiday_activity_logs_with_deletion(
     ]
     
     # Mock successful deletion
-    mock_neo4j_service.execute_write_query.return_value = None  # Delete query doesn't return anything
+    mock_neo4j_service.execute_write_query.return_value = {"nodes_deleted": 1}
 
     # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
@@ -393,7 +393,7 @@ def test_sync_holiday_activity_logs_protect_metric_relationships(
     ]
     
     # Mock successful deletion (only Old Holiday deleted, Christmas protected)
-    mock_neo4j_service.execute_write_query.return_value = None  # Delete query doesn't return anything
+    mock_neo4j_service.execute_write_query.return_value = {"nodes_deleted": 1}
 
     # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
@@ -471,8 +471,8 @@ def test_sync_holiday_activity_logs_create_and_delete(
     
     # Mock successful operations
     mock_neo4j_service.execute_write_query.side_effect = [
-        [{"created_count": 2}],  # Create new logs
-        None,  # Delete query doesn't return anything
+        {"nodes_created": 2},  # Create new logs
+        {"nodes_deleted": 1},  # Delete query returns nodes deleted
     ]
 
     # Override dependencies

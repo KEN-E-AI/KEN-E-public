@@ -239,6 +239,7 @@ class BigQueryService:
             end_date
         FROM `{project_id}.shared_activities.holiday-import`
         WHERE region IN ({region_list})
+        GROUP BY ALL
         ORDER BY start_date
         """
 

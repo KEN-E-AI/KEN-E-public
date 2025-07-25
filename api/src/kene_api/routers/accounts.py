@@ -1,6 +1,7 @@
 """Accounts router for CRUD operations on account entities."""
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Any
@@ -532,6 +533,7 @@ async def update_account(
     account_id: str,
     request: AccountRequest,
     db: Neo4jService = Depends(get_neo4j_service),
+    bigquery: BigQueryService = Depends(get_bigquery_service),
 ) -> Account:
     """
     Update an existing account.
@@ -565,6 +567,12 @@ async def update_account(
         existing_acc = await _check_account_exists(db, account_id)
         if not existing_acc:
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+
+        # Get the current account to check if regions are being updated
+        current_account = await get_account(account_id, db)
+        current_regions = set(current_account.region or [])
+        new_regions = set(request.region) if request.region is not None else None
+        regions_changed = new_regions is not None and current_regions != new_regions
 
         # Build update query dynamically based on provided fields
         update_clauses = []
@@ -615,6 +623,13 @@ async def update_account(
         """
 
         await db.execute_write_query(update_query, params)
+
+        # If regions were updated, sync holiday activity logs
+        if regions_changed:
+            organization_id = current_account.organization_id
+            await _sync_holiday_activity_logs_for_account(
+                db, bigquery, account_id, organization_id, list(new_regions)
+            )
 
         # Return updated account
         return await get_account(account_id, db)
@@ -802,3 +817,84 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         data_region=acc_data.get("data_region", ""),
         region=acc_data.get("region", []),
     )
+
+
+async def _sync_holiday_activity_logs_for_account(
+    db: Neo4jService,
+    bigquery: BigQueryService,
+    account_id: str,
+    organization_id: str,
+    regions: list[str],
+) -> dict[str, Any]:
+    """
+    Sync holiday activity logs when account regions are updated.
+    
+    This function replicates the core logic from the activities sync endpoint.
+    It's called when an account's regions are modified.
+    
+    Args:
+        db: Neo4j database service
+        bigquery: BigQuery service instance
+        account_id: ID of the account to sync
+        organization_id: ID of the organization (used for logging)
+        regions: List of regions to sync
+    
+    Returns:
+        dict: Sync operation results
+    """
+    try:
+        # Import here to avoid circular dependency
+        from ..routers.activities import (
+            _fetch_existing_activity_logs,
+            _fetch_bigquery_holidays,
+            _calculate_sync_operations,
+            _execute_sync_operations,
+        )
+        
+        # Get project ID
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+        if not project_id:
+            logger.warning(
+                "GOOGLE_CLOUD_PROJECT_ID not set, skipping holiday activity logs sync"
+            )
+            return {"created": 0, "deleted": 0, "errors": ["No project ID"]}
+        
+        # Skip if no regions
+        if not regions:
+            logger.info(f"No regions configured for account {account_id}, skipping sync")
+            return {"created": 0, "deleted": 0, "errors": []}
+        
+        # Fetch existing logs
+        existing_holidays, protected_logs = await _fetch_existing_activity_logs(
+            db, account_id
+        )
+        
+        # Fetch holidays from BigQuery
+        holidays = await _fetch_bigquery_holidays(
+            bigquery, project_id, regions
+        )
+        
+        # Calculate sync operations
+        operations = _calculate_sync_operations(
+            existing_holidays, holidays, protected_logs, account_id
+        )
+        
+        # Execute sync operations
+        sync_results = await _execute_sync_operations(db, operations)
+        
+        logger.info(
+            f"Successfully synced holiday activity logs for account {account_id}: "
+            f"Created {sync_results['created']} new logs, deleted {sync_results['deleted']} outdated logs"
+        )
+        
+        # Add operations to results for debugging
+        sync_results["operations"] = operations
+        return sync_results
+        
+    except Exception as e:
+        # Log the error but don't fail the account update
+        logger.error(
+            f"Failed to sync holiday activity logs for account {account_id}: {str(e)}"
+        )
+        # Don't raise - let account update succeed even if sync fails
+        return {"created": 0, "deleted": 0, "errors": [str(e)]}
