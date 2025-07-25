@@ -1,13 +1,16 @@
 """Accounts router for CRUD operations on account entities."""
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ..bigquery import BigQueryService, get_bigquery_service
 from ..database import Neo4jService, get_neo4j_service
+from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
     Account,
     AccountListResponse,
@@ -117,10 +120,12 @@ async def get_accounts(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching accounts: {e!s}"
-        )
+        ) from e
 
 
 @router.get("/{account_id}", response_model=Account)
@@ -168,14 +173,202 @@ async def get_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error fetching account: {e!s}")
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching account: {e!s}"
+        ) from e
+
+
+async def _create_initial_activities(
+    db: Neo4jService, firestore: FirestoreService, account_id: str
+) -> int:
+    """
+    Create initial activities for a new account from Firestore template.
+
+    Args:
+        db: Neo4j database service
+        firestore: Firestore service
+        account_id: ID of the newly created account
+
+    Returns:
+        int: Number of activities created
+    """
+    try:
+        # Fetch all documents from initial-activities collection
+        initial_activities = firestore.list_documents("initial-activities")
+
+        if not initial_activities:
+            logger.info(
+                f"No initial activities found in Firestore for account {account_id}"
+            )
+            return 0
+
+        # Prepare activities for batch creation
+        activities_data = []
+        for activity_doc in initial_activities:
+            # Use the activity_id from Firestore document
+            activity_data = {
+                "activity_id": activity_doc.get("activity_id"),
+                "activity_name": activity_doc.get("activity_name", ""),
+                "activity_description": activity_doc.get("activity_description", ""),
+                "expected_impact": activity_doc.get("expected_impact", ""),
+                "internal": activity_doc.get("internal", False),
+                "known_activity": activity_doc.get("known_activity", False),
+            }
+
+            # Only add if activity_id exists
+            if activity_data["activity_id"]:
+                activities_data.append(activity_data)
+            else:
+                logger.warning(
+                    "Skipping activity without activity_id in initial-activities collection"
+                )
+
+        if not activities_data:
+            logger.warning(f"No valid activities to create for account {account_id}")
+            return 0
+
+        # Create activities in batch using UNWIND
+        create_query = """
+        UNWIND $activities AS activity
+        MATCH (account:Account {account_id: $account_id})
+        CREATE (a:Activity {
+            activity_id: activity.activity_id,
+            activity_name: activity.activity_name,
+            activity_description: activity.activity_description,
+            expected_impact: activity.expected_impact,
+            internal: activity.internal,
+            known_activity: activity.known_activity
+        })
+        CREATE (a)-[:BELONGS_TO]->(account)
+        RETURN count(a) as created_count
+        """
+
+        params = {"account_id": account_id, "activities": activities_data}
+
+        result = await db.execute_write_query(create_query, params)
+        created_count = result[0]["created_count"] if result else 0
+
+        logger.info(
+            f"Created {created_count} initial activities for account {account_id}"
+        )
+        return created_count
+
+    except Exception as e:
+        logger.error(
+            f"Error creating initial activities for account {account_id}: {e!s}"
+        )
+        # Don't raise - let account creation succeed even if initial activities fail
+        return 0
+
+
+async def _create_initial_activity_logs(
+    db: Neo4jService,
+    bigquery: BigQueryService,
+    account_id: str,
+    organization_id: str,
+    regions: list[str],
+) -> int:
+    """
+    Create initial activity logs for act_00 from BigQuery holiday data.
+
+    Args:
+        db: Neo4j database service
+        bigquery: BigQuery service
+        account_id: ID of the newly created account
+        organization_id: ID of the organization (used to get GCP project)
+        regions: List of regions for the account
+
+    Returns:
+        int: Number of activity logs created
+    """
+    try:
+        # Get GCP project ID from environment
+        import os
+
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+        if not project_id:
+            logger.warning(
+                "GOOGLE_CLOUD_PROJECT_ID not set, skipping holiday activity logs"
+            )
+            return 0
+
+        # Check if act_00 activity exists for this account
+        check_query = """
+        MATCH (a:Activity {activity_id: "act_00"})-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        RETURN a
+        """
+        result = await db.execute_query(check_query, {"account_id": account_id})
+        if not result:
+            logger.warning(f"Activity act_00 not found for account {account_id}")
+            return 0
+
+        # Query holiday activities from BigQuery
+        logger.info(
+            f"Querying BigQuery for holidays in project {project_id} for regions {regions}"
+        )
+        holidays = bigquery.query_holiday_activities(project_id, regions)
+        if not holidays:
+            logger.info(f"No holiday activities found for regions {regions}")
+            return 0
+        logger.info(f"Found {len(holidays)} holiday activities from BigQuery")
+
+        # Create activity logs in batch
+        activity_logs_data = []
+        for holiday in holidays:
+            log_id = str(uuid.uuid4())
+            activity_logs_data.append(
+                {
+                    "activity_log_id": f"log_{log_id}",
+                    "activity_id": "act_00",
+                    "account_id": account_id,
+                    "start_date": holiday["start_date"],
+                    "end_date": holiday["end_date"],
+                    "description": holiday["description"],
+                    # Omit evidence field - Neo4j doesn't accept empty dicts
+                }
+            )
+
+        # Create activity logs with LOGGED relationships
+        create_query = """
+        UNWIND $logs AS log
+        MATCH (activity:Activity {activity_id: log.activity_id})-[:BELONGS_TO]->(account:Account {account_id: log.account_id})
+        CREATE (al:ActivityLog {
+            activity_log_id: log.activity_log_id,
+            account_id: log.account_id,
+            start_date: log.start_date,
+            end_date: log.end_date,
+            description: log.description
+        })
+        CREATE (al)-[:LOGGED]->(activity)
+        CREATE (al)-[:BELONGS_TO]->(account)
+        RETURN count(al) as created_count
+        """
+
+        params = {"logs": activity_logs_data}
+        result = await db.execute_write_query(create_query, params)
+        created_count = result[0]["created_count"] if result else 0
+
+        logger.info(
+            f"Created {created_count} holiday activity logs for account {account_id}"
+        )
+        return created_count
+
+    except Exception as e:
+        logger.error(
+            f"Error creating initial activity logs for account {account_id}: {e!s}"
+        )
+        # Don't raise - let account creation succeed even if activity logs fail
+        return 0
 
 
 @router.post("/", response_model=Account)
 async def create_account(
     request: AccountRequest,
     db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
 ) -> Account:
     """
     Create a new account.
@@ -208,7 +401,7 @@ async def create_account(
         "timezone": "America/New_York"
     }
     ```
-    
+
     **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
     try:
@@ -295,6 +488,31 @@ async def create_account(
 
         await db.execute_write_query(create_query, params)
 
+        # Create initial activities for the new account
+        activities_created = await _create_initial_activities(db, firestore, account_id)
+        if activities_created > 0:
+            logger.info(
+                f"Successfully created {activities_created} initial activities for account {account_id}"
+            )
+
+        # Create initial activity logs for act_00 if regions are specified
+        if request.region:
+            logger.info(
+                f"Account {account_id} has regions: {request.region}, attempting to create holiday activity logs"
+            )
+            bigquery = get_bigquery_service()
+            logs_created = await _create_initial_activity_logs(
+                db, bigquery, account_id, request.organization_id, request.region
+            )
+            if logs_created > 0:
+                logger.info(
+                    f"Successfully created {logs_created} holiday activity logs for account {account_id}"
+                )
+            else:
+                logger.info(
+                    f"No holiday activity logs created for account {account_id}"
+                )
+
         # Fetch the created account
         return await get_account(account_id, db)
 
@@ -302,8 +520,12 @@ async def create_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error creating account: {e!s}")
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error creating account: {e!s}"
+        ) from e
 
 
 @router.put("/{account_id}", response_model=Account)
@@ -311,6 +533,7 @@ async def update_account(
     account_id: str,
     request: AccountRequest,
     db: Neo4jService = Depends(get_neo4j_service),
+    bigquery: BigQueryService = Depends(get_bigquery_service),
 ) -> Account:
     """
     Update an existing account.
@@ -344,6 +567,12 @@ async def update_account(
         existing_acc = await _check_account_exists(db, account_id)
         if not existing_acc:
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+
+        # Get the current account to check if regions are being updated
+        current_account = await get_account(account_id, db)
+        current_regions = set(current_account.region or [])
+        new_regions = set(request.region) if request.region is not None else None
+        regions_changed = new_regions is not None and current_regions != new_regions
 
         # Build update query dynamically based on provided fields
         update_clauses = []
@@ -395,6 +624,13 @@ async def update_account(
 
         await db.execute_write_query(update_query, params)
 
+        # If regions were updated, sync holiday activity logs
+        if regions_changed:
+            organization_id = current_account.organization_id
+            await _sync_holiday_activity_logs_for_account(
+                db, bigquery, account_id, organization_id, list(new_regions)
+            )
+
         # Return updated account
         return await get_account(account_id, db)
 
@@ -402,8 +638,12 @@ async def update_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error updating account: {e!s}")
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error updating account: {e!s}"
+        ) from e
 
 
 @router.delete("/{account_id}", response_model=SuccessResponse)
@@ -412,13 +652,18 @@ async def delete_account(
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> SuccessResponse:
     """
-    Delete an account.
+    Delete an account and all related entities.
+
+    This endpoint performs a cascade delete of:
+    - The account node itself
+    - All entities with BELONGS_TO relationship to the account
+    - All ActivityLog nodes with LOGGED relationship to deleted Activity nodes
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
 
     **Returns:**
-    - Success response with deletion details
+    - Success response with deletion details including counts of deleted entities
 
     **Example:**
     ```
@@ -436,36 +681,56 @@ async def delete_account(
         if not existing_acc:
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
 
-        # Check if account has related entities (metrics, activities, etc.)
-        check_related_query = """
-        MATCH (acc:Account {account_id: $account_id})
-        OPTIONAL MATCH (acc)<-[:BELONGS_TO]-(entity)
-        WHERE entity:Metric OR entity:Activity OR entity:Dataset
-        RETURN count(entity) as related_count
+        # Delete everything in multiple simpler queries
+        total_nodes_deleted = 0
+        total_relationships_deleted = 0
+
+        # First, delete all ActivityLog nodes
+        delete_logs_query = """
+        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog)
+        DETACH DELETE log
         """
-        result = await db.execute_query(check_related_query, {"account_id": account_id})
-        related_count = result[0]["related_count"] if result else 0
+        logs_summary = await db.execute_write_query(
+            delete_logs_query, {"account_id": account_id}
+        )
+        total_nodes_deleted += logs_summary.get("nodes_deleted", 0)
+        total_relationships_deleted += logs_summary.get("relationships_deleted", 0)
 
-        if related_count > 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot delete account with {related_count} related entities. Delete related entities first.",
-            )
+        # Then delete all entities with BELONGS_TO relationship
+        delete_entities_query = """
+        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(entity)
+        DETACH DELETE entity
+        """
+        entities_summary = await db.execute_write_query(
+            delete_entities_query, {"account_id": account_id}
+        )
+        total_nodes_deleted += entities_summary.get("nodes_deleted", 0)
+        total_relationships_deleted += entities_summary.get("relationships_deleted", 0)
 
-        # Delete account and BELONGS_TO relationship
-        delete_query = """
+        # Finally delete the account itself
+        delete_account_query = """
         MATCH (acc:Account {account_id: $account_id})
         DETACH DELETE acc
         """
+        account_summary = await db.execute_write_query(
+            delete_account_query, {"account_id": account_id}
+        )
+        total_nodes_deleted += account_summary.get("nodes_deleted", 0)
+        total_relationships_deleted += account_summary.get("relationships_deleted", 0)
 
-        summary = await db.execute_write_query(delete_query, {"account_id": account_id})
+        # Log the deletion for auditing
+        logger.info(
+            f"Deleted account {account_id} with cascade delete: "
+            f"{total_nodes_deleted} nodes, "
+            f"{total_relationships_deleted} relationships"
+        )
 
         return SuccessResponse(
-            message=f"Account {account_id} deleted successfully",
+            message=f"Account {account_id} and all related entities deleted successfully",
             data={
                 "account_id": account_id,
-                "nodes_deleted": summary.get("nodes_deleted", 0),
-                "relationships_deleted": summary.get("relationships_deleted", 0),
+                "nodes_deleted": total_nodes_deleted,
+                "relationships_deleted": total_relationships_deleted,
             },
         )
 
@@ -473,8 +738,12 @@ async def delete_account(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-        raise HTTPException(status_code=500, detail=f"Error deleting account: {e!s}")
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting account: {e!s}"
+        ) from e
 
 
 @router.get(
@@ -548,3 +817,84 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         data_region=acc_data.get("data_region", ""),
         region=acc_data.get("region", []),
     )
+
+
+async def _sync_holiday_activity_logs_for_account(
+    db: Neo4jService,
+    bigquery: BigQueryService,
+    account_id: str,
+    organization_id: str,
+    regions: list[str],
+) -> dict[str, Any]:
+    """
+    Sync holiday activity logs when account regions are updated.
+    
+    This function replicates the core logic from the activities sync endpoint.
+    It's called when an account's regions are modified.
+    
+    Args:
+        db: Neo4j database service
+        bigquery: BigQuery service instance
+        account_id: ID of the account to sync
+        organization_id: ID of the organization (used for logging)
+        regions: List of regions to sync
+    
+    Returns:
+        dict: Sync operation results
+    """
+    try:
+        # Import here to avoid circular dependency
+        from ..routers.activities import (
+            _fetch_existing_activity_logs,
+            _fetch_bigquery_holidays,
+            _calculate_sync_operations,
+            _execute_sync_operations,
+        )
+        
+        # Get project ID
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+        if not project_id:
+            logger.warning(
+                "GOOGLE_CLOUD_PROJECT_ID not set, skipping holiday activity logs sync"
+            )
+            return {"created": 0, "deleted": 0, "errors": ["No project ID"]}
+        
+        # Skip if no regions
+        if not regions:
+            logger.info(f"No regions configured for account {account_id}, skipping sync")
+            return {"created": 0, "deleted": 0, "errors": []}
+        
+        # Fetch existing logs
+        existing_holidays, protected_logs = await _fetch_existing_activity_logs(
+            db, account_id
+        )
+        
+        # Fetch holidays from BigQuery
+        holidays = await _fetch_bigquery_holidays(
+            bigquery, project_id, regions
+        )
+        
+        # Calculate sync operations
+        operations = _calculate_sync_operations(
+            existing_holidays, holidays, protected_logs, account_id
+        )
+        
+        # Execute sync operations
+        sync_results = await _execute_sync_operations(db, operations)
+        
+        logger.info(
+            f"Successfully synced holiday activity logs for account {account_id}: "
+            f"Created {sync_results['created']} new logs, deleted {sync_results['deleted']} outdated logs"
+        )
+        
+        # Add operations to results for debugging
+        sync_results["operations"] = operations
+        return sync_results
+        
+    except Exception as e:
+        # Log the error but don't fail the account update
+        logger.error(
+            f"Failed to sync holiday activity logs for account {account_id}: {str(e)}"
+        )
+        # Don't raise - let account update succeed even if sync fails
+        return {"created": 0, "deleted": 0, "errors": [str(e)]}

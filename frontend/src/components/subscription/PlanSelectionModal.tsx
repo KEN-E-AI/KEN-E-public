@@ -11,7 +11,13 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -37,18 +43,21 @@ export function PlanSelectionModal({
   const [selectedPlanId, setSelectedPlanId] = useState<string>("");
   const [isChanging, setIsChanging] = useState(false);
   const { toast } = useToast();
-  
+
   // Use the React Query hook for subscription plans
   const { plans, isLoading, error, refetch } = useSubscriptionPlans(open);
 
   // Get current plan ID from organization
-  const currentPlanName = currentOrganization.subscription?.plan_name || "Free Plan";
+  const currentPlanName =
+    currentOrganization.subscription?.plan_name || "Free Plan";
 
   // Memoize getCurrentPlanId to avoid recalculating on every render
   const getCurrentPlanId = useMemo(() => {
-    return plans.find((plan) => plan.plan_name === currentPlanName)?.plan_id || "";
+    return (
+      plans.find((plan) => plan.plan_name === currentPlanName)?.plan_id || ""
+    );
   }, [plans, currentPlanName]);
-  
+
   // Set selected plan when plans are loaded
   useEffect(() => {
     if (plans.length > 0 && !selectedPlanId && getCurrentPlanId) {
@@ -66,14 +75,14 @@ export function PlanSelectionModal({
       const updatedOrg = await updateOrganizationSubscription(
         currentOrganization.organization_id,
         selectedPlanId,
-        accountId
+        accountId,
       );
-      
+
       toast({
         title: "Success",
         description: "Your subscription plan has been updated successfully.",
       });
-      
+
       onSubscriptionChanged(updatedOrg);
       onOpenChange(false);
     } catch (error) {
@@ -88,7 +97,11 @@ export function PlanSelectionModal({
     }
   };
 
-  const formatPrice = (price: number, currency: string, billingCycle: string) => {
+  const formatPrice = (
+    price: number,
+    currency: string,
+    billingCycle: string,
+  ) => {
     const formatter = new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: currency,
@@ -144,13 +157,16 @@ export function PlanSelectionModal({
                     className={cn(
                       "relative transition-colors",
                       isSelected && "ring-2 ring-primary",
-                      "hover:bg-accent/50"
+                      "hover:bg-accent/50",
                     )}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <RadioGroupItem value={plan.plan_id} id={plan.plan_id} />
+                          <RadioGroupItem
+                            value={plan.plan_id}
+                            id={plan.plan_id}
+                          />
                           <div>
                             <CardTitle className="text-lg">
                               {plan.plan_name}
@@ -167,7 +183,11 @@ export function PlanSelectionModal({
                         </div>
                         <div className="text-right">
                           <div className="text-2xl font-bold">
-                            {formatPrice(plan.price, plan.currency, plan.billing_cycle)}
+                            {formatPrice(
+                              plan.price,
+                              plan.currency,
+                              plan.billing_cycle,
+                            )}
                           </div>
                         </div>
                       </div>
@@ -176,14 +196,21 @@ export function PlanSelectionModal({
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <div className="flex items-center gap-2 text-sm">
                           <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          <span>Up to {plan.features.max_users} team members</span>
+                          <span>
+                            Up to {plan.features.max_users} team members
+                          </span>
                         </div>
                         <div className="flex items-center gap-2 text-sm">
                           <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          <span>{plan.features.max_reports} reports per month</span>
+                          <span>
+                            {plan.features.max_reports} reports per month
+                          </span>
                         </div>
                         {plan.features.features.map((feature, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm">
+                          <div
+                            key={index}
+                            className="flex items-center gap-2 text-sm"
+                          >
                             <CheckCircle2 className="h-4 w-4 text-green-600" />
                             <span>{feature}</span>
                           </div>

@@ -103,7 +103,7 @@ async def get_intuitions(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching intuitions: {e!s}"
         )
@@ -218,7 +218,7 @@ async def create_intuition(
             or "Neo4j" in str(e)
             or "connect" in str(e).lower()
         ):
-            raise HTTPException(status_code=500, detail="Database error")
+            raise HTTPException(status_code=500, detail="Database error") from e
         raise HTTPException(
             status_code=500, detail=f"Error creating intuition: {e!s}"
         )
@@ -307,7 +307,7 @@ async def update_intuition(
             or "Neo4j" in str(e)
             or "connect" in str(e).lower()
         ):
-            raise HTTPException(status_code=500, detail="Database error")
+            raise HTTPException(status_code=500, detail="Database error") from e
         raise HTTPException(
             status_code=500, detail=f"Error updating intuition: {e!s}"
         )
@@ -393,7 +393,7 @@ async def delete_intuition(
             or "Neo4j" in str(e)
             or "connect" in str(e).lower()
         ):
-            raise HTTPException(status_code=500, detail="Database error")
+            raise HTTPException(status_code=500, detail="Database error") from e
         raise HTTPException(
             status_code=500, detail=f"Error deleting intuition: {e!s}"
         )

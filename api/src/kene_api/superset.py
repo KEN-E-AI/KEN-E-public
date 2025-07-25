@@ -73,7 +73,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to authenticate with Superset: {e}")
-            raise SupersetClientError(f"Authentication failed: {e}")
+            raise SupersetClientError(f"Authentication failed: {e}") from e
 
     async def _ensure_authenticated(self) -> None:
         """Ensure the client is authenticated."""
@@ -97,7 +97,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to get dataset {dataset_id}: {e}")
-            raise SupersetClientError(f"Failed to get dataset: {e}")
+            raise SupersetClientError(f"Failed to get dataset: {e}") from e
 
     async def create_metric(
         self, dataset_id: int, metric_data: dict[str, Any]
@@ -184,7 +184,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to create metric in dataset {dataset_id}: {e}")
-            raise SupersetClientError(f"Failed to create metric: {e}")
+            raise SupersetClientError(f"Failed to create metric: {e}") from e
 
     async def update_metric(
         self, dataset_id: int, metric_id: int, metric_data: dict[str, Any]
@@ -226,7 +226,7 @@ class SupersetClient:
             logger.error(
                 f"Failed to update metric {metric_id} in dataset {dataset_id}: {e}"
             )
-            raise SupersetClientError(f"Failed to update metric: {e}")
+            raise SupersetClientError(f"Failed to update metric: {e}") from e
 
     async def delete_metric(self, dataset_id: int, metric_id: int) -> bool:
         """Delete a metric from a Superset dataset."""
@@ -269,7 +269,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to get metrics for dataset {dataset_id}: {e}")
-            raise SupersetClientError(f"Failed to get metrics: {e}")
+            raise SupersetClientError(f"Failed to get metrics: {e}") from e
 
     async def find_metric_by_name(
         self, dataset_id: int, metric_name: str
@@ -331,7 +331,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to get saved queries: {e}")
-            raise SupersetClientError(f"Failed to get saved queries: {e}")
+            raise SupersetClientError(f"Failed to get saved queries: {e}") from e
 
     async def create_saved_query(self, query_data: dict[str, Any]) -> dict[str, Any]:
         """
@@ -359,7 +359,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to create saved query: {e}")
-            raise SupersetClientError(f"Failed to create saved query: {e}")
+            raise SupersetClientError(f"Failed to create saved query: {e}") from e
 
     async def update_saved_query(
         self, query_id: int, query_data: dict[str, Any]
@@ -390,7 +390,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to update saved query {query_id}: {e}")
-            raise SupersetClientError(f"Failed to update saved query: {e}")
+            raise SupersetClientError(f"Failed to update saved query: {e}") from e
 
     async def delete_saved_query(self, query_id: int) -> bool:
         """
@@ -415,7 +415,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to delete saved query {query_id}: {e}")
-            raise SupersetClientError(f"Failed to delete saved query: {e}")
+            raise SupersetClientError(f"Failed to delete saved query: {e}") from e
 
     async def get_saved_query_by_label(self, label: str) -> dict[str, Any] | None:
         """
@@ -447,7 +447,7 @@ class SupersetClient:
 
         except requests.RequestException as e:
             logger.error(f"Failed to get saved query by label '{label}': {e}")
-            raise SupersetClientError(f"Failed to get saved query: {e}")
+            raise SupersetClientError(f"Failed to get saved query: {e}") from e
 
     async def execute_saved_query(self, query_label: str) -> dict[str, Any]:
         """
@@ -501,7 +501,7 @@ class SupersetClient:
                 try:
                     error_json = response.json()
                     error_detail = error_json.get("message", error_json)
-                except:
+                except Exception:
                     error_detail = error_text
 
                 raise SupersetClientError(
@@ -512,7 +512,7 @@ class SupersetClient:
             raise
         except Exception as e:
             logger.error(f"Unexpected error executing saved query '{query_label}': {e}")
-            raise SupersetClientError(f"Unexpected error during query execution: {e}")
+            raise SupersetClientError(f"Unexpected error during query execution: {e}") from e
 
 
 # Global instance

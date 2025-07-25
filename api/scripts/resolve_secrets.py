@@ -22,8 +22,10 @@ def get_secret(secret_path: str) -> str:
         The secret value
     """
     try:
+        print(f"   🔍 Attempting to access: {secret_path}")
         client = secretmanager.SecretManagerServiceClient()
         response = client.access_secret_version(request={"name": secret_path})
+        print(f"   ✅ Successfully retrieved secret")
         return response.payload.data.decode("UTF-8")
     except exceptions.PermissionDenied:
         print(f"⚠️  Permission denied accessing {secret_path}")

@@ -52,6 +52,27 @@ const AccountSettings = () => {
   const location = useLocation();
   const { toast } = useToast();
   const { currentSection } = useSettingsNavigation();
+
+  // Check if we should open create account modal
+  const searchParams = new URLSearchParams(location.search);
+  const shouldOpenCreateAccount =
+    searchParams.get("openCreateAccount") === "true";
+
+  // Clear the openCreateAccount param after reading it
+  useEffect(() => {
+    if (shouldOpenCreateAccount) {
+      const newSearchParams = new URLSearchParams(location.search);
+      newSearchParams.delete("openCreateAccount");
+      const newSearch = newSearchParams.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: newSearch ? `?${newSearch}` : "",
+        },
+        { replace: true },
+      );
+    }
+  }, [shouldOpenCreateAccount, navigate, location]);
   const {
     user,
     updateUser,
@@ -615,8 +636,8 @@ const AccountSettings = () => {
       {/* Conditional sections for existing organizations */}
       {orgData && !isLoadingOrgData && (
         <>
-          <SubscriptionCard 
-            orgData={orgData} 
+          <SubscriptionCard
+            orgData={orgData}
             onOrganizationUpdate={(updatedOrg) => {
               setOrgMetadata({
                 ...orgMetadata,
@@ -624,7 +645,11 @@ const AccountSettings = () => {
               });
             }}
           />
-          <AccountsManagement orgData={orgData} currentOrgId={currentOrgId!} />
+          <AccountsManagement
+            orgData={orgData}
+            currentOrgId={currentOrgId!}
+            openCreateModal={shouldOpenCreateAccount}
+          />
           <BillingSection orgData={orgData} />
           {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||
             user?.permissions?.organizations?.[currentOrgId!] === "owner") && (

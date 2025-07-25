@@ -29,7 +29,7 @@ interface NavigationItem {
 export function IconNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
 
   const navigationItems: NavigationItem[] = [
     { id: "home", icon: Home, label: "Home", route: "/" },
@@ -52,7 +52,6 @@ export function IconNavigation() {
       label: "Knowledge Base",
       route: "/knowledge",
     },
-    { id: "settings", icon: Settings, label: "Settings", route: "/settings" },
   ];
 
   const isActive = (route: string) => {
@@ -103,8 +102,30 @@ export function IconNavigation() {
         </div>
       </div>
 
-      {/* User Icon - Fixed at bottom */}
-      <div className="p-2 border-t border-gray-700">
+      {/* Bottom Icons - Settings and User */}
+      <div className="space-y-1 p-2 border-t border-gray-700">
+        {/* Settings Icon */}
+        <div className="relative group">
+          <button
+            onClick={() => navigate("/settings")}
+            className={cn(
+              "w-full h-12 flex items-center justify-center transition-colors rounded",
+              isActive("/settings")
+                ? "bg-brand-medium-blue text-white"
+                : "text-gray-400 hover:text-white hover:bg-brand-medium-blue/20",
+            )}
+            aria-label="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+
+          {/* Tooltip */}
+          <div className="absolute left-full top-1/2 transform -translate-y-1/2 ml-2 px-2 py-1 bg-brand-dark-blue text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-gray-700">
+            Settings
+          </div>
+        </div>
+
+        {/* User Icon */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -115,29 +136,8 @@ export function IconNavigation() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="right" className="w-48">
-            <DropdownMenuLabel>Your Name</DropdownMenuLabel>
+            <DropdownMenuLabel>{user?.firstName || "User"}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="flex items-center gap-2 cursor-pointer"
-              onClick={() => {
-                console.log("Invite Users");
-              }}
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
-                />
-              </svg>
-              <span>Invite Users</span>
-            </DropdownMenuItem>
             <DropdownMenuItem
               className="flex items-center gap-2 cursor-pointer"
               onClick={() => {

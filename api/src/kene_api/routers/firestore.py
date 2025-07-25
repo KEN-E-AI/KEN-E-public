@@ -1647,7 +1647,7 @@ async def create_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating channel: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error creating channel: {e!s}") from e
 
 
 @router.get(
@@ -1707,7 +1707,7 @@ async def get_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting channel: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error getting channel: {e!s}") from e
 
 
 @router.get("/channels/{organization_id}", response_model=ChannelListResponse)
@@ -1752,7 +1752,7 @@ async def list_channels(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing channels: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error listing channels: {e!s}") from e
 
 
 @router.put(
@@ -1814,7 +1814,7 @@ async def update_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating channel: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error updating channel: {e!s}") from e
 
 
 @router.delete(
@@ -1868,7 +1868,7 @@ async def delete_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting channel: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting channel: {e!s}") from e
 
 
 # Tactic Endpoints
@@ -1937,7 +1937,7 @@ async def create_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating tactic: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error creating tactic: {e!s}") from e
 
 
 @router.get("/tactics/{organization_id}/{tactic_name}", response_model=TacticResponse)
@@ -1998,7 +1998,7 @@ async def get_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting tactic: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error getting tactic: {e!s}") from e
 
 
 @router.get("/tactics/{organization_id}", response_model=TacticListResponse)
@@ -2045,7 +2045,7 @@ async def list_tactics(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing tactics: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error listing tactics: {e!s}") from e
 
 
 @router.put("/tactics/{organization_id}/{tactic_name}", response_model=TacticResponse)
@@ -2108,7 +2108,7 @@ async def update_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating tactic: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error updating tactic: {e!s}") from e
 
 
 @router.delete(
@@ -2164,7 +2164,7 @@ async def delete_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting tactic: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error deleting tactic: {e!s}") from e
 
 
 # Organization Member Management Endpoints
@@ -2396,7 +2396,7 @@ async def invite_member_to_organization(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error inviting member: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error inviting member: {e!s}") from e
 
 
 @router.put(
@@ -2544,7 +2544,7 @@ async def remove_member_from_organization(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error removing member: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error removing member: {e!s}") from e
 
 
 # Invitation Management Endpoints
