@@ -20,6 +20,7 @@ from .routers import (
     intuitions,
     items,
     metrics,
+    notifications,
     organizations,
     products,
     subscription_plans,
@@ -88,6 +89,9 @@ app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"]
 app.include_router(intuitions.router, prefix="/api/v1/intuitions", tags=["intuitions"])
 app.include_router(items.router, prefix="/api/v1/items", tags=["items"])
 app.include_router(home.router, prefix="/api/v1/home", tags=["home"])
+app.include_router(
+    notifications.router, prefix="/api/v1/notifications", tags=["notifications"]
+)
 app.include_router(
     funnel_reports.router, prefix="/api/v1/funnel-reports", tags=["funnel-reports"]
 )

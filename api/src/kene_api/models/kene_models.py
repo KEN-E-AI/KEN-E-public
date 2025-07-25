@@ -476,25 +476,79 @@ class IntuitionListResponse(BaseModel):
 
 
 # Home/Notification Models
+class NotificationCategory(str, Enum):
+    """Notification category enum."""
+    
+    DATA_QUALITY_ALERT = "Data Quality Alert"
+    NEWS_PRESS = "News & Press"
+    INDUSTRY_NEWS = "Industry News"
+    COMPETITOR_ACTIVITIES = "Competitor Activities"
+    SCHEDULED_REPORT_STATUS = "Scheduled Report Status"
+    KPI_PERFORMANCE = "KPI Performance"
+    NEW_FEATURES = "New Features"
+
+
+class NotificationStatus(str, Enum):
+    """Notification status enum."""
+    
+    EXCLUDED = "excluded"
+    UNREAD = "unread"
+    READ = "read"
+    ARCHIVED = "archived"
+
+
+class NotificationChannel(str, Enum):
+    """Notification channel enum."""
+    
+    UI = "ui"
+    SLACK = "slack"
+    EMAIL = "email"
+
+
 class Notification(BaseEntity):
     """Notification entity model."""
 
-    title: str = Field(..., description="Notification title")
-    message: str = Field(..., description="Notification message")
-    notification_type: str = Field(..., description="Type of notification")
-    priority: str | None = Field(None, description=PRIORITY_LEVEL_DESCRIPTION)
-    read_status: bool = Field(False, description="Read status")
-    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
+    category: NotificationCategory = Field(..., description="Notification category")
+    description: str = Field(..., description="Short description of the notification")
+    data: dict[str, Any] | None = Field(None, description="Optional JSON data")
+    created_at: str = Field(..., description="ISO timestamp when notification was created")
+    archived_at: str | None = Field(None, description="ISO timestamp when notification will be auto-archived (30 days after creation)")
 
 
-class NotificationRequest(BaseRequest):
-    """Request model for notification operations."""
+class NotificationWithStatus(Notification):
+    """Notification with user-specific status."""
+    
+    status: NotificationStatus = Field(..., description="User-specific notification status")
+    read_at: str | None = Field(None, description="ISO timestamp when marked as read")
+    user_archived_at: str | None = Field(None, description="ISO timestamp when archived by user")
 
-    title: str | None = Field(None, description="Notification title")
-    message: str | None = Field(None, description="Notification message")
-    notification_type: str | None = Field(None, description="Type of notification")
-    priority: str | None = Field(None, description=PRIORITY_LEVEL_DESCRIPTION)
-    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
+
+class CreateNotificationRequest(BaseRequest):
+    """Request model for creating notifications."""
+
+    category: NotificationCategory = Field(..., description="Notification category")
+    description: str = Field(..., description="Short description of the notification")
+    data: dict[str, Any] | None = Field(None, description="Optional JSON data")
+
+
+class UpdateNotificationStatusRequest(BaseModel):
+    """Request model for updating notification status."""
+    
+    status: NotificationStatus = Field(..., description="New notification status")
+
+
+class UserNotificationPreferences(BaseModel):
+    """User notification preferences model."""
+    
+    categories: list[NotificationCategory] = Field(..., description="Selected notification categories")
+    channels: list[NotificationChannel] = Field(..., description="Selected notification channels")
+    updated_at: str = Field(..., description="ISO timestamp of last update")
+
+
+class CreateNotificationResponse(SuccessResponse):
+    """Response model for notification creation."""
+    
+    notification_id: str = Field(..., description="Created notification ID")
 
 
 class ActivityScanRequest(BaseModel):
