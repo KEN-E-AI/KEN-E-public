@@ -25,7 +25,12 @@ async function apiCall<T>(
 
     return response.data;
   } catch (error: any) {
-    console.error(`[organizationApi] API Error:`, error);
+    // Only log non-404 errors at error level
+    if (error.response?.status === 404) {
+      console.debug(`[organizationApi] Resource not found: ${path}`);
+    } else {
+      console.error(`[organizationApi] API Error:`, error);
+    }
     if (error.response?.data?.detail) {
       throw new Error(error.response.data.detail);
     }
@@ -49,8 +54,11 @@ export async function getOrganizationById(
       `/api/v1/organizations/${organizationId}`,
     );
     return organization;
-  } catch (error) {
-    console.error(`Failed to fetch organization ${organizationId}:`, error);
+  } catch (error: any) {
+    // Only log non-404 errors, as 404 is expected when org doesn't exist or user lacks access
+    if (error.response?.status !== 404) {
+      console.error(`Failed to fetch organization ${organizationId}:`, error);
+    }
     return undefined;
   }
 }
@@ -108,7 +116,7 @@ export async function deleteOrganization(
 export async function getAccounts(organizationId?: string): Promise<Account[]> {
   const params = organizationId ? `?organization_id=${organizationId}` : "";
   const data = await apiCall<{ accounts: Account[]; total: number }>(
-    `/api/v1/accounts/${params}`,
+    `/api/v1/accounts${params}`,
   );
   return data.accounts;
 }
@@ -146,7 +154,6 @@ export async function createAccount(accountData: {
   region?: string[];
 }): Promise<Account> {
   console.log("[organizationApi] Creating account with data:", accountData);
-  console.log("[organizationApi] API URL:", `${API_BASE_URL}/api/v1/accounts/`);
 
   return apiCall<Account>("/api/v1/accounts/", {
     method: "POST",

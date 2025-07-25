@@ -303,17 +303,20 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
             if (org) {
               return [orgId, { ...org, accounts }];
             } else {
-              console.warn(`Organization ${orgId} not found in Neo4j`);
+              // Organization not found - this is expected for some users
               return [
                 orgId,
                 { organization_id: orgId, organization_name: orgId, accounts },
               ];
             }
-          } catch (err) {
-            console.error(
-              `Failed to load org metadata for ${orgId} from Neo4j`,
-              err,
-            );
+          } catch (err: any) {
+            // Only log non-404 errors
+            if (err.response?.status !== 404 && err.message !== `Resource not found: /api/v1/organizations/${orgId}`) {
+              console.error(
+                `Failed to load org metadata for ${orgId}`,
+                err,
+              );
+            }
             return [
               orgId,
               {

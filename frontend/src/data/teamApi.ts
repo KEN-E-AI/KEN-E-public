@@ -196,8 +196,8 @@ export async function verifyInvitationToken(
   token: string,
 ): Promise<Invitation> {
   try {
-    const response = await api.get(
-      `${API_BASE_URL}/api/v1/firestore/invitations/verify/${token}`,
+    const response = await apiPublic.get(
+      `/api/v1/firestore/invitations/verify/${token}`,
     );
     return response.data;
   } catch (error) {
@@ -234,7 +234,7 @@ export async function cancelInvitation(
 ): Promise<{ success: boolean; message: string }> {
   try {
     const response = await api.delete(
-      `${API_BASE_URL}/api/v1/firestore/invitations/${invitationId}`,
+      `/api/v1/firestore/invitations/${invitationId}`,
       {
         params: { account_id: accountId },
       },

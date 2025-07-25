@@ -333,8 +333,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           parsedOrgAccount.accountId = toAccountId(parsedOrgAccount.accountId);
         }
         setSelectedOrgAccountState(parsedOrgAccount);
-        // Fetch notifications for the restored account
-        fetchNotifications(parsedOrgAccount.accountId);
+        // Don't fetch notifications here - wait for Firebase auth
       } catch (err) {
         console.warn("Failed to parse savedOrgAccount", err);
       }
@@ -356,6 +355,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
     }
   }, []); // Add empty dependency array to run only on mount
+
+  // Fetch notifications when we have both auth and selected account
+  useEffect(() => {
+    const fetchNotificationsIfReady = async () => {
+      // Check if we have Firebase auth, user data, and selected account
+      if (auth.currentUser && user && selectedOrgAccount?.accountId) {
+        await fetchNotifications(selectedOrgAccount.accountId);
+      }
+    };
+
+    fetchNotificationsIfReady();
+  }, [user, selectedOrgAccount?.accountId]); // Re-fetch when user or account changes
 
   const value = {
     user,
