@@ -158,6 +158,11 @@ class NotificationService:
         """
         notifications = []
         
+        # Return empty list if user has no accessible accounts
+        if not account_ids:
+            logger.info(f"User {user_id} has no accessible accounts, returning empty notifications list")
+            return notifications
+        
         # Query notifications for all accessible accounts
         notif_query = self.db.collection("notifications").where(
             "account_id", "in", account_ids
@@ -368,6 +373,10 @@ class NotificationService:
         Returns:
             Count of unread notifications
         """
+        # Return 0 if user has no accessible accounts
+        if not account_ids:
+            return 0
+            
         # Get active notifications for accessible accounts
         now = datetime.now().isoformat()
         notif_query = (

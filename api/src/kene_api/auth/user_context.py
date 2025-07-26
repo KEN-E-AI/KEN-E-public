@@ -168,11 +168,15 @@ async def get_current_user_context(
     # accounts field contains specific permissions for view-role users
     account_level_permissions = permissions.get("account_permissions", {})
     
+    # Combine all accessible accounts from both old and new permission structures
+    all_accessible_accounts = set(account_permissions.keys())
+    all_accessible_accounts.update(account_level_permissions.keys())
+    
     # Build user context
     user_context = UserContext(
         user_id=user_id,
         email=email,
-        accessible_accounts=list(account_permissions.keys()),
+        accessible_accounts=list(all_accessible_accounts),
         permissions=account_permissions,  # Keep for backward compatibility
         organization_permissions=organization_permissions,
         account_permissions=account_level_permissions,  # New field for view-role users
