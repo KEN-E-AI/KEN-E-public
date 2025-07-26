@@ -394,6 +394,26 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         },
       });
 
+      // Create notification preferences for the notification system
+      await api.post(`/api/v1/firestore/documents`, {
+        account_id: firebaseUser.uid,
+        collection: `users/${firebaseUser.uid}/preferences`,
+        document_id: "notifications",
+        data: {
+          categories: [
+            "Data Quality Alert",
+            "News & Press",
+            "Industry News",
+            "Competitor Activities",
+            "Scheduled Report Status",
+            "KPI Performance",
+            "New Features",
+          ],
+          channels: ["ui"],
+          updated_at: new Date().toISOString(),
+        },
+      });
+
       // Show success message instead of logging in immediately
       setErrorMessage("");
       setShowResendButton(true);
@@ -513,6 +533,26 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
               },
             },
           );
+
+          // Create notification preferences for new Google users
+          await api.post(`/api/v1/firestore/documents`, {
+            account_id: firebaseUser.uid,
+            collection: `users/${firebaseUser.uid}/preferences`,
+            document_id: "notifications",
+            data: {
+              categories: [
+                "Data Quality Alert",
+                "News & Press",
+                "Industry News",
+                "Competitor Activities",
+                "Scheduled Report Status",
+                "KPI Performance",
+                "New Features",
+              ],
+              channels: ["ui"],
+              updated_at: new Date().toISOString(),
+            },
+          });
 
           processUserLogin(firebaseUser, updatedUserData, [], [], authDeps);
           onAuthenticated();

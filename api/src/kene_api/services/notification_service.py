@@ -209,8 +209,22 @@ class NotificationService:
                     read_at=status_data.get("read_at"),
                     user_archived_at=status_data.get("archived_at"),
                 )
-                
-                notifications.append(notification)
+            else:
+                # No status document exists - treat as unread
+                notification = NotificationWithStatus(
+                    id=notif_data["id"],
+                    account_id=notif_data["account_id"],
+                    category=NotificationCategory(notif_data["category"]),
+                    description=notif_data["description"],
+                    data=notif_data.get("data"),
+                    created_at=notif_data["created_at"],
+                    archived_at=notif_data.get("archived_at"),
+                    status=NotificationStatus.UNREAD,
+                    read_at=None,
+                    user_archived_at=None,
+                )
+            
+            notifications.append(notification)
         
         # Sort by created_at descending (newest first)
         notifications.sort(key=lambda x: x.created_at, reverse=True)
@@ -248,7 +262,8 @@ class NotificationService:
         elif status == NotificationStatus.ARCHIVED:
             update_data["archived_at"] = datetime.now().isoformat()
         
-        status_ref.update(update_data)
+        # Use set with merge=True to create the document if it doesn't exist
+        status_ref.set(update_data, merge=True)
         
         logger.info(f"Updated notification {notification_id} status to {status.value} for user {user_id}")
 
