@@ -310,26 +310,55 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
               ];
             }
           } catch (err: any) {
-            // Only log non-404 errors
-            if (err.response?.status !== 404 && err.message !== `Resource not found: /api/v1/organizations/${orgId}`) {
-              console.error(
-                `Failed to load org metadata for ${orgId}`,
-                err,
-              );
+            // Handle deleted organizations gracefully
+            if (
+              err.response?.status === 404 ||
+              err.message ===
+                `Resource not found: /api/v1/organizations/${orgId}`
+            ) {
+              // Organization was deleted but user still has permissions
+              // Return null to filter it out later
+              return [orgId, null];
             }
+
+            // Log other errors
+            console.error(`Failed to load org metadata for ${orgId}`, err);
             return [
               orgId,
               {
                 organization_id: orgId,
                 organization_name: orgId,
                 accounts: [],
+                error: true,
               },
             ];
           }
         }),
       );
 
-      const result = Object.fromEntries(entries);
+      // Filter out null entries (deleted organizations)
+      const filteredEntries = entries.filter(([_, value]) => value !== null);
+      const result = Object.fromEntries(filteredEntries);
+
+      // Also remove deleted organizations from orgsFromFirestore
+      const deletedOrgIds = entries
+        .filter(([_, value]) => value === null)
+        .map(([orgId, _]) => orgId);
+
+      if (deletedOrgIds.length > 0) {
+        console.warn(
+          `Found ${deletedOrgIds.length} deleted organizations in user permissions:`,
+          deletedOrgIds,
+        );
+
+        // Update orgsFromFirestore to remove deleted organizations
+        setOrgsFromFirestore((prev) => {
+          const updated = { ...prev };
+          deletedOrgIds.forEach((orgId) => delete updated[orgId]);
+          return updated;
+        });
+      }
+
       setLocalOrgMetadata(result);
       setOrgMetadata(result); // from context
 
@@ -355,6 +384,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         organization_name:
           metadata.organization_name || orgId.replace(/-/g, " "),
         permission,
+        error: metadata.error || false,
         ...metadata,
       };
     },
@@ -540,11 +570,49 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                         <h3 className="font-semibold text-gray-900">
                           {org.organization_name}
                         </h3>
+                        {org.error && (
+                          <Badge variant="destructive" className="text-xs">
+                            Error Loading
+                          </Badge>
+                        )}
                         {selectedOrganization === org.organization_id && (
                           <Check className="h-4 w-4 text-brand-medium-blue" />
                         )}
                       </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Set the organization as current
+                        setCurrentOrganization(org.organization_id);
+                        
+                        // Set the selectedOrgAccount to show in the dropdown
+                        const firstAccount = org.accounts?.[0];
+                        setSelectedOrgAccount({
+                          orgId: org.organization_id,
+                          accountId: firstAccount?.account_id || "",
+                          metadata: {
+                            organization_name: org.organization_name,
+                            account_name: firstAccount?.account_name || "",
+                            industry: firstAccount?.industry || "",
+                            status: firstAccount?.status || "Active",
+                            timezone: firstAccount?.timezone || "",
+                            plan: org.plan,
+                          },
+                        });
+                        
+                        // Complete workspace selection to allow navigation
+                        completeWorkspaceSelection();
+                        // Navigate to organization settings
+                        navigate("/settings/organization");
+                      }}
+                    >
+                      <Settings className="h-4 w-4" />
+                      <span className="sr-only">Organization settings</span>
+                    </Button>
                   </div>
                 </div>
               ))}
