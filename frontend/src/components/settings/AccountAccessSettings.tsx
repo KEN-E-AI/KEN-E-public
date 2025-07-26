@@ -50,7 +50,9 @@ export const AccountAccessSettings = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isGrantModalOpen, setIsGrantModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [selectedAccessLevel, setSelectedAccessLevel] = useState<"edit" | "view">("view");
+  const [selectedAccessLevel, setSelectedAccessLevel] = useState<
+    "edit" | "view"
+  >("view");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load account permissions
@@ -68,7 +70,7 @@ export const AccountAccessSettings = ({
         if (selectedOrgAccount?.orgId) {
           const membersResponse = await getOrganizationMembers(
             selectedOrgAccount.orgId,
-            user.id
+            user.id,
           );
           setOrgMembers(membersResponse.members);
         }
@@ -89,7 +91,7 @@ export const AccountAccessSettings = ({
 
   // Filter available users (org members who don't already have access)
   const availableUsers = orgMembers.filter(
-    (member) => !permissions.some((perm) => perm.user_id === member.user_id)
+    (member) => !permissions.some((perm) => perm.user_id === member.user_id),
   );
 
   const handleGrantAccess = async () => {
@@ -179,7 +181,8 @@ export const AccountAccessSettings = ({
 
   // Check if current user can manage access (needs admin org permission)
   const canManageAccess =
-    user?.permissions?.organizations?.[selectedOrgAccount?.orgId || ""] === "admin";
+    user?.permissions?.organizations?.[selectedOrgAccount?.orgId || ""] ===
+    "admin";
 
   return (
     <>
@@ -206,8 +209,9 @@ export const AccountAccessSettings = ({
         <CardContent className="space-y-4">
           <div className="text-sm text-gray-600">
             <p>
-              Control who has access to this account. Users with organization-level admin
-              permissions automatically have edit access to all accounts.
+              Control who has access to this account. Users with
+              organization-level admin permissions automatically have edit
+              access to all accounts.
             </p>
           </div>
 
@@ -287,10 +291,7 @@ export const AccountAccessSettings = ({
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label htmlFor="grant-user">Select User</Label>
-              <Select
-                value={selectedUserId}
-                onValueChange={setSelectedUserId}
-              >
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
                 <SelectTrigger id="grant-user">
                   <SelectValue placeholder="Choose a user" />
                 </SelectTrigger>

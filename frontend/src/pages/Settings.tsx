@@ -125,7 +125,6 @@ const Settings = () => {
           </Card>
         )}
       </div>
-
     </SettingsLayout>
   );
 };

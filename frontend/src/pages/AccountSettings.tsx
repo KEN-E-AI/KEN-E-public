@@ -580,10 +580,10 @@ const AccountSettings = () => {
   };
 
   // Check if user has admin access to the current organization
-  const hasAdminAccess = currentOrgId && (
-    user?.permissions?.organizations?.[currentOrgId] === "admin" ||
-    user?.permissions?.organizations?.[currentOrgId] === "owner"
-  );
+  const hasAdminAccess =
+    currentOrgId &&
+    (user?.permissions?.organizations?.[currentOrgId] === "admin" ||
+      user?.permissions?.organizations?.[currentOrgId] === "owner");
 
   // If user only has view access to the organization, show restricted message
   if (!isCreatingNew && currentOrgId && !hasAdminAccess) {
@@ -602,8 +602,8 @@ const AccountSettings = () => {
               View-Only Access
             </h2>
             <p className="text-gray-600 mb-6">
-              You have view-only access to this organization. Organization settings 
-              can only be managed by users with admin permissions.
+              You have view-only access to this organization. Organization
+              settings can only be managed by users with admin permissions.
             </p>
             <Button
               variant="outline"
@@ -613,8 +613,8 @@ const AccountSettings = () => {
               Go Back
             </Button>
             <p className="text-sm text-gray-500">
-              If you need to make changes to organization settings, please contact 
-              an organization admin.
+              If you need to make changes to organization settings, please
+              contact an organization admin.
             </p>
           </div>
         </div>

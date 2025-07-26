@@ -294,9 +294,7 @@ export async function revokeAccountAccess(
 /**
  * Get users with access to a specific account
  */
-export async function getAccountPermissions(
-  accountId: string,
-): Promise<{
+export async function getAccountPermissions(accountId: string): Promise<{
   account_id: string;
   permissions: Array<{
     user_id: string;
@@ -308,9 +306,7 @@ export async function getAccountPermissions(
   total: number;
 }> {
   try {
-    const response = await api.get(
-      `/api/v1/accounts/${accountId}/permissions`,
-    );
+    const response = await api.get(`/api/v1/accounts/${accountId}/permissions`);
     return response.data;
   } catch (error) {
     console.error("[teamApi] Error getting account permissions:", error);

@@ -84,17 +84,23 @@ describe("AccountAccessSettings", () => {
     return render(
       <QueryClientProvider client={queryClient}>
         <AccountAccessSettings accountId="acc123" />
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
   };
 
   test("renders loading state initially", () => {
-    mockTeamApi.getAccountPermissions.mockImplementation(() => new Promise(() => {}));
-    mockTeamApi.getOrganizationMembers.mockImplementation(() => new Promise(() => {}));
+    mockTeamApi.getAccountPermissions.mockImplementation(
+      () => new Promise(() => {}),
+    );
+    mockTeamApi.getOrganizationMembers.mockImplementation(
+      () => new Promise(() => {}),
+    );
 
     renderComponent();
 
-    expect(screen.getByText("Loading access permissions...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Loading access permissions..."),
+    ).toBeInTheDocument();
   });
 
   test("renders permissions list", async () => {
@@ -164,7 +170,9 @@ describe("AccountAccessSettings", () => {
     await waitFor(() => {
       expect(screen.queryByText("Grant Access")).not.toBeInTheDocument();
       expect(
-        screen.getByText("You need organization admin permissions to manage account access")
+        screen.getByText(
+          "You need organization admin permissions to manage account access",
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -209,7 +217,7 @@ describe("AccountAccessSettings", () => {
       expect(mockTeamApi.grantAccountAccess).toHaveBeenCalledWith(
         "acc123",
         "user3",
-        "edit"
+        "edit",
       );
       expect(mockToast).toHaveBeenCalledWith({
         title: "Success",
@@ -241,10 +249,10 @@ describe("AccountAccessSettings", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("button")[1]).toBeInTheDocument(); // Skip grant button
     });
-    
-    const revokeButtons = screen.getAllByRole("button").filter(
-      button => button.querySelector("svg")
-    );
+
+    const revokeButtons = screen
+      .getAllByRole("button")
+      .filter((button) => button.querySelector("svg"));
     await user.click(revokeButtons[0]);
 
     // Confirm in toast
@@ -253,7 +261,7 @@ describe("AccountAccessSettings", () => {
         expect.objectContaining({
           title: "Revoke Access",
           description: expect.stringContaining("user1@example.com"),
-        })
+        }),
       );
     });
 
@@ -263,7 +271,10 @@ describe("AccountAccessSettings", () => {
     await confirmButton.props.onClick();
 
     await waitFor(() => {
-      expect(mockTeamApi.revokeAccountAccess).toHaveBeenCalledWith("acc123", "user1");
+      expect(mockTeamApi.revokeAccountAccess).toHaveBeenCalledWith(
+        "acc123",
+        "user1",
+      );
     });
   });
 
@@ -281,9 +292,13 @@ describe("AccountAccessSettings", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText("No specific account permissions granted")).toBeInTheDocument();
       expect(
-        screen.getByText("Organization admins have automatic access to all accounts")
+        screen.getByText("No specific account permissions granted"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Organization admins have automatic access to all accounts",
+        ),
       ).toBeInTheDocument();
     });
   });

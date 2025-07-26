@@ -36,7 +36,7 @@ const ReCaptchaV3 = ({
         onVerify(true);
       }
     }, 200);
-    
+
     return () => clearTimeout(timer);
   }, [executeRecaptcha]);
 

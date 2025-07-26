@@ -103,7 +103,7 @@ describe("TeamManagement", () => {
     return render(
       <QueryClientProvider client={queryClient}>
         <TeamManagement orgData={mockOrgData} />
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
   };
 
@@ -176,10 +176,10 @@ describe("TeamManagement", () => {
 
     await waitFor(() => {
       // Find dropdown buttons (MoreVertical icons)
-      const dropdownButtons = screen.getAllByRole("button").filter(
-        button => button.querySelector("svg")
-      );
-      
+      const dropdownButtons = screen
+        .getAllByRole("button")
+        .filter((button) => button.querySelector("svg"));
+
       // Should have dropdown for user1 and user2, but not for super admin
       expect(dropdownButtons.length).toBeLessThan(mockMembers.length);
     });
@@ -206,7 +206,10 @@ describe("TeamManagement", () => {
     await user.click(screen.getByText("Invite Member"));
 
     // Enter email
-    await user.type(screen.getByPlaceholderText("member@example.com"), "newuser@example.com");
+    await user.type(
+      screen.getByPlaceholderText("member@example.com"),
+      "newuser@example.com",
+    );
 
     // Select view role
     await user.click(screen.getByText("View - Can view data only"));
@@ -242,7 +245,10 @@ describe("TeamManagement", () => {
     await user.click(screen.getByText("Invite Member"));
 
     // Enter email
-    await user.type(screen.getByPlaceholderText("member@example.com"), "newuser@example.com");
+    await user.type(
+      screen.getByPlaceholderText("member@example.com"),
+      "newuser@example.com",
+    );
 
     // Select view role to show account permissions
     await user.click(screen.getByText("View - Can view data only"));
@@ -272,7 +278,7 @@ describe("TeamManagement", () => {
         },
         "user123",
         "Admin User",
-        "Test Organization"
+        "Test Organization",
       );
     });
   });

@@ -43,7 +43,7 @@ const ReCaptchaWrapper = ({ children }: ReCaptchaWrapperProps) => {
         defer: true,
         appendTo: "head",
       }}
-      container={{ parameters: { theme: 'light' } }}
+      container={{ parameters: { theme: "light" } }}
     >
       {children}
     </GoogleReCaptchaProvider>

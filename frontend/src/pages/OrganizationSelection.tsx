@@ -588,7 +588,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                         e.stopPropagation();
                         // Set the organization as current
                         setCurrentOrganization(org.organization_id);
-                        
+
                         // Set the selectedOrgAccount to show in the dropdown
                         const firstAccount = org.accounts?.[0];
                         setSelectedOrgAccount({
@@ -603,7 +603,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             plan: org.plan,
                           },
                         });
-                        
+
                         // Complete workspace selection to allow navigation
                         completeWorkspaceSelection();
                         // Navigate to organization settings

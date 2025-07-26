@@ -63,7 +63,10 @@ const Layout = ({
           onToggleCollapse={() => {
             const newState = !contextSidebarCollapsed;
             setContextSidebarCollapsed(newState);
-            localStorage.setItem("contextSidebarCollapsed", newState.toString());
+            localStorage.setItem(
+              "contextSidebarCollapsed",
+              newState.toString(),
+            );
           }}
         />
       )}
@@ -74,8 +77,8 @@ const Layout = ({
           hideContextSidebar
             ? "pl-[calc(3.5rem+1rem)] sm:pl-[calc(3.5rem+1.5rem)]" // Only IconNavigation width
             : contextSidebarCollapsed
-            ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
-            : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
+              ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
+              : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
         } ${
           !hideChatSidebar
             ? sidebarCollapsed
