@@ -164,13 +164,18 @@ async def get_current_user_context(
     account_permissions = permissions.get("accounts", {})
     organization_permissions = permissions.get("organizations", {})
     
+    # Extract account permissions (new structure)
+    # accounts field contains specific permissions for view-role users
+    account_level_permissions = permissions.get("account_permissions", {})
+    
     # Build user context
     user_context = UserContext(
         user_id=user_id,
         email=email,
         accessible_accounts=list(account_permissions.keys()),
-        permissions=account_permissions,
+        permissions=account_permissions,  # Keep for backward compatibility
         organization_permissions=organization_permissions,
+        account_permissions=account_level_permissions,  # New field for view-role users
     )
     
     # Cache the user context

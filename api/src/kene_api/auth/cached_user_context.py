@@ -39,6 +39,7 @@ class CachedUserContextService:
                     accessible_accounts=cached_data["accessible_accounts"],
                     permissions=cached_data["permissions"],
                     organization_permissions=cached_data["organization_permissions"],
+                    account_permissions=cached_data.get("account_permissions", {}),
                 )
             except Exception as e:
                 logger.error(f"Failed to deserialize cached user context: {e}")
@@ -60,6 +61,7 @@ class CachedUserContextService:
             "accessible_accounts": user_context.accessible_accounts,
             "permissions": user_context.permissions,
             "organization_permissions": user_context.organization_permissions,
+            "account_permissions": user_context.account_permissions,
         }
         
         return self.redis.set_json(cache_key, context_data, USER_CONTEXT_CACHE_TTL)

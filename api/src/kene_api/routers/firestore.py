@@ -2193,6 +2193,10 @@ class InviteMemberRequest(BaseModel):
 
     email: str = Field(..., description="Email of user to invite")
     access_level: str = Field(..., description="Access level to grant: admin or view")
+    account_permissions: dict[str, str] | None = Field(
+        None, 
+        description="Account permissions to grant (only for view-role users). Keys are account IDs, values are 'edit' or 'view'"
+    )
 
 
 class UpdateMemberAccessRequest(BaseModel):
@@ -2341,6 +2345,10 @@ async def invite_member_to_organization(
                 "inviter_name": current_user_name,
                 "organization_name": organization_name,
             }
+            
+            # Add account permissions if provided for view-role users
+            if request.access_level == "view" and request.account_permissions:
+                invitation_data["account_permissions"] = request.account_permissions
 
             # Create invitation in Firestore
             firestore.create_document(
@@ -2387,6 +2395,24 @@ async def invite_member_to_organization(
             raise HTTPException(
                 status_code=500, detail="Failed to update user permissions"
             )
+
+        # If access level is view and account permissions are provided, grant them
+        if request.access_level == "view" and request.account_permissions:
+            for account_id, access_level in request.account_permissions.items():
+                if access_level not in ["edit", "view"]:
+                    continue  # Skip invalid access levels
+                
+                firestore.set_nested_field(
+                    collection="users",
+                    document_id=user_id,
+                    field_path=f"permissions.account_permissions.{account_id}",
+                    value=access_level,
+                )
+            
+            # Invalidate user cache
+            from ..auth.cached_user_context import get_cached_user_context_service
+            cached_user_service = get_cached_user_context_service()
+            cached_user_service.invalidate_user_context(user_id)
 
         return SuccessResponse(
             success=True,
@@ -2446,6 +2472,22 @@ async def update_member_access_level(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
+        # Get current user permissions to check if we're changing from admin to view
+        user_doc = firestore.get_document("users", user_id)
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if target user is a super admin (cannot modify their permissions)
+        user_email = user_doc.get("email", "") or user_doc.get("profile", {}).get("email", "")
+        if user_email.lower().endswith("@ken-e.ai"):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot modify permissions for KEN-E support team members"
+            )
+        
+        current_permissions = user_doc.get("permissions", {})
+        current_org_role = current_permissions.get("organizations", {}).get(organization_id)
+        
         # Update user's permission level for this organization
         success = firestore.set_nested_field(
             collection="users",
@@ -2458,6 +2500,31 @@ async def update_member_access_level(
             raise HTTPException(
                 status_code=404, detail="User not found or update failed"
             )
+
+        # If changing from admin to view, remove all account permissions (they need to be re-granted)
+        # If changing from view to admin, remove explicit account permissions (they now have implicit access)
+        if (current_org_role == "admin" and request.access_level == "view") or \
+           (current_org_role == "view" and request.access_level == "admin"):
+            account_permissions = current_permissions.get("account_permissions", {})
+            
+            # Remove account permissions for accounts in this organization
+            # Note: This is a simplified implementation - ideally we'd check which accounts belong to this org
+            firestore_db = firestore.get_client()
+            user_ref = firestore_db.collection("users").document(user_id)
+            
+            # Remove the entire account_permissions field if changing to admin
+            if request.access_level == "admin" and account_permissions:
+                from google.cloud.firestore_v1 import DELETE_FIELD
+                updates = {}
+                for account_id in account_permissions:
+                    updates[f"permissions.account_permissions.{account_id}"] = DELETE_FIELD
+                if updates:
+                    user_ref.update(updates)
+            
+            # Invalidate user cache
+            from ..auth.cached_user_context import get_cached_user_context_service
+            cached_user_service = get_cached_user_context_service()
+            cached_user_service.invalidate_user_context(user_id)
 
         return SuccessResponse(
             success=True,
@@ -2512,6 +2579,14 @@ async def remove_member_from_organization(
 
         if not user_doc:
             raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if target user is a super admin (cannot remove them)
+        user_email = user_doc.get("email", "") or user_doc.get("profile", {}).get("email", "")
+        if user_email.lower().endswith("@ken-e.ai"):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot remove KEN-E support team members from organizations"
+            )
 
         # Remove the organization from user's permissions
         permissions = user_doc.get("permissions", {})
@@ -2567,6 +2642,9 @@ class Invitation(BaseModel):
     inviter_name: str | None = Field(None, description="Name of the inviter")
     organization_name: str | None = Field(
         None, description="Name of the organization"
+    )
+    account_permissions: dict[str, str] | None = Field(
+        None, description="Account permissions for view-role users"
     )
 
 
@@ -2892,6 +2970,24 @@ async def accept_invitation(
                 status_code=500,
                 detail="Failed to grant organization access",
             )
+
+        # Grant account permissions if provided for view-role users
+        if invitation.get("access_level") == "view" and invitation.get("account_permissions"):
+            for account_id, access_level in invitation["account_permissions"].items():
+                if access_level not in ["edit", "view"]:
+                    continue  # Skip invalid access levels
+                
+                firestore.set_nested_field(
+                    collection="users",
+                    document_id=request.user_id,
+                    field_path=f"permissions.account_permissions.{account_id}",
+                    value=access_level,
+                )
+            
+            # Invalidate user cache
+            from ..auth.cached_user_context import get_cached_user_context_service
+            cached_user_service = get_cached_user_context_service()
+            cached_user_service.invalidate_user_context(request.user_id)
 
         # Update invitation status
         firestore.update_document(

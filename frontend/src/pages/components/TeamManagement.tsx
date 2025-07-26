@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useDialogFix } from "@/hooks/useDialogFix";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -18,8 +20,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Plus, MoreVertical, Mail, Shield, Trash2 } from "lucide-react";
-import { type Organization } from "@/data/organizationTypes";
+import { Users, Plus, MoreVertical, Mail, Shield, Trash2, Settings } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { type Organization, type Account } from "@/data/organizationTypes";
 import {
   getOrganizationMembers,
   inviteMemberToOrganization,
@@ -27,9 +30,12 @@ import {
   removeMemberFromOrganization,
   getOrganizationInvitations,
   cancelInvitation,
+  grantAccountAccess,
+  revokeAccountAccess,
   type TeamMember,
   type Invitation,
 } from "@/data/teamApi";
+import { useAccounts } from "@/queries/accounts";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   DropdownMenu,
@@ -46,6 +52,10 @@ interface TeamManagementProps {
 const TeamManagement = ({ orgData }: TeamManagementProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  
+  // Fix for dialog-related freezing issues
+  useDialogFix();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(true);
@@ -53,21 +63,32 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [isEditAccessModalOpen, setIsEditAccessModalOpen] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
+  const [invitationToCancel, setInvitationToCancel] = useState<Invitation | null>(null);
 
   // Form states
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteAccessLevel, setInviteAccessLevel] = useState<"admin" | "view">(
     "view",
   );
+  const [inviteAccountPermissions, setInviteAccountPermissions] = useState<
+    Record<string, "edit" | "view">
+  >({});
   const [editAccessLevel, setEditAccessLevel] = useState<"admin" | "view">(
     "view",
   );
+  const [editAccountPermissions, setEditAccountPermissions] = useState<
+    Record<string, "edit" | "view">
+  >({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if current user can manage team (admin or owner)
   const canManageTeam =
     user?.permissions?.organizations?.[orgData.organization_id] === "admin" ||
     user?.permissions?.organizations?.[orgData.organization_id] === "owner";
+
+  // Fetch accounts for the organization
+  const { data: accounts = [] } = useAccounts(orgData.organization_id);
 
   // Load team members and invitations
   useEffect(() => {
@@ -131,6 +152,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         {
           email: inviteEmail,
           access_level: inviteAccessLevel,
+          account_permissions: inviteAccessLevel === "view" ? inviteAccountPermissions : undefined,
         },
         user!.id,
         `${user!.firstName} ${user!.lastName}`.trim() || user!.email,
@@ -147,6 +169,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
       setIsInviteModalOpen(false);
       setInviteEmail("");
       setInviteAccessLevel("view");
+      setInviteAccountPermissions({});
 
       toast({
         title: "Success",
@@ -188,8 +211,16 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
   const handleUpdateAccess = async () => {
     if (!selectedMember || !orgData.organization_id || !user?.id) return;
 
+    console.log("[TeamManagement] Starting handleUpdateAccess", {
+      selectedMember,
+      editAccessLevel,
+      editAccountPermissions,
+    });
+
     setIsSubmitting(true);
     try {
+      // Update organization access level
+      console.log("[TeamManagement] Updating member access level...");
       await updateMemberAccessLevel(
         orgData.organization_id,
         selectedMember.user_id,
@@ -197,132 +228,138 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         user.id,
       );
 
+      // Handle account permissions for view-role users
+      if (editAccessLevel === "view") {
+        const currentPermissions = selectedMember.account_permissions || {};
+        
+        // Revoke access from accounts that were removed
+        for (const accountId of Object.keys(currentPermissions)) {
+          if (!editAccountPermissions[accountId]) {
+            console.log(`[TeamManagement] Revoking access from account ${accountId}`);
+            await revokeAccountAccess(accountId, selectedMember.user_id);
+          }
+        }
+        
+        // Grant or update access for accounts in editAccountPermissions
+        for (const [accountId, accessLevel] of Object.entries(editAccountPermissions)) {
+          if (currentPermissions[accountId] !== accessLevel) {
+            console.log(`[TeamManagement] Granting ${accessLevel} access to account ${accountId}`);
+            await grantAccountAccess(accountId, selectedMember.user_id, accessLevel);
+          }
+        }
+      }
+
+      console.log("[TeamManagement] Updating local state...");
       // Update local state
       setMembers(
         members.map((m) =>
           m.user_id === selectedMember.user_id
-            ? { ...m, access_level: editAccessLevel }
+            ? { 
+                ...m, 
+                access_level: editAccessLevel,
+                account_permissions: editAccessLevel === "view" ? editAccountPermissions : {}
+              }
             : m,
         ),
       );
 
+      console.log("[TeamManagement] Closing modal...");
+      // Close modal first
       setIsEditAccessModalOpen(false);
-      setSelectedMember(null);
+      
+      // Clear state after a small delay to ensure modal closes properly
+      setTimeout(() => {
+        setSelectedMember(null);
+        setEditAccountPermissions({});
+      }, 100);
 
-      toast({
-        title: "Success",
-        description: `Updated access level to ${editAccessLevel}`,
-      });
+      console.log("[TeamManagement] Showing success toast...");
+      // Show toast after a delay to avoid conflicts with dialog closing
+      setTimeout(() => {
+        toast({
+          title: "Success",
+          description: `Updated access level${editAccessLevel === "view" && Object.keys(editAccountPermissions).length > 0 ? " and account permissions" : ""}`,
+        });
+      }, 200);
+      
+      console.log("[TeamManagement] handleUpdateAccess completed successfully");
     } catch (error) {
+      console.error("[TeamManagement] Error in handleUpdateAccess:", error);
       toast({
         title: "Error",
         description: "Failed to update access level",
         variant: "destructive",
       });
     } finally {
+      console.log("[TeamManagement] Setting isSubmitting to false");
       setIsSubmitting(false);
     }
   };
 
   const handleRemoveMember = async (member: TeamMember) => {
-    // Show confirmation toast with action
-    toast({
-      title: "Remove Team Member",
-      description: `Are you sure you want to remove ${member.email} from the organization?`,
-      action: (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              // Just dismiss the toast
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={async () => {
-              try {
-                await removeMemberFromOrganization(
-                  orgData.organization_id,
-                  member.user_id,
-                  user!.id,
-                );
+    setMemberToRemove(member);
+  };
 
-                // Update local state
-                setMembers(members.filter((m) => m.user_id !== member.user_id));
+  const confirmRemoveMember = async () => {
+    if (!memberToRemove) return;
+    
+    try {
+      await removeMemberFromOrganization(
+        orgData.organization_id,
+        memberToRemove.user_id,
+        user!.id,
+      );
 
-                toast({
-                  title: "Success",
-                  description: `Removed ${member.email} from the organization`,
-                });
-              } catch (error) {
-                toast({
-                  title: "Error",
-                  description: "Failed to remove member",
-                  variant: "destructive",
-                });
-              }
-            }}
-          >
-            Remove Member
-          </Button>
-        </div>
-      ),
-    });
+      // Update local state
+      setMembers(members.filter((m) => m.user_id !== memberToRemove.user_id));
+      setMemberToRemove(null);
+
+      toast({
+        title: "Success",
+        description: `Removed ${memberToRemove.email} from the organization`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to remove member",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCancelInvitation = async (invitation: Invitation) => {
-    // Show confirmation toast with action
-    toast({
-      title: "Cancel Invitation",
-      description: `Are you sure you want to cancel the invitation to ${invitation.email}?`,
-      action: (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              // Just dismiss the toast
-            }}
-          >
-            Keep
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={async () => {
-              try {
-                await cancelInvitation(invitation.id, user!.id);
-
-                // Update local state
-                setInvitations(
-                  invitations.filter((i) => i.id !== invitation.id),
-                );
-
-                toast({
-                  title: "Success",
-                  description: `Cancelled invitation to ${invitation.email}`,
-                });
-              } catch (error) {
-                toast({
-                  title: "Error",
-                  description: "Failed to cancel invitation",
-                  variant: "destructive",
-                });
-              }
-            }}
-          >
-            Cancel Invitation
-          </Button>
-        </div>
-      ),
-    });
+    setInvitationToCancel(invitation);
   };
 
-  const getAccessBadgeVariant = (accessLevel: string) => {
+  const confirmCancelInvitation = async () => {
+    if (!invitationToCancel) return;
+    
+    try {
+      await cancelInvitation(invitationToCancel.id, user!.id);
+
+      // Update local state
+      setInvitations(
+        invitations.filter((i) => i.id !== invitationToCancel.id),
+      );
+      setInvitationToCancel(null);
+
+      toast({
+        title: "Success",
+        description: `Cancelled invitation to ${invitationToCancel.email}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to cancel invitation",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getAccessBadgeVariant = (accessLevel: string, isSuperAdmin?: boolean) => {
+    if (isSuperAdmin) {
+      return "default"; // Purple/primary color for super admins
+    }
     switch (accessLevel) {
       case "owner":
         return "default";
@@ -331,6 +368,11 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
       default:
         return "outline";
     }
+  };
+
+  // Helper to check if a user is a super admin
+  const isSuperAdmin = (email: string) => {
+    return email.toLowerCase().endsWith("@ken-e.ai");
   };
 
   return (
@@ -381,18 +423,36 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                             {member.first_name} {member.last_name}
                           </span>
                         )}
-                        <Badge
-                          variant={getAccessBadgeVariant(member.access_level)}
-                        >
-                          <Shield className="h-3 w-3 mr-1" />
-                          {member.access_level}
-                        </Badge>
+                        {isSuperAdmin(member.email) ? (
+                          <Badge variant="default">
+                            <Shield className="h-3 w-3 mr-1" />
+                            Super Admin
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant={getAccessBadgeVariant(member.access_level)}
+                          >
+                            <Shield className="h-3 w-3 mr-1" />
+                            {member.access_level}
+                          </Badge>
+                        )}
                       </div>
+                      {/* Show account permissions for view-role users */}
+                      {member.access_level === "view" && member.account_permissions && Object.keys(member.account_permissions).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {Object.entries(member.account_permissions).map(([accountId, accessLevel]) => (
+                            <Badge key={accountId} variant="outline" className="text-xs">
+                              Account {accountId.slice(-6)}: {accessLevel}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {canManageTeam &&
                     member.access_level !== "owner" &&
-                    member.user_id !== user?.id && (
+                    member.user_id !== user?.id &&
+                    !isSuperAdmin(member.email) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -405,11 +465,17 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              console.log("[TeamManagement] Opening edit access modal for:", member.email);
                               setSelectedMember(member);
-                              setEditAccessLevel(
-                                member.access_level as "admin" | "view",
-                              );
+                              // Initialize edit access level with current level
+                              // Map "owner" to "admin" for the modal
+                              const currentLevel = member.access_level === "owner" ? "admin" : member.access_level;
+                              setEditAccessLevel(currentLevel as "admin" | "view");
+                              // Initialize account permissions with current permissions
+                              setEditAccountPermissions(member.account_permissions || {});
                               setIsEditAccessModalOpen(true);
                             }}
                           >
@@ -418,7 +484,11 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-red-600"
-                            onClick={() => handleRemoveMember(member)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleRemoveMember(member);
+                            }}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Remove from Organization
@@ -536,6 +606,65 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                 </SelectContent>
               </Select>
             </div>
+            {/* Show account permissions for view-role users */}
+            {inviteAccessLevel === "view" && accounts.length > 0 && (
+              <div className="space-y-2">
+                <Label>Account Permissions</Label>
+                <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                  {accounts.map((account) => (
+                    <div key={account.account_id} className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`account-${account.account_id}`}
+                          checked={!!inviteAccountPermissions[account.account_id]}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setInviteAccountPermissions({
+                                ...inviteAccountPermissions,
+                                [account.account_id]: "view",
+                              });
+                            } else {
+                              const { [account.account_id]: _, ...rest } = inviteAccountPermissions;
+                              setInviteAccountPermissions(rest);
+                            }
+                          }}
+                        />
+                        <Label
+                          htmlFor={`account-${account.account_id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {account.account_name}
+                        </Label>
+                      </div>
+                      {inviteAccountPermissions[account.account_id] && (
+                        <div className="ml-6">
+                          <Select
+                            value={inviteAccountPermissions[account.account_id]}
+                            onValueChange={(value) =>
+                              setInviteAccountPermissions({
+                                ...inviteAccountPermissions,
+                                [account.account_id]: value as "edit" | "view",
+                              })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="view">View</SelectItem>
+                              <SelectItem value="edit">Edit</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500">
+                  Select which accounts this user should have access to
+                </p>
+              </div>
+            )}
             <div className="flex gap-2 pt-4">
               <Button
                 variant="outline"
@@ -543,6 +672,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                   setIsInviteModalOpen(false);
                   setInviteEmail("");
                   setInviteAccessLevel("view");
+                  setInviteAccountPermissions({});
                 }}
                 className="flex-1"
                 disabled={isSubmitting}
@@ -564,7 +694,27 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
       {/* Edit Access Level Modal */}
       <Dialog
         open={isEditAccessModalOpen}
-        onOpenChange={setIsEditAccessModalOpen}
+        onOpenChange={(open) => {
+          console.log("[TeamManagement] Edit dialog onOpenChange:", open);
+          setIsEditAccessModalOpen(open);
+          if (!open) {
+            // Force cleanup of dialog elements
+            setTimeout(() => {
+              const portalElements = document.querySelectorAll('[data-radix-portal]');
+              portalElements.forEach(el => {
+                if (el.innerHTML.trim() === '') {
+                  el.remove();
+                }
+              });
+              // Reset body styles that might have been set by dialog
+              document.body.style.pointerEvents = '';
+              document.body.style.overflow = '';
+            }, 100);
+            
+            setSelectedMember(null);
+            setEditAccountPermissions({});
+          }
+        }}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -575,12 +725,16 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
               Change access level for {selectedMember?.email}
             </p>
             <div className="space-y-2">
-              <Label htmlFor="edit-access">New Access Level</Label>
+              <Label htmlFor="edit-access">Organization Access Level</Label>
               <Select
                 value={editAccessLevel}
-                onValueChange={(value) =>
-                  setEditAccessLevel(value as "admin" | "view")
-                }
+                onValueChange={(value) => {
+                  setEditAccessLevel(value as "admin" | "view");
+                  // Clear account permissions when changing to admin
+                  if (value === "admin") {
+                    setEditAccountPermissions({});
+                  }
+                }}
               >
                 <SelectTrigger id="edit-access">
                   <SelectValue />
@@ -595,12 +749,74 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                 </SelectContent>
               </Select>
             </div>
+            
+            {/* Show account permissions for view-role users */}
+            {editAccessLevel === "view" && accounts.length > 0 && (
+              <div className="space-y-2">
+                <Label>Account Permissions</Label>
+                <div className="border rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                  {accounts.map((account) => (
+                    <div key={account.account_id} className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`edit-account-${account.account_id}`}
+                          checked={!!editAccountPermissions[account.account_id]}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEditAccountPermissions({
+                                ...editAccountPermissions,
+                                [account.account_id]: "view",
+                              });
+                            } else {
+                              const { [account.account_id]: _, ...rest } = editAccountPermissions;
+                              setEditAccountPermissions(rest);
+                            }
+                          }}
+                        />
+                        <Label
+                          htmlFor={`edit-account-${account.account_id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {account.account_name}
+                        </Label>
+                      </div>
+                      {editAccountPermissions[account.account_id] && (
+                        <div className="ml-6">
+                          <Select
+                            value={editAccountPermissions[account.account_id]}
+                            onValueChange={(value) =>
+                              setEditAccountPermissions({
+                                ...editAccountPermissions,
+                                [account.account_id]: value as "edit" | "view",
+                              })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="view">View</SelectItem>
+                              <SelectItem value="edit">Edit</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500">
+                  Select which accounts this user should have access to
+                </p>
+              </div>
+            )}
+            
             <div className="flex gap-2 pt-4">
               <Button
                 variant="outline"
                 onClick={() => {
                   setIsEditAccessModalOpen(false);
                   setSelectedMember(null);
+                  setEditAccountPermissions({});
                 }}
                 className="flex-1"
                 disabled={isSubmitting}
@@ -608,11 +824,89 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                 Cancel
               </Button>
               <Button
-                onClick={handleUpdateAccess}
+                onClick={(e) => {
+                  console.log("[TeamManagement] Update button clicked");
+                  e.preventDefault();
+                  handleUpdateAccess();
+                }}
                 className="flex-1"
                 disabled={isSubmitting}
+                type="button"
               >
-                {isSubmitting ? "Updating..." : "Update Access"}
+                {isSubmitting ? "Updating..." : "Update Organization Access"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Member Confirmation Dialog */}
+      <Dialog
+        open={!!memberToRemove}
+        onOpenChange={(open) => {
+          if (!open) setMemberToRemove(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove Team Member</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to remove <strong>{memberToRemove?.email}</strong> from the organization?
+            </p>
+            <p className="text-sm text-gray-500">
+              This action cannot be undone. The user will lose access to all organization resources.
+            </p>
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setMemberToRemove(null)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmRemoveMember}
+                className="flex-1"
+              >
+                Remove Member
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Invitation Confirmation Dialog */}
+      <Dialog
+        open={!!invitationToCancel}
+        onOpenChange={(open) => {
+          if (!open) setInvitationToCancel(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel Invitation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to cancel the invitation to <strong>{invitationToCancel?.email}</strong>?
+            </p>
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setInvitationToCancel(null)}
+                className="flex-1"
+              >
+                Keep Invitation
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmCancelInvitation}
+                className="flex-1"
+              >
+                Cancel Invitation
               </Button>
             </div>
           </div>

@@ -92,24 +92,34 @@ async def get_organizations(
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
         # Get organization IDs the user has access to
-        accessible_org_ids = list(user.organization_permissions.keys())
-        
-        if not accessible_org_ids:
-            # User has no organization access
-            return OrganizationListResponse(organizations=[], total=0)
+        if user.is_super_admin:
+            # Super admins can see all organizations
+            organizations_query = """
+            MATCH (org:Organization)
+            RETURN org
+            ORDER BY org.organization_name
+            """
+            result = await db.execute_query(organizations_query, {})
+        else:
+            # Regular users see only their organizations
+            accessible_org_ids = list(user.organization_permissions.keys())
+            
+            if not accessible_org_ids:
+                # User has no organization access
+                return OrganizationListResponse(organizations=[], total=0)
 
-        # Query to fetch only organizations the user has access to
-        organizations_query = """
-        MATCH (org:Organization)
-        WHERE org.organization_id IN $org_ids
-        RETURN org
-        ORDER BY org.organization_name
-        """
+            # Query to fetch only organizations the user has access to
+            organizations_query = """
+            MATCH (org:Organization)
+            WHERE org.organization_id IN $org_ids
+            RETURN org
+            ORDER BY org.organization_name
+            """
 
-        result = await db.execute_query(
-            organizations_query,
-            {"org_ids": accessible_org_ids}
-        )
+            result = await db.execute_query(
+                organizations_query,
+                {"org_ids": accessible_org_ids}
+            )
 
         organizations = []
         for record in result:

@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   User,
   Mail,
@@ -39,6 +40,7 @@ import {
 } from "lucide-react";
 import ReCaptchaWrapper from "@/components/auth/ReCaptchaWrapper";
 import ReCaptchaV3 from "@/components/auth/ReCaptchaV3";
+import ReCaptchaErrorBoundary from "@/components/auth/ReCaptchaErrorBoundary";
 
 interface AuthenticationProps {
   onAuthenticated: () => void;
@@ -550,8 +552,24 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   };
 
   return (
-    <ReCaptchaWrapper>
+    <ReCaptchaErrorBoundary fallback={
       <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="p-6">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  ReCAPTCHA failed to load. Please refresh the page or try again later.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    }>
+      <ReCaptchaWrapper>
+        <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
@@ -1005,7 +1023,8 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           </div>
         </div>
       </div>
-    </ReCaptchaWrapper>
+      </ReCaptchaWrapper>
+    </ReCaptchaErrorBoundary>
   );
 };
 

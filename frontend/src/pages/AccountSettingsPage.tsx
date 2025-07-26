@@ -16,6 +16,7 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AccountProfileSettings } from "@/components/settings/AccountProfileSettings";
@@ -23,6 +24,7 @@ import { AccountMarketingSettings } from "@/components/settings/AccountMarketing
 import { AccountPrivacySettings } from "@/components/settings/AccountPrivacySettings";
 import { AccountIntegrationsSettings } from "@/components/settings/AccountIntegrationsSettings";
 import { AccountPerformanceSettings } from "@/components/settings/AccountPerformanceSettings";
+import { AccountAccessSettings } from "@/components/settings/AccountAccessSettings";
 
 const AccountSettingsPage = () => {
   const { accountId } = useParams<{ accountId: string }>();
@@ -353,7 +355,7 @@ const AccountSettingsPage = () => {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Profile
@@ -379,6 +381,10 @@ const AccountSettingsPage = () => {
             >
               <TrendingUp className="h-4 w-4" />
               Performance
+            </TabsTrigger>
+            <TabsTrigger value="access" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Access
             </TabsTrigger>
           </TabsList>
 
@@ -419,6 +425,13 @@ const AccountSettingsPage = () => {
               accountId={accountId!}
               performanceData={mockPerformanceData}
               onUpdate={(updates) => handleUpdate("performance", updates)}
+            />
+          </TabsContent>
+
+          <TabsContent value="access" className="mt-6">
+            <AccountAccessSettings
+              accountId={accountId!}
+              onUpdate={(updates) => handleUpdate("access", updates)}
             />
           </TabsContent>
         </Tabs>

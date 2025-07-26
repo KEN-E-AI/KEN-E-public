@@ -94,6 +94,7 @@ interface SecuritySetting {
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isAuthLoading: boolean;
   hasSelectedWorkspace: boolean;
   currentOrganizationId: OrganizationId | null;
   selectedOrgAccount: SelectedOrgAccount | null;
@@ -144,6 +145,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     Record<string, any>
   >({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [notificationSettings, setNotificationSettings] = useState<
     NotificationSetting[]
   >([]);
@@ -294,6 +296,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           }
         }
       }
+      // Set loading to false after auth state is determined
+      setIsAuthLoading(false);
     });
 
     return () => unsubscribe();
@@ -371,6 +375,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const value = {
     user,
     isAuthenticated: !!user,
+    isAuthLoading,
     hasSelectedWorkspace,
     currentOrganizationId,
     selectedOrgAccount,
