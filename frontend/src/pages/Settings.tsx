@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, User, ArrowRight, Plus } from "lucide-react";
+import { Building2, User, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const Settings = () => {
@@ -38,35 +38,49 @@ const Settings = () => {
       currentPage="settings"
       showBackButton={false}
       showEntitySelector={false}
+      showContextSidebar={false}
     >
       {/* Header Description */}
       <div className="mb-8">
         <p className="text-dashboard-gray-600">
-          Manage your organization and personal settings
+          Manage your personal and organization settings
         </p>
       </div>
 
-      {/* Organization Settings Section */}
+      {/* User Settings Section */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-semibold text-dashboard-gray-900">
-            Organization Settings
-          </h2>
-          {editableOrganizations.length > 0 && (
-            <Button
-              onClick={() => {
-                const firstOrgId = editableOrganizations[0].id;
-                setCurrentOrganization(firstOrgId);
-                navigate("/settings/organization?openCreateAccount=true");
-              }}
-              className="flex items-center gap-2"
-              size="sm"
-            >
-              <Plus className="h-4 w-4" />
-              Create New Account
-            </Button>
-          )}
+        <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
+          <Card
+            className="cursor-pointer hover:shadow-md transition-shadow group"
+            onClick={handleUserSettingsClick}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
+                    <User className="h-5 w-5 text-brand-medium-blue" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-dashboard-gray-900">
+                      User Settings
+                    </h3>
+                    <p className="text-sm text-dashboard-gray-600">
+                      Manage your profile, notifications, and preferences
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-dashboard-gray-400 group-hover:text-dashboard-gray-600 transition-colors" />
+              </div>
+            </CardHeader>
+          </Card>
         </div>
+      </div>
+
+      {/* Organization Settings Section */}
+      <div>
+        <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-2">
+          Organizations
+        </h2>
         <p className="text-dashboard-gray-600 mb-4">
           Select an organization to manage its settings
         </p>
@@ -112,37 +126,6 @@ const Settings = () => {
         )}
       </div>
 
-      {/* User Settings Section */}
-      <div>
-        <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
-          Personal Settings
-        </h2>
-        <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow group"
-            onClick={handleUserSettingsClick}
-          >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
-                    <User className="h-5 w-5 text-brand-medium-blue" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-dashboard-gray-900">
-                      User Settings
-                    </h3>
-                    <p className="text-sm text-dashboard-gray-600">
-                      Manage your profile, notifications, and preferences
-                    </p>
-                  </div>
-                </div>
-                <ArrowRight className="h-5 w-5 text-dashboard-gray-400 group-hover:text-dashboard-gray-600 transition-colors" />
-              </div>
-            </CardHeader>
-          </Card>
-        </div>
-      </div>
     </SettingsLayout>
   );
 };

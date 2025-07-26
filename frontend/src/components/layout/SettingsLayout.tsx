@@ -15,6 +15,7 @@ interface SettingsLayoutProps {
   currentPage: "settings" | "organization" | "account" | "user";
   showBackButton?: boolean;
   showEntitySelector?: boolean;
+  showContextSidebar?: boolean;
   className?: string;
 }
 
@@ -31,6 +32,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   currentPage,
   showBackButton = true,
   showEntitySelector = true,
+  showContextSidebar = true,
   className,
 }) => {
   const navigate = useNavigate();
@@ -47,7 +49,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   };
 
   return (
-    <Layout pageTitle={pageTitle}>
+    <Layout pageTitle={pageTitle} hideContextSidebar={!showContextSidebar}>
       <div className={cn("space-y-6", className)}>
         {/* Back Button - Only show for account-specific settings */}
         {showBackButton && currentPage === "account" && (
