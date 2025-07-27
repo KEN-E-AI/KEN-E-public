@@ -115,6 +115,7 @@ interface AuthContextType {
   securitySettings: SecuritySetting[];
   setNotificationSettings: (settings: NotificationSetting[]) => void;
   setSecuritySettings: (settings: SecuritySetting[]) => void;
+  isSuperAdmin: boolean;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
@@ -396,6 +397,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     securitySettings,
     setNotificationSettings,
     setSecuritySettings,
+    isSuperAdmin: user?.email?.toLowerCase().endsWith("@ken-e.ai") || false,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

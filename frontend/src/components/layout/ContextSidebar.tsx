@@ -160,6 +160,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     selectedOrgAccount,
     setSelectedOrgAccount,
     setCurrentOrganization,
+    isSuperAdmin,
   } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -236,7 +237,9 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   const isHomePage = location.pathname === "/";
 
   // Organization dropdown logic
-  const accessibleOrgIds = Object.keys(user?.permissions?.organizations || {});
+  const accessibleOrgIds = isSuperAdmin
+    ? Object.keys(orgMetadata) // For super admins, show all organizations
+    : Object.keys(user?.permissions?.organizations || {});
 
   const combinedOptions: Array<{
     value: string;
@@ -432,7 +435,9 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                                 <p
                                   className={cn(
                                     "text-sm font-medium",
-                                    isUnread ? "text-gray-900" : "text-gray-600",
+                                    isUnread
+                                      ? "text-gray-900"
+                                      : "text-gray-600",
                                   )}
                                 >
                                   {notification.data.title}
@@ -461,7 +466,9 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <MoreVertical className="h-4 w-4" />
-                                  <span className="sr-only">Notification actions</span>
+                                  <span className="sr-only">
+                                    Notification actions
+                                  </span>
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">

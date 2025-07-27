@@ -188,6 +188,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     setCurrentOrganization,
     setOrgMetadata,
     setAccountMetadata,
+    isSuperAdmin,
   } = useAuth();
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
@@ -268,12 +269,23 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
 
     const fetchUserData = async () => {
       try {
-        const res = await axios.get(
-          `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
-        );
-        const { data } = res.data;
-        setOrgsFromFirestore(data.permissions.organizations || {});
-        // Note: No longer fetching account permissions - users inherit access from organization permissions
+        if (isSuperAdmin) {
+          // For super admins, fetch all organizations
+          const allOrgs = await getOrganizations();
+          // Convert to the expected format with 'admin' permission for all
+          const superAdminOrgs: Record<string, string> = {};
+          allOrgs.forEach((org) => {
+            superAdminOrgs[org.organization_id] = "admin";
+          });
+          setOrgsFromFirestore(superAdminOrgs);
+        } else {
+          // For regular users, fetch from Firestore permissions
+          const res = await axios.get(
+            `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
+          );
+          const { data } = res.data;
+          setOrgsFromFirestore(data.permissions.organizations || {});
+        }
       } catch (error) {
         console.error("Failed to fetch user org/account data", error);
       } finally {
@@ -282,13 +294,17 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     };
 
     fetchUserData();
-  }, [FIRESTORE_USER_ID]);
+  }, [FIRESTORE_USER_ID, isSuperAdmin]);
 
   useEffect(() => {
-    if (!loadingUserData && Object.keys(orgsFromFirestore).length === 0) {
+    if (
+      !loadingUserData &&
+      Object.keys(orgsFromFirestore).length === 0 &&
+      !isSuperAdmin
+    ) {
       navigate("/create-organization");
     }
-  }, [loadingUserData, orgsFromFirestore]);
+  }, [loadingUserData, orgsFromFirestore, isSuperAdmin]);
 
   useEffect(() => {
     const fetchOrgMetadata = async () => {
@@ -511,43 +527,43 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   // Auto-select if only one account exists across all organizations
   useEffect(() => {
     if (loadingUserData || Object.keys(localOrgMetadata).length === 0) return;
-    
+
     // Get all accounts across all organizations
     let totalAccounts: any[] = [];
     let singleOrg: string | null = null;
-    
+
     Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
       if (org && org.accounts && org.accounts.length > 0) {
         totalAccounts = [...totalAccounts, ...org.accounts];
         if (singleOrg === null) {
           singleOrg = orgId;
         } else if (singleOrg !== orgId) {
-          singleOrg = 'multiple'; // Mark as multiple orgs have accounts
+          singleOrg = "multiple"; // Mark as multiple orgs have accounts
         }
       }
     });
-    
+
     // If there's exactly one account total, auto-select and navigate
-    if (totalAccounts.length === 1 && singleOrg && singleOrg !== 'multiple') {
+    if (totalAccounts.length === 1 && singleOrg && singleOrg !== "multiple") {
       const account = totalAccounts[0];
       const org = localOrgMetadata[singleOrg];
-      
+
       setIsLoading(true);
-      
+
       // Set organization and account
       setSelectedOrganization(singleOrg);
       setSelectedAccount(account.account_id);
-      
+
       // Prepare metadata
       const metadata = formatWorkspaceMetadata(
         org.organization_name || singleOrg,
         account.account_name || account.account_id,
         account.industry || "Unknown",
-        account.status || "Active", 
+        account.status || "Active",
         account.timezone,
         org.plan,
       );
-      
+
       // Set selected org/account
       setSelectedOrgAccount({
         orgId: singleOrg as OrganizationId,
@@ -556,13 +572,21 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
       });
       setCurrentOrganization(singleOrg as OrganizationId);
       completeWorkspaceSelection();
-      
+
       // Navigate to home
       setTimeout(() => {
         onComplete();
       }, 500);
     }
-  }, [localOrgMetadata, loadingUserData, onComplete, setSelectedOrgAccount, setCurrentOrganization, completeWorkspaceSelection, formatWorkspaceMetadata]);
+  }, [
+    localOrgMetadata,
+    loadingUserData,
+    onComplete,
+    setSelectedOrgAccount,
+    setCurrentOrganization,
+    completeWorkspaceSelection,
+    formatWorkspaceMetadata,
+  ]);
 
   const handleOrganizationSelect = async (orgId: string) => {
     if (orgId !== selectedOrganization) {
@@ -644,7 +668,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                       onClick={(e) => {
                         e.stopPropagation();
                         // Set the organization as current
-                        setCurrentOrganization(org.organization_id as OrganizationId);
+                        setCurrentOrganization(
+                          org.organization_id as OrganizationId,
+                        );
 
                         // Set the selectedOrgAccount to show in the dropdown
                         const firstAccount = org.accounts?.[0];
@@ -794,7 +820,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             className="w-full"
                             onClick={() => {
                               // Set the organization as current
-                              setCurrentOrganization(selectedOrganization as OrganizationId);
+                              setCurrentOrganization(
+                                selectedOrganization as OrganizationId,
+                              );
 
                               // Complete workspace selection to allow navigation
                               completeWorkspaceSelection();
