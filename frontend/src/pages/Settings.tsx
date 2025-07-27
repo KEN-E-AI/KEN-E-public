@@ -9,10 +9,19 @@ import { TestNotificationSection } from "@/components/settings/TestNotificationS
 
 const Settings = () => {
   const navigate = useNavigate();
-  const { user, setCurrentOrganization, orgMetadata } = useAuth();
+  const { user, setCurrentOrganization, orgMetadata, isSuperAdmin } = useAuth();
 
   // Get organizations where user can modify settings (admin or owner role)
   const editableOrganizations = useMemo(() => {
+    if (isSuperAdmin) {
+      // Super admins can edit all organizations
+      return Object.entries(orgMetadata).map(([orgId, org]) => ({
+        id: orgId,
+        name: org?.organization_name || orgId,
+        role: "admin",
+      }));
+    }
+
     if (!user?.permissions?.organizations) return [];
 
     return Object.entries(user.permissions.organizations)
@@ -22,7 +31,7 @@ const Settings = () => {
         name: orgMetadata[orgId]?.organization_name || orgId,
         role,
       }));
-  }, [user?.permissions?.organizations, orgMetadata]);
+  }, [user?.permissions?.organizations, orgMetadata, isSuperAdmin]);
 
   const handleOrganizationClick = (orgId: string) => {
     setCurrentOrganization(orgId);

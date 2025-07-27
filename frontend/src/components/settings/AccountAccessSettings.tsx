@@ -44,7 +44,7 @@ export const AccountAccessSettings = ({
   onUpdate,
 }: AccountAccessSettingsProps) => {
   const { toast } = useToast();
-  const { user, selectedOrgAccount } = useAuth();
+  const { user, selectedOrgAccount, isSuperAdmin } = useAuth();
   const [permissions, setPermissions] = useState<AccountPermission[]>([]);
   const [orgMembers, setOrgMembers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -179,10 +179,11 @@ export const AccountAccessSettings = ({
     });
   };
 
-  // Check if current user can manage access (needs admin org permission)
+  // Check if current user can manage access (needs admin org permission or super admin)
   const canManageAccess =
+    isSuperAdmin ||
     user?.permissions?.organizations?.[selectedOrgAccount?.orgId || ""] ===
-    "admin";
+      "admin";
 
   return (
     <>

@@ -82,6 +82,7 @@ const AccountSettings = () => {
     setSelectedOrgAccount,
     orgMetadata,
     setOrgMetadata,
+    isSuperAdmin,
   } = useAuth();
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -581,9 +582,10 @@ const AccountSettings = () => {
 
   // Check if user has admin access to the current organization
   const hasAdminAccess =
-    currentOrgId &&
-    (user?.permissions?.organizations?.[currentOrgId] === "admin" ||
-      user?.permissions?.organizations?.[currentOrgId] === "owner");
+    isSuperAdmin ||
+    (currentOrgId &&
+      (user?.permissions?.organizations?.[currentOrgId] === "admin" ||
+        user?.permissions?.organizations?.[currentOrgId] === "owner"));
 
   // If user only has view access to the organization, show restricted message
   if (!isCreatingNew && currentOrgId && !hasAdminAccess) {

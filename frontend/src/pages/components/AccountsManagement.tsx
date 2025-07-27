@@ -167,6 +167,7 @@ const AccountsManagement = ({
     orgMetadata,
     setOrgMetadata,
     setSelectedOrgAccount,
+    isSuperAdmin,
   } = useAuth();
   // React Query hooks
   const { data: accounts = [], isLoading: isLoadingAccounts } =
@@ -243,10 +244,14 @@ const AccountsManagement = ({
 
   // Filter accounts based on user permissions
   const organizationAccounts = useMemo(() => {
+    // Super admins have access to all accounts
+    if (isSuperAdmin) {
+      return accounts;
+    }
     return accounts.filter(
       (account) => user?.permissions?.accounts?.[account.account_id],
     );
-  }, [accounts, user?.permissions?.accounts]);
+  }, [accounts, user?.permissions?.accounts, isSuperAdmin]);
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
