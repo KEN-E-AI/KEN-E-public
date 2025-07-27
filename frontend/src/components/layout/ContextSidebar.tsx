@@ -14,6 +14,7 @@ import {
   Archive,
   CircleDot,
   AlertTriangle,
+  MoreVertical,
   Newspaper,
   Globe,
   Users,
@@ -30,6 +31,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
@@ -421,15 +428,16 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
-                              <p
-                                className={cn(
-                                  "text-sm font-medium",
-                                  isUnread ? "text-gray-900" : "text-gray-600",
-                                )}
-                              >
-                                {notification.data?.title ||
-                                  notification.category}
-                              </p>
+                              {notification.data?.title && (
+                                <p
+                                  className={cn(
+                                    "text-sm font-medium",
+                                    isUnread ? "text-gray-900" : "text-gray-600",
+                                  )}
+                                >
+                                  {notification.data.title}
+                                </p>
+                              )}
                               <p className="text-sm text-gray-500 mt-1">
                                 {notification.description}
                               </p>
@@ -444,47 +452,51 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                                   : ""}
                               </p>
                             </div>
-                            <div className="flex items-center gap-1">
-                              {isUnread ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   className="h-7 w-7 p-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                  <span className="sr-only">Notification actions</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {isUnread ? (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      markAsRead(notification.id);
+                                    }}
+                                  >
+                                    <Check className="h-4 w-4 mr-2" />
+                                    Mark as read
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      markAsUnread(notification.id);
+                                    }}
+                                  >
+                                    <CircleDot className="h-4 w-4 mr-2" />
+                                    Mark as unread
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    markAsRead(notification.id);
+                                    archiveNotification(notification.id);
                                   }}
-                                  title="Mark as read"
                                 >
-                                  <Check className="h-4 w-4" />
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 w-7 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    markAsUnread(notification.id);
-                                  }}
-                                  title="Mark as unread"
-                                >
-                                  <CircleDot className="h-4 w-4" />
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  archiveNotification(notification.id);
-                                }}
-                                title="Archive"
-                              >
-                                <Archive className="h-4 w-4" />
-                              </Button>
-                            </div>
+                                  <Archive className="h-4 w-4 mr-2" />
+                                  Archive
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                         {notification.data?.badge && (
