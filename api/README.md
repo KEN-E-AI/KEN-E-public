@@ -74,21 +74,40 @@ docs/
 
 3. **Configure environment**
 
-   The API requires environment configuration for database connections and services. You have two options:
+   The API requires environment configuration for database connections and services.
 
-   **Option A: Use the environment switching script (recommended)**
+   **For environments with Google Secret Manager (staging/production):**
+
+   If you have service account credentials files (`ken-e-dev.json`, `ken-e-staging.json`, `ken-e-production.json`), use the service account script:
+
    ```bash
-   # Switch to development environment
-   ./scripts/set_environment.sh development
+   # Test your service account permissions first
+   python scripts/test_service_account.py ken-e-staging.json
 
-   # Or switch to staging environment
-   ./scripts/set_environment.sh staging
+   # If the test passes, use the service account script for staging
+   ./scripts/use_staging_with_sa_fixed.sh
 
-   # Or switch to production environment (use with caution!)
-   ./scripts/set_environment.sh production
+   # Or use the general script for any environment
+   ./scripts/set_environment_with_sa.sh development
+   ./scripts/set_environment_with_sa.sh staging
+   ./scripts/set_environment_with_sa.sh production
    ```
 
-   **Option B: Manually create .env**
+   **For environments without service accounts or Secret Manager access:**
+
+   ```bash
+   # Option 1: Create a local environment file (recommended for staging/production)
+   python scripts/create_local_staging_env.py
+   # Edit .env.staging.local with actual credentials
+   nano .env.staging.local
+   # Use it
+   cp .env.staging.local .env
+
+   # Option 2: Use the basic script (works for development)
+   ./scripts/set_environment.sh development
+   ```
+
+   **Manual configuration:**
    ```bash
    # Copy from example file
    cp .env.example .env
@@ -149,12 +168,32 @@ For detailed authentication documentation, see [docs/AUTHENTICATION.md](docs/AUT
 
 To switch between environments during development:
 
+**With Service Account Credentials (Recommended):**
+```bash
+# Check current environment
+grep ENVIRONMENT .env
+
+# Switch to a different environment using service account
+./scripts/set_environment_with_sa.sh development
+./scripts/set_environment_with_sa.sh staging
+./scripts/set_environment_with_sa.sh production
+
+# For staging specifically, you can also use:
+./scripts/use_staging_with_sa_fixed.sh
+
+# Restart the API server to use the new environment
+```
+
+**Without Service Account Credentials:**
 ```bash
 # Check current environment
 ./scripts/set_environment.sh
 
-# Switch to a different environment
-./scripts/set_environment.sh [development|staging|production]
+# Switch to development (no secrets needed)
+./scripts/set_environment.sh development
+
+# For staging/production without service accounts, use local env files
+cp .env.staging.local .env  # or .env.production.local
 
 # Restart the API server to use the new environment
 ```
@@ -167,6 +206,33 @@ The project uses the following environment files:
 - `.env.staging` - Staging environment configuration  
 - `.env.production` - Production environment configuration
 - `.env` - Active environment (created by set_environment.sh, gitignored)
+
+### Service Account Configuration
+
+For staging and production environments, the API uses Google Cloud service accounts to access Secret Manager. Place your service account JSON files in the `api/` directory:
+
+- `ken-e-dev.json` - Development service account (optional)
+- `ken-e-staging.json` - Staging service account
+- `ken-e-production.json` - Production service account
+
+**Important Security Notes:**
+- Never commit service account files to git (they're already in .gitignore)
+- Store these files securely and share them through secure channels
+- Rotate service account keys periodically
+- Each service account needs the `Secret Manager Secret Accessor` role
+
+**Testing Service Account Permissions:**
+```bash
+# Test a specific service account
+python scripts/test_service_account.py ken-e-staging.json
+
+# Test all available service accounts
+python scripts/test_service_account.py
+```
+
+If your service account lacks Secret Manager permissions, you can either:
+1. Request the `roles/secretmanager.secretAccessor` role from your admin
+2. Use local environment files with manually configured secrets
 - `.env.example` - Template with all required environment variables
 
 **Note:** Never commit `.env` or any file containing actual credentials to version control.
@@ -571,10 +637,31 @@ uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 
 
 - Ensure `GOOGLE_CLOUD_PROJECT_ID` is set correctly
 - Check that you have the necessary credentials configured
-- For local development, you may need to set up Application Default Credentials:
+- For local development with service accounts:
   ```bash
-  gcloud auth application-default login
+  # Test your service account
+  python scripts/test_service_account.py ken-e-staging.json
+  
+  # Use the service account for environment setup
+  ./scripts/use_staging_with_sa_fixed.sh
   ```
+
+**Secret Manager access errors:**
+
+If you get "Failed to resolve secrets from Google Secret Manager":
+1. Verify service account has `Secret Manager Secret Accessor` role
+2. Check project ID is correct (should be 391472102753 for staging)
+3. Use local environment file as fallback:
+   ```bash
+   python scripts/create_local_staging_env.py
+   cp .env.staging.local .env
+   ```
+
+**Environment switching errors:**
+
+- If `set_environment.sh` fails, use `set_environment_with_sa.sh` instead
+- Ensure service account JSON files are in the api/ directory
+- Check file permissions: `chmod +x scripts/*.sh`
 
 ## Breaking Changes
 
