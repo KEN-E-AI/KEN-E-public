@@ -251,39 +251,66 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
 
       // Handle account permissions for view-role users
       if (editAccessLevel === "view") {
-        console.log("[TeamManagement] Processing account permissions for view-role user");
-        
+        console.log(
+          "[TeamManagement] Processing account permissions for view-role user",
+        );
+
         // Check all accounts to determine what actions to take
         for (const account of accounts) {
           const accountId = account.account_id;
           const newPermission = editAccountPermissions[accountId]; // undefined means "none"
-          
+
           // Check if user currently has access to this account
           let currentPermission: string | undefined;
           try {
             const accountPerms = await getAccountPermissions(accountId);
-            const userPerm = accountPerms.permissions.find(p => p.user_id === selectedMember.user_id);
+            const userPerm = accountPerms.permissions.find(
+              (p) => p.user_id === selectedMember.user_id,
+            );
             currentPermission = userPerm?.access_level;
           } catch (error) {
-            console.error(`[TeamManagement] Error checking current permissions for account ${accountId}:`, error);
+            console.error(
+              `[TeamManagement] Error checking current permissions for account ${accountId}:`,
+              error,
+            );
             continue;
           }
-          
-          console.log(`[TeamManagement] Account ${accountId}: current=${currentPermission}, new=${newPermission || 'none'}`);
-          
+
+          console.log(
+            `[TeamManagement] Account ${accountId}: current=${currentPermission}, new=${newPermission || "none"}`,
+          );
+
           // Handle permission changes
           if (currentPermission && !newPermission) {
             // User had access but now should have none - revoke
-            console.log(`[TeamManagement] Revoking access from account ${accountId}`);
+            console.log(
+              `[TeamManagement] Revoking access from account ${accountId}`,
+            );
             await revokeAccountAccess(accountId, selectedMember.user_id);
           } else if (!currentPermission && newPermission) {
             // User had no access but now should have access - grant
-            console.log(`[TeamManagement] Granting ${newPermission} access to account ${accountId}`);
-            await grantAccountAccess(accountId, selectedMember.user_id, newPermission);
-          } else if (currentPermission && newPermission && currentPermission !== newPermission) {
+            console.log(
+              `[TeamManagement] Granting ${newPermission} access to account ${accountId}`,
+            );
+            await grantAccountAccess(
+              accountId,
+              selectedMember.user_id,
+              newPermission,
+            );
+          } else if (
+            currentPermission &&
+            newPermission &&
+            currentPermission !== newPermission
+          ) {
             // User's access level changed - update
-            console.log(`[TeamManagement] Updating access for account ${accountId} from ${currentPermission} to ${newPermission}`);
-            await grantAccountAccess(accountId, selectedMember.user_id, newPermission);
+            console.log(
+              `[TeamManagement] Updating access for account ${accountId} from ${currentPermission} to ${newPermission}`,
+            );
+            await grantAccountAccess(
+              accountId,
+              selectedMember.user_id,
+              newPermission,
+            );
           }
         }
       }

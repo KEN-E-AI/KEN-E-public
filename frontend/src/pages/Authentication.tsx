@@ -623,7 +623,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
                   className="h-32 w-auto"
                 />
               </div>
-              <p className="text-gray-600">Marketing Assistant</p>
+              <p className="text-gray-600">Marketing Analyst</p>
             </div>
 
             <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">

@@ -577,16 +577,18 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                   </div>
                 </SelectItem>
               ))}
-              <SelectItem
-                key="all-orgs-accounts"
-                value="all-orgs-accounts"
-                className="border-t border-gray-200 mt-1 pt-2"
-              >
-                <div className="flex items-center gap-2">
-                  <Building className="h-4 w-4" />
-                  <div className="truncate">All Orgs and Accounts</div>
-                </div>
-              </SelectItem>
+              {combinedOptions.length > 1 && (
+                <SelectItem
+                  key="all-orgs-accounts"
+                  value="all-orgs-accounts"
+                  className="border-t border-gray-200 mt-1 pt-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Building className="h-4 w-4" />
+                    <div className="truncate">All Orgs and Accounts</div>
+                  </div>
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>

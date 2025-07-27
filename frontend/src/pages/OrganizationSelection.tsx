@@ -9,6 +9,7 @@ import {
   createAccount,
   getChildOrganizations,
 } from "@/data/organizationApi";
+import { OrganizationId, AccountId } from "@/lib/branded-types";
 import {
   validateAccountCreationRequirements,
   getTargetOrganizationId,
@@ -495,7 +496,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
           accountId: selectedAccount,
           metadata,
         });
-        setCurrentOrganization(resolution.organizationId);
+        setCurrentOrganization(resolution.organizationId as OrganizationId);
         completeWorkspaceSelection();
 
         onComplete();
@@ -506,6 +507,62 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const selectedOrgData = organizationList.find(
     (org) => org.organization_id === selectedOrganization,
   );
+
+  // Auto-select if only one account exists across all organizations
+  useEffect(() => {
+    if (loadingUserData || Object.keys(localOrgMetadata).length === 0) return;
+    
+    // Get all accounts across all organizations
+    let totalAccounts: any[] = [];
+    let singleOrg: string | null = null;
+    
+    Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
+      if (org && org.accounts && org.accounts.length > 0) {
+        totalAccounts = [...totalAccounts, ...org.accounts];
+        if (singleOrg === null) {
+          singleOrg = orgId;
+        } else if (singleOrg !== orgId) {
+          singleOrg = 'multiple'; // Mark as multiple orgs have accounts
+        }
+      }
+    });
+    
+    // If there's exactly one account total, auto-select and navigate
+    if (totalAccounts.length === 1 && singleOrg && singleOrg !== 'multiple') {
+      const account = totalAccounts[0];
+      const org = localOrgMetadata[singleOrg];
+      
+      setIsLoading(true);
+      
+      // Set organization and account
+      setSelectedOrganization(singleOrg);
+      setSelectedAccount(account.account_id);
+      
+      // Prepare metadata
+      const metadata = formatWorkspaceMetadata(
+        org.organization_name || singleOrg,
+        account.account_name || account.account_id,
+        account.industry || "Unknown",
+        account.status || "Active", 
+        account.timezone,
+        org.plan,
+      );
+      
+      // Set selected org/account
+      setSelectedOrgAccount({
+        orgId: singleOrg as OrganizationId,
+        accountId: account.account_id as AccountId,
+        metadata,
+      });
+      setCurrentOrganization(singleOrg as OrganizationId);
+      completeWorkspaceSelection();
+      
+      // Navigate to home
+      setTimeout(() => {
+        onComplete();
+      }, 500);
+    }
+  }, [localOrgMetadata, loadingUserData, onComplete, setSelectedOrgAccount, setCurrentOrganization, completeWorkspaceSelection, formatWorkspaceMetadata]);
 
   const handleOrganizationSelect = async (orgId: string) => {
     if (orgId !== selectedOrganization) {
@@ -587,7 +644,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                       onClick={(e) => {
                         e.stopPropagation();
                         // Set the organization as current
-                        setCurrentOrganization(org.organization_id);
+                        setCurrentOrganization(org.organization_id as OrganizationId);
 
                         // Set the selectedOrgAccount to show in the dropdown
                         const firstAccount = org.accounts?.[0];
@@ -636,13 +693,6 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
             <CardContent className="space-y-4">
               {selectedOrgData ? (
                 <>
-                  <div className="p-3 bg-brand-light-blue/20 border border-brand-light-blue/40 rounded-lg mb-4">
-                    <p className="text-sm text-brand-dark-blue">
-                      <strong>{selectedOrgData.organization_name}</strong>{" "}
-                      selected
-                    </p>
-                  </div>
-
                   {/* Agency Organization Handling */}
                   {selectedOrgData.agency ? (
                     <>
@@ -744,7 +794,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             className="w-full"
                             onClick={() => {
                               // Set the organization as current
-                              setCurrentOrganization(selectedOrganization);
+                              setCurrentOrganization(selectedOrganization as OrganizationId);
 
                               // Complete workspace selection to allow navigation
                               completeWorkspaceSelection();
@@ -832,7 +882,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           }
 
                           // Set the organization as current
-                          setCurrentOrganization(orgToSet);
+                          setCurrentOrganization(orgToSet as OrganizationId);
 
                           // Complete workspace selection to allow navigation
                           completeWorkspaceSelection();

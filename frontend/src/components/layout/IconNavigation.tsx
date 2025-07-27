@@ -107,7 +107,7 @@ export function IconNavigation() {
         {/* Settings Icon */}
         <div className="relative group">
           <button
-            onClick={() => navigate("/settings")}
+            onClick={() => navigate("/settings/organization")}
             className={cn(
               "w-full h-12 flex items-center justify-center transition-colors rounded",
               isActive("/settings")
@@ -141,11 +141,11 @@ export function IconNavigation() {
             <DropdownMenuItem
               className="flex items-center gap-2 cursor-pointer"
               onClick={() => {
-                navigate("/settings");
+                navigate("/settings/user");
               }}
             >
               <Settings className="h-4 w-4" />
-              <span>Settings</span>
+              <span>Your Settings</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               className="flex items-center gap-2 cursor-pointer text-brand-red"

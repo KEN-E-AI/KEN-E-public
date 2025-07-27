@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, User, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { TestNotificationSection } from "@/components/settings/TestNotificationSection";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -125,6 +126,13 @@ const Settings = () => {
           </Card>
         )}
       </div>
+
+      {/* Test Notifications Section - Dev Only */}
+      {import.meta.env.DEV && (
+        <div className="mt-8">
+          <TestNotificationSection />
+        </div>
+      )}
     </SettingsLayout>
   );
 };

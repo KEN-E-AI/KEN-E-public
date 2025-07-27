@@ -34,6 +34,11 @@ import NotFound from "./pages/NotFound";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
 
+// Import test utilities in development
+if (import.meta.env.DEV) {
+  import("./utils/testNotification");
+}
+
 const queryClient = new QueryClient();
 
 // Wrapper component to handle navigation after organization selection
