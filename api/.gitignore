@@ -54,6 +54,9 @@ htmlcov/
 
 # Specific service account files (in case they exist)
 ken-e-*.json
+ken-e-dev.json
+ken-e-staging.json
+ken-e-production.json
 *-service-account.json
 *-sa.json
 credentials.json
