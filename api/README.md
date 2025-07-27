@@ -8,6 +8,7 @@ A modern FastAPI web service built with Python, featuring automatic API document
 
 - **FastAPI Framework**: High-performance, easy-to-use web framework
 - **Neo4j Integration**: Graph database support for complex relationship queries
+- **Firebase Authentication**: Secure JWT-based authentication with RBAC
 - **Automatic API Documentation**: Interactive docs at `/docs` and `/redoc`
 - **Pydantic Models**: Request/response validation and serialization
 - **Async Support**: Built for high-performance async operations
@@ -15,6 +16,9 @@ A modern FastAPI web service built with Python, featuring automatic API document
 - **Modern Python**: Uses uv for fast dependency management
 - **CORS Support**: Configurable cross-origin resource sharing
 - **Environment Configuration**: Flexible settings management
+- **Redis Caching**: Performance optimization for user permissions
+- **Audit Logging**: Comprehensive security event tracking
+- **Rate Limiting**: Protection against brute force attacks
 
 ## Project Structure
 
@@ -23,17 +27,27 @@ src/kene_api/
 ├── main.py              # Main FastAPI application
 ├── config.py            # Application configuration
 ├── database.py          # Neo4j database service
+├── auth/                # Authentication and authorization
+│   ├── user_context.py  # User context and permissions
+│   ├── firebase_admin.py # Firebase token verification
+│   ├── audit_logger.py  # Security event logging
+│   ├── token_revocation.py # Token revocation service
+│   └── rate_limiting.py # Rate limiting for auth endpoints
 ├── models/
 │   ├── kene_models.py   # Business domain models
 │   └── schemas.py       # Pydantic models
 └── routers/
+    ├── auth.py          # Authentication endpoints
     ├── activities.py    # Activity management endpoints
     ├── insights.py      # Insight relationships endpoints
     ├── intuitions.py    # Intuition management endpoints
     ├── metrics.py       # Metrics endpoints
     └── ...              # Other API route handlers
 tests/
-└── test_main.py         # Test suite
+├── unit/                # Unit tests
+└── integration/         # Integration tests
+docs/
+└── AUTHENTICATION.md    # Authentication documentation
 ```
 
 ## 🚀 Quick Start
@@ -101,6 +115,27 @@ tests/
    - API endpoints: `http://localhost:8000`
    - Interactive docs: `http://localhost:8000/docs`
    - Alternative docs: `http://localhost:8000/redoc`
+
+## 🔐 Authentication
+
+The API uses Firebase Authentication with JWT tokens. All protected endpoints require a valid Firebase ID token in the Authorization header.
+
+### Quick Start
+```bash
+# Include token in requests
+curl -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
+     http://localhost:8000/api/v1/accounts/
+```
+
+### Key Features
+- Firebase ID token verification
+- Role-based access control (RBAC)
+- Rate limiting on auth endpoints
+- Token revocation support
+- Redis caching for performance
+- Comprehensive audit logging
+
+For detailed authentication documentation, see [docs/AUTHENTICATION.md](docs/AUTHENTICATION.md).
 
 ### Environment Details
 

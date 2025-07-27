@@ -9,6 +9,7 @@ import {
   createAccount,
   getChildOrganizations,
 } from "@/data/organizationApi";
+import { OrganizationId, AccountId } from "@/lib/branded-types";
 import {
   validateAccountCreationRequirements,
   getTargetOrganizationId,
@@ -187,6 +188,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     setCurrentOrganization,
     setOrgMetadata,
     setAccountMetadata,
+    isSuperAdmin,
   } = useAuth();
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
@@ -267,12 +269,23 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
 
     const fetchUserData = async () => {
       try {
-        const res = await axios.get(
-          `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
-        );
-        const { data } = res.data;
-        setOrgsFromFirestore(data.permissions.organizations || {});
-        // Note: No longer fetching account permissions - users inherit access from organization permissions
+        if (isSuperAdmin) {
+          // For super admins, fetch all organizations
+          const allOrgs = await getOrganizations();
+          // Convert to the expected format with 'admin' permission for all
+          const superAdminOrgs: Record<string, string> = {};
+          allOrgs.forEach((org) => {
+            superAdminOrgs[org.organization_id] = "admin";
+          });
+          setOrgsFromFirestore(superAdminOrgs);
+        } else {
+          // For regular users, fetch from Firestore permissions
+          const res = await axios.get(
+            `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
+          );
+          const { data } = res.data;
+          setOrgsFromFirestore(data.permissions.organizations || {});
+        }
       } catch (error) {
         console.error("Failed to fetch user org/account data", error);
       } finally {
@@ -281,13 +294,17 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     };
 
     fetchUserData();
-  }, [FIRESTORE_USER_ID]);
+  }, [FIRESTORE_USER_ID, isSuperAdmin]);
 
   useEffect(() => {
-    if (!loadingUserData && Object.keys(orgsFromFirestore).length === 0) {
+    if (
+      !loadingUserData &&
+      Object.keys(orgsFromFirestore).length === 0 &&
+      !isSuperAdmin
+    ) {
       navigate("/create-organization");
     }
-  }, [loadingUserData, orgsFromFirestore]);
+  }, [loadingUserData, orgsFromFirestore, isSuperAdmin]);
 
   useEffect(() => {
     const fetchOrgMetadata = async () => {
@@ -303,30 +320,62 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
             if (org) {
               return [orgId, { ...org, accounts }];
             } else {
-              console.warn(`Organization ${orgId} not found in Neo4j`);
+              // Organization not found - this is expected for some users
               return [
                 orgId,
                 { organization_id: orgId, organization_name: orgId, accounts },
               ];
             }
-          } catch (err) {
-            console.error(
-              `Failed to load org metadata for ${orgId} from Neo4j`,
-              err,
-            );
+          } catch (err: any) {
+            // Handle deleted organizations gracefully
+            if (
+              err.response?.status === 404 ||
+              err.message ===
+                `Resource not found: /api/v1/organizations/${orgId}`
+            ) {
+              // Organization was deleted but user still has permissions
+              // Return null to filter it out later
+              return [orgId, null];
+            }
+
+            // Log other errors
+            console.error(`Failed to load org metadata for ${orgId}`, err);
             return [
               orgId,
               {
                 organization_id: orgId,
                 organization_name: orgId,
                 accounts: [],
+                error: true,
               },
             ];
           }
         }),
       );
 
-      const result = Object.fromEntries(entries);
+      // Filter out null entries (deleted organizations)
+      const filteredEntries = entries.filter(([_, value]) => value !== null);
+      const result = Object.fromEntries(filteredEntries);
+
+      // Also remove deleted organizations from orgsFromFirestore
+      const deletedOrgIds = entries
+        .filter(([_, value]) => value === null)
+        .map(([orgId, _]) => orgId);
+
+      if (deletedOrgIds.length > 0) {
+        console.warn(
+          `Found ${deletedOrgIds.length} deleted organizations in user permissions:`,
+          deletedOrgIds,
+        );
+
+        // Update orgsFromFirestore to remove deleted organizations
+        setOrgsFromFirestore((prev) => {
+          const updated = { ...prev };
+          deletedOrgIds.forEach((orgId) => delete updated[orgId]);
+          return updated;
+        });
+      }
+
       setLocalOrgMetadata(result);
       setOrgMetadata(result); // from context
 
@@ -352,6 +401,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         organization_name:
           metadata.organization_name || orgId.replace(/-/g, " "),
         permission,
+        error: metadata.error || false,
         ...metadata,
       };
     },
@@ -462,7 +512,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
           accountId: selectedAccount,
           metadata,
         });
-        setCurrentOrganization(resolution.organizationId);
+        setCurrentOrganization(resolution.organizationId as OrganizationId);
         completeWorkspaceSelection();
 
         onComplete();
@@ -473,6 +523,70 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   const selectedOrgData = organizationList.find(
     (org) => org.organization_id === selectedOrganization,
   );
+
+  // Auto-select if only one account exists across all organizations
+  useEffect(() => {
+    if (loadingUserData || Object.keys(localOrgMetadata).length === 0) return;
+
+    // Get all accounts across all organizations
+    let totalAccounts: any[] = [];
+    let singleOrg: string | null = null;
+
+    Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
+      if (org && org.accounts && org.accounts.length > 0) {
+        totalAccounts = [...totalAccounts, ...org.accounts];
+        if (singleOrg === null) {
+          singleOrg = orgId;
+        } else if (singleOrg !== orgId) {
+          singleOrg = "multiple"; // Mark as multiple orgs have accounts
+        }
+      }
+    });
+
+    // If there's exactly one account total, auto-select and navigate
+    if (totalAccounts.length === 1 && singleOrg && singleOrg !== "multiple") {
+      const account = totalAccounts[0];
+      const org = localOrgMetadata[singleOrg];
+
+      setIsLoading(true);
+
+      // Set organization and account
+      setSelectedOrganization(singleOrg);
+      setSelectedAccount(account.account_id);
+
+      // Prepare metadata
+      const metadata = formatWorkspaceMetadata(
+        org.organization_name || singleOrg,
+        account.account_name || account.account_id,
+        account.industry || "Unknown",
+        account.status || "Active",
+        account.timezone,
+        org.plan,
+      );
+
+      // Set selected org/account
+      setSelectedOrgAccount({
+        orgId: singleOrg as OrganizationId,
+        accountId: account.account_id as AccountId,
+        metadata,
+      });
+      setCurrentOrganization(singleOrg as OrganizationId);
+      completeWorkspaceSelection();
+
+      // Navigate to home
+      setTimeout(() => {
+        onComplete();
+      }, 500);
+    }
+  }, [
+    localOrgMetadata,
+    loadingUserData,
+    onComplete,
+    setSelectedOrgAccount,
+    setCurrentOrganization,
+    completeWorkspaceSelection,
+    formatWorkspaceMetadata,
+  ]);
 
   const handleOrganizationSelect = async (orgId: string) => {
     if (orgId !== selectedOrganization) {
@@ -503,9 +617,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         {/* Header */}
         <div className="text-center mb-8 pt-8">
           <div className="flex items-center justify-center mb-4">
-            <img 
-              src="/KEN-E Logo E Small.png" 
-              alt="KEN-E Logo" 
+            <img
+              src="/KEN-E Logo E Small.png"
+              alt="KEN-E Logo"
               className="h-16 w-auto"
             />
           </div>
@@ -537,11 +651,51 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                         <h3 className="font-semibold text-gray-900">
                           {org.organization_name}
                         </h3>
+                        {org.error && (
+                          <Badge variant="destructive" className="text-xs">
+                            Error Loading
+                          </Badge>
+                        )}
                         {selectedOrganization === org.organization_id && (
                           <Check className="h-4 w-4 text-brand-medium-blue" />
                         )}
                       </div>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Set the organization as current
+                        setCurrentOrganization(
+                          org.organization_id as OrganizationId,
+                        );
+
+                        // Set the selectedOrgAccount to show in the dropdown
+                        const firstAccount = org.accounts?.[0];
+                        setSelectedOrgAccount({
+                          orgId: org.organization_id,
+                          accountId: firstAccount?.account_id || "",
+                          metadata: {
+                            organization_name: org.organization_name,
+                            account_name: firstAccount?.account_name || "",
+                            industry: firstAccount?.industry || "",
+                            status: firstAccount?.status || "Active",
+                            timezone: firstAccount?.timezone || "",
+                            plan: org.plan,
+                          },
+                        });
+
+                        // Complete workspace selection to allow navigation
+                        completeWorkspaceSelection();
+                        // Navigate to organization settings
+                        navigate("/settings/organization");
+                      }}
+                    >
+                      <Settings className="h-4 w-4" />
+                      <span className="sr-only">Organization settings</span>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -565,13 +719,6 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
             <CardContent className="space-y-4">
               {selectedOrgData ? (
                 <>
-                  <div className="p-3 bg-brand-light-blue/20 border border-brand-light-blue/40 rounded-lg mb-4">
-                    <p className="text-sm text-brand-dark-blue">
-                      <strong>{selectedOrgData.organization_name}</strong>{" "}
-                      selected
-                    </p>
-                  </div>
-
                   {/* Agency Organization Handling */}
                   {selectedOrgData.agency ? (
                     <>
@@ -673,11 +820,13 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             className="w-full"
                             onClick={() => {
                               // Set the organization as current
-                              setCurrentOrganization(selectedOrganization);
-                              
+                              setCurrentOrganization(
+                                selectedOrganization as OrganizationId,
+                              );
+
                               // Complete workspace selection to allow navigation
                               completeWorkspaceSelection();
-                              
+
                               // Navigate to organization settings with create account flag
                               navigate(
                                 "/settings/organization?openCreateAccount=true",
@@ -749,22 +898,23 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           const orgToSet = selectedOrgData.agency
                             ? selectedChildOrg || selectedOrganization
                             : selectedOrganization;
-                          
+
                           if (!orgToSet) {
                             toast({
                               title: "No organization selected",
-                              description: "Please select an organization first",
+                              description:
+                                "Please select an organization first",
                               variant: "destructive",
                             });
                             return;
                           }
-                          
+
                           // Set the organization as current
-                          setCurrentOrganization(orgToSet);
-                          
+                          setCurrentOrganization(orgToSet as OrganizationId);
+
                           // Complete workspace selection to allow navigation
                           completeWorkspaceSelection();
-                          
+
                           // Navigate to organization settings with create account flag
                           navigate(
                             "/settings/organization?openCreateAccount=true",

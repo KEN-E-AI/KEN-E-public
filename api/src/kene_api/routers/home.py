@@ -9,7 +9,7 @@ from ..models.kene_models import (
     ActivityScanRequest,
     ActivityScanResponse,
     Notification,
-    NotificationRequest,
+    CreateNotificationRequest,
     SuccessResponse,
 )
 
@@ -128,7 +128,7 @@ async def get_notifications(
 
 
 @router.post("/notifications", response_model=SuccessResponse)
-async def create_notification(request: NotificationRequest) -> SuccessResponse:
+async def create_notification(request: CreateNotificationRequest) -> SuccessResponse:
     """
     Create a new notification.
 

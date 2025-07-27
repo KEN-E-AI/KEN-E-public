@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ..auth import UserContext, get_current_user_context
 from ..bigquery import BigQueryService, get_bigquery_service
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
@@ -17,6 +18,7 @@ from ..models.kene_models import (
     AccountRequest,
     SuccessResponse,
 )
+from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["accounts"])
 
@@ -65,10 +67,11 @@ async def get_accounts(
     organization_id: str | None = Query(
         None, description="Filter accounts by organization ID"
     ),
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> AccountListResponse:
     """
-    Get all accounts, optionally filtered by organization.
+    Get accounts accessible to the current user, optionally filtered by organization.
 
     **Parameters (query):**
     - `organization_id` (optional): Filter accounts by organization ID
@@ -82,6 +85,8 @@ async def get_accounts(
     GET /api/v1/accounts/
     GET /api/v1/accounts/?organization_id=healthway
     ```
+    
+    **Note:** User must have access to the accounts and organization (if specified).
     """
     try:
         # Check Neo4j connectivity
@@ -89,21 +94,89 @@ async def get_accounts(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        # Build query based on filter
-        if organization_id:
-            accounts_query = """
-            MATCH (org:Organization {organization_id: $organization_id})<-[:BELONGS_TO]-(acc:Account)
-            RETURN acc
-            ORDER BY acc.account_name
-            """
-            params = {"organization_id": organization_id}
+        # Build query based on user permissions
+        if user.is_super_admin:
+            # Super admins can see all accounts
+            if organization_id:
+                accounts_query = """
+                MATCH (org:Organization {organization_id: $organization_id})<-[:BELONGS_TO]-(acc:Account)
+                RETURN acc
+                ORDER BY acc.account_name
+                """
+                params = {"organization_id": organization_id}
+            else:
+                accounts_query = """
+                MATCH (acc:Account)
+                RETURN acc
+                ORDER BY acc.account_name
+                """
+                params = {}
         else:
-            accounts_query = """
-            MATCH (acc:Account)
-            RETURN acc
-            ORDER BY acc.account_name
-            """
-            params = {}
+            # Regular users need to check permissions
+            if organization_id:
+                # Verify user has access to the organization
+                if not user.has_organization_access(organization_id):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Access denied to organization {organization_id}"
+                    )
+                
+                # Check if user is org admin
+                if user.organization_permissions.get(organization_id) == "admin":
+                    # Org admins can see all accounts in their organization
+                    accounts_query = """
+                    MATCH (org:Organization {organization_id: $organization_id})<-[:BELONGS_TO]-(acc:Account)
+                    RETURN acc
+                    ORDER BY acc.account_name
+                    """
+                    params = {"organization_id": organization_id}
+                else:
+                    # View-role users see only accounts they have explicit access to
+                    accessible_account_ids = list(user.account_permissions.keys())
+                    if not accessible_account_ids:
+                        return AccountListResponse(accounts=[], total=0)
+                    
+                    accounts_query = """
+                    MATCH (org:Organization {organization_id: $organization_id})<-[:BELONGS_TO]-(acc:Account)
+                    WHERE acc.account_id IN $account_ids
+                    RETURN acc
+                    ORDER BY acc.account_name
+                    """
+                    params = {
+                        "organization_id": organization_id,
+                        "account_ids": accessible_account_ids
+                    }
+            else:
+                # No organization filter - need to find all accessible accounts
+                accessible_account_ids = []
+                
+                # Add accounts from organizations where user is admin
+                for org_id, role in user.organization_permissions.items():
+                    if role == "admin":
+                        # Get all accounts for this org
+                        org_accounts_query = """
+                        MATCH (org:Organization {organization_id: $org_id})<-[:BELONGS_TO]-(acc:Account)
+                        RETURN acc.account_id as account_id
+                        """
+                        org_result = await db.execute_query(org_accounts_query, {"org_id": org_id})
+                        accessible_account_ids.extend([r["account_id"] for r in org_result])
+                
+                # Add explicitly granted accounts for view-role users
+                accessible_account_ids.extend(list(user.account_permissions.keys()))
+                
+                # Remove duplicates
+                accessible_account_ids = list(set(accessible_account_ids))
+                
+                if not accessible_account_ids:
+                    return AccountListResponse(accounts=[], total=0)
+                
+                accounts_query = """
+                MATCH (acc:Account)
+                WHERE acc.account_id IN $account_ids
+                RETURN acc
+                ORDER BY acc.account_name
+                """
+                params = {"account_ids": accessible_account_ids}
 
         result = await db.execute_query(accounts_query, params)
 
@@ -131,6 +204,7 @@ async def get_accounts(
 @router.get("/{account_id}", response_model=Account)
 async def get_account(
     account_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Account:
     """
@@ -146,8 +220,40 @@ async def get_account(
     ```
     GET /api/v1/accounts/intellipure-b2c
     ```
+    
+    **Note:** User must have access to the account.
     """
     try:
+        # Check if user has access to this account
+        # First, we need to find which organization this account belongs to
+        org_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+        RETURN org.organization_id as organization_id
+        """
+        org_result = await db.execute_query(org_query, {"account_id": account_id})
+        
+        if not org_result:
+            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+            
+        organization_id = org_result[0]["organization_id"]
+        
+        # Now check access with the organization context
+        if not user.is_super_admin:
+            # Check if user has organization access
+            if not user.has_organization_access(organization_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied to account {account_id}"
+                )
+            
+            # If user is view-role, check account-specific permissions
+            if user.organization_permissions.get(organization_id) == "view":
+                if account_id not in user.account_permissions:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Access denied to account {account_id}"
+                    )
+            
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
@@ -514,7 +620,7 @@ async def create_account(
                 )
 
         # Fetch the created account
-        return await get_account(account_id, db)
+        return await get_account(account_id, user, db)
 
     except HTTPException:
         raise
@@ -569,7 +675,7 @@ async def update_account(
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
 
         # Get the current account to check if regions are being updated
-        current_account = await get_account(account_id, db)
+        current_account = await get_account(account_id, user, db)
         current_regions = set(current_account.region or [])
         new_regions = set(request.region) if request.region is not None else None
         regions_changed = new_regions is not None and current_regions != new_regions
@@ -632,7 +738,7 @@ async def update_account(
             )
 
         # Return updated account
-        return await get_account(account_id, db)
+        return await get_account(account_id, user, db)
 
     except HTTPException:
         raise
@@ -751,6 +857,7 @@ async def delete_account(
 )
 async def get_accounts_by_organization(
     organization_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> AccountListResponse:
     """
@@ -769,7 +876,7 @@ async def get_accounts_by_organization(
     ```
     """
     # This is essentially the same as get_accounts with organization_id filter
-    return await get_accounts(organization_id=organization_id, db=db)
+    return await get_accounts(organization_id=organization_id, user=user, db=db)
 
 
 async def _check_account_exists(db: Neo4jService, account_id: str) -> bool:
@@ -898,3 +1005,346 @@ async def _sync_holiday_activity_logs_for_account(
         )
         # Don't raise - let account update succeed even if sync fails
         return {"created": 0, "deleted": 0, "errors": [str(e)]}
+
+
+# Account Permission Models
+class GrantAccountAccessRequest(BaseModel):
+    """Request model for granting account access."""
+    user_id: str = Field(..., description="User ID to grant access to")
+    access_level: str = Field(..., description="Access level: edit or view")
+
+
+class AccountPermissionsResponse(BaseModel):
+    """Response model for account permissions."""
+    account_id: str = Field(..., description="Account ID")
+    permissions: list[dict[str, Any]] = Field(..., description="List of user permissions")
+    total: int = Field(..., description="Total number of users with access")
+
+
+class UserAccountPermission(BaseModel):
+    """Model for a user's permission on an account."""
+    user_id: str
+    email: str
+    access_level: str
+    granted_by: str | None = None
+    granted_at: str | None = None
+
+
+# Account Permission Endpoints
+@router.post("/{account_id}/grant-access", response_model=SuccessResponse)
+async def grant_account_access(
+    account_id: str,
+    request: GrantAccountAccessRequest,
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """
+    Grant a user access to an account.
+    
+    Only organization admins can grant account access.
+    This is used to give view-role users access to specific accounts.
+    
+    **Parameters:**
+    - `account_id` (path): Account ID
+    - `user_id` (body): User ID to grant access to
+    - `access_level` (body): Access level (edit or view)
+    
+    **Returns:**
+    - Success response
+    """
+    try:
+        # Validate access level
+        if request.access_level not in ["edit", "view"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid access_level. Must be 'edit' or 'view'"
+            )
+        
+        # Check database connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+        
+        # Get account's organization
+        org_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+        RETURN org.organization_id as organization_id
+        """
+        org_result = await db.execute_query(org_query, {"account_id": account_id})
+        
+        if not org_result:
+            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+        
+        organization_id = org_result[0]["organization_id"]
+        
+        # Check if user has admin access to the organization
+        if not user.is_super_admin and user.organization_permissions.get(organization_id) != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Only organization admins can grant account access"
+            )
+        
+        # Check if target user exists and has access to the organization
+        target_user_doc = firestore.get_document("users", request.user_id)
+        if not target_user_doc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"User {request.user_id} not found"
+            )
+        
+        target_permissions = target_user_doc.get("permissions", {})
+        target_org_permissions = target_permissions.get("organizations", {})
+        
+        # Check if target user is a super admin
+        target_email = target_user_doc.get("profile", {}).get("email", "")
+        if target_email.lower().endswith("@ken-e.ai"):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot modify permissions for KEN-E support team members"
+            )
+        
+        if organization_id not in target_org_permissions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"User {request.user_id} does not have access to the organization"
+            )
+        
+        # Don't grant explicit permissions to org admins (they already have implicit access)
+        if target_org_permissions[organization_id] == "admin":
+            raise HTTPException(
+                status_code=400,
+                detail="Organization admins already have access to all accounts"
+            )
+        
+        # Grant account permission in Firestore
+        success = firestore.set_nested_field(
+            collection="users",
+            document_id=request.user_id,
+            field_path=f"permissions.account_permissions.{account_id}",
+            value=request.access_level
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to grant account access"
+            )
+        
+        # Invalidate user cache
+        from ..auth.cached_user_context import get_cached_user_context_service
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(request.user_id)
+        
+        # Log the permission grant
+        logger.info(
+            f"User {user.user_id} granted {request.access_level} access to account {account_id} for user {request.user_id}"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            message=f"Granted {request.access_level} access to user {request.user_id}",
+            data={
+                "account_id": account_id,
+                "user_id": request.user_id,
+                "access_level": request.access_level
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error granting account access: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error granting account access: {e!s}"
+        ) from e
+
+
+@router.delete("/{account_id}/revoke-access/{user_id}", response_model=SuccessResponse)
+async def revoke_account_access(
+    account_id: str,
+    user_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """
+    Revoke a user's access to an account.
+    
+    Only organization admins can revoke account access.
+    Cannot revoke access from org admins (they have implicit access).
+    
+    **Parameters:**
+    - `account_id` (path): Account ID
+    - `user_id` (path): User ID to revoke access from
+    
+    **Returns:**
+    - Success response
+    """
+    try:
+        # Check database connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+        
+        # Get account's organization
+        org_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+        RETURN org.organization_id as organization_id
+        """
+        org_result = await db.execute_query(org_query, {"account_id": account_id})
+        
+        if not org_result:
+            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+        
+        organization_id = org_result[0]["organization_id"]
+        
+        # Check if user has admin access to the organization
+        if not user.is_super_admin and user.organization_permissions.get(organization_id) != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Only organization admins can revoke account access"
+            )
+        
+        # Check target user's org role
+        target_user_doc = firestore.get_document("users", user_id)
+        if target_user_doc:
+            target_permissions = target_user_doc.get("permissions", {})
+            target_org_permissions = target_permissions.get("organizations", {})
+            
+            # Check if target user is a super admin
+            target_email = target_user_doc.get("profile", {}).get("email", "")
+            if target_email.lower().endswith("@ken-e.ai"):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Cannot modify permissions for KEN-E support team members"
+                )
+            
+            if target_org_permissions.get(organization_id) == "admin":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot revoke access from organization admins"
+                )
+        
+        # Remove account permission from Firestore
+        firestore_db = firestore.get_client()
+        user_ref = firestore_db.collection("users").document(user_id)
+        
+        # Use field delete to remove the specific account permission
+        from google.cloud.firestore_v1 import DELETE_FIELD
+        user_ref.update({
+            f"permissions.account_permissions.{account_id}": DELETE_FIELD
+        })
+        
+        # Invalidate user cache
+        from ..auth.cached_user_context import get_cached_user_context_service
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user_id)
+        
+        # Log the permission revocation
+        logger.info(
+            f"User {user.user_id} revoked access to account {account_id} from user {user_id}"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            message=f"Revoked access from user {user_id}",
+            data={
+                "account_id": account_id,
+                "user_id": user_id
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error revoking account access: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error revoking account access: {e!s}"
+        ) from e
+
+
+@router.get("/{account_id}/permissions", response_model=AccountPermissionsResponse)
+async def get_account_permissions(
+    account_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> AccountPermissionsResponse:
+    """
+    Get all users with explicit access to an account.
+    
+    Only shows users with explicit permissions (view-role users).
+    Organization admins are not shown as they have implicit access.
+    
+    **Parameters:**
+    - `account_id` (path): Account ID
+    
+    **Returns:**
+    - List of users with their access levels
+    """
+    try:
+        # Check database connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+        
+        # Get account's organization
+        org_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+        RETURN org.organization_id as organization_id
+        """
+        org_result = await db.execute_query(org_query, {"account_id": account_id})
+        
+        if not org_result:
+            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+        
+        organization_id = org_result[0]["organization_id"]
+        
+        # Check if user has access to view permissions
+        if not user.is_super_admin:
+            if not user.has_organization_access(organization_id):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied"
+                )
+        
+        # Query all users to find those with explicit account permissions
+        firestore_db = firestore.get_client()
+        users_ref = firestore_db.collection("users")
+        all_users = users_ref.stream()
+        
+        permissions_list = []
+        
+        for user_doc in all_users:
+            user_data = user_doc.to_dict()
+            user_permissions = user_data.get("permissions", {})
+            account_permissions = user_permissions.get("account_permissions", {})
+            
+            # Check if user has explicit permission for this account
+            if account_id in account_permissions:
+                permission_info = {
+                    "user_id": user_doc.id,
+                    "email": user_data.get("profile", {}).get("email", ""),
+                    "access_level": account_permissions[account_id],
+                    "first_name": user_data.get("profile", {}).get("firstName", ""),
+                    "last_name": user_data.get("profile", {}).get("lastName", ""),
+                }
+                permissions_list.append(permission_info)
+        
+        return AccountPermissionsResponse(
+            account_id=account_id,
+            permissions=permissions_list,
+            total=len(permissions_list)
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting account permissions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting account permissions: {e!s}"
+        ) from e

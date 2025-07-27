@@ -24,6 +24,7 @@ interface LayoutProps {
     range: { from: Date; to: Date } | undefined,
   ) => void;
   hideChatSidebar?: boolean;
+  hideContextSidebar?: boolean;
 }
 
 const Layout = ({
@@ -40,6 +41,7 @@ const Layout = ({
   comparisonDateRange,
   setComparisonDateRange = () => {},
   hideChatSidebar = false,
+  hideContextSidebar = false,
 }: LayoutProps) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextSidebarCollapsed, setContextSidebarCollapsed] = useState(() => {
@@ -55,21 +57,28 @@ const Layout = ({
       <IconNavigation />
 
       {/* Context Sidebar - Fixed left sidebar (after IconNavigation) */}
-      <ContextSidebar
-        isCollapsed={contextSidebarCollapsed}
-        onToggleCollapse={() => {
-          const newState = !contextSidebarCollapsed;
-          setContextSidebarCollapsed(newState);
-          localStorage.setItem("contextSidebarCollapsed", newState.toString());
-        }}
-      />
+      {!hideContextSidebar && (
+        <ContextSidebar
+          isCollapsed={contextSidebarCollapsed}
+          onToggleCollapse={() => {
+            const newState = !contextSidebarCollapsed;
+            setContextSidebarCollapsed(newState);
+            localStorage.setItem(
+              "contextSidebarCollapsed",
+              newState.toString(),
+            );
+          }}
+        />
+      )}
 
       {/* Main Content */}
       <div
         className={`transition-all duration-300 p-4 sm:p-6 space-y-6 min-h-screen ${
-          contextSidebarCollapsed
-            ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
-            : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
+          hideContextSidebar
+            ? "pl-[calc(3.5rem+1rem)] sm:pl-[calc(3.5rem+1.5rem)]" // Only IconNavigation width
+            : contextSidebarCollapsed
+              ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
+              : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
         } ${
           !hideChatSidebar
             ? sidebarCollapsed

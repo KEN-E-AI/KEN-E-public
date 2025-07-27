@@ -396,8 +396,46 @@ def test_delete_organization(mock_neo4j_service):
         "properties_set": 0,
     }
 
-    # Override dependency
+    # Mock Firestore service
+    mock_firestore_service = MagicMock()
+    mock_firestore_client = MagicMock()
+    mock_firestore_service.get_client.return_value = mock_firestore_client
+    
+    # Mock user documents with organization permissions
+    mock_user1 = MagicMock()
+    mock_user1.id = "user1"
+    mock_user1.to_dict.return_value = {
+        "permissions": {
+            "organizations": {
+                "test-org": "admin",
+                "other-org": "member"
+            }
+        }
+    }
+    mock_user1_ref = MagicMock()
+    mock_user1.reference = mock_user1_ref
+    
+    mock_user2 = MagicMock()
+    mock_user2.id = "user2"
+    mock_user2.to_dict.return_value = {
+        "permissions": {
+            "organizations": {
+                "test-org": "member"
+            }
+        }
+    }
+    mock_user2_ref = MagicMock()
+    mock_user2.reference = mock_user2_ref
+    
+    # Mock collection stream
+    mock_users_collection = MagicMock()
+    mock_users_collection.stream.return_value = [mock_user1, mock_user2]
+    mock_firestore_client.collection.return_value = mock_users_collection
+
+    # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
+    from src.kene_api.firestore import get_firestore_service
+    app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
     response = client.delete("/api/v1/organizations/test-org")
 
@@ -407,6 +445,18 @@ def test_delete_organization(mock_neo4j_service):
     assert "deleted successfully" in data["message"]
     assert data["data"]["organization_id"] == "test-org"
     assert data["data"]["nodes_deleted"] == 1
+    
+    # Verify Firestore cleanup was called
+    assert mock_user1_ref.update.called
+    assert mock_user2_ref.update.called
+    
+    # Verify the correct updates were made
+    mock_user1_ref.update.assert_called_with({
+        "permissions.organizations": {"other-org": "member"}  # test-org removed
+    })
+    mock_user2_ref.update.assert_called_with({
+        "permissions.organizations": {}  # test-org was the only org
+    })
 
     # Clean up
     app.dependency_overrides.clear()

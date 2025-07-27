@@ -15,7 +15,7 @@ import type { Organization } from "@/data/organizationTypes";
 import type { SubscriptionPlanDefinition } from "@/types/subscription";
 import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Shield } from "lucide-react";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -82,6 +82,7 @@ const AccountSettings = () => {
     setSelectedOrgAccount,
     orgMetadata,
     setOrgMetadata,
+    isSuperAdmin,
   } = useAuth();
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -578,6 +579,50 @@ const AccountSettings = () => {
     if (isAccountSpecific) return "Account Settings";
     return "Organization Settings";
   };
+
+  // Check if user has admin access to the current organization
+  const hasAdminAccess =
+    isSuperAdmin ||
+    (currentOrgId &&
+      (user?.permissions?.organizations?.[currentOrgId] === "admin" ||
+        user?.permissions?.organizations?.[currentOrgId] === "owner"));
+
+  // If user only has view access to the organization, show restricted message
+  if (!isCreatingNew && currentOrgId && !hasAdminAccess) {
+    return (
+      <SettingsLayout
+        pageTitle={getPageTitle()}
+        currentPage={getCurrentPage()}
+        showBackButton={true}
+      >
+        <div className="text-center py-12">
+          <div className="mx-auto max-w-md">
+            <div className="mb-6">
+              <Shield className="h-16 w-16 mx-auto text-gray-400" />
+            </div>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              View-Only Access
+            </h2>
+            <p className="text-gray-600 mb-6">
+              You have view-only access to this organization. Organization
+              settings can only be managed by users with admin permissions.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => navigate(-1)}
+              className="mb-4"
+            >
+              Go Back
+            </Button>
+            <p className="text-sm text-gray-500">
+              If you need to make changes to organization settings, please
+              contact an organization admin.
+            </p>
+          </div>
+        </div>
+      </SettingsLayout>
+    );
+  }
 
   return (
     <SettingsLayout

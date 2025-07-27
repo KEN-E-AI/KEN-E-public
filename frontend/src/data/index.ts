@@ -17,8 +17,6 @@ export {
   deleteAccount,
   createNewOrganization,
   createNewAccount,
-  organizations,
-  accounts,
 } from "./organizationApi";
 
 // Export types and constants

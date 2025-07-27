@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import api from "@/lib/api";
 import {
   Building,
   Mail,
@@ -94,6 +95,41 @@ const AcceptInvitation = () => {
         user_email: user.email,
         user_name: `${user.firstName} ${user.lastName}`.trim() || user.email,
       });
+
+      // Check if user has notification preferences, create if missing
+      try {
+        const notificationPrefsResponse = await api.get(
+          `/api/v1/firestore/documents/users/${user.id}/preferences/notifications`,
+        );
+        console.log(
+          "[AcceptInvitation] User already has notification preferences",
+        );
+      } catch (error: any) {
+        if (error.response?.status === 404) {
+          console.log(
+            "[AcceptInvitation] Creating notification preferences for new user",
+          );
+          // Create notification preferences
+          await api.post(`/api/v1/firestore/documents`, {
+            account_id: user.id,
+            collection: `users/${user.id}/preferences`,
+            document_id: "notifications",
+            data: {
+              categories: [
+                "Data Quality Alert",
+                "News & Press",
+                "Industry News",
+                "Competitor Activities",
+                "Scheduled Report Status",
+                "KPI Performance",
+                "New Features",
+              ],
+              channels: ["ui"],
+              updated_at: new Date().toISOString(),
+            },
+          });
+        }
+      }
 
       toast({
         title: "Success",

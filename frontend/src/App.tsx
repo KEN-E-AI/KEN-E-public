@@ -1,5 +1,4 @@
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -34,6 +33,11 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
+
+// Import test utilities in development
+if (import.meta.env.DEV) {
+  import("./utils/testNotification");
+}
 
 const queryClient = new QueryClient();
 

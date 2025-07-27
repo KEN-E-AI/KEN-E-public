@@ -29,6 +29,21 @@ class FirestoreService:
         """Initialize Firestore service with credentials."""
         self._db: firestore.Client | None = None
         self._initialized = False
+    
+    def get_client(self) -> firestore.Client:
+        """Get the Firestore client instance.
+        
+        Returns:
+            firestore.Client: The Firestore client
+            
+        Raises:
+            RuntimeError: If Firestore is not initialized
+        """
+        if not self._initialized:
+            self.initialize()
+        if self._db is None:
+            raise RuntimeError(FIRESTORE_NOT_INITIALIZED)
+        return self._db
 
     def initialize(self) -> bool:
         """

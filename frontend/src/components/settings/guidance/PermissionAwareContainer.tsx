@@ -26,10 +26,13 @@ export const PermissionAwareContainer = ({
   children,
   className,
 }: PermissionAwareContainerProps) => {
-  const { user, selectedOrgAccount } = useAuth();
+  const { user, selectedOrgAccount, isSuperAdmin } = useAuth();
 
   // Check if user has required permission
   const hasPermission = React.useMemo(() => {
+    // Super admins always have permission
+    if (isSuperAdmin) return true;
+
     if (!user || !selectedOrgAccount) return false;
 
     const orgId = selectedOrgAccount.orgId;
@@ -49,7 +52,7 @@ export const PermissionAwareContainer = ({
     const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
 
     return userRoleLevel >= requiredRoleLevel;
-  }, [user, selectedOrgAccount, requiredRole]);
+  }, [user, selectedOrgAccount, requiredRole, isSuperAdmin]);
 
   // If user has permission, render children normally
   if (hasPermission) {
@@ -120,9 +123,12 @@ export const PermissionCheck = ({
   scope = "organization",
   children,
 }: PermissionCheckProps) => {
-  const { user, selectedOrgAccount } = useAuth();
+  const { user, selectedOrgAccount, isSuperAdmin } = useAuth();
 
   const hasPermission = React.useMemo(() => {
+    // Super admins always have permission
+    if (isSuperAdmin) return true;
+
     if (!user || !selectedOrgAccount) return false;
 
     const orgId = selectedOrgAccount.orgId;
@@ -141,7 +147,7 @@ export const PermissionCheck = ({
     const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
 
     return userRoleLevel >= requiredRoleLevel;
-  }, [user, selectedOrgAccount, requiredRole]);
+  }, [user, selectedOrgAccount, requiredRole, isSuperAdmin]);
 
   return <>{children(hasPermission)}</>;
 };

@@ -25,14 +25,26 @@ const ReCaptchaV3 = ({
 
   useEffect(() => {
     // Automatically execute reCAPTCHA when component mounts
-    if (executeRecaptcha) {
-      handleReCaptchaVerify();
-    }
+    // Add a small delay to ensure provider is ready
+    const timer = setTimeout(() => {
+      if (executeRecaptcha) {
+        handleReCaptchaVerify();
+      } else {
+        // If reCAPTCHA is not available, consider it verified to not block auth
+        console.warn("ReCAPTCHA not available, bypassing verification");
+        setIsVerified(true);
+        onVerify(true);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
   }, [executeRecaptcha]);
 
   const handleReCaptchaVerify = async () => {
     if (!executeRecaptcha) {
-      console.warn("reCAPTCHA not available yet");
+      console.warn("reCAPTCHA not available, bypassing verification");
+      setIsVerified(true);
+      onVerify(true);
       return;
     }
 

@@ -4,37 +4,38 @@
 
 import type { Organization, Account } from "./organizationTypes";
 import { getDefaultPlan } from "./subscriptionPlansApi";
-
-// Get API base URL from environment
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+import api from "@/lib/api";
 
 // Helper function for API calls
-async function apiCall<T>(path: string, options: RequestInit = {}): Promise<T> {
-  console.log(`[organizationApi] Making API call to: ${API_BASE_URL}${path}`);
-  console.log(`[organizationApi] Options:`, options);
+async function apiCall<T>(
+  path: string,
+  options: {
+    method?: string;
+    data?: any;
+    params?: any;
+  } = {},
+): Promise<T> {
+  try {
+    const response = await api.request<T>({
+      url: path,
+      method: options.method || "GET",
+      data: options.data,
+      params: options.params,
+    });
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-
-  console.log(`[organizationApi] Response status: ${response.status}`);
-
-  if (!response.ok) {
-    const error = await response
-      .json()
-      .catch(() => ({ detail: "Unknown error" }));
-    console.error(`[organizationApi] API Error:`, error);
-    throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+    return response.data;
+  } catch (error: any) {
+    // Only log non-404 errors at error level
+    if (error.response?.status === 404) {
+      console.debug(`[organizationApi] Resource not found: ${path}`);
+    } else {
+      console.error(`[organizationApi] API Error:`, error);
+    }
+    if (error.response?.data?.detail) {
+      throw new Error(error.response.data.detail);
+    }
+    throw error;
   }
-
-  const data = await response.json();
-  console.log(`[organizationApi] Response data:`, data);
-  return data;
 }
 
 // Organization API functions
@@ -53,8 +54,11 @@ export async function getOrganizationById(
       `/api/v1/organizations/${organizationId}`,
     );
     return organization;
-  } catch (error) {
-    console.error(`Failed to fetch organization ${organizationId}:`, error);
+  } catch (error: any) {
+    // Only log non-404 errors, as 404 is expected when org doesn't exist or user lacks access
+    if (error.response?.status !== 404) {
+      console.error(`Failed to fetch organization ${organizationId}:`, error);
+    }
     return undefined;
   }
 }
@@ -72,7 +76,7 @@ export async function createOrganization(orgData: {
 }): Promise<Organization> {
   return apiCall<Organization>("/api/v1/organizations/", {
     method: "POST",
-    body: JSON.stringify(orgData),
+    data: orgData,
   });
 }
 
@@ -82,7 +86,7 @@ export async function updateOrganization(
 ): Promise<Organization> {
   return apiCall<Organization>(`/api/v1/organizations/${organizationId}`, {
     method: "PUT",
-    body: JSON.stringify(updates),
+    data: updates,
   });
 }
 
@@ -95,7 +99,7 @@ export async function updateOrganizationSubscription(
     `/api/v1/organizations/${organizationId}/subscription?account_id=${accountId}`,
     {
       method: "PUT",
-      body: JSON.stringify({ plan_id: planId }),
+      data: { plan_id: planId },
     },
   );
 }
@@ -112,7 +116,7 @@ export async function deleteOrganization(
 export async function getAccounts(organizationId?: string): Promise<Account[]> {
   const params = organizationId ? `?organization_id=${organizationId}` : "";
   const data = await apiCall<{ accounts: Account[]; total: number }>(
-    `/api/v1/accounts/${params}`,
+    `/api/v1/accounts${params}`,
   );
   return data.accounts;
 }
@@ -150,11 +154,10 @@ export async function createAccount(accountData: {
   region?: string[];
 }): Promise<Account> {
   console.log("[organizationApi] Creating account with data:", accountData);
-  console.log("[organizationApi] API URL:", `${API_BASE_URL}/api/v1/accounts/`);
 
   return apiCall<Account>("/api/v1/accounts/", {
     method: "POST",
-    body: JSON.stringify(accountData),
+    data: accountData,
   });
 }
 
@@ -164,7 +167,7 @@ export async function updateAccount(
 ): Promise<Account> {
   return apiCall<Account>(`/api/v1/accounts/${accountId}`, {
     method: "PUT",
-    body: JSON.stringify(updates),
+    data: updates,
   });
 }
 
@@ -183,7 +186,7 @@ export async function moveAccount(
     `/api/v1/organizations/${currentOrganizationId}/move-account/${accountId}`,
     {
       method: "PUT",
-      body: JSON.stringify({ new_organization_id: newOrganizationId }),
+      data: { new_organization_id: newOrganizationId },
     },
   );
 }
@@ -330,7 +333,4 @@ export async function getChildOrganizations(
   }
 }
 
-// Re-export the organizations array as a promise for initial compatibility
-// This will be replaced by actual API calls
-export const organizations = getOrganizations();
-export const accounts = getAllAccounts();
+// Removed immediate API calls - these should be called when needed, not on module load

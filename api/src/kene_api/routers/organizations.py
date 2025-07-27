@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ..auth import UserContext, get_current_user_context
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import get_firestore_service
 from ..models.kene_models import (
@@ -65,13 +66,15 @@ ORGANIZATION_NOT_FOUND_MESSAGE = "Organization not found"
 
 @router.get("/", response_model=OrganizationListResponse)
 async def get_organizations(
+    request: Request,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> OrganizationListResponse:
     """
-    Get all organizations.
+    Get organizations accessible to the current user.
 
-    Returns a list of all organizations with their properties including
-    subscription, billing, and team information.
+    Returns a list of organizations the user has access to with their properties
+    including subscription, billing, and team information.
 
     **Returns:**
     - `organizations`: List of organization objects with all properties
@@ -88,14 +91,35 @@ async def get_organizations(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        # Query to fetch all organizations
-        organizations_query = """
-        MATCH (org:Organization)
-        RETURN org
-        ORDER BY org.organization_name
-        """
+        # Get organization IDs the user has access to
+        if user.is_super_admin:
+            # Super admins can see all organizations
+            organizations_query = """
+            MATCH (org:Organization)
+            RETURN org
+            ORDER BY org.organization_name
+            """
+            result = await db.execute_query(organizations_query, {})
+        else:
+            # Regular users see only their organizations
+            accessible_org_ids = list(user.organization_permissions.keys())
+            
+            if not accessible_org_ids:
+                # User has no organization access
+                return OrganizationListResponse(organizations=[], total=0)
 
-        result = await db.execute_query(organizations_query)
+            # Query to fetch only organizations the user has access to
+            organizations_query = """
+            MATCH (org:Organization)
+            WHERE org.organization_id IN $org_ids
+            RETURN org
+            ORDER BY org.organization_name
+            """
+
+            result = await db.execute_query(
+                organizations_query,
+                {"org_ids": accessible_org_ids}
+            )
 
         organizations = []
         for record in result:
@@ -122,6 +146,7 @@ async def get_organizations(
 @router.get("/{organization_id}", response_model=Organization)
 async def get_organization(
     organization_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Organization:
     """
@@ -137,8 +162,17 @@ async def get_organization(
     ```
     GET /api/v1/organizations/healthway
     ```
+    
+    **Note:** User must have access to the organization.
     """
     try:
+        # Check if user has access to this organization
+        if not user.has_organization_access(organization_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied to organization {organization_id}"
+            )
+        
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
@@ -977,6 +1011,7 @@ async def move_account_to_organization(
 async def delete_organization(
     organization_id: str,
     db: Neo4jService = Depends(get_neo4j_service),
+    firestore_service = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """
     Delete an organization.
@@ -1029,6 +1064,9 @@ async def delete_organization(
             delete_query, {"organization_id": organization_id}
         )
 
+        # Remove organization permissions from all users in Firestore
+        await remove_organization_from_all_users(organization_id, firestore_service)
+
         return SuccessResponse(
             message=f"Organization {organization_id} deleted successfully",
             data={
@@ -1056,6 +1094,62 @@ async def _check_organization_exists(db: Neo4jService, organization_id: str) -> 
     """
     result = await db.execute_query(query, {"organization_id": organization_id})
     return result[0]["exists"] if result else False
+
+
+async def remove_organization_from_all_users(organization_id: str, firestore_service) -> None:
+    """
+    Remove organization permissions from all users in Firestore.
+    
+    This function queries all users and removes the specified organization
+    from their permissions.organizations field.
+    
+    Args:
+        organization_id: The organization ID to remove
+        firestore_service: Firestore service instance
+    """
+    try:
+        # Get Firestore client
+        firestore_db = firestore_service.get_client()
+        
+        # Query all users who have permissions for this organization
+        users_collection = firestore_db.collection("users")
+        
+        # In Firestore, we need to get all users and check their permissions
+        # since we can't directly query nested fields with dynamic keys
+        all_users = users_collection.stream()
+        
+        batch_count = 0
+        for user_doc in all_users:
+            user_data = user_doc.to_dict()
+            permissions = user_data.get("permissions", {})
+            org_permissions = permissions.get("organizations", {})
+            
+            # Check if this user has access to the organization
+            if organization_id in org_permissions:
+                # Remove the organization from user's permissions
+                del org_permissions[organization_id]
+                
+                # Update the user document
+                user_doc.reference.update({
+                    "permissions.organizations": org_permissions
+                })
+                
+                batch_count += 1
+                logger.info(
+                    f"Removed organization {organization_id} from user {user_doc.id} permissions"
+                )
+        
+        logger.info(
+            f"Removed organization {organization_id} permissions from {batch_count} users"
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"Failed to remove organization {organization_id} from user permissions: {e}",
+            exc_info=True
+        )
+        # Don't raise the exception - we still want to complete the deletion
+        # even if we fail to clean up permissions
 
 
 def _create_organization_from_record(org_data: dict[str, Any]) -> Organization:
