@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import UserContext, get_current_user_context
+from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
 from ..models.kene_models import (
     CreateNotificationRequest,
@@ -100,6 +101,7 @@ async def get_notifications(
     account_id: str | None = Query(None, description="Filter by specific account (optional)"),
     user: UserContext = Depends(get_current_user_context),
     service: NotificationService = Depends(get_notification_service),
+    db = Depends(get_neo4j_service),
 ) -> list[NotificationWithStatus]:
     """
     Get notifications for the current user across all accessible accounts.
@@ -132,7 +134,55 @@ async def get_notifications(
             account_ids = [account_id]
         else:
             # Get all accessible accounts
+            # For org admins and super admins, accessible_accounts might be empty since they have implicit access
             account_ids = user.accessible_accounts
+            
+            # If user is a super admin, fetch all accounts
+            if not account_ids and user.is_super_admin:
+                logger.info(f"User {user.user_id} is super admin, fetching all accounts")
+                
+                # Query all accounts for super admins
+                all_accounts_query = """
+                MATCH (acc:Account)
+                RETURN acc.account_id as account_id
+                """
+                
+                try:
+                    result = await db.execute_query(all_accounts_query, {})
+                    account_ids = [record["account_id"] for record in result]
+                    logger.info(f"Found {len(account_ids)} total accounts for super admin")
+                except Exception as e:
+                    logger.error(f"Error fetching accounts for super admin: {e}")
+                    account_ids = []
+            
+            # If user is an org admin but has no explicit account permissions,
+            # we need to fetch accounts from their organizations
+            elif not account_ids and user.organization_permissions:
+                # Check if user is admin of any organization
+                admin_orgs = [
+                    org_id for org_id, role in user.organization_permissions.items()
+                    if role == "admin"
+                ]
+                
+                if admin_orgs:
+                    # Fetch all accounts from organizations where user is admin
+                    logger.info(f"User {user.user_id} is org admin, fetching accounts from organizations")
+                    
+                    # Query Neo4j for accounts in admin organizations
+                    accounts_query = """
+                    MATCH (org:Organization)<-[:BELONGS_TO]-(acc:Account)
+                    WHERE org.organization_id IN $org_ids
+                    RETURN DISTINCT acc.account_id as account_id
+                    """
+                    
+                    try:
+                        result = await db.execute_query(accounts_query, {"org_ids": admin_orgs})
+                        account_ids = [record["account_id"] for record in result]
+                        logger.info(f"Found {len(account_ids)} accounts for org admin {user.user_id}")
+                    except Exception as e:
+                        logger.error(f"Error fetching accounts for org admin: {e}")
+                        # Fall back to empty list
+                        account_ids = []
         
         notifications = await service.get_user_notifications(
             user_id=user.user_id,
