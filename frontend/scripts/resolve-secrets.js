@@ -13,9 +13,19 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function getSecret(secretPath) {
+async function getSecret(secretPath, serviceAccountPath) {
   try {
-    const client = new SecretManagerServiceClient();
+    const clientConfig = {};
+    
+    // If service account path is provided and exists, use it
+    if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
+      console.log(`Using service account: ${serviceAccountPath}`);
+      clientConfig.keyFilename = serviceAccountPath;
+    } else {
+      console.log(`Using Application Default Credentials (service account not found at: ${serviceAccountPath})`);
+    }
+    
+    const client = new SecretManagerServiceClient(clientConfig);
     const [version] = await client.accessSecretVersion({
       name: secretPath,
     });
@@ -32,6 +42,21 @@ async function resolveSecrets(envFile) {
   if (!fs.existsSync(envPath)) {
     console.error(`Environment file ${envFile} not found`);
     process.exit(1);
+  }
+
+  // Determine which service account to use based on the environment file
+  let serviceAccountPath = null;
+  if (envFile.includes("development")) {
+    serviceAccountPath = path.join(__dirname, "../../api/ken-e-dev.json");
+  } else if (envFile.includes("staging")) {
+    serviceAccountPath = path.join(__dirname, "../../api/ken-e-staging.json");
+  } else if (envFile.includes("production")) {
+    serviceAccountPath = path.join(__dirname, "../../api/ken-e-production.json");
+  }
+
+  if (serviceAccountPath && !fs.existsSync(serviceAccountPath)) {
+    console.warn(`Service account file not found at: ${serviceAccountPath}`);
+    console.warn(`Will fall back to Application Default Credentials`);
   }
 
   const envContent = fs.readFileSync(envPath, "utf8");
@@ -60,7 +85,7 @@ async function resolveSecrets(envFile) {
     ) {
       try {
         console.log(`Resolving secret for ${key}...`);
-        const secretValue = await getSecret(cleanValue);
+        const secretValue = await getSecret(cleanValue, serviceAccountPath);
         resolvedLines.push(`${key}=${secretValue}`);
       } catch (error) {
         console.error(
@@ -107,10 +132,23 @@ const environment = process.argv[2];
 if (!environment) {
   console.error("Usage: node resolve-secrets.js <environment>");
   console.error("Example: node resolve-secrets.js .env.production");
+  console.error("");
+  console.error("Note: This script expects service account files to be located at:");
+  console.error("  - api/ken-e-dev.json (for development)");
+  console.error("  - api/ken-e-staging.json (for staging)");
+  console.error("  - api/ken-e-production.json (for production)");
   process.exit(1);
 }
 
+console.log(`Resolving secrets for environment: ${environment}`);
 resolveSecrets(environment).catch((error) => {
   console.error("Error resolving secrets:", error);
+  console.error("");
+  console.error("If you're seeing authentication errors, ensure you have either:");
+  console.error("1. Service account JSON files in api/ directory:");
+  console.error("   - ken-e-dev.json");
+  console.error("   - ken-e-staging.json");
+  console.error("   - ken-e-production.json");
+  console.error("2. Or run: gcloud auth application-default login");
   process.exit(1);
 });

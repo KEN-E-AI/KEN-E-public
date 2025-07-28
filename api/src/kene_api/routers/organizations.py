@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import UserContext, get_current_user_context
+from ..config import settings
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import get_firestore_service
 from ..models.kene_models import (
@@ -165,50 +166,21 @@ async def get_organization(
     
     **Note:** User must have access to the organization.
     """
-    try:
-        # Check if user has access to this organization
-        if not user.has_organization_access(organization_id):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied to organization {organization_id}"
-            )
-        
-        # Check Neo4j connectivity
-        is_healthy = await db.health_check()
-        if not is_healthy:
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-
-        # Query to fetch specific organization
-        organization_query = """
-        MATCH (org:Organization {organization_id: $organization_id})
-        RETURN org
-        """
-
-        result = await db.execute_query(
-            organization_query, {"organization_id": organization_id}
-        )
-
-        if not result:
-            raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_MESSAGE)
-
-        org_data = result[0].get("org")
-        organization = _create_organization_from_record(org_data)
-
-        return organization
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+    # Check if user has access to this organization
+    if not user.has_organization_access(organization_id):
         raise HTTPException(
-            status_code=500, detail=f"Error fetching organization: {e!s}"
+            status_code=403,
+            detail=f"Access denied to organization {organization_id}"
         )
+    
+    # Use internal helper to fetch organization
+    return await _get_organization_by_id(organization_id, db)
 
 
 @router.post("/", response_model=Organization)
 async def create_organization(
     request: OrganizationRequest,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Organization:
     """
@@ -244,6 +216,21 @@ async def create_organization(
     ```
     """
     try:
+        # Check if user has permission to create organizations based on configuration
+        permission_level = settings.organization_creation_permission
+        
+        if permission_level == "none":
+            raise HTTPException(
+                status_code=403,
+                detail="Organization creation is currently disabled"
+            )
+        elif permission_level == "super_admin" and not user.is_super_admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Only super administrators can create organizations"
+            )
+        # If permission_level == "all", any authenticated user can create
+        
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
@@ -315,8 +302,73 @@ async def create_organization(
 
         await db.execute_write_query(create_query, params)
 
+        # Grant the creating user owner permissions on the new organization
+        firestore_service = get_firestore_service()
+        try:
+            success = firestore_service.set_nested_field(
+                collection="users",
+                document_id=user.user_id,
+                field_path=f"permissions.organizations.{organization_id}",
+                value="owner",
+            )
+            if not success:
+                # If we can't grant permissions, rollback the organization creation
+                logger.error(
+                    f"Failed to grant permissions to user {user.user_id} for organization {organization_id}. "
+                    "Rolling back organization creation."
+                )
+                
+                # Attempt to delete the created organization
+                try:
+                    delete_query = """
+                    MATCH (org:Organization {organization_id: $organization_id})
+                    DELETE org
+                    """
+                    await db.execute_write_query(delete_query, {"organization_id": organization_id})
+                    logger.info(f"Successfully rolled back organization {organization_id}")
+                except Exception as rollback_error:
+                    logger.critical(
+                        f"Failed to rollback organization {organization_id} after permission grant failure: {rollback_error}"
+                    )
+                
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to complete organization setup. Please try again."
+                )
+            
+            logger.info(
+                f"Granted owner permissions to user {user.user_id} for organization {organization_id}"
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            # If Firestore is down or there's a critical error, rollback
+            logger.error(
+                f"Critical error granting permissions to user {user.user_id} for organization {organization_id}: {e}. "
+                "Rolling back organization creation."
+            )
+            
+            # Attempt to delete the created organization
+            try:
+                delete_query = """
+                MATCH (org:Organization {organization_id: $organization_id})
+                DELETE org
+                """
+                await db.execute_write_query(delete_query, {"organization_id": organization_id})
+                logger.info(f"Successfully rolled back organization {organization_id}")
+            except Exception as rollback_error:
+                logger.critical(
+                    f"Failed to rollback organization {organization_id} after permission grant failure: {rollback_error}"
+                )
+            
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to complete organization setup due to permission system error."
+            )
+
         # Fetch the created organization
-        return await get_organization(organization_id, db)
+        return await _get_organization_by_id(organization_id, db)
 
     except HTTPException:
         raise
@@ -1094,6 +1146,58 @@ async def _check_organization_exists(db: Neo4jService, organization_id: str) -> 
     """
     result = await db.execute_query(query, {"organization_id": organization_id})
     return result[0]["exists"] if result else False
+
+
+async def _get_organization_by_id(
+    organization_id: str,
+    db: Neo4jService,
+) -> Organization:
+    """
+    Get a specific organization by ID without authentication.
+    Internal helper function for use within the router.
+    
+    Args:
+        organization_id: The unique identifier for the organization
+        db: Neo4j service instance
+        
+    Returns:
+        Organization object
+        
+    Raises:
+        HTTPException: If organization not found or database error
+    """
+    try:
+        # Check Neo4j connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Query to fetch specific organization
+        organization_query = """
+        MATCH (org:Organization {organization_id: $organization_id})
+        RETURN org
+        """
+
+        result = await db.execute_query(
+            organization_query, {"organization_id": organization_id}
+        )
+
+        if not result:
+            raise HTTPException(status_code=404, detail=ORGANIZATION_NOT_FOUND_MESSAGE)
+
+        org_data = result[0].get("org")
+        organization = _create_organization_from_record(org_data)
+
+        return organization
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "Neo4j" in str(e) or "connect" in str(e).lower():
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching organization: {e!s}"
+        )
 
 
 async def remove_organization_from_all_users(organization_id: str, firestore_service) -> None:

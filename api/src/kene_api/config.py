@@ -38,6 +38,10 @@ class Settings:
     # reCAPTCHA settings
     RECAPTCHA_SITE_KEY: str = get_env_var_or_secret("RECAPTCHA_SITE_KEY", "")
     RECAPTCHA_SECRET_KEY: str = get_env_var_or_secret("RECAPTCHA_SECRET_KEY", "")
+    
+    # Organization creation settings
+    # Options: "all" (any authenticated user), "super_admin" (only super admins), "none" (disabled)
+    organization_creation_permission: str = os.getenv("ORGANIZATION_CREATION_PERMISSION", "all")
 
 
 settings = Settings()
