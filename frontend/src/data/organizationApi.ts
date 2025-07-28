@@ -30,6 +30,7 @@ async function apiCall<T>(
       console.debug(`[organizationApi] Resource not found: ${path}`);
     } else {
       console.error(`[organizationApi] API Error:`, error);
+      console.error(`[organizationApi] Response data:`, error.response?.data);
     }
     if (error.response?.data?.detail) {
       throw new Error(error.response.data.detail);

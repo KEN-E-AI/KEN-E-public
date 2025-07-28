@@ -239,7 +239,7 @@ const AccountsManagement = ({
     websites: [""],
     timezone: "America/New_York",
     data_region: "United States",
-    region: [] as string[],
+    region: ["US"] as string[],
   });
 
   // Filter accounts based on user permissions
@@ -436,6 +436,7 @@ const AccountsManagement = ({
         accountName: createAccountFormData.account_name,
         organizationId: currentOrgId,
         industry: createAccountFormData.industry,
+        status: createAccountFormData.status,
         websites: createAccountFormData.websites,
         timezone: createAccountFormData.timezone,
         dataRegion: createAccountFormData.data_region,
@@ -555,7 +556,7 @@ const AccountsManagement = ({
         websites: [""],
         timezone: "America/New_York",
         data_region: "United States",
-        region: [],
+        region: ["US"],
       });
 
       // Set the newly created account as selected in auth context
@@ -889,7 +890,7 @@ const AccountsManagement = ({
   };
 
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
@@ -1243,13 +1244,23 @@ const AccountsManagement = ({
         open={isCreateAccountModalOpen}
         onOpenChange={setIsCreateAccountModalOpen}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Create New Account</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label htmlFor="create-account-name">Account Name</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="create-account-name">Account Name</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>A friendly name for the account. If you have different types of customers who each require a unique strategy, you should consider creating multiple accounts (example: Company B2B, and Company B2C).</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Input
                 id="create-account-name"
                 value={createAccountFormData.account_name}
@@ -1275,7 +1286,17 @@ const AccountsManagement = ({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-account-status">Status</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="create-account-status">Status</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Set the status to inactive to temporarily pause all data processing and charges.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select
                 value={createAccountFormData.status}
                 onValueChange={(value) =>
@@ -1296,7 +1317,17 @@ const AccountsManagement = ({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-account-timezone">Timezone</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="create-account-timezone">Timezone</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Set the timezone to the same value selected in your martech platforms to ensure all data is aligned to the proper date.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select
                 value={createAccountFormData.timezone}
                 onValueChange={(value) =>
@@ -1319,7 +1350,17 @@ const AccountsManagement = ({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="create-account-data-region">Data Region</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="create-account-data-region">Data Region</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Choose a location to store your data. Once your account is created you must contact support to change this setting.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select
                 value={createAccountFormData.data_region}
                 onValueChange={(value) =>
@@ -1340,7 +1381,17 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Customer Region</Label>
+                <div className="flex items-center gap-2">
+                  <Label>Customer Region</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Select all regions where your target customers live. This will be used to understand how regional holidays influence your business metrics.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <div className="relative" ref={createRegionDropdownRef}>
                   <Button
                     type="button"
@@ -1403,7 +1454,17 @@ const AccountsManagement = ({
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Websites</Label>
+                <div className="flex items-center gap-2">
+                  <Label>Websites</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>List all of your websites. KEN-E will study these to understand your business and products/services.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -1605,7 +1666,7 @@ const AccountsManagement = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </TooltipProvider>
   );
 };
 

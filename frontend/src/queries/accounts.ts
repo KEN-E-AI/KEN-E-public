@@ -63,6 +63,7 @@ export const useCreateAccount = () => {
       accountName: string;
       organizationId: string;
       industry: string;
+      status: string;
       websites: string[];
       timezone: string;
       dataRegion: string;
@@ -73,7 +74,7 @@ export const useCreateAccount = () => {
         account_name: accountData.accountName,
         organization_id: accountData.organizationId,
         industry: accountData.industry,
-        status: "active", // Default status
+        status: accountData.status,
         websites: accountData.websites,
         timezone: accountData.timezone,
         data_region: accountData.dataRegion,
