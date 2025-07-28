@@ -595,6 +595,12 @@ async def create_account(
 
         await db.execute_write_query(create_query, params)
 
+        # Invalidate the creating user's cache to ensure their context includes the new account
+        from ..auth.cached_user_context import get_cached_user_context_service
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user.user_id)
+        logger.info(f"Invalidated cache for user {user.user_id} after creating account {account_id}")
+
         # Create initial activities for the new account
         activities_created = await _create_initial_activities(db, firestore, account_id)
         if activities_created > 0:
@@ -731,6 +737,12 @@ async def update_account(
         """
 
         await db.execute_write_query(update_query, params)
+
+        # Invalidate the updating user's cache to ensure fresh context
+        from ..auth.cached_user_context import get_cached_user_context_service
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user.user_id)
+        logger.info(f"Invalidated cache for user {user.user_id} after updating account {account_id}")
 
         # If regions were updated, sync holiday activity logs
         if regions_changed:
