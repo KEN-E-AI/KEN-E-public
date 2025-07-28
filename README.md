@@ -70,14 +70,6 @@ cd ..
 
 ### 2. Configure Environment
 
-#### Setup Required Services
-
-Before configuring the application, set up these external services:
-
-1. **Neo4j Aura Instances**: Create free instances at [neo4j.com/aura](https://neo4j.com/aura/) for dev, staging, and prod
-2. **Firebase Projects**: Set up Firebase projects for authentication
-3. **reCAPTCHA Keys**: Create reCAPTCHA v3 keys at [google.com/recaptcha/admin](https://www.google.com/recaptcha/admin)
-
 #### Configure API Environment
 
 ```bash
@@ -117,19 +109,6 @@ cp .env.example .env.production
 cd ..
 ```
 
-#### reCAPTCHA Configuration
-
-**Important**: Each environment requires its own reCAPTCHA v3 keys:
-
-1. Go to [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin)
-2. Create separate v3 keys for each environment:
-   - **Development**: Add `localhost`, `127.0.0.1` as domains
-   - **Staging**: Add your staging domain
-   - **Production**: Add your production domain
-3. Add the site key to frontend `.env.*` files as `VITE_RECAPTCHA_SITE_KEY`
-4. Add both site and secret keys to API `.env.*` files as `RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY`
-
-**Note**: The site key must match between frontend and API for each environment.
 
 ### 3. Start Development Servers
 
@@ -217,6 +196,22 @@ npm run format.fix    # Format code with Prettier
 ```bash
 cd data_ingestion
 python data_ingestion_pipeline/submit_pipeline.py  # Submit to Vertex AI
+```
+
+## Configuration Options
+
+### Organization Creation Permissions
+
+The API now supports configurable organization creation permissions via the `ORGANIZATION_CREATION_PERMISSION` environment variable:
+
+- `all` (default) - Any authenticated user can create organizations
+- `super_admin` - Only super administrators (users with @ken-e.ai emails) can create organizations
+- `none` - Organization creation is disabled
+
+To configure this in your API environment file:
+```bash
+# In api/.env
+ORGANIZATION_CREATION_PERMISSION=all  # or super_admin, or none
 ```
 
 ## Architecture
@@ -337,16 +332,41 @@ KEN-E uses Google Cloud Secret Manager for secure credential storage. All sensit
 
 ### Authentication Setup
 
-For local development and secret resolution:
-```bash
-# Authenticate with Google Cloud
-gcloud auth application-default login
+For local development and secret resolution, the project now uses service account files for authentication:
 
-# Install frontend dependencies (includes Secret Manager client)
-cd frontend && npm install
+#### Service Account Files
+
+Place your service account JSON files in the `api/` directory:
+- `api/ken-e-dev.json` - Development service account
+- `api/ken-e-staging.json` - Staging service account  
+- `api/ken-e-production.json` - Production service account
+
+**Important Security Notes:**
+- Never commit service account files to git (they're already in .gitignore)
+- Each service account needs the `Secret Manager Secret Accessor` role
+- The frontend build process automatically uses these files for secret resolution
+
+#### Frontend Secret Resolution
+
+The frontend automatically resolves secrets during build/dev commands:
+```bash
+# When you run these commands, secrets are automatically resolved
+npm run dev:development  # Uses api/ken-e-dev.json
+npm run dev:staging      # Uses api/ken-e-staging.json
+npm run dev:production   # Uses api/ken-e-production.json
+npm run build:staging    # Uses api/ken-e-staging.json
+npm run build:production # Uses api/ken-e-production.json
 ```
 
-**Important**: Before running staging or production environments locally, you need proper authentication to access Secret Manager.
+#### Fallback Authentication
+
+If service account files are not available, you can use Application Default Credentials:
+```bash
+# Authenticate with Google Cloud (fallback option)
+gcloud auth application-default login --project=ken-e-staging
+```
+
+**Note**: Service account files are preferred as they avoid re-authentication issues (RAPT errors).
 
 For production deployments, ensure service accounts have the `Secret Manager Secret Accessor` role:
 ```bash
