@@ -70,14 +70,6 @@ cd ..
 
 ### 2. Configure Environment
 
-#### Setup Required Services
-
-Before configuring the application, set up these external services:
-
-1. **Neo4j Aura Instances**: Create free instances at [neo4j.com/aura](https://neo4j.com/aura/) for dev, staging, and prod
-2. **Firebase Projects**: Set up Firebase projects for authentication
-3. **reCAPTCHA Keys**: Create reCAPTCHA v3 keys at [google.com/recaptcha/admin](https://www.google.com/recaptcha/admin)
-
 #### Configure API Environment
 
 ```bash
@@ -117,19 +109,6 @@ cp .env.example .env.production
 cd ..
 ```
 
-#### reCAPTCHA Configuration
-
-**Important**: Each environment requires its own reCAPTCHA v3 keys:
-
-1. Go to [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin)
-2. Create separate v3 keys for each environment:
-   - **Development**: Add `localhost`, `127.0.0.1` as domains
-   - **Staging**: Add your staging domain
-   - **Production**: Add your production domain
-3. Add the site key to frontend `.env.*` files as `VITE_RECAPTCHA_SITE_KEY`
-4. Add both site and secret keys to API `.env.*` files as `RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY`
-
-**Note**: The site key must match between frontend and API for each environment.
 
 ### 3. Start Development Servers
 
