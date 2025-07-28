@@ -116,7 +116,7 @@ export async function deleteOrganization(
 export async function getAccounts(organizationId?: string): Promise<Account[]> {
   const params = organizationId ? `?organization_id=${organizationId}` : "";
   const data = await apiCall<{ accounts: Account[]; total: number }>(
-    `/api/v1/accounts${params}`,
+    `/api/v1/accounts/${params}`,
   );
   return data.accounts;
 }
@@ -282,8 +282,6 @@ export async function createNewOrganization(orgData: {
 
     return newOrg;
   }
-
-  return newOrg;
 }
 
 export async function createNewAccount(accountData: {
