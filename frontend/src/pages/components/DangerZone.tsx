@@ -61,7 +61,7 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
       description: `"${organizationName}" and all associated accounts have been permanently deleted.`,
     });
 
-    navigate("/");
+    navigate("/organization-selection");
   };
 
   const handleDeletionError = (error: any) => {

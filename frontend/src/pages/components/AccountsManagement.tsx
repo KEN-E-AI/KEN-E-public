@@ -166,6 +166,7 @@ const AccountsManagement = ({
     updateUser,
     orgMetadata,
     setOrgMetadata,
+    selectedOrgAccount,
     setSelectedOrgAccount,
     isSuperAdmin,
   } = useAuth();
@@ -784,11 +785,14 @@ const AccountsManagement = ({
     // Store account info before deletion
     const accountId = account.account_id;
     const accountName = account.account_name;
-    const isDeletingCurrentAccount = accountId === accountMetadata?.account_id;
+    const isDeletingCurrentAccount = accountId === selectedOrgAccount?.accountId;
 
-    // Close dialogs immediately to prevent UI issues
+    // Close ALL dialogs immediately to prevent UI issues
     setIsDeleteDialogOpen(false);
     setIsModalOpen(false);
+    setIsEditRegionPopoverOpen(false);
+    setIsCreateRegionPopoverOpen(false);
+    setIsMoveAccountDialogOpen(false);
 
     // Clear selected account state to prevent accessing stale data
     setSelectedAccount(null);
@@ -815,6 +819,25 @@ const AccountsManagement = ({
         title: "Account Deleted",
         description: `"${accountName}" and all related entities have been permanently deleted.`,
       });
+
+      // Update organization metadata to remove the deleted account
+      if (!isDeletingCurrentAccount) {
+        // Remove from account metadata
+        const newAccountMetadata = { ...accountMetadata };
+        delete newAccountMetadata[accountId];
+        setAccountMetadata(newAccountMetadata);
+
+        // Update org metadata to remove the account
+        setOrgMetadata((prev) => ({
+          ...prev,
+          [currentOrgId]: {
+            ...prev[currentOrgId],
+            accounts: prev[currentOrgId]?.accounts?.filter(
+              (acc: any) => acc.account_id !== accountId
+            ) || [],
+          },
+        }));
+      }
 
       // If we deleted the current account, redirect to workspace selection
       if (isDeletingCurrentAccount) {
