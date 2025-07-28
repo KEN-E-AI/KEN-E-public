@@ -473,6 +473,7 @@ async def _create_initial_activity_logs(
 @router.post("/", response_model=Account)
 async def create_account(
     request: AccountRequest,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> Account:
@@ -638,6 +639,7 @@ async def create_account(
 async def update_account(
     account_id: str,
     request: AccountRequest,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
     bigquery: BigQueryService = Depends(get_bigquery_service),
 ) -> Account:
