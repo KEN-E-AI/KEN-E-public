@@ -280,10 +280,35 @@ The project includes:
 
 ## 📝 Environment Variables
 
-No environment variables are required for basic functionality. For production deployments, consider:
+### Required Variables
 
-- `VITE_API_URL` - Backend API endpoint
-- `VITE_ANALYTICS_ID` - Analytics tracking ID
+Each environment file (`.env.development`, `.env.staging`, `.env.production`) should contain:
+
+- `VITE_API_BASE_URL` - Backend API endpoint
+- `VITE_FIREBASE_*` - Firebase configuration (API key, auth domain, project ID, etc.)
+- `VITE_RECAPTCHA_SITE_KEY` - Google reCAPTCHA site key (can reference Secret Manager)
+- `VITE_ENVIRONMENT` - Environment indicator (development|staging|production)
+
+### Secret Manager Integration
+
+The frontend automatically resolves Google Secret Manager references during build/dev commands. If your `.env.*` files contain Secret Manager paths like:
+
+```
+VITE_RECAPTCHA_SITE_KEY=projects/391472102753/secrets/recaptcha-site-key/versions/latest
+```
+
+These will be automatically resolved when you run:
+- `npm run dev:development`, `npm run dev:staging`, or `npm run dev:production`
+- `npm run build:staging` or `npm run build:production`
+
+**Authentication**: The secret resolution uses service account files located in the parent `api/` directory:
+- `api/ken-e-dev.json` for development
+- `api/ken-e-staging.json` for staging
+- `api/ken-e-production.json` for production
+
+If service account files are not available, the script falls back to Application Default Credentials.
+
+**Note**: See [scripts/README-service-accounts.md](scripts/README-service-accounts.md) for detailed setup instructions.
 
 ## 🤝 Contributing
 
