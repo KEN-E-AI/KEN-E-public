@@ -150,12 +150,14 @@ interface AccountsManagementProps {
   orgData: Organization;
   currentOrgId: string;
   openCreateModal?: boolean;
+  hasAdminAccess?: boolean;
 }
 
 const AccountsManagement = ({
   orgData,
   currentOrgId,
   openCreateModal = false,
+  hasAdminAccess = true,
 }: AccountsManagementProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -608,12 +610,12 @@ const AccountsManagement = ({
   // organizationAccounts is already synced with accounts through useMemo
   // No need for a separate useEffect to update it
 
-  // Open create account modal if requested via prop
+  // Open create account modal if requested via prop and user has admin access
   useEffect(() => {
-    if (openCreateModal && !orgData.agency) {
+    if (openCreateModal && !orgData.agency && hasAdminAccess) {
       setIsCreateAccountModalOpen(true);
     }
-  }, [openCreateModal, orgData.agency]);
+  }, [openCreateModal, orgData.agency, hasAdminAccess]);
 
   // Fetch organizations when move dialog opens
   useEffect(() => {
@@ -923,7 +925,7 @@ const AccountsManagement = ({
               <Store className="h-5 w-5" />
               Accounts
             </div>
-            {!orgData.agency && (
+            {!orgData.agency && hasAdminAccess && (
               <Button
                 variant="outline"
                 size="sm"
@@ -975,14 +977,16 @@ const AccountsManagement = ({
                     </div>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleEditAccount(account)}
-                  className="h-8 w-8 p-0"
-                >
-                  <Settings className="h-4 w-4 text-gray-500" />
-                </Button>
+                {hasAdminAccess && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEditAccount(account)}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Settings className="h-4 w-4 text-gray-500" />
+                  </Button>
+                )}
               </div>
             ))
           ) : (
