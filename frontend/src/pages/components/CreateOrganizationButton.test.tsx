@@ -2,6 +2,7 @@ import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AccountSettings from "../AccountSettings";
 import { AuthContext } from "@/contexts/AuthContext";
 
@@ -15,6 +16,23 @@ vi.mock("@/data/organizationApi", () => ({
   createNewOrganization: vi.fn(),
   createNewAccount: vi.fn(),
   getChildOrganizations: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock the subscription plans API
+vi.mock("@/data/subscriptionPlansApi", () => ({
+  getDefaultPlan: vi.fn().mockResolvedValue({
+    plan_name: "Free Plan",
+    plan_description: "Basic features for getting started",
+    price: 0,
+    currency: "USD",
+    billing_cycle: "monthly",
+    features: {
+      features: ["Basic Reports", "1 User"],
+      max_reports: 10,
+      max_users: 1,
+    },
+  }),
+  getSubscriptionPlans: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock the toast hook
@@ -102,12 +120,20 @@ vi.mock("react-router-dom", async () => {
 });
 
 const renderAccountSettings = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+
   return render(
-    <BrowserRouter>
-      <AuthContext.Provider value={mockAuthContext}>
-        <AccountSettings />
-      </AuthContext.Provider>
-    </BrowserRouter>,
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AuthContext.Provider value={mockAuthContext}>
+          <AccountSettings />
+        </AuthContext.Provider>
+      </BrowserRouter>
+    </QueryClientProvider>,
   );
 };
 
@@ -141,5 +167,88 @@ describe("Create Organization Button", () => {
         "Manage your organization profile, subscription, and team settings",
       ),
     ).toBeInTheDocument();
+  });
+
+  test("should show Create New Organization button for view-only users", () => {
+    // Create a view-only user context
+    const viewOnlyAuthContext = {
+      ...mockAuthContext,
+      user: {
+        ...mockUser,
+        permissions: {
+          organizations: {
+            "test-org": "view", // User has view-only access
+          },
+        },
+      },
+    };
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthContext.Provider value={viewOnlyAuthContext}>
+            <AccountSettings />
+          </AuthContext.Provider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+    // Should show the view-only alert
+    expect(
+      screen.getByText(/You have view-only access to this organization/),
+    ).toBeInTheDocument();
+
+    // Should still show the Create New Organization button
+    expect(
+      screen.getByRole("button", { name: "Create New Organization" }),
+    ).toBeInTheDocument();
+  });
+
+  test("should not show organization management sections for view-only users", () => {
+    // Create a view-only user context
+    const viewOnlyAuthContext = {
+      ...mockAuthContext,
+      user: {
+        ...mockUser,
+        permissions: {
+          organizations: {
+            "test-org": "view", // User has view-only access
+          },
+        },
+      },
+    };
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthContext.Provider value={viewOnlyAuthContext}>
+            <AccountSettings />
+          </AuthContext.Provider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+    // Should not show organization form
+    expect(
+      screen.queryByText("Organization Information"),
+    ).not.toBeInTheDocument();
+
+    // Should not show subscription card
+    expect(screen.queryByText("Current Plan")).not.toBeInTheDocument();
+
+    // Should not show billing section
+    expect(screen.queryByText("Billing & Payment")).not.toBeInTheDocument();
   });
 });

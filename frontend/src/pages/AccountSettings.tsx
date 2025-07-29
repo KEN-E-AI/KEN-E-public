@@ -15,6 +15,7 @@ import type { Organization } from "@/data/organizationTypes";
 import type { SubscriptionPlanDefinition } from "@/types/subscription";
 import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Plus, Shield } from "lucide-react";
 
 // Component imports
@@ -589,44 +590,6 @@ const AccountSettings = () => {
       (user?.permissions?.organizations?.[currentOrgId] === "admin" ||
         user?.permissions?.organizations?.[currentOrgId] === "owner"));
 
-  // If user only has view access to the organization, show restricted message
-  if (!isCreatingNew && currentOrgId && !hasAdminAccess) {
-    return (
-      <SettingsLayout
-        pageTitle={getPageTitle()}
-        currentPage={getCurrentPage()}
-        showBackButton={true}
-        showContextSidebar={!isCreatingNew}
-      >
-        <div className="text-center py-12">
-          <div className="mx-auto max-w-md">
-            <div className="mb-6">
-              <Shield className="h-16 w-16 mx-auto text-gray-400" />
-            </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              View-Only Access
-            </h2>
-            <p className="text-gray-600 mb-6">
-              You have view-only access to this organization. Organization
-              settings can only be managed by users with admin permissions.
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => navigate(-1)}
-              className="mb-4"
-            >
-              Go Back
-            </Button>
-            <p className="text-sm text-gray-500">
-              If you need to make changes to organization settings, please
-              contact an organization admin.
-            </p>
-          </div>
-        </div>
-      </SettingsLayout>
-    );
-  }
-
   return (
     <SettingsLayout
       pageTitle={getPageTitle()}
@@ -634,7 +597,7 @@ const AccountSettings = () => {
       showBackButton={!isCreatingNew}
       showContextSidebar={!isCreatingNew}
     >
-      {/* Organization Settings Header with create button */}
+      {/* Organization Settings Header with create button - Always visible */}
       {!isCreatingNew && !isAccountSpecific && (
         <div className="space-y-6 mb-6">
           {/* Description */}
@@ -656,21 +619,35 @@ const AccountSettings = () => {
         </div>
       )}
 
-      {/* Organization Information */}
-      <OrganizationForm
-        isCreatingNew={isCreatingNew}
-        orgData={orgData}
-        formData={newOrgFormData}
-        setFormData={setNewOrgFormData}
-        editAgencyData={editAgencyData}
-        setEditAgencyData={setEditAgencyData}
-        editOrgName={editOrgName}
-        setEditOrgName={setEditOrgName}
-        onSubmit={
-          isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
-        }
-        isLoading={isCreatingOrganization}
-      />
+      {/* View-only access alert */}
+      {!isCreatingNew && currentOrgId && !hasAdminAccess && (
+        <Alert className="mb-6">
+          <Shield className="h-4 w-4" />
+          <AlertDescription>
+            You have view-only access to this organization. You can view
+            settings but cannot make changes. To manage your own organization,
+            click "Create New Organization" above.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Organization Information - Show form for new org or if user has admin access */}
+      {(isCreatingNew || hasAdminAccess) && (
+        <OrganizationForm
+          isCreatingNew={isCreatingNew}
+          orgData={orgData}
+          formData={newOrgFormData}
+          setFormData={setNewOrgFormData}
+          editAgencyData={editAgencyData}
+          setEditAgencyData={setEditAgencyData}
+          editOrgName={editOrgName}
+          setEditOrgName={setEditOrgName}
+          onSubmit={
+            isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
+          }
+          isLoading={isCreatingOrganization}
+        />
+      )}
 
       {/* Show loading state while fetching organization data */}
       {isLoadingOrgData && !isCreatingNew && (
@@ -685,26 +662,41 @@ const AccountSettings = () => {
       {/* Conditional sections for existing organizations */}
       {orgData && !isLoadingOrgData && (
         <>
-          <SubscriptionCard
-            orgData={orgData}
-            onOrganizationUpdate={(updatedOrg) => {
-              setOrgMetadata({
-                ...orgMetadata,
-                [updatedOrg.organization_id]: updatedOrg,
-              });
-            }}
-          />
-          <AccountsManagement
-            orgData={orgData}
-            currentOrgId={currentOrgId!}
-            openCreateModal={shouldOpenCreateAccount}
-          />
-          <BillingSection orgData={orgData} />
-          {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||
-            user?.permissions?.organizations?.[currentOrgId!] === "owner") && (
-            <TeamManagement orgData={orgData} />
+          {/* Show all sections if user has admin access */}
+          {hasAdminAccess ? (
+            <>
+              <SubscriptionCard
+                orgData={orgData}
+                onOrganizationUpdate={(updatedOrg) => {
+                  setOrgMetadata({
+                    ...orgMetadata,
+                    [updatedOrg.organization_id]: updatedOrg,
+                  });
+                }}
+              />
+              <AccountsManagement
+                orgData={orgData}
+                currentOrgId={currentOrgId!}
+                openCreateModal={shouldOpenCreateAccount}
+                hasAdminAccess={hasAdminAccess}
+              />
+              <BillingSection orgData={orgData} />
+              {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||
+                user?.permissions?.organizations?.[currentOrgId!] ===
+                  "owner") && <TeamManagement orgData={orgData} />}
+              <DangerZone orgData={orgData} />
+            </>
+          ) : (
+            <>
+              {/* View-only users can still see accounts (read-only) */}
+              <AccountsManagement
+                orgData={orgData}
+                currentOrgId={currentOrgId!}
+                openCreateModal={shouldOpenCreateAccount}
+                hasAdminAccess={hasAdminAccess}
+              />
+            </>
           )}
-          <DangerZone orgData={orgData} />
         </>
       )}
     </SettingsLayout>
