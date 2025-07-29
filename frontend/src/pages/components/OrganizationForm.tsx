@@ -154,62 +154,80 @@ const OrganizationForm = ({
               Agency Configuration
             </h3>
 
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="agency-switch"
-                checked={currentAgencyValue}
-                onCheckedChange={handleAgencyChange}
-              />
-              <Label htmlFor="agency-switch" className="text-sm font-medium">
-                This organization is an agency that manages other organizations
-              </Label>
-            </div>
-
-            {currentAgencyValue && (
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">
-                  Organizations this agency can manage:
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
+              <div className="flex items-center space-x-3">
+                <Switch
+                  id="agency-switch"
+                  checked={currentAgencyValue}
+                  onCheckedChange={handleAgencyChange}
+                  className="data-[state=unchecked]:bg-gray-300"
+                />
+                <Label
+                  htmlFor="agency-switch"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  This organization is an agency that manages other
+                  organizations
                 </Label>
-                <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3">
-                  {loading ? (
-                    <p className="text-sm text-gray-500">
-                      Loading organizations...
-                    </p>
-                  ) : (
-                    allOrganizations
-                      .filter(
-                        (org) =>
-                          org.organization_id !== orgData?.organization_id,
-                      )
-                      .map((org) => (
-                        <div
-                          key={org.organization_id}
-                          className="flex items-center space-x-2"
-                        >
-                          <Checkbox
-                            id={`org-${org.organization_id}`}
-                            checked={currentChildOrgs.includes(
-                              org.organization_id,
-                            )}
-                            onCheckedChange={(checked) =>
-                              handleChildOrgChange(
-                                org.organization_id,
-                                checked as boolean,
-                              )
-                            }
-                          />
-                          <Label
-                            htmlFor={`org-${org.organization_id}`}
-                            className="text-sm font-normal cursor-pointer"
-                          >
-                            {org.organization_name}
-                          </Label>
-                        </div>
-                      ))
-                  )}
-                </div>
               </div>
-            )}
+
+              {!currentAgencyValue && (
+                <p className="text-xs text-gray-500 ml-8">
+                  Enable this option if your organization manages marketing
+                  strategies for other businesses
+                </p>
+              )}
+
+              {currentAgencyValue && (
+                <div className="space-y-3 border-t border-gray-200 pt-4">
+                  <Label className="text-sm font-medium text-gray-700">
+                    Organizations this agency can manage:
+                  </Label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-300 rounded-md p-3 bg-white">
+                    {loading ? (
+                      <p className="text-sm text-gray-500">
+                        Loading organizations...
+                      </p>
+                    ) : allOrganizations.length > 0 ? (
+                      allOrganizations
+                        .filter(
+                          (org) =>
+                            org.organization_id !== orgData?.organization_id,
+                        )
+                        .map((org) => (
+                          <div
+                            key={org.organization_id}
+                            className="flex items-center space-x-2"
+                          >
+                            <Checkbox
+                              id={`org-${org.organization_id}`}
+                              checked={currentChildOrgs.includes(
+                                org.organization_id,
+                              )}
+                              onCheckedChange={(checked) =>
+                                handleChildOrgChange(
+                                  org.organization_id,
+                                  checked as boolean,
+                                )
+                              }
+                            />
+                            <Label
+                              htmlFor={`org-${org.organization_id}`}
+                              className="text-sm font-normal cursor-pointer"
+                            >
+                              {org.organization_name}
+                            </Label>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="text-sm text-gray-500">
+                        No other organizations available to manage
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

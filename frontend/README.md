@@ -298,10 +298,12 @@ VITE_RECAPTCHA_SITE_KEY=projects/391472102753/secrets/recaptcha-site-key/version
 ```
 
 These will be automatically resolved when you run:
+
 - `npm run dev:development`, `npm run dev:staging`, or `npm run dev:production`
 - `npm run build:staging` or `npm run build:production`
 
 **Authentication**: The secret resolution uses service account files located in the parent `api/` directory:
+
 - `api/ken-e-dev.json` for development
 - `api/ken-e-staging.json` for staging
 - `api/ken-e-production.json` for production

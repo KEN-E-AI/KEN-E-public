@@ -284,6 +284,7 @@ const AccountSettings = () => {
         <SettingsLayout
           pageTitle="Organization Settings"
           currentPage="organization"
+          showContextSidebar={!isCreatingNew}
         >
           <div className="text-center py-8">
             <p className="text-gray-500">Loading organization data...</p>
@@ -297,6 +298,7 @@ const AccountSettings = () => {
       <SettingsLayout
         pageTitle="Organization Settings"
         currentPage="organization"
+        showContextSidebar={!isCreatingNew}
       >
         <div className="text-center py-8">
           <p className="text-gray-500">No organization access found</p>
@@ -594,6 +596,7 @@ const AccountSettings = () => {
         pageTitle={getPageTitle()}
         currentPage={getCurrentPage()}
         showBackButton={true}
+        showContextSidebar={!isCreatingNew}
       >
         <div className="text-center py-12">
           <div className="mx-auto max-w-md">
@@ -629,6 +632,7 @@ const AccountSettings = () => {
       pageTitle={getPageTitle()}
       currentPage={getCurrentPage()}
       showBackButton={!isCreatingNew}
+      showContextSidebar={!isCreatingNew}
     >
       {/* Organization Settings Header with create button */}
       {!isCreatingNew && !isAccountSpecific && (

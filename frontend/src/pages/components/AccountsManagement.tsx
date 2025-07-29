@@ -785,7 +785,8 @@ const AccountsManagement = ({
     // Store account info before deletion
     const accountId = account.account_id;
     const accountName = account.account_name;
-    const isDeletingCurrentAccount = accountId === selectedOrgAccount?.accountId;
+    const isDeletingCurrentAccount =
+      accountId === selectedOrgAccount?.accountId;
 
     // Close ALL dialogs immediately to prevent UI issues
     setIsDeleteDialogOpen(false);
@@ -832,9 +833,10 @@ const AccountsManagement = ({
           ...prev,
           [currentOrgId]: {
             ...prev[currentOrgId],
-            accounts: prev[currentOrgId]?.accounts?.filter(
-              (acc: any) => acc.account_id !== accountId
-            ) || [],
+            accounts:
+              prev[currentOrgId]?.accounts?.filter(
+                (acc: any) => acc.account_id !== accountId,
+              ) || [],
           },
         }));
       }
@@ -1280,7 +1282,12 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
-                    <p>A friendly name for the account. If you have different types of customers who each require a unique strategy, you should consider creating multiple accounts (example: Company B2B, and Company B2C).</p>
+                    <p>
+                      A friendly name for the account. If you have different
+                      types of customers who each require a unique strategy, you
+                      should consider creating multiple accounts (example:
+                      Company B2B, and Company B2C).
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -1316,7 +1323,10 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
-                    <p>Set the status to inactive to temporarily pause all data processing and charges.</p>
+                    <p>
+                      Set the status to inactive to temporarily pause all data
+                      processing and charges.
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -1347,7 +1357,11 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
-                    <p>Set the timezone to the same value selected in your martech platforms to ensure all data is aligned to the proper date.</p>
+                    <p>
+                      Set the timezone to the same value selected in your
+                      martech platforms to ensure all data is aligned to the
+                      proper date.
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -1380,7 +1394,10 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
-                    <p>Choose a location to store your data. Once your account is created you must contact support to change this setting.</p>
+                    <p>
+                      Choose a location to store your data. Once your account is
+                      created you must contact support to change this setting.
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -1411,7 +1428,11 @@ const AccountsManagement = ({
                       <Info className="h-4 w-4 text-gray-400" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p>Select all regions where your target customers live. This will be used to understand how regional holidays influence your business metrics.</p>
+                      <p>
+                        Select all regions where your target customers live.
+                        This will be used to understand how regional holidays
+                        influence your business metrics.
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -1484,7 +1505,10 @@ const AccountsManagement = ({
                       <Info className="h-4 w-4 text-gray-400" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p>List all of your websites. KEN-E will study these to understand your business and products/services.</p>
+                      <p>
+                        List all of your websites. KEN-E will study these to
+                        understand your business and products/services.
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </div>

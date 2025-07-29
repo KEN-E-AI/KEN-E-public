@@ -16,15 +16,17 @@ const __dirname = path.dirname(__filename);
 async function getSecret(secretPath, serviceAccountPath) {
   try {
     const clientConfig = {};
-    
+
     // If service account path is provided and exists, use it
     if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
       console.log(`Using service account: ${serviceAccountPath}`);
       clientConfig.keyFilename = serviceAccountPath;
     } else {
-      console.log(`Using Application Default Credentials (service account not found at: ${serviceAccountPath})`);
+      console.log(
+        `Using Application Default Credentials (service account not found at: ${serviceAccountPath})`,
+      );
     }
-    
+
     const client = new SecretManagerServiceClient(clientConfig);
     const [version] = await client.accessSecretVersion({
       name: secretPath,
@@ -51,7 +53,10 @@ async function resolveSecrets(envFile) {
   } else if (envFile.includes("staging")) {
     serviceAccountPath = path.join(__dirname, "../../api/ken-e-staging.json");
   } else if (envFile.includes("production")) {
-    serviceAccountPath = path.join(__dirname, "../../api/ken-e-production.json");
+    serviceAccountPath = path.join(
+      __dirname,
+      "../../api/ken-e-production.json",
+    );
   }
 
   if (serviceAccountPath && !fs.existsSync(serviceAccountPath)) {
@@ -133,7 +138,9 @@ if (!environment) {
   console.error("Usage: node resolve-secrets.js <environment>");
   console.error("Example: node resolve-secrets.js .env.production");
   console.error("");
-  console.error("Note: This script expects service account files to be located at:");
+  console.error(
+    "Note: This script expects service account files to be located at:",
+  );
   console.error("  - api/ken-e-dev.json (for development)");
   console.error("  - api/ken-e-staging.json (for staging)");
   console.error("  - api/ken-e-production.json (for production)");
@@ -144,7 +151,9 @@ console.log(`Resolving secrets for environment: ${environment}`);
 resolveSecrets(environment).catch((error) => {
   console.error("Error resolving secrets:", error);
   console.error("");
-  console.error("If you're seeing authentication errors, ensure you have either:");
+  console.error(
+    "If you're seeing authentication errors, ensure you have either:",
+  );
   console.error("1. Service account JSON files in api/ directory:");
   console.error("   - ken-e-dev.json");
   console.error("   - ken-e-staging.json");
