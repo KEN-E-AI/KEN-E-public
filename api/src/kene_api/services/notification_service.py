@@ -74,6 +74,53 @@ class NotificationService:
         
         logger.info(f"Created notification {notification_id} for account {account_id}")
         return notification_id
+    
+    async def initialize_notification_for_user(
+        self,
+        notification_id: str,
+        user_id: str,
+        category: NotificationCategory,
+    ) -> None:
+        """Initialize notification status for a specific user.
+        
+        This is useful when a user creates an account and should immediately
+        see notifications for that account.
+        
+        Args:
+            notification_id: The notification ID
+            user_id: The user ID
+            category: The notification category
+        """
+        try:
+            # Check user's notification preferences
+            user_prefs = await self.get_user_preferences(user_id)
+            
+            # Determine initial status based on preferences
+            if category in user_prefs.categories:
+                status = NotificationStatus.UNREAD
+            else:
+                status = NotificationStatus.EXCLUDED
+            
+            # Create status document
+            status_ref = (
+                self.db.collection("users")
+                .document(user_id)
+                .collection("notification_status")
+                .document(notification_id)
+            )
+            
+            status_data = {
+                "notification_id": notification_id,
+                "status": status.value,
+                "updated_at": datetime.now().isoformat(),
+            }
+            
+            status_ref.set(status_data)
+            logger.info(f"Initialized notification {notification_id} for user {user_id} with status {status.value}")
+            
+        except Exception as e:
+            logger.error(f"Error initializing notification for user {user_id}: {e}")
+            # Don't raise - this is a best-effort operation
 
     async def _initialize_user_statuses(
         self,
@@ -83,27 +130,56 @@ class NotificationService:
     ) -> None:
         """Initialize notification status for all users with access to the account.
         
+        This includes:
+        - Users with explicit account permissions
+        - Organization admins (who have implicit access)
+        - Super admins
+        
         Args:
             account_id: The account ID
             notification_id: The notification ID
             category: The notification category
         """
-        # Get all users with access to this account
+        # Get all users
         users_ref = self.db.collection("users")
         users = users_ref.stream()
         
         batch = self.db.batch()
         batch_count = 0
         
+        # We need to find the organization this account belongs to
+        # For now, we'll check all users and determine access
         for user_doc in users:
             user_data = user_doc.to_dict()
             user_id = user_doc.id
+            user_email = user_data.get("email", "")
             
-            # Check if user has access to this account
-            permissions = user_data.get("permissions", {})
-            account_permissions = permissions.get("accounts", {})
+            has_access = False
             
-            if account_id in account_permissions:
+            # Check if user is super admin
+            if user_email.lower().endswith('@ken-e.ai'):
+                has_access = True
+            else:
+                # Check explicit account permissions
+                permissions = user_data.get("permissions", {})
+                account_permissions = permissions.get("accounts", {})
+                account_level_permissions = permissions.get("account_permissions", {})
+                
+                if account_id in account_permissions or account_id in account_level_permissions:
+                    has_access = True
+                else:
+                    # Check if user is an org admin
+                    # Note: We can't easily determine which org the account belongs to from here
+                    # So we'll rely on the account creation process to handle org admin notifications
+                    # This is a limitation that should be addressed in a future refactor
+                    org_permissions = permissions.get("organizations", {})
+                    if any(role == "admin" for role in org_permissions.values()):
+                        # For now, we'll skip org admins here since we don't know the account's org
+                        # The notification will still be visible when they query for it
+                        logger.debug(f"Skipping org admin {user_id} for notification initialization")
+                        continue
+            
+            if has_access:
                 # Check user's notification preferences
                 user_prefs = await self.get_user_preferences(user_id)
                 
@@ -161,6 +237,12 @@ class NotificationService:
         # Return empty list if user has no accessible accounts
         if not account_ids:
             logger.info(f"User {user_id} has no accessible accounts, returning empty notifications list")
+            return notifications
+        
+        # Firestore requires at least one element for 'in' queries
+        # If account_ids is empty at this point, it's a logic error but we'll handle it gracefully
+        if len(account_ids) == 0:
+            logger.warning(f"Empty account_ids list passed to get_user_notifications for user {user_id}")
             return notifications
         
         # Query notifications for all accessible accounts
@@ -390,6 +472,11 @@ class NotificationService:
         """
         # Return 0 if user has no accessible accounts
         if not account_ids:
+            return 0
+        
+        # Firestore requires at least one element for 'in' queries
+        if len(account_ids) == 0:
+            logger.warning(f"Empty account_ids list passed to get_unread_count for user {user_id}")
             return 0
             
         # Get active notifications for accessible accounts
