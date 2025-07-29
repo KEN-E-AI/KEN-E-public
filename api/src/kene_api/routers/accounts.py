@@ -631,7 +631,7 @@ async def create_account(
         # Create notification for the new account
         try:
             notification_service = NotificationService(firestore.get_client())
-            await notification_service.create_notification(
+            notification_id = await notification_service.create_notification(
                 account_id=account_id,
                 category=NotificationCategory.NEW_FEATURES,
                 description="Configure your new account",
@@ -641,7 +641,14 @@ async def create_account(
                     "created_at": datetime.now().isoformat()
                 }
             )
-            logger.info(f"Created new account notification for account {account_id}")
+            logger.info(f"Created new account notification {notification_id} for account {account_id}")
+            
+            # Ensure the creating user can see the notification immediately
+            await notification_service.initialize_notification_for_user(
+                notification_id=notification_id,
+                user_id=user.user_id,
+                category=NotificationCategory.NEW_FEATURES
+            )
         except Exception as e:
             # Don't fail account creation if notification fails
             logger.error(f"Failed to create notification for new account {account_id}: {e}")
