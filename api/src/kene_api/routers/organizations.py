@@ -384,6 +384,7 @@ async def create_organization(
 async def update_organization(
     organization_id: str,
     request: OrganizationRequest,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Organization:
     """
@@ -416,6 +417,13 @@ async def update_organization(
         is_healthy = await db.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Check if user has access to this organization
+        if not user.has_organization_access(organization_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied to organization {organization_id}"
+            )
 
         # Check if organization exists
         existing_org = await _check_organization_exists(db, organization_id)
@@ -475,7 +483,7 @@ async def update_organization(
         await db.execute_write_query(update_query, params)
 
         # Return updated organization
-        return await get_organization(organization_id, db)
+        return await get_organization(organization_id, user, db)
 
     except HTTPException:
         raise
@@ -612,8 +620,8 @@ async def verify_subscription_prerequisites(
             detail="You do not have permission to change this organization's subscription",
         )
 
-    # Verify organization exists
-    existing_org = await get_organization(organization_id, db)
+    # Verify organization exists - using internal helper since we already verified permissions
+    existing_org = await _get_organization_by_id(organization_id, db)
     if not existing_org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
@@ -685,6 +693,7 @@ async def change_organization_subscription(
     organization_id: str,
     request: ChangeSubscriptionRequest,
     account_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
 ) -> Organization:
     """
@@ -733,7 +742,7 @@ async def change_organization_subscription(
         )
 
         # Return updated organization
-        return await get_organization(organization_id, db)
+        return await get_organization(organization_id, user, db)
 
     except HTTPException:
         raise
