@@ -693,7 +693,20 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                         </Badge>
                         <span>
                           • Invited{" "}
-                          {new Date(invitation.created_at).toLocaleDateString()}
+                          {(() => {
+                            try {
+                              const date = new Date(invitation.invited_at);
+                              // Check if the date is valid
+                              if (isNaN(date.getTime())) {
+                                console.error('[TeamManagement] Invalid date format:', invitation.invited_at);
+                                return 'Recently';
+                              }
+                              return date.toLocaleDateString();
+                            } catch (error) {
+                              console.error('[TeamManagement] Error parsing invitation date:', invitation.invited_at, error);
+                              return 'Recently';
+                            }
+                          })()}
                         </span>
                       </div>
                     </div>
