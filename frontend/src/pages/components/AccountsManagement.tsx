@@ -849,11 +849,22 @@ const AccountsManagement = ({
       return;
     }
 
-    // Store account info before deletion
+    // Store account info before ANY state changes
     const accountId = account.account_id;
     const accountName = account.account_name;
-    const isDeletingCurrentAccount =
-      accountId === selectedOrgAccount?.accountId;
+    // Safely check if we're deleting the current account
+    const currentAccountId = selectedOrgAccount?.accountId;
+    const isDeletingCurrentAccount = currentAccountId
+      ? accountId === currentAccountId
+      : false;
+
+    console.log("[AccountsManagement] Delete account debug:", {
+      accountId,
+      accountName,
+      currentAccountId,
+      isDeletingCurrentAccount,
+      selectedOrgAccount: selectedOrgAccount ? "exists" : "null",
+    });
 
     // Close ALL dialogs immediately to prevent UI issues
     setIsDeleteDialogOpen(false);
