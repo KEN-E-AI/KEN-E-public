@@ -36,7 +36,7 @@ def check_entities_before_deletion(account_id):
         
         # Check activity logs
         logs_query = """
-        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(a:Activity)-[:LOGGED]->(al:ActivityLog)
+        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(a:Activity)<-[:LOGGED]-(al:ActivityLog)
         RETURN count(al) as count
         """
         logs_count = session.run(logs_query, account_id=account_id).single()["count"]

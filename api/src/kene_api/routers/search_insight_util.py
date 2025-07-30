@@ -127,7 +127,7 @@ def main(
     SOURCE_DIRECTION = input_direction
 
     KNOWN_ACTIVE_ACTIVITIES_QUERY = f"""
-        MATCH (a:Activity)-[LOGGED]->(al:ActivityLog)
+        MATCH (a:Activity)<-[:LOGGED]-(al:ActivityLog)
         WHERE 
         (al.start_date >= "{evaluation_start_date}"
          AND al.start_date <= "{evaluation_end_date}") OR
@@ -142,7 +142,7 @@ def main(
         """
 
     UNKNOWABLE_ACTIVITIES_QUERY = f"""
-        OPTIONAL MATCH (a:Activity)-[r:LOGGED]->(al:ActivityLog)
+        OPTIONAL MATCH (a:Activity)<-[r:LOGGED]-(al:ActivityLog)
         WHERE (a.known_activity = 'false'
         AND NOT ((al.start_date >= "{evaluation_start_date}"
          AND al.start_date <= "{evaluation_end_date}") OR
@@ -162,7 +162,7 @@ def main(
         """
 
     INFLUENCE_ASSESSMENT_QUERY = """
-        MATCH (a:Activity {{activity_id: '{activity_id}'}})-[r:LOGGED]
+        MATCH (a:Activity {{activity_id: '{activity_id}'}})<-[r:LOGGED]
         -(l:ActivityLog)
         -[i:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]
         -(m:Metric {{metric_id: '{metric_id}'}})

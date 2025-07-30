@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import { useToast } from "@/hooks/use-toast";
 import {
   useAccounts,
@@ -172,6 +173,15 @@ const AccountsManagement = ({
     setSelectedOrgAccount,
     isSuperAdmin,
   } = useAuth();
+
+  // Account operations context for loading overlay
+  const {
+    startOperation,
+    endOperation,
+    updateOperationMessage,
+    isOperationInProgress,
+  } = useAccountOperations();
+
   // React Query hooks
   const { data: accounts = [], isLoading: isLoadingAccounts } =
     useAccounts(currentOrgId);
@@ -283,6 +293,8 @@ const AccountsManagement = ({
 
   // Event handlers
   const handleEditAccount = (account: Account) => {
+    if (isOperationInProgress) return;
+
     setSelectedAccount(account);
     const existingRegion = (account as any).region;
     let regionArray: string[] = [];
@@ -315,6 +327,12 @@ const AccountsManagement = ({
     if (!selectedAccount) return;
 
     try {
+      // Start loading overlay
+      startOperation("Updating account...", "Saving your changes");
+
+      // Close modal to prevent interactions
+      setIsModalOpen(false);
+
       // Check if region is changing
       const regionChanged =
         JSON.stringify(selectedAccount.region) !==
@@ -336,6 +354,11 @@ const AccountsManagement = ({
 
       // If region changed, sync holiday activity logs
       if (regionChanged) {
+        updateOperationMessage(
+          "Syncing holiday activities...",
+          `Updating for regions: ${editFormData.region.join(", ")}`,
+        );
+
         try {
           const syncResult = await syncHolidayMutation.mutateAsync(
             selectedAccount.account_id,
@@ -370,6 +393,9 @@ const AccountsManagement = ({
         }
       }
 
+      // Update contexts
+      updateOperationMessage("Finalizing update...", "Refreshing data");
+
       // Update local accountMetadata context
       setAccountMetadata((prev) => ({
         ...prev,
@@ -390,13 +416,16 @@ const AccountsManagement = ({
         },
       }));
 
-      setIsModalOpen(false);
+      // End loading state
+      endOperation();
+
       setSelectedAccount(null);
       toast({
         title: "Success",
         description: "Account updated successfully.",
       });
     } catch (error) {
+      endOperation();
       console.error("Error saving account:", error);
       toast({
         title: "Error",
@@ -434,6 +463,15 @@ const AccountsManagement = ({
     }
 
     try {
+      // Start the loading overlay
+      startOperation(
+        "Creating account...",
+        "Please wait while we set up your new account",
+      );
+
+      // Close the modal immediately to prevent duplicate clicks
+      setIsCreateAccountModalOpen(false);
+
       // Create account in Neo4j (source of truth)
       const newAccount = await createAccountMutation.mutateAsync({
         accountName: createAccountFormData.account_name,
@@ -451,6 +489,12 @@ const AccountsManagement = ({
         newAccount,
       );
       const newAccountId = newAccount.account_id;
+
+      // Update loading message
+      updateOperationMessage(
+        "Setting up account features...",
+        "Syncing holiday activities",
+      );
 
       // If the new account has a region, sync holiday activity logs
       if (
@@ -470,6 +514,9 @@ const AccountsManagement = ({
           // Don't block account creation due to sync failure
         }
       }
+
+      // Update loading message
+      updateOperationMessage("Finalizing setup...", "Updating permissions");
 
       // Get user's permission level for the organization to apply same level to new account
       console.log("[AccountsManagement] User object:", user);
@@ -586,7 +633,13 @@ const AccountsManagement = ({
 
       // Redirect to account settings page
       navigate("/account-settings");
+
+      // End the loading state
+      endOperation();
     } catch (error: any) {
+      // Make sure to end the loading state on error
+      endOperation();
+
       console.error("[AccountsManagement] Error creating account:", error);
       console.error("[AccountsManagement] Error details:", {
         message: error.message,
@@ -699,6 +752,16 @@ const AccountsManagement = ({
             size="sm"
             onClick={async () => {
               try {
+                // Start loading overlay
+                startOperation(
+                  "Moving account...",
+                  `Transferring "${selectedAccount.account_name}" to "${targetOrg.organization_name}"`,
+                );
+
+                // Close dialogs
+                setIsMoveAccountDialogOpen(false);
+                setIsModalOpen(false);
+
                 console.log(
                   "[AccountsManagement] Moving account:",
                   selectedAccount.account_id,
@@ -733,11 +796,11 @@ const AccountsManagement = ({
                   },
                 }));
 
-                // Close dialogs
-                setIsMoveAccountDialogOpen(false);
-                setIsModalOpen(false);
+                // Clear state
                 setSelectedAccount(null);
                 setTargetOrganizationId("");
+
+                endOperation();
 
                 toast({
                   title: "Account Moved",
@@ -750,6 +813,8 @@ const AccountsManagement = ({
                   "[AccountsManagement] Error moving account:",
                   error,
                 );
+
+                endOperation();
 
                 const errorMessage =
                   error.response?.data?.detail ||
@@ -800,22 +865,31 @@ const AccountsManagement = ({
     // Clear selected account state to prevent accessing stale data
     setSelectedAccount(null);
 
-    // If deleting the current account, clear auth state immediately to prevent freeze
-    if (isDeletingCurrentAccount) {
-      // Clear account metadata immediately
-      const newAccountMetadata = { ...accountMetadata };
-      delete newAccountMetadata[accountId];
-      setAccountMetadata(newAccountMetadata);
-
-      // Clear selected org account if it matches
-      setSelectedOrgAccount(null);
-    }
-
     try {
+      // Start loading overlay with specific message
+      startOperation(
+        "Deleting account...",
+        `Removing "${accountName}" and all associated data`,
+      );
+
+      // If deleting the current account, clear auth state immediately to prevent freeze
+      if (isDeletingCurrentAccount) {
+        // Clear account metadata immediately
+        const newAccountMetadata = { ...accountMetadata };
+        delete newAccountMetadata[accountId];
+        setAccountMetadata(newAccountMetadata);
+
+        // Clear selected org account if it matches
+        setSelectedOrgAccount(null);
+      }
+
       await deleteAccountMutation.mutateAsync({
         orgId: currentOrgId!,
         accountId: accountId,
       });
+
+      // End loading state
+      endOperation();
 
       // Show success message
       toast({
@@ -849,6 +923,7 @@ const AccountsManagement = ({
         navigate("/workspace-selection");
       }
     } catch (error: any) {
+      endOperation();
       console.error("[AccountsManagement] Error deleting account:", error);
 
       const errorMessage =
@@ -931,6 +1006,7 @@ const AccountsManagement = ({
                 size="sm"
                 onClick={() => setIsCreateAccountModalOpen(true)}
                 className="h-8 w-8 p-0"
+                disabled={isOperationInProgress}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -983,6 +1059,7 @@ const AccountsManagement = ({
                     size="sm"
                     onClick={() => handleEditAccount(account)}
                     className="h-8 w-8 p-0"
+                    disabled={isOperationInProgress}
                   >
                     <Settings className="h-4 w-4 text-gray-500" />
                   </Button>
@@ -1302,6 +1379,7 @@ const AccountsManagement = ({
                         setTargetOrganizationId("");
                       }}
                       className="ml-4 text-blue-600 border-blue-200 hover:bg-blue-50"
+                      disabled={isOperationInProgress}
                     >
                       <MoveRight className="h-4 w-4 mr-1" />
                       Move Account
@@ -1321,6 +1399,7 @@ const AccountsManagement = ({
                       size="sm"
                       onClick={() => setIsDeleteDialogOpen(true)}
                       className="ml-4"
+                      disabled={isOperationInProgress}
                     >
                       Delete Account
                     </Button>
@@ -1340,7 +1419,9 @@ const AccountsManagement = ({
               <Button
                 onClick={handleSaveAccount}
                 className="flex-1"
-                disabled={updateAccountMutation.isPending}
+                disabled={
+                  updateAccountMutation.isPending || isOperationInProgress
+                }
               >
                 {updateAccountMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
@@ -1643,7 +1724,9 @@ const AccountsManagement = ({
               <Button
                 onClick={handleCreateAccount}
                 className="flex-1"
-                disabled={createAccountMutation.isPending}
+                disabled={
+                  createAccountMutation.isPending || isOperationInProgress
+                }
               >
                 {createAccountMutation.isPending
                   ? "Creating..."
@@ -1740,7 +1823,11 @@ const AccountsManagement = ({
               </Button>
               <Button
                 onClick={handleMoveAccount}
-                disabled={!targetOrganizationId || isLoadingOrganizations}
+                disabled={
+                  !targetOrganizationId ||
+                  isLoadingOrganizations ||
+                  isOperationInProgress
+                }
                 className="flex-1"
               >
                 Move Account
@@ -1786,7 +1873,9 @@ const AccountsManagement = ({
             </AlertDialogCancel>
             <Button
               onClick={handleDeleteAccount}
-              disabled={deleteAccountMutation.isPending}
+              disabled={
+                deleteAccountMutation.isPending || isOperationInProgress
+              }
               className="bg-red-600 hover:bg-red-700 focus:ring-red-600 text-white"
               variant="destructive"
             >

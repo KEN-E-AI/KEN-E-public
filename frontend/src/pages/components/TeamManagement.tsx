@@ -698,13 +698,20 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                               const date = new Date(invitation.invited_at);
                               // Check if the date is valid
                               if (isNaN(date.getTime())) {
-                                console.error('[TeamManagement] Invalid date format:', invitation.invited_at);
-                                return 'Recently';
+                                console.error(
+                                  "[TeamManagement] Invalid date format:",
+                                  invitation.invited_at,
+                                );
+                                return "Recently";
                               }
                               return date.toLocaleDateString();
                             } catch (error) {
-                              console.error('[TeamManagement] Error parsing invitation date:', invitation.invited_at, error);
-                              return 'Recently';
+                              console.error(
+                                "[TeamManagement] Error parsing invitation date:",
+                                invitation.invited_at,
+                                error,
+                              );
+                              return "Recently";
                             }
                           })()}
                         </span>

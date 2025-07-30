@@ -33,6 +33,77 @@ EVIDENCE_DESCRIPTION = (
     "Stored as a property of the INFLUENCE_CONFIRMED or NO_INFLUENCE_CONFIRMED relationship"
 )
 
+# Region to Holiday Activity ID mapping
+REGION_TO_HOLIDAY_ACTIVITY_ID = {
+    "AU": "act_00_au",
+    "CA": "act_00_ca",
+    "CH": "act_00_ch",
+    "CL": "act_00_cl",
+    "CZ": "act_00_cz",
+    "DE": "act_00_de",
+    "DK": "act_00_dk",
+    "EMEA": "act_00_emea",
+    "ES": "act_00_es",
+    "FR": "act_00_fr",
+    "GB": "act_00_gb",
+    "GLOBAL": "act_00_global",
+    "ID": "act_00_id",
+    "IN": "act_00_in",
+    "IT": "act_00_it",
+    "JAPAC": "act_00_japac",
+    "JP": "act_00_jp",
+    "KR": "act_00_kr",
+    "LAC": "act_00_lac",
+    "MX": "act_00_mx",
+    "MY": "act_00_my",
+    "NA": "act_00_na",
+    "NL": "act_00_nl",
+    "NZ": "act_00_nz",
+    "PT": "act_00_pt",
+    "SK": "act_00_sk",
+    "US": "act_00_us",
+    "ZA": "act_00_za",
+    "VN": "act_00_vn",
+    "VE": "act_00_ve",
+    "UA": "act_00_ua",
+    "TW": "act_00_tw",
+    "TR": "act_00_tr",
+    "TH": "act_00_th",
+    "SL": "act_00_sl",
+    "SG": "act_00_sg",
+    "SE": "act_00_se",
+    "SA": "act_00_sa",
+    "RU": "act_00_ru",
+    "RS": "act_00_rs",
+    "RO": "act_00_ro",
+    "PL": "act_00_pl",
+    "PK": "act_00_pk",
+    "PH": "act_00_ph",
+    "PE": "act_00_pe",
+    "NO": "act_00_no",
+    "NG": "act_00_ng",
+    "MA": "act_00_ma",
+    "LV": "act_00_lv",
+    "IR": "act_00_ir",
+    "IL": "act_00_il",
+    "IE": "act_00_ie",
+    "HU": "act_00_hu",
+    "HK": "act_00_hk",
+    "GR": "act_00_gr",
+    "FI": "act_00_fi",
+    "EG": "act_00_eg",
+    "EE": "act_00_ee",
+    "EC": "act_00_ec",
+    "DZ": "act_00_dz",
+    "CO": "act_00_co",
+    "CN": "act_00_cn",
+    "BR": "act_00_br",
+    "BE": "act_00_be",
+    "AT": "act_00_at",
+    "AR": "act_00_ar",
+    "AE": "act_00_ae",
+}
+
 
 class RelationshipType(str, Enum):
     """Enum for relationship types."""
@@ -479,7 +550,7 @@ class IntuitionListResponse(BaseModel):
 # Home/Notification Models
 class NotificationCategory(str, Enum):
     """Notification category enum."""
-    
+
     DATA_QUALITY_ALERT = "Data Quality Alert"
     NEWS_PRESS = "News & Press"
     INDUSTRY_NEWS = "Industry News"
@@ -491,7 +562,7 @@ class NotificationCategory(str, Enum):
 
 class NotificationStatus(str, Enum):
     """Notification status enum."""
-    
+
     EXCLUDED = "excluded"
     UNREAD = "unread"
     READ = "read"
@@ -500,7 +571,7 @@ class NotificationStatus(str, Enum):
 
 class NotificationChannel(str, Enum):
     """Notification channel enum."""
-    
+
     UI = "ui"
     SLACK = "slack"
     EMAIL = "email"
@@ -512,16 +583,25 @@ class Notification(BaseEntity):
     category: NotificationCategory = Field(..., description="Notification category")
     description: str = Field(..., description="Short description of the notification")
     data: dict[str, Any] | None = Field(None, description="Optional JSON data")
-    created_at: str = Field(..., description="ISO timestamp when notification was created")
-    archived_at: str | None = Field(None, description="ISO timestamp when notification will be auto-archived (30 days after creation)")
+    created_at: str = Field(
+        ..., description="ISO timestamp when notification was created"
+    )
+    archived_at: str | None = Field(
+        None,
+        description="ISO timestamp when notification will be auto-archived (30 days after creation)",
+    )
 
 
 class NotificationWithStatus(Notification):
     """Notification with user-specific status."""
-    
-    status: NotificationStatus = Field(..., description="User-specific notification status")
+
+    status: NotificationStatus = Field(
+        ..., description="User-specific notification status"
+    )
     read_at: str | None = Field(None, description="ISO timestamp when marked as read")
-    user_archived_at: str | None = Field(None, description="ISO timestamp when archived by user")
+    user_archived_at: str | None = Field(
+        None, description="ISO timestamp when archived by user"
+    )
 
 
 class CreateNotificationRequest(BaseRequest):
@@ -534,18 +614,20 @@ class CreateNotificationRequest(BaseRequest):
 
 class UpdateNotificationStatusRequest(BaseModel):
     """Request model for updating notification status."""
-    
+
     status: NotificationStatus = Field(..., description="New notification status")
 
 
 class UserNotificationPreferences(BaseModel):
     """User notification preferences model."""
-    
-    categories: list[NotificationCategory] = Field(..., description="Selected notification categories")
-    channels: list[NotificationChannel] = Field(..., description="Selected notification channels")
+
+    categories: list[NotificationCategory] = Field(
+        ..., description="Selected notification categories"
+    )
+    channels: list[NotificationChannel] = Field(
+        ..., description="Selected notification channels"
+    )
     updated_at: str | None = Field(None, description="ISO timestamp of last update")
-
-
 
 
 class ActivityScanRequest(BaseModel):
@@ -657,7 +739,7 @@ class ErrorResponse(BaseModel):
 
 class CreateNotificationResponse(SuccessResponse):
     """Response model for notification creation."""
-    
+
     notification_id: str = Field(..., description="Created notification ID")
 
 
