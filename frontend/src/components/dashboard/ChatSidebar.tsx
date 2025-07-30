@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { chatService, type ChatMessage } from "@/services/chatService";
 import {
   Send,
   Mic,
@@ -63,6 +64,8 @@ const ChatSidebar = ({
   const [selectedAgent, setSelectedAgent] = useState("ken-e");
   const [message, setMessage] = useState("");
   const [newMessage, setNewMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionId] = useState(() => `sidebar_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "1",
@@ -110,29 +113,60 @@ const ChatSidebar = ({
 
   const currentAgent = agents.find((agent) => agent.id === selectedAgent);
 
-  const sendNewMessage = () => {
-    if (newMessage.trim()) {
-      const message = {
-        id: Date.now().toString(),
-        role: "user" as const,
-        content: newMessage,
+  const sendNewMessage = useCallback(async () => {
+    if (!newMessage.trim() || isLoading) return;
+
+    // Validate message
+    const validation = chatService.validateMessage(newMessage);
+    if (!validation.valid) {
+      console.error("Invalid message:", validation.reason);
+      return;
+    }
+
+    const userMessage = {
+      id: Date.now().toString(),
+      role: "user" as const,
+      content: newMessage,
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setNewMessage("");
+    setIsLoading(true);
+
+    try {
+      // Convert messages to ChatMessage format for the service
+      const chatMessages: ChatMessage[] = [...messages, userMessage].map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+      // Get response from Agent Engine
+      const response = await chatService.sendMessage(chatMessages, sessionId);
+
+      const assistantMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant" as const,
+        content: response.content,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, message]);
-      setNewMessage("");
 
-      // Simulate assistant response
-      setTimeout(() => {
-        const response = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant" as const,
-          content: "I understand your question. Let me help you with that...",
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, response]);
-      }, 1000);
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      
+      // Add error message
+      const errorMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant" as const,
+        content: "I'm sorry, I'm having trouble processing your request. Please try again.",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [newMessage, messages, isLoading, sessionId]);
 
   const handleNewKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -281,9 +315,10 @@ const ChatSidebar = ({
                     <Input
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={handleNewKeyPress}
+                      onKeyDown={handleNewKeyPress}
                       placeholder="What would you like to discuss?"
                       className="w-full border-0 focus:ring-0 focus:border-0 shadow-none"
+                      disabled={isLoading}
                     />
                   </div>
 
@@ -308,11 +343,11 @@ const ChatSidebar = ({
 
                     <Button
                       onClick={sendNewMessage}
-                      disabled={!newMessage.trim()}
+                      disabled={!newMessage.trim() || isLoading}
                       size="sm"
                       className="bg-brand-medium-blue hover:bg-brand-medium-blue/90 text-white px-4"
                     >
-                      Send
+                      {isLoading ? "..." : "Send"}
                     </Button>
                   </div>
                 </div>

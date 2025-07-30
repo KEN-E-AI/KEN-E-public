@@ -48,10 +48,11 @@ async def get_current_user_optional(
         
         # Build user context
         user_context = UserContext(
-            uid=decoded_token["uid"],
+            user_id=decoded_token["uid"],
             email=decoded_token.get("email", ""),
-            name=decoded_token.get("name"),
-            email_verified=decoded_token.get("email_verified", False),
+            accessible_accounts=[],
+            permissions={},
+            organization_permissions={},
         )
         
         # Add permissions from user document if it exists
