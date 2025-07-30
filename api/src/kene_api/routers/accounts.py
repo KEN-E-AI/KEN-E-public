@@ -87,7 +87,7 @@ async def get_accounts(
     GET /api/v1/accounts/
     GET /api/v1/accounts/?organization_id=healthway
     ```
-    
+
     **Note:** User must have access to the accounts and organization (if specified).
     """
     try:
@@ -120,7 +120,7 @@ async def get_accounts(
                 if not user.has_organization_access(organization_id):
                     raise HTTPException(
                         status_code=403,
-                        detail=f"Access denied to organization {organization_id}"
+                        detail=f"Access denied to organization {organization_id}",
                     )
 
                 # Check if user is org admin
@@ -146,7 +146,7 @@ async def get_accounts(
                     """
                     params = {
                         "organization_id": organization_id,
-                        "account_ids": accessible_account_ids
+                        "account_ids": accessible_account_ids,
                     }
             else:
                 # No organization filter - need to find all accessible accounts
@@ -160,8 +160,12 @@ async def get_accounts(
                         MATCH (org:Organization {organization_id: $org_id})<-[:BELONGS_TO]-(acc:Account)
                         RETURN acc.account_id as account_id
                         """
-                        org_result = await db.execute_query(org_accounts_query, {"org_id": org_id})
-                        accessible_account_ids.extend([r["account_id"] for r in org_result])
+                        org_result = await db.execute_query(
+                            org_accounts_query, {"org_id": org_id}
+                        )
+                        accessible_account_ids.extend(
+                            [r["account_id"] for r in org_result]
+                        )
 
                 # Add explicitly granted accounts for view-role users
                 accessible_account_ids.extend(list(user.account_permissions.keys()))
@@ -222,7 +226,7 @@ async def get_account(
     ```
     GET /api/v1/accounts/intellipure-b2c
     ```
-    
+
     **Note:** User must have access to the account.
     """
     try:
@@ -244,16 +248,14 @@ async def get_account(
             # Check if user has organization access
             if not user.has_organization_access(organization_id):
                 raise HTTPException(
-                    status_code=403,
-                    detail=f"Access denied to account {account_id}"
+                    status_code=403, detail=f"Access denied to account {account_id}"
                 )
 
             # If user is view-role, check account-specific permissions
             if user.organization_permissions.get(organization_id) == "view":
                 if account_id not in user.account_permissions:
                     raise HTTPException(
-                        status_code=403,
-                        detail=f"Access denied to account {account_id}"
+                        status_code=403, detail=f"Access denied to account {account_id}"
                     )
 
         # Check Neo4j connectivity
@@ -380,7 +382,7 @@ async def _create_initial_activity_logs(
     regions: list[str],
 ) -> int:
     """
-    Create initial activity logs for act_00 from BigQuery holiday data.
+    Create initial activity logs for regional holiday activities from BigQuery holiday data.
 
     Args:
         db: Neo4j database service
@@ -395,6 +397,7 @@ async def _create_initial_activity_logs(
     try:
         # Get GCP project ID from environment
         import os
+        from ..models.kene_models import REGION_TO_HOLIDAY_ACTIVITY_ID
 
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
         if not project_id:
@@ -403,14 +406,17 @@ async def _create_initial_activity_logs(
             )
             return 0
 
-        # Check if act_00 activity exists for this account
+        # Check if regional holiday activities exist for this account
         check_query = """
-        MATCH (a:Activity {activity_id: "act_00"})-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
-        RETURN a
+        MATCH (a:Activity)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        WHERE a.activity_id STARTS WITH 'act_00_'
+        RETURN count(a) as activity_count
         """
         result = await db.execute_query(check_query, {"account_id": account_id})
-        if not result:
-            logger.warning(f"Activity act_00 not found for account {account_id}")
+        if not result or result[0]["activity_count"] == 0:
+            logger.warning(
+                f"No regional holiday activities found for account {account_id}"
+            )
             return 0
 
         # Query holiday activities from BigQuery
@@ -426,11 +432,17 @@ async def _create_initial_activity_logs(
         # Create activity logs in batch
         activity_logs_data = []
         for holiday in holidays:
+            region = holiday.get("region")
+            # Map region to appropriate activity_id
+            activity_id = REGION_TO_HOLIDAY_ACTIVITY_ID.get(
+                region, f"act_00_{region.lower()}" if region else "act_00"
+            )
+
             log_id = str(uuid.uuid4())
             activity_logs_data.append(
                 {
                     "activity_log_id": f"log_{log_id}",
-                    "activity_id": "act_00",
+                    "activity_id": activity_id,
                     "account_id": account_id,
                     "start_date": holiday["start_date"],
                     "end_date": holiday["end_date"],
@@ -599,9 +611,12 @@ async def create_account(
 
         # Invalidate the creating user's cache to ensure their context includes the new account
         from ..auth.cached_user_context import get_cached_user_context_service
+
         cached_user_service = get_cached_user_context_service()
         cached_user_service.invalidate_user_context(user.user_id)
-        logger.info(f"Invalidated cache for user {user.user_id} after creating account {account_id}")
+        logger.info(
+            f"Invalidated cache for user {user.user_id} after creating account {account_id}"
+        )
 
         # Create initial activities for the new account
         activities_created = await _create_initial_activities(db, firestore, account_id)
@@ -638,20 +653,24 @@ async def create_account(
                 data={
                     "account_name": request.account_name,
                     "created_by": user.user_id,
-                    "created_at": datetime.now().isoformat()
-                }
+                    "created_at": datetime.now().isoformat(),
+                },
             )
-            logger.info(f"Created new account notification {notification_id} for account {account_id}")
-            
+            logger.info(
+                f"Created new account notification {notification_id} for account {account_id}"
+            )
+
             # Ensure the creating user can see the notification immediately
             await notification_service.initialize_notification_for_user(
                 notification_id=notification_id,
                 user_id=user.user_id,
-                category=NotificationCategory.NEW_FEATURES
+                category=NotificationCategory.NEW_FEATURES,
             )
         except Exception as e:
             # Don't fail account creation if notification fails
-            logger.error(f"Failed to create notification for new account {account_id}: {e}")
+            logger.error(
+                f"Failed to create notification for new account {account_id}: {e}"
+            )
 
         # Fetch the created account
         return await get_account(account_id, user, db)
@@ -767,9 +786,12 @@ async def update_account(
 
         # Invalidate the updating user's cache to ensure fresh context
         from ..auth.cached_user_context import get_cached_user_context_service
+
         cached_user_service = get_cached_user_context_service()
         cached_user_service.invalidate_user_context(user.user_id)
-        logger.info(f"Invalidated cache for user {user.user_id} after updating account {account_id}")
+        logger.info(
+            f"Invalidated cache for user {user.user_id} after updating account {account_id}"
+        )
 
         # If regions were updated, sync holiday activity logs
         if regions_changed:
@@ -834,7 +856,7 @@ async def delete_account(
 
         # First, delete all ActivityLog nodes
         delete_logs_query = """
-        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog)
+        MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(log:ActivityLog)
         DETACH DELETE log
         """
         logs_summary = await db.execute_write_query(
@@ -976,17 +998,17 @@ async def _sync_holiday_activity_logs_for_account(
 ) -> dict[str, Any]:
     """
     Sync holiday activity logs when account regions are updated.
-    
+
     This function replicates the core logic from the activities sync endpoint.
     It's called when an account's regions are modified.
-    
+
     Args:
         db: Neo4j database service
         bigquery: BigQuery service instance
         account_id: ID of the account to sync
         organization_id: ID of the organization (used for logging)
         regions: List of regions to sync
-    
+
     Returns:
         dict: Sync operation results
     """
@@ -1007,20 +1029,20 @@ async def _sync_holiday_activity_logs_for_account(
             )
             return {"created": 0, "deleted": 0, "errors": ["No project ID"]}
 
-        # Skip if no regions
-        if not regions:
-            logger.info(f"No regions configured for account {account_id}, skipping sync")
-            return {"created": 0, "deleted": 0, "errors": []}
-
-        # Fetch existing logs
+        # Always fetch existing logs, even if no regions (to delete them)
         existing_holidays, protected_logs = await _fetch_existing_activity_logs(
             db, account_id
         )
 
-        # Fetch holidays from BigQuery
-        holidays = await _fetch_bigquery_holidays(
-            bigquery, project_id, regions
-        )
+        # Fetch holidays from BigQuery (will be empty if no regions)
+        if regions:
+            holidays = await _fetch_bigquery_holidays(bigquery, project_id, regions)
+        else:
+            # No regions means no holidays should exist
+            holidays = []
+            logger.info(
+                f"No regions configured for account {account_id}, will delete all {len(existing_holidays)} existing holiday logs"
+            )
 
         # Calculate sync operations
         operations = _calculate_sync_operations(
@@ -1051,19 +1073,24 @@ async def _sync_holiday_activity_logs_for_account(
 # Account Permission Models
 class GrantAccountAccessRequest(BaseModel):
     """Request model for granting account access."""
+
     user_id: str = Field(..., description="User ID to grant access to")
     access_level: str = Field(..., description="Access level: edit or view")
 
 
 class AccountPermissionsResponse(BaseModel):
     """Response model for account permissions."""
+
     account_id: str = Field(..., description="Account ID")
-    permissions: list[dict[str, Any]] = Field(..., description="List of user permissions")
+    permissions: list[dict[str, Any]] = Field(
+        ..., description="List of user permissions"
+    )
     total: int = Field(..., description="Total number of users with access")
 
 
 class UserAccountPermission(BaseModel):
     """Model for a user's permission on an account."""
+
     user_id: str
     email: str
     access_level: str
@@ -1082,15 +1109,15 @@ async def grant_account_access(
 ) -> SuccessResponse:
     """
     Grant a user access to an account.
-    
+
     Only organization admins can grant account access.
     This is used to give view-role users access to specific accounts.
-    
+
     **Parameters:**
     - `account_id` (path): Account ID
     - `user_id` (body): User ID to grant access to
     - `access_level` (body): Access level (edit or view)
-    
+
     **Returns:**
     - Success response
     """
@@ -1098,8 +1125,7 @@ async def grant_account_access(
         # Validate access level
         if request.access_level not in ["edit", "view"]:
             raise HTTPException(
-                status_code=400,
-                detail="Invalid access_level. Must be 'edit' or 'view'"
+                status_code=400, detail="Invalid access_level. Must be 'edit' or 'view'"
             )
 
         # Check database connectivity
@@ -1120,18 +1146,20 @@ async def grant_account_access(
         organization_id = org_result[0]["organization_id"]
 
         # Check if user has admin access to the organization
-        if not user.is_super_admin and user.organization_permissions.get(organization_id) != "admin":
+        if (
+            not user.is_super_admin
+            and user.organization_permissions.get(organization_id) != "admin"
+        ):
             raise HTTPException(
                 status_code=403,
-                detail="Only organization admins can grant account access"
+                detail="Only organization admins can grant account access",
             )
 
         # Check if target user exists and has access to the organization
         target_user_doc = firestore.get_document("users", request.user_id)
         if not target_user_doc:
             raise HTTPException(
-                status_code=404,
-                detail=f"User {request.user_id} not found"
+                status_code=404, detail=f"User {request.user_id} not found"
             )
 
         target_permissions = target_user_doc.get("permissions", {})
@@ -1142,20 +1170,20 @@ async def grant_account_access(
         if target_email.lower().endswith("@ken-e.ai"):
             raise HTTPException(
                 status_code=403,
-                detail="Cannot modify permissions for KEN-E support team members"
+                detail="Cannot modify permissions for KEN-E support team members",
             )
 
         if organization_id not in target_org_permissions:
             raise HTTPException(
                 status_code=400,
-                detail=f"User {request.user_id} does not have access to the organization"
+                detail=f"User {request.user_id} does not have access to the organization",
             )
 
         # Don't grant explicit permissions to org admins (they already have implicit access)
         if target_org_permissions[organization_id] == "admin":
             raise HTTPException(
                 status_code=400,
-                detail="Organization admins already have access to all accounts"
+                detail="Organization admins already have access to all accounts",
             )
 
         # Grant account permission in Firestore
@@ -1163,17 +1191,17 @@ async def grant_account_access(
             collection="users",
             document_id=request.user_id,
             field_path=f"permissions.account_permissions.{account_id}",
-            value=request.access_level
+            value=request.access_level,
         )
 
         if not success:
             raise HTTPException(
-                status_code=500,
-                detail="Failed to grant account access"
+                status_code=500, detail="Failed to grant account access"
             )
 
         # Invalidate user cache
         from ..auth.cached_user_context import get_cached_user_context_service
+
         cached_user_service = get_cached_user_context_service()
         cached_user_service.invalidate_user_context(request.user_id)
 
@@ -1188,8 +1216,8 @@ async def grant_account_access(
             data={
                 "account_id": account_id,
                 "user_id": request.user_id,
-                "access_level": request.access_level
-            }
+                "access_level": request.access_level,
+            },
         )
 
     except HTTPException:
@@ -1197,8 +1225,7 @@ async def grant_account_access(
     except Exception as e:
         logger.error(f"Error granting account access: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"Error granting account access: {e!s}"
+            status_code=500, detail=f"Error granting account access: {e!s}"
         ) from e
 
 
@@ -1212,14 +1239,14 @@ async def revoke_account_access(
 ) -> SuccessResponse:
     """
     Revoke a user's access to an account.
-    
+
     Only organization admins can revoke account access.
     Cannot revoke access from org admins (they have implicit access).
-    
+
     **Parameters:**
     - `account_id` (path): Account ID
     - `user_id` (path): User ID to revoke access from
-    
+
     **Returns:**
     - Success response
     """
@@ -1242,10 +1269,13 @@ async def revoke_account_access(
         organization_id = org_result[0]["organization_id"]
 
         # Check if user has admin access to the organization
-        if not user.is_super_admin and user.organization_permissions.get(organization_id) != "admin":
+        if (
+            not user.is_super_admin
+            and user.organization_permissions.get(organization_id) != "admin"
+        ):
             raise HTTPException(
                 status_code=403,
-                detail="Only organization admins can revoke account access"
+                detail="Only organization admins can revoke account access",
             )
 
         # Check target user's org role
@@ -1259,13 +1289,13 @@ async def revoke_account_access(
             if target_email.lower().endswith("@ken-e.ai"):
                 raise HTTPException(
                     status_code=403,
-                    detail="Cannot modify permissions for KEN-E support team members"
+                    detail="Cannot modify permissions for KEN-E support team members",
                 )
 
             if target_org_permissions.get(organization_id) == "admin":
                 raise HTTPException(
                     status_code=400,
-                    detail="Cannot revoke access from organization admins"
+                    detail="Cannot revoke access from organization admins",
                 )
 
         # Remove account permission from Firestore
@@ -1274,12 +1304,12 @@ async def revoke_account_access(
 
         # Use field delete to remove the specific account permission
         from google.cloud.firestore_v1 import DELETE_FIELD
-        user_ref.update({
-            f"permissions.account_permissions.{account_id}": DELETE_FIELD
-        })
+
+        user_ref.update({f"permissions.account_permissions.{account_id}": DELETE_FIELD})
 
         # Invalidate user cache
         from ..auth.cached_user_context import get_cached_user_context_service
+
         cached_user_service = get_cached_user_context_service()
         cached_user_service.invalidate_user_context(user_id)
 
@@ -1291,10 +1321,7 @@ async def revoke_account_access(
         return SuccessResponse(
             success=True,
             message=f"Revoked access from user {user_id}",
-            data={
-                "account_id": account_id,
-                "user_id": user_id
-            }
+            data={"account_id": account_id, "user_id": user_id},
         )
 
     except HTTPException:
@@ -1302,8 +1329,7 @@ async def revoke_account_access(
     except Exception as e:
         logger.error(f"Error revoking account access: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"Error revoking account access: {e!s}"
+            status_code=500, detail=f"Error revoking account access: {e!s}"
         ) from e
 
 
@@ -1316,13 +1342,13 @@ async def get_account_permissions(
 ) -> AccountPermissionsResponse:
     """
     Get all users with explicit access to an account.
-    
+
     Only shows users with explicit permissions (view-role users).
     Organization admins are not shown as they have implicit access.
-    
+
     **Parameters:**
     - `account_id` (path): Account ID
-    
+
     **Returns:**
     - List of users with their access levels
     """
@@ -1347,10 +1373,7 @@ async def get_account_permissions(
         # Check if user has access to view permissions
         if not user.is_super_admin:
             if not user.has_organization_access(organization_id):
-                raise HTTPException(
-                    status_code=403,
-                    detail="Access denied"
-                )
+                raise HTTPException(status_code=403, detail="Access denied")
 
         # Query all users to find those with explicit account permissions
         firestore_db = firestore.get_client()
@@ -1378,7 +1401,7 @@ async def get_account_permissions(
         return AccountPermissionsResponse(
             account_id=account_id,
             permissions=permissions_list,
-            total=len(permissions_list)
+            total=len(permissions_list),
         )
 
     except HTTPException:
@@ -1386,6 +1409,5 @@ async def get_account_permissions(
     except Exception as e:
         logger.error(f"Error getting account permissions: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"Error getting account permissions: {e!s}"
+            status_code=500, detail=f"Error getting account permissions: {e!s}"
         ) from e

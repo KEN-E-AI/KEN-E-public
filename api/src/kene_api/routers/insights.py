@@ -208,7 +208,7 @@ async def get_insights(
         # Query to fetch insights: Account → Activity → ActivityLog → Metric relationships
         insights_query = """
         MATCH (account:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)
-        MATCH (activity)-[:LOGGED]->(activity_log:ActivityLog)
+        MATCH (activity)<-[:LOGGED]-(activity_log:ActivityLog)
         MATCH (activity_log)-[insight_rel:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(metric:Metric)
         OPTIONAL MATCH (metric)-[:CALCULATED_FROM]->(dataset:Dataset)
         RETURN activity, activity_log, properties(insight_rel) as relationship, type(insight_rel) as relationship_type, metric, dataset
@@ -319,7 +319,7 @@ async def create_insight(
         query = f"""
         MATCH (account:Account {{account_id: $account_id}})
         MATCH (account)<-[:BELONGS_TO]-(metric:Metric {{metric_id: $metric_id}})
-        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(al:ActivityLog {{activity_log_id: $activity_log_id}})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(al:ActivityLog {{activity_log_id: $activity_log_id}})
         CREATE (al)-[r:{relationship_type} {{
             evidence: $evidence,
             direction: $direction
@@ -424,7 +424,7 @@ async def update_insight(
         query = """
         MATCH (account:Account {account_id: $account_id})
         MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
-        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(al:ActivityLog {activity_log_id: $activity_log_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(al:ActivityLog {activity_log_id: $activity_log_id})
         MATCH (al)-[r:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(metric)
         SET r.evidence = $evidence, r.direction = $direction
         RETURN r
@@ -510,7 +510,7 @@ async def delete_insight(
         query = """
         MATCH (account:Account {account_id: $account_id})
         MATCH (account)<-[:BELONGS_TO]-(metric:Metric {metric_id: $metric_id})
-        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(al:ActivityLog {activity_log_id: $activity_log_id})
+        MATCH (account)<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(al:ActivityLog {activity_log_id: $activity_log_id})
         MATCH (al)-[r:INFLUENCE_CONFIRMED|NO_INFLUENCE_CONFIRMED]->(metric)
         DELETE r
         RETURN count(r) as deleted_count

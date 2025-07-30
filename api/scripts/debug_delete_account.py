@@ -35,7 +35,7 @@ async def debug_delete_account(account_id: str):
             # Step 2: Count ActivityLogs
             print("\n2. Counting ActivityLogs...")
             count_logs_query = """
-            MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog)
+            MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(log:ActivityLog)
             RETURN count(log) as count
             """
             result = await session.run(count_logs_query, account_id=account_id)
@@ -45,7 +45,7 @@ async def debug_delete_account(account_id: str):
             # Step 3: Try to delete ActivityLogs
             print("\n3. Attempting to delete ActivityLogs...")
             delete_logs_query = """
-            MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog)
+            MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(log:ActivityLog)
             DETACH DELETE log
             """
             

@@ -20,7 +20,7 @@ class TestAccountsCascadeDelete:
             # Delete ActivityLogs
             logs_result = await db_service.execute_write(
                 """
-                MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog)
+                MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(log:ActivityLog)
                 DETACH DELETE log
                 RETURN COUNT(log) as nodes_deleted
                 """,
@@ -92,7 +92,7 @@ class TestAccountsCascadeDelete:
         
         # Simulate the delete process
         await mock_service.execute_write(
-            "MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)-[:LOGGED]->(log:ActivityLog) DETACH DELETE log",
+            "MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(log:ActivityLog) DETACH DELETE log",
             {"account_id": "test"}
         )
         await mock_service.execute_write(

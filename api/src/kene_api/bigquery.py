@@ -236,7 +236,8 @@ class BigQueryService:
         SELECT
             description,
             start_date,
-            end_date
+            end_date,
+            region
         FROM `{project_id}.shared_activities.holiday-import`
         WHERE region IN ({region_list})
         GROUP BY ALL

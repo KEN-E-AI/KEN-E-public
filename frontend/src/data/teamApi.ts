@@ -36,7 +36,7 @@ export interface Invitation {
   inviter_name: string;
   access_level: "admin" | "view";
   status: "pending" | "accepted" | "expired" | "cancelled";
-  created_at: string;
+  invited_at: string; // Changed from created_at to match backend
   expires_at: string;
   invitation_token?: string;
   accepted_at?: string;
