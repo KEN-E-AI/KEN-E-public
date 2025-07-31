@@ -4,7 +4,6 @@ import Layout from "@/components/layout/Layout";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -32,27 +31,18 @@ export default function KnowledgeAccount() {
   });
 
   return (
-    <Layout>
-      <div className="flex-1 space-y-4 p-8 pt-6">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">
-            Account Knowledge
-          </h2>
-          <p className="text-muted-foreground">
-            Manage keywords that describe your company and industry for news
-            monitoring.
-          </p>
-        </div>
+    <Layout pageTitle="Account Knowledge">
+      <div className="space-y-6">
+        <p className="text-muted-foreground">
+          Manage keywords that describe your company and industry for news
+          monitoring.
+        </p>
 
         <div className="space-y-4">
           {/* Industry Keywords (Read-only) */}
           <Card>
             <CardHeader>
-              <CardTitle>Industry Keywords</CardTitle>
-              <CardDescription>
-                These keywords are automatically assigned based on your
-                account's industry setting. They cannot be modified directly.
-              </CardDescription>
+              <CardTitle>Industry Concepts</CardTitle>
             </CardHeader>
             <CardContent>
               {isLoading ? (

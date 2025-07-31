@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -228,17 +227,15 @@ export default function CompetitorsConfiguration() {
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Competitors</CardTitle>
-          <CardDescription>
-            Identify your competitors by name or website URL to monitor their
-            mentions and activities.
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <CardTitle>Competitor Concepts</CardTitle>
+            <Button onClick={() => setIsAddDialogOpen(true)} size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Competitor
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Competitor
-          </Button>
 
           {competitors.length === 0 ? (
             <p className="text-sm text-muted-foreground">

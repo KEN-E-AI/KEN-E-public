@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -109,11 +108,7 @@ export default function CustomerKeywordsConfiguration() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Customer Keywords</CardTitle>
-        <CardDescription>
-          Add keywords related to your customers, such as customer segments,
-          regions, or hashtags they use.
-        </CardDescription>
+        <CardTitle>Customer Concepts</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-2">
