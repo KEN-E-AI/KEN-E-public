@@ -128,7 +128,7 @@ steps:
           --platform=managed \
           --project=${_PROD_PROJECT_ID} \
           --allow-unauthenticated \
-          --memory=512Mi \
+          --memory=1Gi \
           --port=8000 \
           --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
           --clear-secrets \
