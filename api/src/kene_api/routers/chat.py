@@ -313,6 +313,7 @@ class AgentEngineClient:
             
             logger.info(f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}")
             logger.info(f"Query: {user_input[:100]}...")
+            logger.info(f"Session ID being passed to Agent Engine: {actual_session_id}")
             
             # Use the agent_engines API with proper Queryable interface
             try:
@@ -329,7 +330,7 @@ class AgentEngineClient:
                     response_parts = []
                     try:
                         # Use the correct parameters expected by the deployed agent
-                        for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id):
+                        for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id, session_id=actual_session_id):
                             logger.info(f"Received chunk type: {type(chunk)}, content preview: {str(chunk)[:100]}...")
                             
                             if isinstance(chunk, dict):
@@ -473,6 +474,7 @@ class AgentEngineClient:
             
             logger.info(f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}")
             logger.info(f"Query: {user_input[:100]}...")
+            logger.info(f"Session ID being passed to Agent Engine for streaming: {actual_session_id}")
             
             # Try streaming with agent_engines API
             try:
@@ -483,7 +485,7 @@ class AgentEngineClient:
                 # Use stream_query with correct parameters for deployed agent
                 if hasattr(self.agent_engine, 'stream_query'):
                     logger.info("Using stream_query method for streaming")
-                    for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id):
+                    for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id, session_id=actual_session_id):
                         if isinstance(chunk, dict):
                             # Handle actual dictionary response
                             # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
@@ -536,12 +538,22 @@ class AgentEngineClient:
                 # Pattern 3: query method
                 if hasattr(self.agent_engine, 'query'):
                     logger.info("Trying query method for streaming fallback")
-                    response = self.agent_engine.query(user_input)
+                    try:
+                        # Try with session parameters first
+                        response = self.agent_engine.query(message=user_input, user_id=user_id, session_id=actual_session_id)
+                    except TypeError:
+                        # Fallback to simple query if parameters not supported
+                        response = self.agent_engine.query(user_input)
                 
                 # Pattern 4: Direct callable
                 elif hasattr(self.agent_engine, '__call__'):
                     logger.info("Trying direct call pattern for streaming fallback")
-                    response = self.agent_engine(user_input)
+                    try:
+                        # Try with session parameters first
+                        response = self.agent_engine(message=user_input, user_id=user_id, session_id=actual_session_id)
+                    except TypeError:
+                        # Fallback to simple call if parameters not supported
+                        response = self.agent_engine(user_input)
                     
                 else:
                     yield f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"

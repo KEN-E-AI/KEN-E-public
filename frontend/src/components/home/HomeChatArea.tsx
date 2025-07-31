@@ -157,14 +157,31 @@ const HomeChatArea = () => {
       // Load actual conversation history from ADK session service
       const history = await chatService.getConversationHistory(conversation.session_id);
       
-      if (history && history.messages) {
-        // Convert ADK session messages to our Message format
-        const loadedMessages: Message[] = history.messages.map((msg: any, index: number) => ({
-          id: `${index}`,
-          content: msg.content || msg.text || 'Empty message',
-          isUser: msg.role === 'user',
-          timestamp: msg.timestamp || '',
-        }));
+      if (history && (history.messages || history.events)) {
+        // Convert ADK session data to our Message format
+        const events = history.events || history.messages || [];
+        const loadedMessages: Message[] = events.map((event: any, index: number) => {
+          // Handle ADK event format: event.content.parts[].text
+          let content = 'Empty message';
+          let role = 'assistant';
+          
+          if (event.content && event.content.parts && event.content.parts.length > 0) {
+            // Extract text from first part
+            content = event.content.parts[0].text || event.content.parts[0].content || 'Empty message';
+            role = event.content.role || event.role || 'assistant';
+          } else if (event.content) {
+            // Simple content format
+            content = event.content.text || event.content || 'Empty message';
+            role = event.role || 'assistant';
+          }
+          
+          return {
+            id: `${index}`,
+            content: content,
+            isUser: role === 'user',
+            timestamp: event.timestamp || '',
+          };
+        });
         setMessages(loadedMessages);
       } else {
         // Fallback if no history available
