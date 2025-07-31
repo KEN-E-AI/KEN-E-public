@@ -12,32 +12,31 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Globe, Plus, X, Save, Loader2 } from "lucide-react";
+import { Globe, Plus, X, Save, Loader2, AlertCircle } from "lucide-react";
 import api from "@/lib/api";
 import type { IndustryKeyword } from "@/types/admin.types";
 
-// Common industries list
+// Common industries list - must match backend INDUSTRY_OPTIONS
 const INDUSTRIES = [
-  "Technology",
-  "Healthcare",
-  "Finance",
-  "Retail",
-  "Manufacturing",
-  "Education",
-  "Entertainment",
-  "Real Estate",
-  "Automotive",
-  "Energy",
-  "Hospitality",
-  "Agriculture",
-  "Transportation",
-  "Telecommunications",
-  "Pharmaceuticals",
-  "Insurance",
-  "Media",
+  "Agriculture, Forestry, Fishing and Hunting",
+  "Utilities",
   "Construction",
-  "Aerospace",
-  "Food & Beverage",
+  "Manufacturing",
+  "Wholesale Trade [B2B]",
+  "Retail Trade",
+  "Transportation and Warehousing",
+  "Information",
+  "Finance and Insurance",
+  "Real Estate and Rental and Leasing",
+  "Professional, Scientific, and Technical Services",
+  "Management of Companies and Enterprises",
+  "Administrative and Support and Waste Management and Remediation Services",
+  "Educational Services",
+  "Health Care and Social Assistance",
+  "Arts, Entertainment, and Recreation",
+  "Accommodation and Food Services",
+  "Other Services (except Public Administration)",
+  "Public Administration",
 ];
 
 export const IndustryKeywordsSettings = () => {
@@ -188,16 +187,6 @@ export const IndustryKeywordsSettings = () => {
             </Button>
             )}
           </div>
-          
-          {/* Backend Not Implemented Notice */}
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Backend Not Implemented</AlertTitle>
-            <AlertDescription>
-              The API endpoints for industry keywords management are not yet implemented.
-              Please implement the backend endpoints to enable this feature.
-            </AlertDescription>
-          </Alert>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">

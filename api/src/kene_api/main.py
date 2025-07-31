@@ -17,6 +17,7 @@ from .routers import (
     firestore,
     funnel_reports,
     home,
+    industry_keywords,
     insights,
     intuitions,
     items,
@@ -115,6 +116,11 @@ app.include_router(
     monitoring_topics.router,
     prefix="/api/v1",
     tags=["monitoring-topics"],
+)
+app.include_router(
+    industry_keywords.router,
+    prefix="/api/v1/industry-keywords",
+    tags=["industry-keywords"],
 )
 
 

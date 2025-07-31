@@ -72,7 +72,7 @@ class CacheService:
             serialized = json.dumps(value)
             self.redis.setex(key, ttl_seconds, serialized)
             return True
-        except (RedisError, json.JSONEncodeError) as e:
+        except (RedisError, json.JSONDecodeError, TypeError) as e:
             logger.error(f"Error setting cache key {key}: {str(e)}")
             return False
             
