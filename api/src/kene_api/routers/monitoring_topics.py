@@ -4,9 +4,15 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 
 from ..auth import UserContext, get_current_user_context
+from ..cache import (
+    CacheService,
+    InMemoryCache,
+    all_industry_keywords_key,
+    industry_keywords_key,
+)
 from ..database import get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import SuccessResponse
@@ -17,11 +23,17 @@ from ..models.monitoring_models import (
     IndustryKeywordsListResponse,
     MonitoringTopics,
     MonitoringTopicsResponse,
+    PaginatedKeywordsRequest,
+    PaginatedKeywordsResponse,
     UpdateCompanyKeywordsRequest,
     UpdateCompetitorRequest,
     UpdateCustomerKeywordsRequest,
     UpdateIndustryKeywordsRequest,
 )
+# Create a module-level cache service (in-memory for now)
+# In production, this would be initialized with Redis
+_cache_service = CacheService(InMemoryCache())
+
 # Define industry options locally until we have a shared constants file
 INDUSTRY_OPTIONS = [
     {"value": "Agriculture, Forestry, Fishing and Hunting"},
@@ -126,7 +138,15 @@ async def get_or_create_monitoring_topics(
 async def get_industry_keywords_for_industry(
     industry: str, firestore: FirestoreService
 ) -> list[str]:
-    """Get keywords for a specific industry."""
+    """Get keywords for a specific industry with caching."""
+    cache_key = industry_keywords_key(industry)
+    
+    # Try cache first
+    cached = _cache_service.get(cache_key)
+    if cached is not None:
+        logger.debug(f"Cache hit for industry keywords: {industry}")
+        return cached
+    
     try:
         doc_id = industry.lower().replace(" ", "_").replace(",", "")
         doc = firestore.get_document(
@@ -134,12 +154,14 @@ async def get_industry_keywords_for_industry(
             document_id=doc_id,
         )
         
-        if doc:
-            return doc.get("keywords", [])
+        keywords = doc.get("keywords", []) if doc else []
         
-        # Return empty list if no keywords defined yet
-        return []
-    except Exception:
+        # Cache for 24 hours (industry keywords change rarely)
+        _cache_service.set(cache_key, keywords, ttl_seconds=86400)
+        
+        return keywords
+    except Exception as e:
+        logger.error(f"Error getting industry keywords: {str(e)}")
         return []
 
 
@@ -640,17 +662,91 @@ async def delete_competitor(
         )
 
 
+@router.get("/{account_id}/company/paginated", response_model=PaginatedKeywordsResponse)
+async def get_company_keywords_paginated(
+    account_id: str = Path(..., description="Account ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+    search: str | None = Query(None, description="Search term"),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> PaginatedKeywordsResponse:
+    """Get company keywords with pagination support."""
+    # Check user has access to this account
+    if not user.has_account_access(account_id) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied to account {account_id}"
+        )
+    
+    try:
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+        
+        if not doc:
+            return PaginatedKeywordsResponse(
+                keywords=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                total_pages=0
+            )
+        
+        # Get all keywords
+        all_keywords = doc.get("company_keywords", [])
+        
+        # Filter by search term if provided
+        if search:
+            search_lower = search.lower()
+            all_keywords = [k for k in all_keywords if search_lower in k.lower()]
+        
+        # Calculate pagination
+        total = len(all_keywords)
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        # Get page of keywords
+        page_keywords = all_keywords[start_idx:end_idx]
+        
+        return PaginatedKeywordsResponse(
+            keywords=page_keywords,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving paginated company keywords: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve keywords"
+        )
+
+
 @router.get("/industries/all", response_model=IndustryKeywordsListResponse)
 async def get_all_industry_keywords(
     user: UserContext = Depends(get_current_user_context),
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> IndustryKeywordsListResponse:
-    """Get keywords for all industries (super admin only)."""
+    """Get keywords for all industries (super admin only) with caching."""
     # Check if user is super admin
     if not user.is_super_admin:
         raise HTTPException(
             status_code=403,
             detail="Only super admins can view industry keywords"
+        )
+    
+    # Try cache first
+    cache_key = all_industry_keywords_key()
+    cached = _cache_service.get(cache_key)
+    if cached is not None:
+        logger.debug("Cache hit for all industry keywords")
+        return IndustryKeywordsListResponse(
+            success=True,
+            industries=[IndustryKeywords(**item) for item in cached]
         )
     
     try:
@@ -663,6 +759,13 @@ async def get_all_industry_keywords(
         industries = []
         for doc in docs:
             industries.append(IndustryKeywords(**doc))
+        
+        # Cache for 24 hours
+        _cache_service.set(
+            cache_key, 
+            [ind.model_dump() for ind in industries], 
+            ttl_seconds=86400
+        )
         
         return IndustryKeywordsListResponse(
             success=True,
@@ -714,6 +817,10 @@ async def update_industry_keywords(
             document_id=doc_id,
             data=doc_data,
         )
+        
+        # Invalidate cache
+        _cache_service.delete(industry_keywords_key(industry))
+        _cache_service.delete(all_industry_keywords_key())
         
         # Update all accounts with this industry
         # Note: In production, this should be done asynchronously

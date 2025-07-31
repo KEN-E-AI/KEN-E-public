@@ -84,6 +84,9 @@ const Knowledge = () => {
             Building,
             "Account Overview",
             "Configure KEN-E's understanding of your business strategy, goals and history",
+            "",
+            () => navigate("/knowledge/account"),
+            false,
           )}
 
           {/* Customers Section */}
@@ -91,6 +94,9 @@ const Knowledge = () => {
             Users,
             "Customers",
             "Configure KEN-E's understanding of your customers and ICP's",
+            "",
+            () => navigate("/knowledge/customers"),
+            false,
           )}
 
           {/* Competitors Section */}
@@ -98,6 +104,9 @@ const Knowledge = () => {
             TrendingUp,
             "Competitors",
             "Configure KEN-E's understanding of your competitors",
+            "",
+            () => navigate("/knowledge/competitors"),
+            false,
           )}
         </div>
       </div>

@@ -3,8 +3,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from ..validators import CompetitorValidators, KeywordValidators
 from .kene_models import BaseRequest
 
 
@@ -14,6 +15,24 @@ class CompetitorEntry(BaseModel):
     name: str = Field(..., description="Competitor name")
     website: str | None = Field(None, description="Competitor website URL")
     keywords: list[str] = Field(..., description="Keywords for monitoring this competitor")
+    
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate competitor name."""
+        return CompetitorValidators.validate_competitor_name(v)
+    
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: str | None) -> str | None:
+        """Validate competitor website."""
+        return CompetitorValidators.validate_website(v)
+    
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class MonitoringTopics(BaseModel):
@@ -72,6 +91,12 @@ class UpdateCompanyKeywordsRequest(BaseRequest):
     company_keywords: list[str] = Field(
         ..., description="New list of company keywords"
     )
+    
+    @field_validator("company_keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate company keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class UpdateCustomerKeywordsRequest(BaseRequest):
@@ -80,6 +105,12 @@ class UpdateCustomerKeywordsRequest(BaseRequest):
     customer_keywords: list[str] = Field(
         ..., description="New list of customer keywords"
     )
+    
+    @field_validator("customer_keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate customer keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class AddCompetitorRequest(BaseRequest):
@@ -90,6 +121,24 @@ class AddCompetitorRequest(BaseRequest):
     keywords: list[str] = Field(
         default_factory=list, description="Keywords for monitoring this competitor"
     )
+    
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate competitor name."""
+        return CompetitorValidators.validate_competitor_name(v)
+    
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: str | None) -> str | None:
+        """Validate competitor website."""
+        return CompetitorValidators.validate_website(v)
+    
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class UpdateCompetitorRequest(BaseRequest):
@@ -111,6 +160,12 @@ class UpdateIndustryKeywordsRequest(BaseModel):
     keywords: list[str] = Field(
         ..., description="New list of keywords for the industry"
     )
+    
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate industry keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class MonitoringTopicsResponse(BaseModel):
@@ -129,3 +184,21 @@ class IndustryKeywordsListResponse(BaseModel):
     industries: list[IndustryKeywords] = Field(
         ..., description="List of all industry keyword mappings"
     )
+
+
+class PaginatedKeywordsRequest(BaseModel):
+    """Request model for paginated keywords."""
+    
+    page: int = Field(default=1, ge=1, description="Page number")
+    page_size: int = Field(default=50, ge=1, le=200, description="Items per page")
+    search: str | None = Field(default=None, description="Search term to filter keywords")
+
+
+class PaginatedKeywordsResponse(BaseModel):
+    """Response model for paginated keywords."""
+    
+    keywords: list[str]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

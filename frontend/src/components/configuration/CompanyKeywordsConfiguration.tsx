@@ -15,6 +15,8 @@ import { Loader2, Plus, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { MonitoringTopics } from "@/types/monitoring";
 import api from "@/lib/api";
+import CompanyKeywordsConfigurationSkeleton from "./CompanyKeywordsConfigurationSkeleton";
+import { KeywordValidation } from "@/utils/validation";
 
 export default function CompanyKeywordsConfiguration() {
   const { selectedOrgAccount } = useAuth();
@@ -80,12 +82,32 @@ export default function CompanyKeywordsConfiguration() {
   });
 
   const handleAddKeyword = () => {
-    const trimmedKeyword = newKeyword.trim().toLowerCase();
-    if (trimmedKeyword && !keywords.includes(trimmedKeyword)) {
-      const updatedKeywords = [...keywords, trimmedKeyword];
-      setKeywords(updatedKeywords);
-      setNewKeyword("");
+    const trimmedKeyword = KeywordValidation.normalizeKeyword(newKeyword);
+    
+    // Validate keyword
+    const validation = KeywordValidation.validateKeyword(trimmedKeyword);
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid keyword",
+        description: validation.error,
+        variant: "destructive",
+      });
+      return;
     }
+    
+    // Check for duplicates
+    if (KeywordValidation.isDuplicate(trimmedKeyword, keywords)) {
+      toast({
+        title: "Duplicate keyword",
+        description: "This keyword already exists",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const updatedKeywords = [...keywords, trimmedKeyword];
+    setKeywords(updatedKeywords);
+    setNewKeyword("");
   };
 
   const handleRemoveKeyword = (keyword: string) => {
@@ -102,13 +124,7 @@ export default function CompanyKeywordsConfiguration() {
     JSON.stringify(monitoringTopics?.company_keywords || []);
 
   if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-6">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </CardContent>
-      </Card>
-    );
+    return <CompanyKeywordsConfigurationSkeleton />;
   }
 
   return (
