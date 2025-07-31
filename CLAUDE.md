@@ -769,10 +769,47 @@ VITE_API_BASE_URL=http://localhost:8000
 ### Deployment Considerations
 
 1. **Service Account Setup**: Ensure proper IAM roles for Vertex AI access
-2. **Environment Variables**: Configure all required variables in deployment
+2. **Environment Variables**: Configure all required variables in deployment (see Cloud Build configuration below)
 3. **Error Monitoring**: Monitor logs for Agent Engine execution errors
 4. **Session Management**: Agent Engine creates/manages sessions automatically
 5. **Rate Limiting**: Consider implementing rate limiting for chat endpoints
+
+#### Cloud Build Deployment Configuration
+
+The Vertex AI Agent Engine environment variables have been added to both staging and production Cloud Build pipelines:
+
+**Staging** (`deployment/cd/staging.yaml`):
+- Environment variables: `VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_STAGING}`
+- Substitutions:
+  ```yaml
+  _VERTEX_AI_LOCATION: us-central1
+  _VERTEX_AI_AGENT_ENGINE_ID_STAGING: ${_VERTEX_AI_AGENT_ENGINE_ID_STAGING}
+  ```
+
+**Production** (`deployment/cd/deploy-to-prod.yaml`):
+- Environment variables: `VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_PROD}`
+- Substitutions:
+  ```yaml
+  _VERTEX_AI_LOCATION: us-central1
+  _VERTEX_AI_AGENT_ENGINE_ID_PROD: ${_VERTEX_AI_AGENT_ENGINE_ID_PROD}
+  ```
+
+**Configuration Details:**
+
+**Staging**: Uses the actual Agent Engine ID directly in the substitutions:
+```
+_VERTEX_AI_AGENT_ENGINE_ID_STAGING: projects/ken-e-staging/locations/us-central1/reasoningEngines/98331523895263232
+```
+
+**Production**: Requires Cloud Build trigger variable configuration:
+- `_VERTEX_AI_AGENT_ENGINE_ID_PROD`: Must be set in the production Cloud Build trigger settings to the actual production Agent Engine ID
+
+**How to Configure Cloud Build Trigger Variables:**
+1. Go to Google Cloud Console → Cloud Build → Triggers
+2. Edit the production deployment trigger
+3. Under "Substitution variables", add:
+   - Variable: `_VERTEX_AI_AGENT_ENGINE_ID_PROD`
+   - Value: `projects/ken-e-production/locations/us-central1/reasoningEngines/YOUR_PROD_ENGINE_ID`
 
 ### Troubleshooting Common Issues
 
