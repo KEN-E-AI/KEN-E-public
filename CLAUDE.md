@@ -603,3 +603,226 @@ BREAKING CHANGE: a commit that has a footer BREAKING CHANGE:, or appends a ! aft
 types other than fix: and feat: are allowed, for example @commitlint/config-conventional (based on the Angular convention) recommends build:, chore:, ci:, docs:, style:, refactor:, perf:, test:, and others.
 footers other than BREAKING CHANGE: <description> may be provided and follow a convention similar to git trailer format.
 ```
+
+## Vertex AI Agent Engine Integration
+
+This section documents the complete process and lessons learned from integrating the KEN-E frontend chatbot with a Vertex AI Agent Engine deployed on Google Cloud Platform.
+
+### Overview
+
+The integration connects existing frontend chatbot components (`HomeChatArea.tsx` and `ChatSidebar.tsx`) with a deployed ADK (Agent Development Kit) chatbot via Vertex AI Agent Engine, replacing simulated responses with real AI-powered responses.
+
+### Architecture
+
+```
+Frontend (React) → API (FastAPI) → Vertex AI Agent Engine (GCP)
+    ↓                  ↓                      ↓
+chatService.ts   chat.py router      Deployed ADK Agent
+```
+
+### Key Components
+
+1. **API Router**: `api/src/kene_api/routers/chat.py`
+   - `AgentEngineClient` class for Agent Engine communication
+   - `/api/v1/chat/completions` endpoint (POST)
+   - `/api/v1/chat/health` endpoint (GET)
+
+2. **Frontend Service**: `frontend/src/services/chatService.ts`
+   - `ChatService` class with Firebase Auth integration
+   - Methods: `sendMessage()`, `streamMessage()`, `checkHealth()`
+
+3. **Test Scripts**: `api/scripts/`
+   - `test_agent_chat.py` - Local testing without full API deployment
+   - `test_reasoning_engine_methods.py` - Debug Agent Engine API methods
+
+### Critical Lessons Learned
+
+#### 1. **API Discovery Issue**
+- **Problem**: Initially used `reasoning_engines` API
+- **Solution**: Must use `agent_engines` API for deployed Agent Engines
+- **Code**: 
+  ```python
+  from vertexai import agent_engines  # NOT reasoning_engines
+  agent_engine = agent_engines.get(agent_engine_id)
+  ```
+
+#### 2. **Parameter Mismatch Issue**
+- **Problem**: Agent expected `message` and `user_id`, we sent `input`
+- **Error Log**: `TypeError: AdkApp.stream_query() missing 2 required keyword-only arguments: 'message' and 'user_id'`
+- **Solution**: 
+  ```python
+  # WRONG
+  agent_engine.stream_query(input=user_input)
+  
+  # CORRECT
+  agent_engine.stream_query(message=user_input, user_id=user_id)
+  ```
+
+#### 3. **Response Structure Issue**
+- **Problem**: Agent returns nested structure, not simple text
+- **Agent Response Format**:
+  ```python
+  {
+    'content': {
+      'parts': [{'text': 'Actual response text here'}]
+    },
+    'grounding_metadata': {...},
+    'usage_metadata': {...},
+    'invocation_id': '...',
+    'author': '...',
+    'actions': [...],
+    'id': '...',
+    'timestamp': '...'
+  }
+  ```
+- **Solution**: Parse nested structure to extract text:
+  ```python
+  if 'content' in chunk and isinstance(chunk['content'], dict):
+      content = chunk['content']
+      if 'parts' in content and isinstance(content['parts'], list):
+          for part in content['parts']:
+              if isinstance(part, dict) and 'text' in part:
+                  response_parts.append(part['text'])
+  ```
+
+#### 4. **Authentication Configuration**
+- **Development**: Use user credentials via `gcloud auth application-default login`
+- **Production**: Use service account credentials via `GOOGLE_APPLICATION_CREDENTIALS`
+- **Environment Variables**:
+  ```bash
+  GOOGLE_CLOUD_PROJECT_ID=ken-e-staging
+  VERTEX_AI_LOCATION=us-central1
+  VERTEX_AI_AGENT_ENGINE_ID=projects/ken-e-staging/locations/us-central1/reasoningEngines/YOUR_ID
+  ```
+
+### Debugging Agent Engine Issues
+
+#### 1. **Check Agent Logs**
+```bash
+# Get recent logs for specific reasoning engine
+gcloud logging read "resource.labels.reasoning_engine_id=\"YOUR_ENGINE_ID\"" \
+  --project=YOUR_PROJECT --limit=20
+
+# Search for specific errors
+gcloud logging read "resource.labels.reasoning_engine_id=\"YOUR_ENGINE_ID\" AND textPayload:\"TypeError\"" \
+  --project=YOUR_PROJECT --limit=10
+```
+
+#### 2. **Local Testing Scripts**
+```bash
+# Test integration without full API deployment
+cd api
+uv run -- python scripts/test_agent_chat.py
+
+# Debug Agent Engine API methods and signatures
+uv run -- python scripts/test_reasoning_engine_methods.py
+```
+
+#### 3. **Common Error Patterns**
+- **400 Reasoning Engine Execution failed**: Check parameter names and types
+- **TypeError: missing required keyword-only arguments**: Verify method signature
+- **InvalidRequestError**: Check deployed agent configuration
+- **Authentication errors**: Verify credentials and project access
+
+### Environment Configuration
+
+#### API Environment Variables (`.env.development`, `.env.staging`, `.env.production`)
+```bash
+# Required for Vertex AI Agent Engine
+VERTEX_AI_LOCATION=us-central1
+VERTEX_AI_AGENT_ENGINE_ID=projects/PROJECT/locations/LOCATION/reasoningEngines/ID
+GOOGLE_CLOUD_PROJECT_ID=your-project-id
+
+# Optional: Service account path (for production)
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+```
+
+#### Frontend Environment Variables
+```bash
+# No changes needed - uses existing API_BASE_URL
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+### Implementation Checklist
+
+#### Backend (API)
+- [x] Add `google-cloud-aiplatform>=1.90.0` to `pyproject.toml`
+- [x] Create `AgentEngineClient` class in chat router
+- [x] Use `agent_engines.get()` not `reasoning_engines`
+- [x] Pass `message=user_input, user_id=user_id` parameters
+- [x] Parse nested response structure `content.parts[].text`
+- [x] Handle both streaming and non-streaming responses
+- [x] Add proper error handling and logging
+
+#### Frontend
+- [x] Create `ChatService` class with Firebase Auth
+- [x] Update chatbot components to use real API calls
+- [x] Remove `setTimeout()` simulated responses
+- [x] Add loading states and error handling
+
+#### Testing
+- [x] Create local test scripts for debugging (`api/scripts/`)
+- [x] Test with user credentials (`gcloud auth application-default login`)
+- [x] Verify response parsing extracts clean text
+- [x] Test both streaming and non-streaming modes
+
+### Deployment Considerations
+
+1. **Service Account Setup**: Ensure proper IAM roles for Vertex AI access
+2. **Environment Variables**: Configure all required variables in deployment
+3. **Error Monitoring**: Monitor logs for Agent Engine execution errors
+4. **Session Management**: Agent Engine creates/manages sessions automatically
+5. **Rate Limiting**: Consider implementing rate limiting for chat endpoints
+
+### Troubleshooting Common Issues
+
+#### "No module named 'vertexai'" 
+```bash
+cd api && uv add google-cloud-aiplatform
+```
+
+#### "ReasoningEngine object has no attribute 'query'"
+Switch from `reasoning_engines` to `agent_engines` API.
+
+#### "TypeError: missing required keyword-only arguments"
+Check deployed agent's expected parameters via logs. Use `message` and `user_id`, not `input`.
+
+#### Response is raw dictionary string
+Implement nested structure parsing for `{'content': {'parts': [{'text': '...'}]}}` format.
+
+#### Authentication failures
+Verify credentials: `gcloud auth application-default login` for development, service account for production.
+
+### API Endpoint Documentation
+
+#### POST `/api/v1/chat/completions`
+**Request:**
+```json
+{
+  "messages": [{"role": "user", "content": "Hello", "timestamp": "2025-01-31T12:00:00Z"}],
+  "stream": false,
+  "session_id": "optional-session-id"
+}
+```
+
+**Response:**
+```json
+{
+  "role": "assistant",
+  "content": "Hi there! How can I help you with company news today?",
+  "session_id": "chat_1234567890_abc123def"
+}
+```
+
+#### GET `/api/v1/chat/health`
+**Response:**
+```json
+{
+  "status": "healthy",
+  "agent_engine_status": "connected",
+  "project_id": "ken-e-staging",
+  "location": "us-central1"
+}
+```
+
+This integration provides a robust, production-ready connection between the KEN-E frontend and Vertex AI Agent Engine, with comprehensive error handling, logging, and debugging capabilities.

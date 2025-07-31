@@ -162,23 +162,82 @@ class AgentEngineClient:
                 # Try the agent_engines query patterns
                 response = None
                 
-                # Pattern 1: query method (from Queryable interface)
-                if hasattr(self.agent_engine, 'query'):
-                    logger.info("Trying query method")
-                    response = self.agent_engine.query(user_input)
-                
-                # Pattern 2: Direct callable
-                elif hasattr(self.agent_engine, '__call__'):
-                    logger.info("Trying direct call pattern")
-                    response = self.agent_engine(user_input)
-                    
-                # Pattern 3: run method
-                elif hasattr(self.agent_engine, 'run'):
-                    logger.info("Trying run method")
-                    response = self.agent_engine.run(user_input)
+                # The Agent Engine has stream_query method - let's collect the stream into a single response
+                if hasattr(self.agent_engine, 'stream_query'):
+                    logger.info("Using stream_query method and collecting response")
+                    response_parts = []
+                    try:
+                        # Use the correct parameters expected by the deployed agent
+                        for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id):
+                            logger.info(f"Received chunk type: {type(chunk)}, content preview: {str(chunk)[:100]}...")
+                            
+                            if isinstance(chunk, dict):
+                                # Handle actual dictionary response
+                                logger.info(f"Processing dict chunk with keys: {list(chunk.keys())}")
+                                
+                                # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
+                                if 'content' in chunk and isinstance(chunk['content'], dict):
+                                    content = chunk['content']
+                                    if 'parts' in content and isinstance(content['parts'], list):
+                                        for part in content['parts']:
+                                            if isinstance(part, dict) and 'text' in part:
+                                                logger.info(f"Extracted text from nested structure: {part['text'][:50]}...")
+                                                response_parts.append(part['text'])
+                                            else:
+                                                response_parts.append(str(part))
+                                    else:
+                                        response_parts.append(str(content))
+                                # Handle direct structure: {'parts': [{'text': '...'}]}
+                                elif 'parts' in chunk and isinstance(chunk['parts'], list):
+                                    for part in chunk['parts']:
+                                        if isinstance(part, dict) and 'text' in part:
+                                            logger.info(f"Extracted text from direct structure: {part['text'][:50]}...")
+                                            response_parts.append(part['text'])
+                                        else:
+                                            response_parts.append(str(part))
+                                # Handle string content
+                                elif 'content' in chunk:
+                                    response_parts.append(str(chunk['content']))
+                                else:
+                                    response_parts.append(str(chunk))
+                            elif isinstance(chunk, str):
+                                # Handle string representation of dictionary
+                                logger.info(f"Processing string chunk: {chunk[:50]}...")
+                                if chunk.startswith("{'parts'") and "'text':" in chunk:
+                                    logger.info("Attempting to parse chunk as dictionary")
+                                    try:
+                                        import ast
+                                        parsed_chunk = ast.literal_eval(chunk)
+                                        logger.info(f"Successfully parsed chunk: {type(parsed_chunk)}")
+                                        if isinstance(parsed_chunk, dict) and 'parts' in parsed_chunk:
+                                            for part in parsed_chunk['parts']:
+                                                if isinstance(part, dict) and 'text' in part:
+                                                    logger.info(f"Extracted text: {part['text'][:50]}...")
+                                                    response_parts.append(part['text'])
+                                        else:
+                                            response_parts.append(chunk)
+                                    except (ValueError, SyntaxError) as e:
+                                        logger.warning(f"Failed to parse chunk as dict: {e}")
+                                        response_parts.append(chunk)
+                                else:
+                                    logger.info("Chunk doesn't match dictionary pattern, adding as-is")
+                                    response_parts.append(chunk)
+                            elif hasattr(chunk, 'content'):
+                                response_parts.append(str(chunk.content))
+                            else:
+                                response_parts.append(str(chunk))
+                        
+                        full_response = ''.join(response_parts).strip()
+                        if full_response:
+                            return full_response
+                        else:
+                            return "Received empty response from Agent Engine"
+                    except Exception as stream_error:
+                        logger.error(f"stream_query failed: {stream_error}")
+                        return f"Agent Engine stream_query error: {str(stream_error)}"
                     
                 else:
-                    return f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
+                    return f"stream_query method not found. Available methods: {', '.join(available_methods[:10])}"
                 
                 logger.info(f"Response received: {type(response)}")
                 
@@ -190,7 +249,16 @@ class AgentEngineClient:
                 elif hasattr(response, 'text'):
                     return str(response.text)
                 elif isinstance(response, dict):
-                    if 'content' in response:
+                    # Handle the agent's response format: {'parts': [{'text': '...'}], 'role': 'model'}
+                    if 'parts' in response and isinstance(response['parts'], list):
+                        text_parts = []
+                        for part in response['parts']:
+                            if isinstance(part, dict) and 'text' in part:
+                                text_parts.append(part['text'])
+                            else:
+                                text_parts.append(str(part))
+                        return ''.join(text_parts).strip()
+                    elif 'content' in response:
                         return str(response['content'])
                     elif 'text' in response:
                         return str(response['text'])
@@ -247,30 +315,52 @@ class AgentEngineClient:
                 available_methods = [method for method in dir(self.agent_engine) if not method.startswith('_')]
                 logger.info(f"Available methods on agent engine: {available_methods}")
                 
-                # Pattern 1: stream method (from StreamQueryable interface)
-                if hasattr(self.agent_engine, 'stream'):
-                    logger.info("Trying stream method")
-                    for chunk in self.agent_engine.stream(user_input):
-                        if isinstance(chunk, str):
-                            yield chunk
+                # Use stream_query with correct parameters for deployed agent
+                if hasattr(self.agent_engine, 'stream_query'):
+                    logger.info("Using stream_query method for streaming")
+                    for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id):
+                        if isinstance(chunk, dict):
+                            # Handle actual dictionary response
+                            # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
+                            if 'content' in chunk and isinstance(chunk['content'], dict):
+                                content = chunk['content']
+                                if 'parts' in content and isinstance(content['parts'], list):
+                                    for part in content['parts']:
+                                        if isinstance(part, dict) and 'text' in part:
+                                            yield part['text']
+                                        else:
+                                            yield str(part)
+                                else:
+                                    yield str(content)
+                            # Handle direct structure: {'parts': [{'text': '...'}]}
+                            elif 'parts' in chunk and isinstance(chunk['parts'], list):
+                                for part in chunk['parts']:
+                                    if isinstance(part, dict) and 'text' in part:
+                                        yield part['text']
+                                    else:
+                                        yield str(part)
+                            elif 'content' in chunk:
+                                yield str(chunk['content'])
+                            else:
+                                yield str(chunk)
+                        elif isinstance(chunk, str):
+                            # Handle string representation of dictionary
+                            if chunk.startswith("{'parts'") and "'text':" in chunk:
+                                try:
+                                    import ast
+                                    parsed_chunk = ast.literal_eval(chunk)
+                                    if isinstance(parsed_chunk, dict) and 'parts' in parsed_chunk:
+                                        for part in parsed_chunk['parts']:
+                                            if isinstance(part, dict) and 'text' in part:
+                                                yield part['text']
+                                    else:
+                                        yield chunk
+                                except (ValueError, SyntaxError):
+                                    yield chunk
+                            else:
+                                yield chunk
                         elif hasattr(chunk, 'content'):
                             yield str(chunk.content)
-                        elif isinstance(chunk, dict) and 'content' in chunk:
-                            yield str(chunk['content'])
-                        else:
-                            yield str(chunk)
-                    return
-                
-                # Pattern 2: stream_query method
-                elif hasattr(self.agent_engine, 'stream_query'):
-                    logger.info("Trying stream_query method")
-                    for chunk in self.agent_engine.stream_query(user_input):
-                        if isinstance(chunk, str):
-                            yield chunk
-                        elif hasattr(chunk, 'content'):
-                            yield str(chunk.content)
-                        elif isinstance(chunk, dict) and 'content' in chunk:
-                            yield str(chunk['content'])
                         else:
                             yield str(chunk)
                     return
