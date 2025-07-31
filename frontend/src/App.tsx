@@ -33,6 +33,7 @@ import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
 import Settings from "./pages/Settings";
 import AdminSettings from "./pages/AdminSettings";
+import AdminIndustryKeywords from "./pages/AdminIndustryKeywords";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
@@ -268,6 +269,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <AdminSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/admin/industry-keywords"
+                element={
+                  <ProtectedRoute>
+                    <AdminIndustryKeywords />
                   </ProtectedRoute>
                 }
               />

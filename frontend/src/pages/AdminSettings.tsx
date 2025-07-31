@@ -12,7 +12,6 @@ import {
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IndustryKeywordsSettings } from "@/components/settings/admin/IndustryKeywordsSettings";
 
 const AdminSettings = () => {
   const navigate = useNavigate();
@@ -30,7 +29,7 @@ const AdminSettings = () => {
       title: "Industry Keywords",
       description: "Configure default keywords for each industry",
       icon: Globe,
-      component: IndustryKeywordsSettings,
+      route: "/settings/admin/industry-keywords",
       implemented: true,
     },
     {
@@ -85,9 +84,8 @@ const AdminSettings = () => {
                   : "opacity-60 cursor-not-allowed",
               )}
               onClick={() => {
-                if (section.implemented) {
-                  const element = document.getElementById(section.id);
-                  element?.scrollIntoView({ behavior: "smooth" });
+                if (section.implemented && section.route) {
+                  navigate(section.route);
                 }
               }}
             >
@@ -114,20 +112,6 @@ const AdminSettings = () => {
             </Card>
           );
         })}
-      </div>
-
-      {/* Implemented Sections */}
-      <div className="space-y-8">
-        {adminSections
-          .filter((section) => section.implemented)
-          .map((section) => {
-            const Component = section.component;
-            return (
-              <div key={section.id} id={section.id}>
-                {Component && <Component />}
-              </div>
-            );
-          })}
       </div>
 
       {/* Coming Soon Notice */}
