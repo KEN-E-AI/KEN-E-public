@@ -431,11 +431,6 @@ const MetricsPage = () => {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
-            Metrics
-          </h2>
-        </div>
         <div className="flex items-center justify-center py-8">
           <div className="text-gray-500">Loading metrics...</div>
         </div>
@@ -446,11 +441,6 @@ const MetricsPage = () => {
   if (error) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
-            Metrics
-          </h2>
-        </div>
         <div className="flex items-center justify-center py-8">
           <div className="text-red-500">{error}</div>
         </div>
@@ -461,10 +451,7 @@ const MetricsPage = () => {
   return (
     <div className="space-y-6">
       {/* Header and Controls */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
-          Metrics
-        </h2>
+      <div className="flex items-center justify-end">
         <Button onClick={handleCreateMetric} size="sm">
           <Plus className="w-4 h-4 mr-2" />
           <span className="hidden sm:inline">Add Metric</span>

@@ -4,7 +4,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -227,8 +226,7 @@ export default function CompetitorsConfiguration() {
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Competitor Concepts</CardTitle>
+          <div className="flex items-center justify-end">
             <Button onClick={() => setIsAddDialogOpen(true)} size="sm">
               <Plus className="mr-2 h-4 w-4" />
               Add Competitor

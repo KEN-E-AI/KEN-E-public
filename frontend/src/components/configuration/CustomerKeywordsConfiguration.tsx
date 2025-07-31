@@ -3,8 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -107,10 +105,7 @@ export default function CustomerKeywordsConfiguration() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Customer Concepts</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         <div className="flex gap-2">
           <Input
             placeholder="Add a keyword (e.g., customer segment, region, hashtag)"
