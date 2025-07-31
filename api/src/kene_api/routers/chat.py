@@ -311,6 +311,74 @@ class AgentEngineClient:
         if session_key in self._user_sessions:
             self._user_sessions[session_key]["message_count"] += 1
             self._user_sessions[session_key]["last_updated"] = datetime.now(timezone.utc)
+    
+    def generate_conversation_name(self, user_message: str) -> str:
+        """Generate a meaningful conversation name from the user's message (1-2 words max)."""
+        try:
+            # Simple keyword extraction - look for key marketing/business terms
+            message_lower = user_message.lower()
+            
+            # Marketing/business keywords to prioritize
+            marketing_keywords = {
+                'seo': 'SEO',
+                'social media': 'Social Media',
+                'facebook': 'Facebook',
+                'instagram': 'Instagram', 
+                'linkedin': 'LinkedIn',
+                'twitter': 'Twitter',
+                'google ads': 'Google Ads',
+                'ppc': 'PPC',
+                'email marketing': 'Email',
+                'content marketing': 'Content',
+                'analytics': 'Analytics',
+                'conversion': 'Conversion',
+                'roi': 'ROI',
+                'revenue': 'Revenue',
+                'sales': 'Sales',
+                'lead generation': 'Leads',
+                'campaign': 'Campaign',
+                'brand': 'Brand',
+                'strategy': 'Strategy',
+                'competitor': 'Competitor',
+                'market research': 'Research',
+                'customer': 'Customer',
+                'retention': 'Retention',
+                'acquisition': 'Acquisition',
+                'funnel': 'Funnel',
+                'dashboard': 'Dashboard',
+                'metrics': 'Metrics',
+                'kpi': 'KPI',
+                'performance': 'Performance',
+                'budget': 'Budget',
+                'optimize': 'Optimization',
+                'report': 'Report'
+            }
+            
+            # Look for marketing keywords first
+            for keyword, name in marketing_keywords.items():
+                if keyword in message_lower:
+                    return name
+            
+            # Fallback: extract first meaningful words (skip common words)
+            import re
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', user_message)
+            stop_words = {'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 'one', 'our', 'had', 'what', 'help', 'with', 'how', 'need', 'want', 'about', 'this', 'that', 'have', 'will', 'would', 'could', 'should'}
+            
+            meaningful_words = [word.title() for word in words[:5] if word.lower() not in stop_words]
+            
+            if meaningful_words:
+                # Take first 1-2 meaningful words
+                if len(meaningful_words) >= 2:
+                    return f"{meaningful_words[0]} {meaningful_words[1]}"
+                else:
+                    return meaningful_words[0]
+            
+            # Final fallback
+            return "Marketing Chat"
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate conversation name: {e}")
+            return "Marketing Chat"
 
     async def get_conversation_history(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
         """Get conversation history from ADK session service and format it for frontend consumption."""
@@ -391,6 +459,17 @@ class AgentEngineClient:
             
             # Get or create session for this user
             actual_session_id = await self.get_or_create_session(user_id, session_id, conversation_name)
+            
+            # Check if this is the first message and we need to generate a conversation name
+            session_key = f"{user_id}:{actual_session_id}"
+            if (session_key in self._user_sessions and 
+                self._user_sessions[session_key]["message_count"] == 0 and
+                not self._user_sessions[session_key].get("conversation_name")):
+                
+                # Generate a meaningful name from the user's first message
+                generated_name = self.generate_conversation_name(user_input)
+                self._user_sessions[session_key]["conversation_name"] = generated_name
+                logger.info(f"Generated conversation name: '{generated_name}' for session {actual_session_id}")
             
             # Increment message count
             self.increment_message_count(user_id, actual_session_id)
@@ -552,6 +631,17 @@ class AgentEngineClient:
             
             # Get or create session for this user
             actual_session_id = await self.get_or_create_session(user_id, session_id, conversation_name)
+            
+            # Check if this is the first message and we need to generate a conversation name
+            session_key = f"{user_id}:{actual_session_id}"
+            if (session_key in self._user_sessions and 
+                self._user_sessions[session_key]["message_count"] == 0 and
+                not self._user_sessions[session_key].get("conversation_name")):
+                
+                # Generate a meaningful name from the user's first message
+                generated_name = self.generate_conversation_name(user_input)
+                self._user_sessions[session_key]["conversation_name"] = generated_name
+                logger.info(f"Generated conversation name: '{generated_name}' for session {actual_session_id}")
             
             # Increment message count
             self.increment_message_count(user_id, actual_session_id)
