@@ -143,12 +143,21 @@ class AgentEngineClient:
             
             # Create ADK session
             try:
+                logger.info(f"Attempting to create ADK session for user: {user_id}")
+                logger.info(f"Session service initialized: {self._session_service is not None}")
+                logger.info(f"Agent engine ID: {self.agent_engine_id}")
+                
                 session_result = await self.session_service.create_session(app_name="ken-e-chatbot", user_id=user_id)
                 session_id = session_result.id if hasattr(session_result, 'id') else str(session_result)
-                logger.info(f"Successfully created ADK session: {session_id}")
+                logger.info(f"Successfully created ADK session: {session_id} for user: {user_id}")
             except Exception as async_error:
-                logger.warning(f"Failed to create ADK session, falling back to manual session ID: {async_error}")
+                logger.error(f"Failed to create ADK session for user {user_id}: {async_error}")
+                logger.error(f"Error type: {type(async_error).__name__}")
+                logger.error(f"Session service status: {self._session_service is not None}")
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
                 session_id = f"manual_{uuid4()}"
+                logger.warning(f"Created fallback manual session ID: {session_id}")
             
             # Store conversation metadata
             conversation_info = {
@@ -184,11 +193,39 @@ class AgentEngineClient:
         """Get an existing session or create a new one."""
         if session_id:
             session_key = f"{user_id}:{session_id}"
+            
+            # First check in-memory cache
             if session_key in self._user_sessions:
-                logger.info(f"Using existing session {session_id} for user {user_id}")
+                logger.info(f"Using existing session {session_id} from cache for user {user_id}")
                 return session_id
             else:
-                logger.warning(f"Session {session_id} not found for user {user_id}, creating new one")
+                # Cache miss - check if session exists in ADK before creating new one
+                logger.info(f"Session {session_id} not in cache, checking ADK for user {user_id}")
+                try:
+                    session_data = await self.session_service.get_session(
+                        app_name="ken-e-chatbot",
+                        user_id=user_id,
+                        session_id=session_id
+                    )
+                    if session_data:
+                        logger.info(f"Found existing ADK session {session_id} for user {user_id}")
+                        # Restore session info to cache
+                        conversation_info = {
+                            "session_id": session_id,
+                            "user_id": user_id,
+                            "conversation_name": conversation_name,
+                            "created_at": getattr(session_data, 'create_time', datetime.now(timezone.utc)),
+                            "last_updated": getattr(session_data, 'update_time', datetime.now(timezone.utc)),
+                            "message_count": len(getattr(session_data, 'events', []))
+                        }
+                        self._user_sessions[session_key] = conversation_info
+                        return session_id
+                    else:
+                        logger.warning(f"ADK session {session_id} not found for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Error checking ADK session {session_id} for user {user_id}: {e}")
+                
+                logger.info(f"Creating new conversation for user {user_id} (original session {session_id} not found)")
         
         # Create new conversation
         return await self.create_conversation(user_id, conversation_name)
@@ -208,6 +245,9 @@ class AgentEngineClient:
         conversations = []
         
         try:
+            logger.info(f"Getting conversations for user: {user_id}")
+            logger.info(f"Cache keys: {list(self._user_sessions.keys())[:5]}...")  # Show first 5 cache keys
+            
             # Get sessions from ADK session service
             sessions = await self.session_service.list_sessions(
                 app_name="ken-e-chatbot",
@@ -275,6 +315,8 @@ class AgentEngineClient:
     async def get_conversation_history(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
         """Get conversation history from ADK session service and format it for frontend consumption."""
         try:
+            logger.info(f"Getting conversation history for user: {user_id}, session: {session_id}")
+            
             session_data = await self.session_service.get_session(
                 app_name="ken-e-chatbot",
                 user_id=user_id,
