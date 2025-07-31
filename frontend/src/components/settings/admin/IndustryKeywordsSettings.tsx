@@ -113,9 +113,7 @@ export const IndustryKeywordsSettings = () => {
 
     try {
       setSaving(true);
-      await api.put(`/api/v1/industry-keywords/${editingIndustry}`, {
-        keywords: editingKeywords,
-      });
+      await api.put(`/api/v1/industry-keywords/${editingIndustry}`, editingKeywords);
 
       toast({
         title: "Success",
