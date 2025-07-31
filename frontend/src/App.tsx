@@ -32,6 +32,7 @@ import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
 import Settings from "./pages/Settings";
+import AdminSettings from "./pages/AdminSettings";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
@@ -259,6 +260,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <UserSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/admin"
+                element={
+                  <ProtectedRoute>
+                    <AdminSettings />
                   </ProtectedRoute>
                 }
               />
