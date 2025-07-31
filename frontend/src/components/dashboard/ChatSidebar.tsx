@@ -135,16 +135,44 @@ const ChatSidebar = ({
 
   // Switch to an existing conversation
   const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
-    setCurrentConversation(conversation);
-    setSessionId(conversation.session_id);
-    
-    // Clear current messages - in a real app, you'd load the conversation history
-    setMessages([{
-      id: "1",
-      role: "assistant",
-      content: `Switched to conversation: ${conversation.conversation_name || 'Untitled Chat'} for ${selectedTab}`,
-      timestamp: new Date(),
-    }]);
+    try {
+      setIsLoading(true);
+      setCurrentConversation(conversation);
+      setSessionId(conversation.session_id);
+      
+      // Load actual conversation history from ADK session service
+      const history = await chatService.getConversationHistory(conversation.session_id);
+      
+      if (history && history.messages) {
+        // Convert ADK session messages to our ChatMessage format
+        const loadedMessages: ChatMessage[] = history.messages.map((msg: any, index: number) => ({
+          id: `${index}`,
+          role: msg.role === 'user' ? 'user' : 'assistant',
+          content: msg.content || msg.text || 'Empty message',
+          timestamp: new Date(msg.timestamp || Date.now()),
+        }));
+        setMessages(loadedMessages);
+      } else {
+        // Fallback if no history available
+        setMessages([{
+          id: "1",
+          role: "assistant",
+          content: `Resumed conversation: ${conversation.conversation_name || 'Untitled Chat'} for ${selectedTab}`,
+          timestamp: new Date(),
+        }]);
+      }
+    } catch (error) {
+      console.error("Failed to load conversation history:", error);
+      // Fallback on error
+      setMessages([{
+        id: "1",
+        role: "assistant",
+        content: `Error loading conversation history. Starting fresh chat for ${selectedTab}.`,
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   }, [selectedTab]);
 
   const handleSendMessage = () => {

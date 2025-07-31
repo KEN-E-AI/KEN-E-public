@@ -149,16 +149,44 @@ const HomeChatArea = () => {
 
   // Switch to an existing conversation
   const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
-    setCurrentConversation(conversation);
-    setSessionId(conversation.session_id);
-    
-    // Clear current messages - in a real app, you'd load the conversation history
-    setMessages([{
-      id: "1",
-      content: `Switched to conversation: ${conversation.conversation_name || 'Untitled Chat'}`,
-      isUser: false,
-      timestamp: new Date().toLocaleString(),
-    }]);
+    try {
+      setIsLoading(true);
+      setCurrentConversation(conversation);
+      setSessionId(conversation.session_id);
+      
+      // Load actual conversation history from ADK session service
+      const history = await chatService.getConversationHistory(conversation.session_id);
+      
+      if (history && history.messages) {
+        // Convert ADK session messages to our Message format
+        const loadedMessages: Message[] = history.messages.map((msg: any, index: number) => ({
+          id: `${index}`,
+          content: msg.content || msg.text || 'Empty message',
+          isUser: msg.role === 'user',
+          timestamp: msg.timestamp || '',
+        }));
+        setMessages(loadedMessages);
+      } else {
+        // Fallback if no history available
+        setMessages([{
+          id: "1",
+          content: `Resumed conversation: ${conversation.conversation_name || 'Untitled Chat'}`,
+          isUser: false,
+          timestamp: new Date().toLocaleString(),
+        }]);
+      }
+    } catch (error) {
+      console.error("Failed to load conversation history:", error);
+      // Fallback on error
+      setMessages([{
+        id: "1",
+        content: `Error loading conversation history. Starting fresh chat.`,
+        isUser: false,
+        timestamp: new Date().toLocaleString(),
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   const sendMessage = useCallback(async () => {
