@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from vertexai.preview import reasoning_engines
+from vertexai import agent_engines
+from typing import Any, Dict, List, AsyncGenerator, Union
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
@@ -43,7 +45,7 @@ class ChatResponse(BaseModel):
 
 
 class AgentEngineClient:
-    """Client for interacting with Vertex AI Agent Engine using session-based API."""
+    """Client for interacting with Vertex AI Agent Engine using agent_engines API."""
     
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
@@ -56,24 +58,23 @@ class AgentEngineClient:
         # Initialize Vertex AI
         vertexai.init(project=self.project_id, location=self.location)
         
-        self._reasoning_engine = None
+        self._agent_engine: Any = None
         self._user_sessions = {}  # Cache for user sessions
     
     @property
-    def reasoning_engine(self):
-        """Lazy-load the reasoning engine."""
-        if self._reasoning_engine is None and self.agent_engine_id:
+    def agent_engine(self):
+        """Lazy-load the agent engine using agent_engines.get()."""
+        if self._agent_engine is None and self.agent_engine_id:
             try:
                 logger.info(f"Attempting to connect to Agent Engine: {self.agent_engine_id}")
                 logger.info(f"Using project: {self.project_id}, location: {self.location}")
                 
-                self._reasoning_engine = reasoning_engines.ReasoningEngine(
-                    self.agent_engine_id
-                )
+                # Use agent_engines.get() to get the deployed agent engine
+                self._agent_engine = agent_engines.get(self.agent_engine_id)
                 
                 # Log the available methods for debugging
-                available_methods = [method for method in dir(self._reasoning_engine) if not method.startswith('_')]
-                logger.info(f"Available methods on reasoning engine: {available_methods}")
+                available_methods = [method for method in dir(self._agent_engine) if not method.startswith('_')]
+                logger.info(f"Available methods on agent engine: {available_methods}")
                 
                 logger.info(f"Successfully connected to Agent Engine: {self.agent_engine_id}")
             except Exception as e:
@@ -83,7 +84,7 @@ class AgentEngineClient:
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=f"Agent Engine is currently unavailable: {str(e)}"
                 )
-        return self._reasoning_engine
+        return self._agent_engine
     
     def get_or_create_session(self, user_id: str, session_id: str) -> str:
         """Get or create a session for a user."""
@@ -93,8 +94,8 @@ class AgentEngineClient:
             try:
                 logger.info(f"Creating new session for user {user_id}")
                 # Try to create an ADK session if the method exists
-                if hasattr(self.reasoning_engine, 'create_session'):
-                    session_response = self.reasoning_engine.create_session(user_id=user_id)
+                if hasattr(self.agent_engine, 'create_session'):
+                    session_response = self.agent_engine.create_session(user_id=user_id)
                     
                     if isinstance(session_response, dict) and "id" in session_response:
                         actual_session_id = session_response["id"]
@@ -133,8 +134,8 @@ class AgentEngineClient:
         user_context: UserContext,
         session_id: str
     ) -> str:
-        """Get a chat completion from the Agent Engine using session-based API."""
-        if not self.reasoning_engine:
+        """Get a chat completion from the Agent Engine using agent_engines API."""
+        if not self.agent_engine:
             return "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
         
         try:
@@ -152,52 +153,57 @@ class AgentEngineClient:
             logger.info(f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}")
             logger.info(f"Query: {user_input[:100]}...")
             
-            # Use stream_query and collect all events for non-streaming response
-            response_parts = []
-            
-            # Check if stream_query method exists, otherwise try other methods
-            if hasattr(self.reasoning_engine, 'stream_query'):
-                try:
-                    for event in self.reasoning_engine.stream_query(
-                        user_id=user_id,
-                        session_id=actual_session_id,
-                        message=user_input
-                    ):
-                        logger.debug(f"Received event: {type(event)} - {str(event)[:200]}...")
-                        
-                        # Extract content from various event types
-                        if hasattr(event, 'content') and event.content:
-                            response_parts.append(str(event.content))
-                        elif isinstance(event, dict):
-                            if 'content' in event:
-                                response_parts.append(str(event['content']))
-                            elif 'message' in event:
-                                response_parts.append(str(event['message']))
-                            elif 'text' in event:
-                                response_parts.append(str(event['text']))
-                        elif isinstance(event, str):
-                            response_parts.append(event)
-                        else:
-                            response_parts.append(str(event))
-                except Exception as stream_error:
-                    logger.error(f"Error during stream_query: {stream_error}")
-                    return f"I encountered an error while processing your request: {str(stream_error)}"
-            else:
-                logger.warning("stream_query method not available on reasoning engine")
-                # Check available methods for debugging
-                available_methods = [method for method in dir(self.reasoning_engine) if not method.startswith('_')]
-                logger.error(f"Available methods on reasoning engine: {available_methods}")
-                return f"I'm unable to process your request. The Agent Engine doesn't have the expected interface. Available methods: {', '.join(available_methods[:5])}..."
-            
-            # Combine all response parts
-            full_response = ''.join(response_parts).strip()
-            
-            if not full_response:
-                logger.warning("Empty response from Agent Engine")
-                return "I received your message but couldn't generate a response. Please try rephrasing your question."
-            
-            logger.info(f"Successfully received response from Agent Engine: {len(full_response)} characters")
-            return full_response
+            # Use the agent_engines API with proper Queryable interface
+            try:
+                # Log available methods for debugging
+                available_methods = [method for method in dir(self.agent_engine) if not method.startswith('_')]
+                logger.info(f"Available methods on agent engine: {available_methods}")
+                
+                # Try the agent_engines query patterns
+                response = None
+                
+                # Pattern 1: query method (from Queryable interface)
+                if hasattr(self.agent_engine, 'query'):
+                    logger.info("Trying query method")
+                    response = self.agent_engine.query(user_input)
+                
+                # Pattern 2: Direct callable
+                elif hasattr(self.agent_engine, '__call__'):
+                    logger.info("Trying direct call pattern")
+                    response = self.agent_engine(user_input)
+                    
+                # Pattern 3: run method
+                elif hasattr(self.agent_engine, 'run'):
+                    logger.info("Trying run method")
+                    response = self.agent_engine.run(user_input)
+                    
+                else:
+                    return f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
+                
+                logger.info(f"Response received: {type(response)}")
+                
+                # Process the response
+                if isinstance(response, str):
+                    return response
+                elif hasattr(response, 'content'):
+                    return str(response.content)
+                elif hasattr(response, 'text'):
+                    return str(response.text)
+                elif isinstance(response, dict):
+                    if 'content' in response:
+                        return str(response['content'])
+                    elif 'text' in response:
+                        return str(response['text'])
+                    elif 'message' in response:
+                        return str(response['message'])
+                    else:
+                        return str(response)
+                else:
+                    return str(response)
+                    
+            except Exception as call_error:
+                logger.error(f"Error calling Agent Engine: {call_error}")
+                return f"Error processing your request: {str(call_error)}"
                 
         except HTTPException:
             raise
@@ -214,8 +220,8 @@ class AgentEngineClient:
         user_context: UserContext,
         session_id: str
     ) -> AsyncGenerator[str, None]:
-        """Stream a chat completion from the Agent Engine using session-based API."""
-        if not self.reasoning_engine:
+        """Stream a chat completion from the Agent Engine using agent_engines API."""
+        if not self.agent_engine:
             yield "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
             return
         
@@ -235,56 +241,81 @@ class AgentEngineClient:
             logger.info(f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}")
             logger.info(f"Query: {user_input[:100]}...")
             
-            # Check if stream_query method exists
-            if hasattr(self.reasoning_engine, 'stream_query'):
-                try:
-                    # Stream events from the Agent Engine
-                    for event in self.reasoning_engine.stream_query(
-                        user_id=user_id,
-                        session_id=actual_session_id,
-                        message=user_input
-                    ):
-                        logger.debug(f"Streaming event: {type(event)} - {str(event)[:200]}...")
-                        
-                        # Extract content from various event types and yield immediately
-                        content_yielded = False
-                        
-                        if hasattr(event, 'content') and event.content:
-                            yield str(event.content)
-                            content_yielded = True
-                        elif isinstance(event, dict):
-                            if 'content' in event and event['content']:
-                                yield str(event['content'])
-                                content_yielded = True
-                            elif 'message' in event and event['message']:
-                                yield str(event['message'])
-                                content_yielded = True
-                            elif 'text' in event and event['text']:
-                                yield str(event['text'])
-                                content_yielded = True
-                            elif 'delta' in event and isinstance(event['delta'], dict):
-                                if 'content' in event['delta'] and event['delta']['content']:
-                                    yield str(event['delta']['content'])
-                                    content_yielded = True
-                        elif isinstance(event, str) and event.strip():
-                            yield event
-                            content_yielded = True
-                        
-                        # If we couldn't extract meaningful content, yield the raw event as string
-                        if not content_yielded and str(event).strip():
-                            yield str(event)
+            # Try streaming with agent_engines API
+            try:
+                # Log available methods for debugging
+                available_methods = [method for method in dir(self.agent_engine) if not method.startswith('_')]
+                logger.info(f"Available methods on agent engine: {available_methods}")
+                
+                # Pattern 1: stream method (from StreamQueryable interface)
+                if hasattr(self.agent_engine, 'stream'):
+                    logger.info("Trying stream method")
+                    for chunk in self.agent_engine.stream(user_input):
+                        if isinstance(chunk, str):
+                            yield chunk
+                        elif hasattr(chunk, 'content'):
+                            yield str(chunk.content)
+                        elif isinstance(chunk, dict) and 'content' in chunk:
+                            yield str(chunk['content'])
+                        else:
+                            yield str(chunk)
+                    return
+                
+                # Pattern 2: stream_query method
+                elif hasattr(self.agent_engine, 'stream_query'):
+                    logger.info("Trying stream_query method")
+                    for chunk in self.agent_engine.stream_query(user_input):
+                        if isinstance(chunk, str):
+                            yield chunk
+                        elif hasattr(chunk, 'content'):
+                            yield str(chunk.content)
+                        elif isinstance(chunk, dict) and 'content' in chunk:
+                            yield str(chunk['content'])
+                        else:
+                            yield str(chunk)
+                    return
+                
+                # Fallback: use regular query and yield the result
+                response = None
+                
+                # Pattern 3: query method
+                if hasattr(self.agent_engine, 'query'):
+                    logger.info("Trying query method for streaming fallback")
+                    response = self.agent_engine.query(user_input)
+                
+                # Pattern 4: Direct callable
+                elif hasattr(self.agent_engine, '__call__'):
+                    logger.info("Trying direct call pattern for streaming fallback")
+                    response = self.agent_engine(user_input)
                     
-                    logger.info("Finished streaming response from Agent Engine")
+                else:
+                    yield f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
+                    return
+                
+                logger.info(f"Streaming response received: {type(response)}")
+                
+                # Process and yield the response
+                if isinstance(response, str):
+                    yield response
+                elif hasattr(response, 'content'):
+                    yield str(response.content)
+                elif hasattr(response, 'text'):
+                    yield str(response.text)
+                elif isinstance(response, dict):
+                    if 'content' in response:
+                        yield str(response['content'])
+                    elif 'text' in response:
+                        yield str(response['text'])
+                    elif 'message' in response:
+                        yield str(response['message'])
+                    else:
+                        yield str(response)
+                else:
+                    yield str(response)
                     
-                except Exception as stream_error:
-                    logger.error(f"Error during stream_query: {stream_error}")
-                    yield f"Error: Failed to query Agent Engine - {str(stream_error)}"
-            else:
-                # Fallback: no streaming support
-                logger.warning("stream_query method not available, providing error message")
-                available_methods = [method for method in dir(self.reasoning_engine) if not method.startswith('_')]
-                logger.error(f"Available methods on reasoning engine: {available_methods}")
-                yield f"Streaming not supported. The Agent Engine doesn't have the expected interface. Available methods: {', '.join(available_methods[:5])}..."
+            except Exception as call_error:
+                logger.error(f"Error calling Agent Engine for streaming: {call_error}")
+                yield f"Error processing your request: {str(call_error)}"
                     
         except Exception as e:
             logger.error(f"Error in streaming chat completion: {e}")
