@@ -273,14 +273,56 @@ class AgentEngineClient:
             self._user_sessions[session_key]["last_updated"] = datetime.now(timezone.utc)
 
     async def get_conversation_history(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get conversation history from ADK session service."""
+        """Get conversation history from ADK session service and format it for frontend consumption."""
         try:
             session_data = await self.session_service.get_session(
                 app_name="ken-e-chatbot",
                 user_id=user_id,
                 session_id=session_id
             )
-            return session_data
+            
+            if session_data and hasattr(session_data, 'events'):
+                # Convert ADK session events to a frontend-friendly format
+                formatted_history = {
+                    "session_id": session_id,
+                    "events": []
+                }
+                
+                # Process each event in the session
+                for event in session_data.events:
+                    formatted_event = {
+                        "content": {},
+                        "role": "assistant",
+                        "timestamp": getattr(event, 'timestamp', None)
+                    }
+                    
+                    # Extract content and role from the event
+                    if hasattr(event, 'content') and event.content:
+                        content_obj = event.content
+                        
+                        # Extract role
+                        if hasattr(content_obj, 'role'):
+                            formatted_event["role"] = content_obj.role
+                        elif hasattr(event, 'author'):
+                            formatted_event["role"] = event.author
+                        
+                        # Extract parts (text content)
+                        if hasattr(content_obj, 'parts') and content_obj.parts:
+                            formatted_event["content"]["parts"] = []
+                            for part in content_obj.parts:
+                                if hasattr(part, 'text'):
+                                    formatted_event["content"]["parts"].append({
+                                        "text": part.text
+                                    })
+                    
+                    formatted_history["events"].append(formatted_event)
+                
+                logger.info(f"Formatted {len(formatted_history['events'])} events for session {session_id}")
+                return formatted_history
+            else:
+                logger.warning(f"No events found in session {session_id}")
+                return {"session_id": session_id, "events": []}
+                
         except Exception as e:
             logger.error(f"Failed to get conversation history for session {session_id}: {e}")
             return None
