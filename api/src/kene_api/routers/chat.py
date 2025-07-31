@@ -4,8 +4,9 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 
 import logging
 import os
-from typing import Any, Dict, List, AsyncGenerator
+from typing import Any, Dict, List, AsyncGenerator, Optional
 from uuid import uuid4
+from datetime import datetime, timezone
 
 import vertexai
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from vertexai.preview import reasoning_engines
 from vertexai import agent_engines
+from google.adk.sessions import VertexAiSessionService
 from typing import Any, Dict, List, AsyncGenerator, Union
 
 from ..auth.dependencies import get_current_user
@@ -34,7 +36,8 @@ class ChatRequest(BaseModel):
     """Request for chat completion."""
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
     stream: bool = Field(default=False, description="Whether to stream the response")
-    session_id: str = Field(default_factory=lambda: str(uuid4()), description="Session ID for conversation tracking")
+    session_id: Optional[str] = Field(None, description="Session ID for conversation tracking")
+    conversation_name: Optional[str] = Field(None, description="Optional name for the conversation")
 
 
 class ChatResponse(BaseModel):
@@ -42,10 +45,36 @@ class ChatResponse(BaseModel):
     role: str = Field(default="assistant", description="Response role")
     content: str = Field(..., description="Response content")
     session_id: str = Field(..., description="Session ID")
+    conversation_name: Optional[str] = Field(None, description="Conversation name if provided")
+
+
+class ConversationInfo(BaseModel):
+    """Information about a conversation/session."""
+    session_id: str = Field(..., description="Session ID")
+    conversation_name: Optional[str] = Field(None, description="User-assigned conversation name")
+    created_at: datetime = Field(..., description="When the conversation was created")
+    last_updated: datetime = Field(..., description="When the conversation was last updated")
+    message_count: int = Field(..., description="Number of messages in the conversation")
+
+
+class ConversationListResponse(BaseModel):
+    """Response for listing conversations."""
+    conversations: List[ConversationInfo] = Field(..., description="List of user conversations")
+    total_count: int = Field(..., description="Total number of conversations")
+
+
+class CreateConversationRequest(BaseModel):
+    """Request to create a new conversation."""
+    conversation_name: Optional[str] = Field(None, description="Optional name for the conversation")
+
+
+class UpdateConversationRequest(BaseModel):
+    """Request to update conversation metadata."""
+    conversation_name: Optional[str] = Field(None, description="New name for the conversation")
 
 
 class AgentEngineClient:
-    """Client for interacting with Vertex AI Agent Engine using agent_engines API."""
+    """Client for interacting with Vertex AI Agent Engine using agent_engines API with ADK session management."""
     
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
@@ -59,7 +88,8 @@ class AgentEngineClient:
         vertexai.init(project=self.project_id, location=self.location)
         
         self._agent_engine: Any = None
-        self._user_sessions = {}  # Cache for user sessions
+        self._session_service: Optional[VertexAiSessionService] = None
+        self._user_sessions = {}  # Cache for user session metadata
     
     @property
     def agent_engine(self):
@@ -86,69 +116,159 @@ class AgentEngineClient:
                 )
         return self._agent_engine
     
-    def get_or_create_session(self, user_id: str, session_id: str) -> str:
-        """Get or create a session for a user."""
-        session_key = f"{user_id}:{session_id}"
-        
-        if session_key not in self._user_sessions:
+    @property
+    def session_service(self) -> VertexAiSessionService:
+        """Lazy-load the ADK session service."""
+        if self._session_service is None:
             try:
-                logger.info(f"Creating new session for user {user_id}")
-                # Try to create an ADK session if the method exists
-                if hasattr(self.agent_engine, 'create_session'):
-                    session_response = self.agent_engine.create_session(user_id=user_id)
-                    
-                    if isinstance(session_response, dict) and "id" in session_response:
-                        actual_session_id = session_response["id"]
-                    else:
-                        # Fallback to using the provided session_id
-                        actual_session_id = session_id
-                else:
-                    # If create_session doesn't exist, use the provided session_id
-                    actual_session_id = session_id
-                
-                self._user_sessions[session_key] = actual_session_id
-                logger.info(f"Using session {actual_session_id} for user {user_id}")
-                
+                logger.info("Initializing ADK VertexAiSessionService")
+                self._session_service = VertexAiSessionService(
+                    project=self.project_id,
+                    location=self.location,
+                    agent_engine_id=self.agent_engine_id.split('/')[-1]  # Extract just the ID part
+                )
+                logger.info("Successfully initialized VertexAiSessionService")
             except Exception as e:
-                logger.warning(f"Failed to create session, using provided session_id: {e}")
-                # Fallback to using the provided session_id
-                self._user_sessions[session_key] = session_id
-        
-        return self._user_sessions[session_key]
+                logger.error(f"Failed to initialize VertexAiSessionService: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Session service is currently unavailable: {str(e)}"
+                )
+        return self._session_service
     
-    def format_messages_for_agent(self, messages: List[ChatMessage]) -> Dict[str, Any]:
-        """Format messages for the Agent Engine input format."""
-        # Convert messages to the format expected by the agent
-        formatted_messages = []
-        for msg in messages:
-            formatted_messages.append({
-                "type": "human" if msg.role == "user" else "ai",
-                "content": msg.content
-            })
+    async def create_conversation(self, user_id: str, conversation_name: Optional[str] = None) -> str:
+        """Create a new conversation using ADK session service."""
+        try:
+            logger.info(f"Creating new conversation for user {user_id}")
+            
+            # Create ADK session
+            try:
+                session_result = await self.session_service.create_session(app_name="ken-e-chatbot", user_id=user_id)
+                session_id = session_result.id if hasattr(session_result, 'id') else str(session_result)
+                logger.info(f"Successfully created ADK session: {session_id}")
+            except Exception as async_error:
+                logger.warning(f"Failed to create ADK session, falling back to manual session ID: {async_error}")
+                session_id = f"manual_{uuid4()}"
+            
+            # Store conversation metadata
+            conversation_info = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "conversation_name": conversation_name,
+                "created_at": datetime.now(timezone.utc),
+                "last_updated": datetime.now(timezone.utc),
+                "message_count": 0
+            }
+            
+            self._user_sessions[f"{user_id}:{session_id}"] = conversation_info
+            logger.info(f"Created conversation with session {session_id} for user {user_id}")
+            
+            return session_id
+            
+        except Exception as e:
+            logger.error(f"Failed to create conversation: {e}")
+            # Fallback to generating a UUID
+            fallback_session_id = f"fallback_{uuid4()}"
+            conversation_info = {
+                "session_id": fallback_session_id,
+                "user_id": user_id,
+                "conversation_name": conversation_name,
+                "created_at": datetime.now(timezone.utc),
+                "last_updated": datetime.now(timezone.utc),
+                "message_count": 0
+            }
+            self._user_sessions[f"{user_id}:{fallback_session_id}"] = conversation_info
+            return fallback_session_id
+    
+    async def get_or_create_session(self, user_id: str, session_id: Optional[str] = None, conversation_name: Optional[str] = None) -> str:
+        """Get an existing session or create a new one."""
+        if session_id:
+            session_key = f"{user_id}:{session_id}"
+            if session_key in self._user_sessions:
+                logger.info(f"Using existing session {session_id} for user {user_id}")
+                return session_id
+            else:
+                logger.warning(f"Session {session_id} not found for user {user_id}, creating new one")
         
-        return {"messages": formatted_messages}
+        # Create new conversation
+        return await self.create_conversation(user_id, conversation_name)
+    
+    def update_conversation_metadata(self, user_id: str, session_id: str, conversation_name: Optional[str] = None) -> bool:
+        """Update conversation metadata."""
+        session_key = f"{user_id}:{session_id}"
+        if session_key in self._user_sessions:
+            if conversation_name is not None:
+                self._user_sessions[session_key]["conversation_name"] = conversation_name
+            self._user_sessions[session_key]["last_updated"] = datetime.now(timezone.utc)
+            return True
+        return False
+    
+    def get_user_conversations(self, user_id: str) -> List[ConversationInfo]:
+        """Get all conversations for a user."""
+        conversations = []
+        for session_key, info in self._user_sessions.items():
+            if session_key.startswith(f"{user_id}:"):
+                conversations.append(ConversationInfo(
+                    session_id=info["session_id"],
+                    conversation_name=info.get("conversation_name"),
+                    created_at=info["created_at"],
+                    last_updated=info["last_updated"],
+                    message_count=info["message_count"]
+                ))
+        
+        # Sort by last updated (most recent first)
+        conversations.sort(key=lambda x: x.last_updated, reverse=True)
+        return conversations
+    
+    async def delete_conversation(self, user_id: str, session_id: str) -> bool:
+        """Delete a conversation and its session."""
+        session_key = f"{user_id}:{session_id}"
+        if session_key in self._user_sessions:
+            try:
+                # Try to delete the ADK session
+                await self.session_service.delete_session(app_name="ken-e-chatbot", user_id=user_id, session_id=session_id)
+                logger.info(f"Deleted ADK session {session_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete ADK session {session_id}: {e}")
+            
+            # Remove from our cache
+            del self._user_sessions[session_key]
+            logger.info(f"Deleted conversation {session_id} for user {user_id}")
+            return True
+        return False
+    
+    def increment_message_count(self, user_id: str, session_id: str) -> None:
+        """Increment the message count for a conversation."""
+        session_key = f"{user_id}:{session_id}"
+        if session_key in self._user_sessions:
+            self._user_sessions[session_key]["message_count"] += 1
+            self._user_sessions[session_key]["last_updated"] = datetime.now(timezone.utc)
     
     async def chat_completion(
         self, 
         messages: List[ChatMessage], 
         user_context: UserContext,
-        session_id: str
-    ) -> str:
-        """Get a chat completion from the Agent Engine using agent_engines API."""
+        session_id: Optional[str] = None,
+        conversation_name: Optional[str] = None
+    ) -> tuple[str, str]:
+        """Get a chat completion from the Agent Engine using agent_engines API with session management."""
         if not self.agent_engine:
-            return "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
+            return "I'm sorry, but I'm unable to process your request at the moment. Please try again later.", ""
         
         try:
             # Get the latest message
             latest_message = messages[-1] if messages else None
             if not latest_message:
-                return "I didn't receive any message to process."
+                return "I didn't receive any message to process.", ""
             
             user_input = latest_message.content
             user_id = user_context.user_id
             
             # Get or create session for this user
-            actual_session_id = self.get_or_create_session(user_id, session_id)
+            actual_session_id = await self.get_or_create_session(user_id, session_id, conversation_name)
+            
+            # Increment message count
+            self.increment_message_count(user_id, actual_session_id)
             
             logger.info(f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}")
             logger.info(f"Query: {user_input[:100]}...")
@@ -229,25 +349,25 @@ class AgentEngineClient:
                         
                         full_response = ''.join(response_parts).strip()
                         if full_response:
-                            return full_response
+                            return full_response, actual_session_id
                         else:
-                            return "Received empty response from Agent Engine"
+                            return "Received empty response from Agent Engine", actual_session_id
                     except Exception as stream_error:
                         logger.error(f"stream_query failed: {stream_error}")
-                        return f"Agent Engine stream_query error: {str(stream_error)}"
+                        return f"Agent Engine stream_query error: {str(stream_error)}", actual_session_id
                     
                 else:
-                    return f"stream_query method not found. Available methods: {', '.join(available_methods[:10])}"
+                    return f"stream_query method not found. Available methods: {', '.join(available_methods[:10])}", actual_session_id
                 
                 logger.info(f"Response received: {type(response)}")
                 
                 # Process the response
                 if isinstance(response, str):
-                    return response
+                    return response, actual_session_id
                 elif hasattr(response, 'content'):
-                    return str(response.content)
+                    return str(response.content), actual_session_id
                 elif hasattr(response, 'text'):
-                    return str(response.text)
+                    return str(response.text), actual_session_id
                 elif isinstance(response, dict):
                     # Handle the agent's response format: {'parts': [{'text': '...'}], 'role': 'model'}
                     if 'parts' in response and isinstance(response['parts'], list):
@@ -257,21 +377,21 @@ class AgentEngineClient:
                                 text_parts.append(part['text'])
                             else:
                                 text_parts.append(str(part))
-                        return ''.join(text_parts).strip()
+                        return ''.join(text_parts).strip(), actual_session_id
                     elif 'content' in response:
-                        return str(response['content'])
+                        return str(response['content']), actual_session_id
                     elif 'text' in response:
-                        return str(response['text'])
+                        return str(response['text']), actual_session_id
                     elif 'message' in response:
-                        return str(response['message'])
+                        return str(response['message']), actual_session_id
                     else:
-                        return str(response)
+                        return str(response), actual_session_id
                 else:
-                    return str(response)
+                    return str(response), actual_session_id
                     
             except Exception as call_error:
                 logger.error(f"Error calling Agent Engine: {call_error}")
-                return f"Error processing your request: {str(call_error)}"
+                return f"Error processing your request: {str(call_error)}", actual_session_id or ""
                 
         except HTTPException:
             raise
@@ -286,7 +406,8 @@ class AgentEngineClient:
         self, 
         messages: List[ChatMessage], 
         user_context: UserContext,
-        session_id: str
+        session_id: Optional[str] = None,
+        conversation_name: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """Stream a chat completion from the Agent Engine using agent_engines API."""
         if not self.agent_engine:
@@ -304,7 +425,10 @@ class AgentEngineClient:
             user_id = user_context.user_id
             
             # Get or create session for this user
-            actual_session_id = self.get_or_create_session(user_id, session_id)
+            actual_session_id = await self.get_or_create_session(user_id, session_id, conversation_name)
+            
+            # Increment message count
+            self.increment_message_count(user_id, actual_session_id)
             
             logger.info(f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}")
             logger.info(f"Query: {user_input[:100]}...")
@@ -434,7 +558,8 @@ async def chat_completion(
                 async for chunk in agent_client.stream_chat_completion(
                     messages=request.messages,
                     user_context=user_context,
-                    session_id=request.session_id
+                    session_id=request.session_id,
+                    conversation_name=request.conversation_name
                 ):
                     # Format as Server-Sent Events
                     yield f"data: {chunk}\n\n"
@@ -450,15 +575,17 @@ async def chat_completion(
             )
         else:
             # Return single response
-            response_content = await agent_client.chat_completion(
+            response_content, actual_session_id = await agent_client.chat_completion(
                 messages=request.messages,
                 user_context=user_context,
-                session_id=request.session_id
+                session_id=request.session_id,
+                conversation_name=request.conversation_name
             )
             
             return ChatResponse(
                 content=response_content,
-                session_id=request.session_id
+                session_id=actual_session_id,
+                conversation_name=request.conversation_name
             )
             
     except HTTPException:
@@ -484,3 +611,138 @@ async def chat_health():
         "project_id": agent_client.project_id,
         "location": agent_client.location,
     }
+
+
+@router.post("/conversations", response_model=ConversationInfo)
+async def create_conversation(
+    request: CreateConversationRequest,
+    user_context: UserContext = Depends(get_current_user)
+):
+    """
+    Create a new conversation/session.
+    """
+    try:
+        session_id = await agent_client.create_conversation(
+            user_id=user_context.user_id,
+            conversation_name=request.conversation_name
+        )
+        
+        # Get the conversation info to return
+        conversations = agent_client.get_user_conversations(user_context.user_id)
+        for conv in conversations:
+            if conv.session_id == session_id:
+                return conv
+        
+        # Fallback if not found in cache
+        return ConversationInfo(
+            session_id=session_id,
+            conversation_name=request.conversation_name,
+            created_at=datetime.now(timezone.utc),
+            last_updated=datetime.now(timezone.utc),
+            message_count=0
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating conversation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create conversation"
+        )
+
+
+@router.get("/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    user_context: UserContext = Depends(get_current_user)
+):
+    """
+    List all conversations for the current user.
+    """
+    try:
+        conversations = agent_client.get_user_conversations(user_context.user_id)
+        
+        return ConversationListResponse(
+            conversations=conversations,
+            total_count=len(conversations)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error listing conversations: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list conversations"
+        )
+
+
+@router.put("/conversations/{session_id}", response_model=ConversationInfo)
+async def update_conversation(
+    session_id: str,
+    request: UpdateConversationRequest,
+    user_context: UserContext = Depends(get_current_user)
+):
+    """
+    Update conversation metadata (e.g., rename conversation).
+    """
+    try:
+        success = agent_client.update_conversation_metadata(
+            user_id=user_context.user_id,
+            session_id=session_id,
+            conversation_name=request.conversation_name
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        # Get updated conversation info
+        conversations = agent_client.get_user_conversations(user_context.user_id)
+        for conv in conversations:
+            if conv.session_id == session_id:
+                return conv
+        
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found after update"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating conversation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update conversation"
+        )
+
+
+@router.delete("/conversations/{session_id}")
+async def delete_conversation(
+    session_id: str,
+    user_context: UserContext = Depends(get_current_user)
+):
+    """
+    Delete a conversation and its associated session.
+    """
+    try:
+        success = await agent_client.delete_conversation(
+            user_id=user_context.user_id,
+            session_id=session_id
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        return {"message": "Conversation deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete conversation"
+        )

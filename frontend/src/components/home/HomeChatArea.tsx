@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Plus,
   Mic,
@@ -11,7 +11,7 @@ import {
   AudioWaveform,
   Wrench,
 } from "lucide-react";
-import { chatService, type ChatMessage } from "@/services/chatService";
+import { chatService, type ChatMessage, type ConversationInfo } from "@/services/chatService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -91,7 +91,72 @@ const HomeChatArea = () => {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(() => `home_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
+  const [currentConversation, setCurrentConversation] = useState<ConversationInfo | null>(null);
+
+  // Load conversations on component mount
+  useEffect(() => {
+    const loadConversations = async () => {
+      try {
+        const userConversations = await chatService.getConversations();
+        setConversations(userConversations);
+        
+        // If no current session, create a new one or use the most recent
+        if (!sessionId && userConversations.length > 0) {
+          const mostRecent = userConversations[0]; // API returns sorted by last_updated
+          setCurrentConversation(mostRecent);
+          setSessionId(mostRecent.session_id);
+        }
+      } catch (error) {
+        console.error("Failed to load conversations:", error);
+      }
+    };
+    
+    loadConversations();
+  }, [sessionId]);
+
+  // Create a new chat conversation
+  const createNewChat = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const newConversation = await chatService.createConversation("New Chat");
+      
+      // Update conversations list
+      setConversations(prev => [newConversation, ...prev]);
+      
+      // Switch to the new conversation
+      setCurrentConversation(newConversation);
+      setSessionId(newConversation.session_id);
+      
+      // Clear current messages to start fresh
+      setMessages([{
+        id: "1",
+        content: "Hello! I'm KEN-E, your marketing intelligence assistant. How can I help you today?",
+        isUser: false,
+        timestamp: new Date().toLocaleString(),
+      }]);
+      
+    } catch (error) {
+      console.error("Failed to create new chat:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Switch to an existing conversation
+  const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
+    setCurrentConversation(conversation);
+    setSessionId(conversation.session_id);
+    
+    // Clear current messages - in a real app, you'd load the conversation history
+    setMessages([{
+      id: "1",
+      content: `Switched to conversation: ${conversation.conversation_name || 'Untitled Chat'}`,
+      isUser: false,
+      timestamp: new Date().toLocaleString(),
+    }]);
+  }, []);
 
   const sendMessage = useCallback(async () => {
     if (!newMessage.trim() || isLoading) return;
@@ -173,10 +238,22 @@ const HomeChatArea = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-full">
-              <DropdownMenuItem>Marketing Strategy Discussion</DropdownMenuItem>
-              <DropdownMenuItem>Campaign Performance Review</DropdownMenuItem>
-              <DropdownMenuItem>Data Analysis Session</DropdownMenuItem>
-              <DropdownMenuItem>Customer Insights Review</DropdownMenuItem>
+              {conversations.length === 0 ? (
+                <DropdownMenuItem disabled>No previous conversations</DropdownMenuItem>
+              ) : (
+                conversations.slice(0, 5).map((conversation) => (
+                  <DropdownMenuItem
+                    key={conversation.session_id}
+                    onClick={() => switchToConversation(conversation)}
+                    className="cursor-pointer"
+                  >
+                    {conversation.conversation_name || `Chat ${conversation.session_id.slice(-8)}`}
+                    <span className="ml-auto text-xs text-gray-500">
+                      {new Date(conversation.last_updated).toLocaleDateString()}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -184,6 +261,8 @@ const HomeChatArea = () => {
             <Button
               size="sm"
               className="bg-brand-medium-blue hover:bg-brand-dark-blue flex-1 sm:flex-none"
+              onClick={createNewChat}
+              disabled={isLoading}
             >
               New Chat
             </Button>
