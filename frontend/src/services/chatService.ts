@@ -253,6 +253,21 @@ class ChatService {
   }
 
   /**
+   * Get conversation history (messages) for a specific session.
+   */
+  async getConversationHistory(sessionId: string): Promise<any> {
+    try {
+      const response = await this.apiClient.get(
+        `/api/v1/chat/conversations/${sessionId}/history`
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching conversation history:", error);
+      return null;
+    }
+  }
+
+  /**
    * Delete a conversation and its associated session.
    */
   async deleteConversation(sessionId: string): Promise<boolean> {

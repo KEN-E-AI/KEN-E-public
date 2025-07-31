@@ -203,18 +203,46 @@ class AgentEngineClient:
             return True
         return False
     
-    def get_user_conversations(self, user_id: str) -> List[ConversationInfo]:
-        """Get all conversations for a user."""
+    async def get_user_conversations(self, user_id: str) -> List[ConversationInfo]:
+        """Get all conversations for a user from ADK session service."""
         conversations = []
-        for session_key, info in self._user_sessions.items():
-            if session_key.startswith(f"{user_id}:"):
+        
+        try:
+            # Get sessions from ADK session service
+            sessions = await self.session_service.list_sessions(
+                app_name="ken-e-chatbot",
+                user_id=user_id
+            )
+            
+            # Handle ListSessionsResponse - it might have a sessions attribute
+            session_list = sessions.sessions if hasattr(sessions, 'sessions') else sessions
+            
+            for session in session_list:
+                # Try to get metadata from our cache first, fallback to session data
+                session_id = getattr(session, 'id', None) or getattr(session, 'session_id', str(session))
+                session_key = f"{user_id}:{session_id}"
+                cached_info = self._user_sessions.get(session_key, {})
+                
                 conversations.append(ConversationInfo(
-                    session_id=info["session_id"],
-                    conversation_name=info.get("conversation_name"),
-                    created_at=info["created_at"],
-                    last_updated=info["last_updated"],
-                    message_count=info["message_count"]
+                    session_id=session_id,
+                    conversation_name=cached_info.get("conversation_name") or f"Chat {session_id[-8:]}",
+                    created_at=getattr(session, 'create_time', None) or cached_info.get("created_at", datetime.now(timezone.utc)),
+                    last_updated=getattr(session, 'update_time', None) or cached_info.get("last_updated", datetime.now(timezone.utc)),
+                    message_count=cached_info.get("message_count", 0)
                 ))
+                
+        except Exception as e:
+            logger.error(f"Failed to get sessions from ADK service: {e}")
+            # Fallback to cached sessions if ADK service fails
+            for session_key, info in self._user_sessions.items():
+                if session_key.startswith(f"{user_id}:"):
+                    conversations.append(ConversationInfo(
+                        session_id=info["session_id"],
+                        conversation_name=info.get("conversation_name"),
+                        created_at=info["created_at"],
+                        last_updated=info["last_updated"],
+                        message_count=info["message_count"]
+                    ))
         
         # Sort by last updated (most recent first)
         conversations.sort(key=lambda x: x.last_updated, reverse=True)
@@ -243,6 +271,19 @@ class AgentEngineClient:
         if session_key in self._user_sessions:
             self._user_sessions[session_key]["message_count"] += 1
             self._user_sessions[session_key]["last_updated"] = datetime.now(timezone.utc)
+
+    async def get_conversation_history(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get conversation history from ADK session service."""
+        try:
+            session_data = await self.session_service.get_session(
+                app_name="ken-e-chatbot",
+                user_id=user_id,
+                session_id=session_id
+            )
+            return session_data
+        except Exception as e:
+            logger.error(f"Failed to get conversation history for session {session_id}: {e}")
+            return None
     
     async def chat_completion(
         self, 
@@ -628,7 +669,7 @@ async def create_conversation(
         )
         
         # Get the conversation info to return
-        conversations = agent_client.get_user_conversations(user_context.user_id)
+        conversations = await agent_client.get_user_conversations(user_context.user_id)
         for conv in conversations:
             if conv.session_id == session_id:
                 return conv
@@ -658,7 +699,7 @@ async def list_conversations(
     List all conversations for the current user.
     """
     try:
-        conversations = agent_client.get_user_conversations(user_context.user_id)
+        conversations = await agent_client.get_user_conversations(user_context.user_id)
         
         return ConversationListResponse(
             conversations=conversations,
@@ -696,7 +737,7 @@ async def update_conversation(
             )
         
         # Get updated conversation info
-        conversations = agent_client.get_user_conversations(user_context.user_id)
+        conversations = await agent_client.get_user_conversations(user_context.user_id)
         for conv in conversations:
             if conv.session_id == session_id:
                 return conv
@@ -715,6 +756,35 @@ async def update_conversation(
             detail="Failed to update conversation"
         )
 
+
+@router.get("/conversations/{session_id}/history")
+async def get_conversation_history(
+    session_id: str,
+    user_context: UserContext = Depends(get_current_user)
+):
+    """
+    Get the message history for a specific conversation.
+    """
+    try:
+        history = await agent_client.get_conversation_history(
+            user_id=user_context.user_id,
+            session_id=session_id
+        )
+        
+        if history is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation history not found"
+            )
+            
+        return history
+        
+    except Exception as e:
+        logger.error(f"Error getting conversation history {session_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get conversation history"
+        )
 
 @router.delete("/conversations/{session_id}")
 async def delete_conversation(
