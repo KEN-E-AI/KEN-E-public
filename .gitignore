@@ -195,7 +195,20 @@ my_env.tfvars
 .env
 .requirements.txt
 
+# Environment files (comprehensive patterns for all subdirectories)
+**/.env
+**/.env.*
+**/.env.local
+**/.env.development
+**/.env.staging
+**/.env.production
+**/.env.resolved
+**/.env.backup.*
+**/.env.bak*
+
 #secrets
 deployment/terraform/keys/*.json
 firebase-key.json
 *service-account-key.json
+**/*service-account*.json
+**/ken-e-*.json

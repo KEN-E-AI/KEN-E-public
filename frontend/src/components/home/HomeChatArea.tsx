@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Plus,
   Mic,
@@ -11,6 +11,7 @@ import {
   AudioWaveform,
   Wrench,
 } from "lucide-react";
+import { chatService, type ChatMessage, type ConversationInfo } from "@/services/chatService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -89,30 +90,132 @@ const initialMessages: Message[] = [
 const HomeChatArea = () => {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [newMessage, setNewMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
+  const [currentConversation, setCurrentConversation] = useState<ConversationInfo | null>(null);
 
-  const sendMessage = () => {
-    if (newMessage.trim()) {
-      const message: Message = {
-        id: Date.now().toString(),
-        content: newMessage,
-        isUser: true,
+  // Load conversations on component mount
+  useEffect(() => {
+    const loadConversations = async () => {
+      try {
+        const userConversations = await chatService.getConversations();
+        // Ensure we always set an array, even if API returns unexpected data
+        setConversations(Array.isArray(userConversations) ? userConversations : []);
+        
+        // If no current session, create a new one or use the most recent
+        if (!sessionId && Array.isArray(userConversations) && userConversations.length > 0) {
+          const mostRecent = userConversations[0]; // API returns sorted by last_updated
+          setCurrentConversation(mostRecent);
+          setSessionId(mostRecent.session_id);
+        }
+      } catch (error) {
+        console.error("Failed to load conversations:", error);
+        // Set empty array on error to prevent crashes
+        setConversations([]);
+      }
+    };
+    
+    loadConversations();
+  }, [sessionId]);
+
+  // Create a new chat conversation
+  const createNewChat = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const newConversation = await chatService.createConversation("New Chat");
+      
+      // Update conversations list
+      setConversations(prev => [newConversation, ...prev]);
+      
+      // Switch to the new conversation
+      setCurrentConversation(newConversation);
+      setSessionId(newConversation.session_id);
+      
+      // Clear current messages to start fresh
+      setMessages([{
+        id: "1",
+        content: "Hello! I'm KEN-E, your marketing intelligence assistant. How can I help you today?",
+        isUser: false,
+        timestamp: new Date().toLocaleString(),
+      }]);
+      
+    } catch (error) {
+      console.error("Failed to create new chat:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Switch to an existing conversation
+  const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
+    setCurrentConversation(conversation);
+    setSessionId(conversation.session_id);
+    
+    // Clear current messages - in a real app, you'd load the conversation history
+    setMessages([{
+      id: "1",
+      content: `Switched to conversation: ${conversation.conversation_name || 'Untitled Chat'}`,
+      isUser: false,
+      timestamp: new Date().toLocaleString(),
+    }]);
+  }, []);
+
+  const sendMessage = useCallback(async () => {
+    if (!newMessage.trim() || isLoading) return;
+
+    // Validate message
+    const validation = chatService.validateMessage(newMessage);
+    if (!validation.valid) {
+      console.error("Invalid message:", validation.reason);
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: newMessage,
+      isUser: true,
+      timestamp: "",
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setNewMessage("");
+    setIsLoading(true);
+
+    try {
+      // Convert messages to ChatMessage format
+      const chatMessages: ChatMessage[] = [...messages, userMessage].map(msg => ({
+        role: msg.isUser ? "user" : "assistant",
+        content: msg.content,
+        timestamp: msg.timestamp,
+      }));
+
+      // Get response from Agent Engine
+      const response = await chatService.sendMessage(chatMessages, sessionId);
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: response.content,
+        isUser: false,
         timestamp: "",
       };
-      setMessages([...messages, message]);
-      setNewMessage("");
 
-      // Simulate assistant response
-      setTimeout(() => {
-        const response: Message = {
-          id: (Date.now() + 1).toString(),
-          content: "I understand your question. Let me help you with that...",
-          isUser: false,
-          timestamp: "",
-        };
-        setMessages((prev) => [...prev, response]);
-      }, 1000);
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "I'm sorry, I'm having trouble processing your request. Please try again.",
+        isUser: false,
+        timestamp: "",
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [newMessage, messages, isLoading, sessionId]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -138,10 +241,22 @@ const HomeChatArea = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-full">
-              <DropdownMenuItem>Marketing Strategy Discussion</DropdownMenuItem>
-              <DropdownMenuItem>Campaign Performance Review</DropdownMenuItem>
-              <DropdownMenuItem>Data Analysis Session</DropdownMenuItem>
-              <DropdownMenuItem>Customer Insights Review</DropdownMenuItem>
+              {!Array.isArray(conversations) || conversations.length === 0 ? (
+                <DropdownMenuItem disabled>No previous conversations</DropdownMenuItem>
+              ) : (
+                conversations.slice(0, 5).map((conversation) => (
+                  <DropdownMenuItem
+                    key={conversation.session_id}
+                    onClick={() => switchToConversation(conversation)}
+                    className="cursor-pointer"
+                  >
+                    {conversation.conversation_name || `Chat ${conversation.session_id.slice(-8)}`}
+                    <span className="ml-auto text-xs text-gray-500">
+                      {new Date(conversation.last_updated).toLocaleDateString()}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -149,6 +264,8 @@ const HomeChatArea = () => {
             <Button
               size="sm"
               className="bg-brand-medium-blue hover:bg-brand-dark-blue flex-1 sm:flex-none"
+              onClick={createNewChat}
+              disabled={isLoading}
             >
               New Chat
             </Button>
@@ -219,9 +336,10 @@ const HomeChatArea = () => {
                 <Input
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleKeyPress}
                   placeholder="What would you like to discuss?"
                   className="w-full border-0 focus:ring-0 focus:border-0 shadow-none"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -246,11 +364,11 @@ const HomeChatArea = () => {
 
                 <Button
                   onClick={sendMessage}
-                  disabled={!newMessage.trim()}
+                  disabled={!newMessage.trim() || isLoading}
                   size="sm"
                   className="bg-brand-medium-blue hover:bg-brand-dark-blue text-white px-4"
                 >
-                  Send
+                  {isLoading ? "..." : "Send"}
                 </Button>
               </div>
             </div>

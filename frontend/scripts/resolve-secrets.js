@@ -121,7 +121,9 @@ async function resolveSecrets(envFile) {
         key.includes("SECRET") ||
         key.includes("PASSWORD") ||
         key.includes("RECAPTCHA") ||
-        key.includes("FIREBASE_API_KEY"))
+        key.includes("FIREBASE") ||
+        key.includes("VITE_API_BASE_URL") ||
+        key.includes("VITE_ENVIRONMENT"))
     );
   });
 
