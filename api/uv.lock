@@ -793,7 +793,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "firebase-admin", specifier = ">=6.1.0" },
-    { name = "google-cloud-aiplatform", specifier = ">=1.80.0" },
+    { name = "google-cloud-aiplatform", specifier = ">=1.90.0" },
     { name = "google-cloud-bigquery", specifier = ">=3.11.0" },
     { name = "google-cloud-firestore", specifier = ">=2.21.0" },
     { name = "google-cloud-secret-manager", specifier = ">=2.21.0" },
