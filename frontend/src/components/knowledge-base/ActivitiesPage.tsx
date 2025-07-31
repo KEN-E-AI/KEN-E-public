@@ -861,10 +861,7 @@ const ActivitiesPage = () => {
     <TooltipProvider>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl sm:text-2xl font-semibold text-dashboard-gray-900">
-            Activities
-          </h2>
+        <div className="flex items-center justify-end">
           <Button
             size="sm"
             onClick={() => {

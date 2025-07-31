@@ -25,10 +25,15 @@ import Knowledge from "./pages/Knowledge";
 import KnowledgeProducts from "./pages/KnowledgeProducts";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
+import KnowledgeAccount from "./pages/KnowledgeAccount";
+import KnowledgeCustomers from "./pages/KnowledgeCustomers";
+import KnowledgeCompetitors from "./pages/KnowledgeCompetitors";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
 import Settings from "./pages/Settings";
+import AdminSettings from "./pages/AdminSettings";
+import AdminIndustryKeywords from "./pages/AdminIndustryKeywords";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
@@ -203,6 +208,30 @@ const App = () => (
                 }
               />
               <Route
+                path="/knowledge/account"
+                element={
+                  <ProtectedRoute>
+                    <KnowledgeAccount />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge/customers"
+                element={
+                  <ProtectedRoute>
+                    <KnowledgeCustomers />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge/competitors"
+                element={
+                  <ProtectedRoute>
+                    <KnowledgeCompetitors />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/settings"
                 element={
                   <ProtectedRoute>
@@ -232,6 +261,22 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <UserSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/admin"
+                element={
+                  <ProtectedRoute>
+                    <AdminSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/admin/industry-keywords"
+                element={
+                  <ProtectedRoute>
+                    <AdminIndustryKeywords />
                   </ProtectedRoute>
                 }
               />

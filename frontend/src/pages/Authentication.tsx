@@ -5,8 +5,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  getRedirectResult,
   sendEmailVerification,
-  type User as FirebaseAuthUser,
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,10 +15,11 @@ import type {
   FirebaseUser,
   FirestoreUserData,
   UserDataResponse,
-  AuthHelperDeps,
   NotificationSettings,
   SecuritySettings,
 } from "@/types/auth";
+import { toUserId } from "@/lib/branded-types";
+import type { NotificationSetting, SecuritySetting } from "@/data/userSettingsData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +48,6 @@ interface AuthenticationProps {
 }
 
 const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const { login, setNotificationSettings, setSecuritySettings } = useAuth();
   const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
@@ -81,6 +81,22 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     auth.signOut().catch((error) => {
       console.error("Error signing out:", error);
     });
+
+    // Check for redirect result (in case we're coming back from Google OAuth)
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result && result.user) {
+          console.log("Redirect sign-in successful");
+          // Handle the signed-in user
+          handleGoogleSignInSuccess(result.user as FirebaseUser);
+        }
+      })
+      .catch((error) => {
+        console.error("Redirect result error:", error);
+        if (error.code && error.message) {
+          setErrorMessage(`Google Sign-in Error: ${error.message}`);
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -132,7 +148,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   // Helper function to fetch user data and settings from Firestore
   const fetchUserDataAndSettings = async (
     uid: string,
-    apiBaseUrl: string,
   ): Promise<UserDataResponse> => {
     const [userRes, notificationsRes, securityRes] = await Promise.all([
       api.get<{ data: FirestoreUserData }>(
@@ -169,10 +184,12 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     firestoreData: FirestoreUserData,
     notificationsData: Array<{ data: NotificationSettings }>,
     securityData: Array<{ data: SecuritySettings }>,
-    deps: AuthHelperDeps,
+    login: (user: any) => void,
+    setNotificationSettings: (settings: NotificationSetting[]) => void,
+    setSecuritySettings: (settings: SecuritySetting[]) => void,
   ): void => {
-    deps.login({
-      id: firebaseUser.uid,
+    login({
+      id: toUserId(firebaseUser.uid),
       email: firestoreData.profile?.email || firebaseUser.email || "",
       firstName: firestoreData.profile?.first_name || "",
       lastName: firestoreData.profile?.last_name || "",
@@ -186,20 +203,27 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
 
     // Set notification and security settings
     if (notificationsData.length > 0) {
-      const notificationSettings = notificationsData[0].data;
-      deps.setNotificationSettings(notificationSettings);
+      // Convert NotificationSettings to NotificationSetting[]
+      const settings: NotificationSetting[] = notificationsData.map(item => ({
+        ...item.data,
+        id: 'default', // Add required fields for NotificationSetting
+      } as NotificationSetting));
+      setNotificationSettings(settings);
     }
 
     if (securityData.length > 0) {
-      const securitySettings = securityData[0].data;
-      deps.setSecuritySettings(securitySettings);
+      // Convert SecuritySettings to SecuritySetting[]
+      const settings: SecuritySetting[] = securityData.map(item => ({
+        ...item.data,
+        id: 'default', // Add required fields for SecuritySetting
+      } as SecuritySetting));
+      setSecuritySettings(settings);
     }
   };
 
   // Helper function to create a new user in Firestore
   const createUserInFirestore = async (
     firebaseUser: FirebaseUser,
-    apiBaseUrl: string,
   ): Promise<FirestoreUserData> => {
     const displayName = firebaseUser.displayName || "";
     const [firstName, ...lastNameParts] = displayName.split(" ");
@@ -288,12 +312,13 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       }
 
       const { userData, notificationsData, securityData } =
-        await fetchUserDataAndSettings(firebaseUser.uid, API_BASE_URL);
+        await fetchUserDataAndSettings(firebaseUser.uid);
 
       // Update email verification status in Firestore if needed
+      // Note: email_verified is not in the UserProfile type, but might exist in Firestore
       if (
         userData.profile &&
-        !userData.profile.email_verified &&
+        !(userData.profile as any).email_verified &&
         firebaseUser.emailVerified
       ) {
         await api.put(
@@ -308,19 +333,15 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
         );
       }
 
-      const authDeps: AuthHelperDeps = {
-        apiBaseUrl: API_BASE_URL,
-        login,
-        setNotificationSettings,
-        setSecuritySettings,
-      };
 
       processUserLogin(
         firebaseUser as FirebaseUser,
         userData,
         notificationsData,
         securityData,
-        authDeps,
+        login,
+        setNotificationSettings,
+        setSecuritySettings,
       );
       onAuthenticated();
     } catch (error: any) {
@@ -380,7 +401,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             first_name: signUpData.firstName,
             last_name: signUpData.lastName,
             job_title: "", // Default empty
-            email_verified: false, // Track email verification status
           },
           permissions: {
             organizations: {},
@@ -473,95 +493,75 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     }
   };
 
+  const handleGoogleSignInSuccess = async (firebaseUser: FirebaseUser) => {
+
+    try {
+      // Try to fetch existing user data
+      const { userData, notificationsData, securityData } =
+        await fetchUserDataAndSettings(firebaseUser.uid);
+
+      // User exists, process login
+      processUserLogin(
+        firebaseUser,
+        userData,
+        notificationsData,
+        securityData,
+        login,
+        setNotificationSettings,
+        setSecuritySettings,
+      );
+      onAuthenticated();
+    } catch (error) {
+      const errorMessage = handleApiError(error);
+
+      if (errorMessage === "") {
+        // User doesn't exist (404), create new user
+        const newUserData = await createUserInFirestore(
+          firebaseUser,
+        );
+
+        // For Google sign-in, email is already verified by Google
+        // Note: We could track email_verified in Firestore if needed, but it's not in the UserProfile type
+        const updatedUserData = newUserData;
+
+        // Create notification preferences for new Google users
+        await api.post(`/api/v1/firestore/documents`, {
+          account_id: firebaseUser.uid,
+          collection: `users/${firebaseUser.uid}/preferences`,
+          document_id: "notifications",
+          data: {
+            categories: [
+              "Data Quality Alert",
+              "News & Press",
+              "Industry News",
+              "Competitor Activities",
+              "Scheduled Report Status",
+              "KPI Performance",
+              "New Features",
+            ],
+            channels: ["ui"],
+            updated_at: new Date().toISOString(),
+          },
+        });
+
+        processUserLogin(firebaseUser, updatedUserData, [], [], login, setNotificationSettings, setSecuritySettings);
+        onAuthenticated();
+      } else {
+        // Other API errors
+        console.error("API error during Google sign-in:", error);
+        setErrorMessage(errorMessage);
+      }
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setErrorMessage("");
 
     try {
-      // Authenticate with Google
       const result = await signInWithPopup(auth, googleProvider);
       const firebaseUser = result.user as FirebaseUser;
-
-      const authDeps: AuthHelperDeps = {
-        apiBaseUrl: API_BASE_URL,
-        login,
-        setNotificationSettings,
-        setSecuritySettings,
-      };
-
-      try {
-        // Try to fetch existing user data
-        const { userData, notificationsData, securityData } =
-          await fetchUserDataAndSettings(firebaseUser.uid, API_BASE_URL);
-
-        // User exists, process login
-        processUserLogin(
-          firebaseUser,
-          userData,
-          notificationsData,
-          securityData,
-          authDeps,
-        );
-        onAuthenticated();
-      } catch (error) {
-        const errorMessage = handleApiError(error);
-
-        if (errorMessage === "") {
-          // User doesn't exist (404), create new user
-          const newUserData = await createUserInFirestore(
-            firebaseUser,
-            API_BASE_URL,
-          );
-
-          // For Google sign-in, email is already verified by Google
-          // Update the email_verified status in the created user data
-          const updatedUserData = {
-            ...newUserData,
-            profile: {
-              ...newUserData.profile,
-              email_verified: true,
-            },
-          };
-
-          await api.put(
-            `/api/v1/firestore/documents/users/${firebaseUser.uid}?account_id=${firebaseUser.uid}`,
-            {
-              update: {
-                field: "profile.email_verified",
-                operator: "set",
-                value: true,
-              },
-            },
-          );
-
-          // Create notification preferences for new Google users
-          await api.post(`/api/v1/firestore/documents`, {
-            account_id: firebaseUser.uid,
-            collection: `users/${firebaseUser.uid}/preferences`,
-            document_id: "notifications",
-            data: {
-              categories: [
-                "Data Quality Alert",
-                "News & Press",
-                "Industry News",
-                "Competitor Activities",
-                "Scheduled Report Status",
-                "KPI Performance",
-                "New Features",
-              ],
-              channels: ["ui"],
-              updated_at: new Date().toISOString(),
-            },
-          });
-
-          processUserLogin(firebaseUser, updatedUserData, [], [], authDeps);
-          onAuthenticated();
-        } else {
-          // Other API errors
-          console.error("API error during Google sign-in:", error);
-          setErrorMessage(errorMessage);
-        }
-      }
+      await handleGoogleSignInSuccess(firebaseUser);
     } catch (error: any) {
       console.error("Google sign-in error:", error);
 
@@ -877,6 +877,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
                         Google
                       </Button>
                     </div>
+
                   </TabsContent>
 
                   {/* Sign Up Tab */}

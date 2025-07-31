@@ -24,21 +24,28 @@ const ReCaptchaV3 = ({
   const [isVerified, setIsVerified] = useState(false);
 
   useEffect(() => {
-    // Automatically execute reCAPTCHA when component mounts
-    // Add a small delay to ensure provider is ready
-    const timer = setTimeout(() => {
-      if (executeRecaptcha) {
+    // Only execute when executeRecaptcha becomes available
+    if (executeRecaptcha && !isVerifying && !isVerified) {
+      // Add a delay to ensure the reCAPTCHA script is fully loaded
+      const timer = setTimeout(() => {
         handleReCaptchaVerify();
-      } else {
-        // If reCAPTCHA is not available, consider it verified to not block auth
-        console.warn("ReCAPTCHA not available, bypassing verification");
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [executeRecaptcha, isVerifying, isVerified]);
+
+  // Fallback timeout if reCAPTCHA never loads
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
+      if (!isVerified && !isVerifying) {
+        console.warn("ReCAPTCHA not available after timeout, bypassing verification");
         setIsVerified(true);
         onVerify(true);
       }
-    }, 200);
+    }, 3000);
 
-    return () => clearTimeout(timer);
-  }, [executeRecaptcha]);
+    return () => clearTimeout(fallbackTimer);
+  }, [isVerified, isVerifying, onVerify]);
 
   const handleReCaptchaVerify = async () => {
     if (!executeRecaptcha) {

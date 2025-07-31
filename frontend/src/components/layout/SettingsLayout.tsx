@@ -68,7 +68,8 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         {/* Breadcrumb Navigation */}
         {currentPage !== "settings" &&
           currentPage !== "organization" &&
-          currentPage !== "user" && (
+          currentPage !== "user" &&
+          currentPage !== "admin" && (
             <ContextBreadcrumb currentPage={currentPage} />
           )}
 

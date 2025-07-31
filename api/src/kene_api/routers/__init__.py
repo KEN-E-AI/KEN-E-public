@@ -6,6 +6,7 @@ from . import datasets as datasets
 from . import firestore as firestore
 from . import funnel_reports as funnel_reports
 from . import home as home
+from . import industry_keywords as industry_keywords
 from . import insights as insights
 from . import intuitions as intuitions
 from . import items as items

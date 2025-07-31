@@ -225,6 +225,19 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     // Check each menu configuration to see if the current path starts with it
     for (const [menuPath, config] of Object.entries(menuConfigurations)) {
       if (path.startsWith(menuPath)) {
+        // Add admin link to settings menu for super admins
+        if (menuPath === "/settings" && isSuperAdmin) {
+          return {
+            path: menuPath,
+            config: {
+              ...config,
+              items: [
+                ...config.items,
+                { id: "admin", label: "Admin", route: "/settings/admin" },
+              ],
+            },
+          };
+        }
         return { path: menuPath, config };
       }
     }
