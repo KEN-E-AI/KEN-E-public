@@ -225,7 +225,8 @@ class ChatService {
       const response = await this.apiClient.get<ConversationInfo[]>(
         "/api/v1/chat/conversations"
       );
-      return response.data;
+      // Ensure we always return an array, even if API returns unexpected data
+      return Array.isArray(response.data) ? response.data : [];
     } catch (error) {
       console.error("Error fetching conversations:", error);
       return [];

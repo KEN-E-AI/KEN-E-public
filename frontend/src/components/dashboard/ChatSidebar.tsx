@@ -84,16 +84,19 @@ const ChatSidebar = ({
     const loadConversations = async () => {
       try {
         const userConversations = await chatService.getConversations();
-        setConversations(userConversations);
+        // Ensure we always set an array, even if API returns unexpected data
+        setConversations(Array.isArray(userConversations) ? userConversations : []);
         
         // If no current session, create a new one or use the most recent
-        if (!sessionId && userConversations.length > 0) {
+        if (!sessionId && Array.isArray(userConversations) && userConversations.length > 0) {
           const mostRecent = userConversations[0]; // API returns sorted by last_updated
           setCurrentConversation(mostRecent);
           setSessionId(mostRecent.session_id);
         }
       } catch (error) {
         console.error("Failed to load conversations:", error);
+        // Set empty array on error to prevent crashes
+        setConversations([]);
       }
     };
     
@@ -292,7 +295,7 @@ const ChatSidebar = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
-                  {conversations.length === 0 ? (
+                  {!Array.isArray(conversations) || conversations.length === 0 ? (
                     <DropdownMenuItem disabled>No previous conversations</DropdownMenuItem>
                   ) : (
                     conversations.slice(0, 4).map((conversation) => (
