@@ -25,7 +25,7 @@ class ChatMessage(BaseModel):
     """A chat message."""
     role: str = Field(..., description="Message role: 'user' or 'assistant'")
     content: str = Field(..., description="Message content")
-    timestamp: str = Field(None, description="Message timestamp")
+    timestamp: str | None = Field(None, description="Message timestamp")
 
 
 class ChatRequest(BaseModel):
@@ -43,7 +43,7 @@ class ChatResponse(BaseModel):
 
 
 class AgentEngineClient:
-    """Client for interacting with Vertex AI Agent Engine."""
+    """Client for interacting with Vertex AI Agent Engine using session-based API."""
     
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
@@ -57,23 +57,63 @@ class AgentEngineClient:
         vertexai.init(project=self.project_id, location=self.location)
         
         self._reasoning_engine = None
+        self._user_sessions = {}  # Cache for user sessions
     
     @property
     def reasoning_engine(self):
         """Lazy-load the reasoning engine."""
         if self._reasoning_engine is None and self.agent_engine_id:
             try:
+                logger.info(f"Attempting to connect to Agent Engine: {self.agent_engine_id}")
+                logger.info(f"Using project: {self.project_id}, location: {self.location}")
+                
                 self._reasoning_engine = reasoning_engines.ReasoningEngine(
                     self.agent_engine_id
                 )
-                logger.info(f"Connected to Agent Engine: {self.agent_engine_id}")
+                
+                # Log the available methods for debugging
+                available_methods = [method for method in dir(self._reasoning_engine) if not method.startswith('_')]
+                logger.info(f"Available methods on reasoning engine: {available_methods}")
+                
+                logger.info(f"Successfully connected to Agent Engine: {self.agent_engine_id}")
             except Exception as e:
                 logger.error(f"Failed to connect to Agent Engine: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Agent Engine is currently unavailable"
+                    detail=f"Agent Engine is currently unavailable: {str(e)}"
                 )
         return self._reasoning_engine
+    
+    def get_or_create_session(self, user_id: str, session_id: str) -> str:
+        """Get or create a session for a user."""
+        session_key = f"{user_id}:{session_id}"
+        
+        if session_key not in self._user_sessions:
+            try:
+                logger.info(f"Creating new session for user {user_id}")
+                # Try to create an ADK session if the method exists
+                if hasattr(self.reasoning_engine, 'create_session'):
+                    session_response = self.reasoning_engine.create_session(user_id=user_id)
+                    
+                    if isinstance(session_response, dict) and "id" in session_response:
+                        actual_session_id = session_response["id"]
+                    else:
+                        # Fallback to using the provided session_id
+                        actual_session_id = session_id
+                else:
+                    # If create_session doesn't exist, use the provided session_id
+                    actual_session_id = session_id
+                
+                self._user_sessions[session_key] = actual_session_id
+                logger.info(f"Using session {actual_session_id} for user {user_id}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to create session, using provided session_id: {e}")
+                # Fallback to using the provided session_id
+                self._user_sessions[session_key] = session_id
+        
+        return self._user_sessions[session_key]
     
     def format_messages_for_agent(self, messages: List[ChatMessage]) -> Dict[str, Any]:
         """Format messages for the Agent Engine input format."""
@@ -93,44 +133,79 @@ class AgentEngineClient:
         user_context: UserContext,
         session_id: str
     ) -> str:
-        """Get a chat completion from the Agent Engine."""
+        """Get a chat completion from the Agent Engine using session-based API."""
         if not self.reasoning_engine:
-            # Fallback response when Agent Engine is not available
             return "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
         
         try:
-            # Format input for the agent
-            agent_input = self.format_messages_for_agent(messages)
+            # Get the latest message
+            latest_message = messages[-1] if messages else None
+            if not latest_message:
+                return "I didn't receive any message to process."
             
-            # Add user context for personalization
-            config = {
-                "metadata": {
-                    "user_id": user_context.user_id,
-                    "session_id": session_id,
-                    "email": user_context.email,
-                }
-            }
+            user_input = latest_message.content
+            user_id = user_context.user_id
             
-            # Call the reasoning engine
-            response = self.reasoning_engine.query(
-                input=agent_input,
-                config=config
-            )
+            # Get or create session for this user
+            actual_session_id = self.get_or_create_session(user_id, session_id)
             
-            # Extract the response content
-            if isinstance(response, dict) and "content" in response:
-                return response["content"]
-            elif isinstance(response, str):
-                return response
+            logger.info(f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}")
+            logger.info(f"Query: {user_input[:100]}...")
+            
+            # Use stream_query and collect all events for non-streaming response
+            response_parts = []
+            
+            # Check if stream_query method exists, otherwise try other methods
+            if hasattr(self.reasoning_engine, 'stream_query'):
+                try:
+                    for event in self.reasoning_engine.stream_query(
+                        user_id=user_id,
+                        session_id=actual_session_id,
+                        message=user_input
+                    ):
+                        logger.debug(f"Received event: {type(event)} - {str(event)[:200]}...")
+                        
+                        # Extract content from various event types
+                        if hasattr(event, 'content') and event.content:
+                            response_parts.append(str(event.content))
+                        elif isinstance(event, dict):
+                            if 'content' in event:
+                                response_parts.append(str(event['content']))
+                            elif 'message' in event:
+                                response_parts.append(str(event['message']))
+                            elif 'text' in event:
+                                response_parts.append(str(event['text']))
+                        elif isinstance(event, str):
+                            response_parts.append(event)
+                        else:
+                            response_parts.append(str(event))
+                except Exception as stream_error:
+                    logger.error(f"Error during stream_query: {stream_error}")
+                    return f"I encountered an error while processing your request: {str(stream_error)}"
             else:
-                logger.warning(f"Unexpected response format: {type(response)}")
-                return str(response)
+                logger.warning("stream_query method not available on reasoning engine")
+                # Check available methods for debugging
+                available_methods = [method for method in dir(self.reasoning_engine) if not method.startswith('_')]
+                logger.error(f"Available methods on reasoning engine: {available_methods}")
+                return f"I'm unable to process your request. The Agent Engine doesn't have the expected interface. Available methods: {', '.join(available_methods[:5])}..."
+            
+            # Combine all response parts
+            full_response = ''.join(response_parts).strip()
+            
+            if not full_response:
+                logger.warning("Empty response from Agent Engine")
+                return "I received your message but couldn't generate a response. Please try rephrasing your question."
+            
+            logger.info(f"Successfully received response from Agent Engine: {len(full_response)} characters")
+            return full_response
                 
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Error in chat completion: {e}")
+            logger.error(f"Unexpected error in chat completion: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to process chat request"
+                detail=f"An unexpected error occurred: {str(e)}"
             )
     
     async def stream_chat_completion(
@@ -139,37 +214,77 @@ class AgentEngineClient:
         user_context: UserContext,
         session_id: str
     ) -> AsyncGenerator[str, None]:
-        """Stream a chat completion from the Agent Engine."""
+        """Stream a chat completion from the Agent Engine using session-based API."""
         if not self.reasoning_engine:
             yield "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
             return
         
         try:
-            # Format input for the agent
-            agent_input = self.format_messages_for_agent(messages)
+            # Get the latest message
+            latest_message = messages[-1] if messages else None
+            if not latest_message:
+                yield "I didn't receive any message to process."
+                return
             
-            # Add user context for personalization
-            config = {
-                "metadata": {
-                    "user_id": user_context.user_id,
-                    "session_id": session_id,
-                    "email": user_context.email,
-                }
-            }
+            user_input = latest_message.content
+            user_id = user_context.user_id
             
-            # Stream from the reasoning engine
-            for chunk in self.reasoning_engine.stream_query(
-                input=agent_input,
-                config=config
-            ):
-                if isinstance(chunk, dict):
-                    # Extract content from chunk
-                    if "content" in chunk:
-                        yield chunk["content"]
-                    elif "delta" in chunk and "content" in chunk["delta"]:
-                        yield chunk["delta"]["content"]
-                elif isinstance(chunk, str):
-                    yield chunk
+            # Get or create session for this user
+            actual_session_id = self.get_or_create_session(user_id, session_id)
+            
+            logger.info(f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}")
+            logger.info(f"Query: {user_input[:100]}...")
+            
+            # Check if stream_query method exists
+            if hasattr(self.reasoning_engine, 'stream_query'):
+                try:
+                    # Stream events from the Agent Engine
+                    for event in self.reasoning_engine.stream_query(
+                        user_id=user_id,
+                        session_id=actual_session_id,
+                        message=user_input
+                    ):
+                        logger.debug(f"Streaming event: {type(event)} - {str(event)[:200]}...")
+                        
+                        # Extract content from various event types and yield immediately
+                        content_yielded = False
+                        
+                        if hasattr(event, 'content') and event.content:
+                            yield str(event.content)
+                            content_yielded = True
+                        elif isinstance(event, dict):
+                            if 'content' in event and event['content']:
+                                yield str(event['content'])
+                                content_yielded = True
+                            elif 'message' in event and event['message']:
+                                yield str(event['message'])
+                                content_yielded = True
+                            elif 'text' in event and event['text']:
+                                yield str(event['text'])
+                                content_yielded = True
+                            elif 'delta' in event and isinstance(event['delta'], dict):
+                                if 'content' in event['delta'] and event['delta']['content']:
+                                    yield str(event['delta']['content'])
+                                    content_yielded = True
+                        elif isinstance(event, str) and event.strip():
+                            yield event
+                            content_yielded = True
+                        
+                        # If we couldn't extract meaningful content, yield the raw event as string
+                        if not content_yielded and str(event).strip():
+                            yield str(event)
+                    
+                    logger.info("Finished streaming response from Agent Engine")
+                    
+                except Exception as stream_error:
+                    logger.error(f"Error during stream_query: {stream_error}")
+                    yield f"Error: Failed to query Agent Engine - {str(stream_error)}"
+            else:
+                # Fallback: no streaming support
+                logger.warning("stream_query method not available, providing error message")
+                available_methods = [method for method in dir(self.reasoning_engine) if not method.startswith('_')]
+                logger.error(f"Available methods on reasoning engine: {available_methods}")
+                yield f"Streaming not supported. The Agent Engine doesn't have the expected interface. Available methods: {', '.join(available_methods[:5])}..."
                     
         except Exception as e:
             logger.error(f"Error in streaming chat completion: {e}")
