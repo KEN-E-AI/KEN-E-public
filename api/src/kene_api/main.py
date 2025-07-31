@@ -20,6 +20,7 @@ from .routers import (
     intuitions,
     items,
     metrics,
+    monitoring_topics,
     notifications,
     organizations,
     products,
@@ -107,6 +108,11 @@ app.include_router(
     subscription_plans.router,
     prefix="/api/v1",
     tags=["subscription-plans"],
+)
+app.include_router(
+    monitoring_topics.router,
+    prefix="/api/v1",
+    tags=["monitoring-topics"],
 )
 
 

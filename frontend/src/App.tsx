@@ -25,6 +25,9 @@ import Knowledge from "./pages/Knowledge";
 import KnowledgeProducts from "./pages/KnowledgeProducts";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
+import KnowledgeAccount from "./pages/KnowledgeAccount";
+import KnowledgeCustomers from "./pages/KnowledgeCustomers";
+import KnowledgeCompetitors from "./pages/KnowledgeCompetitors";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
@@ -199,6 +202,30 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Insights />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge/account"
+                element={
+                  <ProtectedRoute>
+                    <KnowledgeAccount />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge/customers"
+                element={
+                  <ProtectedRoute>
+                    <KnowledgeCustomers />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/knowledge/competitors"
+                element={
+                  <ProtectedRoute>
+                    <KnowledgeCompetitors />
                   </ProtectedRoute>
                 }
               />
