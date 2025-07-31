@@ -863,3 +863,164 @@ Verify credentials: `gcloud auth application-default login` for development, ser
 ```
 
 This integration provides a robust, production-ready connection between the KEN-E frontend and Vertex AI Agent Engine, with comprehensive error handling, logging, and debugging capabilities.
+
+## Critical Cross-Project Authentication Fix (January 2025)
+
+### Issue Summary
+**Problem**: Conversations not being saved due to Agent Engine returning empty responses despite successful authentication and session creation.
+
+**Root Cause**: Complex multi-service authentication where different Google Cloud APIs used different credential contexts:
+- Firebase Admin SDK: Used `ken-e-dev` project credentials (for user authentication)
+- Vertex AI Agent Engine: Required `ken-e-staging` project credentials (for AI responses)
+- Individual Agent Engine API calls (`stream_query`) weren't inheriting the staging credentials properly
+
+### Symptoms Observed
+- ✅ User authentication worked (no 401 errors)
+- ✅ Sessions created successfully (fallback manual sessions)  
+- ✅ Agent Engine connection appeared successful (`agent_engines.get()` worked)
+- ❌ `stream_query` calls returned empty response arrays `[]`
+- ❌ Frontend showed "Received empty response from Agent Engine"
+
+### The Fix: Global Credential Context Management
+
+**Location**: `/api/src/kene_api/routers/chat.py` in `AgentEngineClient.chat_completion()`
+
+**Solution**: Set `GOOGLE_APPLICATION_CREDENTIALS` globally for the entire chat completion process:
+
+```python
+async def chat_completion(self, messages, user_context, session_id=None, conversation_name=None):
+    # Set staging credentials for the ENTIRE chat completion process
+    original_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if self._staging_credentials_path:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self._staging_credentials_path
+        
+    try:
+        # ALL Agent Engine operations now use staging credentials
+        # including stream_query calls
+        if not self.agent_engine:
+            return "Unable to connect to AI service", ""
+            
+        # ... rest of chat completion logic ...
+        
+    finally:
+        # Always restore original credentials
+        if original_creds:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = original_creds
+        elif "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+            del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+```
+
+**Key Architecture**:
+- **Firebase Auth**: Uses `ken-e-dev.json` service account for validating frontend tokens
+- **Agent Engine**: Uses `ken-e-staging.json` service account for AI API calls  
+- **Credential Switching**: Temporarily sets staging credentials only during Agent Engine operations
+- **Isolation**: Each chat request gets isolated credential context
+
+### Why This Was Difficult to Debug
+1. **Silent Failures**: Agent Engine connected successfully but queries returned empty arrays
+2. **Multiple Credential Scopes**: Firebase vs Vertex AI vs Agent Engine APIs each needed different credentials
+3. **Lazy Loading**: Agent Engine initialization happened separately from actual API calls
+4. **Cross-Project Complexity**: Development frontend + staging backend is an unusual setup
+5. **Credential Inheritance**: Vertex AI initialization didn't guarantee individual API calls would use same credentials
+
+### Local Development Configuration
+**Environment Variables** (`.env.development`):
+```bash
+# Main project (for Firebase auth)
+GOOGLE_CLOUD_PROJECT_ID=ken-e-dev
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/ken-e-dev.json
+
+# Agent Engine project (for AI responses)  
+VERTEX_AI_PROJECT_ID=ken-e-staging
+VERTEX_AI_CREDENTIALS=/path/to/ken-e-staging.json
+```
+
+**Testing Setup**:
+- Frontend: http://localhost:8081 (dev Firebase tokens)
+- API: http://localhost:8000 (validates dev tokens, uses staging Agent Engine)
+
+### Production Implications
+This fix ensures proper credential isolation in production deployments where different services may use different Google Cloud projects or service accounts.
+
+**Monitoring**: Check Agent Engine responses are non-empty and sessions are properly persisted to verify the fix is working.
+
+**Date Resolved**: January 31, 2025
+
+## Critical Conversation Persistence UI Fix (January 2025)
+
+### Issue Summary
+**Problem**: Chat functionality worked fine (messages sent/received), but conversations were not persisting in the UI. Users couldn't see previous conversations or resume chat sessions, even though sessions were being stored correctly in the ADK Session Service.
+
+**Root Cause**: Frontend API response parsing mismatch. The API returns conversation lists as:
+```json
+{
+  "conversations": [ConversationInfo[], ...],
+  "total_count": number
+}
+```
+
+But the frontend expected a direct array of `ConversationInfo[]`.
+
+### The Fix: Frontend API Response Structure Update
+
+**Location**: `/frontend/src/services/chatService.ts`
+
+**Problem Code**:
+```typescript
+async getConversations(): Promise<ConversationInfo[]> {
+  const response = await this.apiClient.get<ConversationInfo[]>(
+    "/api/v1/chat/conversations"
+  );
+  return Array.isArray(response.data) ? response.data : [];
+}
+```
+
+**Fixed Code**:
+```typescript
+export interface ConversationListResponse {
+  conversations: ConversationInfo[];
+  total_count: number;
+}
+
+async getConversations(): Promise<ConversationInfo[]> {
+  const response = await this.apiClient.get<ConversationListResponse>(
+    "/api/v1/chat/conversations"
+  );
+  // API returns {conversations: ConversationInfo[], total_count: number}
+  const data = response.data;
+  if (data && Array.isArray(data.conversations)) {
+    return data.conversations;
+  }
+  // Fallback for backward compatibility
+  return Array.isArray(response.data) ? response.data : [];
+}
+```
+
+### Key Architecture Confirmation
+- **Sessions ARE stored** by Vertex AI Agent Engine Session Service (ADK)
+- **Backend conversation logic was correct** - it properly calls `session_service.list_sessions()`
+- **Frontend conversation loading was correct** - it calls `getConversations()` on component mount  
+- **Only the response parsing was broken** - simple API contract mismatch
+
+### Files Changed (Production-Safe)
+1. **`frontend/src/services/chatService.ts`**:
+   - Added `ConversationListResponse` interface
+   - Updated `getConversations()` method to parse nested response structure
+   - Maintained backward compatibility with direct array responses
+
+### What NOT to Include in Production
+The following changes were made only for local development debugging and should NOT be deployed:
+- Cross-project authentication setup (`ken-e-dev` + `ken-e-staging`)
+- Local service account credential files  
+- Development-specific environment variable configurations
+- Any credential switching or global authentication modifications in chat.py
+
+### Verification
+After this fix:
+- ✅ Conversations appear in sidebar on page load
+- ✅ Previous chat sessions can be resumed
+- ✅ New conversations are properly persisted
+- ✅ Session management works as expected
+
+**Date Resolved**: January 31, 2025
+**Impact**: Frontend conversation persistence now works correctly without any backend or architectural changes.

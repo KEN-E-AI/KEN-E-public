@@ -33,6 +33,11 @@ export interface ConversationInfo {
   message_count: number;
 }
 
+export interface ConversationListResponse {
+  conversations: ConversationInfo[];
+  total_count: number;
+}
+
 class ChatService {
   private apiClient = axios.create({
     baseURL: API_BASE_URL,
@@ -222,10 +227,15 @@ class ChatService {
    */
   async getConversations(): Promise<ConversationInfo[]> {
     try {
-      const response = await this.apiClient.get<ConversationInfo[]>(
+      const response = await this.apiClient.get<ConversationListResponse>(
         "/api/v1/chat/conversations"
       );
-      // Ensure we always return an array, even if API returns unexpected data
+      // API returns {conversations: ConversationInfo[], total_count: number}
+      const data = response.data;
+      if (data && Array.isArray(data.conversations)) {
+        return data.conversations;
+      }
+      // Fallback: check if response.data is directly an array (for backward compatibility)
       return Array.isArray(response.data) ? response.data : [];
     } catch (error) {
       console.error("Error fetching conversations:", error);
