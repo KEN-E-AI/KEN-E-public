@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { chatService, type ChatMessage } from "@/services/chatService";
+import { useState, useCallback, useEffect } from "react";
+import { chatService, type ChatMessage, type ConversationInfo } from "@/services/chatService";
 import {
   Send,
   Mic,
@@ -65,7 +65,9 @@ const ChatSidebar = ({
   const [message, setMessage] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(() => `sidebar_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
+  const [currentConversation, setCurrentConversation] = useState<ConversationInfo | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "1",
@@ -76,6 +78,71 @@ const ChatSidebar = ({
       timestamp: new Date(),
     },
   ]);
+
+  // Load conversations on component mount
+  useEffect(() => {
+    const loadConversations = async () => {
+      try {
+        const userConversations = await chatService.getConversations();
+        setConversations(userConversations);
+        
+        // If no current session, create a new one or use the most recent
+        if (!sessionId && userConversations.length > 0) {
+          const mostRecent = userConversations[0]; // API returns sorted by last_updated
+          setCurrentConversation(mostRecent);
+          setSessionId(mostRecent.session_id);
+        }
+      } catch (error) {
+        console.error("Failed to load conversations:", error);
+      }
+    };
+    
+    loadConversations();
+  }, [sessionId]);
+
+  // Create a new chat conversation
+  const createNewChat = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const newConversation = await chatService.createConversation("Dashboard Chat");
+      
+      // Update conversations list
+      setConversations(prev => [newConversation, ...prev]);
+      
+      // Switch to the new conversation
+      setCurrentConversation(newConversation);
+      setSessionId(newConversation.session_id);
+      
+      // Clear current messages to start fresh
+      setMessages([{
+        id: "1",
+        role: "assistant",
+        content: `Hello! I'm here to help with your ${selectedTab} strategy${
+          selectedChannel !== "Overview" ? ` for ${selectedChannel}` : ""
+        }${selectedTactic ? ` - ${selectedTactic}` : ""}. What would you like to discuss?`,
+        timestamp: new Date(),
+      }]);
+      
+    } catch (error) {
+      console.error("Failed to create new chat:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedTab, selectedChannel, selectedTactic]);
+
+  // Switch to an existing conversation
+  const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
+    setCurrentConversation(conversation);
+    setSessionId(conversation.session_id);
+    
+    // Clear current messages - in a real app, you'd load the conversation history
+    setMessages([{
+      id: "1",
+      role: "assistant",
+      content: `Switched to conversation: ${conversation.conversation_name || 'Untitled Chat'} for ${selectedTab}`,
+      timestamp: new Date(),
+    }]);
+  }, [selectedTab]);
 
   const handleSendMessage = () => {
     if (!message.trim()) return;
@@ -225,19 +292,26 @@ const ChatSidebar = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuItem>
-                    Marketing Strategy Discussion
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    Campaign Performance Review
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>Data Analysis Session</DropdownMenuItem>
-                  <DropdownMenuItem>Budget Optimization Talk</DropdownMenuItem>
+                  {conversations.length === 0 ? (
+                    <DropdownMenuItem disabled>No previous conversations</DropdownMenuItem>
+                  ) : (
+                    conversations.slice(0, 4).map((conversation) => (
+                      <DropdownMenuItem
+                        key={conversation.session_id}
+                        onClick={() => switchToConversation(conversation)}
+                        className="cursor-pointer"
+                      >
+                        {conversation.conversation_name || `Chat ${conversation.session_id.slice(-6)}`}
+                      </DropdownMenuItem>
+                    ))
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button
                 size="sm"
                 className="bg-brand-medium-blue hover:bg-brand-medium-blue/90"
+                onClick={createNewChat}
+                disabled={isLoading}
               >
                 New
               </Button>

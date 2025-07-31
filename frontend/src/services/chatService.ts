@@ -25,6 +25,14 @@ export interface ChatResponse {
   session_id: string;
 }
 
+export interface ConversationInfo {
+  session_id: string;
+  conversation_name?: string;
+  created_at: string;
+  last_updated: string;
+  message_count: number;
+}
+
 class ChatService {
   private apiClient = axios.create({
     baseURL: API_BASE_URL,
@@ -191,6 +199,69 @@ class ChatService {
     }
 
     return { valid: true };
+  }
+
+  /**
+   * Create a new conversation/chat session.
+   */
+  async createConversation(conversationName?: string): Promise<ConversationInfo> {
+    try {
+      const response = await this.apiClient.post<ConversationInfo>(
+        "/api/v1/chat/conversations",
+        { conversation_name: conversationName }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      throw new Error("Failed to create new conversation");
+    }
+  }
+
+  /**
+   * Get all conversations for the current user.
+   */
+  async getConversations(): Promise<ConversationInfo[]> {
+    try {
+      const response = await this.apiClient.get<ConversationInfo[]>(
+        "/api/v1/chat/conversations"
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Update conversation metadata (like name).
+   */
+  async updateConversation(
+    sessionId: string, 
+    conversationName: string
+  ): Promise<ConversationInfo> {
+    try {
+      const response = await this.apiClient.put<ConversationInfo>(
+        `/api/v1/chat/conversations/${sessionId}`,
+        { conversation_name: conversationName }
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error updating conversation:", error);
+      throw new Error("Failed to update conversation");
+    }
+  }
+
+  /**
+   * Delete a conversation and its associated session.
+   */
+  async deleteConversation(sessionId: string): Promise<boolean> {
+    try {
+      await this.apiClient.delete(`/api/v1/chat/conversations/${sessionId}`);
+      return true;
+    } catch (error) {
+      console.error("Error deleting conversation:", error);
+      return false;
+    }
   }
 }
 
