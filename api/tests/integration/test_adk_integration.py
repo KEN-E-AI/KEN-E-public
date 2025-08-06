@@ -15,19 +15,23 @@
 """Integration tests for ADK (Agent Development Kit) functionality."""
 
 import os
+import sys
 import logging
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any
 
-from src.kene_api.routers.chat import AgentEngineClient, ChatMessage
-from src.kene_api.auth.models import UserContext
+# Add src to path so imports work in Cloud Build
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
+
+from kene_api.routers.chat import AgentEngineClient, ChatMessage
+from kene_api.auth.models import UserContext
 
 
 @pytest.fixture
 def mock_vertexai():
     """Mock the Vertex AI initialization."""
-    with patch('src.kene_api.routers.chat.vertexai') as mock:
+    with patch('kene_api.routers.chat.vertexai') as mock:
         mock.init = MagicMock()
         yield mock
 
@@ -35,7 +39,7 @@ def mock_vertexai():
 @pytest.fixture
 def mock_agent_engines():
     """Mock the agent_engines module."""
-    with patch('src.kene_api.routers.chat.agent_engines') as mock:
+    with patch('kene_api.routers.chat.agent_engines') as mock:
         # Create a mock agent engine
         mock_engine = MagicMock()
         mock_engine.name = "test-agent-engine"
@@ -50,7 +54,7 @@ def mock_agent_engines():
 @pytest.fixture
 def mock_session_service():
     """Mock the ADK Session Service."""
-    with patch('src.kene_api.routers.chat.VertexAiSessionService') as mock_class:
+    with patch('kene_api.routers.chat.VertexAiSessionService') as mock_class:
         mock_service = MagicMock()
         
         # Mock session operations
@@ -234,7 +238,7 @@ async def test_error_handling():
         'VERTEX_AI_AGENT_ENGINE_ID': 'projects/test/locations/us-central1/reasoningEngines/test-id'
     }):
         # Test with agent engine that raises an error
-        with patch('src.kene_api.routers.chat.agent_engines.get') as mock_get:
+        with patch('kene_api.routers.chat.agent_engines.get') as mock_get:
             mock_get.side_effect = Exception("Failed to connect to Agent Engine")
             
             client = AgentEngineClient()

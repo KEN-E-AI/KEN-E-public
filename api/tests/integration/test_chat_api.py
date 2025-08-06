@@ -15,12 +15,16 @@
 """Integration tests for the ADK-based chat API functionality."""
 
 import os
+import sys
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, List, Any
 
-from src.kene_api.routers.chat import AgentEngineClient, ChatMessage
-from src.kene_api.auth.models import UserContext
+# Add src to path so imports work in Cloud Build
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
+
+from kene_api.routers.chat import AgentEngineClient, ChatMessage
+from kene_api.auth.models import UserContext
 
 
 @pytest.fixture
