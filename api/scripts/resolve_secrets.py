@@ -10,6 +10,16 @@ from pathlib import Path
 from google.cloud import secretmanager
 from google.api_core import exceptions
 
+# Create a single client instance to reuse
+_secret_client = None
+
+def get_secret_client():
+    """Get or create the Secret Manager client."""
+    global _secret_client
+    if _secret_client is None:
+        _secret_client = secretmanager.SecretManagerServiceClient()
+    return _secret_client
+
 
 def get_secret(secret_path: str) -> str:
     """
@@ -22,10 +32,13 @@ def get_secret(secret_path: str) -> str:
         The secret value
     """
     try:
+        import time
+        start_time = time.time()
         print(f"   🔍 Attempting to access: {secret_path}")
-        client = secretmanager.SecretManagerServiceClient()
+        client = get_secret_client()  # Reuse the client
         response = client.access_secret_version(request={"name": secret_path})
-        print(f"   ✅ Successfully retrieved secret")
+        elapsed = time.time() - start_time
+        print(f"   ✅ Successfully retrieved secret ({elapsed:.1f}s)")
         return response.payload.data.decode("UTF-8")
     except exceptions.PermissionDenied:
         print(f"⚠️  Permission denied accessing {secret_path}")

@@ -1,11 +1,11 @@
 # KEN-E
 
-A multi-agent AI system for marketing analysis built on Google Cloud Platform. KEN-E combines LangGraph orchestration, CrewAI multi-agent collaboration, and a modern React frontend to provide comprehensive marketing insights and analytics.
+An AI-powered marketing analysis system built on Google Cloud Platform. KEN-E uses Google's Agent Development Kit (ADK) deployed to Vertex AI Agent Engine, integrated with a modern React frontend to provide comprehensive marketing insights and analytics.
 
 ## Overview
 
 KEN-E is a sophisticated marketing analysis platform that leverages:
-- **AI-Powered Agents**: Three specialized CrewAI agents (KEN-E, BET-E, VIK-E) for execution, data collection, and reporting
+- **AI-Powered Agent**: Google ADK agent deployed on Vertex AI Agent Engine for intelligent marketing assistance
 - **Modern Tech Stack**: FastAPI backend, React frontend, Neo4j graph database
 - **Cloud-Native**: Fully deployed on Google Cloud Platform with Vertex AI integration
 - **Real-time Analytics**: Performance metrics, big bets tracking, and exploration tools
@@ -15,10 +15,7 @@ KEN-E is a sophisticated marketing analysis platform that leverages:
 
 ```
 ken-e/
-├── app/                    # Main agent system (LangGraph & CrewAI)
-│   ├── agent.py           # Core LangGraph orchestration
-│   ├── agent_engine_app.py # Google Cloud Agent Engine deployment
-│   ├── crew/              # CrewAI multi-agent configuration
+├── app/                    # Utility modules
 │   └── utils/             # Utilities for GCS, tracing, typing
 ├── api/                   # FastAPI REST service
 │   ├── src/kene_api/      # API source code
@@ -153,7 +150,6 @@ uv run --active python scripts/migrate_organizations_to_neo4j.py
 | `make install`       | Install all Python dependencies using uv                       |
 | `make test`          | Run unit and integration tests                                 |
 | `make lint`          | Run code quality checks (codespell, ruff, mypy)              |
-| `make backend`       | Deploy agent to Google Cloud Agent Engine                      |
 | `uv run jupyter lab` | Launch Jupyter notebooks for prototyping                       |
 
 ### API Development
@@ -218,10 +214,10 @@ ORGANIZATION_CREATION_PERMISSION=all  # or super_admin, or none
 
 ### Core Components
 
-1. **Agent System** (`app/`): LangGraph orchestration with CrewAI agents
-   - KEN-E: Main execution agent
-   - BET-E: Web scraping and data collection
-   - VIK-E: Reporting and analysis
+1. **ADK Agent**: Google's Agent Development Kit deployed on Vertex AI Agent Engine
+   - Intelligent conversational AI for marketing assistance
+   - Session management and conversation persistence
+   - Direct integration with frontend via API
 
 2. **API Service** (`api/`): FastAPI with Neo4j and Firestore
    - RESTful endpoints for metrics, activities, insights
@@ -262,8 +258,7 @@ The project includes GitHub Actions workflows:
 ### Manual Deployment
 
 ```bash
-# Deploy agent to Agent Engine
-make backend
+# ADK Agent is pre-deployed and accessed via API configuration
 
 # Deploy API to Cloud Run
 cd api && gcloud run deploy kene-api --source .
@@ -396,5 +391,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Built with [Google Cloud Platform](https://cloud.google.com/)
-- Agent framework by [LangGraph](https://github.com/langchain-ai/langgraph) and [CrewAI](https://www.crewai.com/)
+- AI powered by [Google's Agent Development Kit (ADK)](https://cloud.google.com/vertex-ai/docs/generative-ai/agent-development-kit)
 - Initially generated with [`googleCloudPlatform/agent-starter-pack`](https://github.com/GoogleCloudPlatform/agent-starter-pack)

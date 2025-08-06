@@ -17,7 +17,7 @@ readonly SECRET_RESOLUTION_TIMEOUT=10
 # Helper function to check if ADC is configured
 is_adc_configured() {
     if command -v uv &> /dev/null; then
-        uv run python "$ADC_CHECK_SCRIPT" 2>/dev/null
+        uv run --active python "$ADC_CHECK_SCRIPT" 2>/dev/null
     elif command -v python3 &> /dev/null; then
         python3 "$ADC_CHECK_SCRIPT" 2>/dev/null
     else
@@ -39,7 +39,7 @@ get_timeout_command() {
 # Helper function to get the appropriate Python command
 get_python_command() {
     if command -v uv &> /dev/null; then
-        echo "uv run python"
+        echo "uv run --active python"
     elif command -v python3 &> /dev/null; then
         echo "python3"
     else
@@ -56,11 +56,13 @@ run_secret_resolution() {
     
     # Add debug mode
     if [ -n "$DEBUG_SECRETS" ]; then
-        echo "DEBUG: Running: $timeout_cmd ${SECRET_RESOLUTION_TIMEOUT}s $python_cmd $RESOLVE_SECRETS_SCRIPT $env_file"
+        echo "DEBUG: Running: $python_cmd $RESOLVE_SECRETS_SCRIPT $env_file"
     fi
     
-    # Always run with timeout (timeout_cmd is guaranteed to exist by caller)
-    $timeout_cmd ${SECRET_RESOLUTION_TIMEOUT}s $python_cmd "$RESOLVE_SECRETS_SCRIPT" "$env_file" 2>&1 | tee "$temp_output"
+    # Run without timeout due to buffering issues with gtimeout on macOS
+    # The Python script itself has its own timeout handling
+    $python_cmd "$RESOLVE_SECRETS_SCRIPT" "$env_file" 2>&1 | tee "$temp_output"
+    return ${PIPESTATUS[0]}
 }
 
 # Helper function to create a timestamped backup

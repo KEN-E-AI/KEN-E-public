@@ -8,8 +8,7 @@ test:
 ken-e:
 	PYTHONPATH=. uv run streamlit run frontend/streamlit_app.py --browser.serverAddress=localhost --server.enableCORS=false --server.enableXsrfProtection=false
 
-backend:
-	uv export --no-hashes --no-sources --no-header --no-emit-project --frozen > .requirements.txt && uv run app/agent_engine_app.py
+# backend target removed - ADK Agent Engine is accessed directly via API
 
 
 

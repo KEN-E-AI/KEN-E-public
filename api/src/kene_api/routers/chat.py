@@ -2,6 +2,7 @@
 Chat API endpoints for Vertex AI Agent Engine integration.
 """
 
+import asyncio
 import logging
 import os
 from typing import Any, Dict, List, AsyncGenerator, Optional
@@ -493,7 +494,18 @@ class AgentEngineClient:
                     response_parts = []
                     try:
                         # Use the correct parameters expected by the deployed agent
-                        for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id, session_id=actual_session_id):
+                        # Run the blocking stream_query in a thread pool to avoid blocking the event loop
+                        loop = asyncio.get_event_loop()
+                        stream_iterator = await loop.run_in_executor(
+                            None,
+                            lambda: list(self.agent_engine.stream_query(
+                                message=user_input, 
+                                user_id=user_id, 
+                                session_id=actual_session_id
+                            ))
+                        )
+                        
+                        for chunk in stream_iterator:
                             logger.info(f"Received chunk type: {type(chunk)}, content preview: {str(chunk)[:100]}...")
                             
                             if isinstance(chunk, dict):
@@ -659,7 +671,49 @@ class AgentEngineClient:
                 # Use stream_query with correct parameters for deployed agent
                 if hasattr(self.agent_engine, 'stream_query'):
                     logger.info("Using stream_query method for streaming")
-                    for chunk in self.agent_engine.stream_query(message=user_input, user_id=user_id, session_id=actual_session_id):
+                    
+                    # Create an async generator that runs the blocking stream_query in a thread
+                    import concurrent.futures
+                    import queue
+                    import threading
+                    
+                    chunk_queue = queue.Queue()
+                    exception_holder = {"exception": None}
+                    
+                    def stream_worker():
+                        try:
+                            for chunk in self.agent_engine.stream_query(
+                                message=user_input, 
+                                user_id=user_id, 
+                                session_id=actual_session_id
+                            ):
+                                chunk_queue.put(chunk)
+                        except Exception as e:
+                            exception_holder["exception"] = e
+                        finally:
+                            chunk_queue.put(None)  # Signal completion
+                    
+                    # Start the streaming in a background thread
+                    stream_thread = threading.Thread(target=stream_worker)
+                    stream_thread.start()
+                    
+                    # Yield chunks as they arrive
+                    while True:
+                        # Check for chunks with a timeout to avoid blocking forever
+                        try:
+                            chunk = chunk_queue.get(timeout=0.1)
+                        except queue.Empty:
+                            # Check if thread is still alive
+                            if not stream_thread.is_alive() and chunk_queue.empty():
+                                break
+                            await asyncio.sleep(0.01)  # Small yield to event loop
+                            continue
+                        
+                        if chunk is None:  # End signal
+                            break
+                        
+                        if exception_holder["exception"]:
+                            raise exception_holder["exception"]
                         if isinstance(chunk, dict):
                             # Handle actual dictionary response
                             # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
