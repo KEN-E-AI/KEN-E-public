@@ -168,12 +168,13 @@ async def test_conversation_listing(mock_vertexai, mock_agent_engines, mock_sess
         client = AgentEngineClient()
         client._session_service = mock_session_service
         
-        conversations = await client.get_conversations(user_id="test-user")
+        conversations = await client.get_user_conversations(user_id="test-user")
         
         assert len(conversations) == 2, "Should return two conversations"
-        assert conversations[0]["session_id"] == "session-1"
-        assert conversations[0]["conversation_name"] == "Test Conversation 1"
-        assert conversations[1]["session_id"] == "session-2"
+        assert conversations[0].session_id == "session-1"
+        assert conversations[0].conversation_name == "Chat ession-1"  # Default format is "Chat {session_id[-8:]}"
+        assert conversations[1].session_id == "session-2"
+        assert conversations[1].conversation_name == "Chat ession-2"
 
 
 @pytest.mark.asyncio
@@ -181,19 +182,23 @@ async def test_conversation_history(mock_vertexai, mock_agent_engines, mock_sess
     """
     Test retrieving conversation history.
     """
-    # Mock session with history
+    # Mock session with history in ADK format
     mock_session = MagicMock()
-    mock_session.session_chunks = [
-        MagicMock(node_responses=[
-            MagicMock(
-                text="User message 1",
-                metadata={"role": "user", "timestamp": "2025-01-01T00:00:00Z"}
+    mock_session.events = [
+        MagicMock(
+            content=MagicMock(
+                role="user",
+                parts=[MagicMock(text="User message 1")]
             ),
-            MagicMock(
-                text="AI response 1",
-                metadata={"role": "assistant", "timestamp": "2025-01-01T00:00:01Z"}
-            )
-        ])
+            timestamp="2025-01-01T00:00:00Z"
+        ),
+        MagicMock(
+            content=MagicMock(
+                role="assistant",
+                parts=[MagicMock(text="AI response 1")]
+            ),
+            timestamp="2025-01-01T00:00:01Z"
+        )
     ]
     
     # Create async mock for get_session
@@ -215,11 +220,13 @@ async def test_conversation_history(mock_vertexai, mock_agent_engines, mock_sess
             session_id="test-session"
         )
         
-        assert len(history) == 2, "Should return two messages"
-        assert history[0]["role"] == "user"
-        assert history[0]["content"] == "User message 1"
-        assert history[1]["role"] == "assistant"
-        assert history[1]["content"] == "AI response 1"
+        assert history is not None, "Should return history"
+        assert history["session_id"] == "test-session"
+        assert len(history["events"]) == 2, "Should return two events"
+        assert history["events"][0]["role"] == "user"
+        assert history["events"][0]["content"]["parts"][0]["text"] == "User message 1"
+        assert history["events"][1]["role"] == "assistant"
+        assert history["events"][1]["content"]["parts"][0]["text"] == "AI response 1"
 
 
 def test_missing_agent_engine_handling():
