@@ -43,21 +43,7 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
-  - name: "python:3.11-slim"
-    id: deploy-agent-engine
-    entrypoint: /bin/bash
-    args:
-      - "-c"
-      - |
-        echo "$_FIREBASE_KEY_JSON" > firebase-key.json
-        uv export --no-hashes --no-header --no-emit-project --frozen > .requirements.txt
-        uv run app/agent_engine_app.py \
-          --project ${_PROD_PROJECT_ID} \
-          --location ${_REGION} \
-          --set-env-vars "COMMIT_SHA=${COMMIT_SHA},DATA_STORE_ID=${_DATA_STORE_ID},DATA_STORE_REGION=${_DATA_STORE_REGION}"
-    env:
-      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
-    secretEnv: ['_FIREBASE_KEY_JSON']
+  # CrewAI deployment removed - using ADK Agent Engine ID directly in API
 
   - name: "gcr.io/cloud-builders/docker"
     id: build-react-image
