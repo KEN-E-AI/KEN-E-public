@@ -138,7 +138,7 @@ async def test_conversation_listing(mock_vertexai, mock_agent_engines, mock_sess
     """
     Test listing conversations functionality.
     """
-    # Mock session list response
+    # Mock session list response with async function
     mock_sessions = [
         MagicMock(
             id="session-1",
@@ -153,7 +153,12 @@ async def test_conversation_listing(mock_vertexai, mock_agent_engines, mock_sess
             update_time=MagicMock(timestamp=lambda: 1234567891)
         )
     ]
-    mock_session_service.list_sessions.return_value = mock_sessions
+    
+    # Create async mock for list_sessions
+    async def mock_list_sessions(*args, **kwargs):
+        return mock_sessions
+    
+    mock_session_service.list_sessions = mock_list_sessions
     
     with patch.dict(os.environ, {
         'GOOGLE_CLOUD_PROJECT_ID': 'test-project',
@@ -190,7 +195,12 @@ async def test_conversation_history(mock_vertexai, mock_agent_engines, mock_sess
             )
         ])
     ]
-    mock_session_service.get_session.return_value = mock_session
+    
+    # Create async mock for get_session
+    async def mock_get_session(*args, **kwargs):
+        return mock_session
+    
+    mock_session_service.get_session = mock_get_session
     
     with patch.dict(os.environ, {
         'GOOGLE_CLOUD_PROJECT_ID': 'test-project',
@@ -243,9 +253,16 @@ async def test_error_handling():
             
             client = AgentEngineClient()
             
-            # Should handle the error gracefully
-            engine = client.agent_engine
-            assert engine is None, "Should return None when agent engine fails to initialize"
+            # The code raises an HTTPException when agent engine fails to initialize
+            # This is the expected behavior for production
+            from fastapi import HTTPException
+            import pytest
+            
+            with pytest.raises(HTTPException) as exc_info:
+                engine = client.agent_engine
+            
+            assert exc_info.value.status_code == 503, "Should raise 503 Service Unavailable"
+            assert "Agent Engine is currently unavailable" in str(exc_info.value.detail)
 
 
 def test_response_parsing():
