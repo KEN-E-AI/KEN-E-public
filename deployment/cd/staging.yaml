@@ -217,7 +217,5 @@ options:
   substitutionOption: ALLOW_LOOSE
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
 
-availableSecrets:
-  secretManager:
-    - versionName: projects/${PROJECT_ID}/secrets/firebase-key-staging/versions/latest
-      env: _FIREBASE_KEY_JSON
+# availableSecrets section removed - API now uses Application Default Credentials
+# with the service account attached to Cloud Run
