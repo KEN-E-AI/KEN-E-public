@@ -15,33 +15,11 @@
 """Integration tests for ADK (Agent Development Kit) functionality."""
 
 import os
-import sys
 import logging
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any
 
-# Add API source to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../api'))
-
-# Mock dependencies that might not be installed in test environment
-# Create mock modules with proper structure
-mock_redis = MagicMock()
-mock_redis.exceptions = MagicMock()
-mock_redis.exceptions.ConnectionError = Exception
-mock_redis.exceptions.TimeoutError = Exception
-sys.modules['redis'] = mock_redis
-sys.modules['redis.exceptions'] = mock_redis.exceptions
-
-sys.modules['neo4j'] = MagicMock()
-sys.modules['firebase_admin'] = MagicMock()
-sys.modules['firebase_admin.auth'] = MagicMock()
-sys.modules['firebase_admin.credentials'] = MagicMock()
-sys.modules['google.cloud.firestore'] = MagicMock()
-sys.modules['google.adk'] = MagicMock()
-sys.modules['google.adk.sessions'] = MagicMock()
-
-# Now we can safely import the API modules
 from src.kene_api.routers.chat import AgentEngineClient, ChatMessage
 from src.kene_api.auth.models import UserContext
 

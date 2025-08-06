@@ -35,13 +35,31 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
-  # Run integration tests
+  # Run root integration tests (if any remain)
   - name: "python:3.11-slim"
     id: integration-tests
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+        if [ -d "tests/integration" ] && [ "$(ls -A tests/integration)" ]; then
+          uv run pytest tests/integration
+        else
+          echo "No integration tests in root project"
+        fi
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # Run API integration tests
+  - name: "python:3.11-slim"
+    id: api-integration-tests
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cd api
+        pip install uv --user
+        uv sync --frozen
         uv run pytest tests/integration
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
