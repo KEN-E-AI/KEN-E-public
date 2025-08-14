@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from google.cloud import firestore
+from google.cloud.firestore_v1.field_path import FieldPath
 
 from ..models.kene_models import (
     Notification,
@@ -48,31 +49,51 @@ class FirestoreNotificationRepository(NotificationRepository):
         offset: int = 0,
     ) -> list[Notification]:
         """Get notifications for specified accounts from Firestore."""
-        query = self.db.collection("notifications").where(
-            "account_id", "in", account_ids
-        )
+        # Firestore doesn't allow empty arrays in "in" queries
+        if not account_ids:
+            return []
         
-        if not include_archived:
-            now = datetime.now().isoformat()
-            query = query.where("archived_at", ">", now)
+        logger = logging.getLogger(__name__)
+        all_notifications = []
         
-        # Order by created_at descending
-        query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
+        # Firestore has a limit of 10 items for "in" queries
+        # Process in batches of 10
+        for i in range(0, len(account_ids), 10):
+            batch_account_ids = account_ids[i:i + 10]
+            
+            query = self.db.collection("notifications").where(
+                "account_id", "in", batch_account_ids
+            )
+            
+            if not include_archived:
+                now = datetime.now().isoformat()
+                query = query.where("archived_at", ">", now)
+            
+            # Try with ordering first
+            try:
+                # Order by created_at descending
+                # Note: This requires a composite index in Firestore
+                ordered_query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
+                docs = ordered_query.stream()
+            except Exception as e:
+                # If there's an index issue, fall back to simpler query
+                logger.warning(f"Firestore query failed (likely missing index): {e}")
+                docs = query.stream()
+            
+            for doc in docs:
+                data = doc.to_dict()
+                all_notifications.append(Notification(**data))
         
-        # Apply pagination
+        # Sort all notifications by created_at descending
+        all_notifications.sort(key=lambda n: n.created_at, reverse=True)
+        
+        # Apply pagination after combining all results
         if offset > 0:
-            query = query.offset(offset)
+            all_notifications = all_notifications[offset:]
         if limit:
-            query = query.limit(limit)
+            all_notifications = all_notifications[:limit]
         
-        docs = query.stream()
-        
-        notifications = []
-        for doc in docs:
-            data = doc.to_dict()
-            notifications.append(Notification(**data))
-        
-        return notifications
+        return all_notifications
 
     async def get_user_statuses(
         self,
@@ -94,7 +115,7 @@ class FirestoreNotificationRepository(NotificationRepository):
             batch_ids = notification_ids[i:i + 10]
             
             docs = status_collection.where(
-                firestore.FieldPath.document_id(), "in", batch_ids
+                FieldPath.document_id(), "in", batch_ids
             ).stream()
             
             for doc in docs:

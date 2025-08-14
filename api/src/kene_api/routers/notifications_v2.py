@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
 
 from ..auth import UserContext, get_current_user_context
-from ..database import get_firestore_service
+from ..firestore import get_firestore_service
 from ..models.kene_models import (
     ACCOUNT_ID_DESCRIPTION,
     CreateNotificationRequest,
@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_notification_service(
-    firestore_db: firestore.Client = Depends(get_firestore_service),
+    firestore_service = Depends(get_firestore_service),
 ) -> NotificationService:
     """Get notification service instance with caching."""
+    # Get the actual Firestore client from the service
+    firestore_db = firestore_service.get_client()
     # Create base repository
     base_repository = FirestoreNotificationRepository(firestore_db)
     
@@ -138,6 +140,14 @@ async def get_notifications(
     else:
         # Get all accessible accounts
         account_ids = user.accessible_accounts
+        
+        # For super admins and org admins, accessible_accounts might be empty since they have implicit access
+        # In this case, we return all notifications (service will filter based on what's in the database)
+        if not account_ids and (user.is_super_admin or any(role == "admin" for role in user.organization_permissions.values())):
+            # For now, return empty list for super admins/org admins with no explicit accounts
+            # This maintains the same behavior as other routers in the system
+            # A future enhancement could query all accounts from the database
+            return []
     
     if not account_ids:
         return []
