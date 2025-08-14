@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, MagicMock
 from google.cloud import firestore
 
-from src.kene_api.services.notification_service import NotificationService
+from src.kene_api.services.notification_service_v2 import NotificationService
 from src.kene_api.models.kene_models import NotificationCategory
 
 

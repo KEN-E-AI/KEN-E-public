@@ -249,7 +249,7 @@ class TestNotificationEndpoints:
                 "channels": ["ui", "email"],
             }
             
-            with mock.patch("src.kene_api.services.notification_service.NotificationService.get_user_preferences") as mock_get_prefs:
+            with mock.patch("src.kene_api.services.notification_service_v2.NotificationService.get_user_preferences") as mock_get_prefs:
                 mock_get_prefs.return_value = {
                     "categories": ["KPI Performance", "New Features"],
                     "channels": ["ui", "email"],
@@ -276,7 +276,7 @@ class TestNotificationEndpoints:
             mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
             mock_firestore.return_value = mock_service
             
-            with mock.patch("src.kene_api.services.notification_service.NotificationService.create_notification") as mock_create:
+            with mock.patch("src.kene_api.services.notification_service_v2.NotificationService.create_notification") as mock_create:
                 mock_create.return_value = "notif_123"
                 
                 notification_data = {
