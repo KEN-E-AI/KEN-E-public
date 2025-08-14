@@ -56,29 +56,29 @@ deploy_indexes() {
             echo "Creating index: notifications (account_id, archived_at)..."
             gcloud firestore indexes composite create \
                 --collection-group=notifications \
-                --field-config field-path=account_id,order=ascending \
-                --field-config field-path=archived_at,order=ascending \
+                --field-config="field-path=account_id,order=ascending" \
+                --field-config="field-path=archived_at,order=ascending" \
                 --project="$PROJECT_ID" --quiet 2>/dev/null || true
             
             echo "Creating index: notifications (account_id, archived_at, created_at DESC)..."
             gcloud firestore indexes composite create \
                 --collection-group=notifications \
-                --field-config field-path=account_id,order=ascending \
-                --field-config field-path=archived_at,order=ascending \
-                --field-config field-path=created_at,order=descending \
+                --field-config="field-path=account_id,order=ascending" \
+                --field-config="field-path=archived_at,order=ascending" \
+                --field-config="field-path=created_at,order=descending" \
                 --project="$PROJECT_ID" --quiet 2>/dev/null || true
             
             echo "Creating index: notifications (account_id, created_at DESC)..."
             gcloud firestore indexes composite create \
                 --collection-group=notifications \
-                --field-config field-path=account_id,order=ascending \
-                --field-config field-path=created_at,order=descending \
+                --field-config="field-path=account_id,order=ascending" \
+                --field-config="field-path=created_at,order=descending" \
                 --project="$PROJECT_ID" --quiet 2>/dev/null || true
             
             echo "Creating index: notification_status (status)..."
             gcloud firestore indexes composite create \
                 --collection-group=notification_status \
-                --field-config field-path=status,order=ascending \
+                --field-config="field-path=status,order=ascending" \
                 --project="$PROJECT_ID" --quiet 2>/dev/null || true
         fi
         

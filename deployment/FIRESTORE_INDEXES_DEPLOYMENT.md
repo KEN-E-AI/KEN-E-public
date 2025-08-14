@@ -114,14 +114,14 @@ The notification system requires the following composite indexes to function eff
 
    **Full example for ken-e-staging:**
    ```bash
-   # Create all indexes for staging
-   gcloud firestore indexes composite create --collection-group=notifications --field-config field-path=account_id,order=ascending --field-config field-path=archived_at,order=ascending --project=ken-e-staging
+   # Create all indexes for staging (copy and paste each command)
+   gcloud firestore indexes composite create --collection-group=notifications --field-config="field-path=account_id,order=ascending" --field-config="field-path=archived_at,order=ascending" --project=ken-e-staging
 
-   gcloud firestore indexes composite create --collection-group=notifications --field-config field-path=account_id,order=ascending --field-config field-path=archived_at,order=ascending --field-config field-path=created_at,order=descending --project=ken-e-staging
+   gcloud firestore indexes composite create --collection-group=notifications --field-config="field-path=account_id,order=ascending" --field-config="field-path=archived_at,order=ascending" --field-config="field-path=created_at,order=descending" --project=ken-e-staging
 
-   gcloud firestore indexes composite create --collection-group=notifications --field-config field-path=account_id,order=ascending --field-config field-path=created_at,order=descending --project=ken-e-staging
+   gcloud firestore indexes composite create --collection-group=notifications --field-config="field-path=account_id,order=ascending" --field-config="field-path=created_at,order=descending" --project=ken-e-staging
 
-   gcloud firestore indexes composite create --collection-group=notification_status --field-config field-path=status,order=ascending --project=ken-e-staging
+   gcloud firestore indexes composite create --collection-group=notification_status --field-config="field-path=status,order=ascending" --project=ken-e-staging
    ```
 
 ### Method 3: Using the Deployment Script
