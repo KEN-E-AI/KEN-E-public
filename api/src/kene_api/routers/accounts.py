@@ -20,7 +20,7 @@ from ..models.kene_models import (
     NotificationCategory,
     SuccessResponse,
 )
-from ..services.notification_service import NotificationService
+from ..services.notification_service_v2 import NotificationService
 
 router = APIRouter(tags=["accounts"])
 

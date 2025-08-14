@@ -23,7 +23,7 @@ from .routers import (
     items,
     metrics,
     monitoring_topics,
-    notifications,
+    notifications_v2 as notifications,
     organizations,
     products,
     subscription_plans,

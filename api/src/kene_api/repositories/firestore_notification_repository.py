@@ -1,10 +1,14 @@
 """Firestore implementation of notification repository."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
 
 from google.cloud import firestore
+from google.cloud.firestore_v1.field_path import FieldPath
+
+logger = logging.getLogger(__name__)
 
 from ..models.kene_models import (
     Notification,
@@ -40,6 +44,81 @@ class FirestoreNotificationRepository(NotificationRepository):
         data = doc.to_dict()
         return Notification(**data)
 
+    def _create_batches(self, account_ids: list[str], batch_size: int = 10) -> list[list[str]]:
+        """Split account IDs into batches of specified size."""
+        return [account_ids[i:i + batch_size] for i in range(0, len(account_ids), batch_size)]
+    
+    async def _fetch_batch(
+        self,
+        batch_account_ids: list[str],
+        include_archived: bool,
+    ) -> list[Notification]:
+        """Fetch notifications for a single batch of account IDs."""
+        query = self.db.collection("notifications").where(
+            "account_id", "in", batch_account_ids
+        )
+        
+        if not include_archived:
+            now = datetime.now().isoformat()
+            query = query.where("archived_at", ">", now)
+        
+        # Try with ordering first
+        try:
+            # Order by created_at descending
+            # Note: This requires a composite index in Firestore
+            ordered_query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
+            docs = ordered_query.stream()
+        except Exception as e:
+            # If there's an index issue, fall back to simpler query
+            logger.warning(f"Firestore query failed (likely missing index): {e}")
+            docs = query.stream()
+        
+        notifications = []
+        for doc in docs:
+            data = doc.to_dict()
+            notifications.append(Notification(**data))
+        
+        return notifications
+    
+    async def _fetch_batches_parallel(
+        self,
+        batches: list[list[str]],
+        include_archived: bool,
+    ) -> list[Notification]:
+        """Fetch multiple batches of notifications in parallel."""
+        # Create tasks for parallel execution
+        tasks = [
+            self._fetch_batch(batch, include_archived)
+            for batch in batches
+        ]
+        
+        # Execute all batches in parallel
+        batch_results = await asyncio.gather(*tasks)
+        
+        # Flatten the results
+        all_notifications = []
+        for batch_notifications in batch_results:
+            all_notifications.extend(batch_notifications)
+        
+        return all_notifications
+    
+    def _sort_notifications(self, notifications: list[Notification]) -> list[Notification]:
+        """Sort notifications by created_at in descending order."""
+        return sorted(notifications, key=lambda n: n.created_at, reverse=True)
+    
+    def _apply_pagination(
+        self,
+        notifications: list[Notification],
+        limit: int | None,
+        offset: int,
+    ) -> list[Notification]:
+        """Apply pagination to a list of notifications."""
+        if offset > 0:
+            notifications = notifications[offset:]
+        if limit:
+            notifications = notifications[:limit]
+        return notifications
+
     async def get_by_account(
         self,
         account_ids: list[str],
@@ -47,7 +126,36 @@ class FirestoreNotificationRepository(NotificationRepository):
         limit: int | None = None,
         offset: int = 0,
     ) -> list[Notification]:
-        """Get notifications for specified accounts from Firestore."""
+        """Get notifications for specified accounts from Firestore.
+        
+        This method handles Firestore's limitation of 10 items in "IN" queries
+        by batching the account IDs and fetching in parallel for better performance.
+        """
+        # Firestore doesn't allow empty arrays in "in" queries
+        if not account_ids:
+            return []
+        
+        # For small sets, use direct query with Firestore pagination
+        if len(account_ids) <= 10 and limit and limit <= 100:
+            # Single batch, can use Firestore's native pagination
+            return await self._fetch_batch_with_pagination(
+                account_ids, include_archived, limit, offset
+            )
+        
+        # For larger sets, fetch all and paginate in memory
+        batches = self._create_batches(account_ids)
+        notifications = await self._fetch_batches_parallel(batches, include_archived)
+        notifications = self._sort_notifications(notifications)
+        return self._apply_pagination(notifications, limit, offset)
+    
+    async def _fetch_batch_with_pagination(
+        self,
+        account_ids: list[str],
+        include_archived: bool,
+        limit: int,
+        offset: int,
+    ) -> list[Notification]:
+        """Fetch a single batch with Firestore-level pagination."""
         query = self.db.collection("notifications").where(
             "account_id", "in", account_ids
         )
@@ -56,16 +164,21 @@ class FirestoreNotificationRepository(NotificationRepository):
             now = datetime.now().isoformat()
             query = query.where("archived_at", ">", now)
         
-        # Order by created_at descending
+        # Apply Firestore pagination
         query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
-        
-        # Apply pagination
         if offset > 0:
             query = query.offset(offset)
         if limit:
             query = query.limit(limit)
         
-        docs = query.stream()
+        try:
+            docs = query.stream()
+        except Exception as e:
+            logger.warning(f"Firestore query with pagination failed: {e}")
+            # Fallback to in-memory pagination
+            notifications = await self._fetch_batch(account_ids, include_archived)
+            notifications = self._sort_notifications(notifications)
+            return self._apply_pagination(notifications, limit, offset)
         
         notifications = []
         for doc in docs:
@@ -94,7 +207,7 @@ class FirestoreNotificationRepository(NotificationRepository):
             batch_ids = notification_ids[i:i + 10]
             
             docs = status_collection.where(
-                firestore.FieldPath.document_id(), "in", batch_ids
+                FieldPath.document_id(), "in", batch_ids
             ).stream()
             
             for doc in docs:

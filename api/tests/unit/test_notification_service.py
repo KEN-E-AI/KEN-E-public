@@ -32,6 +32,7 @@ class TestNotificationService:
         """Create service with test repository."""
         return NotificationService(repository)
 
+    @pytest.mark.asyncio
     async def test_create_notification(self, service, repository):
         """Test creating a notification initializes user statuses."""
         # Set up user preferences
@@ -55,22 +56,42 @@ class TestNotificationService:
             data={"test": "data"},
         )
         
-        assert notification_id.startswith("notif_acc_123_")
+        # Strengthen ID format assertion
+        import re
+        assert re.match(r"^notif_acc_123_\d{13}_\d{3}$", notification_id), \
+            f"Notification ID format incorrect: {notification_id}"
         
-        # Verify notification was created
+        # Verify notification was created with all expected fields
         notification = await repository.get_by_id(notification_id)
         assert notification is not None
         assert notification.description == "Test notification"
+        assert notification.account_id == "acc_123"
+        assert notification.category == NotificationCategory.KPI_PERFORMANCE
+        assert notification.data == {"test": "data"}
+        assert notification.created_at is not None
+        assert notification.archived_at is not None
         
-        # Verify user statuses were initialized correctly
+        # Verify user statuses were initialized correctly with timestamps
         user1_statuses = await repository.get_user_statuses("user_1", [notification_id])
+        assert notification_id in user1_statuses
         assert user1_statuses[notification_id]["status"] == NotificationStatus.UNREAD.value
+        assert "updated_at" in user1_statuses[notification_id]
         
         user2_statuses = await repository.get_user_statuses("user_2", [notification_id])
+        assert notification_id in user2_statuses  
         assert user2_statuses[notification_id]["status"] == NotificationStatus.EXCLUDED.value
+        assert "updated_at" in user2_statuses[notification_id]
 
+    @pytest.mark.asyncio
     async def test_get_user_notifications(self, service, repository):
         """Test getting user notifications with status."""
+        # Set up user preferences to enable notifications
+        user_prefs = UserNotificationPreferences(
+            categories=[NotificationCategory.KPI_PERFORMANCE, NotificationCategory.NEW_FEATURES],
+            channels=[NotificationChannel.UI],
+        )
+        await repository.set_user_preferences("user_1", user_prefs)
+        
         # Create notifications
         notif1_id = await service.create_notification(
             account_id="acc_123",
@@ -103,6 +124,7 @@ class TestNotificationService:
         notif2 = next(n for n in notifications if n.id == notif2_id)
         assert notif2.status == NotificationStatus.UNREAD
 
+    @pytest.mark.asyncio
     async def test_get_user_notifications_excludes_archived(self, service, repository):
         """Test that archived notifications are excluded by default."""
         # Create notifications
@@ -140,15 +162,18 @@ class TestNotificationService:
         
         assert len(notifications) == 2
 
+    @pytest.mark.asyncio
     async def test_get_user_notifications_pagination(self, service, repository):
         """Test pagination in get_user_notifications."""
-        # Create multiple notifications
+        # Create multiple notifications with known order
+        created_ids = []
         for i in range(10):
-            await service.create_notification(
+            notif_id = await service.create_notification(
                 account_id="acc_123",
                 category=NotificationCategory.KPI_PERFORMANCE,
                 description=f"Notification {i}",
             )
+            created_ids.append(notif_id)
         
         # Test limit
         notifications = await service.get_user_notifications(
@@ -157,6 +182,9 @@ class TestNotificationService:
             limit=5,
         )
         assert len(notifications) == 5
+        # Verify they are sorted by created_at descending (newest first)
+        for i in range(1, len(notifications)):
+            assert notifications[i-1].created_at >= notifications[i].created_at
         
         # Test offset
         page2 = await service.get_user_notifications(
@@ -167,11 +195,17 @@ class TestNotificationService:
         )
         assert len(page2) == 5
         
-        # Ensure no overlap
+        # Ensure no overlap between pages
         page1_ids = {n.id for n in notifications}
         page2_ids = {n.id for n in page2}
-        assert len(page1_ids & page2_ids) == 0
+        assert page1_ids.isdisjoint(page2_ids), "Pages should not overlap"
+        
+        # Verify total coverage
+        all_page_ids = page1_ids | page2_ids
+        assert len(all_page_ids) == 10, "All notifications should be covered"
+        assert all_page_ids == set(created_ids), "Should contain exactly the created notifications"
 
+    @pytest.mark.asyncio
     async def test_update_user_notification_status(self, service, repository):
         """Test updating notification status."""
         notif_id = await service.create_notification(
@@ -192,6 +226,7 @@ class TestNotificationService:
         assert statuses[notif_id]["status"] == NotificationStatus.READ.value
         assert "read_at" in statuses[notif_id]
 
+    @pytest.mark.asyncio
     async def test_get_user_preferences_with_defaults(self, service, repository):
         """Test getting user preferences returns defaults if not set."""
         # Get preferences for user without saved preferences
@@ -205,6 +240,7 @@ class TestNotificationService:
         saved_prefs = await repository.get_user_preferences("new_user")
         assert saved_prefs is not None
 
+    @pytest.mark.asyncio
     async def test_update_user_preferences(self, service, repository):
         """Test updating user preferences."""
         new_prefs = UserNotificationPreferences(
@@ -221,8 +257,16 @@ class TestNotificationService:
         assert NotificationChannel.EMAIL in saved_prefs.channels
         assert saved_prefs.updated_at is not None
 
+    @pytest.mark.asyncio
     async def test_get_unread_count(self, service, repository):
         """Test getting unread notification count."""
+        # Set up user preferences to enable notifications
+        user_prefs = UserNotificationPreferences(
+            categories=[NotificationCategory.KPI_PERFORMANCE],
+            channels=[NotificationChannel.UI],
+        )
+        await repository.set_user_preferences("user_1", user_prefs)
+        
         # Create notifications
         for i in range(5):
             await service.create_notification(
@@ -247,6 +291,7 @@ class TestNotificationService:
         count = await service.get_unread_count("user_1", ["acc_123"])
         assert count == 3
 
+    @pytest.mark.asyncio
     async def test_archive_old_notifications(self, service, repository):
         """Test archiving old notifications."""
         # This would require mocking datetime or modifying the service

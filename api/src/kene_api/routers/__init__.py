@@ -11,6 +11,7 @@ from . import insights as insights
 from . import intuitions as intuitions
 from . import items as items
 from . import metrics as metrics
+from . import notifications_v2 as notifications_v2
 from . import organizations as organizations
 from . import products as products
 from . import superset_saved_queries as superset_saved_queries

@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
 
 from ..auth import UserContext, get_current_user_context
-from ..database import get_firestore_service
+from ..database import get_neo4j_service
+from ..firestore import get_firestore_service
 from ..models.kene_models import (
     ACCOUNT_ID_DESCRIPTION,
     CreateNotificationRequest,
@@ -26,9 +27,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_notification_service(
-    firestore_db: firestore.Client = Depends(get_firestore_service),
+    firestore_service = Depends(get_firestore_service),
 ) -> NotificationService:
     """Get notification service instance with caching."""
+    # Get the actual Firestore client from the service
+    firestore_db = firestore_service.get_client()
     # Create base repository
     base_repository = FirestoreNotificationRepository(firestore_db)
     
@@ -97,7 +100,7 @@ async def create_notification(
         
     except Exception as e:
         logger.error(f"Error creating notification: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error creating notification: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to create notification")
 
 
 @router.get("/", response_model=list[NotificationWithStatus])
@@ -108,6 +111,7 @@ async def get_notifications(
     limit: int = Query(50, ge=1, le=100, description="Maximum number of notifications to return"),
     offset: int = Query(0, ge=0, description="Number of notifications to skip"),
     service: NotificationService = Depends(get_notification_service),
+    db = Depends(get_neo4j_service),
 ) -> list[NotificationWithStatus]:
     """
     Get notifications for the current user.
@@ -138,6 +142,29 @@ async def get_notifications(
     else:
         # Get all accessible accounts
         account_ids = user.accessible_accounts
+        
+        # For super admins and org admins, accessible_accounts might be empty since they have implicit access
+        # We need to fetch all accounts they can access
+        if not account_ids:
+            if user.is_super_admin:
+                # Super admins can see all accounts
+                logger.info(f"User {user.user_id} is super admin, fetching all accounts")
+                query = "MATCH (acc:Account) RETURN acc.account_id as account_id"
+                result = await db.execute_query(query, {})
+                account_ids = [record["account_id"] for record in result]
+                
+            elif any(role == "admin" for role in user.organization_permissions.values()):
+                # Org admins can see all accounts in their organizations
+                admin_orgs = [org_id for org_id, role in user.organization_permissions.items() if role == "admin"]
+                if admin_orgs:
+                    logger.info(f"User {user.user_id} is org admin, fetching organization accounts")
+                    query = """
+                    MATCH (org:Organization)<-[:BELONGS_TO]-(acc:Account)
+                    WHERE org.organization_id IN $org_ids
+                    RETURN DISTINCT acc.account_id as account_id
+                    """
+                    result = await db.execute_query(query, {"org_ids": admin_orgs})
+                    account_ids = [record["account_id"] for record in result]
     
     if not account_ids:
         return []
@@ -155,7 +182,7 @@ async def get_notifications(
         
     except Exception as e:
         logger.error(f"Error fetching notifications: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching notifications: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to fetch notifications")
 
 
 @router.put("/{notification_id}/status", response_model=SuccessResponse)
