@@ -78,27 +78,50 @@ The notification system requires the following composite indexes to function eff
    gcloud auth application-default login
    ```
 
-2. **Deploy to each environment**:
+2. **Deploy indexes individually to each environment**:
 
-   **Development:**
+   **Note**: gcloud requires creating each index individually. Run these commands for each environment (replace `PROJECT_ID` with `ken-e-dev`, `ken-e-staging`, or `ken-e-production`):
+
    ```bash
-   gcloud firestore indexes create \
-     --project=ken-e-dev \
-     --file=deployment/firestore.indexes.json
+   # Index 1: Basic query (account_id + archived_at)
+   gcloud firestore indexes composite create \
+     --collection-group=notifications \
+     --field-config field-path=account_id,order=ascending \
+     --field-config field-path=archived_at,order=ascending \
+     --project=PROJECT_ID
+
+   # Index 2: Sorted query (account_id + archived_at + created_at DESC)
+   gcloud firestore indexes composite create \
+     --collection-group=notifications \
+     --field-config field-path=account_id,order=ascending \
+     --field-config field-path=archived_at,order=ascending \
+     --field-config field-path=created_at,order=descending \
+     --project=PROJECT_ID
+
+   # Index 3: Simple sorted (account_id + created_at DESC)
+   gcloud firestore indexes composite create \
+     --collection-group=notifications \
+     --field-config field-path=account_id,order=ascending \
+     --field-config field-path=created_at,order=descending \
+     --project=PROJECT_ID
+
+   # Index 4: Status index
+   gcloud firestore indexes composite create \
+     --collection-group=notification_status \
+     --field-config field-path=status,order=ascending \
+     --project=PROJECT_ID
    ```
 
-   **Staging:**
+   **Full example for ken-e-staging:**
    ```bash
-   gcloud firestore indexes create \
-     --project=ken-e-staging \
-     --file=deployment/firestore.indexes.json
-   ```
+   # Create all indexes for staging
+   gcloud firestore indexes composite create --collection-group=notifications --field-config field-path=account_id,order=ascending --field-config field-path=archived_at,order=ascending --project=ken-e-staging
 
-   **Production:**
-   ```bash
-   gcloud firestore indexes create \
-     --project=ken-e-production \
-     --file=deployment/firestore.indexes.json
+   gcloud firestore indexes composite create --collection-group=notifications --field-config field-path=account_id,order=ascending --field-config field-path=archived_at,order=ascending --field-config field-path=created_at,order=descending --project=ken-e-staging
+
+   gcloud firestore indexes composite create --collection-group=notifications --field-config field-path=account_id,order=ascending --field-config field-path=created_at,order=descending --project=ken-e-staging
+
+   gcloud firestore indexes composite create --collection-group=notification_status --field-config field-path=status,order=ascending --project=ken-e-staging
    ```
 
 ### Method 3: Using the Deployment Script
@@ -133,9 +156,9 @@ After deployment, verify that indexes are active:
 ### Using CLI:
 ```bash
 # List indexes for each project
-gcloud firestore indexes list --project=ken-e-dev
-gcloud firestore indexes list --project=ken-e-staging
-gcloud firestore indexes list --project=ken-e-production
+gcloud firestore indexes composite list --project=ken-e-dev
+gcloud firestore indexes composite list --project=ken-e-staging
+gcloud firestore indexes composite list --project=ken-e-production
 ```
 
 ### Using Console:

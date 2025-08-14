@@ -41,7 +41,46 @@ deploy_indexes() {
         
         # Deploy the indexes using gcloud firestore
         echo "Deploying indexes..."
-        gcloud firestore indexes create --project="$PROJECT_ID" --file="$INDEX_FILE" --quiet
+        # Note: gcloud doesn't support bulk index creation from JSON file
+        # We need to use Firebase CLI or create indexes individually
+        
+        # Try Firebase CLI first if available
+        if command -v firebase &> /dev/null; then
+            echo "Using Firebase CLI to deploy indexes..."
+            firebase use "$PROJECT_ID" --add 2>/dev/null || firebase use "$PROJECT_ID"
+            firebase deploy --only firestore:indexes --project "$PROJECT_ID" --config "$INDEX_FILE"
+        else
+            echo "Firebase CLI not available. Creating indexes individually..."
+            
+            # Create indexes one by one using gcloud
+            echo "Creating index: notifications (account_id, archived_at)..."
+            gcloud firestore indexes composite create \
+                --collection-group=notifications \
+                --field-config field-path=account_id,order=ascending \
+                --field-config field-path=archived_at,order=ascending \
+                --project="$PROJECT_ID" --quiet 2>/dev/null || true
+            
+            echo "Creating index: notifications (account_id, archived_at, created_at DESC)..."
+            gcloud firestore indexes composite create \
+                --collection-group=notifications \
+                --field-config field-path=account_id,order=ascending \
+                --field-config field-path=archived_at,order=ascending \
+                --field-config field-path=created_at,order=descending \
+                --project="$PROJECT_ID" --quiet 2>/dev/null || true
+            
+            echo "Creating index: notifications (account_id, created_at DESC)..."
+            gcloud firestore indexes composite create \
+                --collection-group=notifications \
+                --field-config field-path=account_id,order=ascending \
+                --field-config field-path=created_at,order=descending \
+                --project="$PROJECT_ID" --quiet 2>/dev/null || true
+            
+            echo "Creating index: notification_status (status)..."
+            gcloud firestore indexes composite create \
+                --collection-group=notification_status \
+                --field-config field-path=status,order=ascending \
+                --project="$PROJECT_ID" --quiet 2>/dev/null || true
+        fi
         
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}✓ Successfully deployed indexes to $PROJECT_ID${NC}"
@@ -98,4 +137,4 @@ fi
 
 echo ""
 echo "To verify indexes are active, run:"
-echo "  gcloud firestore indexes list --project=<project-id>"
+echo "  gcloud firestore indexes composite list --project=<project-id>"
