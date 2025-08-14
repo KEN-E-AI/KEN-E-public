@@ -316,4 +316,7 @@ class TestNotificationEndpoints:
             )
             
             assert response.status_code == 403
-            assert "Insufficient permissions" in response.json()["detail"]
+            error_detail = response.json()["detail"]
+            # Stronger assertion: check exact error message format
+            assert error_detail == "Access denied to account acc_999", \
+                f"Expected specific error message, got: {error_detail}"
