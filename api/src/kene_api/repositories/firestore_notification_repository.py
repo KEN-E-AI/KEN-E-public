@@ -61,8 +61,11 @@ class FirestoreNotificationRepository(NotificationRepository):
         if not include_archived:
             now = datetime.now().isoformat()
             query = query.where("archived_at", ">", now)
+            # When filtering by archived_at, we need to order by archived_at first
+            # to match the existing composite index
+            query = query.order_by("archived_at", direction=firestore.Query.ASCENDING)
         
-        # Try with ordering first
+        # Try with ordering by created_at
         try:
             # Order by created_at descending
             # Note: This requires a composite index in Firestore
@@ -163,8 +166,11 @@ class FirestoreNotificationRepository(NotificationRepository):
         if not include_archived:
             now = datetime.now().isoformat()
             query = query.where("archived_at", ">", now)
+            # When filtering by archived_at, we need to order by archived_at first
+            # to match the existing composite index
+            query = query.order_by("archived_at", direction=firestore.Query.ASCENDING)
         
-        # Apply Firestore pagination
+        # Apply ordering by created_at
         query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
         if offset > 0:
             query = query.offset(offset)
