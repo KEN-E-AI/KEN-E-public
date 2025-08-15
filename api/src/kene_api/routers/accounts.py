@@ -21,6 +21,7 @@ from ..models.kene_models import (
     SuccessResponse,
 )
 from ..services.notification_service_v2 import NotificationService
+from ..repositories import FirestoreNotificationRepository
 
 router = APIRouter(tags=["accounts"])
 
@@ -645,7 +646,9 @@ async def create_account(
 
         # Create notification for the new account
         try:
-            notification_service = NotificationService(firestore.get_client())
+            # Create repository and service instances
+            notification_repository = FirestoreNotificationRepository(firestore.get_client())
+            notification_service = NotificationService(notification_repository)
             notification_id = await notification_service.create_notification(
                 account_id=account_id,
                 category=NotificationCategory.NEW_FEATURES,
