@@ -39,7 +39,8 @@ export const KeywordValidation = {
     if (!this.VALID_PATTERN.test(trimmed)) {
       return {
         isValid: false,
-        error: "Keyword contains invalid characters. Only letters, numbers, spaces, hyphens, dots, and ampersands are allowed",
+        error:
+          "Keyword contains invalid characters. Only letters, numbers, spaces, hyphens, dots, and ampersands are allowed",
       };
     }
 
@@ -74,7 +75,7 @@ export const KeywordValidation = {
   isDuplicate(keyword: string, existingKeywords: string[]): boolean {
     const normalizedKeyword = this.normalizeKeyword(keyword, true);
     return existingKeywords.some(
-      (existing) => this.normalizeKeyword(existing, true) === normalizedKeyword
+      (existing) => this.normalizeKeyword(existing, true) === normalizedKeyword,
     );
   },
 };
@@ -123,9 +124,11 @@ export const CompetitorValidation = {
    * @param website The website URL to validate
    * @returns Object with isValid, normalized URL, and error message
    */
-  validateWebsite(
-    website: string | null
-  ): { isValid: boolean; url?: string; error?: string } {
+  validateWebsite(website: string | null): {
+    isValid: boolean;
+    url?: string;
+    error?: string;
+  } {
     if (!website) {
       return { isValid: true };
     }

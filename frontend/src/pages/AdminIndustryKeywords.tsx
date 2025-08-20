@@ -28,7 +28,8 @@ const AdminIndustryKeywords = () => {
         <div>
           <h1 className="text-3xl font-bold">Industry Keywords</h1>
           <p className="text-muted-foreground">
-            Manage keywords that are automatically applied to accounts based on their industry
+            Manage keywords that are automatically applied to accounts based on
+            their industry
           </p>
         </div>
       </div>

@@ -19,7 +19,9 @@ class RateLimiter:
         self.minute_requests: dict[str, list[float]] = defaultdict(list)
         self.hour_requests: dict[str, list[float]] = defaultdict(list)
 
-    def _clean_old_requests(self, requests: list[float], window_seconds: int) -> list[float]:
+    def _clean_old_requests(
+        self, requests: list[float], window_seconds: int
+    ) -> list[float]:
         """Remove requests older than the time window."""
         current_time = time.time()
         cutoff_time = current_time - window_seconds
@@ -38,10 +40,10 @@ class RateLimiter:
     def check_rate_limit(self, request: Request) -> None:
         """
         Check if the request exceeds rate limits.
-        
+
         This implementation ensures strict rate limiting by checking if adding
         the current request would exceed limits before actually adding it.
-        
+
         Raises:
             HTTPException: If rate limit is exceeded
         """
@@ -85,5 +87,5 @@ class RateLimiter:
 # More restrictive than general API endpoints to prevent abuse
 recaptcha_rate_limiter = RateLimiter(
     requests_per_minute=5,  # 5 verification attempts per minute
-    requests_per_hour=20,   # 20 verification attempts per hour
+    requests_per_hour=20,  # 20 verification attempts per hour
 )

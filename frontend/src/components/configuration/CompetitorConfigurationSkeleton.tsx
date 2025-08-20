@@ -23,7 +23,10 @@ export default function CompetitorConfigurationSkeleton() {
         {/* Competitor list skeleton */}
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-start justify-between p-4 border rounded-lg">
+            <div
+              key={i}
+              className="flex items-start justify-between p-4 border rounded-lg"
+            >
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-5 w-32" />
                 <Skeleton className="h-4 w-48" />

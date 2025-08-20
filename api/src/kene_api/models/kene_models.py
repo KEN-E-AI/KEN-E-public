@@ -953,6 +953,9 @@ class Account(BaseModel):
     region: list[str] = Field(
         default_factory=list, description="List of regions for the account"
     )
+    estimated_annual_ad_budget: int | None = Field(
+        None, description="Estimated annual advertising budget in USD"
+    )
 
 
 class OrganizationRequest(BaseModel):
@@ -993,6 +996,9 @@ class AccountRequest(BaseModel):
     data_region: str | None = Field(None, description="Data region for the account")
     region: list[str] | None = Field(
         None, description="List of regions for the account"
+    )
+    estimated_annual_ad_budget: int | None = Field(
+        None, description="Estimated annual advertising budget in USD"
     )
 
 

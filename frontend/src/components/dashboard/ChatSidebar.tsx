@@ -1,5 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
-import { chatService, type ChatMessage, type ConversationInfo } from "@/services/chatService";
+import {
+  chatService,
+  type ChatMessage,
+  type ConversationInfo,
+} from "@/services/chatService";
 import {
   Send,
   Mic,
@@ -67,7 +71,8 @@ const ChatSidebar = ({
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationInfo[]>([]);
-  const [currentConversation, setCurrentConversation] = useState<ConversationInfo | null>(null);
+  const [currentConversation, setCurrentConversation] =
+    useState<ConversationInfo | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "1",
@@ -85,10 +90,16 @@ const ChatSidebar = ({
       try {
         const userConversations = await chatService.getConversations();
         // Ensure we always set an array, even if API returns unexpected data
-        setConversations(Array.isArray(userConversations) ? userConversations : []);
-        
+        setConversations(
+          Array.isArray(userConversations) ? userConversations : [],
+        );
+
         // If no current session, create a new one or use the most recent
-        if (!sessionId && Array.isArray(userConversations) && userConversations.length > 0) {
+        if (
+          !sessionId &&
+          Array.isArray(userConversations) &&
+          userConversations.length > 0
+        ) {
           const mostRecent = userConversations[0]; // API returns sorted by last_updated
           setCurrentConversation(mostRecent);
           setSessionId(mostRecent.session_id);
@@ -99,7 +110,7 @@ const ChatSidebar = ({
         setConversations([]);
       }
     };
-    
+
     loadConversations();
   }, [sessionId]);
 
@@ -107,25 +118,27 @@ const ChatSidebar = ({
   const createNewChat = useCallback(async () => {
     try {
       setIsLoading(true);
-      const newConversation = await chatService.createConversation("Dashboard Chat");
-      
+      const newConversation =
+        await chatService.createConversation("Dashboard Chat");
+
       // Update conversations list
-      setConversations(prev => [newConversation, ...prev]);
-      
+      setConversations((prev) => [newConversation, ...prev]);
+
       // Switch to the new conversation
       setCurrentConversation(newConversation);
       setSessionId(newConversation.session_id);
-      
+
       // Clear current messages to start fresh
-      setMessages([{
-        id: "1",
-        role: "assistant",
-        content: `Hello! I'm here to help with your ${selectedTab} strategy${
-          selectedChannel !== "Overview" ? ` for ${selectedChannel}` : ""
-        }${selectedTactic ? ` - ${selectedTactic}` : ""}. What would you like to discuss?`,
-        timestamp: new Date(),
-      }]);
-      
+      setMessages([
+        {
+          id: "1",
+          role: "assistant",
+          content: `Hello! I'm here to help with your ${selectedTab} strategy${
+            selectedChannel !== "Overview" ? ` for ${selectedChannel}` : ""
+          }${selectedTactic ? ` - ${selectedTactic}` : ""}. What would you like to discuss?`,
+          timestamp: new Date(),
+        },
+      ]);
     } catch (error) {
       console.error("Failed to create new chat:", error);
     } finally {
@@ -134,63 +147,82 @@ const ChatSidebar = ({
   }, [selectedTab, selectedChannel, selectedTactic]);
 
   // Switch to an existing conversation
-  const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
-    try {
-      setIsLoading(true);
-      setCurrentConversation(conversation);
-      setSessionId(conversation.session_id);
-      
-      // Load actual conversation history from ADK session service
-      const history = await chatService.getConversationHistory(conversation.session_id);
-      
-      if (history && (history.messages || history.events)) {
-        // Convert ADK session data to our ChatMessage format
-        const events = history.events || history.messages || [];
-        const loadedMessages: ChatMessage[] = events.map((event: any, index: number) => {
-          // Handle ADK event format: event.content.parts[].text
-          let content = 'Empty message';
-          let role = 'assistant';
-          
-          if (event.content && event.content.parts && event.content.parts.length > 0) {
-            // Extract text from first part
-            content = event.content.parts[0].text || event.content.parts[0].content || 'Empty message';
-            role = event.content.role || event.role || 'assistant';
-          } else if (event.content) {
-            // Simple content format
-            content = event.content.text || event.content || 'Empty message';
-            role = event.role || 'assistant';
-          }
-          
-          return {
-            id: `${index}`,
-            role: role === 'user' ? 'user' : 'assistant',
-            content: content,
-            timestamp: new Date(event.timestamp || Date.now()),
-          };
-        });
-        setMessages(loadedMessages);
-      } else {
-        // Fallback if no history available
-        setMessages([{
-          id: "1",
-          role: "assistant",
-          content: `Resumed conversation: ${conversation.conversation_name || 'Untitled Chat'} for ${selectedTab}`,
-          timestamp: new Date(),
-        }]);
+  const switchToConversation = useCallback(
+    async (conversation: ConversationInfo) => {
+      try {
+        setIsLoading(true);
+        setCurrentConversation(conversation);
+        setSessionId(conversation.session_id);
+
+        // Load actual conversation history from ADK session service
+        const history = await chatService.getConversationHistory(
+          conversation.session_id,
+        );
+
+        if (history && (history.messages || history.events)) {
+          // Convert ADK session data to our ChatMessage format
+          const events = history.events || history.messages || [];
+          const loadedMessages: ChatMessage[] = events.map(
+            (event: any, index: number) => {
+              // Handle ADK event format: event.content.parts[].text
+              let content = "Empty message";
+              let role = "assistant";
+
+              if (
+                event.content &&
+                event.content.parts &&
+                event.content.parts.length > 0
+              ) {
+                // Extract text from first part
+                content =
+                  event.content.parts[0].text ||
+                  event.content.parts[0].content ||
+                  "Empty message";
+                role = event.content.role || event.role || "assistant";
+              } else if (event.content) {
+                // Simple content format
+                content =
+                  event.content.text || event.content || "Empty message";
+                role = event.role || "assistant";
+              }
+
+              return {
+                id: `${index}`,
+                role: role === "user" ? "user" : "assistant",
+                content: content,
+                timestamp: new Date(event.timestamp || Date.now()),
+              };
+            },
+          );
+          setMessages(loadedMessages);
+        } else {
+          // Fallback if no history available
+          setMessages([
+            {
+              id: "1",
+              role: "assistant",
+              content: `Resumed conversation: ${conversation.conversation_name || "Untitled Chat"} for ${selectedTab}`,
+              timestamp: new Date(),
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error("Failed to load conversation history:", error);
+        // Fallback on error
+        setMessages([
+          {
+            id: "1",
+            role: "assistant",
+            content: `Error loading conversation history. Starting fresh chat for ${selectedTab}.`,
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to load conversation history:", error);
-      // Fallback on error
-      setMessages([{
-        id: "1",
-        role: "assistant",
-        content: `Error loading conversation history. Starting fresh chat for ${selectedTab}.`,
-        timestamp: new Date(),
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedTab]);
+    },
+    [selectedTab],
+  );
 
   const handleSendMessage = () => {
     if (!message.trim()) return;
@@ -245,16 +277,18 @@ const ChatSidebar = ({
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setNewMessage("");
     setIsLoading(true);
 
     try {
       // Convert messages to ChatMessage format for the service
-      const chatMessages: ChatMessage[] = [...messages, userMessage].map(msg => ({
-        role: msg.role,
-        content: msg.content,
-      }));
+      const chatMessages: ChatMessage[] = [...messages, userMessage].map(
+        (msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }),
+      );
 
       // Get response from Agent Engine
       const response = await chatService.sendMessage(chatMessages, sessionId);
@@ -266,18 +300,19 @@ const ChatSidebar = ({
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error sending message:", error);
-      
+
       // Add error message
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant" as const,
-        content: "I'm sorry, I'm having trouble processing your request. Please try again.",
+        content:
+          "I'm sorry, I'm having trouble processing your request. Please try again.",
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -340,8 +375,11 @@ const ChatSidebar = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
-                  {!Array.isArray(conversations) || conversations.length === 0 ? (
-                    <DropdownMenuItem disabled>No previous conversations</DropdownMenuItem>
+                  {!Array.isArray(conversations) ||
+                  conversations.length === 0 ? (
+                    <DropdownMenuItem disabled>
+                      No previous conversations
+                    </DropdownMenuItem>
                   ) : (
                     conversations.slice(0, 4).map((conversation) => (
                       <DropdownMenuItem
@@ -349,7 +387,8 @@ const ChatSidebar = ({
                         onClick={() => switchToConversation(conversation)}
                         className="cursor-pointer"
                       >
-                        {conversation.conversation_name || `Chat ${conversation.session_id.slice(-6)}`}
+                        {conversation.conversation_name ||
+                          `Chat ${conversation.session_id.slice(-6)}`}
                       </DropdownMenuItem>
                     ))
                   )}

@@ -32,18 +32,19 @@ class RecaptchaService:
             logger.warning("RECAPTCHA_SECRET_KEY not configured")
 
     def _validate_v3_response(
-        self, result: RecaptchaVerificationResult,
+        self,
+        result: RecaptchaVerificationResult,
         expected_action: str | None,
-        min_score: float
+        min_score: float,
     ) -> RecaptchaVerificationResult:
         """
         Validate reCAPTCHA v3 specific requirements (score and action).
-        
+
         Args:
             result: The verification result from Google
             expected_action: Expected action string
             min_score: Minimum acceptable score
-            
+
         Returns:
             Updated verification result
         """
@@ -54,24 +55,29 @@ class RecaptchaService:
                 success=False,
                 score=result.score,
                 action=result.action,
-                error_codes=["score-too-low"]
+                error_codes=["score-too-low"],
             )
 
         # Check if action matches expected action
         if expected_action and result.action != expected_action:
-            logger.warning(f"reCAPTCHA v3 action mismatch: expected {expected_action}, got {result.action}")
+            logger.warning(
+                f"reCAPTCHA v3 action mismatch: expected {expected_action}, got {result.action}"
+            )
             return RecaptchaVerificationResult(
                 success=False,
                 score=result.score,
                 action=result.action,
-                error_codes=["action-mismatch"]
+                error_codes=["action-mismatch"],
             )
 
         return result
 
     async def verify_token(
-        self, token: str, remote_ip: str | None = None, expected_action: str | None = None,
-        min_score: float = 0.5
+        self,
+        token: str,
+        remote_ip: str | None = None,
+        expected_action: str | None = None,
+        min_score: float = 0.5,
     ) -> RecaptchaVerificationResult:
         """
         Verify a reCAPTCHA token with Google's API.
@@ -96,7 +102,9 @@ class RecaptchaService:
                 success=False, error_codes=["missing-input-response"]
             )
 
-        logger.info(f"Verifying reCAPTCHA token for action: {expected_action}, IP: {remote_ip}")
+        logger.info(
+            f"Verifying reCAPTCHA token for action: {expected_action}, IP: {remote_ip}"
+        )
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -126,8 +134,12 @@ class RecaptchaService:
 
                 # For reCAPTCHA v3, validate score and action
                 if result.score is not None:
-                    logger.info(f"reCAPTCHA v3 score: {result.score}, action: {result.action}")
-                    return self._validate_v3_response(result, expected_action, min_score)
+                    logger.info(
+                        f"reCAPTCHA v3 score: {result.score}, action: {result.action}"
+                    )
+                    return self._validate_v3_response(
+                        result, expected_action, min_score
+                    )
 
                 return result
 

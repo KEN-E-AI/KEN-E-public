@@ -57,9 +57,7 @@ class FirestoreQueryRequest(BaseRequest):
         description="Query operator (==, !=, <, <=, >, >=, in, not-in, array-contains, array-contains-any)",
     )
     value: Any | None = Field(None, description="Value to compare against")
-    limit: int | None = Field(
-        None, description="Maximum number of documents to return"
-    )
+    limit: int | None = Field(None, description="Maximum number of documents to return")
 
 
 class KPISettingRequest(BaseRequest):
@@ -81,9 +79,7 @@ class KPISettingResponse(BaseModel):
     success: bool = Field(..., description="Operation success status")
     account_id: str = Field(..., description="Account ID")
     kpi_name: str = Field(..., description="KPI name")
-    metric_id: str | None = Field(
-        None, description="Metric ID associated with the KPI"
-    )
+    metric_id: str | None = Field(None, description="Metric ID associated with the KPI")
 
 
 class KPISettingsResponse(BaseModel):
@@ -129,9 +125,7 @@ class FunnelStepResponse(BaseModel):
     success: bool = Field(..., description="Operation success status")
     account_id: str = Field(..., description="Account ID")
     funnel_type: str = Field(..., description="Type of funnel")
-    big_bet_name: str | None = Field(
-        None, description="Big bet name (if applicable)"
-    )
+    big_bet_name: str | None = Field(None, description="Big bet name (if applicable)")
     funnel_step_num: int = Field(..., description="Step number")
     funnel_step_data: dict[str, Any] | None = Field(
         None, description="Funnel step data"
@@ -144,9 +138,7 @@ class FunnelStepsListResponse(BaseModel):
     success: bool = Field(..., description="Operation success status")
     account_id: str = Field(..., description="Account ID")
     funnel_type: str = Field(..., description="Type of funnel")
-    big_bet_name: str | None = Field(
-        None, description="Big bet name (if applicable)"
-    )
+    big_bet_name: str | None = Field(None, description="Big bet name (if applicable)")
     funnel_steps: list[dict[str, Any]] = Field(..., description="List of funnel steps")
     total: int = Field(..., description="Total number of funnel steps")
 
@@ -193,9 +185,7 @@ class ChannelResponse(BaseModel):
     success: bool = Field(..., description="Operation success status")
     account_id: str = Field(..., description="Account ID")
     funnel_type: str = Field(..., description="Type of funnel")
-    big_bet_name: str | None = Field(
-        None, description="Big bet name (if applicable)"
-    )
+    big_bet_name: str | None = Field(None, description="Big bet name (if applicable)")
     funnel_step_num: int = Field(..., description="Step number")
     channel_name: str = Field(..., description="Channel name")
     channel_data: dict[str, Any] | None = Field(None, description="Channel data")
@@ -248,9 +238,7 @@ class TacticResponse(BaseModel):
     success: bool = Field(..., description="Operation success status")
     account_id: str = Field(..., description="Account ID")
     funnel_type: str = Field(..., description="Type of funnel")
-    big_bet_name: str | None = Field(
-        None, description="Big bet name (if applicable)"
-    )
+    big_bet_name: str | None = Field(None, description="Big bet name (if applicable)")
     funnel_step_num: int = Field(..., description="Step number")
     channel_name: str = Field(..., description="Channel name")
     tactic_name: str = Field(..., description="Tactic name")
@@ -369,9 +357,7 @@ async def create_document(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error creating document: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error creating document: {e!s}")
 
 
 @router.get(
@@ -422,9 +408,7 @@ async def get_document(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error retrieving document: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error retrieving document: {e!s}")
 
 
 @router.put("/documents/{collection}/{document_id}", response_model=SuccessResponse)
@@ -637,9 +621,7 @@ async def update_document(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error updating document: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error updating document: {e!s}")
 
 
 @router.delete("/documents/{collection}/{document_id}", response_model=SuccessResponse)
@@ -691,9 +673,7 @@ async def delete_document(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting document: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error deleting document: {e!s}")
 
 
 @router.post("/documents/query", response_model=FirestoreDocumentListResponse)
@@ -754,9 +734,7 @@ async def query_documents(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error querying documents: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error querying documents: {e!s}")
 
 
 @router.get(
@@ -789,9 +767,7 @@ async def list_collection_documents(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error listing documents: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error listing documents: {e!s}")
 
 
 # Subcollection Document Operations
@@ -1647,7 +1623,9 @@ async def create_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating channel: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error creating channel: {e!s}"
+        ) from e
 
 
 @router.get(
@@ -1707,7 +1685,9 @@ async def get_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting channel: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error getting channel: {e!s}"
+        ) from e
 
 
 @router.get("/channels/{organization_id}", response_model=ChannelListResponse)
@@ -1752,7 +1732,9 @@ async def list_channels(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing channels: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error listing channels: {e!s}"
+        ) from e
 
 
 @router.put(
@@ -1814,7 +1796,9 @@ async def update_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating channel: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error updating channel: {e!s}"
+        ) from e
 
 
 @router.delete(
@@ -1868,7 +1852,9 @@ async def delete_channel(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting channel: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting channel: {e!s}"
+        ) from e
 
 
 # Tactic Endpoints
@@ -1937,7 +1923,9 @@ async def create_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating tactic: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error creating tactic: {e!s}"
+        ) from e
 
 
 @router.get("/tactics/{organization_id}/{tactic_name}", response_model=TacticResponse)
@@ -1998,7 +1986,9 @@ async def get_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting tactic: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error getting tactic: {e!s}"
+        ) from e
 
 
 @router.get("/tactics/{organization_id}", response_model=TacticListResponse)
@@ -2045,7 +2035,9 @@ async def list_tactics(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing tactics: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error listing tactics: {e!s}"
+        ) from e
 
 
 @router.put("/tactics/{organization_id}/{tactic_name}", response_model=TacticResponse)
@@ -2108,7 +2100,9 @@ async def update_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating tactic: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error updating tactic: {e!s}"
+        ) from e
 
 
 @router.delete(
@@ -2164,7 +2158,9 @@ async def delete_tactic(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting tactic: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting tactic: {e!s}"
+        ) from e
 
 
 # Organization Member Management Endpoints
@@ -2194,8 +2190,8 @@ class InviteMemberRequest(BaseModel):
     email: str = Field(..., description="Email of user to invite")
     access_level: str = Field(..., description="Access level to grant: admin or view")
     account_permissions: dict[str, str] | None = Field(
-        None, 
-        description="Account permissions to grant (only for view-role users). Keys are account IDs, values are 'edit' or 'view'"
+        None,
+        description="Account permissions to grant (only for view-role users). Keys are account IDs, values are 'edit' or 'view'",
     )
 
 
@@ -2345,7 +2341,7 @@ async def invite_member_to_organization(
                 "inviter_name": current_user_name,
                 "organization_name": organization_name,
             }
-            
+
             # Add account permissions if provided for view-role users
             if request.access_level == "view" and request.account_permissions:
                 invitation_data["account_permissions"] = request.account_permissions
@@ -2401,16 +2397,17 @@ async def invite_member_to_organization(
             for account_id, access_level in request.account_permissions.items():
                 if access_level not in ["edit", "view"]:
                     continue  # Skip invalid access levels
-                
+
                 firestore.set_nested_field(
                     collection="users",
                     document_id=user_id,
                     field_path=f"permissions.account_permissions.{account_id}",
                     value=access_level,
                 )
-            
+
             # Invalidate user cache
             from ..auth.cached_user_context import get_cached_user_context_service
+
             cached_user_service = get_cached_user_context_service()
             cached_user_service.invalidate_user_context(user_id)
 
@@ -2422,7 +2419,9 @@ async def invite_member_to_organization(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error inviting member: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error inviting member: {e!s}"
+        ) from e
 
 
 @router.put(
@@ -2476,18 +2475,22 @@ async def update_member_access_level(
         user_doc = firestore.get_document("users", user_id)
         if not user_doc:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         # Check if target user is a super admin (cannot modify their permissions)
-        user_email = user_doc.get("email", "") or user_doc.get("profile", {}).get("email", "")
+        user_email = user_doc.get("email", "") or user_doc.get("profile", {}).get(
+            "email", ""
+        )
         if user_email.lower().endswith("@ken-e.ai"):
             raise HTTPException(
                 status_code=403,
-                detail="Cannot modify permissions for KEN-E support team members"
+                detail="Cannot modify permissions for KEN-E support team members",
             )
-        
+
         current_permissions = user_doc.get("permissions", {})
-        current_org_role = current_permissions.get("organizations", {}).get(organization_id)
-        
+        current_org_role = current_permissions.get("organizations", {}).get(
+            organization_id
+        )
+
         # Update user's permission level for this organization
         success = firestore.set_nested_field(
             collection="users",
@@ -2503,26 +2506,31 @@ async def update_member_access_level(
 
         # If changing from admin to view, remove all account permissions (they need to be re-granted)
         # If changing from view to admin, remove explicit account permissions (they now have implicit access)
-        if (current_org_role == "admin" and request.access_level == "view") or \
-           (current_org_role == "view" and request.access_level == "admin"):
+        if (current_org_role == "admin" and request.access_level == "view") or (
+            current_org_role == "view" and request.access_level == "admin"
+        ):
             account_permissions = current_permissions.get("account_permissions", {})
-            
+
             # Remove account permissions for accounts in this organization
             # Note: This is a simplified implementation - ideally we'd check which accounts belong to this org
             firestore_db = firestore.get_client()
             user_ref = firestore_db.collection("users").document(user_id)
-            
+
             # Remove the entire account_permissions field if changing to admin
             if request.access_level == "admin" and account_permissions:
                 from google.cloud.firestore_v1 import DELETE_FIELD
+
                 updates = {}
                 for account_id in account_permissions:
-                    updates[f"permissions.account_permissions.{account_id}"] = DELETE_FIELD
+                    updates[f"permissions.account_permissions.{account_id}"] = (
+                        DELETE_FIELD
+                    )
                 if updates:
                     user_ref.update(updates)
-            
+
             # Invalidate user cache
             from ..auth.cached_user_context import get_cached_user_context_service
+
             cached_user_service = get_cached_user_context_service()
             cached_user_service.invalidate_user_context(user_id)
 
@@ -2579,13 +2587,15 @@ async def remove_member_from_organization(
 
         if not user_doc:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         # Check if target user is a super admin (cannot remove them)
-        user_email = user_doc.get("email", "") or user_doc.get("profile", {}).get("email", "")
+        user_email = user_doc.get("email", "") or user_doc.get("profile", {}).get(
+            "email", ""
+        )
         if user_email.lower().endswith("@ken-e.ai"):
             raise HTTPException(
                 status_code=403,
-                detail="Cannot remove KEN-E support team members from organizations"
+                detail="Cannot remove KEN-E support team members from organizations",
             )
 
         # Remove the organization from user's permissions
@@ -2619,7 +2629,9 @@ async def remove_member_from_organization(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error removing member: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error removing member: {e!s}"
+        ) from e
 
 
 # Invitation Management Endpoints
@@ -2640,9 +2652,7 @@ class Invitation(BaseModel):
         ..., description="Unique token for accepting invitation"
     )
     inviter_name: str | None = Field(None, description="Name of the inviter")
-    organization_name: str | None = Field(
-        None, description="Name of the organization"
-    )
+    organization_name: str | None = Field(None, description="Name of the organization")
     account_permissions: dict[str, str] | None = Field(
         None, description="Account permissions for view-role users"
     )
@@ -2760,9 +2770,7 @@ async def create_invitation(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error creating invitation: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error creating invitation: {e!s}")
 
 
 @router.get(
@@ -2972,20 +2980,23 @@ async def accept_invitation(
             )
 
         # Grant account permissions if provided for view-role users
-        if invitation.get("access_level") == "view" and invitation.get("account_permissions"):
+        if invitation.get("access_level") == "view" and invitation.get(
+            "account_permissions"
+        ):
             for account_id, access_level in invitation["account_permissions"].items():
                 if access_level not in ["edit", "view"]:
                     continue  # Skip invalid access levels
-                
+
                 firestore.set_nested_field(
                     collection="users",
                     document_id=request.user_id,
                     field_path=f"permissions.account_permissions.{account_id}",
                     value=access_level,
                 )
-            
+
             # Invalidate user cache
             from ..auth.cached_user_context import get_cached_user_context_service
+
             cached_user_service = get_cached_user_context_service()
             cached_user_service.invalidate_user_context(request.user_id)
 

@@ -13,7 +13,8 @@ export default function CustomerKeywordsConfigurationSkeleton() {
       <CardHeader>
         <CardTitle>Customer Keywords</CardTitle>
         <CardDescription>
-          Add keywords that describe your target customers to monitor relevant discussions.
+          Add keywords that describe your target customers to monitor relevant
+          discussions.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

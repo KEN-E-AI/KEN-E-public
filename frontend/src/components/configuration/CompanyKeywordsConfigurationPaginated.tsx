@@ -18,7 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, X, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { MonitoringTopics } from "@/types/monitoring";
 import api from "@/lib/api";
@@ -57,7 +64,8 @@ export default function CompanyKeywordsConfigurationPaginated() {
   const { data: monitoringTopics } = useQuery<MonitoringTopics | null>({
     queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
     queryFn: async () => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
+      if (!selectedOrgAccount?.accountId)
+        throw new Error("No account selected");
       const response = await api.get(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
       );
@@ -67,30 +75,32 @@ export default function CompanyKeywordsConfigurationPaginated() {
   });
 
   // Fetch paginated keywords
-  const { data: paginatedData, isLoading } = useQuery<PaginatedKeywordsResponse>({
-    queryKey: [
-      "company-keywords-paginated",
-      selectedOrgAccount?.accountId,
-      page,
-      pageSize,
-      debouncedSearchTerm,
-    ],
-    queryFn: async () => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
-      const params = new URLSearchParams({
-        page: page.toString(),
-        page_size: pageSize.toString(),
-      });
-      if (debouncedSearchTerm) {
-        params.append("search", debouncedSearchTerm);
-      }
-      const response = await api.get(
-        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/company/paginated?${params}`,
-      );
-      return response.data;
-    },
-    enabled: !!selectedOrgAccount?.accountId,
-  });
+  const { data: paginatedData, isLoading } =
+    useQuery<PaginatedKeywordsResponse>({
+      queryKey: [
+        "company-keywords-paginated",
+        selectedOrgAccount?.accountId,
+        page,
+        pageSize,
+        debouncedSearchTerm,
+      ],
+      queryFn: async () => {
+        if (!selectedOrgAccount?.accountId)
+          throw new Error("No account selected");
+        const params = new URLSearchParams({
+          page: page.toString(),
+          page_size: pageSize.toString(),
+        });
+        if (debouncedSearchTerm) {
+          params.append("search", debouncedSearchTerm);
+        }
+        const response = await api.get(
+          `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/company/paginated?${params}`,
+        );
+        return response.data;
+      },
+      enabled: !!selectedOrgAccount?.accountId,
+    });
 
   // Initialize local keywords from full list
   useEffect(() => {
@@ -102,7 +112,8 @@ export default function CompanyKeywordsConfigurationPaginated() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (updatedKeywords: string[]) => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
+      if (!selectedOrgAccount?.accountId)
+        throw new Error("No account selected");
       const response = await api.put(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/company`,
         {
@@ -136,7 +147,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
 
   const handleAddKeyword = () => {
     const trimmedKeyword = KeywordValidation.normalizeKeyword(newKeyword);
-    
+
     // Validate keyword
     const validation = KeywordValidation.validateKeyword(trimmedKeyword);
     if (!validation.isValid) {
@@ -147,7 +158,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
       });
       return;
     }
-    
+
     // Check for duplicates
     if (KeywordValidation.isDuplicate(trimmedKeyword, localKeywords)) {
       toast({
@@ -157,7 +168,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
       });
       return;
     }
-    
+
     const updatedKeywords = [...localKeywords, trimmedKeyword];
     setLocalKeywords(updatedKeywords);
     setNewKeyword("");
@@ -247,10 +258,16 @@ export default function CompanyKeywordsConfigurationPaginated() {
         {paginatedData && (
           <div className="text-sm text-muted-foreground">
             {paginatedData.total === 0 ? (
-              searchTerm ? "No keywords match your search" : "No keywords added yet"
+              searchTerm ? (
+                "No keywords match your search"
+              ) : (
+                "No keywords added yet"
+              )
             ) : (
               <>
-                Showing {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, paginatedData.total)} of {paginatedData.total} keywords
+                Showing {(page - 1) * pageSize + 1}-
+                {Math.min(page * pageSize, paginatedData.total)} of{" "}
+                {paginatedData.total} keywords
                 {searchTerm && " (filtered)"}
               </>
             )}
@@ -290,7 +307,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -308,7 +325,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
                 } else {
                   pageNum = page - 2 + i;
                 }
-                
+
                 return (
                   <Button
                     key={pageNum}
@@ -325,7 +342,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
               Next

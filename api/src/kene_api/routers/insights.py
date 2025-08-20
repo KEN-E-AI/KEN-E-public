@@ -242,10 +242,10 @@ async def get_insights(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(
-            status_code=500, detail=f"Error fetching insights: {e!s}"
-        )
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(status_code=500, detail=f"Error fetching insights: {e!s}")
 
 
 @router.post("/", response_model=SuccessResponse)
@@ -353,8 +353,12 @@ async def create_insight(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error creating insight: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error creating insight: {e!s}"
+        ) from e
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -454,8 +458,12 @@ async def update_insight(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error updating insight: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error updating insight: {e!s}"
+        ) from e
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -538,5 +546,9 @@ async def delete_insight(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error deleting insight: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting insight: {e!s}"
+        ) from e

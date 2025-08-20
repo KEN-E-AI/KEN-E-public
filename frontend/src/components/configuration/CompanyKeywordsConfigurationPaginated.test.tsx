@@ -23,7 +23,7 @@ vi.mock("@/hooks/use-toast", () => ({
 
 describe("CompanyKeywordsConfigurationPaginated", () => {
   let queryClient: QueryClient;
-  
+
   const mockAuthContext = {
     selectedOrgAccount: {
       orgId: "org_123",
@@ -60,7 +60,7 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
       );
 
       // Check for loading skeleton elements
-      const skeletons = container.querySelectorAll('.animate-pulse');
+      const skeletons = container.querySelectorAll(".animate-pulse");
       expect(skeletons.length).toBeGreaterThan(0);
     });
   });
@@ -68,10 +68,13 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
   describe("Pagination", () => {
     it("displays paginated keywords with page controls", async () => {
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: Array.from({ length: 150 }, (_, i) => `keyword_${i}`)
-          } 
+        data: {
+          data: {
+            company_keywords: Array.from(
+              { length: 150 },
+              (_, i) => `keyword_${i}`,
+            ),
+          },
         },
       };
 
@@ -107,8 +110,10 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
       });
 
       // Check pagination info
-      expect(screen.getByText("Showing 1-50 of 150 keywords")).toBeInTheDocument();
-      
+      expect(
+        screen.getByText("Showing 1-50 of 150 keywords"),
+      ).toBeInTheDocument();
+
       // Check pagination controls
       expect(screen.getByText("Previous")).toBeDisabled();
       expect(screen.getByText("Next")).not.toBeDisabled();
@@ -120,24 +125,32 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
     it("navigates between pages", async () => {
       const user = userEvent.setup();
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: Array.from({ length: 150 }, (_, i) => `keyword_${i}`)
-          } 
+        data: {
+          data: {
+            company_keywords: Array.from(
+              { length: 150 },
+              (_, i) => `keyword_${i}`,
+            ),
+          },
         },
       };
 
       vi.mocked(api.get).mockImplementation((url) => {
         if (url.includes("/company/paginated")) {
-          const urlObj = new URL(url, 'http://localhost');
-          const page = parseInt(urlObj.searchParams.get('page') || '1');
-          const pageSize = parseInt(urlObj.searchParams.get('page_size') || '50');
+          const urlObj = new URL(url, "http://localhost");
+          const page = parseInt(urlObj.searchParams.get("page") || "1");
+          const pageSize = parseInt(
+            urlObj.searchParams.get("page_size") || "50",
+          );
           const start = (page - 1) * pageSize;
           const end = start + pageSize;
-          
+
           return Promise.resolve({
             data: {
-              keywords: Array.from({ length: pageSize }, (_, i) => `keyword_${start + i}`),
+              keywords: Array.from(
+                { length: pageSize },
+                (_, i) => `keyword_${start + i}`,
+              ),
               total: 150,
               page,
               page_size: pageSize,
@@ -167,7 +180,9 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
         expect(screen.queryByText("keyword_0")).not.toBeInTheDocument();
         expect(screen.getByText("keyword_50")).toBeInTheDocument();
         expect(screen.getByText("keyword_99")).toBeInTheDocument();
-        expect(screen.getByText("Showing 51-100 of 150 keywords")).toBeInTheDocument();
+        expect(
+          screen.getByText("Showing 51-100 of 150 keywords"),
+        ).toBeInTheDocument();
       });
 
       // Click page 3
@@ -176,28 +191,38 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
       await waitFor(() => {
         expect(screen.getByText("keyword_100")).toBeInTheDocument();
         expect(screen.getByText("keyword_149")).toBeInTheDocument();
-        expect(screen.getByText("Showing 101-150 of 150 keywords")).toBeInTheDocument();
+        expect(
+          screen.getByText("Showing 101-150 of 150 keywords"),
+        ).toBeInTheDocument();
       });
     });
 
     it("changes page size", async () => {
       const user = userEvent.setup();
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: Array.from({ length: 150 }, (_, i) => `keyword_${i}`)
-          } 
+        data: {
+          data: {
+            company_keywords: Array.from(
+              { length: 150 },
+              (_, i) => `keyword_${i}`,
+            ),
+          },
         },
       };
 
       vi.mocked(api.get).mockImplementation((url) => {
         if (url.includes("/company/paginated")) {
-          const urlObj = new URL(url, 'http://localhost');
-          const pageSize = parseInt(urlObj.searchParams.get('page_size') || '50');
-          
+          const urlObj = new URL(url, "http://localhost");
+          const pageSize = parseInt(
+            urlObj.searchParams.get("page_size") || "50",
+          );
+
           return Promise.resolve({
             data: {
-              keywords: Array.from({ length: pageSize }, (_, i) => `keyword_${i}`),
+              keywords: Array.from(
+                { length: pageSize },
+                (_, i) => `keyword_${i}`,
+              ),
               total: 150,
               page: 1,
               page_size: pageSize,
@@ -221,14 +246,16 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
       });
 
       // Change page size to 20
-      const pageSizeSelect = screen.getByRole('combobox');
+      const pageSizeSelect = screen.getByRole("combobox");
       await user.click(pageSizeSelect);
       await user.click(screen.getByText("20"));
 
       await waitFor(() => {
         expect(screen.getByText("keyword_19")).toBeInTheDocument();
         expect(screen.queryByText("keyword_20")).not.toBeInTheDocument();
-        expect(screen.getByText("Showing 1-20 of 150 keywords")).toBeInTheDocument();
+        expect(
+          screen.getByText("Showing 1-20 of 150 keywords"),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -237,23 +264,37 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
     it("filters keywords based on search term", async () => {
       const user = userEvent.setup();
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: ["apple", "banana", "apricot", "cherry", "application"]
-          } 
+        data: {
+          data: {
+            company_keywords: [
+              "apple",
+              "banana",
+              "apricot",
+              "cherry",
+              "application",
+            ],
+          },
         },
       };
 
       vi.mocked(api.get).mockImplementation((url) => {
         if (url.includes("/company/paginated")) {
-          const urlObj = new URL(url, 'http://localhost');
-          const search = urlObj.searchParams.get('search') || '';
-          
-          const allKeywords = ["apple", "banana", "apricot", "cherry", "application"];
-          const filtered = search 
-            ? allKeywords.filter(k => k.toLowerCase().includes(search.toLowerCase()))
+          const urlObj = new URL(url, "http://localhost");
+          const search = urlObj.searchParams.get("search") || "";
+
+          const allKeywords = [
+            "apple",
+            "banana",
+            "apricot",
+            "cherry",
+            "application",
+          ];
+          const filtered = search
+            ? allKeywords.filter((k) =>
+                k.toLowerCase().includes(search.toLowerCase()),
+              )
             : allKeywords;
-          
+
           return Promise.resolve({
             data: {
               keywords: filtered,
@@ -288,25 +329,27 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
         expect(screen.getByText("apple")).toBeInTheDocument();
         expect(screen.getByText("application")).toBeInTheDocument();
         expect(screen.queryByText("banana")).not.toBeInTheDocument();
-        expect(screen.getByText("Showing 1-2 of 2 keywords (filtered)")).toBeInTheDocument();
+        expect(
+          screen.getByText("Showing 1-2 of 2 keywords (filtered)"),
+        ).toBeInTheDocument();
       });
     });
 
     it("shows no results message when search yields no matches", async () => {
       const user = userEvent.setup();
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: ["apple", "banana"]
-          } 
+        data: {
+          data: {
+            company_keywords: ["apple", "banana"],
+          },
         },
       };
 
       vi.mocked(api.get).mockImplementation((url) => {
         if (url.includes("/company/paginated")) {
-          const urlObj = new URL(url, 'http://localhost');
-          const search = urlObj.searchParams.get('search') || '';
-          
+          const urlObj = new URL(url, "http://localhost");
+          const search = urlObj.searchParams.get("search") || "";
+
           if (search === "xyz") {
             return Promise.resolve({
               data: {
@@ -318,7 +361,7 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
               },
             });
           }
-          
+
           return Promise.resolve({
             data: {
               keywords: ["apple", "banana"],
@@ -348,7 +391,9 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
       await user.type(searchInput, "xyz");
 
       await waitFor(() => {
-        expect(screen.getByText("No keywords match your search")).toBeInTheDocument();
+        expect(
+          screen.getByText("No keywords match your search"),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -357,10 +402,10 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
     it("adds keyword and refreshes paginated view", async () => {
       const user = userEvent.setup();
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: ["existing"]
-          } 
+        data: {
+          data: {
+            company_keywords: ["existing"],
+          },
         },
       };
 
@@ -410,10 +455,10 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
     it("removes keyword and updates immediately", async () => {
       const user = userEvent.setup();
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: ["keyword1", "keyword2", "keyword3"]
-          } 
+        data: {
+          data: {
+            company_keywords: ["keyword1", "keyword2", "keyword3"],
+          },
         },
       };
 
@@ -449,7 +494,7 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
       // Remove keyword2
       const keyword2Badge = screen.getByText("keyword2").closest(".badge");
       const removeButton = keyword2Badge?.querySelector("button");
-      
+
       if (removeButton) {
         await user.click(removeButton);
       }
@@ -468,12 +513,15 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
 
   describe("Performance with large datasets", () => {
     it("handles 1000+ keywords efficiently", async () => {
-      const manyKeywords = Array.from({ length: 1500 }, (_, i) => `keyword_${i}`);
+      const manyKeywords = Array.from(
+        { length: 1500 },
+        (_, i) => `keyword_${i}`,
+      );
       const mockTopicsData = {
-        data: { 
-          data: { 
-            company_keywords: manyKeywords
-          } 
+        data: {
+          data: {
+            company_keywords: manyKeywords,
+          },
         },
       };
 
@@ -505,9 +553,11 @@ describe("CompanyKeywordsConfigurationPaginated", () => {
         expect(screen.getByText("keyword_0")).toBeInTheDocument();
         expect(screen.getByText("keyword_49")).toBeInTheDocument();
         expect(screen.queryByText("keyword_50")).not.toBeInTheDocument();
-        
+
         // Should show correct total
-        expect(screen.getByText("Showing 1-50 of 1500 keywords")).toBeInTheDocument();
+        expect(
+          screen.getByText("Showing 1-50 of 1500 keywords"),
+        ).toBeInTheDocument();
       });
     });
   });

@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,22 +32,25 @@ export default function CompetitorsConfiguration() {
   const [keywordInput, setKeywordInput] = useState("");
 
   // Fetch monitoring topics
-  const { data: monitoringTopics, isLoading } = useQuery<MonitoringTopics | null>({
-    queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
-    queryFn: async () => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
-      const response = await api.get(
-        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
-      );
-      return response.data.data || null;
-    },
-    enabled: !!selectedOrgAccount?.accountId,
-  });
+  const { data: monitoringTopics, isLoading } =
+    useQuery<MonitoringTopics | null>({
+      queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
+      queryFn: async () => {
+        if (!selectedOrgAccount?.accountId)
+          throw new Error("No account selected");
+        const response = await api.get(
+          `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
+        );
+        return response.data.data || null;
+      },
+      enabled: !!selectedOrgAccount?.accountId,
+    });
 
   // Add competitor mutation
   const addMutation = useMutation({
     mutationFn: async (competitor: Partial<CompetitorEntry>) => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
+      if (!selectedOrgAccount?.accountId)
+        throw new Error("No account selected");
       const response = await api.post(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/competitors`,
         {
@@ -90,7 +89,8 @@ export default function CompetitorsConfiguration() {
       index: number;
       competitor: Partial<CompetitorEntry>;
     }) => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
+      if (!selectedOrgAccount?.accountId)
+        throw new Error("No account selected");
       const response = await api.put(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/competitors/${index}`,
         {
@@ -125,7 +125,8 @@ export default function CompetitorsConfiguration() {
   // Delete competitor mutation
   const deleteMutation = useMutation({
     mutationFn: async (index: number) => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
+      if (!selectedOrgAccount?.accountId)
+        throw new Error("No account selected");
       const response = await api.delete(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/competitors/${index}`,
       );
@@ -234,7 +235,6 @@ export default function CompetitorsConfiguration() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-
           {competitors.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No competitors added yet

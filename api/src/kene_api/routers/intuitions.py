@@ -103,10 +103,10 @@ async def get_intuitions(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(
-            status_code=500, detail=f"Error fetching intuitions: {e!s}"
-        )
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(status_code=500, detail=f"Error fetching intuitions: {e!s}")
 
 
 @router.post("/", response_model=SuccessResponse)
@@ -219,9 +219,7 @@ async def create_intuition(
             or "connect" in str(e).lower()
         ):
             raise HTTPException(status_code=500, detail="Database error") from e
-        raise HTTPException(
-            status_code=500, detail=f"Error creating intuition: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error creating intuition: {e!s}")
 
 
 @router.put("/", response_model=SuccessResponse)
@@ -308,9 +306,7 @@ async def update_intuition(
             or "connect" in str(e).lower()
         ):
             raise HTTPException(status_code=500, detail="Database error") from e
-        raise HTTPException(
-            status_code=500, detail=f"Error updating intuition: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error updating intuition: {e!s}")
 
 
 @router.delete("/", response_model=SuccessResponse)
@@ -394,6 +390,4 @@ async def delete_intuition(
             or "connect" in str(e).lower()
         ):
             raise HTTPException(status_code=500, detail="Database error") from e
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting intuition: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error deleting intuition: {e!s}")

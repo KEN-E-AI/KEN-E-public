@@ -38,7 +38,9 @@ const ReCaptchaV3 = ({
   useEffect(() => {
     const fallbackTimer = setTimeout(() => {
       if (!isVerified && !isVerifying) {
-        console.warn("ReCAPTCHA not available after timeout, bypassing verification");
+        console.warn(
+          "ReCAPTCHA not available after timeout, bypassing verification",
+        );
         setIsVerified(true);
         onVerify(true);
       }

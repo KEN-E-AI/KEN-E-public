@@ -78,11 +78,15 @@ describe("KeywordValidation", () => {
     });
 
     it("preserves case by default", () => {
-      expect(KeywordValidation.normalizeKeyword("TestKeyword")).toBe("TestKeyword");
+      expect(KeywordValidation.normalizeKeyword("TestKeyword")).toBe(
+        "TestKeyword",
+      );
     });
 
     it("converts to lowercase when requested", () => {
-      expect(KeywordValidation.normalizeKeyword("TestKeyword", true)).toBe("testkeyword");
+      expect(KeywordValidation.normalizeKeyword("TestKeyword", true)).toBe(
+        "testkeyword",
+      );
     });
   });
 
@@ -95,17 +99,25 @@ describe("KeywordValidation", () => {
 
     it("detects case-insensitive duplicates", () => {
       expect(KeywordValidation.isDuplicate("ai", existingKeywords)).toBe(true);
-      expect(KeywordValidation.isDuplicate("MACHINE LEARNING", existingKeywords)).toBe(true);
+      expect(
+        KeywordValidation.isDuplicate("MACHINE LEARNING", existingKeywords),
+      ).toBe(true);
     });
 
     it("correctly identifies non-duplicates", () => {
-      expect(KeywordValidation.isDuplicate("neural networks", existingKeywords)).toBe(false);
+      expect(
+        KeywordValidation.isDuplicate("neural networks", existingKeywords),
+      ).toBe(false);
       expect(KeywordValidation.isDuplicate("ML", existingKeywords)).toBe(false);
     });
 
     it("handles whitespace differences", () => {
-      expect(KeywordValidation.isDuplicate("  AI  ", existingKeywords)).toBe(true);
-      expect(KeywordValidation.isDuplicate("Machine  Learning", existingKeywords)).toBe(false);
+      expect(KeywordValidation.isDuplicate("  AI  ", existingKeywords)).toBe(
+        true,
+      );
+      expect(
+        KeywordValidation.isDuplicate("Machine  Learning", existingKeywords),
+      ).toBe(false);
     });
   });
 });

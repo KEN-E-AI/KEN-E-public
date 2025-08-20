@@ -19,7 +19,10 @@ import type {
   SecuritySettings,
 } from "@/types/auth";
 import { toUserId } from "@/lib/branded-types";
-import type { NotificationSetting, SecuritySetting } from "@/data/userSettingsData";
+import type {
+  NotificationSetting,
+  SecuritySetting,
+} from "@/data/userSettingsData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -204,19 +207,25 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     // Set notification and security settings
     if (notificationsData.length > 0) {
       // Convert NotificationSettings to NotificationSetting[]
-      const settings: NotificationSetting[] = notificationsData.map(item => ({
-        ...item.data,
-        id: 'default', // Add required fields for NotificationSetting
-      } as NotificationSetting));
+      const settings: NotificationSetting[] = notificationsData.map(
+        (item) =>
+          ({
+            ...item.data,
+            id: "default", // Add required fields for NotificationSetting
+          }) as NotificationSetting,
+      );
       setNotificationSettings(settings);
     }
 
     if (securityData.length > 0) {
       // Convert SecuritySettings to SecuritySetting[]
-      const settings: SecuritySetting[] = securityData.map(item => ({
-        ...item.data,
-        id: 'default', // Add required fields for SecuritySetting
-      } as SecuritySetting));
+      const settings: SecuritySetting[] = securityData.map(
+        (item) =>
+          ({
+            ...item.data,
+            id: "default", // Add required fields for SecuritySetting
+          }) as SecuritySetting,
+      );
       setSecuritySettings(settings);
     }
   };
@@ -332,7 +341,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           },
         );
       }
-
 
       processUserLogin(
         firebaseUser as FirebaseUser,
@@ -494,7 +502,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   };
 
   const handleGoogleSignInSuccess = async (firebaseUser: FirebaseUser) => {
-
     try {
       // Try to fetch existing user data
       const { userData, notificationsData, securityData } =
@@ -516,9 +523,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
 
       if (errorMessage === "") {
         // User doesn't exist (404), create new user
-        const newUserData = await createUserInFirestore(
-          firebaseUser,
-        );
+        const newUserData = await createUserInFirestore(firebaseUser);
 
         // For Google sign-in, email is already verified by Google
         // Note: We could track email_verified in Firestore if needed, but it's not in the UserProfile type
@@ -544,7 +549,15 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
           },
         });
 
-        processUserLogin(firebaseUser, updatedUserData, [], [], login, setNotificationSettings, setSecuritySettings);
+        processUserLogin(
+          firebaseUser,
+          updatedUserData,
+          [],
+          [],
+          login,
+          setNotificationSettings,
+          setSecuritySettings,
+        );
         onAuthenticated();
       } else {
         // Other API errors
@@ -877,7 +890,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
                         Google
                       </Button>
                     </div>
-
                   </TabsContent>
 
                   {/* Sign Up Tab */}

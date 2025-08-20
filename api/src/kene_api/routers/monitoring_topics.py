@@ -30,6 +30,7 @@ from ..models.monitoring_models import (
     UpdateCustomerKeywordsRequest,
     UpdateIndustryKeywordsRequest,
 )
+
 # Create a module-level cache service (in-memory for now)
 # In production, this would be initialized with Redis
 _cache_service = CacheService(InMemoryCache())
@@ -48,7 +49,9 @@ INDUSTRY_OPTIONS = [
     {"value": "Real Estate and Rental and Leasing"},
     {"value": "Professional, Scientific, and Technical Services"},
     {"value": "Management of Companies and Enterprises"},
-    {"value": "Administrative and Support and Waste Management and Remediation Services"},
+    {
+        "value": "Administrative and Support and Waste Management and Remediation Services"
+    },
     {"value": "Educational Services"},
     {"value": "Health Care and Social Assistance"},
     {"value": "Arts, Entertainment, and Recreation"},
@@ -77,6 +80,7 @@ async def test_account_access(
         "account_permissions": user.account_permissions,
     }
 
+
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -97,16 +101,16 @@ async def get_or_create_monitoring_topics(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if doc:
             return MonitoringTopics(**doc)
-        
+
         # Create new document if not exists
         # Get industry keywords
         industry_keywords = await get_industry_keywords_for_industry(
             industry, firestore
         )
-        
+
         now = datetime.utcnow().isoformat()
         monitoring_topics = MonitoringTopics(
             account_id=account_id,
@@ -118,20 +122,19 @@ async def get_or_create_monitoring_topics(
             created_at=now,
             updated_at=now,
         )
-        
+
         # Save to Firestore
         firestore.create_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
             data=monitoring_topics.model_dump(),
         )
-        
+
         return monitoring_topics
     except Exception as e:
         logger.error(f"Error getting/creating monitoring topics: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve monitoring topics"
+            status_code=500, detail="Failed to retrieve monitoring topics"
         )
 
 
@@ -140,25 +143,25 @@ async def get_industry_keywords_for_industry(
 ) -> list[str]:
     """Get keywords for a specific industry with caching."""
     cache_key = industry_keywords_key(industry)
-    
+
     # Try cache first
     cached = _cache_service.get(cache_key)
     if cached is not None:
         logger.debug(f"Cache hit for industry keywords: {industry}")
         return cached
-    
+
     try:
         doc_id = industry.lower().replace(" ", "_").replace(",", "")
         doc = firestore.get_document(
             collection=INDUSTRY_KEYWORDS_COLLECTION,
             document_id=doc_id,
         )
-        
+
         keywords = doc.get("keywords", []) if doc else []
-        
+
         # Cache for 24 hours (industry keywords change rarely)
         _cache_service.set(cache_key, keywords, ttl_seconds=86400)
-        
+
         return keywords
     except Exception as e:
         logger.error(f"Error getting industry keywords: {str(e)}")
@@ -177,7 +180,7 @@ async def update_accounts_with_industry(
             collection=MONITORING_TOPICS_COLLECTION,
             limit=1000,  # Adjust based on expected scale
         )
-        
+
         # Filter and update accounts with matching industry
         for doc in all_docs:
             # We need to cross-reference with account data to check industry
@@ -205,63 +208,60 @@ async def get_monitoring_topics(
     # Check user has access to this account
     if not user.has_account_access(account_id) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Access denied to account {account_id}"
+            status_code=403, detail=f"Access denied to account {account_id}"
         )
-    
+
     try:
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if doc:
-            return MonitoringTopicsResponse(
-                success=True,
-                data=MonitoringTopics(**doc)
-            )
+            return MonitoringTopicsResponse(success=True, data=MonitoringTopics(**doc))
         else:
             # Document doesn't exist, try to create it
             # Get account details from Neo4j
             neo4j = await get_neo4j_service()
-            
+
             account_query = """
             MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
             RETURN acc.industry as industry, org.organization_id as organization_id
             """
-            
+
             try:
                 async with neo4j.get_session() as session:
-                    result = await session.run(account_query, {"account_id": account_id})
+                    result = await session.run(
+                        account_query, {"account_id": account_id}
+                    )
                     record = await result.single()
             except Exception as e:
-                logger.error(f"Neo4j query error for account {account_id}: {str(e)}", exc_info=True)
+                logger.error(
+                    f"Neo4j query error for account {account_id}: {str(e)}",
+                    exc_info=True,
+                )
                 raise
-                
+
             if not record:
                 logger.error(f"Account {account_id} not found in Neo4j")
-                return MonitoringTopicsResponse(
-                    success=True,
-                    data=None
-                )
-                
+                return MonitoringTopicsResponse(success=True, data=None)
+
             industry = record["industry"]
             organization_id = record["organization_id"]
-            
+
             # Create monitoring topics document
             monitoring_topics = await get_or_create_monitoring_topics(
                 account_id, organization_id, industry, firestore
             )
-            
-            return MonitoringTopicsResponse(
-                success=True,
-                data=monitoring_topics
-            )
+
+            return MonitoringTopicsResponse(success=True, data=monitoring_topics)
     except Exception as e:
-        logger.error(f"Error retrieving monitoring topics for account {account_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error retrieving monitoring topics for account {account_id}: {str(e)}",
+            exc_info=True,
+        )
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve monitoring topics: {str(e)}"
+            status_code=500, detail=f"Failed to retrieve monitoring topics: {str(e)}"
         )
 
 
@@ -276,52 +276,47 @@ async def update_company_keywords(
     # Check user has write access to this account
     if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Write access denied to account {account_id}"
+            status_code=403, detail=f"Write access denied to account {account_id}"
         )
-    
+
     # Validate account_id matches
     if request.account_id != account_id:
         raise HTTPException(
-            status_code=400,
-            detail="Account ID in path does not match request body"
+            status_code=400, detail="Account ID in path does not match request body"
         )
-    
+
     try:
         # First check if document exists
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if not doc:
             # Need to get account info to create the document
             # Get account details from Neo4j
             neo4j = await get_neo4j_service()
-            
+
             account_query = """
             MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
             RETURN acc.industry as industry, org.organization_id as organization_id
             """
-            
+
             async with neo4j.get_session() as session:
                 result = await session.run(account_query, {"account_id": account_id})
                 record = await result.single()
-                
+
                 if not record:
-                    raise HTTPException(
-                        status_code=404,
-                        detail="Account not found"
-                    )
-                
+                    raise HTTPException(status_code=404, detail="Account not found")
+
                 industry = record["industry"]
                 organization_id = record["organization_id"]
-            
+
             # Create the document
             monitoring_topics = await get_or_create_monitoring_topics(
                 account_id, organization_id, industry, firestore
             )
-        
+
         # Now update the document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -331,17 +326,14 @@ async def update_company_keywords(
                 "updated_at": datetime.utcnow().isoformat(),
             },
         )
-        
+
         return SuccessResponse(
             message="Company keywords updated successfully",
-            data={"company_keywords": request.company_keywords}
+            data={"company_keywords": request.company_keywords},
         )
     except Exception as e:
         logger.error(f"Error updating company keywords: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to update company keywords"
-        )
+        raise HTTPException(status_code=500, detail="Failed to update company keywords")
 
 
 @router.put("/{account_id}/customers", response_model=SuccessResponse)
@@ -355,52 +347,47 @@ async def update_customer_keywords(
     # Check user has write access to this account
     if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Write access denied to account {account_id}"
+            status_code=403, detail=f"Write access denied to account {account_id}"
         )
-    
+
     # Validate account_id matches
     if request.account_id != account_id:
         raise HTTPException(
-            status_code=400,
-            detail="Account ID in path does not match request body"
+            status_code=400, detail="Account ID in path does not match request body"
         )
-    
+
     try:
         # First check if document exists
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if not doc:
             # Need to get account info to create the document
             # Get account details from Neo4j
             neo4j = await get_neo4j_service()
-            
+
             account_query = """
             MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
             RETURN acc.industry as industry, org.organization_id as organization_id
             """
-            
+
             async with neo4j.get_session() as session:
                 result = await session.run(account_query, {"account_id": account_id})
                 record = await result.single()
-                
+
                 if not record:
-                    raise HTTPException(
-                        status_code=404,
-                        detail="Account not found"
-                    )
-                
+                    raise HTTPException(status_code=404, detail="Account not found")
+
                 industry = record["industry"]
                 organization_id = record["organization_id"]
-            
+
             # Create the document
             monitoring_topics = await get_or_create_monitoring_topics(
                 account_id, organization_id, industry, firestore
             )
-        
+
         # Now update the document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -410,16 +397,15 @@ async def update_customer_keywords(
                 "updated_at": datetime.utcnow().isoformat(),
             },
         )
-        
+
         return SuccessResponse(
             message="Customer keywords updated successfully",
-            data={"customer_keywords": request.customer_keywords}
+            data={"customer_keywords": request.customer_keywords},
         )
     except Exception as e:
         logger.error(f"Error updating customer keywords: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to update customer keywords"
+            status_code=500, detail="Failed to update customer keywords"
         )
 
 
@@ -434,62 +420,57 @@ async def add_competitor(
     # Check user has write access to this account
     if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Write access denied to account {account_id}"
+            status_code=403, detail=f"Write access denied to account {account_id}"
         )
-    
+
     # Validate account_id matches
     if request.account_id != account_id:
         raise HTTPException(
-            status_code=400,
-            detail="Account ID in path does not match request body"
+            status_code=400, detail="Account ID in path does not match request body"
         )
-    
+
     try:
         # Get current document
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if not doc:
             # Need to get account info to create the document
             # Get account details from Neo4j
             neo4j = await get_neo4j_service()
-            
+
             account_query = """
             MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
             RETURN acc.industry as industry, org.organization_id as organization_id
             """
-            
+
             async with neo4j.get_session() as session:
                 result = await session.run(account_query, {"account_id": account_id})
                 record = await result.single()
-                
+
                 if not record:
-                    raise HTTPException(
-                        status_code=404,
-                        detail="Account not found"
-                    )
-                
+                    raise HTTPException(status_code=404, detail="Account not found")
+
                 industry = record["industry"]
                 organization_id = record["organization_id"]
-            
+
             # Create the document
             monitoring_topics = await get_or_create_monitoring_topics(
                 account_id, organization_id, industry, firestore
             )
             doc = monitoring_topics.model_dump()
-        
+
         # Add new competitor
         competitors = doc.get("competitor_entries", [])
         new_competitor = CompetitorEntry(
             name=request.name,
             website=request.website,
-            keywords=request.keywords or [request.name.lower()]
+            keywords=request.keywords or [request.name.lower()],
         )
         competitors.append(new_competitor.model_dump())
-        
+
         # Update document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -499,22 +480,21 @@ async def add_competitor(
                 "updated_at": datetime.utcnow().isoformat(),
             },
         )
-        
+
         return SuccessResponse(
             message="Competitor added successfully",
-            data={"competitor": new_competitor.model_dump()}
+            data={"competitor": new_competitor.model_dump()},
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error adding competitor: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to add competitor"
-        )
+        raise HTTPException(status_code=500, detail="Failed to add competitor")
 
 
-@router.put("/{account_id}/competitors/{competitor_index}", response_model=SuccessResponse)
+@router.put(
+    "/{account_id}/competitors/{competitor_index}", response_model=SuccessResponse
+)
 async def update_competitor(
     account_id: str = Path(..., description="Account ID"),
     competitor_index: int = Path(..., description="Competitor index in array"),
@@ -526,46 +506,42 @@ async def update_competitor(
     # Check user has write access to this account
     if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Write access denied to account {account_id}"
+            status_code=403, detail=f"Write access denied to account {account_id}"
         )
-    
+
     # Validate account_id matches
     if request.account_id != account_id:
         raise HTTPException(
-            status_code=400,
-            detail="Account ID in path does not match request body"
+            status_code=400, detail="Account ID in path does not match request body"
         )
-    
+
     # Validate competitor_index matches
     if request.competitor_index != competitor_index:
         raise HTTPException(
             status_code=400,
-            detail="Competitor index in path does not match request body"
+            detail="Competitor index in path does not match request body",
         )
-    
+
     try:
         # Get current document
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if not doc:
             raise HTTPException(
-                status_code=404,
-                detail="Monitoring topics not found for this account"
+                status_code=404, detail="Monitoring topics not found for this account"
             )
-        
+
         # Get competitors
         competitors = doc.get("competitor_entries", [])
-        
+
         if competitor_index < 0 or competitor_index >= len(competitors):
             raise HTTPException(
-                status_code=404,
-                detail="Competitor not found at specified index"
+                status_code=404, detail="Competitor not found at specified index"
             )
-        
+
         # Update competitor
         if request.name is not None:
             competitors[competitor_index]["name"] = request.name
@@ -573,7 +549,7 @@ async def update_competitor(
             competitors[competitor_index]["website"] = request.website
         if request.keywords is not None:
             competitors[competitor_index]["keywords"] = request.keywords
-        
+
         # Update document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -583,22 +559,21 @@ async def update_competitor(
                 "updated_at": datetime.utcnow().isoformat(),
             },
         )
-        
+
         return SuccessResponse(
             message="Competitor updated successfully",
-            data={"competitor": competitors[competitor_index]}
+            data={"competitor": competitors[competitor_index]},
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating competitor: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to update competitor"
-        )
+        raise HTTPException(status_code=500, detail="Failed to update competitor")
 
 
-@router.delete("/{account_id}/competitors/{competitor_index}", response_model=SuccessResponse)
+@router.delete(
+    "/{account_id}/competitors/{competitor_index}", response_model=SuccessResponse
+)
 async def delete_competitor(
     account_id: str = Path(..., description="Account ID"),
     competitor_index: int = Path(..., description="Competitor index in array"),
@@ -609,35 +584,32 @@ async def delete_competitor(
     # Check user has write access to this account
     if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Write access denied to account {account_id}"
+            status_code=403, detail=f"Write access denied to account {account_id}"
         )
-    
+
     try:
         # Get current document
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if not doc:
             raise HTTPException(
-                status_code=404,
-                detail="Monitoring topics not found for this account"
+                status_code=404, detail="Monitoring topics not found for this account"
             )
-        
+
         # Get competitors
         competitors = doc.get("competitor_entries", [])
-        
+
         if competitor_index < 0 or competitor_index >= len(competitors):
             raise HTTPException(
-                status_code=404,
-                detail="Competitor not found at specified index"
+                status_code=404, detail="Competitor not found at specified index"
             )
-        
+
         # Remove competitor
         deleted_competitor = competitors.pop(competitor_index)
-        
+
         # Update document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -647,19 +619,16 @@ async def delete_competitor(
                 "updated_at": datetime.utcnow().isoformat(),
             },
         )
-        
+
         return SuccessResponse(
             message="Competitor deleted successfully",
-            data={"deleted_competitor": deleted_competitor}
+            data={"deleted_competitor": deleted_competitor},
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting competitor: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to delete competitor"
-        )
+        raise HTTPException(status_code=500, detail="Failed to delete competitor")
 
 
 @router.get("/{account_id}/company/paginated", response_model=PaginatedKeywordsResponse)
@@ -675,55 +644,47 @@ async def get_company_keywords_paginated(
     # Check user has access to this account
     if not user.has_account_access(account_id) and not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail=f"Access denied to account {account_id}"
+            status_code=403, detail=f"Access denied to account {account_id}"
         )
-    
+
     try:
         doc = firestore.get_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
         )
-        
+
         if not doc:
             return PaginatedKeywordsResponse(
-                keywords=[],
-                total=0,
-                page=page,
-                page_size=page_size,
-                total_pages=0
+                keywords=[], total=0, page=page, page_size=page_size, total_pages=0
             )
-        
+
         # Get all keywords
         all_keywords = doc.get("company_keywords", [])
-        
+
         # Filter by search term if provided
         if search:
             search_lower = search.lower()
             all_keywords = [k for k in all_keywords if search_lower in k.lower()]
-        
+
         # Calculate pagination
         total = len(all_keywords)
         total_pages = (total + page_size - 1) // page_size if total > 0 else 0
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        
+
         # Get page of keywords
         page_keywords = all_keywords[start_idx:end_idx]
-        
+
         return PaginatedKeywordsResponse(
             keywords=page_keywords,
             total=total,
             page=page,
             page_size=page_size,
-            total_pages=total_pages
+            total_pages=total_pages,
         )
     except Exception as e:
         logger.error(f"Error retrieving paginated company keywords: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve keywords"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve keywords")
 
 
 @router.get("/industries/all", response_model=IndustryKeywordsListResponse)
@@ -735,47 +696,39 @@ async def get_all_industry_keywords(
     # Check if user is super admin
     if not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail="Only super admins can view industry keywords"
+            status_code=403, detail="Only super admins can view industry keywords"
         )
-    
+
     # Try cache first
     cache_key = all_industry_keywords_key()
     cached = _cache_service.get(cache_key)
     if cached is not None:
         logger.debug("Cache hit for all industry keywords")
         return IndustryKeywordsListResponse(
-            success=True,
-            industries=[IndustryKeywords(**item) for item in cached]
+            success=True, industries=[IndustryKeywords(**item) for item in cached]
         )
-    
+
     try:
         # Get all industry keyword documents
         docs = firestore.query_documents(
             collection=INDUSTRY_KEYWORDS_COLLECTION,
             limit=100,  # Should be enough for all industries
         )
-        
+
         industries = []
         for doc in docs:
             industries.append(IndustryKeywords(**doc))
-        
+
         # Cache for 24 hours
         _cache_service.set(
-            cache_key, 
-            [ind.model_dump() for ind in industries], 
-            ttl_seconds=86400
+            cache_key, [ind.model_dump() for ind in industries], ttl_seconds=86400
         )
-        
-        return IndustryKeywordsListResponse(
-            success=True,
-            industries=industries
-        )
+
+        return IndustryKeywordsListResponse(success=True, industries=industries)
     except Exception as e:
         logger.error(f"Error retrieving industry keywords: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve industry keywords"
+            status_code=500, detail="Failed to retrieve industry keywords"
         )
 
 
@@ -790,18 +743,14 @@ async def update_industry_keywords(
     # Check if user is super admin
     if not user.is_super_admin:
         raise HTTPException(
-            status_code=403,
-            detail="Only super admins can modify industry keywords"
+            status_code=403, detail="Only super admins can modify industry keywords"
         )
-    
+
     # Validate industry exists
     valid_industries = [opt["value"] for opt in INDUSTRY_OPTIONS]
     if industry not in valid_industries:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid industry: {industry}"
-        )
-    
+        raise HTTPException(status_code=400, detail=f"Invalid industry: {industry}")
+
     try:
         # Update industry keywords document
         doc_id = industry.lower().replace(" ", "_").replace(",", "")
@@ -811,28 +760,27 @@ async def update_industry_keywords(
             "updated_by": user.user_id,
             "updated_at": datetime.utcnow().isoformat(),
         }
-        
+
         firestore.create_document(
             collection=INDUSTRY_KEYWORDS_COLLECTION,
             document_id=doc_id,
             data=doc_data,
         )
-        
+
         # Invalidate cache
         _cache_service.delete(industry_keywords_key(industry))
         _cache_service.delete(all_industry_keywords_key())
-        
+
         # Update all accounts with this industry
         # Note: In production, this should be done asynchronously
         await update_accounts_with_industry(industry, request.keywords, firestore)
-        
+
         return SuccessResponse(
             message=f"Industry keywords updated for {industry}",
-            data={"keywords": request.keywords}
+            data={"keywords": request.keywords},
         )
     except Exception as e:
         logger.error(f"Error updating industry keywords: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to update industry keywords"
+            status_code=500, detail="Failed to update industry keywords"
         )

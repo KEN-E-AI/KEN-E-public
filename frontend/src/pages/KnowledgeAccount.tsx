@@ -1,12 +1,7 @@
 import { useState } from "react";
 import CompanyKeywordsConfiguration from "@/components/configuration/CompanyKeywordsConfiguration";
 import Layout from "@/components/layout/Layout";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
@@ -18,17 +13,19 @@ export default function KnowledgeAccount() {
   const { selectedOrgAccount } = useAuth();
 
   // Fetch monitoring topics to display industry keywords
-  const { data: monitoringTopics, isLoading } = useQuery<MonitoringTopics | null>({
-    queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
-    queryFn: async () => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
-      const response = await api.get(
-        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
-      );
-      return response.data.data || null;
-    },
-    enabled: !!selectedOrgAccount?.accountId,
-  });
+  const { data: monitoringTopics, isLoading } =
+    useQuery<MonitoringTopics | null>({
+      queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
+      queryFn: async () => {
+        if (!selectedOrgAccount?.accountId)
+          throw new Error("No account selected");
+        const response = await api.get(
+          `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
+        );
+        return response.data.data || null;
+      },
+      enabled: !!selectedOrgAccount?.accountId,
+    });
 
   return (
     <Layout pageTitle="Account Knowledge">

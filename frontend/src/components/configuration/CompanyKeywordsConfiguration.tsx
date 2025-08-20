@@ -1,11 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,20 +19,25 @@ export default function CompanyKeywordsConfiguration() {
   const [keywords, setKeywords] = useState<string[]>([]);
 
   // Debug logging
-  console.log("CompanyKeywordsConfiguration - selectedOrgAccount:", selectedOrgAccount);
+  console.log(
+    "CompanyKeywordsConfiguration - selectedOrgAccount:",
+    selectedOrgAccount,
+  );
 
   // Fetch monitoring topics
-  const { data: monitoringTopics, isLoading } = useQuery<MonitoringTopics | null>({
-    queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
-    queryFn: async () => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
-      const response = await api.get(
-        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
-      );
-      return response.data.data || null;
-    },
-    enabled: !!selectedOrgAccount?.accountId,
-  });
+  const { data: monitoringTopics, isLoading } =
+    useQuery<MonitoringTopics | null>({
+      queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
+      queryFn: async () => {
+        if (!selectedOrgAccount?.accountId)
+          throw new Error("No account selected");
+        const response = await api.get(
+          `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}`,
+        );
+        return response.data.data || null;
+      },
+      enabled: !!selectedOrgAccount?.accountId,
+    });
 
   // Initialize keywords when data loads
   useEffect(() => {
@@ -49,7 +49,8 @@ export default function CompanyKeywordsConfiguration() {
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (updatedKeywords: string[]) => {
-      if (!selectedOrgAccount?.accountId) throw new Error("No account selected");
+      if (!selectedOrgAccount?.accountId)
+        throw new Error("No account selected");
       const response = await api.put(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/company`,
         {
@@ -82,7 +83,7 @@ export default function CompanyKeywordsConfiguration() {
 
   const handleAddKeyword = () => {
     const trimmedKeyword = KeywordValidation.normalizeKeyword(newKeyword);
-    
+
     // Validate keyword
     const validation = KeywordValidation.validateKeyword(trimmedKeyword);
     if (!validation.isValid) {
@@ -93,7 +94,7 @@ export default function CompanyKeywordsConfiguration() {
       });
       return;
     }
-    
+
     // Check for duplicates
     if (KeywordValidation.isDuplicate(trimmedKeyword, keywords)) {
       toast({
@@ -103,7 +104,7 @@ export default function CompanyKeywordsConfiguration() {
       });
       return;
     }
-    
+
     const updatedKeywords = [...keywords, trimmedKeyword];
     setKeywords(updatedKeywords);
     setNewKeyword("");

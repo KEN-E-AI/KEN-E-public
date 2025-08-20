@@ -512,7 +512,9 @@ class SupersetClient:
             raise
         except Exception as e:
             logger.error(f"Unexpected error executing saved query '{query_label}': {e}")
-            raise SupersetClientError(f"Unexpected error during query execution: {e}") from e
+            raise SupersetClientError(
+                f"Unexpected error during query execution: {e}"
+            ) from e
 
 
 # Global instance
