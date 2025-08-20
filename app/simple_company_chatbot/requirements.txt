@@ -1,0 +1,8 @@
+google-cloud-aiplatform[adk,agent_engines]
+google-adk
+google-cloud-discoveryengine
+python-dotenv
+google-analytics-data
+newsapi-python
+weave
+wandb

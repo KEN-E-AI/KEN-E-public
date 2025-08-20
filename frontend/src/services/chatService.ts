@@ -41,7 +41,7 @@ export interface ConversationListResponse {
 class ChatService {
   private apiClient = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 30000, // 30 second timeout for chat requests
+    timeout: 600000, // 10 minute timeout for chat requests (matches backend timeout)
   });
 
   constructor() {

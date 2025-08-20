@@ -265,46 +265,41 @@ class AgentEngineClient:
                 )
                 return session_id
             else:
-                # Cache miss - check if session exists in ADK before creating new one
-                logger.info(
-                    f"Session {session_id} not in cache, checking ADK for user {user_id}"
-                )
-                try:
-                    session_data = await self.session_service.get_session(
-                        app_name="ken-e-chatbot", user_id=user_id, session_id=session_id
-                    )
-                    if session_data:
-                        logger.info(
-                            f"Found existing ADK session {session_id} for user {user_id}"
+                # Cache miss - check if this is a valid ADK session format before querying ADK
+                # Skip ADK validation for frontend-generated or fallback session IDs
+                is_adk_session = not (session_id.startswith('chat_') or 
+                                    session_id.startswith('fallback_') or 
+                                    session_id.startswith('manual_'))
+                
+                if is_adk_session:
+                    logger.info(f"Session {session_id} not in cache, checking ADK for user {user_id}")
+                    try:
+                        session_data = await self.session_service.get_session(
+                            app_name="ken-e-chatbot",
+                            user_id=user_id,
+                            session_id=session_id
                         )
-                        # Restore session info to cache
-                        conversation_info = {
-                            "session_id": session_id,
-                            "user_id": user_id,
-                            "conversation_name": conversation_name,
-                            "created_at": getattr(
-                                session_data, "create_time", datetime.now(timezone.utc)
-                            ),
-                            "last_updated": getattr(
-                                session_data, "update_time", datetime.now(timezone.utc)
-                            ),
-                            "message_count": len(getattr(session_data, "events", [])),
-                        }
-                        self._user_sessions[session_key] = conversation_info
-                        return session_id
-                    else:
-                        logger.warning(
-                            f"ADK session {session_id} not found for user {user_id}"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Error checking ADK session {session_id} for user {user_id}: {e}"
-                    )
-
-                logger.info(
-                    f"Creating new conversation for user {user_id} (original session {session_id} not found)"
-                )
-
+                        if session_data:
+                            logger.info(f"Found existing ADK session {session_id} for user {user_id}")
+                            # Restore session info to cache
+                            conversation_info = {
+                                "session_id": session_id,
+                                "user_id": user_id,
+                                "conversation_name": conversation_name,
+                                "created_at": getattr(session_data, 'create_time', datetime.now(timezone.utc)),
+                                "last_updated": getattr(session_data, 'update_time', datetime.now(timezone.utc)),
+                                "message_count": len(getattr(session_data, 'events', []))
+                            }
+                            self._user_sessions[session_key] = conversation_info
+                            return session_id
+                        else:
+                            logger.warning(f"ADK session {session_id} not found for user {user_id}")
+                    except Exception as e:
+                        logger.warning(f"Error checking ADK session {session_id} for user {user_id}: {e}")
+                else:
+                    logger.info(f"Session {session_id} has non-ADK format, skipping ADK validation")
+                
+                logger.info(f"Creating new conversation for user {user_id} (original session {session_id} not found or invalid)")
         # Create new conversation
         return await self.create_conversation(user_id, conversation_name)
 
@@ -642,19 +637,23 @@ class AgentEngineClient:
                     response_parts = []
                     try:
                         # Use the correct parameters expected by the deployed agent
-                        # Run the blocking stream_query in a thread pool to avoid blocking the event loop
+                        # Run the blocking stream_query in a thread pool with timeout to avoid blocking the event loop
                         loop = asyncio.get_event_loop()
-                        stream_iterator = await loop.run_in_executor(
-                            None,
-                            lambda: list(
-                                self.agent_engine.stream_query(
-                                    message=user_input,
-                                    user_id=user_id,
-                                    session_id=actual_session_id,
-                                )
-                            ),
-                        )
-
+                        try:
+                            stream_iterator = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    None,
+                                    lambda: list(self.agent_engine.stream_query(
+                                        message=user_input, 
+                                        user_id=user_id, 
+                                        session_id=actual_session_id
+                                    ))
+                                ),
+                                timeout=600.0  # 10 minute timeout for complex requests like strategy generation
+                            )
+                        except asyncio.TimeoutError:
+                            logger.error(f"Agent Engine timed out after 600 seconds for user {user_id}")
+                            return "I'm sorry, your request is taking longer than expected. Please try a simpler question or try again later.", actual_session_id
                         for chunk in stream_iterator:
                             logger.info(
                                 f"Received chunk type: {type(chunk)}, content preview: {str(chunk)[:100]}..."
