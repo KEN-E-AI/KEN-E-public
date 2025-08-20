@@ -233,11 +233,17 @@ def test_missing_agent_engine_handling():
     """
     Test handling when no agent engine is configured.
     """
-    with patch.dict(os.environ, {
+    # Clear VERTEX_AI_AGENT_ENGINE_ID to ensure it's not set
+    env_patch = {
         'GOOGLE_CLOUD_PROJECT_ID': 'test-project',
         'VERTEX_AI_LOCATION': 'us-central1'
-        # No VERTEX_AI_AGENT_ENGINE_ID set
-    }):
+    }
+    
+    # Remove VERTEX_AI_AGENT_ENGINE_ID if it exists
+    with patch.dict(os.environ, env_patch, clear=False):
+        if 'VERTEX_AI_AGENT_ENGINE_ID' in os.environ:
+            del os.environ['VERTEX_AI_AGENT_ENGINE_ID']
+            
         client = AgentEngineClient()
         
         # Agent engine should be None

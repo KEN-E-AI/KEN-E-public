@@ -180,12 +180,17 @@ async def test_development_mode_without_agent():
     Test development mode behavior when no agent engine is configured.
     Verifies fallback behavior for development.
     """
-    with patch.dict(os.environ, {
+    # Ensure VERTEX_AI_AGENT_ENGINE_ID is not set
+    env_patch = {
         'GOOGLE_CLOUD_PROJECT_ID': 'test-project',
         'VERTEX_AI_LOCATION': 'us-central1',
         'ENVIRONMENT': 'development'
-        # Note: No VERTEX_AI_AGENT_ENGINE_ID set
-    }):
+    }
+    
+    with patch.dict(os.environ, env_patch, clear=False):
+        if 'VERTEX_AI_AGENT_ENGINE_ID' in os.environ:
+            del os.environ['VERTEX_AI_AGENT_ENGINE_ID']
+            
         client = AgentEngineClient()
         test_user = UserContext(
             user_id="dev-user",
