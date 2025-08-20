@@ -639,12 +639,26 @@ async def create_account(
                 f"with data region {request.data_region or 'US'}: {e}"
             )
 
-        # Note: Firestore collection strategy_docs_{account_id} will be created automatically
-        # when the first document is added to it. No need to pre-create an empty collection.
-        logger.info(
-            f"Account {account_id} created. Firestore collection 'strategy_docs_{account_id}' "
-            f"will be created automatically when documents are first added."
-        )
+        # Create Firestore collection strategy_docs_{account_id} with initial placeholder document
+        try:
+            collection_name = f"strategy_docs_{account_id}"
+            initial_doc_data = {
+                "account_id": account_id,
+                "created_at": datetime.now().isoformat(),
+                "created_by": user.user_id,
+                "type": "placeholder",
+                "description": "Initial placeholder document - collection ready for business strategy documents",
+                "organization_id": request.organization_id
+            }
+            doc_id = firestore.create_document(collection_name, "_placeholder", initial_doc_data)
+            logger.info(
+                f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
+            )
+        except Exception as e:
+            # Log error but don't fail account creation if collection creation fails
+            logger.error(
+                f"Failed to create Firestore collection for account {account_id}: {e}"
+            )
 
         # Create initial activities for the new account
         activities_created = await _create_initial_activities(db, firestore, account_id)
