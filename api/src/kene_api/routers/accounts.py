@@ -857,6 +857,8 @@ async def update_account(
 async def delete_account(
     account_id: str,
     db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+    storage: StorageService = Depends(get_storage_service),
 ) -> SuccessResponse:
     """
     Delete an account and all related entities.
@@ -865,6 +867,8 @@ async def delete_account(
     - The account node itself
     - All entities with BELONGS_TO relationship to the account
     - All ActivityLog nodes with LOGGED relationship to deleted Activity nodes
+    - All business strategy documents from Google Cloud Storage
+    - The Firestore collection strategy_docs_{account_id}
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
@@ -883,12 +887,74 @@ async def delete_account(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        # Check if account exists
-        existing_acc = await _check_account_exists(db, account_id)
-        if not existing_acc:
+        # Check if account exists and get account data for cleanup
+        account_query = """
+        MATCH (acc:Account {account_id: $account_id})
+        RETURN acc.data_region as data_region
+        """
+        account_result = await db.execute_query(
+            account_query, {"account_id": account_id}
+        )
+
+        if not account_result:
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
 
-        # Delete everything in multiple simpler queries
+        data_region = account_result[0]["data_region"] or "US"
+
+        # Clean up external resources before deleting from Neo4j
+        cleanup_results = {
+            "gcs_documents_deleted": 0,
+            "firestore_collection_deleted": False,
+            "cleanup_errors": [],
+        }
+
+        # Delete GCS documents for this account
+        try:
+            deleted_documents = await storage.delete_account_documents(
+                account_id, data_region
+            )
+            cleanup_results["gcs_documents_deleted"] = 1 if deleted_documents else 0
+            logger.info(
+                f"Deleted GCS documents for account {account_id} in region {data_region}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to delete GCS documents for account {account_id}: {e}"
+            )
+            cleanup_results["cleanup_errors"].append(f"GCS cleanup failed: {e}")
+
+        # Delete Firestore collection strategy_docs_{account_id}
+        try:
+            collection_name = f"strategy_docs_{account_id}"
+            # Delete all documents in the collection
+            firestore_db = firestore.get_client()
+            collection_ref = firestore_db.collection(collection_name)
+
+            # Get all documents in the collection
+            docs = collection_ref.list_documents()
+            deleted_docs_count = 0
+
+            for doc in docs:
+                doc.delete()
+                deleted_docs_count += 1
+
+            if deleted_docs_count > 0:
+                cleanup_results["firestore_collection_deleted"] = True
+                logger.info(
+                    f"Deleted Firestore collection '{collection_name}' with {deleted_docs_count} documents"
+                )
+            else:
+                logger.info(
+                    f"Firestore collection '{collection_name}' was empty or did not exist"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to delete Firestore collection for account {account_id}: {e}"
+            )
+            cleanup_results["cleanup_errors"].append(f"Firestore cleanup failed: {e}")
+
+        # Delete Neo4j entities in multiple simpler queries
         total_nodes_deleted = 0
         total_relationships_deleted = 0
 
@@ -929,7 +995,9 @@ async def delete_account(
         logger.info(
             f"Deleted account {account_id} with cascade delete: "
             f"{total_nodes_deleted} nodes, "
-            f"{total_relationships_deleted} relationships"
+            f"{total_relationships_deleted} relationships, "
+            f"GCS documents: {cleanup_results['gcs_documents_deleted']}, "
+            f"Firestore collection: {cleanup_results['firestore_collection_deleted']}"
         )
 
         return SuccessResponse(
@@ -938,6 +1006,12 @@ async def delete_account(
                 "account_id": account_id,
                 "nodes_deleted": total_nodes_deleted,
                 "relationships_deleted": total_relationships_deleted,
+                "gcs_documents_deleted": cleanup_results["gcs_documents_deleted"],
+                "firestore_collection_deleted": cleanup_results[
+                    "firestore_collection_deleted"
+                ],
+                "cleanup_errors": cleanup_results["cleanup_errors"],
+                "data_region": data_region,
             },
         )
 

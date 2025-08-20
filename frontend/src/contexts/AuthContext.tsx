@@ -104,7 +104,7 @@ interface AuthContextType {
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
   setCurrentOrganization: (orgId: OrganizationId) => void;
-  setSelectedOrgAccount: (account: SelectedOrgAccount) => void;
+  setSelectedOrgAccount: (account: SelectedOrgAccount | null) => void;
   orgMetadata: Record<string, any>;
   accountMetadata: Record<string, any>;
   setOrgMetadata: (data: Record<string, any>) => void;
@@ -261,13 +261,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.setItem("currentOrganizationId", orgId);
   };
 
-  const setSelectedOrgAccount = (account: SelectedOrgAccount) => {
+  /**
+   * Sets the selected organization account or clears it if null is passed.
+   * When an account is selected, it saves to localStorage and fetches notifications.
+   * When null is passed, it clears localStorage and notifications.
+   * @param account - The account to select, or null to clear selection
+   */
+  const setSelectedOrgAccount = (account: SelectedOrgAccount | null) => {
     console.log("✅ Context updated:", account);
     setSelectedOrgAccountState(account);
-    localStorage.setItem("selectedOrgAccount", JSON.stringify(account));
 
-    // 🧠 Fetch notifications here
-    fetchNotifications(account.accountId);
+    if (account) {
+      localStorage.setItem("selectedOrgAccount", JSON.stringify(account));
+      // 🧠 Fetch notifications here
+      fetchNotifications(account.accountId);
+    } else {
+      localStorage.removeItem("selectedOrgAccount");
+      // Clear notifications when no account is selected
+      setNotifications([]);
+    }
   };
 
   // Sync with Firebase auth state
