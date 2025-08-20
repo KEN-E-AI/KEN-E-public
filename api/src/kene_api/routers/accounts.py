@@ -639,6 +639,13 @@ async def create_account(
                 f"with data region {request.data_region or 'US'}: {e}"
             )
 
+        # Note: Firestore collection strategy_docs_{account_id} will be created automatically
+        # when the first document is added to it. No need to pre-create an empty collection.
+        logger.info(
+            f"Account {account_id} created. Firestore collection 'strategy_docs_{account_id}' "
+            f"will be created automatically when documents are first added."
+        )
+
         # Create initial activities for the new account
         activities_created = await _create_initial_activities(db, firestore, account_id)
         if activities_created > 0:
