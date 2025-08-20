@@ -78,7 +78,9 @@ async def get_saved_queries_by_account(
         logger.error(
             f"Unexpected error while getting saved queries for account {account_id}: {e}"
         )
-        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE) from e
+        raise HTTPException(
+            status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE
+        ) from e
 
 
 @router.post("/", response_model=SavedQueryResponse)
@@ -133,7 +135,9 @@ async def create_saved_query(
         logger.error(
             f"Unexpected error while creating saved query '{request.label}': {e}"
         )
-        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE) from e
+        raise HTTPException(
+            status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE
+        ) from e
 
 
 @router.put("/{query_id}", response_model=SavedQueryResponse)
@@ -183,7 +187,9 @@ async def update_saved_query(
         raise HTTPException(status_code=500, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error while updating saved query {query_id}: {e}")
-        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE) from e
+        raise HTTPException(
+            status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE
+        ) from e
 
 
 @router.delete("/{query_id}", response_model=SuccessResponse)
@@ -221,7 +227,9 @@ async def delete_saved_query(
         raise HTTPException(status_code=500, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Unexpected error while deleting saved query {query_id}: {e}")
-        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE) from e
+        raise HTTPException(
+            status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE
+        ) from e
 
 
 @router.post("/execute/{query_label}", response_model=QueryExecutionResponse)
@@ -263,7 +271,9 @@ async def execute_saved_query(
         logger.error(
             f"Unexpected error while executing saved query '{query_label}': {e}"
         )
-        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE) from e
+        raise HTTPException(
+            status_code=500, detail=INTERNAL_SERVER_ERROR_MESSAGE
+        ) from e
 
 
 @router.get("/execute/{query_label}", response_model=QueryExecutionResponse)

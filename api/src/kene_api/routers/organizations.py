@@ -104,7 +104,7 @@ async def get_organizations(
         else:
             # Regular users see only their organizations
             accessible_org_ids = list(user.organization_permissions.keys())
-            
+
             if not accessible_org_ids:
                 # User has no organization access
                 return OrganizationListResponse(organizations=[], total=0)
@@ -118,8 +118,7 @@ async def get_organizations(
             """
 
             result = await db.execute_query(
-                organizations_query,
-                {"org_ids": accessible_org_ids}
+                organizations_query, {"org_ids": accessible_org_ids}
             )
 
         organizations = []
@@ -138,7 +137,9 @@ async def get_organizations(
     except Exception as e:
         # Handle Neo4j connectivity issues specifically
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching organizations: {e!s}"
         )
@@ -163,16 +164,15 @@ async def get_organization(
     ```
     GET /api/v1/organizations/healthway
     ```
-    
+
     **Note:** User must have access to the organization.
     """
     # Check if user has access to this organization
     if not user.has_organization_access(organization_id):
         raise HTTPException(
-            status_code=403,
-            detail=f"Access denied to organization {organization_id}"
+            status_code=403, detail=f"Access denied to organization {organization_id}"
         )
-    
+
     # Use internal helper to fetch organization
     return await _get_organization_by_id(organization_id, db)
 
@@ -218,19 +218,18 @@ async def create_organization(
     try:
         # Check if user has permission to create organizations based on configuration
         permission_level = settings.organization_creation_permission
-        
+
         if permission_level == "none":
             raise HTTPException(
-                status_code=403,
-                detail="Organization creation is currently disabled"
+                status_code=403, detail="Organization creation is currently disabled"
             )
         elif permission_level == "super_admin" and not user.is_super_admin:
             raise HTTPException(
                 status_code=403,
-                detail="Only super administrators can create organizations"
+                detail="Only super administrators can create organizations",
             )
         # If permission_level == "all", any authenticated user can create
-        
+
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
@@ -317,29 +316,33 @@ async def create_organization(
                     f"Failed to grant permissions to user {user.user_id} for organization {organization_id}. "
                     "Rolling back organization creation."
                 )
-                
+
                 # Attempt to delete the created organization
                 try:
                     delete_query = """
                     MATCH (org:Organization {organization_id: $organization_id})
                     DELETE org
                     """
-                    await db.execute_write_query(delete_query, {"organization_id": organization_id})
-                    logger.info(f"Successfully rolled back organization {organization_id}")
+                    await db.execute_write_query(
+                        delete_query, {"organization_id": organization_id}
+                    )
+                    logger.info(
+                        f"Successfully rolled back organization {organization_id}"
+                    )
                 except Exception as rollback_error:
                     logger.critical(
                         f"Failed to rollback organization {organization_id} after permission grant failure: {rollback_error}"
                     )
-                
+
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to complete organization setup. Please try again."
+                    detail="Failed to complete organization setup. Please try again.",
                 )
-            
+
             logger.info(
                 f"Granted owner permissions to user {user.user_id} for organization {organization_id}"
             )
-            
+
         except HTTPException:
             raise
         except Exception as e:
@@ -348,23 +351,25 @@ async def create_organization(
                 f"Critical error granting permissions to user {user.user_id} for organization {organization_id}: {e}. "
                 "Rolling back organization creation."
             )
-            
+
             # Attempt to delete the created organization
             try:
                 delete_query = """
                 MATCH (org:Organization {organization_id: $organization_id})
                 DELETE org
                 """
-                await db.execute_write_query(delete_query, {"organization_id": organization_id})
+                await db.execute_write_query(
+                    delete_query, {"organization_id": organization_id}
+                )
                 logger.info(f"Successfully rolled back organization {organization_id}")
             except Exception as rollback_error:
                 logger.critical(
                     f"Failed to rollback organization {organization_id} after permission grant failure: {rollback_error}"
                 )
-            
+
             raise HTTPException(
                 status_code=500,
-                detail="Failed to complete organization setup due to permission system error."
+                detail="Failed to complete organization setup due to permission system error.",
             )
 
         # Fetch the created organization
@@ -374,7 +379,9 @@ async def create_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error creating organization: {e!s}"
         )
@@ -422,7 +429,7 @@ async def update_organization(
         if not user.has_organization_access(organization_id):
             raise HTTPException(
                 status_code=403,
-                detail=f"Access denied to organization {organization_id}"
+                detail=f"Access denied to organization {organization_id}",
             )
 
         # Check if organization exists
@@ -489,7 +496,9 @@ async def update_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error updating organization: {e!s}"
         )
@@ -503,16 +512,16 @@ async def check_user_organization_permission(
 ) -> bool:
     """
     Check if a user has the required permission for an organization.
-    
+
     Args:
         account_id: The user's account ID
         organization_id: The organization ID
         required_roles: List of acceptable roles (e.g., ["admin", "owner"])
         firestore_service: Firestore service instance
-    
+
     Returns:
         bool: True if user has permission, False otherwise
-        
+
     Raises:
         HTTPException: If there's an error accessing Firestore
     """
@@ -539,10 +548,7 @@ async def check_user_organization_permission(
         raise
     except Exception as e:
         logger.error(f"Error checking user permissions: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to verify user permissions"
-        )
+        raise HTTPException(status_code=500, detail="Failed to verify user permissions")
 
 
 async def validate_plan_change(
@@ -551,11 +557,11 @@ async def validate_plan_change(
 ) -> None:
     """
     Validate that a plan change is allowed.
-    
+
     Args:
         existing_org: Current organization data
         new_plan: New subscription plan data
-        
+
     Raises:
         HTTPException: If validation fails
     """
@@ -588,16 +594,16 @@ async def verify_subscription_prerequisites(
 ) -> Organization:
     """
     Verify all prerequisites for changing subscription.
-    
+
     Args:
         db: Neo4j service instance
         firestore_service: Firestore service instance
         account_id: User's account ID
         organization_id: Organization ID
-        
+
     Returns:
         Organization: The existing organization
-        
+
     Raises:
         HTTPException: If any prerequisite check fails
     """
@@ -634,14 +640,14 @@ async def fetch_and_validate_plan(
 ) -> dict[str, Any]:
     """
     Fetch and validate a subscription plan.
-    
+
     Args:
         firestore_service: Firestore service instance
         plan_id: The plan ID to fetch
-        
+
     Returns:
         dict: The plan data
-        
+
     Raises:
         HTTPException: If plan not found or invalid
     """
@@ -665,11 +671,11 @@ def build_subscription_from_plan(
 ) -> dict[str, Any]:
     """
     Build a subscription object from plan data.
-    
+
     Args:
         plan_data: Subscription plan data from Firestore
         existing_subscription: Current subscription to preserve some fields
-        
+
     Returns:
         dict: New subscription data
     """
@@ -682,7 +688,9 @@ def build_subscription_from_plan(
         "next_billing_date": existing_subscription.next_billing_date,  # Preserve billing date
         "features": plan_data["features"]["features"],
         "usage": {
-            "reports_generated": existing_subscription.usage.get("reports_generated", 0),  # Preserve usage
+            "reports_generated": existing_subscription.usage.get(
+                "reports_generated", 0
+            ),  # Preserve usage
             "reports_limit": plan_data["features"]["max_reports"],
         },
     }
@@ -750,7 +758,7 @@ async def change_organization_subscription(
         logger.error(f"Unexpected error changing subscription: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while changing the subscription"
+            detail="An unexpected error occurred while changing the subscription",
         )
 
 
@@ -760,14 +768,14 @@ async def get_organization_team(
 ) -> dict[str, Any]:
     """
     Get the current team data for an organization.
-    
+
     Args:
         db: Neo4j service instance
         organization_id: Organization ID
-        
+
     Returns:
         dict: Team data
-        
+
     Raises:
         ValueError: If organization not found
     """
@@ -794,11 +802,11 @@ def update_team_member_limit(
 ) -> dict[str, Any]:
     """
     Update the member limit in team data.
-    
+
     Args:
         team_data: Existing team data
         new_member_limit: New member limit
-        
+
     Returns:
         dict: Updated team data
     """
@@ -816,7 +824,7 @@ async def save_organization_subscription_updates(
 ) -> None:
     """
     Save organization updates to the database.
-    
+
     Args:
         db: Neo4j service instance
         organization_id: Organization ID
@@ -852,7 +860,7 @@ async def update_organization_subscription_in_db(
 ) -> None:
     """
     Update organization subscription in the database.
-    
+
     Args:
         db: Neo4j service instance
         organization_id: Organization ID
@@ -864,17 +872,12 @@ async def update_organization_subscription_in_db(
 
     # Update team with new member limit
     updated_team = update_team_member_limit(
-        existing_team,
-        plan_data["features"]["max_users"]
+        existing_team, plan_data["features"]["max_users"]
     )
 
     # Save all updates to database
     await save_organization_subscription_updates(
-        db,
-        organization_id,
-        subscription_data,
-        updated_team,
-        plan_data["plan_name"]
+        db, organization_id, subscription_data, updated_team, plan_data["plan_name"]
     )
 
 
@@ -1064,15 +1067,19 @@ async def move_account_to_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
-        raise HTTPException(status_code=500, detail=f"Error moving account: {e!s}") from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error moving account: {e!s}"
+        ) from e
 
 
 @router.delete("/{organization_id}", response_model=SuccessResponse)
 async def delete_organization(
     organization_id: str,
     db: Neo4jService = Depends(get_neo4j_service),
-    firestore_service = Depends(get_firestore_service),
+    firestore_service=Depends(get_firestore_service),
 ) -> SuccessResponse:
     """
     Delete an organization.
@@ -1141,7 +1148,9 @@ async def delete_organization(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error deleting organization: {e!s}"
         )
@@ -1164,14 +1173,14 @@ async def _get_organization_by_id(
     """
     Get a specific organization by ID without authentication.
     Internal helper function for use within the router.
-    
+
     Args:
         organization_id: The unique identifier for the organization
         db: Neo4j service instance
-        
+
     Returns:
         Organization object
-        
+
     Raises:
         HTTPException: If organization not found or database error
     """
@@ -1203,19 +1212,23 @@ async def _get_organization_by_id(
         raise
     except Exception as e:
         if "Neo4j" in str(e) or "connect" in str(e).lower():
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE) from e
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching organization: {e!s}"
         )
 
 
-async def remove_organization_from_all_users(organization_id: str, firestore_service) -> None:
+async def remove_organization_from_all_users(
+    organization_id: str, firestore_service
+) -> None:
     """
     Remove organization permissions from all users in Firestore.
-    
+
     This function queries all users and removes the specified organization
     from their permissions.organizations field.
-    
+
     Args:
         organization_id: The organization ID to remove
         firestore_service: Firestore service instance
@@ -1223,43 +1236,43 @@ async def remove_organization_from_all_users(organization_id: str, firestore_ser
     try:
         # Get Firestore client
         firestore_db = firestore_service.get_client()
-        
+
         # Query all users who have permissions for this organization
         users_collection = firestore_db.collection("users")
-        
+
         # In Firestore, we need to get all users and check their permissions
         # since we can't directly query nested fields with dynamic keys
         all_users = users_collection.stream()
-        
+
         batch_count = 0
         for user_doc in all_users:
             user_data = user_doc.to_dict()
             permissions = user_data.get("permissions", {})
             org_permissions = permissions.get("organizations", {})
-            
+
             # Check if this user has access to the organization
             if organization_id in org_permissions:
                 # Remove the organization from user's permissions
                 del org_permissions[organization_id]
-                
+
                 # Update the user document
-                user_doc.reference.update({
-                    "permissions.organizations": org_permissions
-                })
-                
+                user_doc.reference.update(
+                    {"permissions.organizations": org_permissions}
+                )
+
                 batch_count += 1
                 logger.info(
                     f"Removed organization {organization_id} from user {user_doc.id} permissions"
                 )
-        
+
         logger.info(
             f"Removed organization {organization_id} permissions from {batch_count} users"
         )
-        
+
     except Exception as e:
         logger.error(
             f"Failed to remove organization {organization_id} from user permissions: {e}",
-            exc_info=True
+            exc_info=True,
         )
         # Don't raise the exception - we still want to complete the deletion
         # even if we fail to clean up permissions

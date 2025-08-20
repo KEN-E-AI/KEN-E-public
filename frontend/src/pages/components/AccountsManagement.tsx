@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { IndustrySelectDropdown as IndustrySelect } from "@/components/ui/industry-select-dropdown";
+import { FileUpload } from "@/components/ui/file-upload";
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,8 @@ import {
   AlertTriangle,
   MoveRight,
   Info,
+  DollarSign,
+  FileText,
 } from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
@@ -253,6 +256,8 @@ const AccountsManagement = ({
     timezone: "America/New_York",
     data_region: "United States",
     region: ["US"] as string[],
+    estimated_annual_ad_budget: null as number | null,
+    business_strategy_documents: [] as File[],
   });
 
   // Filter accounts based on user permissions
@@ -482,6 +487,10 @@ const AccountsManagement = ({
         timezone: createAccountFormData.timezone,
         dataRegion: createAccountFormData.data_region,
         region: createAccountFormData.region,
+        estimatedAnnualAdBudget:
+          createAccountFormData.estimated_annual_ad_budget,
+        businessStrategyDocuments:
+          createAccountFormData.business_strategy_documents,
       });
 
       console.log(
@@ -1723,6 +1732,85 @@ const AccountsManagement = ({
                   </div>
                 ))}
               </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="create-account-budget">
+                  <DollarSign className="inline h-4 w-4 mr-1" />
+                  Estimated Annual Ad Budget (USD)
+                </Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>
+                      This helps KEN-E provide better budget optimization
+                      recommendations and insights.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Input
+                id="create-account-budget"
+                type="number"
+                min="0"
+                step="1000"
+                value={createAccountFormData.estimated_annual_ad_budget || ""}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCreateAccountFormData({
+                    ...createAccountFormData,
+                    estimated_annual_ad_budget: value
+                      ? parseInt(value, 10)
+                      : null,
+                  });
+                }}
+                placeholder="e.g., 100000"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>
+                  <FileText className="inline h-4 w-4 mr-1" />
+                  Business Strategy Documents
+                </Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>
+                      Upload documents to help KEN-E understand your business
+                      context (optional). Examples: Business plan, marketing
+                      strategy, customer profiles, competitive analysis.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <FileUpload
+                files={createAccountFormData.business_strategy_documents}
+                onFilesChange={(files) =>
+                  setCreateAccountFormData({
+                    ...createAccountFormData,
+                    business_strategy_documents: files,
+                  })
+                }
+                accept={[
+                  ".pdf",
+                  ".xlsx",
+                  ".docx",
+                  ".pptx",
+                  ".txt",
+                  ".png",
+                  ".jpg",
+                  ".jpeg",
+                ]}
+                multiple={true}
+                maxSize={25 * 1024 * 1024} // 25MB
+                maxTotalSize={100 * 1024 * 1024} // 100MB
+                maxFiles={10}
+              />
             </div>
             <div className="flex gap-2 pt-4">
               <Button

@@ -96,6 +96,31 @@ export const marketingSettingsSchema = z.object({
   }),
 });
 
+// File validation helper
+const fileSchema = z
+  .instanceof(File)
+  .refine(
+    (file) => {
+      const allowedTypes = [
+        ".pdf",
+        ".xlsx",
+        ".docx",
+        ".pptx",
+        ".txt",
+        ".png",
+        ".jpg",
+        ".jpeg",
+      ];
+      const fileExt = "." + file.name.split(".").pop()?.toLowerCase();
+      return allowedTypes.includes(fileExt);
+    },
+    { message: "File type not supported" },
+  )
+  .refine(
+    (file) => file.size <= 25 * 1024 * 1024, // 25MB
+    { message: "File size must be less than 25MB" },
+  );
+
 // Validation schema for account creation
 export const accountCreationSchema = z.object({
   account_name: z
@@ -118,6 +143,25 @@ export const accountCreationSchema = z.object({
   website: z
     .union([z.string().url("Invalid website URL"), z.literal("")])
     .optional(),
+
+  estimated_annual_ad_budget: z
+    .number()
+    .min(0, "Budget must be non-negative")
+    .max(1000000000, "Budget must be less than $1,000,000,000")
+    .nullable()
+    .optional(),
+
+  business_strategy_documents: z
+    .array(fileSchema)
+    .max(10, "Maximum 10 files allowed")
+    .refine(
+      (files) => {
+        const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+        return totalSize <= 100 * 1024 * 1024; // 100MB
+      },
+      { message: "Total file size must be less than 100MB" },
+    )
+    .default([]),
 
   template_id: z.string().min(1, "Template selection is required"),
 

@@ -29,13 +29,13 @@ class FirestoreService:
         """Initialize Firestore service with credentials."""
         self._db: firestore.Client | None = None
         self._initialized = False
-    
+
     def get_client(self) -> firestore.Client:
         """Get the Firestore client instance.
-        
+
         Returns:
             firestore.Client: The Firestore client
-            
+
         Raises:
             RuntimeError: If Firestore is not initialized
         """
@@ -98,21 +98,32 @@ class FirestoreService:
                 credentials = None
 
                 # Check if credentials_path is a Secret Manager path
-                if (credentials_path.startswith("projects/") and
-                    "/secrets/" in credentials_path and
-                    "/versions/" in credentials_path):
-
-                    print(f"Loading service account credentials from Secret Manager: {credentials_path}")
+                if (
+                    credentials_path.startswith("projects/")
+                    and "/secrets/" in credentials_path
+                    and "/versions/" in credentials_path
+                ):
+                    print(
+                        f"Loading service account credentials from Secret Manager: {credentials_path}"
+                    )
                     try:
                         # Get service account JSON from Secret Manager
-                        service_account_info = get_env_var_or_secret_json("GOOGLE_APPLICATION_CREDENTIALS")
+                        service_account_info = get_env_var_or_secret_json(
+                            "GOOGLE_APPLICATION_CREDENTIALS"
+                        )
                         if service_account_info:
-                            credentials = service_account.Credentials.from_service_account_info(
-                                service_account_info
+                            credentials = (
+                                service_account.Credentials.from_service_account_info(
+                                    service_account_info
+                                )
                             )
-                            print("Successfully loaded service account credentials from Secret Manager")
+                            print(
+                                "Successfully loaded service account credentials from Secret Manager"
+                            )
                         else:
-                            raise ValueError("Failed to retrieve service account JSON from Secret Manager")
+                            raise ValueError(
+                                "Failed to retrieve service account JSON from Secret Manager"
+                            )
                     except Exception as e:
                         print(f"Failed to load credentials from Secret Manager: {e}")
                         raise
@@ -131,13 +142,13 @@ class FirestoreService:
                         )
 
                     print(f"Using Firestore credentials from file: {credentials_path}")
-                    credentials = service_account.Credentials.from_service_account_file(credentials_path)
+                    credentials = service_account.Credentials.from_service_account_file(
+                        credentials_path
+                    )
 
                 # Initialize Firestore client with explicit credentials
                 self._db = firestore.Client(
-                    project=project_id,
-                    database=database_id,
-                    credentials=credentials
+                    project=project_id, database=database_id, credentials=credentials
                 )
 
                 print(
@@ -215,9 +226,7 @@ class FirestoreService:
             doc_ref = collection_ref.add(data)[1]
             return doc_ref.id
 
-    def get_document(
-        self, collection: str, document_id: str
-    ) -> dict[str, Any] | None:
+    def get_document(self, collection: str, document_id: str) -> dict[str, Any] | None:
         """
         Get a document from Firestore.
 

@@ -23,7 +23,7 @@ vi.mock("@/hooks/use-toast", () => ({
 
 describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
   let queryClient: QueryClient;
-  
+
   const mockAuthContext = {
     selectedOrgAccount: {
       orgId: "org_123",
@@ -55,10 +55,11 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
   describe("Error Handling", () => {
     it("handles network timeout gracefully", async () => {
       // Simulate a timeout
-      vi.mocked(api.get).mockImplementation(() => 
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Network timeout")), 100)
-        )
+      vi.mocked(api.get).mockImplementation(
+        () =>
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Network timeout")), 100),
+          ),
       );
 
       render(
@@ -69,10 +70,13 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
         </AuthContext.Provider>,
       );
 
-      await waitFor(() => {
-        // Should show the component but with empty state
-        expect(screen.getByText("Company Keywords")).toBeInTheDocument();
-      }, { timeout: 200 });
+      await waitFor(
+        () => {
+          // Should show the component but with empty state
+          expect(screen.getByText("Company Keywords")).toBeInTheDocument();
+        },
+        { timeout: 200 },
+      );
     });
 
     it("handles 403 permission denied error", async () => {
@@ -101,7 +105,7 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockData);
-      
+
       const error = new Error("Internal Server Error");
       (error as any).response = { status: 500 };
       vi.mocked(api.put).mockRejectedValueOnce(error);
@@ -115,7 +119,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
 
       const input = screen.getByPlaceholderText("Add a keyword");
@@ -123,7 +129,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
 
       // The UI should remain functional after error
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
     });
 
@@ -140,7 +148,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
 
       await waitFor(() => {
         // Should handle gracefully and show empty state
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -164,7 +174,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
 
       const longKeyword = "a".repeat(150);
@@ -174,7 +186,7 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       // Should truncate or handle long keyword appropriately
       await waitFor(() => {
         const addedKeyword = screen.getByText((content, element) => {
-          return element?.tagName === 'SPAN' && content.length <= 100;
+          return element?.tagName === "SPAN" && content.length <= 100;
         });
         expect(addedKeyword).toBeInTheDocument();
       });
@@ -198,7 +210,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
 
       const specialKeyword = "test@#$%^&*()";
@@ -233,11 +247,13 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
 
       const input = screen.getByPlaceholderText("Add a keyword");
-      
+
       // Rapidly add multiple keywords
       await user.type(input, "keyword1{enter}");
       await user.type(input, "keyword2{enter}");
@@ -251,21 +267,21 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
 
     it("handles concurrent modifications", async () => {
       const mockData = {
-        data: { 
-          data: { 
-            company_keywords: ["initial1", "initial2"] 
-          } 
+        data: {
+          data: {
+            company_keywords: ["initial1", "initial2"],
+          },
         },
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockData);
-      
+
       // Simulate another user adding a keyword
       const updatedData = {
-        data: { 
-          data: { 
-            company_keywords: ["initial1", "initial2", "other-user-keyword"] 
-          } 
+        data: {
+          data: {
+            company_keywords: ["initial1", "initial2", "other-user-keyword"],
+          },
         },
       };
       vi.mocked(api.get).mockResolvedValueOnce(updatedData);
@@ -291,12 +307,15 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
     });
 
     it("handles maximum keyword limit (1000 keywords)", async () => {
-      const manyKeywords = Array.from({ length: 1000 }, (_, i) => `keyword_${i}`);
+      const manyKeywords = Array.from(
+        { length: 1000 },
+        (_, i) => `keyword_${i}`,
+      );
       const mockData = {
-        data: { 
-          data: { 
-            company_keywords: manyKeywords 
-          } 
+        data: {
+          data: {
+            company_keywords: manyKeywords,
+          },
         },
       };
 
@@ -332,7 +351,7 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       // Check for loading skeleton elements
-      const skeletons = container.querySelectorAll('.animate-pulse');
+      const skeletons = container.querySelectorAll(".animate-pulse");
       expect(skeletons.length).toBeGreaterThan(0);
     });
 
@@ -343,7 +362,7 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockData);
-      
+
       // Make put request hang
       vi.mocked(api.put).mockImplementation(() => new Promise(() => {}));
 
@@ -399,7 +418,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       await waitFor(() => {
         expect(screen.getByText("readonly")).toBeInTheDocument();
         // Input should still be visible for view-only users in this implementation
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -423,15 +444,17 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
 
       const input = screen.getByPlaceholderText("Add a keyword");
-      
+
       // Test various invalid formats
       await user.type(input, "   {enter}"); // Empty
       await user.type(input, "\n\t{enter}"); // Whitespace only
-      
+
       // Should not make API calls for invalid keywords
       expect(vi.mocked(api.put)).not.toHaveBeenCalled();
     });
@@ -454,7 +477,9 @@ describe("CompanyKeywordsConfiguration - Comprehensive Tests", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText("Add a keyword"),
+        ).toBeInTheDocument();
       });
 
       const input = screen.getByPlaceholderText("Add a keyword");

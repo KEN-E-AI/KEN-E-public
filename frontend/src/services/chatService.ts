@@ -69,7 +69,7 @@ class ChatService {
           console.error("Unauthorized chat request");
         }
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -78,7 +78,7 @@ class ChatService {
    */
   async sendMessage(
     messages: ChatMessage[],
-    sessionId?: string
+    sessionId?: string,
   ): Promise<ChatResponse> {
     try {
       const request: ChatRequest = {
@@ -89,17 +89,18 @@ class ChatService {
 
       const response = await this.apiClient.post<ChatResponse>(
         "/api/v1/chat/completions",
-        request
+        request,
       );
 
       return response.data;
     } catch (error) {
       console.error("Error sending chat message:", error);
-      
+
       // Return a fallback response
       return {
         role: "assistant",
-        content: "I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+        content:
+          "I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
         session_id: sessionId || this.generateSessionId(),
       };
     }
@@ -109,9 +110,9 @@ class ChatService {
    * Stream a chat response from the Agent Engine.
    * This returns an async generator that yields chunks of the response.
    */
-  async* streamMessage(
+  async *streamMessage(
     messages: ChatMessage[],
-    sessionId?: string
+    sessionId?: string,
   ): AsyncGenerator<string, void, unknown> {
     try {
       const request: ChatRequest = {
@@ -128,7 +129,7 @@ class ChatService {
           headers: {
             Accept: "text/plain",
           },
-        }
+        },
       );
 
       const reader = response.data.getReader();
@@ -200,7 +201,10 @@ class ChatService {
     }
 
     if (content.length > 4000) {
-      return { valid: false, reason: "Message is too long (max 4000 characters)" };
+      return {
+        valid: false,
+        reason: "Message is too long (max 4000 characters)",
+      };
     }
 
     return { valid: true };
@@ -209,11 +213,13 @@ class ChatService {
   /**
    * Create a new conversation/chat session.
    */
-  async createConversation(conversationName?: string): Promise<ConversationInfo> {
+  async createConversation(
+    conversationName?: string,
+  ): Promise<ConversationInfo> {
     try {
       const response = await this.apiClient.post<ConversationInfo>(
         "/api/v1/chat/conversations",
-        { conversation_name: conversationName }
+        { conversation_name: conversationName },
       );
       return response.data;
     } catch (error) {
@@ -228,7 +234,7 @@ class ChatService {
   async getConversations(): Promise<ConversationInfo[]> {
     try {
       const response = await this.apiClient.get<ConversationListResponse>(
-        "/api/v1/chat/conversations"
+        "/api/v1/chat/conversations",
       );
       // API returns {conversations: ConversationInfo[], total_count: number}
       const data = response.data;
@@ -247,13 +253,13 @@ class ChatService {
    * Update conversation metadata (like name).
    */
   async updateConversation(
-    sessionId: string, 
-    conversationName: string
+    sessionId: string,
+    conversationName: string,
   ): Promise<ConversationInfo> {
     try {
       const response = await this.apiClient.put<ConversationInfo>(
         `/api/v1/chat/conversations/${sessionId}`,
-        { conversation_name: conversationName }
+        { conversation_name: conversationName },
       );
       return response.data;
     } catch (error) {
@@ -268,7 +274,7 @@ class ChatService {
   async getConversationHistory(sessionId: string): Promise<any> {
     try {
       const response = await this.apiClient.get(
-        `/api/v1/chat/conversations/${sessionId}/history`
+        `/api/v1/chat/conversations/${sessionId}/history`,
       );
       return response.data;
     } catch (error) {

@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from ..auth import UserContext, get_current_user_context
@@ -21,6 +21,7 @@ from ..models.kene_models import (
     SuccessResponse,
 )
 from ..services.notification_service_v2 import NotificationService
+from ..services.storage_service import StorageService, get_storage_service
 from ..repositories import FirestoreNotificationRepository
 
 router = APIRouter(tags=["accounts"])
@@ -590,7 +591,8 @@ async def create_account(
             websites: $websites,
             timezone: $timezone,
             data_region: $data_region,
-            region: $region
+            region: $region,
+            estimated_annual_ad_budget: $estimated_annual_ad_budget
         })
         CREATE (acc)-[:BELONGS_TO]->(org)
         RETURN acc
@@ -606,6 +608,7 @@ async def create_account(
             "timezone": request.timezone,
             "data_region": request.data_region or "",
             "region": request.region or [],
+            "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
         }
 
         await db.execute_write_query(create_query, params)
@@ -617,6 +620,30 @@ async def create_account(
         cached_user_service.invalidate_user_context(user.user_id)
         logger.info(
             f"Invalidated cache for user {user.user_id} after creating account {account_id}"
+        )
+
+        # Ensure GCS bucket exists for business strategy documents
+        try:
+            storage_service = get_storage_service()
+            bucket_name, location = await storage_service.ensure_bucket_exists(
+                request.data_region or "US"
+            )
+            logger.info(
+                f"Ensured GCS bucket {bucket_name} exists in {location} "
+                f"for account {account_id} with data region {request.data_region or 'US'}"
+            )
+        except Exception as e:
+            # Log error but don't fail account creation if bucket creation fails
+            logger.error(
+                f"Failed to ensure GCS bucket for account {account_id} "
+                f"with data region {request.data_region or 'US'}: {e}"
+            )
+
+        # Note: Firestore collection strategy_docs_{account_id} will be created automatically
+        # when the first document is added to it. No need to pre-create an empty collection.
+        logger.info(
+            f"Account {account_id} created. Firestore collection 'strategy_docs_{account_id}' "
+            f"will be created automatically when documents are first added."
         )
 
         # Create initial activities for the new account
@@ -647,7 +674,9 @@ async def create_account(
         # Create notification for the new account
         try:
             # Create repository and service instances
-            notification_repository = FirestoreNotificationRepository(firestore.get_client())
+            notification_repository = FirestoreNotificationRepository(
+                firestore.get_client()
+            )
             notification_service = NotificationService(notification_repository)
             notification_id = await notification_service.create_notification(
                 account_id=account_id,
@@ -775,6 +804,12 @@ async def update_account(
             update_clauses.append("acc.region = $region")
             params["region"] = request.region
 
+        if request.estimated_annual_ad_budget is not None:
+            update_clauses.append(
+                "acc.estimated_annual_ad_budget = $estimated_annual_ad_budget"
+            )
+            params["estimated_annual_ad_budget"] = request.estimated_annual_ad_budget
+
         if not update_clauses:
             raise HTTPException(status_code=400, detail="No fields provided to update")
 
@@ -822,6 +857,8 @@ async def update_account(
 async def delete_account(
     account_id: str,
     db: Neo4jService = Depends(get_neo4j_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+    storage: StorageService = Depends(get_storage_service),
 ) -> SuccessResponse:
     """
     Delete an account and all related entities.
@@ -830,6 +867,8 @@ async def delete_account(
     - The account node itself
     - All entities with BELONGS_TO relationship to the account
     - All ActivityLog nodes with LOGGED relationship to deleted Activity nodes
+    - All business strategy documents from Google Cloud Storage
+    - The Firestore collection strategy_docs_{account_id}
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
@@ -848,12 +887,74 @@ async def delete_account(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
-        # Check if account exists
-        existing_acc = await _check_account_exists(db, account_id)
-        if not existing_acc:
+        # Check if account exists and get account data for cleanup
+        account_query = """
+        MATCH (acc:Account {account_id: $account_id})
+        RETURN acc.data_region as data_region
+        """
+        account_result = await db.execute_query(
+            account_query, {"account_id": account_id}
+        )
+
+        if not account_result:
             raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
 
-        # Delete everything in multiple simpler queries
+        data_region = account_result[0]["data_region"] or "US"
+
+        # Clean up external resources before deleting from Neo4j
+        cleanup_results = {
+            "gcs_documents_deleted": 0,
+            "firestore_collection_deleted": False,
+            "cleanup_errors": [],
+        }
+
+        # Delete GCS documents for this account
+        try:
+            deleted_documents = await storage.delete_account_documents(
+                account_id, data_region
+            )
+            cleanup_results["gcs_documents_deleted"] = 1 if deleted_documents else 0
+            logger.info(
+                f"Deleted GCS documents for account {account_id} in region {data_region}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to delete GCS documents for account {account_id}: {e}"
+            )
+            cleanup_results["cleanup_errors"].append(f"GCS cleanup failed: {e}")
+
+        # Delete Firestore collection strategy_docs_{account_id}
+        try:
+            collection_name = f"strategy_docs_{account_id}"
+            # Delete all documents in the collection
+            firestore_db = firestore.get_client()
+            collection_ref = firestore_db.collection(collection_name)
+
+            # Get all documents in the collection
+            docs = collection_ref.list_documents()
+            deleted_docs_count = 0
+
+            for doc in docs:
+                doc.delete()
+                deleted_docs_count += 1
+
+            if deleted_docs_count > 0:
+                cleanup_results["firestore_collection_deleted"] = True
+                logger.info(
+                    f"Deleted Firestore collection '{collection_name}' with {deleted_docs_count} documents"
+                )
+            else:
+                logger.info(
+                    f"Firestore collection '{collection_name}' was empty or did not exist"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to delete Firestore collection for account {account_id}: {e}"
+            )
+            cleanup_results["cleanup_errors"].append(f"Firestore cleanup failed: {e}")
+
+        # Delete Neo4j entities in multiple simpler queries
         total_nodes_deleted = 0
         total_relationships_deleted = 0
 
@@ -894,7 +995,9 @@ async def delete_account(
         logger.info(
             f"Deleted account {account_id} with cascade delete: "
             f"{total_nodes_deleted} nodes, "
-            f"{total_relationships_deleted} relationships"
+            f"{total_relationships_deleted} relationships, "
+            f"GCS documents: {cleanup_results['gcs_documents_deleted']}, "
+            f"Firestore collection: {cleanup_results['firestore_collection_deleted']}"
         )
 
         return SuccessResponse(
@@ -903,6 +1006,12 @@ async def delete_account(
                 "account_id": account_id,
                 "nodes_deleted": total_nodes_deleted,
                 "relationships_deleted": total_relationships_deleted,
+                "gcs_documents_deleted": cleanup_results["gcs_documents_deleted"],
+                "firestore_collection_deleted": cleanup_results[
+                    "firestore_collection_deleted"
+                ],
+                "cleanup_errors": cleanup_results["cleanup_errors"],
+                "data_region": data_region,
             },
         )
 
@@ -989,6 +1098,7 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         timezone=acc_data.get("timezone"),
         data_region=acc_data.get("data_region", ""),
         region=acc_data.get("region", []),
+        estimated_annual_ad_budget=acc_data.get("estimated_annual_ad_budget"),
     )
 
 
@@ -1413,4 +1523,215 @@ async def get_account_permissions(
         logger.error(f"Error getting account permissions: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error getting account permissions: {e!s}"
+        ) from e
+
+
+@router.post("/{account_id}/documents")
+async def upload_business_documents(
+    account_id: str,
+    files: list[UploadFile] = File(...),
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+    storage: StorageService = Depends(get_storage_service),
+) -> dict[str, Any]:
+    """
+    Upload business strategy documents for an account.
+
+    Supported file types: .pdf, .xlsx, .docx, .pptx, .txt, .png, .jpg
+    Maximum file size: 25MB per file, 100MB total per account
+    Maximum files: 10 per account
+
+    **Parameters:**
+    - `account_id` (path): Account ID
+    - `files` (form data): List of files to upload
+
+    **Returns:**
+    - Upload results with file information
+    """
+    try:
+        # Check database connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Check if account exists and user has access, get account data_region
+        account_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+        RETURN org.organization_id as organization_id, acc.data_region as data_region
+        """
+        account_result = await db.execute_query(
+            account_query, {"account_id": account_id}
+        )
+
+        if not account_result:
+            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+
+        organization_id = account_result[0]["organization_id"]
+        data_region = account_result[0]["data_region"] or "US"
+
+        # Check user access
+        if not user.is_super_admin:
+            if not user.has_organization_access(organization_id):
+                raise HTTPException(status_code=403, detail="Access denied to account")
+
+            # Check account-specific access for view-role users
+            if user.organization_permissions.get(organization_id) == "view":
+                if account_id not in user.account_permissions:
+                    raise HTTPException(
+                        status_code=403, detail="Access denied to account"
+                    )
+
+        # Validate files
+        ALLOWED_EXTENSIONS = {
+            ".pdf",
+            ".xlsx",
+            ".docx",
+            ".pptx",
+            ".txt",
+            ".png",
+            ".jpg",
+            ".jpeg",
+        }
+        MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
+        MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100MB
+        MAX_FILES = 10
+
+        if len(files) > MAX_FILES:
+            raise HTTPException(
+                status_code=400, detail=f"Maximum {MAX_FILES} files allowed"
+            )
+
+        total_size = 0
+        for file in files:
+            # Check file extension
+            if file.filename:
+                file_ext = "." + file.filename.split(".")[-1].lower()
+                if file_ext not in ALLOWED_EXTENSIONS:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File type {file_ext} not allowed. Supported types: {', '.join(ALLOWED_EXTENSIONS)}",
+                    )
+
+            # Check file size (read a bit to get size)
+            content = await file.read()
+            file_size = len(content)
+            total_size += file_size
+
+            if file_size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {file.filename} exceeds maximum size of 25MB",
+                )
+
+            # Reset file pointer
+            await file.seek(0)
+
+        if total_size > MAX_TOTAL_SIZE:
+            raise HTTPException(
+                status_code=400, detail="Total file size exceeds 100MB limit"
+            )
+
+        # Upload files to GCS
+        uploaded_files = await storage.upload_business_documents(
+            account_id, data_region, files
+        )
+
+        # Store file metadata in Firestore for search/indexing
+        try:
+            successful_uploads = [f for f in uploaded_files if "error" not in f]
+            if successful_uploads:
+                firestore = get_firestore_service()
+                doc_data = {
+                    "account_id": account_id,
+                    "files": successful_uploads,
+                    "uploaded_by": user.user_id,
+                    "uploaded_at": datetime.now().isoformat(),
+                    "organization_id": organization_id,
+                }
+                firestore.set_document(
+                    f"account_documents", account_id, doc_data, merge=True
+                )
+        except Exception as e:
+            logger.warning(f"Failed to store document metadata in Firestore: {e}")
+
+        return {
+            "success": True,
+            "message": f"Uploaded {len([f for f in uploaded_files if 'error' not in f])} files successfully",
+            "account_id": account_id,
+            "files": uploaded_files,
+            "total_files": len(files),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error uploading documents for account {account_id}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error uploading documents: {e!s}"
+        ) from e
+
+
+@router.get("/{account_id}/documents")
+async def list_business_documents(
+    account_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+    storage: StorageService = Depends(get_storage_service),
+) -> dict[str, Any]:
+    """
+    List business strategy documents for an account.
+
+    **Parameters:**
+    - `account_id` (path): Account ID
+
+    **Returns:**
+    - List of uploaded documents
+    """
+    try:
+        # Check access and get account data_region
+        account_query = """
+        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+        RETURN org.organization_id as organization_id, acc.data_region as data_region
+        """
+        account_result = await db.execute_query(
+            account_query, {"account_id": account_id}
+        )
+
+        if not account_result:
+            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
+
+        organization_id = account_result[0]["organization_id"]
+        data_region = account_result[0]["data_region"] or "US"
+
+        # Check user access
+        if not user.is_super_admin:
+            if not user.has_organization_access(organization_id):
+                raise HTTPException(status_code=403, detail="Access denied to account")
+
+            if user.organization_permissions.get(organization_id) == "view":
+                if account_id not in user.account_permissions:
+                    raise HTTPException(
+                        status_code=403, detail="Access denied to account"
+                    )
+
+        # List documents from GCS
+        documents = await storage.list_account_documents(account_id, data_region)
+
+        return {
+            "success": True,
+            "account_id": account_id,
+            "documents": documents,
+            "total_documents": len(documents),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error listing documents for account {account_id}: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error listing documents: {e!s}"
         ) from e

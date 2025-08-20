@@ -14,20 +14,22 @@ class CompetitorEntry(BaseModel):
 
     name: str = Field(..., description="Competitor name")
     website: str | None = Field(None, description="Competitor website URL")
-    keywords: list[str] = Field(..., description="Keywords for monitoring this competitor")
-    
+    keywords: list[str] = Field(
+        ..., description="Keywords for monitoring this competitor"
+    )
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
         """Validate competitor name."""
         return CompetitorValidators.validate_competitor_name(v)
-    
+
     @field_validator("website")
     @classmethod
     def validate_website(cls, v: str | None) -> str | None:
         """Validate competitor website."""
         return CompetitorValidators.validate_website(v)
-    
+
     @field_validator("keywords")
     @classmethod
     def validate_keywords(cls, v: list[str]) -> list[str]:
@@ -62,7 +64,9 @@ class IndustryKeywords(BaseModel):
     """Industry keyword mapping for super admin management."""
 
     industry: str = Field(..., description="Industry name")
-    keywords: list[str] = Field(..., description="Keywords associated with this industry")
+    keywords: list[str] = Field(
+        ..., description="Keywords associated with this industry"
+    )
     updated_by: str = Field(..., description="User ID who last updated these keywords")
     updated_at: str = Field(..., description="ISO timestamp of last update")
 
@@ -73,7 +77,9 @@ class MonitoringResult(BaseModel):
     article_id: str = Field(..., description="Unique identifier (hash) for the article")
     url: str = Field(..., description="URL of the discovered article")
     title: str = Field(..., description="Title of the article")
-    discovered_date: str = Field(..., description="Date when article was discovered (YYYY-MM-DD)")
+    discovered_date: str = Field(
+        ..., description="Date when article was discovered (YYYY-MM-DD)"
+    )
     matched_topics: list[str] = Field(
         ..., description="Topics/keywords that matched this article"
     )
@@ -88,10 +94,8 @@ class MonitoringResult(BaseModel):
 class UpdateCompanyKeywordsRequest(BaseRequest):
     """Request to update company keywords."""
 
-    company_keywords: list[str] = Field(
-        ..., description="New list of company keywords"
-    )
-    
+    company_keywords: list[str] = Field(..., description="New list of company keywords")
+
     @field_validator("company_keywords")
     @classmethod
     def validate_keywords(cls, v: list[str]) -> list[str]:
@@ -105,7 +109,7 @@ class UpdateCustomerKeywordsRequest(BaseRequest):
     customer_keywords: list[str] = Field(
         ..., description="New list of customer keywords"
     )
-    
+
     @field_validator("customer_keywords")
     @classmethod
     def validate_keywords(cls, v: list[str]) -> list[str]:
@@ -121,19 +125,19 @@ class AddCompetitorRequest(BaseRequest):
     keywords: list[str] = Field(
         default_factory=list, description="Keywords for monitoring this competitor"
     )
-    
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
         """Validate competitor name."""
         return CompetitorValidators.validate_competitor_name(v)
-    
+
     @field_validator("website")
     @classmethod
     def validate_website(cls, v: str | None) -> str | None:
         """Validate competitor website."""
         return CompetitorValidators.validate_website(v)
-    
+
     @field_validator("keywords")
     @classmethod
     def validate_keywords(cls, v: list[str]) -> list[str]:
@@ -160,7 +164,7 @@ class UpdateIndustryKeywordsRequest(BaseModel):
     keywords: list[str] = Field(
         ..., description="New list of keywords for the industry"
     )
-    
+
     @field_validator("keywords")
     @classmethod
     def validate_keywords(cls, v: list[str]) -> list[str]:
@@ -188,15 +192,17 @@ class IndustryKeywordsListResponse(BaseModel):
 
 class PaginatedKeywordsRequest(BaseModel):
     """Request model for paginated keywords."""
-    
+
     page: int = Field(default=1, ge=1, description="Page number")
     page_size: int = Field(default=50, ge=1, le=200, description="Items per page")
-    search: str | None = Field(default=None, description="Search term to filter keywords")
+    search: str | None = Field(
+        default=None, description="Search term to filter keywords"
+    )
 
 
 class PaginatedKeywordsResponse(BaseModel):
     """Response model for paginated keywords."""
-    
+
     keywords: list[str]
     total: int
     page: int

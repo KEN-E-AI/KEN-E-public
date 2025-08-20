@@ -57,7 +57,9 @@ class EmailService:
             return False
 
         try:
-            invitation_url = f"{self.app_base_url}/auth/signin?invitation={invitation_token}"
+            invitation_url = (
+                f"{self.app_base_url}/auth/signin?invitation={invitation_token}"
+            )
 
             # Create the email content using template
             subject = f"You've been invited to join {organization_name} on KEN-E"

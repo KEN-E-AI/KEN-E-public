@@ -30,7 +30,9 @@ def _is_cache_valid() -> bool:
         return False
     if _cache_timestamp is None:
         return False
-    return datetime.now(timezone.utc) - _cache_timestamp < timedelta(seconds=CACHE_TTL_SECONDS)
+    return datetime.now(timezone.utc) - _cache_timestamp < timedelta(
+        seconds=CACHE_TTL_SECONDS
+    )
 
 
 def _invalidate_cache() -> None:
@@ -97,7 +99,9 @@ async def list_subscription_plans(
             total=len(plans),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing plans: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error listing plans: {e!s}"
+        ) from e
 
 
 @router.get("/subscription-plans/default", response_model=SubscriptionPlanDefinition)
@@ -115,7 +119,8 @@ async def get_default_subscription_plan(
         if cached_plans is not None:
             # Find default plan in cache
             default_plans = [
-                p for p in cached_plans
+                p
+                for p in cached_plans
                 if p.get("is_default", False) and p.get("is_active", True)
             ]
             if default_plans:
@@ -144,7 +149,9 @@ async def get_default_subscription_plan(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting default plan: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error getting default plan: {e!s}"
+        ) from e
 
 
 @router.get("/subscription-plans/{plan_id}", response_model=SubscriptionPlanDefinition)
@@ -163,7 +170,10 @@ async def get_subscription_plan(
         if cached_plans is not None:
             # Find plan in cache
             for plan_dict in cached_plans:
-                if plan_dict.get("plan_id") == plan_id or plan_dict.get("id") == plan_id:
+                if (
+                    plan_dict.get("plan_id") == plan_id
+                    or plan_dict.get("id") == plan_id
+                ):
                     if "id" in plan_dict and "plan_id" not in plan_dict:
                         plan_dict["plan_id"] = plan_dict["id"]
                     return SubscriptionPlanDefinition(**plan_dict)
@@ -218,7 +228,10 @@ async def create_subscription_plan(
                 firestore_service.update_document(
                     collection=SUBSCRIPTION_PLANS_COLLECTION,
                     document_id=default_plan["id"],
-                    data={"is_default": False, "updated_at": datetime.now(timezone.utc).isoformat()},
+                    data={
+                        "is_default": False,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
 
         # Create the plan
@@ -239,7 +252,9 @@ async def create_subscription_plan(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating plan: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error creating plan: {e!s}"
+        ) from e
 
 
 @router.put("/subscription-plans/{plan_id}", response_model=SubscriptionPlanDefinition)
@@ -264,7 +279,9 @@ async def update_subscription_plan(
             raise HTTPException(status_code=404, detail="Plan not found")
 
         # If setting as default, unset other default plans
-        if plan_update.get("is_default", False) and not existing_plan.get("is_default", False):
+        if plan_update.get("is_default", False) and not existing_plan.get(
+            "is_default", False
+        ):
             default_plans = firestore_service.list_documents(
                 collection=SUBSCRIPTION_PLANS_COLLECTION,
                 where_filters=[("is_default", "==", True)],
@@ -274,7 +291,10 @@ async def update_subscription_plan(
                 firestore_service.update_document(
                     collection=SUBSCRIPTION_PLANS_COLLECTION,
                     document_id=default_plan["id"],
-                    data={"is_default": False, "updated_at": datetime.now(timezone.utc).isoformat()},
+                    data={
+                        "is_default": False,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
 
         # Update the plan
@@ -302,4 +322,6 @@ async def update_subscription_plan(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating plan: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Error updating plan: {e!s}"
+        ) from e

@@ -26,6 +26,8 @@ export interface AccountCreationData {
   industry: string;
   location: string;
   website: string;
+  estimated_annual_ad_budget: number | null;
+  business_strategy_documents: File[];
 
   // Step 2: Template Selection
   template_id: string;
@@ -67,6 +69,8 @@ export const AccountCreationWizard = ({
     industry: "",
     location: "",
     website: "",
+    estimated_annual_ad_budget: null,
+    business_strategy_documents: [],
     template_id: "",
     objectives: [],
     channels: [],

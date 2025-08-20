@@ -153,9 +153,54 @@ export async function createAccount(accountData: {
   timezone: string;
   data_region?: string;
   region?: string[];
+  estimated_annual_ad_budget?: number | null;
+  business_strategy_documents?: File[];
 }): Promise<Account> {
   console.log("[organizationApi] Creating account with data:", accountData);
 
+  // If there are files to upload, we need to handle it separately
+  if (
+    accountData.business_strategy_documents &&
+    accountData.business_strategy_documents.length > 0
+  ) {
+    // First create the account without files
+    const { business_strategy_documents, ...accountDataWithoutFiles } =
+      accountData;
+    const newAccount = await apiCall<Account>("/api/v1/accounts/", {
+      method: "POST",
+      data: accountDataWithoutFiles,
+    });
+
+    // Then upload the files
+    try {
+      const formData = new FormData();
+      business_strategy_documents.forEach((file, index) => {
+        formData.append("files", file);
+      });
+
+      await api.post(
+        `/api/v1/accounts/${newAccount.account_id}/documents`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+
+      console.log(
+        "[organizationApi] Files uploaded successfully for account:",
+        newAccount.account_id,
+      );
+    } catch (uploadError) {
+      console.error("[organizationApi] Failed to upload files:", uploadError);
+      // Account was created but file upload failed - this is logged but doesn't fail the creation
+    }
+
+    return newAccount;
+  }
+
+  // No files to upload, simple account creation
   return apiCall<Account>("/api/v1/accounts/", {
     method: "POST",
     data: accountData,

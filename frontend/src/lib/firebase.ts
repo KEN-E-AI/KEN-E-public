@@ -10,13 +10,12 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
 // Add additional scopes if needed
-googleProvider.addScope('profile');
-googleProvider.addScope('email');
+googleProvider.addScope("profile");
+googleProvider.addScope("email");
 
 export { auth, googleProvider };

@@ -18,10 +18,10 @@ class NotificationRepository(ABC):
     @abstractmethod
     async def create(self, notification: Notification) -> str:
         """Create a new notification.
-        
+
         Args:
             notification: The notification to create
-            
+
         Returns:
             The created notification ID
         """
@@ -30,10 +30,10 @@ class NotificationRepository(ABC):
     @abstractmethod
     async def get_by_id(self, notification_id: str) -> Notification | None:
         """Get a notification by ID.
-        
+
         Args:
             notification_id: The notification ID
-            
+
         Returns:
             The notification or None if not found
         """
@@ -48,13 +48,13 @@ class NotificationRepository(ABC):
         offset: int = 0,
     ) -> list[Notification]:
         """Get notifications for specified accounts.
-        
+
         Args:
             account_ids: List of account IDs
             include_archived: Whether to include archived notifications
             limit: Maximum number of notifications to return
             offset: Number of notifications to skip
-            
+
         Returns:
             List of notifications
         """
@@ -67,11 +67,11 @@ class NotificationRepository(ABC):
         notification_ids: list[str],
     ) -> dict[str, dict[str, Any]]:
         """Get user's statuses for specific notifications.
-        
+
         Args:
             user_id: The user ID
             notification_ids: List of notification IDs
-            
+
         Returns:
             Dict mapping notification_id to status data
         """
@@ -85,7 +85,7 @@ class NotificationRepository(ABC):
         status: NotificationStatus,
     ) -> None:
         """Update a user's notification status.
-        
+
         Args:
             user_id: The user ID
             notification_id: The notification ID
@@ -94,12 +94,14 @@ class NotificationRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_user_preferences(self, user_id: str) -> UserNotificationPreferences | None:
+    async def get_user_preferences(
+        self, user_id: str
+    ) -> UserNotificationPreferences | None:
         """Get user's notification preferences.
-        
+
         Args:
             user_id: The user ID
-            
+
         Returns:
             User preferences or None if not set
         """
@@ -112,7 +114,7 @@ class NotificationRepository(ABC):
         preferences: UserNotificationPreferences,
     ) -> None:
         """Set user's notification preferences.
-        
+
         Args:
             user_id: The user ID
             preferences: The preferences to set
@@ -122,23 +124,25 @@ class NotificationRepository(ABC):
     @abstractmethod
     async def count_unread(self, user_id: str, account_ids: list[str]) -> int:
         """Count unread notifications for a user.
-        
+
         Args:
             user_id: The user ID
             account_ids: List of accessible account IDs
-            
+
         Returns:
             Count of unread notifications
         """
         pass
 
     @abstractmethod
-    async def get_users_by_account(self, account_id: str) -> list[tuple[str, dict[str, Any]]]:
+    async def get_users_by_account(
+        self, account_id: str
+    ) -> list[tuple[str, dict[str, Any]]]:
         """Get all users with access to an account.
-        
+
         Args:
             account_id: The account ID
-            
+
         Returns:
             List of tuples (user_id, user_data)
         """
@@ -150,7 +154,7 @@ class NotificationRepository(ABC):
         statuses: list[dict[str, Any]],
     ) -> None:
         """Create multiple user notification statuses in batch.
-        
+
         Args:
             statuses: List of status records to create
         """
@@ -159,10 +163,10 @@ class NotificationRepository(ABC):
     @abstractmethod
     async def archive_old_notifications(self, days: int = 30) -> int:
         """Archive notifications older than specified days.
-        
+
         Args:
             days: Number of days after which to archive
-            
+
         Returns:
             Number of notifications archived
         """
@@ -174,7 +178,9 @@ class InMemoryNotificationRepository(NotificationRepository):
 
     def __init__(self):
         self.notifications: dict[str, Notification] = {}
-        self.user_statuses: dict[str, dict[str, dict[str, Any]]] = {}  # user_id -> notification_id -> status
+        self.user_statuses: dict[
+            str, dict[str, dict[str, Any]]
+        ] = {}  # user_id -> notification_id -> status
         self.user_preferences: dict[str, UserNotificationPreferences] = {}
         self.user_accounts: dict[str, list[str]] = {}  # user_id -> account_ids
 
@@ -193,23 +199,22 @@ class InMemoryNotificationRepository(NotificationRepository):
         offset: int = 0,
     ) -> list[Notification]:
         notifications = [
-            n for n in self.notifications.values()
-            if n.account_id in account_ids
+            n for n in self.notifications.values() if n.account_id in account_ids
         ]
-        
+
         if not include_archived:
             now = datetime.now().isoformat()
             notifications = [n for n in notifications if n.archived_at > now]
-        
+
         # Sort by created_at descending
         notifications.sort(key=lambda x: x.created_at, reverse=True)
-        
+
         # Apply pagination
         if offset:
             notifications = notifications[offset:]
         if limit:
             notifications = notifications[:limit]
-        
+
         return notifications
 
     async def get_user_statuses(
@@ -231,20 +236,22 @@ class InMemoryNotificationRepository(NotificationRepository):
     ) -> None:
         if user_id not in self.user_statuses:
             self.user_statuses[user_id] = {}
-        
+
         status_data = {
             "status": status.value,
             "updated_at": datetime.now().isoformat(),
         }
-        
+
         if status == NotificationStatus.READ:
             status_data["read_at"] = datetime.now().isoformat()
         elif status == NotificationStatus.ARCHIVED:
             status_data["archived_at"] = datetime.now().isoformat()
-        
+
         self.user_statuses[user_id][notification_id] = status_data
 
-    async def get_user_preferences(self, user_id: str) -> UserNotificationPreferences | None:
+    async def get_user_preferences(
+        self, user_id: str
+    ) -> UserNotificationPreferences | None:
         return self.user_preferences.get(user_id)
 
     async def set_user_preferences(
@@ -257,20 +264,24 @@ class InMemoryNotificationRepository(NotificationRepository):
     async def count_unread(self, user_id: str, account_ids: list[str]) -> int:
         notifications = await self.get_by_account(account_ids, include_archived=False)
         user_statuses = self.user_statuses.get(user_id, {})
-        
+
         count = 0
         for notification in notifications:
             status_data = user_statuses.get(notification.id, {"status": "unread"})
             if status_data.get("status") == "unread":
                 count += 1
-        
+
         return count
 
-    async def get_users_by_account(self, account_id: str) -> list[tuple[str, dict[str, Any]]]:
+    async def get_users_by_account(
+        self, account_id: str
+    ) -> list[tuple[str, dict[str, Any]]]:
         users = []
         for user_id, accounts in self.user_accounts.items():
             if account_id in accounts:
-                users.append((user_id, {"permissions": {"accounts": {account_id: "user"}}}))
+                users.append(
+                    (user_id, {"permissions": {"accounts": {account_id: "user"}}})
+                )
         return users
 
     async def batch_create_user_statuses(
@@ -280,10 +291,10 @@ class InMemoryNotificationRepository(NotificationRepository):
         for status in statuses:
             user_id = status["user_id"]
             notification_id = status["notification_id"]
-            
+
             if user_id not in self.user_statuses:
                 self.user_statuses[user_id] = {}
-            
+
             self.user_statuses[user_id][notification_id] = {
                 "status": status["status"],
                 "updated_at": status["updated_at"],
@@ -292,7 +303,7 @@ class InMemoryNotificationRepository(NotificationRepository):
     async def archive_old_notifications(self, days: int = 30) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         archived_count = 0
-        
+
         for user_id, user_statuses in self.user_statuses.items():
             for notification_id, status_data in user_statuses.items():
                 notification = self.notifications.get(notification_id)
@@ -301,5 +312,5 @@ class InMemoryNotificationRepository(NotificationRepository):
                         status_data["status"] = NotificationStatus.ARCHIVED.value
                         status_data["archived_at"] = datetime.now().isoformat()
                         archived_count += 1
-        
+
         return archived_count

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class SecurityEventType(str, Enum):
     """Types of security events to audit."""
-    
+
     LOGIN_SUCCESS = "login_success"
     LOGIN_FAILURE = "login_failure"
     TOKEN_VERIFICATION_FAILURE = "token_verification_failure"
@@ -29,27 +29,27 @@ class SecurityEventType(str, Enum):
 
 class AuditLogger:
     """Service for logging security events."""
-    
+
     def __init__(self):
         """Initialize the audit logger."""
         self.collection_name = "security_audit_logs"
         self._structured_logger = self._setup_structured_logging()
-    
+
     def _setup_structured_logging(self) -> logging.Logger:
         """Set up structured logging for Google Cloud Logging."""
         audit_logger = logging.getLogger("security_audit")
         audit_logger.setLevel(logging.INFO)
-        
+
         # Remove default handlers to avoid duplicate logs
         audit_logger.handlers = []
-        
+
         # Add structured logging handler
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter('%(message)s'))
+        handler.setFormatter(logging.Formatter("%(message)s"))
         audit_logger.addHandler(handler)
-        
+
         return audit_logger
-    
+
     async def log_event(
         self,
         event_type: SecurityEventType,
@@ -61,7 +61,7 @@ class AuditLogger:
         severity: str = "INFO",
     ) -> None:
         """Log a security event.
-        
+
         Args:
             event_type: Type of security event
             user_id: User ID if available
@@ -81,36 +81,38 @@ class AuditLogger:
             "details": details or {},
             "severity": severity,
         }
-        
+
         # Log to structured logging for Cloud Logging
         self._structured_logger.log(
             getattr(logging, severity),
-            json.dumps({
-                "security_event": event_data,
-                "labels": {
-                    "event_type": event_type.value,
-                    "severity": severity,
+            json.dumps(
+                {
+                    "security_event": event_data,
+                    "labels": {
+                        "event_type": event_type.value,
+                        "severity": severity,
+                    },
                 }
-            })
+            ),
         )
-        
+
         # Also store in Firestore for longer retention and queries
         try:
             firestore_service = get_firestore_service()
             db = firestore_service.get_client()
-            
+
             # Add server timestamp
             event_data["server_timestamp"] = firestore.SERVER_TIMESTAMP
-            
+
             # Store in Firestore
             await self._store_in_firestore(db, event_data)
-            
+
         except Exception as e:
             logger.error(f"Failed to store audit log in Firestore: {e}")
-    
+
     async def _store_in_firestore(self, db: firestore.Client, event_data: dict) -> None:
         """Store audit log in Firestore.
-        
+
         Args:
             db: Firestore client
             event_data: Event data to store
@@ -118,7 +120,7 @@ class AuditLogger:
         # Create a document with auto-generated ID
         doc_ref = db.collection(self.collection_name).document()
         doc_ref.set(event_data)
-    
+
     async def log_login_success(
         self,
         user_id: str,
@@ -135,7 +137,7 @@ class AuditLogger:
             user_agent=user_agent,
             severity="INFO",
         )
-    
+
     async def log_login_failure(
         self,
         email: Optional[str] = None,
@@ -152,7 +154,7 @@ class AuditLogger:
             details={"reason": reason},
             severity="WARNING",
         )
-    
+
     async def log_access_denied(
         self,
         user_id: str,
@@ -173,7 +175,7 @@ class AuditLogger:
             },
             severity="WARNING",
         )
-    
+
     async def log_rate_limit_exceeded(
         self,
         ip_address: str,
@@ -188,7 +190,7 @@ class AuditLogger:
             details={"endpoint": endpoint},
             severity="WARNING",
         )
-    
+
     async def log_token_revoked(
         self,
         user_id: str,

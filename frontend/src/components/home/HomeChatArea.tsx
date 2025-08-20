@@ -11,7 +11,11 @@ import {
   AudioWaveform,
   Wrench,
 } from "lucide-react";
-import { chatService, type ChatMessage, type ConversationInfo } from "@/services/chatService";
+import {
+  chatService,
+  type ChatMessage,
+  type ConversationInfo,
+} from "@/services/chatService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -93,7 +97,8 @@ const HomeChatArea = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationInfo[]>([]);
-  const [currentConversation, setCurrentConversation] = useState<ConversationInfo | null>(null);
+  const [currentConversation, setCurrentConversation] =
+    useState<ConversationInfo | null>(null);
 
   // Load conversations on component mount
   useEffect(() => {
@@ -101,10 +106,16 @@ const HomeChatArea = () => {
       try {
         const userConversations = await chatService.getConversations();
         // Ensure we always set an array, even if API returns unexpected data
-        setConversations(Array.isArray(userConversations) ? userConversations : []);
-        
+        setConversations(
+          Array.isArray(userConversations) ? userConversations : [],
+        );
+
         // If no current session, create a new one or use the most recent
-        if (!sessionId && Array.isArray(userConversations) && userConversations.length > 0) {
+        if (
+          !sessionId &&
+          Array.isArray(userConversations) &&
+          userConversations.length > 0
+        ) {
           const mostRecent = userConversations[0]; // API returns sorted by last_updated
           setCurrentConversation(mostRecent);
           setSessionId(mostRecent.session_id);
@@ -115,7 +126,7 @@ const HomeChatArea = () => {
         setConversations([]);
       }
     };
-    
+
     loadConversations();
   }, [sessionId]);
 
@@ -124,22 +135,24 @@ const HomeChatArea = () => {
     try {
       setIsLoading(true);
       const newConversation = await chatService.createConversation("New Chat");
-      
+
       // Update conversations list
-      setConversations(prev => [newConversation, ...prev]);
-      
+      setConversations((prev) => [newConversation, ...prev]);
+
       // Switch to the new conversation
       setCurrentConversation(newConversation);
       setSessionId(newConversation.session_id);
-      
+
       // Clear current messages to start fresh
-      setMessages([{
-        id: "1",
-        content: "Hello! I'm KEN-E, your marketing intelligence assistant. How can I help you today?",
-        isUser: false,
-        timestamp: new Date().toLocaleString(),
-      }]);
-      
+      setMessages([
+        {
+          id: "1",
+          content:
+            "Hello! I'm KEN-E, your marketing intelligence assistant. How can I help you today?",
+          isUser: false,
+          timestamp: new Date().toLocaleString(),
+        },
+      ]);
     } catch (error) {
       console.error("Failed to create new chat:", error);
     } finally {
@@ -148,63 +161,82 @@ const HomeChatArea = () => {
   }, []);
 
   // Switch to an existing conversation
-  const switchToConversation = useCallback(async (conversation: ConversationInfo) => {
-    try {
-      setIsLoading(true);
-      setCurrentConversation(conversation);
-      setSessionId(conversation.session_id);
-      
-      // Load actual conversation history from ADK session service
-      const history = await chatService.getConversationHistory(conversation.session_id);
-      
-      if (history && (history.messages || history.events)) {
-        // Convert ADK session data to our Message format
-        const events = history.events || history.messages || [];
-        const loadedMessages: Message[] = events.map((event: any, index: number) => {
-          // Handle ADK event format: event.content.parts[].text
-          let content = 'Empty message';
-          let role = 'assistant';
-          
-          if (event.content && event.content.parts && event.content.parts.length > 0) {
-            // Extract text from first part
-            content = event.content.parts[0].text || event.content.parts[0].content || 'Empty message';
-            role = event.content.role || event.role || 'assistant';
-          } else if (event.content) {
-            // Simple content format
-            content = event.content.text || event.content || 'Empty message';
-            role = event.role || 'assistant';
-          }
-          
-          return {
-            id: `${index}`,
-            content: content,
-            isUser: role === 'user',
-            timestamp: event.timestamp || '',
-          };
-        });
-        setMessages(loadedMessages);
-      } else {
-        // Fallback if no history available
-        setMessages([{
-          id: "1",
-          content: `Resumed conversation: ${conversation.conversation_name || 'Untitled Chat'}`,
-          isUser: false,
-          timestamp: new Date().toLocaleString(),
-        }]);
+  const switchToConversation = useCallback(
+    async (conversation: ConversationInfo) => {
+      try {
+        setIsLoading(true);
+        setCurrentConversation(conversation);
+        setSessionId(conversation.session_id);
+
+        // Load actual conversation history from ADK session service
+        const history = await chatService.getConversationHistory(
+          conversation.session_id,
+        );
+
+        if (history && (history.messages || history.events)) {
+          // Convert ADK session data to our Message format
+          const events = history.events || history.messages || [];
+          const loadedMessages: Message[] = events.map(
+            (event: any, index: number) => {
+              // Handle ADK event format: event.content.parts[].text
+              let content = "Empty message";
+              let role = "assistant";
+
+              if (
+                event.content &&
+                event.content.parts &&
+                event.content.parts.length > 0
+              ) {
+                // Extract text from first part
+                content =
+                  event.content.parts[0].text ||
+                  event.content.parts[0].content ||
+                  "Empty message";
+                role = event.content.role || event.role || "assistant";
+              } else if (event.content) {
+                // Simple content format
+                content =
+                  event.content.text || event.content || "Empty message";
+                role = event.role || "assistant";
+              }
+
+              return {
+                id: `${index}`,
+                content: content,
+                isUser: role === "user",
+                timestamp: event.timestamp || "",
+              };
+            },
+          );
+          setMessages(loadedMessages);
+        } else {
+          // Fallback if no history available
+          setMessages([
+            {
+              id: "1",
+              content: `Resumed conversation: ${conversation.conversation_name || "Untitled Chat"}`,
+              isUser: false,
+              timestamp: new Date().toLocaleString(),
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error("Failed to load conversation history:", error);
+        // Fallback on error
+        setMessages([
+          {
+            id: "1",
+            content: `Error loading conversation history. Starting fresh chat.`,
+            isUser: false,
+            timestamp: new Date().toLocaleString(),
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to load conversation history:", error);
-      // Fallback on error
-      setMessages([{
-        id: "1",
-        content: `Error loading conversation history. Starting fresh chat.`,
-        isUser: false,
-        timestamp: new Date().toLocaleString(),
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const sendMessage = useCallback(async () => {
     if (!newMessage.trim() || isLoading) return;
@@ -223,17 +255,19 @@ const HomeChatArea = () => {
       timestamp: "",
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setNewMessage("");
     setIsLoading(true);
 
     try {
       // Convert messages to ChatMessage format
-      const chatMessages: ChatMessage[] = [...messages, userMessage].map(msg => ({
-        role: msg.isUser ? "user" : "assistant",
-        content: msg.content,
-        timestamp: msg.timestamp,
-      }));
+      const chatMessages: ChatMessage[] = [...messages, userMessage].map(
+        (msg) => ({
+          role: msg.isUser ? "user" : "assistant",
+          content: msg.content,
+          timestamp: msg.timestamp,
+        }),
+      );
 
       // Get response from Agent Engine
       const response = await chatService.sendMessage(chatMessages, sessionId);
@@ -245,18 +279,19 @@ const HomeChatArea = () => {
         timestamp: "",
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error sending message:", error);
-      
+
       // Add error message
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: "I'm sorry, I'm having trouble processing your request. Please try again.",
+        content:
+          "I'm sorry, I'm having trouble processing your request. Please try again.",
         isUser: false,
         timestamp: "",
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -287,7 +322,9 @@ const HomeChatArea = () => {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-full">
               {!Array.isArray(conversations) || conversations.length === 0 ? (
-                <DropdownMenuItem disabled>No previous conversations</DropdownMenuItem>
+                <DropdownMenuItem disabled>
+                  No previous conversations
+                </DropdownMenuItem>
               ) : (
                 conversations.slice(0, 5).map((conversation) => (
                   <DropdownMenuItem
@@ -295,7 +332,8 @@ const HomeChatArea = () => {
                     onClick={() => switchToConversation(conversation)}
                     className="cursor-pointer"
                   >
-                    {conversation.conversation_name || `Chat ${conversation.session_id.slice(-8)}`}
+                    {conversation.conversation_name ||
+                      `Chat ${conversation.session_id.slice(-8)}`}
                     <span className="ml-auto text-xs text-gray-500">
                       {new Date(conversation.last_updated).toLocaleDateString()}
                     </span>

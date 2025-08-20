@@ -113,7 +113,10 @@ export const IndustryKeywordsSettings = () => {
 
     try {
       setSaving(true);
-      await api.put(`/api/v1/industry-keywords/${editingIndustry}`, editingKeywords);
+      await api.put(
+        `/api/v1/industry-keywords/${editingIndustry}`,
+        editingKeywords,
+      );
 
       toast({
         title: "Success",
@@ -174,15 +177,15 @@ export const IndustryKeywordsSettings = () => {
             </div>
             {!editingIndustry && (
               <Button
-              onClick={() => {
-                setEditingIndustry("new");
-                setEditingKeywords([]);
-              }}
-              size="sm"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add Industry
-            </Button>
+                onClick={() => {
+                  setEditingIndustry("new");
+                  setEditingKeywords([]);
+                }}
+                size="sm"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Industry
+              </Button>
             )}
           </div>
         </div>

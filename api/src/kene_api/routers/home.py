@@ -62,9 +62,7 @@ async def scan_activities(request: ActivityScanRequest) -> ActivityScanResponse:
         )
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error scanning activities: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error scanning activities: {e!s}")
 
 
 @router.get("/notifications", response_model=list[Notification])

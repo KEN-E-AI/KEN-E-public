@@ -802,7 +802,7 @@ async def _validate_account_and_get_regions(
         raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
 
     regions = account_result[0].get("regions", [])
-    
+
     # When there are no regions, we still need to proceed to clean up any existing logs
     if not regions:
         logger.info(f"Account {account_id} has no regions configured")
@@ -850,18 +850,18 @@ async def _fetch_existing_activity_logs(
         # Convert Neo4j Date objects to strings for consistent comparison
         start_date = log["start_date"]
         end_date = log["end_date"]
-        
+
         # Handle Neo4j Date objects
         if hasattr(start_date, "iso_format"):
             start_date = start_date.iso_format()
         elif start_date and not isinstance(start_date, str):
             start_date = str(start_date)
-            
+
         if hasattr(end_date, "iso_format"):
             end_date = end_date.iso_format()
         elif end_date and not isinstance(end_date, str):
             end_date = str(end_date)
-        
+
         key = (
             log["description"],
             start_date,
@@ -943,14 +943,16 @@ def _calculate_sync_operations(
         sample_bigquery = list(bigquery_holiday_map.keys())[0]
         logger.debug(f"Sample existing holiday key: {sample_existing}")
         logger.debug(f"Sample BigQuery holiday key: {sample_bigquery}")
-        
+
         # Check if any BigQuery holidays match existing ones
         matches_found = 0
         for bq_key in bigquery_holiday_map.keys():
             if bq_key in existing_holidays:
                 matches_found += 1
-        logger.info(f"Found {matches_found} matching holidays between BigQuery and existing logs")
-    
+        logger.info(
+            f"Found {matches_found} matching holidays between BigQuery and existing logs"
+        )
+
     # Find holidays to create
     new_logs_data = []
     for holiday_key, holiday_data in bigquery_holiday_map.items():
@@ -973,7 +975,7 @@ def _calculate_sync_operations(
     logs_to_delete = []
     protected_from_deletion = []
     bigquery_holiday_keys = set(bigquery_holiday_map.keys())
-    
+
     # Extract existing regions from existing holidays
     existing_regions = set()
     existing_region_counts = {}
@@ -984,14 +986,16 @@ def _calculate_sync_operations(
         if activity_id.startswith("act_00_") and len(activity_id) > 7:
             region_suffix = activity_id[7:].upper()
             existing_regions.add(region_suffix)
-            existing_region_counts[region_suffix] = existing_region_counts.get(region_suffix, 0) + 1
-    
+            existing_region_counts[region_suffix] = (
+                existing_region_counts.get(region_suffix, 0) + 1
+            )
+
     logger.info(f"Existing holiday logs are for regions: {existing_regions}")
     logger.info(f"Existing holiday counts by region: {existing_region_counts}")
-    
+
     # Track what we're deleting by region
     deletion_by_region = {}
-    
+
     for key, log_id in existing_holidays.items():
         if key not in bigquery_holiday_keys:
             if log_id in protected_logs:
@@ -1002,15 +1006,21 @@ def _calculate_sync_operations(
                 activity_id = key[3]
                 if activity_id.startswith("act_00_") and len(activity_id) > 7:
                     region_suffix = activity_id[7:].upper()
-                    deletion_by_region[region_suffix] = deletion_by_region.get(region_suffix, 0) + 1
+                    deletion_by_region[region_suffix] = (
+                        deletion_by_region.get(region_suffix, 0) + 1
+                    )
                 # Log what we're deleting for debugging
-                logger.debug(f"Marking for deletion: {key[0][:50]}... on {key[1]} (activity: {key[3]})")
-    
+                logger.debug(
+                    f"Marking for deletion: {key[0][:50]}... on {key[1]} (activity: {key[3]})"
+                )
+
     if deletion_by_region:
         logger.info(f"Logs marked for deletion by region: {deletion_by_region}")
 
-    logger.info(f"Sync operations summary: {len(new_logs_data)} to create, {len(logs_to_delete)} to delete, {len(protected_from_deletion)} protected")
-    
+    logger.info(
+        f"Sync operations summary: {len(new_logs_data)} to create, {len(logs_to_delete)} to delete, {len(protected_from_deletion)} protected"
+    )
+
     return {
         "to_create": new_logs_data,
         "to_delete": logs_to_delete,
@@ -1041,10 +1051,12 @@ async def _create_activity_logs_batch(
 
     try:
         result = await db.execute_write_query(create_query, {"logs": logs_batch})
-        
+
         # execute_write_query returns a summary with counters
         created_count = result.get("nodes_created", 0)
-        logger.debug(f"Created {created_count} activity logs from batch of {len(logs_batch)}")
+        logger.debug(
+            f"Created {created_count} activity logs from batch of {len(logs_batch)}"
+        )
         return created_count
     except Exception as e:
         logger.error(f"Failed to create activity logs batch: {e}")
@@ -1060,8 +1072,10 @@ async def _delete_activity_logs_batch(
         return 0
 
     # First, let's check what logs we're trying to delete
-    logger.debug(f"Attempting to delete {len(log_ids_batch)} activity logs: {log_ids_batch[:5]}...")  # Show first 5 IDs
-    
+    logger.debug(
+        f"Attempting to delete {len(log_ids_batch)} activity logs: {log_ids_batch[:5]}..."
+    )  # Show first 5 IDs
+
     # Delete the logs that are not protected by metric relationships
     delete_query = """
     UNWIND $log_ids AS log_id
@@ -1073,15 +1087,17 @@ async def _delete_activity_logs_batch(
     delete_result = await db.execute_write_query(
         delete_query, {"log_ids": log_ids_batch}
     )
-    
+
     # execute_write_query returns a summary with counters
     deleted_count = delete_result.get("nodes_deleted", 0)
-    
+
     if deleted_count < len(log_ids_batch):
-        logger.warning(f"Only deleted {deleted_count} out of {len(log_ids_batch)} logs. Some logs may be protected or not found.")
+        logger.warning(
+            f"Only deleted {deleted_count} out of {len(log_ids_batch)} logs. Some logs may be protected or not found."
+        )
     else:
         logger.debug(f"Successfully deleted {deleted_count} activity logs")
-    
+
     return deleted_count
 
 
@@ -1099,7 +1115,7 @@ async def _execute_sync_operations(
     # Create logs in batches
     logs_to_create = operations["to_create"]
     logger.info(f"Total logs to create: {len(logs_to_create)}")
-    
+
     for i in range(0, len(logs_to_create), BATCH_SIZE):
         batch = logs_to_create[i : i + BATCH_SIZE]
         try:
@@ -1113,7 +1129,7 @@ async def _execute_sync_operations(
     # Delete logs in batches
     logs_to_delete = operations["to_delete"]
     logger.info(f"Total logs to delete: {len(logs_to_delete)}")
-    
+
     for i in range(0, len(logs_to_delete), BATCH_SIZE):
         batch = logs_to_delete[i : i + BATCH_SIZE]
         try:
@@ -1167,7 +1183,7 @@ async def sync_holiday_activity_logs(
 
         # Step 2: Validate account and get regions
         account_data = await _validate_account_and_get_regions(db, account_id)
-        
+
         # Step 3: Always fetch existing logs, even if no regions configured
         existing_holidays, protected_logs = await _fetch_existing_activity_logs(
             db, account_id
@@ -1181,7 +1197,9 @@ async def sync_holiday_activity_logs(
         else:
             # No regions means no holidays should exist
             holidays = []
-            logger.info(f"No regions configured for account {account_id}, will delete all existing holiday logs")
+            logger.info(
+                f"No regions configured for account {account_id}, will delete all existing holiday logs"
+            )
 
         # Step 5: Calculate sync operations
         operations = _calculate_sync_operations(
@@ -1196,7 +1214,7 @@ async def sync_holiday_activity_logs(
             message = f"No regions configured. Deleted {sync_results['deleted']} holiday logs."
         else:
             message = f"Synced holiday activities. Created {sync_results['created']} new logs, deleted {sync_results['deleted']} outdated logs."
-            
+
         return SuccessResponse(
             success=True,
             message=message,

@@ -68,6 +68,8 @@ export const useCreateAccount = () => {
       timezone: string;
       dataRegion: string;
       region: string[];
+      estimatedAnnualAdBudget?: number | null;
+      businessStrategyDocuments?: File[];
     }) => {
       // Transform camelCase to snake_case for API
       return createAccountApi({
@@ -79,6 +81,8 @@ export const useCreateAccount = () => {
         timezone: accountData.timezone,
         data_region: accountData.dataRegion,
         region: accountData.region,
+        estimated_annual_ad_budget: accountData.estimatedAnnualAdBudget,
+        business_strategy_documents: accountData.businessStrategyDocuments,
       });
     },
     onSuccess: () => {
