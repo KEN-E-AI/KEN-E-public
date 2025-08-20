@@ -26,8 +26,10 @@ from .routers import (
     notifications_v2 as notifications,
     organizations,
     products,
+    strategy,
     subscription_plans,
     superset_saved_queries,
+    usage,
     users,
 )
 
@@ -117,6 +119,8 @@ app.include_router(
     prefix="/api/v1",
     tags=["monitoring-topics"],
 )
+app.include_router(strategy.router)  # Strategy router already has its prefix
+app.include_router(usage.router)  # Usage router already has its prefix
 app.include_router(
     industry_keywords.router,
     prefix="/api/v1/industry-keywords",
