@@ -239,14 +239,24 @@ class TestFirestoreNotificationBatching:
         """Test fallback when Firestore index is missing."""
         account_id = "acc_001"
         
-        mock_query = Mock()
-        mock_query.where.return_value = mock_query
-        # Simulate index error on order_by
-        mock_query.order_by.side_effect = Exception("Index not found")
-        # Fallback query should work
-        mock_query.stream.return_value = []
+        # Create a mock query chain that fails on order_by for created_at
+        mock_collection = Mock()
+        mock_query_after_where = Mock()
+        mock_query_after_archived_filter = Mock()
+        mock_query_after_archived_order = Mock()
         
-        mock_firestore_client.collection.return_value.where.return_value = mock_query
+        # Set up the chain: collection -> where -> where (archived_at) -> order_by (archived_at) -> order_by (created_at - fails)
+        mock_collection.where.return_value = mock_query_after_where
+        mock_query_after_where.where.return_value = mock_query_after_archived_filter
+        mock_query_after_archived_filter.order_by.return_value = mock_query_after_archived_order
+        
+        # The second order_by (created_at) should fail
+        mock_query_after_archived_order.order_by.side_effect = Exception("Index not found") 
+        
+        # Fallback: query.stream() should work (returns empty list)
+        mock_query_after_archived_order.stream.return_value = iter([])  # Empty iterator
+        
+        mock_firestore_client.collection.return_value = mock_collection
         
         with patch('src.kene_api.repositories.firestore_notification_repository.logger') as mock_logger:
             result = await repository.get_by_account([account_id])
