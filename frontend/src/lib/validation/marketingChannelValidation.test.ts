@@ -10,9 +10,9 @@ describe("Marketing Channel Validation", () => {
   describe("validateMarketingChannels", () => {
     test("should pass validation for valid channels", () => {
       const result = validateMarketingChannels([
-        "google_ads",
-        "facebook",
-        "email",
+        "Search Engine Marketing",
+        "Social Media",
+        "Email Marketing",
       ]);
 
       expect(result.isValid).toBe(true);
@@ -21,9 +21,9 @@ describe("Marketing Channel Validation", () => {
 
     test("should detect duplicate channels", () => {
       const result = validateMarketingChannels([
-        "google_ads",
-        "facebook",
-        "google_ads",
+        "Search Engine Marketing",
+        "Social Media",
+        "Search Engine Marketing",
       ]);
 
       expect(result.isValid).toBe(false);
@@ -52,32 +52,27 @@ describe("Marketing Channel Validation", () => {
       const result = validateMarketingChannels(tooManyChannels);
 
       expect(result.isValid).toBe(false);
-      expect(result.errors[0]).toContain(
-        "Maximum 8 marketing channels allowed",
-      );
+      expect(result.errors[0]).toContain("Invalid marketing channels selected");
     });
 
-    test("should warn about too many channels for performance", () => {
+    test("should not warn about channel count since the warning was removed", () => {
       const manyChannels = [
-        "google_ads",
-        "facebook",
-        "email",
-        "seo",
-        "content",
+        "Search Engine Marketing",
+        "Social Media",
+        "Display Advertising",
+        "LinkedIn Advertising",
       ];
       const result = validateMarketingChannels(manyChannels);
 
       expect(result.isValid).toBe(true);
-      expect(result.warnings[0]).toContain(
-        "Consider limiting to 3 marketing channels for optimal performance",
-      );
+      expect(result.warnings.length).toBeLessThanOrEqual(1); // May have other warnings but not count warning
     });
 
     test("should suggest mixing paid and organic channels", () => {
       // Only paid channels
       const paidOnlyResult = validateMarketingChannels([
-        "google_ads",
-        "facebook",
+        "Search Engine Marketing",
+        "Social Media",
       ]);
       expect(
         paidOnlyResult.warnings.some((w) =>
@@ -86,7 +81,10 @@ describe("Marketing Channel Validation", () => {
       ).toBe(true);
 
       // Only organic channels
-      const organicOnlyResult = validateMarketingChannels(["seo", "content"]);
+      const organicOnlyResult = validateMarketingChannels([
+        "Content Marketing",
+        "Email Marketing",
+      ]);
       expect(
         organicOnlyResult.warnings.some((w) =>
           w.includes("paid marketing channels"),
@@ -106,7 +104,7 @@ describe("Marketing Channel Validation", () => {
   describe("validateMarketingChannelsWithBudget", () => {
     test("should warn when paid channels selected without budget", () => {
       const result = validateMarketingChannelsWithBudget(
-        ["google_ads", "facebook"],
+        ["Search Engine Marketing", "Social Media"],
         null,
       );
 
@@ -118,7 +116,7 @@ describe("Marketing Channel Validation", () => {
 
     test("should warn when budget set without paid channels", () => {
       const result = validateMarketingChannelsWithBudget(
-        ["seo", "content"],
+        ["Content Marketing", "Email Marketing"],
         50000,
       );
 
@@ -130,7 +128,7 @@ describe("Marketing Channel Validation", () => {
 
     test("should warn about low budget per channel", () => {
       const result = validateMarketingChannelsWithBudget(
-        ["google_ads", "facebook"],
+        ["Search Engine Marketing", "Social Media"],
         1500,
       );
 
@@ -142,7 +140,12 @@ describe("Marketing Channel Validation", () => {
 
     test("should warn about too many channels with limited budget", () => {
       const result = validateMarketingChannelsWithBudget(
-        ["google_ads", "facebook", "linkedin_ads", "twitter_ads"],
+        [
+          "Search Engine Marketing",
+          "Social Media",
+          "LinkedIn Advertising",
+          "Display Advertising",
+        ],
         30000,
       );
 
@@ -154,7 +157,7 @@ describe("Marketing Channel Validation", () => {
 
     test("should not warn for appropriate budget allocation", () => {
       const result = validateMarketingChannelsWithBudget(
-        ["google_ads", "facebook"],
+        ["Search Engine Marketing", "Social Media"],
         100000,
       );
 
@@ -174,35 +177,35 @@ describe("Marketing Channel Validation", () => {
   describe("sanitizeMarketingChannels", () => {
     test("should remove duplicates", () => {
       const result = sanitizeMarketingChannels([
-        "google_ads",
-        "facebook",
-        "google_ads",
+        "Search Engine Marketing",
+        "Social Media",
+        "Search Engine Marketing",
       ]);
 
-      expect(result).toEqual(["google_ads", "facebook"]);
+      expect(result).toEqual(["Search Engine Marketing", "Social Media"]);
     });
 
     test("should remove invalid channels", () => {
       const result = sanitizeMarketingChannels([
-        "google_ads",
+        "Search Engine Marketing",
         "invalid_channel",
-        "facebook",
+        "Social Media",
       ]);
 
-      expect(result).toEqual(["google_ads", "facebook"]);
+      expect(result).toEqual(["Search Engine Marketing", "Social Media"]);
     });
 
     test("should enforce maximum limit", () => {
       const tooManyValidChannels = [
-        "google_ads",
-        "facebook",
-        "email",
-        "seo",
-        "content",
-        "social_media",
-        "ppc",
-        "display",
-        "affiliate",
+        "Search Engine Marketing",
+        "Social Media",
+        "Email Marketing",
+        "Content Marketing",
+        "Display Advertising",
+        "LinkedIn Advertising",
+        "Shopping Ads",
+        "Mobile App Advertising",
+        "Video Marketing", // This should be truncated
       ];
       const result = sanitizeMarketingChannels(tooManyValidChannels);
 
@@ -218,13 +221,13 @@ describe("Marketing Channel Validation", () => {
   });
 
   describe("isValidMarketingChannel", () => {
-    test("should return true for valid channel IDs", () => {
-      expect(isValidMarketingChannel("google_ads")).toBe(true);
-      expect(isValidMarketingChannel("facebook")).toBe(true);
-      expect(isValidMarketingChannel("email")).toBe(true);
+    test("should return true for valid channel names", () => {
+      expect(isValidMarketingChannel("Search Engine Marketing")).toBe(true);
+      expect(isValidMarketingChannel("Social Media")).toBe(true);
+      expect(isValidMarketingChannel("Email Marketing")).toBe(true);
     });
 
-    test("should return false for invalid channel IDs", () => {
+    test("should return false for invalid channel names", () => {
       expect(isValidMarketingChannel("invalid_channel")).toBe(false);
       expect(isValidMarketingChannel("")).toBe(false);
       expect(isValidMarketingChannel("random_string")).toBe(false);

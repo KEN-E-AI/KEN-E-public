@@ -45,21 +45,23 @@ export const INTEGRATION_PREREQUISITES: Record<string, string[]> = {
 
 // Paid marketing channels that require budget
 export const PAID_MARKETING_CHANNELS = [
-  "google_ads",
-  "facebook",
-  "linkedin_ads",
-  "twitter_ads",
-  "tiktok_ads",
-  "pinterest_ads",
+  "Search Engine Marketing",
+  "Display Advertising",
+  "Social Media",
+  "LinkedIn Advertising",
+  "Shopping Ads",
+  "Mobile App Advertising",
 ] as const;
 
 // Marketing channels that work well with specific integrations
 export const CHANNEL_INTEGRATION_RECOMMENDATIONS: Record<string, string[]> = {
-  google_ads: ["google_analytics", "google_tag_manager"],
-  facebook: ["facebook_pixel", "google_analytics"],
-  email: ["mailchimp", "klaviyo", "constant_contact"],
-  content: ["google_analytics", "hubspot"],
-  seo: ["google_analytics", "google_search_console"],
+  "Search Engine Marketing": ["google_analytics", "google_tag_manager"],
+  "Social Media": ["meta_ads", "google_analytics"],
+  "Email Marketing": ["mailchimp", "hubspot"],
+  "Content Marketing": ["google_analytics", "hubspot"],
+  "Display Advertising": ["google_analytics", "google_tag_manager"],
+  "LinkedIn Advertising": ["hubspot", "google_analytics"],
+  "Shopping Ads": ["google_analytics", "google_tag_manager"],
 };
 
 export type ValidationSeverity = "error" | "warning" | "info";

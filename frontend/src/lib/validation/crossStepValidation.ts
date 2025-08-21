@@ -92,15 +92,13 @@ export const validateMarketingIntegrationConsistency = (
     );
 
     if (missingRecommendations.length > 0) {
-      const channelName =
-        MARKETING_CHANNELS.find((ch) => ch.id === channel)?.name || channel;
       const recNames = missingRecommendations.map((id) => {
         const int = PRODUCT_INTEGRATIONS.find((i) => i.id === id);
         return int?.name || id;
       });
 
       warnings.push(
-        `For ${channelName}, consider adding: ${recNames.join(", ")} for better tracking and optimization.`,
+        `For ${channel}, consider adding: ${recNames.join(", ")} for better tracking and optimization.`,
       );
     }
   });
@@ -125,13 +123,9 @@ export const validateMarketingIntegrationConsistency = (
         const integrationName =
           PRODUCT_INTEGRATIONS.find((int) => int.id === integration)?.name ||
           integration;
-        const channelNames = suggestedChannels.map((id) => {
-          const ch = MARKETING_CHANNELS.find((c) => c.id === id);
-          return ch?.name || id;
-        });
 
         warnings.push(
-          `You have ${integrationName} integration but no corresponding marketing channels. Consider adding: ${channelNames.join(" or ")}.`,
+          `You have ${integrationName} integration but no corresponding marketing channels. Consider adding: ${suggestedChannels.join(" or ")}.`,
         );
       }
     }
@@ -162,28 +156,30 @@ export const validateMarketingIntegrationConsistency = (
     }
   }
 
-  // E-commerce specific validations
+  // E-commerce specific validations (currently no ecommerce integrations in data)
+  // This would be activated if e-commerce platforms like Shopify were added
   const hasEcommerceIntegration = productIntegrations.some((id) => {
+    // Check for e-commerce related integrations by name or future category
     const integration = PRODUCT_INTEGRATIONS.find((int) => int.id === id);
-    return integration?.category === "ecommerce";
+    return (
+      integration &&
+      ["shopify", "woocommerce", "magento"].includes(integration.id)
+    );
   });
 
   if (hasEcommerceIntegration) {
     const hasEmailMarketing = productIntegrations.some((id) => {
       const integration = PRODUCT_INTEGRATIONS.find((int) => int.id === id);
-      return integration?.category === "email_marketing";
+      return integration?.category === "email";
     });
 
-    if (!hasEmailMarketing && !marketingChannels.includes("email")) {
+    if (!hasEmailMarketing && !marketingChannels.includes("Email Marketing")) {
       warnings.push(
         "For e-commerce businesses, email marketing is typically essential for customer retention and increased lifetime value.",
       );
     }
 
-    if (
-      !marketingChannels.includes("seo") &&
-      !marketingChannels.includes("content")
-    ) {
+    if (!marketingChannels.includes("Content Marketing")) {
       warnings.push(
         "Consider adding SEO or content marketing for long-term organic growth in e-commerce.",
       );
@@ -217,26 +213,43 @@ export const validateIndustryConsistency = (
     }
   > = {
     "E-commerce": {
-      recommendedChannels: ["google_ads", "facebook", "email", "seo"],
-      recommendedIntegrations: ["google_analytics", "mailchimp", "shopify"],
+      recommendedChannels: [
+        "Search Engine Marketing",
+        "Social Media",
+        "Email Marketing",
+        "Content Marketing",
+      ],
+      recommendedIntegrations: ["google_analytics", "mailchimp"],
       warningMessage:
         "E-commerce typically benefits from paid ads, email marketing, and robust analytics.",
     },
     SaaS: {
-      recommendedChannels: ["content", "seo", "linkedin_ads", "email"],
-      recommendedIntegrations: ["google_analytics", "hubspot", "intercom"],
+      recommendedChannels: [
+        "Content Marketing",
+        "LinkedIn Advertising",
+        "Email Marketing",
+      ],
+      recommendedIntegrations: ["google_analytics", "hubspot"],
       warningMessage:
         "SaaS companies often succeed with content marketing, SEO, and comprehensive CRM integration.",
     },
     "Local Services": {
-      recommendedChannels: ["google_ads", "facebook", "local_seo"],
-      recommendedIntegrations: ["google_analytics", "google_my_business"],
+      recommendedChannels: [
+        "Search Engine Marketing",
+        "Social Media",
+        "Local Advertising",
+      ],
+      recommendedIntegrations: ["google_analytics"],
       warningMessage:
         "Local services should focus on location-based marketing and local SEO.",
     },
     "B2B Services": {
-      recommendedChannels: ["linkedin_ads", "content", "email", "seo"],
-      recommendedIntegrations: ["google_analytics", "hubspot", "linkedin"],
+      recommendedChannels: [
+        "LinkedIn Advertising",
+        "Content Marketing",
+        "Email Marketing",
+      ],
+      recommendedIntegrations: ["google_analytics", "hubspot"],
       warningMessage:
         "B2B services typically require longer sales cycles with content and LinkedIn focus.",
     },
@@ -259,11 +272,7 @@ export const validateIndustryConsistency = (
       let message = `For ${industry} businesses: `;
 
       if (missingChannels.length > 0) {
-        const channelNames = missingChannels.map((id) => {
-          const ch = MARKETING_CHANNELS.find((c) => c.id === id);
-          return ch?.name || id;
-        });
-        message += `Consider adding ${channelNames.join(", ")} marketing channels`;
+        message += `Consider adding ${missingChannels.join(", ")} marketing channels`;
       }
 
       if (missingIntegrations.length > 0) {
@@ -301,7 +310,7 @@ export const validateWebsiteChannelConsistency = (
 
   // Check if they have websites but no web-focused channels
   if (websites.length > 0) {
-    const webFocusedChannels = ["seo", "content", "google_ads", "facebook"];
+    const webFocusedChannels = ["Content Marketing", "Search Engine Marketing"];
     const hasWebChannel = marketingChannels.some((ch) =>
       webFocusedChannels.includes(ch),
     );
@@ -313,7 +322,10 @@ export const validateWebsiteChannelConsistency = (
     }
 
     // Multiple websites warning
-    if (websites.length > 3 && marketingChannels.includes("seo")) {
+    if (
+      websites.length > 3 &&
+      marketingChannels.includes("Content Marketing")
+    ) {
       warnings.push(
         "Managing SEO for multiple websites can be challenging. Consider focusing your SEO efforts on your primary domain.",
       );
@@ -321,7 +333,7 @@ export const validateWebsiteChannelConsistency = (
   }
 
   // Check for channels that require websites
-  const websiteRequiredChannels = ["seo", "content"];
+  const websiteRequiredChannels = ["Content Marketing", "Video Marketing"];
   const hasWebsiteRequiredChannel = marketingChannels.some((ch) =>
     websiteRequiredChannels.includes(ch),
   );

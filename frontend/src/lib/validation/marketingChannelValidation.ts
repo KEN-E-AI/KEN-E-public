@@ -14,8 +14,8 @@ export const validateMarketingChannels = (
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Get allowed channel IDs from the data source
-  const allowedChannelIds = MARKETING_CHANNELS.map((ch) => ch.id);
+  // Get allowed channel names from the data source
+  const allowedChannelNames = [...MARKETING_CHANNELS];
 
   // Check for duplicates
   const uniqueChannels = new Set(channels);
@@ -27,7 +27,7 @@ export const validateMarketingChannels = (
 
   // Validate against allowed channels
   const invalidChannels = channels.filter(
-    (id) => !allowedChannelIds.includes(id),
+    (name) => !allowedChannelNames.includes(name),
   );
   if (invalidChannels.length > 0) {
     errors.push(
@@ -42,15 +42,7 @@ export const validateMarketingChannels = (
     );
   }
 
-  // Warning for too many channels (performance)
-  if (
-    channels.length > MARKETING_CHANNEL_LIMITS.RECOMMENDED_CHANNELS &&
-    channels.length <= MARKETING_CHANNEL_LIMITS.MAX_CHANNELS
-  ) {
-    warnings.push(
-      `Consider limiting to ${MARKETING_CHANNEL_LIMITS.RECOMMENDED_CHANNELS} marketing channels for optimal performance and focus.`,
-    );
-  }
+  // Note: Removed the warning about limiting to 3 channels as requested
 
   // Check for paid channels mix
   const paidChannelsSelected = channels.filter((ch) =>
@@ -140,27 +132,26 @@ export const validateMarketingChannelsWithBudget = (
 export const getMarketingChannelRules = () => ({
   maxChannels: MARKETING_CHANNEL_LIMITS.MAX_CHANNELS,
   recommendedChannels: MARKETING_CHANNEL_LIMITS.RECOMMENDED_CHANNELS,
-  allowedChannels: MARKETING_CHANNELS.map((ch) => ch.id),
+  allowedChannels: [...MARKETING_CHANNELS],
   paidChannels: PAID_MARKETING_CHANNELS,
 });
 
 /**
  * Check if a marketing channel is valid
  */
-export const isValidMarketingChannel = (channelId: string): boolean => {
-  const allowedChannelIds = MARKETING_CHANNELS.map((ch) => ch.id);
-  return allowedChannelIds.includes(channelId);
+export const isValidMarketingChannel = (channelName: string): boolean => {
+  return MARKETING_CHANNELS.includes(channelName as any);
 };
 
 /**
  * Remove invalid and duplicate marketing channels
  */
 export const sanitizeMarketingChannels = (channels: string[]): string[] => {
-  const allowedChannelIds = MARKETING_CHANNELS.map((ch) => ch.id);
-
   // Remove duplicates and invalid channels
   const uniqueValidChannels = Array.from(
-    new Set(channels.filter((id) => allowedChannelIds.includes(id))),
+    new Set(
+      channels.filter((name) => MARKETING_CHANNELS.includes(name as any)),
+    ),
   );
 
   // Respect max limit

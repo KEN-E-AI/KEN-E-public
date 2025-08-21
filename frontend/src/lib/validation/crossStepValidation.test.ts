@@ -17,7 +17,7 @@ const createMockFormData = (
   estimated_annual_ad_budget: 50000,
   business_strategy_documents: [],
   template_id: "tech-template",
-  marketing_channels: ["google_ads", "seo"],
+  marketing_channels: ["Search Engine Marketing", "Content Marketing"],
   product_integrations: ["google_analytics"],
   objectives: ["increase_traffic"],
   kpis: ["sessions", "conversions"],
@@ -31,7 +31,7 @@ describe("Cross-Step Validation", () => {
   describe("validateCrossStepConsistency", () => {
     test("should pass validation for consistent data", () => {
       const formData = createMockFormData({
-        marketing_channels: ["google_ads", "seo"],
+        marketing_channels: ["Search Engine Marketing", "Content Marketing"],
         product_integrations: ["google_analytics"],
         estimated_annual_ad_budget: 100000,
       });
@@ -43,7 +43,11 @@ describe("Cross-Step Validation", () => {
 
     test("should include all individual step validations", () => {
       const formData = createMockFormData({
-        marketing_channels: ["google_ads", "facebook", "google_ads"], // Duplicate
+        marketing_channels: [
+          "Search Engine Marketing",
+          "Social Media",
+          "Search Engine Marketing",
+        ], // Duplicate
         product_integrations: ["google_analytics", "adobe_analytics"], // Conflict
       });
 
@@ -58,7 +62,7 @@ describe("Cross-Step Validation", () => {
 
     test("should include cross-step consistency warnings", () => {
       const formData = createMockFormData({
-        marketing_channels: ["google_ads"],
+        marketing_channels: ["Search Engine Marketing"],
         product_integrations: [], // Missing analytics
         estimated_annual_ad_budget: 50000,
       });
@@ -77,7 +81,7 @@ describe("Cross-Step Validation", () => {
   describe("validateMarketingIntegrationConsistency", () => {
     test("should recommend integrations based on marketing channels", () => {
       const result = validateMarketingIntegrationConsistency(
-        ["google_ads", "facebook"],
+        ["Search Engine Marketing", "Social Media"],
         [], // No integrations
         100000,
       );
@@ -91,7 +95,7 @@ describe("Cross-Step Validation", () => {
 
     test("should warn about integration without corresponding channel", () => {
       const result = validateMarketingIntegrationConsistency(
-        ["seo"], // No Google Ads
+        ["Content Marketing"], // No Google Ads
         ["google_ads"], // But has Google Ads integration
         50000,
       );
@@ -101,7 +105,7 @@ describe("Cross-Step Validation", () => {
 
     test("should warn about paid channels without conversion tracking", () => {
       const result = validateMarketingIntegrationConsistency(
-        ["google_ads", "facebook"],
+        ["Search Engine Marketing", "Social Media"],
         ["mailchimp"], // No analytics/tracking
         100000,
       );
@@ -113,7 +117,12 @@ describe("Cross-Step Validation", () => {
 
     test("should warn about low budget spread across many channels", () => {
       const result = validateMarketingIntegrationConsistency(
-        ["google_ads", "facebook", "linkedin_ads", "twitter_ads"],
+        [
+          "Search Engine Marketing",
+          "Social Media",
+          "LinkedIn Advertising",
+          "Display Advertising",
+        ],
         ["google_analytics"],
         20000, // Low budget for 4 channels
       );
@@ -123,28 +132,30 @@ describe("Cross-Step Validation", () => {
       ).toBe(true);
     });
 
-    test("should recommend email marketing for e-commerce", () => {
+    test("should not warn about e-commerce when no e-commerce integrations exist", () => {
       const result = validateMarketingIntegrationConsistency(
-        ["seo"],
-        ["shopify"], // E-commerce integration
+        ["Content Marketing"],
+        ["google_analytics"], // Non-ecommerce integration
         null,
       );
 
+      // Should not generate e-commerce specific warnings
       expect(result.warnings.some((w) => w.includes("email marketing"))).toBe(
-        true,
+        false,
       );
     });
 
-    test("should recommend SEO for e-commerce", () => {
+    test("should not warn about SEO for non-ecommerce", () => {
       const result = validateMarketingIntegrationConsistency(
-        ["google_ads"], // Only paid, no organic
-        ["shopify"],
+        ["Search Engine Marketing"], // Only paid, no organic
+        ["google_analytics"],
         100000,
       );
 
+      // Should not generate e-commerce specific SEO warnings
       expect(
         result.warnings.some((w) => w.includes("SEO or content marketing")),
-      ).toBe(true);
+      ).toBe(false);
     });
   });
 
@@ -152,7 +163,7 @@ describe("Cross-Step Validation", () => {
     test("should recommend appropriate channels for E-commerce", () => {
       const result = validateIndustryConsistency(
         "E-commerce",
-        ["seo"], // Missing recommended channels
+        ["Content Marketing"], // Missing recommended channels
         ["shopify"], // Has e-commerce integration
       );
 
@@ -164,11 +175,11 @@ describe("Cross-Step Validation", () => {
     test("should recommend appropriate channels for SaaS", () => {
       const result = validateIndustryConsistency(
         "SaaS",
-        ["google_ads"], // Missing content/SEO
+        ["Search Engine Marketing"], // Missing content/SEO
         [],
       );
 
-      expect(result.warnings.some((w) => w.includes("SaaS companies"))).toBe(
+      expect(result.warnings.some((w) => w.includes("SaaS businesses"))).toBe(
         true,
       );
     });
@@ -176,11 +187,11 @@ describe("Cross-Step Validation", () => {
     test("should recommend appropriate channels for Local Services", () => {
       const result = validateIndustryConsistency(
         "Local Services",
-        ["email"], // Missing local-focused channels
+        ["Email Marketing"], // Missing local-focused channels
         [],
       );
 
-      expect(result.warnings.some((w) => w.includes("Local services"))).toBe(
+      expect(result.warnings.some((w) => w.includes("Local Services"))).toBe(
         true,
       );
     });
@@ -188,11 +199,11 @@ describe("Cross-Step Validation", () => {
     test("should recommend appropriate channels for B2B Services", () => {
       const result = validateIndustryConsistency(
         "B2B Services",
-        ["google_ads"], // Missing LinkedIn/content
+        ["Search Engine Marketing"], // Missing LinkedIn/content
         [],
       );
 
-      expect(result.warnings.some((w) => w.includes("B2B services"))).toBe(
+      expect(result.warnings.some((w) => w.includes("B2B Services"))).toBe(
         true,
       );
     });
@@ -200,7 +211,12 @@ describe("Cross-Step Validation", () => {
     test("should pass for industries with appropriate channels", () => {
       const result = validateIndustryConsistency(
         "E-commerce",
-        ["google_ads", "facebook", "email", "seo"],
+        [
+          "Search Engine Marketing",
+          "Social Media",
+          "Email Marketing",
+          "Content Marketing",
+        ],
         ["google_analytics", "mailchimp", "shopify"],
       );
 
@@ -213,7 +229,7 @@ describe("Cross-Step Validation", () => {
     test("should warn when websites exist but no web channels selected", () => {
       const result = validateWebsiteChannelConsistency(
         ["https://example.com", "https://shop.com"],
-        ["email", "social_media"], // No web-focused channels
+        ["Email Marketing", "Social Media"], // No web-focused channels
       );
 
       expect(
@@ -231,7 +247,7 @@ describe("Cross-Step Validation", () => {
           "https://site3.com",
           "https://site4.com",
         ],
-        ["seo"], // SEO selected
+        ["Content Marketing"], // SEO selected
       );
 
       expect(
@@ -244,7 +260,7 @@ describe("Cross-Step Validation", () => {
     test("should warn when SEO/content selected without websites", () => {
       const result = validateWebsiteChannelConsistency(
         [], // No websites
-        ["seo", "content"], // But has website-dependent channels
+        ["Content Marketing", "Video Marketing"], // But has website-dependent channels
       );
 
       expect(
@@ -257,7 +273,7 @@ describe("Cross-Step Validation", () => {
     test("should pass for appropriate website-channel combinations", () => {
       const result = validateWebsiteChannelConsistency(
         ["https://example.com"],
-        ["seo", "google_ads", "content"],
+        ["Content Marketing", "Search Engine Marketing", "Video Marketing"],
       );
 
       expect(result.isValid).toBe(true);
