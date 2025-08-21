@@ -11,6 +11,7 @@ import {
   useUpdateAccount,
   accountKeys,
 } from "@/queries/accounts";
+import { useAccountConsistency } from "@/hooks/useAccountConsistency";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
@@ -577,7 +578,49 @@ const AccountsManagement = ({
       const accountData = transformWizardData(wizardData, currentOrgId!);
       const result = await createAccountMutation.mutateAsync(accountData);
 
-      // Update UI and cache
+      // Schedule consistency check after a brief delay for data propagation
+      setTimeout(async () => {
+        try {
+          // Basic validation: check if expected data was saved
+          const hasExpectedChannels =
+            wizardData.marketing_channels?.length > 0
+              ? result.marketing_channels?.length ===
+                wizardData.marketing_channels.length
+              : true;
+          const hasExpectedIntegrations =
+            wizardData.product_integrations?.length > 0
+              ? result.product_integrations?.length ===
+                wizardData.product_integrations.length
+              : true;
+          const hasExpectedWebsites =
+            wizardData.websites?.length > 0
+              ? result.websites?.length === wizardData.websites.length
+              : true;
+
+          if (
+            !hasExpectedChannels ||
+            !hasExpectedIntegrations ||
+            !hasExpectedWebsites
+          ) {
+            console.warn(
+              "[AccountsManagement] Account created but some expected data may be missing",
+            );
+            toast({
+              title: "Account Created",
+              description:
+                "Account created successfully, but some data may need verification. Please check the account settings.",
+              variant: "default",
+            });
+          }
+        } catch (error) {
+          console.error(
+            "[AccountsManagement] Error during consistency check:",
+            error,
+          );
+        }
+      }, 2000);
+
+      // Show success message
       toast({
         title: "Success",
         description: "Account created successfully!",
