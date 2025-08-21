@@ -13,12 +13,17 @@ import { WizardStep2MarketingChannels } from "./wizard/WizardStep2MarketingChann
 import { WizardStep3ProductIntegrations } from "./wizard/WizardStep3ProductIntegrations";
 import { WizardStep4Configuration } from "./wizard/WizardStep4Configuration";
 import { WizardStep5Confirm } from "./wizard/WizardStep5Confirm";
+import { ValidationSummary } from "@/components/ui/ValidationSummary";
 import {
   templateService,
   type IndustryTemplate,
 } from "@/services/templateService";
 import { validateAccountCreation } from "./validation/accountValidation";
+import { validateCrossStepConsistency } from "@/lib/validation/crossStepValidation";
+import { validateMarketingChannelsWithBudget } from "@/lib/validation/marketingChannelValidation";
+import { validateProductIntegrations } from "@/lib/validation/productIntegrationValidation";
 import { ErrorBoundary } from "./ErrorBoundary";
+import type { ValidationResult } from "@/types/validation";
 
 export interface AccountCreationData {
   // Step 1: Basic Information
@@ -126,6 +131,58 @@ export const AccountCreationWizard = ({
     }
   };
 
+  // Get validation results for all steps
+  const getStepValidations = () => {
+    const step2Validation = validateMarketingChannelsWithBudget(
+      formData.marketing_channels,
+      formData.estimated_annual_ad_budget,
+    );
+    const step3Validation = validateProductIntegrations(
+      formData.product_integrations,
+    );
+    const crossStepValidation = validateCrossStepConsistency(formData);
+
+    return [
+      {
+        step: "Basic Information",
+        stepNumber: 1,
+        result: {
+          isValid:
+            formData.account_name.trim() !== "" &&
+            formData.industry !== "" &&
+            formData.template_id !== "" &&
+            formData.websites.some((w) => w.trim() !== "") &&
+            formData.region.length > 0 &&
+            formData.data_region !== "" &&
+            formData.timezone !== "",
+          errors: [],
+          warnings: [],
+        },
+        isRequired: true,
+      },
+      {
+        step: "Marketing Channels",
+        stepNumber: 2,
+        result: step2Validation,
+        isRequired: true,
+      },
+      {
+        step: "Product Integrations",
+        stepNumber: 3,
+        result: step3Validation,
+        isRequired: false, // Optional step
+      },
+      {
+        step: "Overall Consistency",
+        stepNumber: 5,
+        result: crossStepValidation,
+        isRequired: false,
+      },
+    ];
+  };
+
+  const stepValidations = getStepValidations();
+
   const canProceed = () => {
     switch (currentStep) {
       case 1:
@@ -139,13 +196,21 @@ export const AccountCreationWizard = ({
           formData.timezone !== ""
         );
       case 2:
-        return formData.marketing_channels.length > 0;
+        // Allow proceeding if no critical errors
+        const marketingValidation = stepValidations.find(
+          (v) => v.stepNumber === 2,
+        );
+        return marketingValidation ? marketingValidation.result.isValid : false;
       case 3:
         return true; // Product integrations are optional
       case 4:
         return formData.objectives.length > 0;
       case 5:
-        return true;
+        // Final step - check all validations
+        const hasBlockingErrors = stepValidations.some(
+          (v) => !v.result.isValid && v.isRequired !== false,
+        );
+        return !hasBlockingErrors;
       default:
         return false;
     }
@@ -240,10 +305,19 @@ export const AccountCreationWizard = ({
               )}
 
               {currentStep === 5 && (
-                <WizardStep5Confirm
-                  formData={formData}
-                  selectedTemplate={loadedTemplate}
-                />
+                <div className="space-y-6">
+                  <WizardStep5Confirm
+                    formData={formData}
+                    selectedTemplate={loadedTemplate}
+                  />
+
+                  {/* Validation Summary */}
+                  <ValidationSummary
+                    validations={stepValidations}
+                    canProceed={canProceed()}
+                    onFixIssues={(stepNumber) => setCurrentStep(stepNumber)}
+                  />
+                </div>
               )}
             </div>
 

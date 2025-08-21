@@ -372,7 +372,7 @@ async def _create_initial_activities(
         logger.error(
             f"Error creating initial activities for account {account_id}: {type(e).__name__}: {e!s}"
         )
-        logger.error(f"Exception details for account {account_id}: {repr(e)}")
+        logger.error(f"Exception details for account {account_id}: {e!r}")
         # Don't raise - let account creation succeed even if initial activities fail
         return 0
 
@@ -494,6 +494,7 @@ async def create_account(
     user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
     firestore: FirestoreService = Depends(get_firestore_service),
+    storage: StorageService = Depends(get_storage_service),
 ) -> Account:
     """
     Create a new account.
@@ -619,7 +620,32 @@ async def create_account(
             "template_id": request.template_id,
         }
 
-        await db.execute_write_query(create_query, params)
+        # DEBUG: Log the Neo4j query parameters
+        logger.info("=== NEO4J EXECUTION DEBUG ===")
+        logger.info(f"Query: {create_query}")
+        logger.info(f"Parameters: {params}")
+        logger.info(f"Params marketing_channels: {params.get('marketing_channels')}")
+        logger.info(f"Params product_integrations: {params.get('product_integrations')}")
+
+        result = await db.execute_write_query(create_query, params)
+        logger.info(f"Neo4j query result: {result}")
+
+        # DEBUG: Verify the data was actually stored
+        verify_query = """
+        MATCH (acc:Account {account_id: $account_id})
+        RETURN acc.account_id, acc.marketing_channels, acc.product_integrations, acc
+        """
+        verify_result = await db.execute_query(verify_query, {"account_id": account_id})
+        logger.info("=== VERIFICATION RESULT ===")
+        logger.info(f"Verification query result: {verify_result}")
+        if verify_result and len(verify_result) > 0:
+            account_data = verify_result[0]
+            logger.info(f"Found account: {account_data}")
+            logger.info(f"Stored marketing_channels: {account_data.get('acc.marketing_channels')}")
+            logger.info(f"Stored product_integrations: {account_data.get('acc.product_integrations')}")
+        else:
+            logger.error(f"CRITICAL: Account {account_id} not found in Neo4j after creation!")
+        logger.info("=== ACCOUNT CREATION DEBUG END ===")
 
         # Invalidate the creating user's cache to ensure their context includes the new account
         from ..auth.cached_user_context import get_cached_user_context_service
@@ -694,6 +720,20 @@ async def create_account(
                 logger.info(
                     f"No regional holidays found - no activity logs created for account {account_id}"
                 )
+
+        # Create Google Cloud Storage folder for the account
+        try:
+            data_region = request.data_region or "US"
+            folder_created = await storage.ensure_account_folder(account_id, data_region)
+            if folder_created:
+                logger.info(f"Created GCS folder for account {account_id} in region {data_region}")
+            else:
+                logger.warning(f"Failed to create GCS folder for account {account_id} in region {data_region}")
+        except Exception as e:
+            # Don't fail account creation if storage folder creation fails
+            logger.error(
+                f"Failed to create GCS folder for new account {account_id}: {e}"
+            )
 
         # Create notification for the new account
         try:

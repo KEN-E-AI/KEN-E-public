@@ -6,26 +6,46 @@ import {
   PRODUCT_INTEGRATIONS,
   INTEGRATION_CATEGORIES,
 } from "@/data/productIntegrations";
+import { ValidationAlert } from "@/components/ui/ValidationAlert";
+import {
+  validateProductIntegrations,
+  suggestComplementaryIntegrations,
+} from "@/lib/validation/productIntegrationValidation";
 import type { AccountCreationData } from "../AccountCreationWizard";
 import type { IndustryTemplate } from "@/services/templateService";
+import type { ValidationMessage } from "@/types/validation";
 
 interface WizardStep3ProductIntegrationsProps {
   formData: AccountCreationData;
   setFormData: (data: AccountCreationData) => void;
   selectedTemplate?: IndustryTemplate | null;
+  showValidation?: boolean;
 }
 
 export const WizardStep3ProductIntegrations = ({
   formData,
   setFormData,
   selectedTemplate,
+  showValidation = true,
 }: WizardStep3ProductIntegrationsProps) => {
   const handleIntegrationToggle = (integrationId: string, checked: boolean) => {
     if (checked) {
-      setFormData({
-        ...formData,
-        product_integrations: [...formData.product_integrations, integrationId],
-      });
+      // Prevent duplicates and validate selection
+      if (!formData.product_integrations.includes(integrationId)) {
+        // Check if integration is available
+        const integration = PRODUCT_INTEGRATIONS.find(
+          (int) => int.id === integrationId,
+        );
+        if (integration?.status === "available") {
+          setFormData({
+            ...formData,
+            product_integrations: [
+              ...formData.product_integrations,
+              integrationId,
+            ],
+          });
+        }
+      }
     } else {
       setFormData({
         ...formData,
@@ -41,6 +61,41 @@ export const WizardStep3ProductIntegrations = ({
       selectedTemplate?.productIntegrations?.includes(integrationId) || false
     );
   };
+
+  // Validate current selections
+  const validationResult = validateProductIntegrations(
+    formData.product_integrations,
+  );
+
+  // Get suggestions for complementary integrations
+  const suggestions = suggestComplementaryIntegrations(
+    formData.product_integrations,
+  );
+
+  // Convert validation result to UI messages
+  const validationMessages: ValidationMessage[] = [
+    ...validationResult.errors.map((error) => ({
+      severity: "error" as const,
+      message: error,
+      field: "product_integrations",
+    })),
+    ...validationResult.warnings.map((warning) => ({
+      severity: "warning" as const,
+      message: warning,
+      field: "product_integrations",
+    })),
+    // Add suggestions as info messages
+    ...suggestions.slice(0, 2).map((suggestionId) => {
+      const integration = PRODUCT_INTEGRATIONS.find(
+        (int) => int.id === suggestionId,
+      );
+      return {
+        severity: "info" as const,
+        message: `Consider adding ${integration?.name || suggestionId} to complement your current selections.`,
+        field: "product_integrations",
+      };
+    }),
+  ];
 
   // Group integrations by category
   const integrationsByCategory = PRODUCT_INTEGRATIONS.reduce(
@@ -73,6 +128,11 @@ export const WizardStep3ProductIntegrations = ({
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Validation Messages */}
+        {showValidation && validationMessages.length > 0 && (
+          <ValidationAlert messages={validationMessages} />
+        )}
+
         {/* Integration Categories */}
         {Object.entries(integrationsByCategory).map(
           ([category, integrations]) => (

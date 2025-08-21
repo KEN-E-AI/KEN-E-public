@@ -151,8 +151,14 @@ export const WizardStep1BasicInfo = ({
             objectives: template.defaultObjectives,
             kpis: template.defaultKPIs,
             // Only set template values if user hasn't made selections yet
-            marketing_channels: prev.marketing_channels.length > 0 ? prev.marketing_channels : template.marketingChannels,
-            product_integrations: prev.product_integrations.length > 0 ? prev.product_integrations : template.productIntegrations,
+            marketing_channels:
+              prev.marketing_channels.length > 0
+                ? prev.marketing_channels
+                : template.marketingChannels,
+            product_integrations:
+              prev.product_integrations.length > 0
+                ? prev.product_integrations
+                : template.productIntegrations,
           }));
 
           if (onTemplateLoad) {

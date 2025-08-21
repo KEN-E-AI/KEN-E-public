@@ -7,26 +7,34 @@ import {
   MARKETING_CHANNELS,
   MARKETING_CHANNEL_CATEGORIES,
 } from "@/data/marketingChannels";
+import { ValidationAlert } from "@/components/ui/ValidationAlert";
+import { validateMarketingChannelsWithBudget } from "@/lib/validation/marketingChannelValidation";
 import type { AccountCreationData } from "../AccountCreationWizard";
 import type { IndustryTemplate } from "@/services/templateService";
+import type { ValidationMessage } from "@/types/validation";
 
 interface WizardStep2MarketingChannelsProps {
   formData: AccountCreationData;
   setFormData: (data: AccountCreationData) => void;
   selectedTemplate?: IndustryTemplate | null;
+  showValidation?: boolean;
 }
 
 export const WizardStep2MarketingChannels = ({
   formData,
   setFormData,
   selectedTemplate,
+  showValidation = true,
 }: WizardStep2MarketingChannelsProps) => {
   const handleChannelToggle = (channel: string, checked: boolean) => {
     if (checked) {
-      setFormData({
-        ...formData,
-        marketing_channels: [...formData.marketing_channels, channel],
-      });
+      // Prevent duplicates and validate selection
+      if (!formData.marketing_channels.includes(channel)) {
+        setFormData({
+          ...formData,
+          marketing_channels: [...formData.marketing_channels, channel],
+        });
+      }
     } else {
       setFormData({
         ...formData,
@@ -40,6 +48,26 @@ export const WizardStep2MarketingChannels = ({
   const isChannelRecommended = (channel: string) => {
     return selectedTemplate?.marketingChannels?.includes(channel) || false;
   };
+
+  // Validate current selections
+  const validationResult = validateMarketingChannelsWithBudget(
+    formData.marketing_channels,
+    formData.estimated_annual_ad_budget,
+  );
+
+  // Convert validation result to UI messages
+  const validationMessages: ValidationMessage[] = [
+    ...validationResult.errors.map((error) => ({
+      severity: "error" as const,
+      message: error,
+      field: "marketing_channels",
+    })),
+    ...validationResult.warnings.map((warning) => ({
+      severity: "warning" as const,
+      message: warning,
+      field: "marketing_channels",
+    })),
+  ];
 
   return (
     <Card className="w-full max-w-4xl mx-auto">
@@ -60,6 +88,11 @@ export const WizardStep2MarketingChannels = ({
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Validation Messages */}
+        {showValidation && validationMessages.length > 0 && (
+          <ValidationAlert messages={validationMessages} />
+        )}
+
         {/* Channel Categories */}
         {Object.entries(MARKETING_CHANNEL_CATEGORIES).map(
           ([category, channels]) => (
