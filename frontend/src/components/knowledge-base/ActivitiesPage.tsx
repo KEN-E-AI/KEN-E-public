@@ -193,7 +193,7 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/intuitions/?account_id=${selectedOrgAccount.accountId}`,
+        `${API_BASE_URL}/api/v1/intuitions/?account_id=${selectedOrgAccount?.accountId}`,
       );
 
       if (response.data.intuitions) {
@@ -241,20 +241,29 @@ const ActivitiesPage = () => {
       setLoading(true);
       setError(null);
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/activities/?account_id=${selectedOrgAccount.accountId}`,
+        `${API_BASE_URL}/api/v1/activities/?account_id=${selectedOrgAccount?.accountId}`,
       );
 
       if (response.data.activities !== undefined) {
         let convertedActivities =
           response.data.activities.map(convertApiActivity);
 
+        // Deduplicate activities by ID to prevent React key conflicts
+        const uniqueActivities = convertedActivities.reduce((acc, activity) => {
+          const existing = acc.find(a => a.id === activity.id);
+          if (!existing) {
+            acc.push(activity);
+          }
+          return acc;
+        }, [] as Activity[]);
+
         // Fetch and populate intuitions
-        convertedActivities =
-          await fetchAndPopulateIntuitions(convertedActivities);
+        const activitiesWithIntuitions =
+          await fetchAndPopulateIntuitions(uniqueActivities);
 
-        console.log("Activities: ", convertedActivities);
+        console.log("Activities: ", activitiesWithIntuitions);
 
-        setActivitiesData(convertedActivities);
+        setActivitiesData(activitiesWithIntuitions);
       } else {
         setError("Failed to fetch activities");
       }
@@ -274,7 +283,7 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount.accountId}`,
+        `${API_BASE_URL}/api/v1/metrics/?account_id=${selectedOrgAccount?.accountId}`,
       );
 
       if (response.data.metrics !== undefined) {
@@ -302,7 +311,7 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.get(
-        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount.accountId}`,
+        `${API_BASE_URL}/api/v1/datasets/?account_id=${selectedOrgAccount?.accountId}`,
       );
 
       if (response.data.datasets !== undefined) {
@@ -421,7 +430,7 @@ const ActivitiesPage = () => {
         {
           data: {
             activity_id: activityId,
-            account_id: selectedOrgAccount.accountId,
+            account_id: selectedOrgAccount?.accountId,
           },
         },
       );
@@ -602,7 +611,7 @@ const ActivitiesPage = () => {
         `${API_BASE_URL}/api/v1/activities/logs`,
         {
           id: logId,
-          account_id: selectedOrgAccount.accountId,
+          account_id: selectedOrgAccount?.accountId,
           start_date: updates.startDate,
           end_date: updates.endDate,
           description: updates.description,
@@ -639,7 +648,7 @@ const ActivitiesPage = () => {
 
     try {
       const payload = {
-        account_id: selectedOrgAccount.accountId,
+        account_id: selectedOrgAccount?.accountId,
         activity_id: activityId,
         metric_id: intuition.metricName, // This should be the actual metric ID
         direction: intuition.direction === "increase" ? "positive" : "negative",
@@ -681,7 +690,7 @@ const ActivitiesPage = () => {
 
     try {
       const response = await axios.put(`${API_BASE_URL}/api/v1/intuitions/`, {
-        account_id: selectedOrgAccount.accountId,
+        account_id: selectedOrgAccount?.accountId,
         activity_id: activityId,
         metric_id: updates.metricName,
         direction: updates.direction === "increase" ? "positive" : "negative",
@@ -720,7 +729,7 @@ const ActivitiesPage = () => {
         `${API_BASE_URL}/api/v1/intuitions/`,
         {
           data: {
-            account_id: selectedOrgAccount.accountId,
+            account_id: selectedOrgAccount?.accountId,
             activity_id: activityId,
             metric_id: metricId,
           },
@@ -750,7 +759,7 @@ const ActivitiesPage = () => {
         `${API_BASE_URL}/api/v1/activities/logs`,
         {
           data: {
-            account_id: selectedOrgAccount.accountId,
+            account_id: selectedOrgAccount?.accountId,
             activity_id: activityId,
             activity_log_id: logId,
           },
