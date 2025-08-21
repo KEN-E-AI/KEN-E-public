@@ -8,14 +8,15 @@ import {
   ArrowLeft,
   AlertTriangle,
 } from "lucide-react";
-import {
-  ACCOUNT_TEMPLATES,
-  type AccountTemplate,
-} from "@/data/accountTemplates";
 import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
-import { WizardStep2TemplateSelection } from "./wizard/WizardStep2TemplateSelection";
-import { WizardStep3Configuration } from "./wizard/WizardStep3Configuration";
-import { WizardStep4Settings } from "./wizard/WizardStep4Settings";
+import { WizardStep2MarketingChannels } from "./wizard/WizardStep2MarketingChannels";
+import { WizardStep3ProductIntegrations } from "./wizard/WizardStep3ProductIntegrations";
+import { WizardStep4Configuration } from "./wizard/WizardStep4Configuration";
+import { WizardStep5Confirm } from "./wizard/WizardStep5Confirm";
+import {
+  templateService,
+  type IndustryTemplate,
+} from "@/services/templateService";
 import { validateAccountCreation } from "./validation/accountValidation";
 import { ErrorBoundary } from "./ErrorBoundary";
 
@@ -24,25 +25,25 @@ export interface AccountCreationData {
   account_name: string;
   description: string;
   industry: string;
-  location: string;
-  website: string;
+  websites: string[];
   estimated_annual_ad_budget: number | null;
   business_strategy_documents: File[];
 
-  // Step 2: Template Selection
+  // Step 2: Template Selection (will be auto-selected based on industry)
   template_id: string;
 
-  // Step 3: Configuration
-  objectives: string[];
-  channels: string[];
-  kpis: string[];
-  timezone: string;
+  // Step 3: Marketing Channels
+  marketing_channels: string[];
 
-  // Step 4: Settings
-  auto_sync: boolean;
-  performance_alerts: boolean;
-  budget_alerts: boolean;
-  data_retention: number;
+  // Step 4: Product Integrations
+  product_integrations: string[];
+
+  // Configuration fields (from step 1 and 4)
+  timezone: string;
+  data_region: string;
+  region: string[];
+  objectives: string[];
+  kpis: string[];
 }
 
 interface AccountCreationWizardProps {
@@ -59,6 +60,9 @@ export const AccountCreationWizard = ({
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadedTemplate, setLoadedTemplate] = useState<IndustryTemplate | null>(
+    null,
+  );
   const [validationErrors, setValidationErrors] = useState<
     Array<{ field: string; message: string }>
   >([]);
@@ -67,27 +71,21 @@ export const AccountCreationWizard = ({
     account_name: "",
     description: "",
     industry: "",
-    location: "",
-    website: "",
+    websites: [""],
     estimated_annual_ad_budget: null,
     business_strategy_documents: [],
     template_id: "",
+    marketing_channels: [],
+    product_integrations: [],
     objectives: [],
-    channels: [],
     kpis: [],
     timezone: "America/New_York",
-    auto_sync: true,
-    performance_alerts: true,
-    budget_alerts: true,
-    data_retention: 365,
+    data_region: "US",
+    region: ["US"],
   });
 
-  const totalSteps = 4;
+  const totalSteps = 5;
   const progress = (currentStep / totalSteps) * 100;
-
-  const selectedTemplate = formData.template_id
-    ? ACCOUNT_TEMPLATES[formData.template_id]
-    : null;
 
   const handleNext = () => {
     if (currentStep < totalSteps) {
@@ -99,18 +97,6 @@ export const AccountCreationWizard = ({
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
-  };
-
-  const handleTemplateSelect = (template: AccountTemplate) => {
-    setFormData({
-      ...formData,
-      template_id: template.id,
-      industry: template.recommendedSettings.industry,
-      timezone: template.recommendedSettings.timezone,
-      objectives: template.defaultObjectives,
-      channels: template.defaultChannels,
-      kpis: template.defaultKPIs,
-    });
   };
 
   const handleComplete = async () => {
@@ -143,12 +129,22 @@ export const AccountCreationWizard = ({
   const canProceed = () => {
     switch (currentStep) {
       case 1:
-        return formData.account_name.trim() !== "" && formData.industry !== "";
+        return (
+          formData.account_name.trim() !== "" &&
+          formData.industry !== "" &&
+          formData.template_id !== "" &&
+          formData.websites.some((w) => w.trim() !== "") &&
+          formData.region.length > 0 &&
+          formData.data_region !== "" &&
+          formData.timezone !== ""
+        );
       case 2:
-        return formData.template_id !== "";
+        return formData.marketing_channels.length > 0;
       case 3:
-        return formData.objectives.length > 0 && formData.channels.length > 0;
+        return true; // Product integrations are optional
       case 4:
+        return formData.objectives.length > 0;
+      case 5:
         return true;
       default:
         return false;
@@ -189,17 +185,22 @@ export const AccountCreationWizard = ({
                 <span
                   className={currentStep >= 2 ? "text-brand-medium-blue" : ""}
                 >
-                  Template
+                  Channels
                 </span>
                 <span
                   className={currentStep >= 3 ? "text-brand-medium-blue" : ""}
                 >
-                  Configuration
+                  Integrations
                 </span>
                 <span
                   className={currentStep >= 4 ? "text-brand-medium-blue" : ""}
                 >
-                  Settings
+                  Objectives
+                </span>
+                <span
+                  className={currentStep >= 5 ? "text-brand-medium-blue" : ""}
+                >
+                  Confirm
                 </span>
               </div>
             </div>
@@ -210,31 +211,38 @@ export const AccountCreationWizard = ({
                 <WizardStep1BasicInfo
                   formData={formData}
                   setFormData={setFormData}
+                  onTemplateLoad={setLoadedTemplate}
                 />
               )}
 
               {currentStep === 2 && (
-                <WizardStep2TemplateSelection
+                <WizardStep2MarketingChannels
                   formData={formData}
-                  selectedCategory={selectedCategory}
-                  setSelectedCategory={setSelectedCategory}
-                  onTemplateSelect={handleTemplateSelect}
+                  setFormData={setFormData}
+                  selectedTemplate={loadedTemplate}
                 />
               )}
 
-              {currentStep === 3 && selectedTemplate && (
-                <WizardStep3Configuration
+              {currentStep === 3 && (
+                <WizardStep3ProductIntegrations
                   formData={formData}
                   setFormData={setFormData}
-                  selectedTemplate={selectedTemplate}
+                  selectedTemplate={loadedTemplate}
                 />
               )}
 
-              {currentStep === 4 && (
-                <WizardStep4Settings
+              {currentStep === 4 && loadedTemplate && (
+                <WizardStep4Configuration
                   formData={formData}
                   setFormData={setFormData}
-                  selectedTemplate={selectedTemplate}
+                  selectedTemplate={loadedTemplate}
+                />
+              )}
+
+              {currentStep === 5 && (
+                <WizardStep5Confirm
+                  formData={formData}
+                  selectedTemplate={loadedTemplate}
                 />
               )}
             </div>
@@ -244,8 +252,22 @@ export const AccountCreationWizard = ({
               <Alert variant="destructive" className="mt-4">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
-                  {submitError ||
-                    "Please fix the validation errors before continuing."}
+                  {submitError || (
+                    <>
+                      Please fix the validation errors in the following fields:{" "}
+                      <strong>
+                        {validationErrors
+                          .map((error) => {
+                            // Convert field names to more readable format
+                            const fieldName = error.field
+                              .replace(/_/g, " ")
+                              .replace(/\b\w/g, (l) => l.toUpperCase());
+                            return fieldName;
+                          })
+                          .join(", ")}
+                      </strong>
+                    </>
+                  )}
                 </AlertDescription>
               </Alert>
             )}

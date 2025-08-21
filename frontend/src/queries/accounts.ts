@@ -22,7 +22,8 @@ export const useAccounts = (organizationId: string | null) => {
     queryKey: accountKeys.list(organizationId || ""),
     queryFn: async () => {
       if (!organizationId) return [];
-      return getAccountsByOrganizationId(organizationId);
+      const accounts = await getAccountsByOrganizationId(organizationId);
+      return accounts;
     },
     enabled: !!organizationId,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -68,6 +69,8 @@ export const useCreateAccount = () => {
       timezone: string;
       dataRegion: string;
       region: string[];
+      marketing_channels: string[];
+      product_integrations: string[];
       estimatedAnnualAdBudget?: number | null;
       businessStrategyDocuments?: File[];
     }) => {
@@ -81,11 +84,18 @@ export const useCreateAccount = () => {
         timezone: accountData.timezone,
         data_region: accountData.dataRegion,
         region: accountData.region,
+        marketing_channels: accountData.marketing_channels,
+        product_integrations: accountData.product_integrations,
         estimated_annual_ad_budget: accountData.estimatedAnnualAdBudget,
         business_strategy_documents: accountData.businessStrategyDocuments,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidate the specific organization's account list
+      queryClient.invalidateQueries({
+        queryKey: accountKeys.list(variables.organizationId),
+      });
+      // Also invalidate all lists for broader cache consistency
       queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
     },
     onError: (error) => {

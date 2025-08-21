@@ -250,7 +250,7 @@ const ActivitiesPage = () => {
 
         // Deduplicate activities by ID to prevent React key conflicts
         const uniqueActivities = convertedActivities.reduce((acc, activity) => {
-          const existing = acc.find(a => a.id === activity.id);
+          const existing = acc.find((a) => a.id === activity.id);
           if (!existing) {
             acc.push(activity);
           }

@@ -9,20 +9,20 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Target } from "lucide-react";
-import { type AccountTemplate } from "@/data/accountTemplates";
+import { type IndustryTemplate } from "@/services/templateService";
 import { AccountCreationData } from "../AccountCreationWizard";
 
-interface WizardStep3ConfigurationProps {
+interface WizardStep4ConfigurationProps {
   formData: AccountCreationData;
   setFormData: (data: AccountCreationData) => void;
-  selectedTemplate: AccountTemplate;
+  selectedTemplate: IndustryTemplate;
 }
 
-export const WizardStep3Configuration = ({
+export const WizardStep4Configuration = ({
   formData,
   setFormData,
   selectedTemplate,
-}: WizardStep3ConfigurationProps) => {
+}: WizardStep4ConfigurationProps) => {
   const handleObjectiveToggle = (objective: string, checked: boolean) => {
     if (checked) {
       setFormData({
@@ -33,20 +33,6 @@ export const WizardStep3Configuration = ({
       setFormData({
         ...formData,
         objectives: formData.objectives.filter((o) => o !== objective),
-      });
-    }
-  };
-
-  const handleChannelToggle = (channel: string, checked: boolean) => {
-    if (checked) {
-      setFormData({
-        ...formData,
-        channels: [...formData.channels, channel],
-      });
-    } else {
-      setFormData({
-        ...formData,
-        channels: formData.channels.filter((c) => c !== channel),
       });
     }
   };
@@ -98,29 +84,6 @@ export const WizardStep3Configuration = ({
             </div>
           </div>
 
-          {/* Channels */}
-          <div>
-            <Label className="text-base font-medium mb-3 block">
-              Marketing Channels
-            </Label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {selectedTemplate.defaultChannels.map((channel, index) => (
-                <div key={index} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`channel-${index}`}
-                    checked={formData.channels.includes(channel)}
-                    onCheckedChange={(checked) =>
-                      handleChannelToggle(channel, checked as boolean)
-                    }
-                  />
-                  <Label htmlFor={`channel-${index}`} className="text-sm">
-                    {channel}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* KPIs */}
           <div>
             <Label className="text-base font-medium mb-3 block">
@@ -142,33 +105,6 @@ export const WizardStep3Configuration = ({
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Timezone */}
-          <div>
-            <Label htmlFor="timezone">Timezone</Label>
-            <Select
-              value={formData.timezone}
-              onValueChange={(value) =>
-                setFormData({ ...formData, timezone: value })
-              }
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                <SelectItem value="America/Chicago">Central Time</SelectItem>
-                <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                <SelectItem value="America/Los_Angeles">
-                  Pacific Time
-                </SelectItem>
-                <SelectItem value="Europe/London">GMT</SelectItem>
-                <SelectItem value="Europe/Paris">CET</SelectItem>
-                <SelectItem value="Asia/Tokyo">JST</SelectItem>
-                <SelectItem value="Australia/Sydney">AEST</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
       </CardContent>
