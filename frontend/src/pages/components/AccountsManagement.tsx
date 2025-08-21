@@ -9,7 +9,9 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useUpdateAccount,
+  accountKeys,
 } from "@/queries/accounts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
@@ -79,6 +81,10 @@ import {
   migrateIndustryValue,
   getIndustryDisplayName,
 } from "@/lib/industryMigration";
+import {
+  AccountCreationWizard,
+  type AccountCreationData,
+} from "@/components/settings/AccountCreationWizard";
 
 const REGION_OPTIONS = [
   { value: "Global", label: "Global" },
@@ -186,12 +192,66 @@ const AccountsManagement = ({
   } = useAccountOperations();
 
   // React Query hooks
+  const queryClient = useQueryClient();
   const { data: accounts = [], isLoading: isLoadingAccounts } =
     useAccounts(currentOrgId);
   const createAccountMutation = useCreateAccount();
   const deleteAccountMutation = useDeleteAccount();
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
+
+  // Helper functions for account creation (following C-4: simple, testable functions)
+  const validateAccountCreation = (
+    data: AccountCreationData,
+    orgId: string | null,
+  ): string | null => {
+    if (!orgId) {
+      return "No organization selected. Please select an organization first.";
+    }
+    if (!data.account_name || !data.industry) {
+      return "Please fill in required fields: account name and industry.";
+    }
+    return null;
+  };
+
+  const transformWizardData = (data: AccountCreationData, orgId: string) => ({
+    accountName: data.account_name,
+    organizationId: orgId,
+    industry: data.industry,
+    status: "Active" as const,
+    websites: data.websites || [],
+    timezone: data.timezone,
+    dataRegion: data.data_region,
+    region: data.region,
+    estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
+    businessStrategyDocuments: data.business_strategy_documents || [],
+  });
+
+  const updateContextsAfterCreation = (account: any, orgId: string) => {
+    // Update account metadata for easy lookup
+    setAccountMetadata((prev) => ({
+      ...prev,
+      [account.account_id]: account,
+    }));
+
+    // Update orgMetadata to include the new account
+    setOrgMetadata((prev) => ({
+      ...prev,
+      [orgId]: {
+        ...prev[orgId],
+        accounts: [...(prev[orgId]?.accounts || []), account],
+      },
+    }));
+  };
+
+  const refreshAccountQueries = async (orgId: string) => {
+    await queryClient.invalidateQueries({
+      queryKey: accountKeys.list(orgId),
+    });
+    await queryClient.refetchQueries({
+      queryKey: accountKeys.list(orgId),
+    });
+  };
 
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -262,14 +322,16 @@ const AccountsManagement = ({
 
   // Filter accounts based on user permissions
   const organizationAccounts = useMemo(() => {
-    // Super admins have access to all accounts
-    if (isSuperAdmin) {
+    // Super admins or organization admins have access to all accounts
+    if (isSuperAdmin || hasAdminAccess) {
       return accounts;
     }
-    return accounts.filter(
-      (account) => user?.permissions?.accounts?.[account.account_id],
-    );
-  }, [accounts, user?.permissions?.accounts, isSuperAdmin]);
+
+    // Regular users only see accounts they have explicit permissions for
+    return accounts.filter((account) => {
+      return user?.permissions?.accounts?.[account.account_id];
+    });
+  }, [accounts, user?.permissions?.accounts, isSuperAdmin, hasAdminAccess]);
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
@@ -437,6 +499,58 @@ const AccountsManagement = ({
         description: "Failed to update account. Please try again.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleWizardComplete = async (wizardData: AccountCreationData) => {
+    // Validate input data
+    const validationError = validateAccountCreation(wizardData, currentOrgId);
+    if (validationError) {
+      toast({
+        title: "Error",
+        description: validationError,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Start loading operation
+      startOperation(
+        "Creating account...",
+        "Please wait while we set up your new account",
+      );
+
+      // Transform and create account
+      const accountData = transformWizardData(wizardData, currentOrgId!);
+      const result = await createAccountMutation.mutateAsync(accountData);
+
+      // Update UI and cache
+      toast({
+        title: "Success",
+        description: "Account created successfully!",
+      });
+
+      await refreshAccountQueries(currentOrgId!);
+      updateContextsAfterCreation(result, currentOrgId!);
+
+      // Close wizard
+      setIsCreateAccountModalOpen(false);
+    } catch (error: unknown) {
+      console.error("[AccountsManagement] Error creating account:", error);
+
+      const errorMessage =
+        axios.isAxiosError(error) && error.response?.data?.message
+          ? error.response.data.message
+          : "Failed to create account. Please try again.";
+
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
     }
   };
 
@@ -937,10 +1051,11 @@ const AccountsManagement = ({
         }));
       }
 
-      // If we deleted the current account, redirect to workspace selection
+      // If we deleted the current account, clear the selected account but stay on organization settings
       if (isDeletingCurrentAccount) {
-        // Navigate immediately instead of with timeout to prevent accessing deleted data
-        navigate("/workspace-selection");
+        // Clear the selected account in auth context since it no longer exists
+        setSelectedOrgAccount(null);
+        // Stay on the current page - user can create new accounts from here
       }
     } catch (error: any) {
       endOperation();
@@ -1450,391 +1565,12 @@ const AccountsManagement = ({
         </DialogContent>
       </Dialog>
 
-      {/* Create Account Modal */}
-      <Dialog
-        open={isCreateAccountModalOpen}
-        onOpenChange={setIsCreateAccountModalOpen}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create New Account</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-name">Account Name</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      A friendly name for the account. If you have different
-                      types of customers who each require a unique strategy, you
-                      should consider creating multiple accounts (example:
-                      Company B2B, and Company B2C).
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Input
-                id="create-account-name"
-                value={createAccountFormData.account_name}
-                onChange={(e) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    account_name: e.target.value,
-                  })
-                }
-                placeholder="Enter account name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="create-account-industry">Industry</Label>
-              <IndustrySelect
-                value={createAccountFormData.industry}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    industry: value,
-                  })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-status">Status</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Set the status to inactive to temporarily pause all data
-                      processing and charges.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Select
-                value={createAccountFormData.status}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    status: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-timezone">Timezone</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Set the timezone to the same value selected in your
-                      martech platforms to ensure all data is aligned to the
-                      proper date.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Select
-                value={createAccountFormData.timezone}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    timezone: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select timezone" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-data-region">Data Region</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Choose a location to store your data. Once your account is
-                      created you must contact support to change this setting.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Select
-                value={createAccountFormData.data_region}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    data_region: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select data region" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="United States">United States</SelectItem>
-                  <SelectItem value="Europe">Europe</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label>Customer Region</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p>
-                        Select all regions where your target customers live.
-                        This will be used to understand how regional holidays
-                        influence your business metrics.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <div className="relative" ref={createRegionDropdownRef}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() =>
-                      setIsCreateRegionPopoverOpen(!isCreateRegionPopoverOpen)
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  {isCreateRegionPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                      {REGION_OPTIONS.map((option) => (
-                        <div
-                          key={option.value}
-                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                          onClick={() => {
-                            if (
-                              !createAccountFormData.region.includes(
-                                option.value,
-                              )
-                            ) {
-                              toggleRegion(option.value, false);
-                              setIsCreateRegionPopoverOpen(false);
-                            }
-                          }}
-                        >
-                          <span className="flex-1">{option.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                {createAccountFormData.region.map((regionValue, index) => (
-                  <div key={index} className="flex gap-2">
-                    <Input
-                      value={
-                        REGION_OPTIONS.find((opt) => opt.value === regionValue)
-                          ?.label || regionValue
-                      }
-                      readOnly
-                      className="flex-1 bg-gray-50"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleRegion(regionValue, false)}
-                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label>Websites</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p>
-                        List all of your websites. KEN-E will study these to
-                        understand your business and products/services.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addCreateWebsiteField}
-                  className="h-8 w-8 p-0"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {createAccountFormData.websites.map((website, index) => (
-                  <div key={index} className="flex gap-2">
-                    <Input
-                      value={website}
-                      onChange={(e) =>
-                        updateCreateWebsiteField(index, e.target.value)
-                      }
-                      placeholder="Enter website URL"
-                      className="flex-1"
-                    />
-                    {createAccountFormData.websites.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeCreateWebsiteField(index)}
-                        className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-budget">
-                  <DollarSign className="inline h-4 w-4 mr-1" />
-                  Estimated Annual Ad Budget (USD)
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      This helps KEN-E provide better budget optimization
-                      recommendations and insights.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Input
-                id="create-account-budget"
-                type="number"
-                min="0"
-                step="1000"
-                value={createAccountFormData.estimated_annual_ad_budget || ""}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    estimated_annual_ad_budget: value
-                      ? parseInt(value, 10)
-                      : null,
-                  });
-                }}
-                placeholder="e.g., 100000"
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label>
-                  <FileText className="inline h-4 w-4 mr-1" />
-                  Business Strategy Documents
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Upload documents to help KEN-E understand your business
-                      context (optional). Examples: Business plan, marketing
-                      strategy, customer profiles, competitive analysis.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <FileUpload
-                files={createAccountFormData.business_strategy_documents}
-                onFilesChange={(files) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    business_strategy_documents: files,
-                  })
-                }
-                accept={[
-                  ".pdf",
-                  ".xlsx",
-                  ".docx",
-                  ".pptx",
-                  ".txt",
-                  ".png",
-                  ".jpg",
-                  ".jpeg",
-                ]}
-                multiple={true}
-                maxSize={25 * 1024 * 1024} // 25MB
-                maxTotalSize={100 * 1024 * 1024} // 100MB
-                maxFiles={10}
-              />
-            </div>
-            <div className="flex gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setIsCreateAccountModalOpen(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateAccount}
-                className="flex-1"
-                disabled={
-                  createAccountMutation.isPending || isOperationInProgress
-                }
-              >
-                {createAccountMutation.isPending
-                  ? "Creating..."
-                  : "Create Account"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Account Creation Wizard */}
+      <AccountCreationWizard
+        isOpen={isCreateAccountModalOpen}
+        onClose={() => setIsCreateAccountModalOpen(false)}
+        onComplete={handleWizardComplete}
+      />
 
       {/* Move Account Dialog */}
       <Dialog

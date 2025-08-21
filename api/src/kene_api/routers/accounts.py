@@ -20,9 +20,9 @@ from ..models.kene_models import (
     NotificationCategory,
     SuccessResponse,
 )
+from ..repositories import FirestoreNotificationRepository
 from ..services.notification_service_v2 import NotificationService
 from ..services.storage_service import StorageService, get_storage_service
-from ..repositories import FirestoreNotificationRepository
 
 router = APIRouter(tags=["accounts"])
 
@@ -370,8 +370,9 @@ async def _create_initial_activities(
 
     except Exception as e:
         logger.error(
-            f"Error creating initial activities for account {account_id}: {e!s}"
+            f"Error creating initial activities for account {account_id}: {type(e).__name__}: {e!s}"
         )
+        logger.error(f"Exception details for account {account_id}: {repr(e)}")
         # Don't raise - let account creation succeed even if initial activities fail
         return 0
 
@@ -399,6 +400,7 @@ async def _create_initial_activity_logs(
     try:
         # Get GCP project ID from environment
         import os
+
         from ..models.kene_models import REGION_TO_HOLIDAY_ACTIVITY_ID
 
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
@@ -592,7 +594,10 @@ async def create_account(
             timezone: $timezone,
             data_region: $data_region,
             region: $region,
-            estimated_annual_ad_budget: $estimated_annual_ad_budget
+            estimated_annual_ad_budget: $estimated_annual_ad_budget,
+            marketing_channels: $marketing_channels,
+            product_integrations: $product_integrations,
+            template_id: $template_id
         })
         CREATE (acc)-[:BELONGS_TO]->(org)
         RETURN acc
@@ -609,6 +614,9 @@ async def create_account(
             "data_region": request.data_region or "",
             "region": request.region or [],
             "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
+            "marketing_channels": request.marketing_channels or [],
+            "product_integrations": request.product_integrations or [],
+            "template_id": request.template_id,
         }
 
         await db.execute_write_query(create_query, params)
@@ -648,9 +656,11 @@ async def create_account(
                 "created_by": user.user_id,
                 "type": "placeholder",
                 "description": "Initial placeholder document - collection ready for business strategy documents",
-                "organization_id": request.organization_id
+                "organization_id": request.organization_id,
             }
-            doc_id = firestore.create_document(collection_name, "_placeholder", initial_doc_data)
+            doc_id = firestore.create_document(
+                collection_name, "_placeholder", initial_doc_data
+            )
             logger.info(
                 f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
             )
@@ -682,7 +692,7 @@ async def create_account(
                 )
             else:
                 logger.info(
-                    f"No holiday activity logs created for account {account_id}"
+                    f"No regional holidays found - no activity logs created for account {account_id}"
                 )
 
         # Create notification for the new account
@@ -707,9 +717,9 @@ async def create_account(
             )
 
             # Ensure the creating user can see the notification immediately
-            await notification_service.initialize_notification_for_user(
+            await notification_service._initialize_user_statuses(
+                account_id=account_id,
                 notification_id=notification_id,
-                user_id=user.user_id,
                 category=NotificationCategory.NEW_FEATURES,
             )
         except Exception as e:
@@ -977,7 +987,7 @@ async def delete_account(
         MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(activity:Activity)<-[:LOGGED]-(log:ActivityLog)
         DETACH DELETE log
         """
-        logs_summary = await db.execute_write_query(
+        logs_summary = await db.execute_write_operation(
             delete_logs_query, {"account_id": account_id}
         )
         total_nodes_deleted += logs_summary.get("nodes_deleted", 0)
@@ -988,7 +998,7 @@ async def delete_account(
         MATCH (acc:Account {account_id: $account_id})<-[:BELONGS_TO]-(entity)
         DETACH DELETE entity
         """
-        entities_summary = await db.execute_write_query(
+        entities_summary = await db.execute_write_operation(
             delete_entities_query, {"account_id": account_id}
         )
         total_nodes_deleted += entities_summary.get("nodes_deleted", 0)
@@ -999,7 +1009,7 @@ async def delete_account(
         MATCH (acc:Account {account_id: $account_id})
         DETACH DELETE acc
         """
-        account_summary = await db.execute_write_query(
+        account_summary = await db.execute_write_operation(
             delete_account_query, {"account_id": account_id}
         )
         total_nodes_deleted += account_summary.get("nodes_deleted", 0)
@@ -1113,6 +1123,9 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         data_region=acc_data.get("data_region", ""),
         region=acc_data.get("region", []),
         estimated_annual_ad_budget=acc_data.get("estimated_annual_ad_budget"),
+        marketing_channels=acc_data.get("marketing_channels", []),
+        product_integrations=acc_data.get("product_integrations", []),
+        template_id=acc_data.get("template_id"),
     )
 
 
@@ -1663,7 +1676,7 @@ async def upload_business_documents(
                     "organization_id": organization_id,
                 }
                 firestore.set_document(
-                    f"account_documents", account_id, doc_data, merge=True
+                    "account_documents", account_id, doc_data, merge=True
                 )
         except Exception as e:
             logger.warning(f"Failed to store document metadata in Firestore: {e}")
