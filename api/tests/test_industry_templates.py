@@ -34,8 +34,7 @@ def sample_template_data():
         "id": "retail_trade_b2c",
         "industry": "Retail Trade [B2C]",
         "name": "Retail Trade [B2C] Template",
-        "description": "Optimized template for retail",
-        "definition": "Selling goods directly to consumers",
+        "description": "Selling goods directly to consumers",
         "default_objectives": ["Increase sales", "Improve customer satisfaction"],
         "default_channels": ["Email", "Social Media"],
         "default_kpis": ["Revenue", "Customer Count"],
@@ -153,7 +152,7 @@ class TestGetIndustryTemplate:
         assert response.status_code == 200
         data = response.json()
         assert data["industry"] == "Retail Trade [B2C]"
-        assert data["definition"] == "Selling goods directly to consumers"
+        assert data["description"] == "Selling goods directly to consumers"
     
     @patch("src.kene_api.routers.industry_templates._fetch_template_by_industry")
     def test_get_template_by_industry_not_found(self, mock_fetch, client):

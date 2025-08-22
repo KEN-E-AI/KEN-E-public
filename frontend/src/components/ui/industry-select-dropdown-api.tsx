@@ -4,7 +4,10 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { templateService, type IndustryTemplate } from "@/services/templateService";
+import {
+  templateService,
+  type IndustryTemplate,
+} from "@/services/templateService";
 
 interface IndustrySelectProps {
   value: string;
@@ -16,7 +19,7 @@ interface IndustrySelectProps {
 interface IndustryOption {
   value: string;
   label: string;
-  definition: string;
+  description: string;
 }
 
 /**
@@ -49,9 +52,12 @@ export const IndustrySelectDropdownAPI = React.forwardRef<
         try {
           const templates = await templateService.getAllTemplates();
           const options: IndustryOption[] = templates.map((template) => ({
-            value: template.industry || template.recommendedSettings?.industry || template.id,
+            value:
+              template.industry ||
+              template.recommendedSettings?.industry ||
+              template.id,
             label: template.industry || template.name,
-            definition: template.definition || template.description || "",
+            description: template.description || "",
           }));
           // Sort alphabetically by label
           options.sort((a, b) => a.label.localeCompare(b.label));
@@ -76,7 +82,7 @@ export const IndustrySelectDropdownAPI = React.forwardRef<
       return industries.filter(
         (opt) =>
           opt.label.toLowerCase().includes(searchLower) ||
-          opt.definition.toLowerCase().includes(searchLower),
+          opt.description.toLowerCase().includes(searchLower),
       );
     }, [search, industries]);
 
@@ -244,9 +250,9 @@ export const IndustrySelectDropdownAPI = React.forwardRef<
                     >
                       <div className="flex flex-col items-start flex-1 py-1">
                         <span className="font-medium">{option.label}</span>
-                        {option.definition && (
+                        {option.description && (
                           <span className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                            {option.definition}
+                            {option.description}
                           </span>
                         )}
                       </div>

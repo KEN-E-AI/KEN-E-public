@@ -144,21 +144,22 @@ export const WizardStep1BasicInfo = ({
             ...prev,
             industry,
             template_id: template.id,
-            // Pre-populate with template defaults
-            timezone: template.recommendedSettings.timezone,
-            data_region: template.recommendedSettings.data_region || "US",
+            // Pre-populate with template defaults (with safe fallbacks)
+            timezone:
+              template.recommendedSettings?.timezone || "America/New_York",
+            data_region: template.recommendedSettings?.data_region || "US",
             // Will be used in later steps
-            objectives: template.defaultObjectives,
-            kpis: template.defaultKPIs,
+            objectives: template.defaultObjectives || [],
+            kpis: template.defaultKPIs || [],
             // Only set template values if user hasn't made selections yet
             marketing_channels:
               prev.marketing_channels.length > 0
                 ? prev.marketing_channels
-                : template.marketingChannels,
+                : template.marketingChannels || [],
             product_integrations:
               prev.product_integrations.length > 0
                 ? prev.product_integrations
-                : template.productIntegrations,
+                : template.productIntegrations || [],
           }));
 
           if (onTemplateLoad) {

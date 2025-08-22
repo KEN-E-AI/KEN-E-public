@@ -18,8 +18,7 @@ describe("IndustrySelectDropdownAPI", () => {
       id: "retail_trade_b2c",
       industry: "Retail Trade [B2C]",
       name: "Retail Trade [B2C] Template",
-      description: "Template for retail businesses",
-      definition: "Selling goods directly to consumers",
+      description: "Selling goods directly to consumers",
       defaultObjectives: [],
       defaultChannels: [],
       defaultKPIs: [],
@@ -40,8 +39,7 @@ describe("IndustrySelectDropdownAPI", () => {
       id: "manufacturing",
       industry: "Manufacturing",
       name: "Manufacturing Template",
-      description: "Template for manufacturing companies",
-      definition: "Transforming raw materials into new products",
+      description: "Transforming raw materials into new products",
       defaultObjectives: [],
       defaultChannels: [],
       defaultKPIs: [],
@@ -70,30 +68,34 @@ describe("IndustrySelectDropdownAPI", () => {
 
   test("renders with placeholder when no value selected", async () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
-    
+
     render(
       <IndustrySelectDropdownAPI
         value=""
         onValueChange={mockOnValueChange}
         placeholder="Select an industry"
-      />
+      />,
     );
 
     // Wait for loading to complete
     await waitFor(() => {
-      expect(screen.getByRole("combobox")).not.toHaveTextContent("Loading industries...");
+      expect(screen.getByRole("combobox")).not.toHaveTextContent(
+        "Loading industries...",
+      );
     });
 
-    expect(screen.getByRole("combobox")).toHaveTextContent("Select an industry");
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      "Select an industry",
+    );
   });
 
   test("shows loading state while fetching industries", async () => {
     vi.mocked(templateService.getAllTemplates).mockImplementation(
-      () => new Promise(() => {}) // Never resolves to keep loading
+      () => new Promise(() => {}), // Never resolves to keep loading
     );
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -105,7 +107,7 @@ describe("IndustrySelectDropdownAPI", () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     // Wait for industries to load
@@ -124,11 +126,11 @@ describe("IndustrySelectDropdownAPI", () => {
     });
   });
 
-  test("displays industry definitions in dropdown", async () => {
+  test("displays industry descriptions in dropdown", async () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -139,13 +141,13 @@ describe("IndustrySelectDropdownAPI", () => {
     const button = screen.getByRole("combobox");
     await userEvent.click(button);
 
-    // Check if definitions are displayed
+    // Check if descriptions are displayed
     await waitFor(() => {
       expect(
-        screen.getByText("Selling goods directly to consumers")
+        screen.getByText("Selling goods directly to consumers"),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("Transforming raw materials into new products")
+        screen.getByText("Transforming raw materials into new products"),
       ).toBeInTheDocument();
     });
   });
@@ -154,7 +156,7 @@ describe("IndustrySelectDropdownAPI", () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -181,7 +183,7 @@ describe("IndustrySelectDropdownAPI", () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -210,24 +212,28 @@ describe("IndustrySelectDropdownAPI", () => {
       <IndustrySelectDropdownAPI
         value="Retail Trade [B2C]"
         onValueChange={mockOnValueChange}
-      />
+      />,
     );
 
     await waitFor(() => {
       expect(templateService.getAllTemplates).toHaveBeenCalled();
     });
 
-    expect(screen.getByRole("combobox")).toHaveTextContent("Retail Trade [B2C]");
+    expect(screen.getByRole("combobox")).toHaveTextContent(
+      "Retail Trade [B2C]",
+    );
   });
 
   test("handles API error gracefully", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     vi.mocked(templateService.getAllTemplates).mockRejectedValue(
-      new Error("API Error")
+      new Error("API Error"),
     );
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -250,7 +256,7 @@ describe("IndustrySelectDropdownAPI", () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -280,7 +286,7 @@ describe("IndustrySelectDropdownAPI", () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -303,7 +309,7 @@ describe("IndustrySelectDropdownAPI", () => {
     // Dropdown should be closed
     await waitFor(() => {
       expect(
-        screen.queryByPlaceholderText("Search industries...")
+        screen.queryByPlaceholderText("Search industries..."),
       ).not.toBeInTheDocument();
     });
   });
@@ -312,7 +318,7 @@ describe("IndustrySelectDropdownAPI", () => {
     vi.mocked(templateService.getAllTemplates).mockResolvedValue(mockTemplates);
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {
@@ -339,10 +345,12 @@ describe("IndustrySelectDropdownAPI", () => {
       { ...mockTemplates[0] }, // Retail Trade [B2C]
     ];
 
-    vi.mocked(templateService.getAllTemplates).mockResolvedValue(unsortedTemplates);
+    vi.mocked(templateService.getAllTemplates).mockResolvedValue(
+      unsortedTemplates,
+    );
 
     render(
-      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />
+      <IndustrySelectDropdownAPI value="" onValueChange={mockOnValueChange} />,
     );
 
     await waitFor(() => {

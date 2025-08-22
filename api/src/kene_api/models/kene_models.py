@@ -1078,9 +1078,7 @@ class IndustryTemplateSettings(BaseModel):
 class IndustryTemplateDefaults(BaseModel):
     """Default settings for an industry template."""
 
-    data_retention: int = Field(
-        90, description="Data retention period in days"
-    )
+    data_retention: int = Field(90, description="Data retention period in days")
 
 
 class IndustryTemplate(BaseModel):
@@ -1089,37 +1087,49 @@ class IndustryTemplate(BaseModel):
     id: str = Field(..., description="Unique identifier for the template")
     industry: str = Field(..., description="Industry name")
     name: str = Field(..., description="Template display name")
-    description: str = Field(..., description="Template description")
-    definition: str = Field(
-        "", description="Industry definition for display in dropdown"
-    )
+    description: str = Field(..., description="Industry description")
     default_objectives: list[str] = Field(
-        default_factory=list, description="Default marketing objectives"
+        default_factory=list,
+        description="Default marketing objectives",
+        alias="defaultObjectives",
     )
     default_channels: list[str] = Field(
-        default_factory=list, description="Default marketing channels"
+        default_factory=list,
+        description="Default marketing channels",
+        alias="defaultChannels",
     )
     default_kpis: list[str] = Field(
-        default_factory=list, description="Default KPIs to track"
+        default_factory=list, description="Default KPIs to track", alias="defaultKPIs"
     )
     marketing_channels: list[str] = Field(
-        default_factory=list, description="Recommended marketing channels"
+        default_factory=list,
+        description="Recommended marketing channels",
+        alias="marketingChannels",
     )
     product_integrations: list[str] = Field(
-        default_factory=list, description="Recommended product integrations"
+        default_factory=list,
+        description="Recommended product integrations",
+        alias="productIntegrations",
     )
     recommended_settings: IndustryTemplateSettings = Field(
-        ..., description="Recommended configuration settings"
+        ...,
+        description="Recommended configuration settings",
+        alias="recommendedSettings",
     )
     default_settings: IndustryTemplateDefaults = Field(
         default_factory=IndustryTemplateDefaults,
-        description="Default settings values"
+        description="Default settings values",
+        alias="defaultSettings",
     )
     is_active: bool = Field(
         True, description="Whether this template is currently available"
     )
     created_at: str = Field(..., description="Template creation timestamp")
     updated_at: str = Field(..., description="Template last update timestamp")
+
+    class Config:
+        populate_by_name = True  # Allow both field name and alias to work
+        by_alias = False  # Use field names (snake_case) in output, not aliases
 
 
 class IndustryTemplateListResponse(BaseModel):
