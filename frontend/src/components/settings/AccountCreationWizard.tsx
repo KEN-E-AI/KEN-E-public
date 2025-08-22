@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
 import { WizardStep2MarketingChannelsImproved } from "./wizard/WizardStep2MarketingChannelsImproved";
-import { WizardStep3ProductIntegrations } from "./wizard/WizardStep3ProductIntegrations";
+import { WizardStep3ProductIntegrationsImproved } from "./wizard/WizardStep3ProductIntegrationsImproved";
 import { WizardStep5Confirm } from "./wizard/WizardStep5Confirm";
 import { ValidationSummary } from "@/components/ui/ValidationSummary";
 import {
@@ -283,7 +283,7 @@ export const AccountCreationWizard = ({
               )}
 
               {currentStep === 3 && (
-                <WizardStep3ProductIntegrations
+                <WizardStep3ProductIntegrationsImproved
                   formData={formData}
                   setFormData={setFormData}
                   selectedTemplate={loadedTemplate}

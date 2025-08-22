@@ -582,7 +582,17 @@ export const WizardStep1BasicInfo = ({
             Business Strategy Documents
           </CardTitle>
           <div className="text-sm text-dashboard-gray-600">
-            <p className="mb-2">Upload documents to help KEN-E understand your business, competitors and customers.</p><p> <b>At least one document required if no websites are provided.</b> Examples:</p>
+            <p className="mb-2">
+              Upload documents to help KEN-E understand your business,
+              competitors and customers.
+            </p>
+            <p>
+              {" "}
+              <b>
+                At least one document required if no websites are provided.
+              </b>{" "}
+              Examples:
+            </p>
             <ul className="list-disc list-inside ml-2 mb-3 space-y-1">
               <li>Business plan</li>
               <li>Competitive analysis</li>
