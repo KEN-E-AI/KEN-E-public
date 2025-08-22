@@ -150,7 +150,9 @@ export const AccountCreationWizard = ({
             formData.account_name.trim() !== "" &&
             formData.industry !== "" &&
             formData.template_id !== "" &&
-            formData.websites.some((w) => w.trim() !== "") &&
+            // Either websites OR business documents required
+            (formData.websites.some((w) => w.trim() !== "") ||
+              formData.business_strategy_documents.length > 0) &&
             formData.region.length > 0 &&
             formData.data_region !== "" &&
             formData.timezone !== "",
