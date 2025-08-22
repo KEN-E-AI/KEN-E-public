@@ -1,8 +1,16 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Link, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Link, Clock, Settings, CheckCircle } from "lucide-react";
 import {
   PRODUCT_INTEGRATIONS,
   INTEGRATION_CATEGORIES,
@@ -30,30 +38,31 @@ export const WizardStep3ProductIntegrationsImproved = ({
   showValidation = true,
 }: WizardStep3ProductIntegrationsImprovedProps) => {
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
+  const [enabledIntegrations, setEnabledIntegrations] = useState<Set<string>>(new Set());
 
-  const handleIntegrationToggle = (integrationId: string, checked: boolean) => {
-    if (checked) {
-      if (!formData.product_integrations.includes(integrationId)) {
-        const integration = PRODUCT_INTEGRATIONS.find(
-          (int) => int.id === integrationId,
-        );
-        if (integration?.status === "available") {
-          setFormData({
-            ...formData,
-            product_integrations: [
-              ...formData.product_integrations,
-              integrationId,
-            ],
-          });
-        }
+  const handleIntegrationClick = (integrationId: string) => {
+    const integration = PRODUCT_INTEGRATIONS.find(
+      (int) => int.id === integrationId,
+    );
+    if (integration?.status === "available" && !enabledIntegrations.has(integrationId)) {
+      setSelectedIntegration(integrationId);
+    }
+  };
+
+  const handleEnableIntegration = () => {
+    if (selectedIntegration) {
+      setEnabledIntegrations(prev => new Set(prev).add(selectedIntegration));
+      if (!formData.product_integrations.includes(selectedIntegration)) {
+        setFormData({
+          ...formData,
+          product_integrations: [
+            ...formData.product_integrations,
+            selectedIntegration,
+          ],
+        });
       }
-    } else {
-      setFormData({
-        ...formData,
-        product_integrations: formData.product_integrations.filter(
-          (id) => id !== integrationId,
-        ),
-      });
+      setSelectedIntegration(null);
     }
   };
 
@@ -142,9 +151,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
                 {integrations.map((integration) => {
                   const Icon = integration.icon;
                   const isAvailable = integration.status === "available";
-                  const isSelected = formData.product_integrations.includes(
-                    integration.id,
-                  );
+                  const isEnabled = enabledIntegrations.has(integration.id);
                   const hasImageError = imageErrors.has(integration.id);
 
                   return (
@@ -153,14 +160,10 @@ export const WizardStep3ProductIntegrationsImproved = ({
                       className={`p-3 transition-all ${
                         !isAvailable
                           ? "opacity-60 cursor-not-allowed"
-                          : isSelected
-                            ? "border-brand-medium-blue bg-brand-light-blue/10"
-                            : "hover:border-dashboard-gray-300 cursor-pointer"
+                          : isEnabled
+                            ? "border-green-500 bg-green-50"
+                            : "hover:border-dashboard-gray-300"
                       }`}
-                      onClick={() =>
-                        isAvailable &&
-                        handleIntegrationToggle(integration.id, !isSelected)
-                      }
                     >
                       <div className="flex items-start gap-3">
                         {/* Logo or Icon */}
@@ -188,19 +191,29 @@ export const WizardStep3ProductIntegrationsImproved = ({
                               </h4>
                             </div>
 
-                            {/* Checkbox */}
+                            {/* Action buttons/badges */}
                             {isAvailable ? (
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={(checked) =>
-                                  handleIntegrationToggle(
-                                    integration.id,
-                                    checked as boolean,
-                                  )
-                                }
-                                onClick={(e) => e.stopPropagation()}
-                                className="ml-2 mt-0.5"
-                              />
+                              isEnabled ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs bg-green-50 text-green-700 border-green-200 ml-2"
+                                >
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Enabled
+                                </Badge>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="ml-2 p-1 h-auto"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleIntegrationClick(integration.id);
+                                  }}
+                                >
+                                  <Settings className="h-4 w-4" />
+                                </Button>
+                              )
                             ) : (
                               <Badge
                                 variant="outline"
@@ -221,33 +234,47 @@ export const WizardStep3ProductIntegrationsImproved = ({
           ),
         )}
 
-        {/* Selected integrations summary */}
-        {formData.product_integrations.length > 0 && (
-          <Card className="bg-brand-light-blue/5 border-brand-light-blue/20">
-            <CardContent className="pt-4">
-              <h4 className="font-medium text-sm text-dashboard-gray-800 mb-2">
-                Selected Integrations ({formData.product_integrations.length})
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {formData.product_integrations.map((integrationId) => {
-                  const integration = PRODUCT_INTEGRATIONS.find(
-                    (i) => i.id === integrationId,
-                  );
-
-                  return (
-                    <Badge
-                      key={integrationId}
-                      variant="secondary"
-                      className="text-xs"
-                    >
-                      {integration?.name || integrationId}
-                    </Badge>
-                  );
-                })}
+        {/* Integration Setup Modal */}
+        <Dialog open={!!selectedIntegration} onOpenChange={(open) => !open && setSelectedIntegration(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                Setup {PRODUCT_INTEGRATIONS.find(i => i.id === selectedIntegration)?.name}
+              </DialogTitle>
+              <DialogDescription>
+                Follow these instructions to enable this integration:
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">Integration Steps:</h4>
+                <ol className="list-decimal list-inside space-y-2 text-sm text-dashboard-gray-600">
+                  <li>Navigate to your {PRODUCT_INTEGRATIONS.find(i => i.id === selectedIntegration)?.name} account settings</li>
+                  <li>Generate an API key or access token</li>
+                  <li>Copy the API credentials</li>
+                  <li>Return here and paste the credentials</li>
+                  <li>Test the connection to verify setup</li>
+                </ol>
               </div>
-            </CardContent>
-          </Card>
-        )}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> You can complete this setup after creating your account. The integration will be marked as pending until configured.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setSelectedIntegration(null)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleEnableIntegration}>
+                Mark as Enabled
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
