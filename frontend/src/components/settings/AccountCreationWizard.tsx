@@ -12,7 +12,6 @@ import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
 import { WizardStep2MarketingChannelsImproved } from "./wizard/WizardStep2MarketingChannelsImproved";
 import { WizardStep3ProductIntegrationsImproved } from "./wizard/WizardStep3ProductIntegrationsImproved";
 import { WizardStep5ConfirmImproved } from "./wizard/WizardStep5ConfirmImproved";
-import { ValidationSummary } from "@/components/ui/ValidationSummary";
 import {
   templateService,
   type IndustryTemplate,
@@ -22,7 +21,6 @@ import { validateCrossStepConsistency } from "@/lib/validation/crossStepValidati
 import { validateMarketingChannelsWithBudget } from "@/lib/validation/marketingChannelValidation";
 import { validateProductIntegrations } from "@/lib/validation/productIntegrationValidation";
 import { ErrorBoundary } from "./ErrorBoundary";
-import type { ValidationResult } from "@/types/validation";
 
 export interface AccountCreationData {
   // Step 1: Basic Information
@@ -293,19 +291,10 @@ export const AccountCreationWizard = ({
               )}
 
               {currentStep === 4 && (
-                <div className="space-y-6">
-                  <WizardStep5ConfirmImproved
-                    formData={formData}
-                    selectedTemplate={loadedTemplate}
-                  />
-
-                  {/* Validation Summary */}
-                  <ValidationSummary
-                    validations={stepValidations}
-                    canProceed={canProceed()}
-                    onFixIssues={(stepNumber) => setCurrentStep(stepNumber)}
-                  />
-                </div>
+                <WizardStep5ConfirmImproved
+                  formData={formData}
+                  selectedTemplate={loadedTemplate}
+                />
               )}
             </div>
 
