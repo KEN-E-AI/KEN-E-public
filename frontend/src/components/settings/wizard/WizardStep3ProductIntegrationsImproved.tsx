@@ -45,23 +45,42 @@ export const WizardStep3ProductIntegrationsImproved = ({
     const integration = PRODUCT_INTEGRATIONS.find(
       (int) => int.id === integrationId,
     );
-    if (integration?.status === "available" && !enabledIntegrations.has(integrationId)) {
+    if (integration?.status === "available") {
       setSelectedIntegration(integrationId);
     }
   };
 
-  const handleEnableIntegration = () => {
+  const handleToggleIntegration = () => {
     if (selectedIntegration) {
-      setEnabledIntegrations(prev => new Set(prev).add(selectedIntegration));
-      if (!formData.product_integrations.includes(selectedIntegration)) {
+      const isCurrentlyEnabled = enabledIntegrations.has(selectedIntegration);
+      
+      if (isCurrentlyEnabled) {
+        // Disable the integration
+        const newEnabled = new Set(enabledIntegrations);
+        newEnabled.delete(selectedIntegration);
+        setEnabledIntegrations(newEnabled);
+        
         setFormData({
           ...formData,
-          product_integrations: [
-            ...formData.product_integrations,
-            selectedIntegration,
-          ],
+          product_integrations: formData.product_integrations.filter(
+            id => id !== selectedIntegration
+          ),
         });
+      } else {
+        // Enable the integration
+        setEnabledIntegrations(prev => new Set(prev).add(selectedIntegration));
+        
+        if (!formData.product_integrations.includes(selectedIntegration)) {
+          setFormData({
+            ...formData,
+            product_integrations: [
+              ...formData.product_integrations,
+              selectedIntegration,
+            ],
+          });
+        }
       }
+      
       setSelectedIntegration(null);
     }
   };
@@ -193,19 +212,20 @@ export const WizardStep3ProductIntegrationsImproved = ({
 
                             {/* Action buttons/badges */}
                             {isAvailable ? (
-                              isEnabled ? (
-                                <Badge
-                                  variant="outline"
-                                  className="text-xs bg-green-50 text-green-700 border-green-200 ml-2"
-                                >
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Enabled
-                                </Badge>
-                              ) : (
+                              <div className="flex items-center gap-1">
+                                {isEnabled && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs bg-green-50 text-green-700 border-green-200"
+                                  >
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    Enabled
+                                  </Badge>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="ml-2 p-1 h-auto"
+                                  className="p-1 h-auto"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleIntegrationClick(integration.id);
@@ -213,7 +233,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
                                 >
                                   <Settings className="h-4 w-4" />
                                 </Button>
-                              )
+                              </div>
                             ) : (
                               <Badge
                                 variant="outline"
@@ -269,8 +289,11 @@ export const WizardStep3ProductIntegrationsImproved = ({
               >
                 Cancel
               </Button>
-              <Button onClick={handleEnableIntegration}>
-                Mark as Enabled
+              <Button 
+                onClick={handleToggleIntegration}
+                variant={enabledIntegrations.has(selectedIntegration || '') ? 'destructive' : 'default'}
+              >
+                {enabledIntegrations.has(selectedIntegration || '') ? 'Disable' : 'Mark as Enabled'}
               </Button>
             </DialogFooter>
           </DialogContent>
