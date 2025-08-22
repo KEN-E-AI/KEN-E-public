@@ -34,7 +34,13 @@ import { FileUpload } from "@/components/ui/file-upload";
 import { Textarea } from "@/components/ui/textarea";
 import { MarketingChannelsSelector } from "@/components/ui/MarketingChannelsSelector";
 import { MARKETING_CHANNELS } from "@/data/marketingChannels";
+import {
+  MARKETING_CHANNELS_WITH_DESCRIPTIONS,
+  MARKETING_CHANNEL_CATEGORIES_WITH_DESCRIPTIONS,
+  getChannelInfoByName,
+} from "@/data/marketingChannelsWithDescriptions";
 import { ProductIntegrationsSelector } from "@/components/ui/ProductIntegrationsSelector";
+import { ProductIntegrationsEditor } from "@/components/ui/ProductIntegrationsEditor";
 import {
   Dialog,
   DialogContent,
@@ -75,6 +81,7 @@ import {
   Info,
   DollarSign,
   FileText,
+  Search,
 } from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
@@ -209,6 +216,20 @@ const AccountsManagement = ({
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
 
+  // Debug: Log accounts data when it changes
+  useEffect(() => {
+    if (accounts && accounts.length > 0) {
+      console.log("[AccountsManagement] Accounts loaded:", accounts);
+      console.log("[AccountsManagement] First account full data:", accounts[0]);
+      if (accounts[0].marketing_channels) {
+        console.log(
+          "[AccountsManagement] First account has marketing_channels:",
+          accounts[0].marketing_channels,
+        );
+      }
+    }
+  }, [accounts]);
+
   // Helper functions for account creation (following C-4: simple, testable functions)
   const validateAccountCreation = (
     data: AccountCreationData,
@@ -274,6 +295,8 @@ const AccountsManagement = ({
     isEditMarketingChannelsPopoverOpen,
     setIsEditMarketingChannelsPopoverOpen,
   ] = useState(false);
+  const [marketingChannelSearchTerm, setMarketingChannelSearchTerm] =
+    useState("");
   const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
     useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -305,6 +328,7 @@ const AccountsManagement = ({
         !editMarketingChannelsDropdownRef.current.contains(event.target as Node)
       ) {
         setIsEditMarketingChannelsPopoverOpen(false);
+        setMarketingChannelSearchTerm("");
       }
       if (
         createRegionDropdownRef.current &&
@@ -329,6 +353,7 @@ const AccountsManagement = ({
     estimated_annual_ad_budget: null as number | null,
     marketing_channels: [] as string[],
     product_integrations: [] as string[],
+    business_strategy_documents: [] as File[],
     timezone: "",
     data_region: "",
     region: [] as string[],
@@ -401,8 +426,19 @@ const AccountsManagement = ({
   const handleEditAccount = (account: Account) => {
     if (isOperationInProgress) return;
 
+    // Debug logging to see what data we're receiving
+    console.log("[AccountsManagement] Editing account:", account);
+    console.log(
+      "[AccountsManagement] Account marketing_channels:",
+      account.marketing_channels,
+    );
+    console.log(
+      "[AccountsManagement] Account product_integrations:",
+      account.product_integrations,
+    );
+
     setSelectedAccount(account);
-    const existingRegion = (account as any).region;
+    const existingRegion = account.region;
     let regionArray: string[] = [];
 
     if (Array.isArray(existingRegion)) {
@@ -415,27 +451,28 @@ const AccountsManagement = ({
     const migratedIndustry = migrateIndustryValue(account.industry);
 
     // Migrate data_region value if needed
-    const migratedDataRegion = migrateDataRegionValue(
-      (account as any).data_region,
-    );
+    const migratedDataRegion = migrateDataRegionValue(account.data_region);
 
-    setEditFormData({
+    const formData = {
       account_name: account.account_name,
-      description: (account as any).description || "",
+      description: account.description || "",
       industry: migratedIndustry,
       status: account.status,
       websites:
         account.websites && account.websites.length > 0
           ? account.websites
           : [""],
-      estimated_annual_ad_budget:
-        (account as any).estimated_annual_ad_budget || null,
-      marketing_channels: (account as any).marketing_channels || [],
-      product_integrations: (account as any).product_integrations || [],
+      estimated_annual_ad_budget: account.estimated_annual_ad_budget || null,
+      marketing_channels: account.marketing_channels || [],
+      product_integrations: account.product_integrations || [],
+      business_strategy_documents: [], // Will be populated from server if available
       timezone: account.timezone || "America/New_York",
       data_region: migratedDataRegion,
       region: regionArray,
-    });
+    };
+
+    console.log("[AccountsManagement] Setting editFormData to:", formData);
+    setEditFormData(formData);
     setIsModalOpen(true);
   };
 
@@ -1686,7 +1723,8 @@ const AccountsManagement = ({
                     >
                       <p>
                         Select the marketing channels you currently use or plan
-                        to use for this account.
+                        to use for this account. These settings are stored in
+                        Neo4j and will affect your marketing insights.
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -1709,23 +1747,134 @@ const AccountsManagement = ({
                     <Plus className="h-4 w-4" />
                   </Button>
                   {isEditMarketingChannelsPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                      {MARKETING_CHANNELS.map((channel) => (
-                        <div
-                          key={channel}
-                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                          onClick={() => {
-                            if (
-                              !editFormData.marketing_channels.includes(channel)
-                            ) {
-                              toggleMarketingChannel(channel);
-                              setIsEditMarketingChannelsPopoverOpen(false);
+                    <div className="absolute top-full right-0 mt-1 w-96 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                      <div className="sticky top-0 bg-white border-b border-gray-200 p-2">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <Input
+                            type="text"
+                            placeholder="Search marketing channels..."
+                            className="pl-8 pr-2 py-1 text-sm"
+                            value={marketingChannelSearchTerm}
+                            onChange={(e) =>
+                              setMarketingChannelSearchTerm(e.target.value)
                             }
-                          }}
-                        >
-                          <span className="flex-1">{channel}</span>
+                            onClick={(e) => e.stopPropagation()}
+                          />
                         </div>
-                      ))}
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {marketingChannelSearchTerm
+                          ? // When searching, show flat list
+                            MARKETING_CHANNELS_WITH_DESCRIPTIONS.filter(
+                              (channel) =>
+                                channel.name
+                                  .toLowerCase()
+                                  .includes(
+                                    marketingChannelSearchTerm.toLowerCase(),
+                                  ) ||
+                                channel.description
+                                  .toLowerCase()
+                                  .includes(
+                                    marketingChannelSearchTerm.toLowerCase(),
+                                  ),
+                            ).map((channelInfo) => {
+                              const isSelected =
+                                editFormData.marketing_channels.includes(
+                                  channelInfo.name,
+                                );
+                              return (
+                                <div
+                                  key={channelInfo.id}
+                                  className={`px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                                    isSelected
+                                      ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                      : ""
+                                  }`}
+                                  onClick={() => {
+                                    if (!isSelected) {
+                                      toggleMarketingChannel(channelInfo.name);
+                                      setIsEditMarketingChannelsPopoverOpen(
+                                        false,
+                                      );
+                                      setMarketingChannelSearchTerm("");
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1">
+                                      <div className="font-medium text-sm text-gray-900">
+                                        {channelInfo.name}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        {channelInfo.description}
+                                      </div>
+                                    </div>
+                                    {isSelected && (
+                                      <span className="text-xs text-gray-400 mt-1">
+                                        Added
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          : // When not searching, show grouped by category
+                            Object.entries(
+                              MARKETING_CHANNEL_CATEGORIES_WITH_DESCRIPTIONS,
+                            ).map(([category, channels]) => (
+                              <div key={category}>
+                                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
+                                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                    {category}
+                                  </h4>
+                                </div>
+                                {channels.map((channelInfo) => {
+                                  const isSelected =
+                                    editFormData.marketing_channels.includes(
+                                      channelInfo.name,
+                                    );
+                                  return (
+                                    <div
+                                      key={channelInfo.id}
+                                      className={`px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                                        isSelected
+                                          ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                          : ""
+                                      }`}
+                                      onClick={() => {
+                                        if (!isSelected) {
+                                          toggleMarketingChannel(
+                                            channelInfo.name,
+                                          );
+                                          setIsEditMarketingChannelsPopoverOpen(
+                                            false,
+                                          );
+                                          setMarketingChannelSearchTerm("");
+                                        }
+                                      }}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1">
+                                          <div className="font-medium text-sm text-gray-900">
+                                            {channelInfo.name}
+                                          </div>
+                                          <div className="text-xs text-gray-500 mt-1">
+                                            {channelInfo.description}
+                                          </div>
+                                        </div>
+                                        {isSelected && (
+                                          <span className="text-xs text-gray-400 mt-1">
+                                            Added
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1749,11 +1898,93 @@ const AccountsManagement = ({
                     </Button>
                   </div>
                 ))}
+                {editFormData.marketing_channels.length === 0 && (
+                  <p className="text-xs text-dashboard-gray-500">
+                    No marketing channels selected. Add channels using the +
+                    button above.
+                  </p>
+                )}
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Product Integrations</Label>
-              <ProductIntegrationsSelector
+              <div className="flex items-center gap-2">
+                <Label>
+                  <FileText className="inline h-4 w-4 mr-1" />
+                  Business Strategy Documents
+                </Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
+                    <p>
+                      Upload documents to help KEN-E understand your business,
+                      competitors and customers (e.g., business plans, marketing
+                      strategies, competitive analysis).
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <FileUpload
+                files={editFormData.business_strategy_documents}
+                onFilesChange={(files) =>
+                  setEditFormData({
+                    ...editFormData,
+                    business_strategy_documents: files,
+                  })
+                }
+                accept={[
+                  ".pdf",
+                  ".xlsx",
+                  ".docx",
+                  ".pptx",
+                  ".txt",
+                  ".png",
+                  ".jpg",
+                  ".jpeg",
+                ]}
+                multiple={true}
+                maxSize={25 * 1024 * 1024} // 25MB
+                maxTotalSize={100 * 1024 * 1024} // 100MB
+                maxFiles={10}
+              />
+              {/* TODO: Display list of existing documents from server */}
+              <p className="text-xs text-dashboard-gray-500">
+                Note: Previously uploaded documents will be displayed here once
+                the API supports document retrieval.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>Product Integrations</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
+                    <p>
+                      Select and configure the marketing tools you want to
+                      integrate with KEN-E. Click the gear icon to configure
+                      each integration.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <ProductIntegrationsEditor
                 value={editFormData.product_integrations}
                 onChange={(integrations) =>
                   setEditFormData({
@@ -1761,6 +1992,21 @@ const AccountsManagement = ({
                     product_integrations: integrations,
                   })
                 }
+                enabledIntegrations={editFormData.product_integrations.filter(
+                  (id) => {
+                    // TODO: Replace with actual enabled status from API
+                    // For now, mark first 2 as enabled for demo
+                    const index = editFormData.product_integrations.indexOf(id);
+                    return index < 2;
+                  },
+                )}
+                onConfigure={(integrationId) => {
+                  // TODO: Open configuration dialog for the integration
+                  toast({
+                    title: "Configuration",
+                    description: `Configure ${integrationId} integration (coming soon)`,
+                  });
+                }}
                 compact={true}
               />
             </div>

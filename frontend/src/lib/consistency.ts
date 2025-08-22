@@ -2,7 +2,7 @@
  * Account consistency checking utilities for detecting Neo4j/Firestore sync issues
  */
 
-import type { Account } from "@/types/organization";
+import type { Account } from "@/data/organizationTypes";
 
 export interface ConsistencyCheck {
   isConsistent: boolean;

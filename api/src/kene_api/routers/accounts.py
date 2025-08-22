@@ -187,11 +187,18 @@ async def get_accounts(
                 params = {"account_ids": accessible_account_ids}
 
         result = await db.execute_query(accounts_query, params)
+        
+        # Debug logging
+        logger.info(f"[DEBUG] Neo4j query executed: {accounts_query}")
+        logger.info(f"[DEBUG] Query params: {params}")
+        logger.info(f"[DEBUG] Number of records returned: {len(result)}")
 
         accounts = []
-        for record in result:
+        for i, record in enumerate(result):
+            logger.info(f"[DEBUG] Record {i} keys: {list(record.keys())}")
             acc_data = record.get("acc")
             if acc_data:
+                logger.info(f"[DEBUG] Processing account: {acc_data.get('account_id')}")
                 account = _create_account_from_record(acc_data)
                 accounts.append(account)
 
@@ -872,6 +879,14 @@ async def update_account(
             )
             params["estimated_annual_ad_budget"] = request.estimated_annual_ad_budget
 
+        if request.marketing_channels is not None:
+            update_clauses.append("acc.marketing_channels = $marketing_channels")
+            params["marketing_channels"] = request.marketing_channels
+
+        if request.product_integrations is not None:
+            update_clauses.append("acc.product_integrations = $product_integrations")
+            params["product_integrations"] = request.product_integrations
+
         if not update_clauses:
             raise HTTPException(status_code=400, detail="No fields provided to update")
 
@@ -1150,6 +1165,12 @@ async def _get_organization_agency_status(
 
 def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
     """Create an Account object from a Neo4j record."""
+    # Debug logging to see what's in the Neo4j record
+    logger.info(f"[DEBUG] Creating account from Neo4j record for account_id: {acc_data.get('account_id')}")
+    logger.info(f"[DEBUG] Raw acc_data keys: {list(acc_data.keys())}")
+    logger.info(f"[DEBUG] marketing_channels in record: {acc_data.get('marketing_channels')}")
+    logger.info(f"[DEBUG] product_integrations in record: {acc_data.get('product_integrations')}")
+    
     return Account(
         account_id=acc_data.get("account_id"),
         account_name=acc_data.get("account_name"),

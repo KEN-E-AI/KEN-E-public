@@ -5,7 +5,7 @@ import {
   createAccount as createAccountApi,
   updateAccount as updateAccountApi,
 } from "@/data/organizationApi";
-import type { Account } from "@/types/organization";
+import type { Account } from "@/data/organizationTypes";
 
 // Query keys factory
 export const accountKeys = {

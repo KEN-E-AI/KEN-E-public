@@ -538,7 +538,6 @@ export const WizardStep1BasicInfo = ({
               </SelectContent>
             </Select>
           </div>
-
         </CardContent>
       </Card>
 

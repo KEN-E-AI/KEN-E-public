@@ -956,6 +956,12 @@ class Account(BaseModel):
     estimated_annual_ad_budget: int | None = Field(
         None, description="Estimated annual advertising budget in USD"
     )
+    marketing_channels: list[str] = Field(
+        default_factory=list, description="List of marketing channels"
+    )
+    product_integrations: list[str] = Field(
+        default_factory=list, description="List of product integrations"
+    )
 
 
 class OrganizationRequest(BaseModel):

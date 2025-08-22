@@ -72,7 +72,20 @@ class Neo4jService:
                 # Use session.execute_read for read queries
                 async def _execute_query(tx):
                     result = await tx.run(query, parameters)
-                    return await result.data()
+                    data = await result.data()
+                    
+                    # Debug logging for account queries
+                    if "Account" in query and data:
+                        logger.info(f"[DEBUG Neo4j] Query contains 'Account', checking data structure")
+                        for i, record in enumerate(data[:1]):  # Just log first record
+                            if 'acc' in record:
+                                acc = record['acc']
+                                logger.info(f"[DEBUG Neo4j] Account properties present: {list(acc.keys()) if isinstance(acc, dict) else 'not a dict'}")
+                                if isinstance(acc, dict) and 'marketing_channels' in acc:
+                                    mc = acc['marketing_channels']
+                                    logger.info(f"[DEBUG Neo4j] marketing_channels value: {mc}, type: {type(mc)}")
+                    
+                    return data
 
                 records = await session.execute_read(_execute_query)
                 return records

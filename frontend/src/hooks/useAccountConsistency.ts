@@ -9,7 +9,7 @@ import {
   detectPartialCreationFailure,
 } from "@/lib/consistency";
 import { useAccounts } from "@/queries/accounts";
-import type { Account } from "@/types/organization";
+import type { Account } from "@/data/organizationTypes";
 import type { ConsistencyCheck, ConsistencyIssue } from "@/lib/consistency";
 
 export interface UseAccountConsistencyOptions {
