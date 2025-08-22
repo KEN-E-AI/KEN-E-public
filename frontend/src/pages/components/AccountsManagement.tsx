@@ -30,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { IndustrySelectDropdown as IndustrySelect } from "@/components/ui/industry-select-dropdown";
-import { FileUpload } from "@/components/ui/file-upload";
 import { Textarea } from "@/components/ui/textarea";
 import { MarketingChannelsSelector } from "@/components/ui/MarketingChannelsSelector";
 import { MARKETING_CHANNELS } from "@/data/marketingChannels";
@@ -80,7 +79,6 @@ import {
   MoveRight,
   Info,
   DollarSign,
-  FileText,
   Search,
 } from "lucide-react";
 import {
@@ -353,7 +351,6 @@ const AccountsManagement = ({
     estimated_annual_ad_budget: null as number | null,
     marketing_channels: [] as string[],
     product_integrations: [] as string[],
-    business_strategy_documents: [] as File[],
     timezone: "",
     data_region: "",
     region: [] as string[],
@@ -465,7 +462,6 @@ const AccountsManagement = ({
       estimated_annual_ad_budget: account.estimated_annual_ad_budget || null,
       marketing_channels: account.marketing_channels || [],
       product_integrations: account.product_integrations || [],
-      business_strategy_documents: [], // Will be populated from server if available
       timezone: account.timezone || "America/New_York",
       data_region: migratedDataRegion,
       region: regionArray,
@@ -1723,8 +1719,8 @@ const AccountsManagement = ({
                     >
                       <p>
                         Select the marketing channels you currently use or plan
-                        to use for this account. These settings are stored in
-                        Neo4j and will affect your marketing insights.
+                        to use for this account to improve KEN-E's
+                        recommendations.
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -1905,61 +1901,6 @@ const AccountsManagement = ({
                   </p>
                 )}
               </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label>
-                  <FileText className="inline h-4 w-4 mr-1" />
-                  Business Strategy Documents
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
-                    side="right"
-                    align="center"
-                    avoidCollisions={true}
-                    collisionPadding={10}
-                    sideOffset={5}
-                  >
-                    <p>
-                      Upload documents to help KEN-E understand your business,
-                      competitors and customers (e.g., business plans, marketing
-                      strategies, competitive analysis).
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <FileUpload
-                files={editFormData.business_strategy_documents}
-                onFilesChange={(files) =>
-                  setEditFormData({
-                    ...editFormData,
-                    business_strategy_documents: files,
-                  })
-                }
-                accept={[
-                  ".pdf",
-                  ".xlsx",
-                  ".docx",
-                  ".pptx",
-                  ".txt",
-                  ".png",
-                  ".jpg",
-                  ".jpeg",
-                ]}
-                multiple={true}
-                maxSize={25 * 1024 * 1024} // 25MB
-                maxTotalSize={100 * 1024 * 1024} // 100MB
-                maxFiles={10}
-              />
-              {/* TODO: Display list of existing documents from server */}
-              <p className="text-xs text-dashboard-gray-500">
-                Note: Previously uploaded documents will be displayed here once
-                the API supports document retrieval.
-              </p>
             </div>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
