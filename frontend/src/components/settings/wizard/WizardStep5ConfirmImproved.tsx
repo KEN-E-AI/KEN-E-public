@@ -65,8 +65,10 @@ export const WizardStep5ConfirmImproved = ({
 
     // Overall account validation
     const accountValidation = validateAccountCreation(formData);
-    if (!accountValidation.isValid) {
-      issues.push(...accountValidation.errors);
+    if (!accountValidation.success && accountValidation.errors) {
+      accountValidation.errors.forEach((error) => {
+        issues.push(error.message);
+      });
     }
 
     return [...new Set(issues)]; // Remove duplicates
