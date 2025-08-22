@@ -52,12 +52,6 @@ export const validateMarketingChannels = (
     (ch) => !PAID_MARKETING_CHANNELS.includes(ch as any),
   );
 
-  if (paidChannelsSelected.length > 0 && organicChannelsSelected.length === 0) {
-    warnings.push(
-      "Consider adding organic marketing channels (like SEO or content marketing) to complement your paid strategy.",
-    );
-  }
-
   if (organicChannelsSelected.length > 0 && paidChannelsSelected.length === 0) {
     warnings.push(
       "Consider adding paid marketing channels for faster results alongside your organic strategy.",
