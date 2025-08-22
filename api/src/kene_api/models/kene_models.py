@@ -1000,6 +1000,12 @@ class AccountRequest(BaseModel):
     estimated_annual_ad_budget: int | None = Field(
         None, description="Estimated annual advertising budget in USD"
     )
+    marketing_channels: list[str] | None = Field(
+        None, description="List of marketing channels"
+    )
+    product_integrations: list[str] | None = Field(
+        None, description="List of product integrations"
+    )
 
 
 class OrganizationListResponse(BaseModel):
