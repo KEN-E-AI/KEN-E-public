@@ -1064,3 +1064,68 @@ class ChangeSubscriptionRequest(BaseModel):
     """Request model for changing organization subscription plan."""
 
     plan_id: str = Field(..., description="The ID of the new subscription plan")
+
+
+# Industry Template Models
+class IndustryTemplateSettings(BaseModel):
+    """Settings recommended for an industry template."""
+
+    timezone: str = Field(..., description="Recommended timezone")
+    data_region: str = Field(..., description="Recommended data region")
+    industry: str = Field(..., description="Industry name")
+
+
+class IndustryTemplateDefaults(BaseModel):
+    """Default settings for an industry template."""
+
+    data_retention: int = Field(
+        90, description="Data retention period in days"
+    )
+
+
+class IndustryTemplate(BaseModel):
+    """Industry template model for account creation guidance."""
+
+    id: str = Field(..., description="Unique identifier for the template")
+    industry: str = Field(..., description="Industry name")
+    name: str = Field(..., description="Template display name")
+    description: str = Field(..., description="Template description")
+    definition: str = Field(
+        "", description="Industry definition for display in dropdown"
+    )
+    default_objectives: list[str] = Field(
+        default_factory=list, description="Default marketing objectives"
+    )
+    default_channels: list[str] = Field(
+        default_factory=list, description="Default marketing channels"
+    )
+    default_kpis: list[str] = Field(
+        default_factory=list, description="Default KPIs to track"
+    )
+    marketing_channels: list[str] = Field(
+        default_factory=list, description="Recommended marketing channels"
+    )
+    product_integrations: list[str] = Field(
+        default_factory=list, description="Recommended product integrations"
+    )
+    recommended_settings: IndustryTemplateSettings = Field(
+        ..., description="Recommended configuration settings"
+    )
+    default_settings: IndustryTemplateDefaults = Field(
+        default_factory=IndustryTemplateDefaults,
+        description="Default settings values"
+    )
+    is_active: bool = Field(
+        True, description="Whether this template is currently available"
+    )
+    created_at: str = Field(..., description="Template creation timestamp")
+    updated_at: str = Field(..., description="Template last update timestamp")
+
+
+class IndustryTemplateListResponse(BaseModel):
+    """Response model for industry template list."""
+
+    templates: list[IndustryTemplate] = Field(
+        ..., description="List of industry templates"
+    )
+    total: int = Field(..., description="Total number of templates")

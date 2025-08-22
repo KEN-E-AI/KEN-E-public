@@ -5,6 +5,7 @@ export interface IndustryTemplate {
   industry: string;
   name: string;
   description: string;
+  definition: string;
   defaultObjectives: string[];
   defaultChannels: string[];
   defaultKPIs: string[];
@@ -22,16 +23,25 @@ export interface IndustryTemplate {
   updated_at: string;
 }
 
+export interface IndustryTemplateListResponse {
+  templates: IndustryTemplate[];
+  total: number;
+}
+
 class TemplateService {
   async getTemplateByIndustry(
     industry: string,
   ): Promise<IndustryTemplate | null> {
     try {
       const response = await api.get<IndustryTemplate>(
-        `/api/v1/templates/industry/${encodeURIComponent(industry)}`,
+        `/api/v1/industry-templates/industry/${encodeURIComponent(industry)}`,
       );
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log(`No template found for industry ${industry}`);
+        return null;
+      }
       console.error(`Failed to get template for industry ${industry}:`, error);
       return null;
     }
@@ -39,8 +49,10 @@ class TemplateService {
 
   async getAllTemplates(): Promise<IndustryTemplate[]> {
     try {
-      const response = await api.get<IndustryTemplate[]>("/api/v1/templates/");
-      return response.data;
+      const response = await api.get<IndustryTemplateListResponse>(
+        "/api/v1/industry-templates",
+      );
+      return response.data.templates;
     } catch (error) {
       console.error("Failed to get all templates:", error);
       return [];
@@ -50,10 +62,14 @@ class TemplateService {
   async getTemplateById(templateId: string): Promise<IndustryTemplate | null> {
     try {
       const response = await api.get<IndustryTemplate>(
-        `/api/v1/templates/${templateId}`,
+        `/api/v1/industry-templates/${templateId}`,
       );
       return response.data;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log(`Template ${templateId} not found`);
+        return null;
+      }
       console.error(`Failed to get template ${templateId}:`, error);
       return null;
     }

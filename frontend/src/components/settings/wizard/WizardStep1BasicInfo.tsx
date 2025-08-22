@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { AccountCreationData } from "../AccountCreationWizard";
-import { IndustrySelectDropdown as IndustrySelect } from "@/components/ui/industry-select-dropdown";
+import { IndustrySelectDropdownAPI as IndustrySelect } from "@/components/ui/industry-select-dropdown-api";
 import {
   templateService,
   type IndustryTemplate,

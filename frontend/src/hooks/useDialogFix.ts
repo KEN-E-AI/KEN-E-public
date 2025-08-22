@@ -48,9 +48,12 @@ export const useDialogFix = () => {
         '[data-radix-portal] [data-aria-hidden="true"]',
       );
 
-      console.log(
-        `[useDialogFix] Found ${overlays.length} dialog overlays and ${dialogBackdrops.length} backdrops`,
-      );
+      // Only log if there are actually orphaned elements
+      if (overlays.length > 0 || dialogBackdrops.length > 0) {
+        console.log(
+          `[useDialogFix] Found ${overlays.length} dialog overlays and ${dialogBackdrops.length} backdrops`,
+        );
+      }
 
       // Check if body has pointer-events disabled
       const bodyStyle = document.body.style;
