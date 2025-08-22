@@ -16,10 +16,7 @@ import {
   INTEGRATION_CATEGORIES,
 } from "@/data/productIntegrationsWithLogos";
 import { ValidationAlert } from "@/components/ui/ValidationAlert";
-import {
-  validateProductIntegrations,
-  suggestComplementaryIntegrations,
-} from "@/lib/validation/productIntegrationValidation";
+import { validateProductIntegrations } from "@/lib/validation/productIntegrationValidation";
 import type { AccountCreationData } from "../AccountCreationWizard";
 import type { IndustryTemplate } from "@/services/templateService";
 import type { ValidationMessage } from "@/types/validation";
@@ -94,12 +91,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
     formData.product_integrations,
   );
 
-  // Get suggestions for complementary integrations
-  const suggestions = suggestComplementaryIntegrations(
-    formData.product_integrations,
-  );
-
-  // Convert validation result to UI messages
+  // Convert validation result to UI messages (should be empty now)
   const validationMessages: ValidationMessage[] = [
     ...validationResult.errors.map((error) => ({
       severity: "error" as const,
@@ -111,17 +103,6 @@ export const WizardStep3ProductIntegrationsImproved = ({
       message: warning,
       field: "product_integrations",
     })),
-    // Add top suggestion as info message
-    ...suggestions.slice(0, 1).map((suggestionId) => {
-      const integration = PRODUCT_INTEGRATIONS.find(
-        (int) => int.id === suggestionId,
-      );
-      return {
-        severity: "info" as const,
-        message: `Consider adding ${integration?.name || suggestionId} to complement your current selections.`,
-        field: "product_integrations",
-      };
-    }),
   ];
 
   // Group integrations by category
