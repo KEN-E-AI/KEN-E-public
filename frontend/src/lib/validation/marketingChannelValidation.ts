@@ -87,11 +87,7 @@ export const validateMarketingChannelsWithBudget = (
   );
 
   // Budget vs paid channels consistency
-  if (paidChannelsSelected.length > 0 && (!budget || budget <= 0)) {
-    warnings.push(
-      "You selected paid marketing channels but no advertising budget. Consider setting a budget or removing paid channels.",
-    );
-  }
+  // Removed warning about paid channels without budget as per user request
 
   if (budget && budget > 0 && paidChannelsSelected.length === 0) {
     warnings.push(

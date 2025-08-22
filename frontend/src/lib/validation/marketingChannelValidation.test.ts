@@ -102,16 +102,17 @@ describe("Marketing Channel Validation", () => {
   });
 
   describe("validateMarketingChannelsWithBudget", () => {
-    test("should warn when paid channels selected without budget", () => {
+    test("should not warn when paid channels selected without budget", () => {
       const result = validateMarketingChannelsWithBudget(
         ["Search Engine Marketing", "Social Media"],
         null,
       );
 
       expect(result.isValid).toBe(true);
+      // Warning about paid channels without budget has been removed
       expect(
         result.warnings.some((w) => w.includes("no advertising budget")),
-      ).toBe(true);
+      ).toBe(false);
     });
 
     test("should warn when budget set without paid channels", () => {
