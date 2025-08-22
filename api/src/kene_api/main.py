@@ -18,6 +18,7 @@ from .routers import (
     funnel_reports,
     home,
     industry_keywords,
+    industry_templates,
     insights,
     intuitions,
     items,
@@ -121,6 +122,11 @@ app.include_router(
     industry_keywords.router,
     prefix="/api/v1/industry-keywords",
     tags=["industry-keywords"],
+)
+app.include_router(
+    industry_templates.router,
+    prefix="/api/v1",
+    tags=["industry-templates"],
 )
 
 

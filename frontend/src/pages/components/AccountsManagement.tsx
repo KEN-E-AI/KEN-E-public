@@ -9,7 +9,10 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useUpdateAccount,
+  accountKeys,
 } from "@/queries/accounts";
+import { useAccountConsistency } from "@/hooks/useAccountConsistency";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
@@ -27,7 +30,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { IndustrySelectDropdown as IndustrySelect } from "@/components/ui/industry-select-dropdown";
-import { FileUpload } from "@/components/ui/file-upload";
+import { Textarea } from "@/components/ui/textarea";
+import { MarketingChannelsSelector } from "@/components/ui/MarketingChannelsSelector";
+import { MARKETING_CHANNELS } from "@/data/marketingChannels";
+import {
+  MARKETING_CHANNELS_WITH_DESCRIPTIONS,
+  MARKETING_CHANNEL_CATEGORIES_WITH_DESCRIPTIONS,
+  getChannelInfoByName,
+} from "@/data/marketingChannelsWithDescriptions";
+import { ProductIntegrationsSelector } from "@/components/ui/ProductIntegrationsSelector";
+import { ProductIntegrationsEditor } from "@/components/ui/ProductIntegrationsEditor";
 import {
   Dialog,
   DialogContent,
@@ -67,7 +79,7 @@ import {
   MoveRight,
   Info,
   DollarSign,
-  FileText,
+  Search,
 } from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
@@ -79,6 +91,14 @@ import {
   migrateIndustryValue,
   getIndustryDisplayName,
 } from "@/lib/industryMigration";
+import {
+  migrateDataRegionValue,
+  getDataRegionDisplayName,
+} from "@/lib/dataRegionMigration";
+import {
+  AccountCreationWizard,
+  type AccountCreationData,
+} from "@/components/settings/AccountCreationWizard";
 
 const REGION_OPTIONS = [
   { value: "Global", label: "Global" },
@@ -186,6 +206,7 @@ const AccountsManagement = ({
   } = useAccountOperations();
 
   // React Query hooks
+  const queryClient = useQueryClient();
   const { data: accounts = [], isLoading: isLoadingAccounts } =
     useAccounts(currentOrgId);
   const createAccountMutation = useCreateAccount();
@@ -193,12 +214,87 @@ const AccountsManagement = ({
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
 
+  // Debug: Log accounts data when it changes
+  useEffect(() => {
+    if (accounts && accounts.length > 0) {
+      console.log("[AccountsManagement] Accounts loaded:", accounts);
+      console.log("[AccountsManagement] First account full data:", accounts[0]);
+      if (accounts[0].marketing_channels) {
+        console.log(
+          "[AccountsManagement] First account has marketing_channels:",
+          accounts[0].marketing_channels,
+        );
+      }
+    }
+  }, [accounts]);
+
+  // Helper functions for account creation (following C-4: simple, testable functions)
+  const validateAccountCreation = (
+    data: AccountCreationData,
+    orgId: string | null,
+  ): string | null => {
+    if (!orgId) {
+      return "No organization selected. Please select an organization first.";
+    }
+    if (!data.account_name || !data.industry) {
+      return "Please fill in required fields: account name and industry.";
+    }
+    return null;
+  };
+
+  const transformWizardData = (data: AccountCreationData, orgId: string) => ({
+    accountName: data.account_name,
+    organizationId: orgId,
+    industry: data.industry,
+    status: "Active" as const,
+    websites: data.websites || [],
+    timezone: data.timezone,
+    dataRegion: data.data_region,
+    region: data.region,
+    estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
+    businessStrategyDocuments: data.business_strategy_documents || [],
+    marketing_channels: data.marketing_channels || [],
+    product_integrations: data.product_integrations || [],
+  });
+
+  const updateContextsAfterCreation = (account: any, orgId: string) => {
+    // Update account metadata for easy lookup
+    setAccountMetadata((prev) => ({
+      ...prev,
+      [account.account_id]: account,
+    }));
+
+    // Update orgMetadata to include the new account
+    setOrgMetadata((prev) => ({
+      ...prev,
+      [orgId]: {
+        ...prev[orgId],
+        accounts: [...(prev[orgId]?.accounts || []), account],
+      },
+    }));
+  };
+
+  const refreshAccountQueries = async (orgId: string) => {
+    await queryClient.invalidateQueries({
+      queryKey: accountKeys.list(orgId),
+    });
+    await queryClient.refetchQueries({
+      queryKey: accountKeys.list(orgId),
+    });
+  };
+
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateAccountModalOpen, setIsCreateAccountModalOpen] =
     useState(false);
   const [isEditRegionPopoverOpen, setIsEditRegionPopoverOpen] = useState(false);
+  const [
+    isEditMarketingChannelsPopoverOpen,
+    setIsEditMarketingChannelsPopoverOpen,
+  ] = useState(false);
+  const [marketingChannelSearchTerm, setMarketingChannelSearchTerm] =
+    useState("");
   const [isCreateRegionPopoverOpen, setIsCreateRegionPopoverOpen] =
     useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -213,6 +309,7 @@ const AccountsManagement = ({
 
   // Refs for click-outside handling
   const editRegionDropdownRef = useRef<HTMLDivElement>(null);
+  const editMarketingChannelsDropdownRef = useRef<HTMLDivElement>(null);
   const createRegionDropdownRef = useRef<HTMLDivElement>(null);
 
   // Handle click outside to close dropdowns
@@ -223,6 +320,13 @@ const AccountsManagement = ({
         !editRegionDropdownRef.current.contains(event.target as Node)
       ) {
         setIsEditRegionPopoverOpen(false);
+      }
+      if (
+        editMarketingChannelsDropdownRef.current &&
+        !editMarketingChannelsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsEditMarketingChannelsPopoverOpen(false);
+        setMarketingChannelSearchTerm("");
       }
       if (
         createRegionDropdownRef.current &&
@@ -240,9 +344,13 @@ const AccountsManagement = ({
 
   const [editFormData, setEditFormData] = useState({
     account_name: "",
+    description: "",
     industry: "",
     status: "",
     websites: [""],
+    estimated_annual_ad_budget: null as number | null,
+    marketing_channels: [] as string[],
+    product_integrations: [] as string[],
     timezone: "",
     data_region: "",
     region: [] as string[],
@@ -254,7 +362,7 @@ const AccountsManagement = ({
     status: "Active",
     websites: [""],
     timezone: "America/New_York",
-    data_region: "United States",
+    data_region: "US",
     region: ["US"] as string[],
     estimated_annual_ad_budget: null as number | null,
     business_strategy_documents: [] as File[],
@@ -262,14 +370,16 @@ const AccountsManagement = ({
 
   // Filter accounts based on user permissions
   const organizationAccounts = useMemo(() => {
-    // Super admins have access to all accounts
-    if (isSuperAdmin) {
+    // Super admins or organization admins have access to all accounts
+    if (isSuperAdmin || hasAdminAccess) {
       return accounts;
     }
-    return accounts.filter(
-      (account) => user?.permissions?.accounts?.[account.account_id],
-    );
-  }, [accounts, user?.permissions?.accounts, isSuperAdmin]);
+
+    // Regular users only see accounts they have explicit permissions for
+    return accounts.filter((account) => {
+      return user?.permissions?.accounts?.[account.account_id];
+    });
+  }, [accounts, user?.permissions?.accounts, isSuperAdmin, hasAdminAccess]);
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
@@ -287,6 +397,19 @@ const AccountsManagement = ({
     });
   };
 
+  // Marketing channels management helpers
+  const toggleMarketingChannel = (channel: string) => {
+    const currentChannels = editFormData.marketing_channels;
+    const newChannels = currentChannels.includes(channel)
+      ? currentChannels.filter((c) => c !== channel)
+      : [...currentChannels, channel];
+
+    setEditFormData({
+      ...editFormData,
+      marketing_channels: newChannels,
+    });
+  };
+
   const getSelectedRegionLabels = (regions: string[]) => {
     return regions
       .map((regionValue) => {
@@ -300,8 +423,19 @@ const AccountsManagement = ({
   const handleEditAccount = (account: Account) => {
     if (isOperationInProgress) return;
 
+    // Debug logging to see what data we're receiving
+    console.log("[AccountsManagement] Editing account:", account);
+    console.log(
+      "[AccountsManagement] Account marketing_channels:",
+      account.marketing_channels,
+    );
+    console.log(
+      "[AccountsManagement] Account product_integrations:",
+      account.product_integrations,
+    );
+
     setSelectedAccount(account);
-    const existingRegion = (account as any).region;
+    const existingRegion = account.region;
     let regionArray: string[] = [];
 
     if (Array.isArray(existingRegion)) {
@@ -313,18 +447,28 @@ const AccountsManagement = ({
     // Migrate industry value if needed
     const migratedIndustry = migrateIndustryValue(account.industry);
 
-    setEditFormData({
+    // Migrate data_region value if needed
+    const migratedDataRegion = migrateDataRegionValue(account.data_region);
+
+    const formData = {
       account_name: account.account_name,
+      description: account.description || "",
       industry: migratedIndustry,
       status: account.status,
       websites:
         account.websites && account.websites.length > 0
           ? account.websites
           : [""],
+      estimated_annual_ad_budget: account.estimated_annual_ad_budget || null,
+      marketing_channels: account.marketing_channels || [],
+      product_integrations: account.product_integrations || [],
       timezone: account.timezone || "America/New_York",
-      data_region: (account as any).data_region || "United States",
+      data_region: migratedDataRegion,
       region: regionArray,
-    });
+    };
+
+    console.log("[AccountsManagement] Setting editFormData to:", formData);
+    setEditFormData(formData);
     setIsModalOpen(true);
   };
 
@@ -348,11 +492,14 @@ const AccountsManagement = ({
         accountId: selectedAccount.account_id,
         updates: {
           account_name: editFormData.account_name,
+          description: editFormData.description,
           industry: editFormData.industry,
           status: editFormData.status,
           websites: editFormData.websites,
+          estimated_annual_ad_budget: editFormData.estimated_annual_ad_budget,
+          marketing_channels: editFormData.marketing_channels,
+          product_integrations: editFormData.product_integrations,
           timezone: editFormData.timezone,
-          data_region: editFormData.data_region,
           region: editFormData.region,
         },
       });
@@ -437,6 +584,100 @@ const AccountsManagement = ({
         description: "Failed to update account. Please try again.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleWizardComplete = async (wizardData: AccountCreationData) => {
+    // Validate input data
+    const validationError = validateAccountCreation(wizardData, currentOrgId);
+    if (validationError) {
+      toast({
+        title: "Error",
+        description: validationError,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Start loading operation
+      startOperation(
+        "Creating account...",
+        "Please wait while we set up your new account",
+      );
+
+      // Transform and create account
+      const accountData = transformWizardData(wizardData, currentOrgId!);
+      const result = await createAccountMutation.mutateAsync(accountData);
+
+      // Schedule consistency check after a brief delay for data propagation
+      setTimeout(async () => {
+        try {
+          // Basic validation: check if expected data was saved
+          const hasExpectedChannels =
+            wizardData.marketing_channels?.length > 0
+              ? result.marketing_channels?.length ===
+                wizardData.marketing_channels.length
+              : true;
+          const hasExpectedIntegrations =
+            wizardData.product_integrations?.length > 0
+              ? result.product_integrations?.length ===
+                wizardData.product_integrations.length
+              : true;
+          const hasExpectedWebsites =
+            wizardData.websites?.length > 0
+              ? result.websites?.length === wizardData.websites.length
+              : true;
+
+          if (
+            !hasExpectedChannels ||
+            !hasExpectedIntegrations ||
+            !hasExpectedWebsites
+          ) {
+            console.warn(
+              "[AccountsManagement] Account created but some expected data may be missing",
+            );
+            toast({
+              title: "Account Created",
+              description:
+                "Account created successfully, but some data may need verification. Please check the account settings.",
+              variant: "default",
+            });
+          }
+        } catch (error) {
+          console.error(
+            "[AccountsManagement] Error during consistency check:",
+            error,
+          );
+        }
+      }, 2000);
+
+      // Show success message
+      toast({
+        title: "Success",
+        description: "Account created successfully!",
+      });
+
+      await refreshAccountQueries(currentOrgId!);
+      updateContextsAfterCreation(result, currentOrgId!);
+
+      // Close wizard
+      setIsCreateAccountModalOpen(false);
+    } catch (error: unknown) {
+      console.error("[AccountsManagement] Error creating account:", error);
+
+      const errorMessage =
+        axios.isAxiosError(error) && error.response?.data?.message
+          ? error.response.data.message
+          : "Failed to create account. Please try again.";
+
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
     }
   };
 
@@ -614,7 +855,7 @@ const AccountsManagement = ({
         status: "Active",
         websites: [""],
         timezone: "America/New_York",
-        data_region: "United States",
+        data_region: "US",
         region: ["US"],
       });
 
@@ -937,10 +1178,11 @@ const AccountsManagement = ({
         }));
       }
 
-      // If we deleted the current account, redirect to workspace selection
+      // If we deleted the current account, clear the selected account but stay on organization settings
       if (isDeletingCurrentAccount) {
-        // Navigate immediately instead of with timeout to prevent accessing deleted data
-        navigate("/workspace-selection");
+        // Clear the selected account in auth context since it no longer exists
+        setSelectedOrgAccount(null);
+        // Stay on the current page - user can create new accounts from here
       }
     } catch (error: any) {
       endOperation();
@@ -1097,7 +1339,7 @@ const AccountsManagement = ({
 
       {/* Edit Account Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Account</DialogTitle>
           </DialogHeader>
@@ -1109,7 +1351,14 @@ const AccountsManagement = ({
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
                     <p>
                       A friendly name for the account. If you have different
                       types of customers who each require a unique strategy, you
@@ -1144,13 +1393,78 @@ const AccountsManagement = ({
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="account-description">Description</Label>
+              <Textarea
+                id="account-description"
+                value={editFormData.description}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Brief description of this account..."
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="edit-budget">
+                  <DollarSign className="inline h-4 w-4 mr-1" />
+                  Estimated Annual Ad Budget (USD)
+                </Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
+                    <p>
+                      This helps KEN-E provide better budget optimization
+                      recommendations
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Input
+                id="edit-budget"
+                type="number"
+                min="0"
+                step="1000"
+                value={editFormData.estimated_annual_ad_budget || ""}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEditFormData({
+                    ...editFormData,
+                    estimated_annual_ad_budget: value
+                      ? parseInt(value, 10)
+                      : null,
+                  });
+                }}
+                placeholder="e.g., 100000"
+              />
+            </div>
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Label htmlFor="account-status">Status</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
                     <p>
                       Set the status to inactive to temporarily pause all data
                       processing and charges.
@@ -1183,7 +1497,14 @@ const AccountsManagement = ({
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
                     <p>
                       Set the timezone to the same value selected in your
                       martech platforms to ensure all data is aligned to the
@@ -1220,31 +1541,26 @@ const AccountsManagement = ({
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-gray-400" />
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
                     <p>
-                      Choose a location to store your data. Once your account is
-                      created you must contact support to change this setting.
+                      The location where your data is stored. Once your account
+                      is created you cannot change this setting.
                     </p>
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <Select
-                value={editFormData.data_region}
-                onValueChange={(value) =>
-                  setEditFormData({
-                    ...editFormData,
-                    data_region: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select data region" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="United States">United States</SelectItem>
-                  <SelectItem value="Europe">Europe</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                value={getDataRegionDisplayName(editFormData.data_region)}
+                readOnly
+                className="bg-gray-50 cursor-not-allowed"
+              />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1254,7 +1570,14 @@ const AccountsManagement = ({
                     <TooltipTrigger asChild>
                       <Info className="h-4 w-4 text-gray-400" />
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
+                    <TooltipContent
+                      className="max-w-sm text-sm"
+                      side="right"
+                      align="center"
+                      avoidCollisions={true}
+                      collisionPadding={10}
+                      sideOffset={5}
+                    >
                       <p>
                         Select all regions where your target customers live.
                         This will be used to understand how regional holidays
@@ -1327,7 +1650,14 @@ const AccountsManagement = ({
                     <TooltipTrigger asChild>
                       <Info className="h-4 w-4 text-gray-400" />
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
+                    <TooltipContent
+                      className="max-w-sm text-sm"
+                      side="right"
+                      align="center"
+                      avoidCollisions={true}
+                      collisionPadding={10}
+                      sideOffset={5}
+                    >
                       <p>
                         List all of your websites. KEN-E will study these to
                         understand your business and products/services.
@@ -1370,6 +1700,256 @@ const AccountsManagement = ({
                   </div>
                 ))}
               </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label>Marketing Channels</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent
+                      className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                      side="right"
+                      align="center"
+                      avoidCollisions={true}
+                      collisionPadding={10}
+                      sideOffset={5}
+                    >
+                      <p>
+                        Select the marketing channels you currently use or plan
+                        to use for this account to improve KEN-E's
+                        recommendations.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div
+                  className="relative"
+                  ref={editMarketingChannelsDropdownRef}
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() =>
+                      setIsEditMarketingChannelsPopoverOpen(
+                        !isEditMarketingChannelsPopoverOpen,
+                      )
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  {isEditMarketingChannelsPopoverOpen && (
+                    <div className="absolute top-full right-0 mt-1 w-96 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                      <div className="sticky top-0 bg-white border-b border-gray-200 p-2">
+                        <div className="relative">
+                          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <Input
+                            type="text"
+                            placeholder="Search marketing channels..."
+                            className="pl-8 pr-2 py-1 text-sm"
+                            value={marketingChannelSearchTerm}
+                            onChange={(e) =>
+                              setMarketingChannelSearchTerm(e.target.value)
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto">
+                        {marketingChannelSearchTerm
+                          ? // When searching, show flat list
+                            MARKETING_CHANNELS_WITH_DESCRIPTIONS.filter(
+                              (channel) =>
+                                channel.name
+                                  .toLowerCase()
+                                  .includes(
+                                    marketingChannelSearchTerm.toLowerCase(),
+                                  ) ||
+                                channel.description
+                                  .toLowerCase()
+                                  .includes(
+                                    marketingChannelSearchTerm.toLowerCase(),
+                                  ),
+                            ).map((channelInfo) => {
+                              const isSelected =
+                                editFormData.marketing_channels.includes(
+                                  channelInfo.name,
+                                );
+                              return (
+                                <div
+                                  key={channelInfo.id}
+                                  className={`px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                                    isSelected
+                                      ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                      : ""
+                                  }`}
+                                  onClick={() => {
+                                    if (!isSelected) {
+                                      toggleMarketingChannel(channelInfo.name);
+                                      setIsEditMarketingChannelsPopoverOpen(
+                                        false,
+                                      );
+                                      setMarketingChannelSearchTerm("");
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1">
+                                      <div className="font-medium text-sm text-gray-900">
+                                        {channelInfo.name}
+                                      </div>
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        {channelInfo.description}
+                                      </div>
+                                    </div>
+                                    {isSelected && (
+                                      <span className="text-xs text-gray-400 mt-1">
+                                        Added
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          : // When not searching, show grouped by category
+                            Object.entries(
+                              MARKETING_CHANNEL_CATEGORIES_WITH_DESCRIPTIONS,
+                            ).map(([category, channels]) => (
+                              <div key={category}>
+                                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
+                                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                    {category}
+                                  </h4>
+                                </div>
+                                {channels.map((channelInfo) => {
+                                  const isSelected =
+                                    editFormData.marketing_channels.includes(
+                                      channelInfo.name,
+                                    );
+                                  return (
+                                    <div
+                                      key={channelInfo.id}
+                                      className={`px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                                        isSelected
+                                          ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                          : ""
+                                      }`}
+                                      onClick={() => {
+                                        if (!isSelected) {
+                                          toggleMarketingChannel(
+                                            channelInfo.name,
+                                          );
+                                          setIsEditMarketingChannelsPopoverOpen(
+                                            false,
+                                          );
+                                          setMarketingChannelSearchTerm("");
+                                        }
+                                      }}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1">
+                                          <div className="font-medium text-sm text-gray-900">
+                                            {channelInfo.name}
+                                          </div>
+                                          <div className="text-xs text-gray-500 mt-1">
+                                            {channelInfo.description}
+                                          </div>
+                                        </div>
+                                        {isSelected && (
+                                          <span className="text-xs text-gray-400 mt-1">
+                                            Added
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                {editFormData.marketing_channels.map((channel, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={channel}
+                      readOnly
+                      className="flex-1 bg-gray-50"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggleMarketingChannel(channel)}
+                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                {editFormData.marketing_channels.length === 0 && (
+                  <p className="text-xs text-dashboard-gray-500">
+                    No marketing channels selected. Add channels using the +
+                    button above.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>Product Integrations</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent
+                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    side="right"
+                    align="center"
+                    avoidCollisions={true}
+                    collisionPadding={10}
+                    sideOffset={5}
+                  >
+                    <p>
+                      Select and configure the marketing tools you want to
+                      integrate with KEN-E. Click the gear icon to configure
+                      each integration.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <ProductIntegrationsEditor
+                value={editFormData.product_integrations}
+                onChange={(integrations) =>
+                  setEditFormData({
+                    ...editFormData,
+                    product_integrations: integrations,
+                  })
+                }
+                enabledIntegrations={editFormData.product_integrations.filter(
+                  (id) => {
+                    // TODO: Replace with actual enabled status from API
+                    // For now, mark first 2 as enabled for demo
+                    const index = editFormData.product_integrations.indexOf(id);
+                    return index < 2;
+                  },
+                )}
+                onConfigure={(integrationId) => {
+                  // TODO: Open configuration dialog for the integration
+                  toast({
+                    title: "Configuration",
+                    description: `Configure ${integrationId} integration (coming soon)`,
+                  });
+                }}
+                compact={true}
+              />
             </div>
 
             {/* Danger Zone */}
@@ -1450,391 +2030,12 @@ const AccountsManagement = ({
         </DialogContent>
       </Dialog>
 
-      {/* Create Account Modal */}
-      <Dialog
-        open={isCreateAccountModalOpen}
-        onOpenChange={setIsCreateAccountModalOpen}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create New Account</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-name">Account Name</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      A friendly name for the account. If you have different
-                      types of customers who each require a unique strategy, you
-                      should consider creating multiple accounts (example:
-                      Company B2B, and Company B2C).
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Input
-                id="create-account-name"
-                value={createAccountFormData.account_name}
-                onChange={(e) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    account_name: e.target.value,
-                  })
-                }
-                placeholder="Enter account name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="create-account-industry">Industry</Label>
-              <IndustrySelect
-                value={createAccountFormData.industry}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    industry: value,
-                  })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-status">Status</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Set the status to inactive to temporarily pause all data
-                      processing and charges.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Select
-                value={createAccountFormData.status}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    status: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-timezone">Timezone</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Set the timezone to the same value selected in your
-                      martech platforms to ensure all data is aligned to the
-                      proper date.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Select
-                value={createAccountFormData.timezone}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    timezone: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select timezone" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-data-region">Data Region</Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Choose a location to store your data. Once your account is
-                      created you must contact support to change this setting.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Select
-                value={createAccountFormData.data_region}
-                onValueChange={(value) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    data_region: value,
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select data region" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="United States">United States</SelectItem>
-                  <SelectItem value="Europe">Europe</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label>Customer Region</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p>
-                        Select all regions where your target customers live.
-                        This will be used to understand how regional holidays
-                        influence your business metrics.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <div className="relative" ref={createRegionDropdownRef}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() =>
-                      setIsCreateRegionPopoverOpen(!isCreateRegionPopoverOpen)
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  {isCreateRegionPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                      {REGION_OPTIONS.map((option) => (
-                        <div
-                          key={option.value}
-                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                          onClick={() => {
-                            if (
-                              !createAccountFormData.region.includes(
-                                option.value,
-                              )
-                            ) {
-                              toggleRegion(option.value, false);
-                              setIsCreateRegionPopoverOpen(false);
-                            }
-                          }}
-                        >
-                          <span className="flex-1">{option.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                {createAccountFormData.region.map((regionValue, index) => (
-                  <div key={index} className="flex gap-2">
-                    <Input
-                      value={
-                        REGION_OPTIONS.find((opt) => opt.value === regionValue)
-                          ?.label || regionValue
-                      }
-                      readOnly
-                      className="flex-1 bg-gray-50"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleRegion(regionValue, false)}
-                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label>Websites</Label>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p>
-                        List all of your websites. KEN-E will study these to
-                        understand your business and products/services.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addCreateWebsiteField}
-                  className="h-8 w-8 p-0"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {createAccountFormData.websites.map((website, index) => (
-                  <div key={index} className="flex gap-2">
-                    <Input
-                      value={website}
-                      onChange={(e) =>
-                        updateCreateWebsiteField(index, e.target.value)
-                      }
-                      placeholder="Enter website URL"
-                      className="flex-1"
-                    />
-                    {createAccountFormData.websites.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeCreateWebsiteField(index)}
-                        className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="create-account-budget">
-                  <DollarSign className="inline h-4 w-4 mr-1" />
-                  Estimated Annual Ad Budget (USD)
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      This helps KEN-E provide better budget optimization
-                      recommendations and insights.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Input
-                id="create-account-budget"
-                type="number"
-                min="0"
-                step="1000"
-                value={createAccountFormData.estimated_annual_ad_budget || ""}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    estimated_annual_ad_budget: value
-                      ? parseInt(value, 10)
-                      : null,
-                  });
-                }}
-                placeholder="e.g., 100000"
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label>
-                  <FileText className="inline h-4 w-4 mr-1" />
-                  Business Strategy Documents
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      Upload documents to help KEN-E understand your business
-                      context (optional). Examples: Business plan, marketing
-                      strategy, customer profiles, competitive analysis.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <FileUpload
-                files={createAccountFormData.business_strategy_documents}
-                onFilesChange={(files) =>
-                  setCreateAccountFormData({
-                    ...createAccountFormData,
-                    business_strategy_documents: files,
-                  })
-                }
-                accept={[
-                  ".pdf",
-                  ".xlsx",
-                  ".docx",
-                  ".pptx",
-                  ".txt",
-                  ".png",
-                  ".jpg",
-                  ".jpeg",
-                ]}
-                multiple={true}
-                maxSize={25 * 1024 * 1024} // 25MB
-                maxTotalSize={100 * 1024 * 1024} // 100MB
-                maxFiles={10}
-              />
-            </div>
-            <div className="flex gap-2 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setIsCreateAccountModalOpen(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleCreateAccount}
-                className="flex-1"
-                disabled={
-                  createAccountMutation.isPending || isOperationInProgress
-                }
-              >
-                {createAccountMutation.isPending
-                  ? "Creating..."
-                  : "Create Account"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Account Creation Wizard */}
+      <AccountCreationWizard
+        isOpen={isCreateAccountModalOpen}
+        onClose={() => setIsCreateAccountModalOpen(false)}
+        onComplete={handleWizardComplete}
+      />
 
       {/* Move Account Dialog */}
       <Dialog

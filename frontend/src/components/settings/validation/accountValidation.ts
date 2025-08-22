@@ -17,11 +17,6 @@ export const accountProfileSchema = z.object({
 
   timezone: z.string().optional(),
 
-  description: z
-    .string()
-    .max(500, "Description must be less than 500 characters")
-    .optional(),
-
   website: z
     .union([z.string().url("Invalid website URL"), z.literal("")])
     .optional(),
@@ -135,14 +130,10 @@ export const accountCreationSchema = z.object({
 
   industry: z.string().min(1, "Industry is required"),
 
-  location: z
-    .string()
-    .max(100, "Location must be less than 100 characters")
-    .optional(),
-
-  website: z
-    .union([z.string().url("Invalid website URL"), z.literal("")])
-    .optional(),
+  websites: z
+    .array(z.union([z.string().url("Invalid website URL"), z.literal("")]))
+    .min(1, "At least one website is required")
+    .default([""]),
 
   estimated_annual_ad_budget: z
     .number()
@@ -165,22 +156,23 @@ export const accountCreationSchema = z.object({
 
   template_id: z.string().min(1, "Template selection is required"),
 
-  objectives: z.array(z.string()).min(1, "At least one objective is required"),
+  marketing_channels: z
+    .array(z.string())
+    .min(1, "At least one marketing channel is required"),
 
-  channels: z.array(z.string()).min(1, "At least one channel is required"),
+  product_integrations: z.array(z.string()).default([]), // Optional
+
+  objectives: z.array(z.string()).min(1, "At least one objective is required"),
 
   kpis: z.array(z.string()).min(1, "At least one KPI is required"),
 
   timezone: z.string().min(1, "Timezone is required"),
 
-  auto_sync: z.boolean().default(true),
-  performance_alerts: z.boolean().default(true),
-  budget_alerts: z.boolean().default(true),
+  data_region: z.string().min(1, "Data region is required"),
 
-  data_retention: z
-    .number()
-    .min(30, "Data retention must be at least 30 days")
-    .max(2555, "Data retention must be less than 7 years"),
+  region: z
+    .array(z.string())
+    .min(1, "At least one customer region is required"),
 });
 
 // Validation schema for KPI
