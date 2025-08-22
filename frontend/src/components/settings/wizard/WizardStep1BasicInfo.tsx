@@ -24,6 +24,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { FileUpload } from "@/components/ui/file-upload";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import {
   Building2,
   DollarSign,
@@ -32,6 +34,7 @@ import {
   Info,
   Plus,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { AccountCreationData } from "../AccountCreationWizard";
 import { IndustrySelectDropdownAPI as IndustrySelect } from "@/components/ui/industry-select-dropdown-api";
@@ -317,10 +320,24 @@ export const WizardStep1BasicInfo = ({
             )}
           </div>
 
+          {/* Alert for website/document requirement */}
+          {formData.websites.every((w) => w.trim() === "") &&
+            formData.business_strategy_documents.length === 0 && (
+              <Alert className="border-orange-200 bg-orange-50">
+                <AlertCircle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-sm">
+                  <strong>Required:</strong> Please provide at least one website URL below OR upload at least one business document in the section below.
+                </AlertDescription>
+              </Alert>
+            )}
+
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Label>Websites</Label>
+                <Badge variant="outline" className="text-xs">
+                  {formData.business_strategy_documents.length > 0 ? "Optional" : "Required"}
+                </Badge>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-gray-400" />
@@ -580,17 +597,16 @@ export const WizardStep1BasicInfo = ({
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Business Strategy Documents
+            <Badge variant="outline" className="text-xs">
+              {formData.websites.some((w) => w.trim() !== "") ? "Optional" : "Required"}
+            </Badge>
           </CardTitle>
           <div className="text-sm text-dashboard-gray-600">
             <p className="mb-2">
               Upload documents to help KEN-E understand your business,
               competitors and customers.
             </p>
-            <p>
-              {" "}
-              <b>
-                At least one document required if no websites are provided.
-              </b>{" "}
+            <p className="font-medium text-dashboard-gray-700">
               Examples:
             </p>
             <ul className="list-disc list-inside ml-2 mb-3 space-y-1">
@@ -602,11 +618,6 @@ export const WizardStep1BasicInfo = ({
               <li>Product catalogs</li>
               <li>Annual reports</li>
             </ul>
-            {formData.websites.length === 0 && (
-              <span className="text-dashboard-accent-red font-medium">
-                At least one document required if no websites provided.
-              </span>
-            )}
           </div>
         </CardHeader>
         <CardContent>
