@@ -11,7 +11,7 @@ import {
 import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
 import { WizardStep2MarketingChannelsImproved } from "./wizard/WizardStep2MarketingChannelsImproved";
 import { WizardStep3ProductIntegrationsImproved } from "./wizard/WizardStep3ProductIntegrationsImproved";
-import { WizardStep5Confirm } from "./wizard/WizardStep5Confirm";
+import { WizardStep5ConfirmImproved } from "./wizard/WizardStep5ConfirmImproved";
 import { ValidationSummary } from "@/components/ui/ValidationSummary";
 import {
   templateService,
@@ -292,7 +292,7 @@ export const AccountCreationWizard = ({
 
               {currentStep === 4 && (
                 <div className="space-y-6">
-                  <WizardStep5Confirm
+                  <WizardStep5ConfirmImproved
                     formData={formData}
                     selectedTemplate={loadedTemplate}
                   />
