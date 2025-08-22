@@ -119,24 +119,10 @@ def _parse_template_data(template_dict: dict[str, Any]) -> IndustryTemplate:
 
     The Pydantic model now handles both snake_case and camelCase field names
     via aliases, so we can pass the raw Firestore data directly.
+    
+    Note: recommendedSettings, defaultSettings, and name fields have been
+    deprecated and removed from Firestore.
     """
-    # Ensure nested settings have defaults if missing
-    if (
-        "recommendedSettings" not in template_dict
-        and "recommended_settings" not in template_dict
-    ):
-        template_dict["recommendedSettings"] = {
-            "timezone": "America/New_York",
-            "data_region": "United States",
-            "industry": template_dict.get("industry", ""),
-        }
-
-    if (
-        "defaultSettings" not in template_dict
-        and "default_settings" not in template_dict
-    ):
-        template_dict["defaultSettings"] = {"data_retention": 90}
-
     # Add timestamps if missing
     if "created_at" not in template_dict:
         template_dict["created_at"] = datetime.now(timezone.utc).isoformat()

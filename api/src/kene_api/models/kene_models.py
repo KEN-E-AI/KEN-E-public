@@ -1086,7 +1086,7 @@ class IndustryTemplate(BaseModel):
 
     id: str = Field(..., description="Unique identifier for the template")
     industry: str = Field(..., description="Industry name")
-    name: str = Field(..., description="Template display name")
+    name: str | None = Field(None, description="Template display name (deprecated)")
     description: str = Field(..., description="Industry description")
     default_objectives: list[str] = Field(
         default_factory=list,
@@ -1111,14 +1111,14 @@ class IndustryTemplate(BaseModel):
         description="Recommended product integrations",
         alias="productIntegrations",
     )
-    recommended_settings: IndustryTemplateSettings = Field(
-        ...,
-        description="Recommended configuration settings",
+    recommended_settings: IndustryTemplateSettings | None = Field(
+        None,
+        description="Recommended configuration settings (deprecated)",
         alias="recommendedSettings",
     )
-    default_settings: IndustryTemplateDefaults = Field(
-        default_factory=IndustryTemplateDefaults,
-        description="Default settings values",
+    default_settings: IndustryTemplateDefaults | None = Field(
+        None,
+        description="Default settings values (deprecated)",
         alias="defaultSettings",
     )
     is_active: bool = Field(

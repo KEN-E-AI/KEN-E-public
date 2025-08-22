@@ -144,10 +144,9 @@ export const WizardStep1BasicInfo = ({
             ...prev,
             industry,
             template_id: template.id,
-            // Pre-populate with template defaults (with safe fallbacks)
-            timezone:
-              template.recommendedSettings?.timezone || "America/New_York",
-            data_region: template.recommendedSettings?.data_region || "US",
+            // Use defaults since recommendedSettings has been removed
+            timezone: "America/New_York",
+            data_region: "US",
             // Will be used in later steps
             objectives: template.defaultObjectives || [],
             kpis: template.defaultKPIs || [],
@@ -292,7 +291,20 @@ export const WizardStep1BasicInfo = ({
           </div>
 
           <div>
-            <Label htmlFor="industry">Industry *</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="industry">Industry *</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-4 w-4 text-gray-400" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-md">
+                  <p>
+                    The industry you choose will help KEN-E understand your
+                    customers, your competitors, and your business objectives.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <IndustrySelect
               value={formData.industry}
               onValueChange={handleIndustryChange}
@@ -308,7 +320,7 @@ export const WizardStep1BasicInfo = ({
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Label>Websites *</Label>
+                <Label>Websites</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Info className="h-4 w-4 text-gray-400" />
@@ -316,7 +328,9 @@ export const WizardStep1BasicInfo = ({
                   <TooltipContent className="max-w-md">
                     <p>
                       List all of your websites. KEN-E will study these to
-                      understand your business and products/services.
+                      understand your business and products/services. You must
+                      provide either at least one website or upload at least one
+                      business document.
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -569,7 +583,14 @@ export const WizardStep1BasicInfo = ({
           </CardTitle>
           <p className="text-sm text-dashboard-gray-600">
             Upload documents to help KEN-E understand your business context
-            (optional)
+            {formData.websites.length === 0 ? (
+              <span className="text-dashboard-accent-red font-medium">
+                {" "}
+                (at least one document required if no websites provided)
+              </span>
+            ) : (
+              " (optional)"
+            )}
           </p>
         </CardHeader>
         <CardContent>

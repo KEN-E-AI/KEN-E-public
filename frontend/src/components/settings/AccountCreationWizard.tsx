@@ -11,7 +11,6 @@ import {
 import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
 import { WizardStep2MarketingChannels } from "./wizard/WizardStep2MarketingChannels";
 import { WizardStep3ProductIntegrations } from "./wizard/WizardStep3ProductIntegrations";
-import { WizardStep4Configuration } from "./wizard/WizardStep4Configuration";
 import { WizardStep5Confirm } from "./wizard/WizardStep5Confirm";
 import { ValidationSummary } from "@/components/ui/ValidationSummary";
 import {
@@ -37,13 +36,13 @@ export interface AccountCreationData {
   // Step 2: Template Selection (will be auto-selected based on industry)
   template_id: string;
 
-  // Step 3: Marketing Channels
+  // Step 2: Marketing Channels
   marketing_channels: string[];
 
-  // Step 4: Product Integrations
+  // Step 3: Product Integrations
   product_integrations: string[];
 
-  // Configuration fields (from step 1 and 4)
+  // Configuration fields (from step 1 and template)
   timezone: string;
   data_region: string;
   region: string[];
@@ -89,7 +88,7 @@ export const AccountCreationWizard = ({
     region: ["US"],
   });
 
-  const totalSteps = 5;
+  const totalSteps = 4; // Removed objectives/KPIs step
   const progress = (currentStep / totalSteps) * 100;
 
   const handleNext = () => {
@@ -190,7 +189,9 @@ export const AccountCreationWizard = ({
           formData.account_name.trim() !== "" &&
           formData.industry !== "" &&
           formData.template_id !== "" &&
-          formData.websites.some((w) => w.trim() !== "") &&
+          // Either websites OR business documents required
+          (formData.websites.some((w) => w.trim() !== "") ||
+            formData.business_strategy_documents.length > 0) &&
           formData.region.length > 0 &&
           formData.data_region !== "" &&
           formData.timezone !== ""
@@ -204,8 +205,6 @@ export const AccountCreationWizard = ({
       case 3:
         return true; // Product integrations are optional
       case 4:
-        return formData.objectives.length > 0;
-      case 5:
         // Final step - check all validations
         const hasBlockingErrors = stepValidations.some(
           (v) => !v.result.isValid && v.isRequired !== false,
@@ -260,11 +259,6 @@ export const AccountCreationWizard = ({
                 <span
                   className={currentStep >= 4 ? "text-brand-medium-blue" : ""}
                 >
-                  Objectives
-                </span>
-                <span
-                  className={currentStep >= 5 ? "text-brand-medium-blue" : ""}
-                >
                   Confirm
                 </span>
               </div>
@@ -296,15 +290,7 @@ export const AccountCreationWizard = ({
                 />
               )}
 
-              {currentStep === 4 && loadedTemplate && (
-                <WizardStep4Configuration
-                  formData={formData}
-                  setFormData={setFormData}
-                  selectedTemplate={loadedTemplate}
-                />
-              )}
-
-              {currentStep === 5 && (
+              {currentStep === 4 && (
                 <div className="space-y-6">
                   <WizardStep5Confirm
                     formData={formData}

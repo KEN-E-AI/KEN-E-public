@@ -3,21 +3,12 @@ import api from "@/lib/api";
 export interface IndustryTemplate {
   id: string;
   industry: string;
-  name: string;
   description: string;
   defaultObjectives: string[];
   defaultChannels: string[];
   defaultKPIs: string[];
   marketingChannels: string[];
   productIntegrations: string[];
-  recommendedSettings: {
-    timezone: string;
-    data_region: string;
-    industry: string;
-  };
-  defaultSettings: {
-    data_retention: number;
-  };
   created_at: string;
   updated_at: string;
 }
@@ -26,21 +17,12 @@ export interface IndustryTemplate {
 interface IndustryTemplateApiResponse {
   id: string;
   industry: string;
-  name: string;
   description: string;
   default_objectives: string[];
   default_channels: string[];
   default_kpis: string[];
   marketing_channels: string[];
   product_integrations: string[];
-  recommended_settings: {
-    timezone: string;
-    data_region: string;
-    industry: string;
-  };
-  default_settings: {
-    data_retention: number;
-  };
   created_at: string;
   updated_at: string;
 }
@@ -63,21 +45,12 @@ class TemplateService {
     return {
       id: apiTemplate.id,
       industry: apiTemplate.industry,
-      name: apiTemplate.name,
       description: apiTemplate.description,
       defaultObjectives: apiTemplate.default_objectives || [],
       defaultChannels: apiTemplate.default_channels || [],
       defaultKPIs: apiTemplate.default_kpis || [],
       marketingChannels: apiTemplate.marketing_channels || [],
       productIntegrations: apiTemplate.product_integrations || [],
-      recommendedSettings: apiTemplate.recommended_settings || {
-        timezone: "America/New_York",
-        data_region: "United States",
-        industry: apiTemplate.industry,
-      },
-      defaultSettings: apiTemplate.default_settings || {
-        data_retention: 90,
-      },
       created_at: apiTemplate.created_at,
       updated_at: apiTemplate.updated_at,
     };
