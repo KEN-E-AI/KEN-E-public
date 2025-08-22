@@ -581,17 +581,23 @@ export const WizardStep1BasicInfo = ({
             <FileText className="h-5 w-5" />
             Business Strategy Documents
           </CardTitle>
-          <p className="text-sm text-dashboard-gray-600">
-            Upload documents to help KEN-E understand your business context
-            {formData.websites.length === 0 ? (
+          <div className="text-sm text-dashboard-gray-600">
+            <p className="mb-2">Upload documents to help KEN-E understand your business, competitors and customers.</p><p> <b>At least one document required if no websites are provided.</b> Examples:</p>
+            <ul className="list-disc list-inside ml-2 mb-3 space-y-1">
+              <li>Business plan</li>
+              <li>Competitive analysis</li>
+              <li>Marketing strategy</li>
+              <li>Customer profiles</li>
+              <li>Brand guidelines</li>
+              <li>Product catalogs</li>
+              <li>Annual reports</li>
+            </ul>
+            {formData.websites.length === 0 && (
               <span className="text-dashboard-accent-red font-medium">
-                {" "}
-                (at least one document required if no websites provided)
+                At least one document required if no websites provided.
               </span>
-            ) : (
-              " (optional)"
             )}
-          </p>
+          </div>
         </CardHeader>
         <CardContent>
           <FileUpload
@@ -617,10 +623,6 @@ export const WizardStep1BasicInfo = ({
             maxTotalSize={100 * 1024 * 1024} // 100MB
             maxFiles={10}
           />
-          <p className="text-xs text-dashboard-gray-500 mt-2">
-            Examples: Business plan, marketing strategy, customer profiles,
-            competitive analysis
-          </p>
         </CardContent>
       </Card>
     </TooltipProvider>
