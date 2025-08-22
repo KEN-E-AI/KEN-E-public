@@ -46,6 +46,8 @@ export const transformWizardData = (
   region: data.region,
   estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
   businessStrategyDocuments: data.business_strategy_documents || [],
+  marketing_channels: data.marketing_channels || [],
+  product_integrations: data.product_integrations || [],
 });
 
 /**

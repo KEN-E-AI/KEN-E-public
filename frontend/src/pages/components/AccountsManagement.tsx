@@ -225,7 +225,6 @@ const AccountsManagement = ({
 
   const transformWizardData = (data: AccountCreationData, orgId: string) => ({
     accountName: data.account_name,
-    description: data.description || "",
     organizationId: orgId,
     industry: data.industry,
     status: "Active" as const,

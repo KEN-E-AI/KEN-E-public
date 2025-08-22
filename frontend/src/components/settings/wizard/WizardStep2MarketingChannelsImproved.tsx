@@ -169,7 +169,8 @@ export const WizardStep2MarketingChannelsImproved = ({
         {/* Selected count indicator */}
         {formData.marketing_channels.length > 0 && (
           <div className="text-sm text-dashboard-gray-600 text-center">
-            {formData.marketing_channels.length} channel{formData.marketing_channels.length !== 1 ? 's' : ''} selected
+            {formData.marketing_channels.length} channel
+            {formData.marketing_channels.length !== 1 ? "s" : ""} selected
           </div>
         )}
       </CardContent>

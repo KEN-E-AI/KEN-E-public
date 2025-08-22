@@ -25,7 +25,6 @@ import { ErrorBoundary } from "./ErrorBoundary";
 export interface AccountCreationData {
   // Step 1: Basic Information
   account_name: string;
-  description: string;
   industry: string;
   websites: string[];
   estimated_annual_ad_budget: number | null;
@@ -71,7 +70,6 @@ export const AccountCreationWizard = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [formData, setFormData] = useState<AccountCreationData>({
     account_name: "",
-    description: "",
     industry: "",
     websites: [""],
     estimated_annual_ad_budget: null,

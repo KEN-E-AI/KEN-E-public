@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,17 @@ export const WizardStep3ProductIntegrationsImproved = ({
   showValidation = true,
 }: WizardStep3ProductIntegrationsImprovedProps) => {
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
-  const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
-  const [enabledIntegrations, setEnabledIntegrations] = useState<Set<string>>(new Set());
+  const [selectedIntegration, setSelectedIntegration] = useState<string | null>(
+    null,
+  );
+  const [enabledIntegrations, setEnabledIntegrations] = useState<Set<string>>(
+    new Set(formData.product_integrations),
+  );
+
+  // Sync enabledIntegrations with formData.product_integrations
+  useEffect(() => {
+    setEnabledIntegrations(new Set(formData.product_integrations));
+  }, [formData.product_integrations]);
 
   const handleIntegrationClick = (integrationId: string) => {
     const integration = PRODUCT_INTEGRATIONS.find(
@@ -50,23 +59,25 @@ export const WizardStep3ProductIntegrationsImproved = ({
   const handleToggleIntegration = () => {
     if (selectedIntegration) {
       const isCurrentlyEnabled = enabledIntegrations.has(selectedIntegration);
-      
+
       if (isCurrentlyEnabled) {
         // Disable the integration
         const newEnabled = new Set(enabledIntegrations);
         newEnabled.delete(selectedIntegration);
         setEnabledIntegrations(newEnabled);
-        
+
         setFormData({
           ...formData,
           product_integrations: formData.product_integrations.filter(
-            id => id !== selectedIntegration
+            (id) => id !== selectedIntegration,
           ),
         });
       } else {
         // Enable the integration
-        setEnabledIntegrations(prev => new Set(prev).add(selectedIntegration));
-        
+        setEnabledIntegrations((prev) =>
+          new Set(prev).add(selectedIntegration),
+        );
+
         if (!formData.product_integrations.includes(selectedIntegration)) {
           setFormData({
             ...formData,
@@ -77,7 +88,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
           });
         }
       }
-      
+
       setSelectedIntegration(null);
     }
   };
@@ -117,7 +128,6 @@ export const WizardStep3ProductIntegrationsImproved = ({
     {} as Record<string, typeof PRODUCT_INTEGRATIONS>,
   );
 
-
   return (
     <Card className="w-full max-w-5xl mx-auto">
       <CardHeader>
@@ -134,7 +144,6 @@ export const WizardStep3ProductIntegrationsImproved = ({
         {showValidation && validationMessages.length > 0 && (
           <ValidationAlert messages={validationMessages} />
         )}
-
 
         {/* Integration Categories */}
         {Object.entries(integrationsByCategory).map(
@@ -236,11 +245,18 @@ export const WizardStep3ProductIntegrationsImproved = ({
         )}
 
         {/* Integration Setup Modal */}
-        <Dialog open={!!selectedIntegration} onOpenChange={(open) => !open && setSelectedIntegration(null)}>
+        <Dialog
+          open={!!selectedIntegration}
+          onOpenChange={(open) => !open && setSelectedIntegration(null)}
+        >
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
-                Setup {PRODUCT_INTEGRATIONS.find(i => i.id === selectedIntegration)?.name}
+                Setup{" "}
+                {
+                  PRODUCT_INTEGRATIONS.find((i) => i.id === selectedIntegration)
+                    ?.name
+                }
               </DialogTitle>
               <DialogDescription>
                 Follow these instructions to enable this integration:
@@ -250,7 +266,15 @@ export const WizardStep3ProductIntegrationsImproved = ({
               <div className="space-y-3">
                 <h4 className="font-medium text-sm">Integration Steps:</h4>
                 <ol className="list-decimal list-inside space-y-2 text-sm text-dashboard-gray-600">
-                  <li>Navigate to your {PRODUCT_INTEGRATIONS.find(i => i.id === selectedIntegration)?.name} account settings</li>
+                  <li>
+                    Navigate to your{" "}
+                    {
+                      PRODUCT_INTEGRATIONS.find(
+                        (i) => i.id === selectedIntegration,
+                      )?.name
+                    }{" "}
+                    account settings
+                  </li>
                   <li>Generate an API key or access token</li>
                   <li>Copy the API credentials</li>
                   <li>Return here and paste the credentials</li>
@@ -259,7 +283,9 @@ export const WizardStep3ProductIntegrationsImproved = ({
               </div>
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> You can complete this setup after creating your account. The integration will be marked as pending until configured.
+                  <strong>Note:</strong> You can complete this setup after
+                  creating your account. The integration will be marked as
+                  pending until configured.
                 </p>
               </div>
             </div>
@@ -270,11 +296,17 @@ export const WizardStep3ProductIntegrationsImproved = ({
               >
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={handleToggleIntegration}
-                variant={enabledIntegrations.has(selectedIntegration || '') ? 'destructive' : 'default'}
+                variant={
+                  enabledIntegrations.has(selectedIntegration || "")
+                    ? "destructive"
+                    : "default"
+                }
               >
-                {enabledIntegrations.has(selectedIntegration || '') ? 'Disable' : 'Mark as Enabled'}
+                {enabledIntegrations.has(selectedIntegration || "")
+                  ? "Disable"
+                  : "Mark as Enabled"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -17,11 +17,6 @@ export const accountProfileSchema = z.object({
 
   timezone: z.string().optional(),
 
-  description: z
-    .string()
-    .max(500, "Description must be less than 500 characters")
-    .optional(),
-
   website: z
     .union([z.string().url("Invalid website URL"), z.literal("")])
     .optional(),

@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -277,23 +276,6 @@ export const WizardStep1BasicInfo = ({
           </div>
 
           <div>
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  description: e.target.value,
-                })
-              }
-              placeholder="Brief description of this account..."
-              rows={3}
-              className="mt-1"
-            />
-          </div>
-
-          <div>
             <div className="flex items-center gap-2">
               <Label htmlFor="industry">Industry *</Label>
               <Tooltip>
@@ -326,7 +308,9 @@ export const WizardStep1BasicInfo = ({
               <Alert className="border-orange-200 bg-orange-50">
                 <AlertCircle className="h-4 w-4 text-orange-600" />
                 <AlertDescription className="text-sm">
-                  <strong>Required:</strong> Please provide at least one website URL below OR upload at least one business document in the section below.
+                  <strong>Required:</strong> Please provide at least one website
+                  URL below OR upload at least one business document in the
+                  section below.
                 </AlertDescription>
               </Alert>
             )}
@@ -336,7 +320,9 @@ export const WizardStep1BasicInfo = ({
               <div className="flex items-center gap-2">
                 <Label>Websites</Label>
                 <Badge variant="outline" className="text-xs">
-                  {formData.business_strategy_documents.length > 0 ? "Optional" : "Required"}
+                  {formData.business_strategy_documents.length > 0
+                    ? "Optional"
+                    : "Required"}
                 </Badge>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -553,42 +539,6 @@ export const WizardStep1BasicInfo = ({
             </Select>
           </div>
 
-          {/* Show selected template info */}
-          {loadedTemplate && (
-            <div className="mt-4 p-4 bg-brand-light-blue/10 rounded-lg border border-brand-light-blue/20">
-              <div className="flex items-start gap-2">
-                <Sparkles className="h-4 w-4 text-brand-medium-blue mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-brand-medium-blue mb-1">
-                    Industry Template Loaded: {loadedTemplate.name}
-                  </p>
-                  <p className="text-xs text-dashboard-gray-600 mb-2">
-                    {loadedTemplate.description}
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="font-medium text-dashboard-gray-700">
-                        Marketing Channels:
-                      </span>{" "}
-                      {loadedTemplate.marketingChannels?.slice(0, 2).join(", ")}
-                      {(loadedTemplate.marketingChannels?.length || 0) > 2 &&
-                        " +more"}
-                    </div>
-                    <div>
-                      <span className="font-medium text-dashboard-gray-700">
-                        Recommended Integrations:
-                      </span>{" "}
-                      {loadedTemplate.productIntegrations
-                        ?.slice(0, 2)
-                        .join(", ") || "None"}
-                      {(loadedTemplate.productIntegrations?.length || 0) > 2 &&
-                        " +more"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -598,7 +548,9 @@ export const WizardStep1BasicInfo = ({
             <FileText className="h-5 w-5" />
             Business Strategy Documents
             <Badge variant="outline" className="text-xs">
-              {formData.websites.some((w) => w.trim() !== "") ? "Optional" : "Required"}
+              {formData.websites.some((w) => w.trim() !== "")
+                ? "Optional"
+                : "Required"}
             </Badge>
           </CardTitle>
           <div className="text-sm text-dashboard-gray-600">
@@ -606,9 +558,7 @@ export const WizardStep1BasicInfo = ({
               Upload documents to help KEN-E understand your business,
               competitors and customers.
             </p>
-            <p className="font-medium text-dashboard-gray-700">
-              Examples:
-            </p>
+            <p className="font-medium text-dashboard-gray-700">Examples:</p>
             <ul className="list-disc list-inside ml-2 mb-3 space-y-1">
               <li>Business plan</li>
               <li>Competitive analysis</li>

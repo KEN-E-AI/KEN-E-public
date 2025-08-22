@@ -597,8 +597,7 @@ async def create_account(
             region: $region,
             estimated_annual_ad_budget: $estimated_annual_ad_budget,
             marketing_channels: $marketing_channels,
-            product_integrations: $product_integrations,
-            template_id: $template_id
+            product_integrations: $product_integrations
         })
         CREATE (acc)-[:BELONGS_TO]->(org)
         RETURN acc
@@ -617,7 +616,6 @@ async def create_account(
             "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
             "marketing_channels": request.marketing_channels or [],
             "product_integrations": request.product_integrations or [],
-            "template_id": request.template_id,
         }
 
         # DEBUG: Log the Neo4j query parameters
@@ -1165,7 +1163,6 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         estimated_annual_ad_budget=acc_data.get("estimated_annual_ad_budget"),
         marketing_channels=acc_data.get("marketing_channels", []),
         product_integrations=acc_data.get("product_integrations", []),
-        template_id=acc_data.get("template_id"),
     )
 
 
