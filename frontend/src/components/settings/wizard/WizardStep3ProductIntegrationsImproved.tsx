@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Link, Clock, AlertCircle } from "lucide-react";
+import { Link, Clock } from "lucide-react";
 import {
   PRODUCT_INTEGRATIONS,
   INTEGRATION_CATEGORIES,
@@ -109,10 +108,6 @@ export const WizardStep3ProductIntegrationsImproved = ({
     {} as Record<string, typeof PRODUCT_INTEGRATIONS>,
   );
 
-  // Count coming soon integrations
-  const comingSoonCount = PRODUCT_INTEGRATIONS.filter(
-    (int) => int.status === "coming_soon",
-  ).length;
 
   return (
     <Card className="w-full max-w-5xl mx-auto">
@@ -131,16 +126,6 @@ export const WizardStep3ProductIntegrationsImproved = ({
           <ValidationAlert messages={validationMessages} />
         )}
 
-        {/* Coming soon notice - moved to top and made smaller */}
-        {comingSoonCount > 0 && (
-          <Alert className="border-orange-200 bg-orange-50">
-            <AlertCircle className="h-4 w-4 text-orange-600" />
-            <AlertDescription className="text-sm text-orange-800">
-              {comingSoonCount} additional integrations coming soon. You can add
-              more after setting up your account.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {/* Integration Categories */}
         {Object.entries(integrationsByCategory).map(
@@ -198,14 +183,9 @@ export const WizardStep3ProductIntegrationsImproved = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-1">
                             <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-medium text-sm text-dashboard-gray-800">
-                                  {integration.name}
-                                </h4>
-                              </div>
-                              <p className="text-xs text-dashboard-gray-600 mt-0.5">
-                                {integration.description}
-                              </p>
+                              <h4 className="font-medium text-sm text-dashboard-gray-800">
+                                {integration.name}
+                              </h4>
                             </div>
 
                             {/* Checkbox */}
@@ -227,7 +207,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
                                 className="text-xs bg-orange-50 text-orange-700 border-orange-200 ml-2"
                               >
                                 <Clock className="h-3 w-3 mr-1" />
-                                Soon
+                                Coming soon
                               </Badge>
                             )}
                           </div>
