@@ -69,8 +69,8 @@ class NotificationService:
         # Store notification
         await self.repository.create(notification)
 
-        # Initialize status for all users with access to this account
-        await self._initialize_user_statuses(account_id, notification_id, category)
+        # Note: User statuses are now created lazily when users query notifications
+        # or explicitly by the caller for specific users (more scalable approach)
 
         logger.info(f"Created notification {notification_id} for account {account_id}")
         return notification_id
