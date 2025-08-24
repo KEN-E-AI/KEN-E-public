@@ -25,6 +25,7 @@ dependencies = [
     "firebase-admin>=6.1.0",
     "redis>=5.0.0",
     "google-adk>=0.1.0",
+    "importlib-metadata<8.0",
 ]
 
 [dependency-groups]
