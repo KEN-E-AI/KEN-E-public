@@ -925,14 +925,14 @@ wheels = [
 
 [[package]]
 name = "importlib-metadata"
-version = "8.7.0"
+version = "7.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "zipp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/66/650a33bd90f786193e4de4b3ad86ea60b53c89b669a5c7be931fac31cdb0/importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000", size = 56641, upload-time = "2025-04-27T15:29:01.736Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/72/33d1bb4be61f1327d3cd76fc41e2d001a6b748a0648d944c646643f123fe/importlib_metadata-7.2.1.tar.gz", hash = "sha256:509ecb2ab77071db5137c655e24ceb3eee66e7bbc6574165d0d114d9fc4bbe68", size = 52834, upload-time = "2024-06-23T15:17:54.753Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/b0/36bd937216ec521246249be3bf9855081de4c5e06a0c9b4219dbeda50373/importlib_metadata-8.7.0-py3-none-any.whl", hash = "sha256:e5dd1551894c77868a30651cef00984d50e1002d06942a7101d34870c5f02afd", size = 27656, upload-time = "2025-04-27T15:29:00.214Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/28/7daa5f782f5e2cbbec00556bf23ca106023470ebab3ae1040ee778269af1/importlib_metadata-7.2.1-py3-none-any.whl", hash = "sha256:ffef94b0b66046dd8ea2d619b701fe978d9264d38f3998bc4c27ec3b146a87c8", size = 25037, upload-time = "2024-06-23T15:17:52.117Z" },
 ]
 
 [[package]]
@@ -1006,6 +1006,7 @@ dependencies = [
     { name = "google-cloud-secret-manager" },
     { name = "google-cloud-storage" },
     { name = "httpx" },
+    { name = "importlib-metadata" },
     { name = "jinja2" },
     { name = "neo4j" },
     { name = "pydantic" },
@@ -1042,6 +1043,7 @@ requires-dist = [
     { name = "google-cloud-secret-manager", specifier = ">=2.21.0" },
     { name = "google-cloud-storage", specifier = ">=2.18.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "importlib-metadata", specifier = "<8.0" },
     { name = "jinja2", specifier = ">=3.1.2" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "pydantic", specifier = ">=2.11.5" },
