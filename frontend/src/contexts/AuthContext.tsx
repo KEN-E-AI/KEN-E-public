@@ -111,6 +111,7 @@ interface AuthContextType {
   setAccountMetadata: (data: Record<string, any>) => void;
   notifications: Notification[];
   setNotifications: (n: Notification[]) => void;
+  refreshNotifications: () => Promise<void>;
   notificationSettings: NotificationSetting[];
   securitySettings: SecuritySetting[];
   setNotificationSettings: (settings: NotificationSetting[]) => void;
@@ -282,6 +283,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  /**
+   * Refreshes notifications for the currently selected account.
+   * This can be called after creating an account or when notifications need to be updated.
+   */
+  const refreshNotifications = async () => {
+    if (selectedOrgAccount?.accountId) {
+      console.log(
+        "🔄 Refreshing notifications for account:",
+        selectedOrgAccount.accountId,
+      );
+      await fetchNotifications(selectedOrgAccount.accountId);
+    } else {
+      console.log("⚠️ No account selected, cannot refresh notifications");
+    }
+  };
+
   // Sync with Firebase auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -448,6 +465,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setAccountMetadata,
     notifications,
     setNotifications,
+    refreshNotifications,
     notificationSettings,
     securitySettings,
     setNotificationSettings,

@@ -18,6 +18,7 @@ from ..models.kene_models import (
     AccountListResponse,
     AccountRequest,
     NotificationCategory,
+    NotificationStatus,
     SuccessResponse,
 )
 from ..repositories import FirestoreNotificationRepository
@@ -187,7 +188,7 @@ async def get_accounts(
                 params = {"account_ids": accessible_account_ids}
 
         result = await db.execute_query(accounts_query, params)
-        
+
         # Debug logging
         logger.info(f"[DEBUG] Neo4j query executed: {accounts_query}")
         logger.info(f"[DEBUG] Query params: {params}")
@@ -630,7 +631,9 @@ async def create_account(
         logger.info(f"Query: {create_query}")
         logger.info(f"Parameters: {params}")
         logger.info(f"Params marketing_channels: {params.get('marketing_channels')}")
-        logger.info(f"Params product_integrations: {params.get('product_integrations')}")
+        logger.info(
+            f"Params product_integrations: {params.get('product_integrations')}"
+        )
 
         result = await db.execute_write_query(create_query, params)
         logger.info(f"Neo4j query result: {result}")
@@ -646,10 +649,16 @@ async def create_account(
         if verify_result and len(verify_result) > 0:
             account_data = verify_result[0]
             logger.info(f"Found account: {account_data}")
-            logger.info(f"Stored marketing_channels: {account_data.get('acc.marketing_channels')}")
-            logger.info(f"Stored product_integrations: {account_data.get('acc.product_integrations')}")
+            logger.info(
+                f"Stored marketing_channels: {account_data.get('acc.marketing_channels')}"
+            )
+            logger.info(
+                f"Stored product_integrations: {account_data.get('acc.product_integrations')}"
+            )
         else:
-            logger.error(f"CRITICAL: Account {account_id} not found in Neo4j after creation!")
+            logger.error(
+                f"CRITICAL: Account {account_id} not found in Neo4j after creation!"
+            )
         logger.info("=== ACCOUNT CREATION DEBUG END ===")
 
         # Invalidate the creating user's cache to ensure their context includes the new account
@@ -729,11 +738,17 @@ async def create_account(
         # Create Google Cloud Storage folder for the account
         try:
             data_region = request.data_region or "US"
-            folder_created = await storage.ensure_account_folder(account_id, data_region)
+            folder_created = await storage.ensure_account_folder(
+                account_id, data_region
+            )
             if folder_created:
-                logger.info(f"Created GCS folder for account {account_id} in region {data_region}")
+                logger.info(
+                    f"Created GCS folder for account {account_id} in region {data_region}"
+                )
             else:
-                logger.warning(f"Failed to create GCS folder for account {account_id} in region {data_region}")
+                logger.warning(
+                    f"Failed to create GCS folder for account {account_id} in region {data_region}"
+                )
         except Exception as e:
             # Don't fail account creation if storage folder creation fails
             logger.error(
@@ -762,15 +777,51 @@ async def create_account(
             )
 
             # Ensure the creating user can see the notification immediately
-            await notification_service._initialize_user_statuses(
-                account_id=account_id,
-                notification_id=notification_id,
-                category=NotificationCategory.NEW_FEATURES,
+            # Create notification status directly for the creating user
+            await notification_repository.batch_create_user_statuses(
+                [
+                    {
+                        "user_id": user.user_id,
+                        "notification_id": notification_id,
+                        "status": NotificationStatus.UNREAD.value,
+                        "updated_at": datetime.now().isoformat(),
+                    }
+                ]
             )
         except Exception as e:
             # Don't fail account creation if notification fails
             logger.error(
                 f"Failed to create notification for new account {account_id}: {e}"
+            )
+
+        # Grant the creating user admin permissions on the new account
+        try:
+            success = firestore.set_nested_field(
+                collection="users",
+                document_id=user.user_id,
+                field_path=f"permissions.accounts.{account_id}",
+                value="admin",
+            )
+            if success:
+                logger.info(
+                    f"Granted admin permissions to user {user.user_id} for account {account_id}"
+                )
+
+                # Invalidate the user's cache again to ensure permissions are updated
+                cached_user_service.invalidate_user_context(user.user_id)
+                logger.info(
+                    f"Invalidated cache again for user {user.user_id} after granting account permissions"
+                )
+            else:
+                logger.warning(
+                    f"Failed to grant permissions to user {user.user_id} for account {account_id}, "
+                    "but account was created successfully"
+                )
+        except Exception as e:
+            # Don't fail account creation if permission grant fails
+            logger.error(
+                f"Error granting permissions to user {user.user_id} for account {account_id}: {e}, "
+                "but account was created successfully"
             )
 
         # Fetch the created account
@@ -1166,11 +1217,17 @@ async def _get_organization_agency_status(
 def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
     """Create an Account object from a Neo4j record."""
     # Debug logging to see what's in the Neo4j record
-    logger.info(f"[DEBUG] Creating account from Neo4j record for account_id: {acc_data.get('account_id')}")
+    logger.info(
+        f"[DEBUG] Creating account from Neo4j record for account_id: {acc_data.get('account_id')}"
+    )
     logger.info(f"[DEBUG] Raw acc_data keys: {list(acc_data.keys())}")
-    logger.info(f"[DEBUG] marketing_channels in record: {acc_data.get('marketing_channels')}")
-    logger.info(f"[DEBUG] product_integrations in record: {acc_data.get('product_integrations')}")
-    
+    logger.info(
+        f"[DEBUG] marketing_channels in record: {acc_data.get('marketing_channels')}"
+    )
+    logger.info(
+        f"[DEBUG] product_integrations in record: {acc_data.get('product_integrations')}"
+    )
+
     return Account(
         account_id=acc_data.get("account_id"),
         account_name=acc_data.get("account_name"),

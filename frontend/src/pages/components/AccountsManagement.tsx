@@ -194,6 +194,7 @@ const AccountsManagement = ({
     setOrgMetadata,
     selectedOrgAccount,
     setSelectedOrgAccount,
+    refreshNotifications,
     isSuperAdmin,
   } = useAuth();
 
@@ -660,6 +661,9 @@ const AccountsManagement = ({
 
       await refreshAccountQueries(currentOrgId!);
       updateContextsAfterCreation(result, currentOrgId!);
+
+      // Refresh notifications to show the new account notification
+      await refreshNotifications();
 
       // Close wizard
       setIsCreateAccountModalOpen(false);
