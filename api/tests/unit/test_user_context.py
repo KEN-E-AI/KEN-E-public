@@ -5,7 +5,6 @@ from unittest import mock
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
-from google.cloud import firestore
 
 from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import (
@@ -185,6 +184,138 @@ class TestGetCurrentUserContext:
             assert result.accessible_accounts == []
             assert result.permissions == {}
             assert result.organization_permissions == {}
+    
+    @pytest.mark.asyncio
+    async def test_super_admin_bypasses_rate_limit(self):
+        """Test that super admin users bypass rate limiting."""
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="valid-token")
+        decoded_token = {
+            "uid": "super-admin-id",
+            "email": "admin@ken-e.ai",  # Super admin email domain
+            "iat": 1234567890,
+        }
+        
+        # Mock Firestore
+        mock_firestore_client = mock.Mock()
+        mock_collection = mock.Mock()
+        mock_document = mock.Mock()
+        mock_user_doc = mock.Mock()
+        mock_user_doc.exists = True
+        mock_user_doc.to_dict.return_value = {
+            "uid": "super-admin-id",
+            "email": "admin@ken-e.ai",
+            "permissions": {
+                "accounts": {},
+                "organizations": {},
+            },
+        }
+        
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_document
+        mock_document.get.return_value = mock_user_doc
+        
+        mock_firestore_service = mock.Mock()
+        mock_firestore_service.get_client.return_value = mock_firestore_client
+        
+        mock_request = mock.Mock(spec=Request)
+        mock_request.client = mock.Mock(host="127.0.0.1")
+        mock_request.headers = mock.Mock()
+        mock_request.headers.get = mock.Mock(return_value="User-Agent")
+        mock_request.url = "http://test.com/api/endpoint"
+        
+        with mock.patch(
+            "src.kene_api.auth.user_context.verify_id_token",
+            return_value=decoded_token
+        ):
+            # Mock rate limiter - should NOT be called for super admin
+            with mock.patch(
+                "src.kene_api.auth.user_context.token_rate_limiter.check_rate_limit"
+            ) as mock_rate_limit:
+                with mock.patch(
+                    "src.kene_api.auth.user_context.get_cached_user_context_service"
+                ) as mock_get_cached:
+                    with mock.patch(
+                        "src.kene_api.auth.user_context.get_token_revocation_service"
+                    ) as mock_get_revocation:
+                        with mock.patch(
+                            "src.kene_api.auth.user_context.get_audit_logger"
+                        ) as mock_get_audit:
+                            mock_cached_service = mock.Mock()
+                            mock_cached_service.get_user_context.return_value = None
+                            mock_cached_service.set_user_context.return_value = True
+                            mock_get_cached.return_value = mock_cached_service
+                            
+                            mock_revocation_service = mock.Mock()
+                            mock_revocation_service.is_token_revoked = mock.AsyncMock(return_value=False)
+                            mock_get_revocation.return_value = mock_revocation_service
+                            
+                            mock_audit_logger = mock.Mock()
+                            mock_audit_logger.log_event = mock.AsyncMock()
+                            mock_audit_logger.log_login_success = mock.AsyncMock()
+                            mock_get_audit.return_value = mock_audit_logger
+                            
+                            result = await get_current_user_context(mock_request, credentials, mock_firestore_service)
+                            
+                            # Verify rate limiter was NOT called for super admin
+                            mock_rate_limit.assert_not_called()
+                            
+                            # Verify audit log was called for bypass
+                            mock_audit_logger.log_event.assert_called()
+                            # Check the bypass log call
+                            for call in mock_audit_logger.log_event.call_args_list:
+                                if call[1].get("details", {}).get("action") == "rate_limit_bypass":
+                                    assert call[1]["details"]["reason"] == "super_admin"
+                                    break
+                            else:
+                                assert False, "Rate limit bypass was not logged"
+                            
+                            # Verify returned context
+                            assert result.user_id == "super-admin-id"
+                            assert result.email == "admin@ken-e.ai"
+                            assert result.is_super_admin is True
+
+    @pytest.mark.asyncio
+    async def test_regular_user_is_rate_limited(self):
+        """Test that regular users are subject to rate limiting."""
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="valid-token")
+        decoded_token = {
+            "uid": "regular-user-id",
+            "email": "user@example.com",  # Not a super admin email
+            "iat": 1234567890,
+        }
+        
+        mock_firestore_service = mock.Mock()
+        mock_request = mock.Mock(spec=Request)
+        mock_request.client = mock.Mock(host="127.0.0.1")
+        mock_request.headers = mock.Mock()
+        mock_request.headers.get = mock.Mock(return_value="User-Agent")
+        mock_request.url = "http://test.com/api/endpoint"
+        
+        with mock.patch(
+            "src.kene_api.auth.user_context.verify_id_token",
+            return_value=decoded_token
+        ):
+            # Mock rate limiter to raise exception
+            with mock.patch(
+                "src.kene_api.auth.user_context.token_rate_limiter.check_rate_limit"
+            ) as mock_rate_limit:
+                with mock.patch(
+                    "src.kene_api.auth.user_context.get_audit_logger"
+                ) as mock_get_audit:
+                    mock_rate_limit.side_effect = HTTPException(status_code=429, detail="Rate limit exceeded")
+                    mock_audit_logger = mock.Mock()
+                    mock_audit_logger.log_rate_limit_exceeded = mock.AsyncMock()
+                    mock_get_audit.return_value = mock_audit_logger
+                    
+                    with pytest.raises(HTTPException) as exc_info:
+                        await get_current_user_context(mock_request, credentials, mock_firestore_service)
+                    
+                    # Verify rate limiter was called for regular user
+                    mock_rate_limit.assert_called_once_with(mock_request)
+                    
+                    # Verify the exception is rate limit
+                    assert exc_info.value.status_code == 429
+                    assert "Rate limit exceeded" in exc_info.value.detail
     
     @pytest.mark.asyncio
     async def test_valid_token_existing_user(self):

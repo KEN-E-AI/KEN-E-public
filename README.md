@@ -112,8 +112,8 @@ cd ..
 ```bash
 # Terminal 1: Start API server
 cd api
-# Note: If your virtual environment is in the project root, use --active flag
-uv run --active uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+# Note: Use uv run without --active flag to avoid package reinstallation issues
+uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: Start frontend
 cd frontend
@@ -139,7 +139,7 @@ npm run dev -- --mode staging  # Uses .env.staging
 ```bash
 # Run migration script to populate Neo4j with sample data
 cd api
-uv run --active python scripts/migrate_organizations_to_neo4j.py
+uv run python scripts/migrate_organizations_to_neo4j.py
 ```
 
 ## Development Commands
