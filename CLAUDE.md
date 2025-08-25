@@ -47,7 +47,7 @@ ken-e/
 
 ### API Service (api/) - Python/FastAPI
 **Note:** The API is a Python project using `pyproject.toml`. Do NOT use npm commands here.
-- `cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000` - Run FastAPI development server
+- `cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000` - Run FastAPI development server
 - `cd api && python run_dev.py` - Alternative dev server launcher
 - `cd api && pytest tests/` - Run API tests
 - `cd api && ./docker.sh dev` - Run API in Docker container
@@ -251,7 +251,7 @@ cd api && ./scripts/set_environment.sh staging
 cd frontend && ./scripts/set_environment.sh staging
 
 # Restart services to pick up new environment
-cd api && uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 cd frontend && npm run dev:staging  # or dev:development / dev:production
 ```
 
@@ -1024,3 +1024,46 @@ After this fix:
 
 **Date Resolved**: January 31, 2025
 **Impact**: Frontend conversation persistence now works correctly without any backend or architectural changes.
+
+## Troubleshooting Common Issues
+
+### API Server Reload Loop on Startup
+
+**Issue**: When starting the API with `uv run --active`, the server repeatedly reloads due to package reinstallation.
+
+**Symptoms**:
+- Multiple messages: `WARNING: WatchFiles detected changes in '.venv/lib/python3.12/site-packages/requests/...'`
+- Warning about missing `RECORD` file: `Failed to uninstall package... due to missing RECORD file`
+- Server restarts 4-5 times before stabilizing
+
+**Root Cause**: 
+1. The `--active` flag can cause issues when `VIRTUAL_ENV` path doesn't match the project's `.venv` path
+2. Corrupted package installations with missing `RECORD` files
+3. Lockfile version mismatches causing `uv` to repeatedly reinstall packages
+
+**Solutions**:
+
+1. **Use `uv run` without the `--active` flag** (Recommended):
+   ```bash
+   cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+2. **If packages are corrupted, clean and reinstall**:
+   ```bash
+   # Remove corrupted package directories
+   rm -rf .venv/lib/python3.12/site-packages/requests*
+   
+   # Update lockfile and sync packages
+   uv lock --upgrade-package requests
+   uv sync
+   ```
+
+3. **Alternative: Use Python directly**:
+   ```bash
+   cd api && python -m uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+**Prevention**: 
+- Always use `uv run` without `--active` for consistent behavior
+- Keep lockfile updated with `uv lock` when adding/updating dependencies
+- Report any `VIRTUAL_ENV` path mismatches in the terminal output
