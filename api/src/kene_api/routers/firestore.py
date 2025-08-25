@@ -2392,6 +2392,15 @@ async def invite_member_to_organization(
                 status_code=500, detail="Failed to update user permissions"
             )
 
+        # Invalidate user cache after granting organization permissions
+        from ..auth.cached_user_context import get_cached_user_context_service
+
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user_id)
+        logger.info(
+            f"Invalidated cache for user {user_id} after granting organization {organization_id} permissions"
+        )
+
         # If access level is view and account permissions are provided, grant them
         if request.access_level == "view" and request.account_permissions:
             for account_id, access_level in request.account_permissions.items():
@@ -2405,11 +2414,7 @@ async def invite_member_to_organization(
                     value=access_level,
                 )
 
-            # Invalidate user cache
-            from ..auth.cached_user_context import get_cached_user_context_service
-
-            cached_user_service = get_cached_user_context_service()
-            cached_user_service.invalidate_user_context(user_id)
+            # Cache was already invalidated above after organization permission grant
 
         return SuccessResponse(
             success=True,
@@ -2503,6 +2508,15 @@ async def update_member_access_level(
             raise HTTPException(
                 status_code=404, detail="User not found or update failed"
             )
+
+        # Invalidate user cache after updating organization permissions
+        from ..auth.cached_user_context import get_cached_user_context_service
+
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user_id)
+        logger.info(
+            f"Invalidated cache for user {user_id} after updating organization {organization_id} permissions"
+        )
 
         # If changing from admin to view, remove all account permissions (they need to be re-granted)
         # If changing from view to admin, remove explicit account permissions (they now have implicit access)
@@ -2978,6 +2992,15 @@ async def accept_invitation(
                 status_code=500,
                 detail="Failed to grant organization access",
             )
+
+        # Invalidate user cache after granting organization access via invitation
+        from ..auth.cached_user_context import get_cached_user_context_service
+
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(request.user_id)
+        logger.info(
+            f"Invalidated cache for user {request.user_id} after accepting invitation to organization {invitation['organization_id']}"
+        )
 
         # Grant account permissions if provided for view-role users
         if invitation.get("access_level") == "view" and invitation.get(

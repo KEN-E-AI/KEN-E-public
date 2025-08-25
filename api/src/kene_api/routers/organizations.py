@@ -343,6 +343,15 @@ async def create_organization(
                 f"Granted admin permissions to user {user.user_id} for organization {organization_id}"
             )
 
+            # Invalidate the creating user's cache to ensure their context includes the new organization
+            from ..auth.cached_user_context import get_cached_user_context_service
+
+            cached_user_service = get_cached_user_context_service()
+            cached_user_service.invalidate_user_context(user.user_id)
+            logger.info(
+                f"Invalidated cache for user {user.user_id} after creating organization {organization_id}"
+            )
+
         except HTTPException:
             raise
         except Exception as e:
