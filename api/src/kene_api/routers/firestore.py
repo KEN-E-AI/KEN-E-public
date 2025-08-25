@@ -2363,8 +2363,11 @@ async def invite_member_to_organization(
             )
 
             if not email_sent:
-                # Log but don't fail
-                pass
+                # Log the error but don't fail the invitation creation
+                logger.error(
+                    f"Failed to send invitation email to {request.email} for account {account_id}. "
+                    f"Invitation was created but email was not sent."
+                )
 
             return SuccessResponse(
                 success=True,
@@ -2773,8 +2776,10 @@ async def create_invitation(
 
         if not email_sent:
             # Log the issue but don't fail the invitation creation
-            # In production, you might want to queue this for retry
-            pass
+            logger.error(
+                f"Failed to send invitation email to {request.email} for account {account_id}. "
+                f"Invitation was created but email was not sent. Consider queueing for retry."
+            )
 
         return SuccessResponse(
             success=True,
