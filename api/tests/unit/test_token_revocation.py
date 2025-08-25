@@ -40,7 +40,7 @@ class TestTokenRevocationService:
                 
                 revocation_service.redis.is_available.return_value = True
                 
-                mock_audit_logger = mock.Mock()
+                mock_audit_logger = mock.AsyncMock()
                 mock_audit.return_value = mock_audit_logger
                 
                 # Revoke token
@@ -88,7 +88,7 @@ class TestTokenRevocationService:
                 
                 revocation_service.redis.is_available.return_value = True
                 
-                mock_audit_logger = mock.Mock()
+                mock_audit_logger = mock.AsyncMock()
                 mock_audit.return_value = mock_audit_logger
                 
                 # Revoke all tokens

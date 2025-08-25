@@ -1,0 +1,46 @@
+# Redis Availability Alert Policy
+displayName: "KEN-E Redis Instance Down"
+documentation:
+  content: |
+    This alert fires when the Redis instance becomes unavailable or unreachable.
+    This is a critical alert that requires immediate attention.
+
+    **Immediate Actions:**
+    1. Check Redis instance status in Google Cloud Console
+    2. Verify VPC connectivity from Cloud Run services
+    3. Check for ongoing maintenance windows
+    4. Review recent deployments or configuration changes
+
+    **Recovery Steps:**
+    1. If instance is stopped, restart it
+    2. If networking issues, check firewall rules and VPC peering
+    3. If persistent issues, consider failing over to backup instance (production only)
+
+    **Escalation:**
+    This is a P0 incident - escalate immediately if not resolved within 15 minutes.
+  mimeType: "text/markdown"
+
+conditions:
+  - displayName: "Redis instance unavailable"
+    conditionThreshold:
+      filter: 'resource.type="redis_instance" AND metric.type="redis.googleapis.com/up"'
+      comparison: COMPARISON_LESS_THAN
+      thresholdValue: 1.0
+      duration: 180s  # 3 minutes
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MAX
+          crossSeriesReducer: REDUCE_MIN
+          groupByFields:
+            - "resource.label.instance_id"
+
+alertStrategy:
+  autoClose: 3600s  # 1 hour
+
+combiner: OR
+
+enabled: true
+
+notificationChannels:
+  # Add your critical notification channels here
+  # - "projects/PROJECT_ID/notificationChannels/CRITICAL_CHANNEL_ID"
