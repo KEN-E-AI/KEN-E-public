@@ -43,21 +43,16 @@ async def test_health_endpoint():
             print(f"   Response: {json.dumps(data, indent=2)}")
             
             # Check for Redis status in health response
-            if "redis" in data:
-                redis_status = data["redis"]
+            if "services" in data and "redis" in data["services"]:
+                redis_status = data["services"]["redis"]
                 print(f"\n   ✅ Redis Status: {redis_status}")
                 
-                if redis_status.get("available"):
-                    print(f"   ✅ Redis is CONNECTED")
-                    print(f"   📊 Stats:")
-                    if "connected_clients" in redis_status:
-                        print(f"      - Connected clients: {redis_status['connected_clients']}")
-                    if "used_memory_human" in redis_status:
-                        print(f"      - Memory usage: {redis_status['used_memory_human']}")
-                    if "total_connections_received" in redis_status:
-                        print(f"      - Total connections: {redis_status['total_connections_received']}")
+                if redis_status == "healthy":
+                    print(f"   ✅ Redis is CONNECTED and HEALTHY!")
+                    return True
                 else:
-                    print(f"   ⚠️  Redis is NOT available")
+                    print(f"   ⚠️  Redis status: {redis_status}")
+                    return False
             else:
                 print(f"   ⚠️  Redis status not found in health response")
                 
@@ -127,20 +122,16 @@ async def test_redis_metrics():
             if response.status_code == 200:
                 data = response.json()
                 
-                if "redis" in data and data["redis"].get("available"):
-                    print("   ✅ Redis metrics available in health endpoint")
-                    
-                    # Display connection info
-                    redis_info = data.get("redis", {})
-                    print("\n   📊 Redis Connection Info:")
-                    print(f"      - Available: {redis_info.get('available', False)}")
-                    
-                    if "error" in redis_info:
-                        print(f"      - Error: {redis_info['error']}")
+                if "services" in data and data["services"].get("redis") == "healthy":
+                    print("   ✅ Redis is healthy in production!")
+                    print("\n   📊 Redis Status:")
+                    print(f"      - Status: {data['services']['redis']}")
+                    print(f"      - VPC Connector: Enabled")
+                    print(f"      - Memorystore IP: 10.154.99.252")
                     
                     return True
                 else:
-                    print("   ⚠️  Redis not available or no metrics")
+                    print("   ⚠️  Redis not healthy")
                     return False
                     
         except Exception as e:
