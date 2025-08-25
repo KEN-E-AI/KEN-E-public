@@ -8,9 +8,9 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 API_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 # Service account files
-DEVELOPMENT_SA="$API_DIR/ken-e-dev.json"
-STAGING_SA="$API_DIR/ken-e-staging.json"
-PRODUCTION_SA="$API_DIR/ken-e-production.json"
+DEVELOPMENT_SA="$API_DIR/ken-e-dev-sa.json"
+STAGING_SA="$API_DIR/ken-e-staging-sa.json"
+PRODUCTION_SA="$API_DIR/ken-e-production-sa.json"
 
 # Helper function to set service account
 set_service_account() {
