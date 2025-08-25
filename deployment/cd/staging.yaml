@@ -173,7 +173,7 @@ steps:
           set -e
           set -x
 
-          echo "Deploying Cloud Run service with attached service account..."
+          echo "Deploying Cloud Run service with attached service account and VPC connector..."
           gcloud run deploy kene-api-staging \
             --image=gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA} \
             --region=${_REGION} \
@@ -183,6 +183,7 @@ steps:
             --memory=1Gi \
             --port=8000 \
             --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
+            --vpc-connector=ken-e-staging-connector \
             --clear-secrets \
             --set-env-vars "DEBUG=false,HOST=0.0.0.0,ENVIRONMENT=staging,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},AURA_INSTANCEID=${_AURA_INSTANCEID},AURA_INSTANCENAME=${_AURA_INSTANCENAME},SUPERSET_BASE_URL=${_SUPERSET_BASE_URL},SUPERSET_USERNAME=${_SUPERSET_USERNAME},SUPERSET_PASSWORD=${_SUPERSET_PASSWORD},GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,USE_APPLICATION_DEFAULT_CREDENTIALS=true,RECAPTCHA_SITE_KEY=${_RECAPTCHA_SITE_KEY_STAGING},RECAPTCHA_SECRET_KEY=${_RECAPTCHA_SECRET_KEY_STAGING},VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_STAGING},REDIS_HOST=${_REDIS_HOST_STAGING},REDIS_PORT=${_REDIS_PORT},REDIS_DB=${_REDIS_DB},SUPPRESS_REDIS_WARNING=false"
 
