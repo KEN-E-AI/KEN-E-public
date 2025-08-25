@@ -16,6 +16,7 @@ import {
   tryOrganizationId,
   tryAccountId,
 } from "@/lib/branded-types";
+import { validateAndCleanAuthState } from "@/utils/authRecovery";
 
 interface User {
   id: UserId;
@@ -335,6 +336,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Initialize auth state from localStorage on component mount
   useEffect(() => {
+    // First, validate and clean any corrupted auth state
+    validateAndCleanAuthState().then((result) => {
+      if (result.clearedItems.length > 0) {
+        console.warn('Auth state recovery performed:', result.message);
+      }
+    });
+    
     const savedWorkspaceSelection = localStorage.getItem(
       "hasSelectedWorkspace",
     );
