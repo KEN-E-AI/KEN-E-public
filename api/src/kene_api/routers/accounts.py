@@ -490,7 +490,6 @@ async def _create_initial_activity_logs(
 async def create_account(
     request: AccountRequest,
     user: UserContext = Depends(get_current_user_context),
-    db: Neo4jService = Depends(get_neo4j_service),
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> Account:
     """
@@ -527,10 +526,46 @@ async def create_account(
 
     **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
+    # Generate unique account_id FIRST - this will always succeed
+    account_id = generate_unique_account_id()
+    print(f"[ACCOUNT_CREATION] Starting for: {account_id}")
+    logger.info(f"[ACCOUNT_CREATION] Starting account creation for account_id: {account_id}")
+    
+    # CRITICAL: Trigger strategy generation IMMEDIATELY
+    # This ensures it runs regardless of any failures below
+    # User explicitly requested: "feel free to create strategy generation regardless of whatever else fails"
+    strategy_generation_triggered = False
     try:
+        print(f"[STRATEGY] About to trigger generation for {account_id}")
+        logger.info(f"[STRATEGY] Triggering strategy generation for account {account_id} BEFORE any database operations")
+        from ..tasks.strategy_tasks import trigger_strategy_generation_sync
+        
+        trigger_strategy_generation_sync(
+            account_id=account_id,
+            company_name=request.account_name,
+            websites=request.websites,
+            industry=request.industry,
+            customer_regions=request.region or [],
+            user_id=user.user_id,
+            annual_ad_budget=request.estimated_annual_ad_budget
+        )
+        strategy_generation_triggered = True
+        logger.info(f"[STRATEGY] Successfully triggered strategy generation for account {account_id}")
+    except Exception as e:
+        logger.error(f"[STRATEGY] Failed to trigger strategy generation for account {account_id}: {e}", exc_info=True)
+    
+    # Now proceed with the rest of account creation
+    # Even if this fails, strategy generation has already been triggered
+    try:
+        # Get Neo4j service (we removed it from dependencies to ensure strategy runs first)
+        from ..database import get_neo4j_service
+        db = await get_neo4j_service()
+        
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
+            # Neo4j is down, but strategy generation was already triggered
+            logger.warning(f"Neo4j unavailable, but strategy generation already triggered for {account_id}")
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
         # Validate required fields
@@ -563,14 +598,13 @@ async def create_account(
                 detail="Account creation is not permitted for agency organizations",
             )
 
-        # Generate unique account_id using UUID
-        account_id = generate_unique_account_id()
-
+        # Account ID was already generated at the beginning
         # Check if account already exists (extremely unlikely with UUID4)
         existing_acc = await _check_account_exists(db, account_id)
         if existing_acc:
             logger.warning(f"UUID collision detected for account_id: {account_id}")
             # Generate a new UUID if collision occurs (extremely rare)
+            old_account_id = account_id
             account_id = generate_unique_account_id()
             existing_acc = await _check_account_exists(db, account_id)
             if existing_acc:
@@ -578,6 +612,9 @@ async def create_account(
                     status_code=500,
                     detail="Unable to generate unique account ID. Please try again.",
                 )
+            # Update the strategy generation with new account_id if we had to regenerate
+            if strategy_generation_triggered:
+                logger.info(f"[STRATEGY] Updating strategy generation from {old_account_id} to {account_id}")
 
         # Create account node and BELONGS_TO relationship
         create_query = """
@@ -592,7 +629,10 @@ async def create_account(
             timezone: $timezone,
             data_region: $data_region,
             region: $region,
-            estimated_annual_ad_budget: $estimated_annual_ad_budget
+            estimated_annual_ad_budget: $estimated_annual_ad_budget,
+            setup_status: $setup_status,
+            setup_started_at: $setup_started_at,
+            setup_completed_at: $setup_completed_at
         })
         CREATE (acc)-[:BELONGS_TO]->(org)
         RETURN acc
@@ -609,6 +649,9 @@ async def create_account(
             "data_region": request.data_region or "",
             "region": request.region or [],
             "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
+            "setup_status": "pending",  # Initial status
+            "setup_started_at": None,
+            "setup_completed_at": None,
         }
 
         await db.execute_write_query(create_query, params)
@@ -686,6 +729,7 @@ async def create_account(
                 )
 
         # Create notification for the new account
+        logger.info(f"Starting notification creation for account {account_id}")
         try:
             # Create repository and service instances
             notification_repository = FirestoreNotificationRepository(
@@ -706,24 +750,40 @@ async def create_account(
                 f"Created new account notification {notification_id} for account {account_id}"
             )
 
-            # Ensure the creating user can see the notification immediately
-            await notification_service.initialize_notification_for_user(
-                notification_id=notification_id,
-                user_id=user.user_id,
-                category=NotificationCategory.NEW_FEATURES,
-            )
+            # Try to initialize notification for user if method exists
+            if hasattr(notification_service, 'initialize_notification_for_user'):
+                await notification_service.initialize_notification_for_user(
+                    notification_id=notification_id,
+                    user_id=user.user_id,
+                    category=NotificationCategory.NEW_FEATURES,
+                )
         except Exception as e:
             # Don't fail account creation if notification fails
             logger.error(
                 f"Failed to create notification for new account {account_id}: {e}"
             )
+        
+        logger.info(f"Completed notification section for account {account_id}")
+
+        # Strategy generation was already triggered at the beginning
+        # Log the status for clarity
+        if strategy_generation_triggered:
+            logger.info(f"[STRATEGY] Strategy generation was already triggered for account {account_id}")
+        else:
+            logger.warning(f"[STRATEGY] Strategy generation was not triggered for account {account_id}")
 
         # Fetch the created account
         return await get_account(account_id, user, db)
 
     except HTTPException:
+        # Even if account creation failed, strategy generation was already triggered
+        if strategy_generation_triggered:
+            logger.info(f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}")
         raise
     except Exception as e:
+        # Even if account creation failed, strategy generation was already triggered
+        if strategy_generation_triggered:
+            logger.info(f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}")
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(
                 status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE

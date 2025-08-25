@@ -1,6 +1,8 @@
 google-cloud-aiplatform[adk,agent_engines]
 google-adk
 google-cloud-discoveryengine
+google-cloud-firestore
+google-cloud-logging
 python-dotenv
 google-analytics-data
 newsapi-python

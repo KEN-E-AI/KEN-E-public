@@ -671,6 +671,15 @@ wheels = [
 ]
 
 [[package]]
+name = "google-adk"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/2c/0865745f3c532a9f8cfcfdd8fd7db9288e8ba8f3ca64722938f95b2d26ca/google_adk-0.0.1.tar.gz", hash = "sha256:df43f5d9e91066bf3e8dbee49efb56acca177da3cb170e1f793cb55eaadc56f9", size = 5343, upload_time = "2025-03-17T17:49:29.932Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/0d/9b971b144200bc3905abd520249275d2ccca627d63de2001f8a7308ab253/google_adk-0.0.1-py3-none-any.whl", hash = "sha256:3901e48732413d02fdba0a0cd02d965325253fc19166f181049daf93f473f225", size = 5521, upload_time = "2025-03-17T17:49:28.521Z" },
+]
+
+[[package]]
 name = "google-api-core"
 version = "2.24.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1548,6 +1557,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "firebase-admin" },
+    { name = "google-adk" },
     { name = "google-cloud-aiplatform", extra = ["evaluation", "reasoningengine"] },
     { name = "google-cloud-logging" },
     { name = "google-cloud-secret-manager" },
@@ -1581,6 +1591,7 @@ dev = [
 requires-dist = [
     { name = "codespell", marker = "extra == 'lint'", specifier = "~=2.2.0" },
     { name = "firebase-admin", specifier = "~=6.7.0" },
+    { name = "google-adk" },
     { name = "google-cloud-aiplatform", extras = ["evaluation", "reasoningengine"], specifier = "~=1.81.0" },
     { name = "google-cloud-logging", specifier = "~=3.11.4" },
     { name = "google-cloud-secret-manager", specifier = ">=2.24.0" },

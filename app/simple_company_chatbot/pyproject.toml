@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Simple company news chatbot using ADK and Vertex AI Search"
 dependencies = [
     "google-adk",
+    "google-cloud-firestore>=2.20.0",
     "newsapi-python>=0.2.7",
     "pypdf2>=3.0.1",
     "python-dotenv",
