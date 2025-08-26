@@ -2365,7 +2365,7 @@ async def invite_member_to_organization(
             if not email_sent:
                 # Log the error but don't fail the invitation creation
                 logger.error(
-                    f"Failed to send invitation email to {request.email} for account {account_id}. "
+                    f"Failed to send invitation email to {request.email} for organization {organization_id}. "
                     f"Invitation was created but email was not sent."
                 )
 

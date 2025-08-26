@@ -7,6 +7,7 @@ from python_http_client.exceptions import HTTPError
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Content, Email, Mail, To
 
+from .exceptions import EmailServiceInitializationError, SecretManagerError
 from .secret_manager import get_env_var_or_secret
 from .templates.template_loader import template_loader
 
@@ -28,32 +29,89 @@ class EmailService:
     def _ensure_initialized(self):
         """Ensure the service is initialized with current environment variables."""
         if not self._initialized:
-            self.api_key = get_env_var_or_secret("SENDGRID_API_KEY")
-            self.from_email = os.getenv("EMAIL_FROM_ADDRESS", "noreply@ken-e.ai")
-            self.from_name = os.getenv("EMAIL_FROM_NAME", "KEN-E Team")
-            self.app_base_url = os.getenv("APP_BASE_URL", "http://localhost:8080")
-            
-            logger.info(
-                f"Initializing EmailService with: "
-                f"from_email={self.from_email}, "
-                f"app_base_url={self.app_base_url}, "
-                f"api_key={'present' if self.api_key else 'missing'}"
-            )
-
-            if not self.api_key:
-                logger.warning(
-                    "SendGrid API key not found. Email sending will be disabled."
-                )
-                self.client = None
-            else:
+            try:
+                # Attempt to get SendGrid API key - allow failure for graceful degradation
                 try:
-                    self.client = SendGridAPIClient(self.api_key)
-                    logger.info("SendGrid client successfully initialized")
-                except Exception as e:
-                    logger.error(f"Failed to initialize SendGrid client: {e}")
+                    self.api_key = get_env_var_or_secret("SENDGRID_API_KEY", allow_failure=False)
+                except SecretManagerError as e:
+                    # Log detailed error for monitoring
+                    logger.error(
+                        f"Failed to retrieve SendGrid API key from Secret Manager. "
+                        f"Email service will be disabled. "
+                        f"Error details: {e}",
+                        extra={
+                            "error_type": "secret_manager_failure",
+                            "env_var": e.env_var,
+                            "secret_path": e.secret_path,
+                            "service": "email"
+                        }
+                    )
+                    self.api_key = None
                     self.client = None
-            
-            self._initialized = True
+                    self._initialized = True
+                    return
+
+                self.from_email = os.getenv("EMAIL_FROM_ADDRESS", "noreply@ken-e.ai")
+                self.from_name = os.getenv("EMAIL_FROM_NAME", "KEN-E Team")
+                self.app_base_url = os.getenv("APP_BASE_URL", "http://localhost:8080")
+
+                # Check if we have a valid API key
+                if not self.api_key:
+                    logger.warning(
+                        "SendGrid API key not found. Email sending will be disabled.",
+                        extra={"service": "email", "error_type": "missing_api_key"}
+                    )
+                    self.client = None
+                else:
+                    # Validate the API key format before trying to initialize
+                    if not self.api_key.startswith("SG."):
+                        logger.warning(
+                            f"SendGrid API key doesn't have expected format (should start with 'SG.'). "
+                            f"Key starts with: {self.api_key[:5] if len(self.api_key) >= 5 else self.api_key}",
+                            extra={"service": "email", "error_type": "invalid_api_key_format"}
+                        )
+
+                    try:
+                        self.client = SendGridAPIClient(self.api_key)
+                        logger.info(
+                            "SendGrid client successfully initialized",
+                            extra={
+                                "service": "email",
+                                "from_email": self.from_email,
+                                "app_base_url": self.app_base_url,
+                                "status": "initialized"
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to initialize SendGrid client: {e}",
+                            extra={
+                                "service": "email",
+                                "error_type": "sendgrid_client_init_failure",
+                                "api_key_valid_format": self.api_key.startswith('SG.')
+                            }
+                        )
+                        self.client = None
+                        raise EmailServiceInitializationError(
+                            f"SendGrid client initialization failed: {e}"
+                        ) from e
+
+            except EmailServiceInitializationError:
+                # Re-raise initialization errors
+                raise
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error during EmailService initialization: {e}. "
+                    f"Email sending will be disabled.",
+                    extra={
+                        "service": "email",
+                        "error_type": "unexpected_init_error"
+                    }
+                )
+                self.api_key = None
+                self.client = None
+            finally:
+                self._initialized = True
 
     def send_invitation_email(
         self,
@@ -76,16 +134,33 @@ class EmailService:
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
-        # Ensure service is initialized
-        self._ensure_initialized()
-        
-        if not self.client:
+        # Ensure service is initialized - handle initialization errors gracefully
+        try:
+            self._ensure_initialized()
+        except EmailServiceInitializationError as e:
             logger.error(
-                f"SendGrid client not initialized. Cannot send email to {to_email}. "
-                f"API key present: {self.api_key is not None}"
+                f"Email service initialization failed. Cannot send email to {to_email}. Error: {e}",
+                extra={
+                    "service": "email",
+                    "error_type": "initialization_failure",
+                    "recipient": to_email,
+                    "organization": organization_name
+                }
             )
             return False
-        
+
+        if not self.client:
+            logger.warning(
+                f"SendGrid client not available. Cannot send invitation email to {to_email}.",
+                extra={
+                    "service": "email",
+                    "error_type": "client_unavailable",
+                    "recipient": to_email,
+                    "organization": organization_name
+                }
+            )
+            return False
+
         logger.info(
             f"Attempting to send invitation email to {to_email} "
             f"for organization {organization_name}"
@@ -115,7 +190,7 @@ Hi there,
 
 {inviter_name} has invited you to join {organization_name} on KEN-E with {access_level} access.
 
-KEN-E is a multi-agent AI system for marketing analysis that provides comprehensive insights 
+KEN-E is a multi-agent AI system for marketing analysis that provides comprehensive insights
 and analytics to help optimize your marketing strategies.
 
 Click here to accept the invitation:
@@ -194,11 +269,33 @@ The KEN-E Team
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
-        # Ensure service is initialized
-        self._ensure_initialized()
-        
+        # Ensure service is initialized - handle initialization errors gracefully
+        try:
+            self._ensure_initialized()
+        except EmailServiceInitializationError as e:
+            logger.error(
+                f"Email service initialization failed. Cannot send acceptance notification. Error: {e}",
+                extra={
+                    "service": "email",
+                    "error_type": "initialization_failure",
+                    "recipient": to_email,
+                    "accepter": accepter_email,
+                    "organization": organization_name
+                }
+            )
+            return False
+
         if not self.client:
-            logger.error("SendGrid client not initialized. Cannot send email.")
+            logger.warning(
+                "SendGrid client not available. Cannot send acceptance notification.",
+                extra={
+                    "service": "email",
+                    "error_type": "client_unavailable",
+                    "recipient": to_email,
+                    "accepter": accepter_email,
+                    "organization": organization_name
+                }
+            )
             return False
 
         try:

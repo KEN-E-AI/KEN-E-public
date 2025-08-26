@@ -53,6 +53,9 @@ def main():
     # Initialize email service
     email_service = EmailService()
     
+    # Force initialization by calling _ensure_initialized
+    email_service._ensure_initialized()
+    
     logger.info(f"from_email (actual): {email_service.from_email}")
     logger.info(f"from_name (actual): {email_service.from_name}")
     logger.info(f"app_base_url (actual): {email_service.app_base_url}")
