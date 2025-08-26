@@ -253,6 +253,22 @@ def generate_strategy_documents(
                 if hasattr(event.actions, 'state_delta') and event.actions.state_delta:
                     state_delta = event.actions.state_delta
                     
+                    # Log what's in state_delta
+                    logger.info(f"[STATE_DELTA] Keys in state_delta: {list(state_delta.keys())}")
+                    
+                    # Check all keys to see what agents are outputting
+                    for key in state_delta.keys():
+                        value = state_delta[key]
+                        if value:
+                            if isinstance(value, str):
+                                logger.info(f"[STATE_DELTA] {key}: string with {len(value)} chars")
+                                if len(value) > 0 and len(value) < 100:
+                                    logger.info(f"[STATE_DELTA] {key} content: {value}")
+                            elif isinstance(value, dict):
+                                logger.info(f"[STATE_DELTA] {key}: dict with keys {list(value.keys())[:5]}")
+                            else:
+                                logger.info(f"[STATE_DELTA] {key}: {type(value)}")
+                    
                     # Look for updated_strategy_doc in state_delta
                     if 'updated_strategy_doc' in state_delta:
                         doc_content = state_delta['updated_strategy_doc']
@@ -308,29 +324,31 @@ def generate_strategy_documents(
                                         logger.warning(f"[DOCUMENT] Author '{author}' didn't match any document type")
                                 else:
                                     logger.warning(f"[DOCUMENT] Event has no author field! Cannot determine doc type.")
+                                
+                                # Save the document if we determined its type
+                                if doc_type and parsed_doc:
+                                    generated_documents[doc_type] = parsed_doc
+                                    author_name = event.author if hasattr(event, 'author') else 'unknown'
+                                    logger.info(f"[DOCUMENT] Captured {doc_type} from {author_name}")
                                     
-                                    if doc_type and parsed_doc:
-                                        generated_documents[doc_type] = parsed_doc
-                                        logger.info(f"[DOCUMENT] Captured {doc_type} from {author}")
+                                    # Save to Firestore immediately using sync version
+                                    try:
+                                        from agents.strategy_agent.utils import save_strategy_document_sync
                                         
-                                        # Save to Firestore immediately using sync version
-                                        try:
-                                            from agents.strategy_agent.utils import save_strategy_document_sync
-                                            
-                                            # Use the synchronous save function
-                                            result = save_strategy_document_sync(
-                                                account_id=account_id,
-                                                doc_type=doc_type,
-                                                content=parsed_doc,
-                                                user_id=user_id
-                                            )
-                                            
-                                            if result:
-                                                logger.info(f"[FIRESTORE] Successfully saved {doc_type} to Firestore")
-                                            else:
-                                                logger.error(f"[FIRESTORE] Failed to save {doc_type} to Firestore")
-                                        except Exception as e:
-                                            logger.error(f"[FIRESTORE] Error saving {doc_type}: {e}")
+                                        # Use the synchronous save function
+                                        result = save_strategy_document_sync(
+                                            account_id=account_id,
+                                            doc_type=doc_type,
+                                            content=parsed_doc,
+                                            user_id=user_id
+                                        )
+                                        
+                                        if result:
+                                            logger.info(f"[FIRESTORE] Successfully saved {doc_type} to Firestore")
+                                        else:
+                                            logger.error(f"[FIRESTORE] Failed to save {doc_type} to Firestore")
+                                    except Exception as e:
+                                        logger.error(f"[FIRESTORE] Error saving {doc_type}: {e}")
                                             
                             except json.JSONDecodeError as e:
                                 logger.error(f"[DOCUMENT] Failed to parse JSON: {e}")

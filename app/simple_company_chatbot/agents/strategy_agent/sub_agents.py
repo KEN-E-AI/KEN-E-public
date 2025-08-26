@@ -29,24 +29,14 @@ DATASTORE_ID = "projects/ken-e-dev/locations/us-central1/collections/default_col
 # Common Tools and Helper Functions
 # ============================================================================
 
-def exit_loop(tool_context: ToolContext, final_document: str = ""):
+def exit_loop(tool_context: ToolContext):
     """Call this function ONLY when the document is approved, signaling the loop should end."""
     print(f"  [Tool Call] exit_loop triggered by {tool_context.agent_name}")
     
-    # Print the final strategy document before exiting
-    print("\n" + "="*60)
-    print("🎯 FINAL APPROVED STRATEGY DOCUMENT:")
-    print("="*60)
-    
-    if final_document:
-        print(final_document)
-    else:
-        print("⚠️ No final document provided to exit_loop function")
-    
-    print("="*60 + "\n")
-    
+    # The approved document should already be in state_delta['updated_strategy_doc']
+    # Just signal to exit the loop
     tool_context.actions.escalate = True
-    return {"status": "Loop terminated successfully", "document_displayed": bool(final_document)}
+    return {"status": "Loop terminated successfully"}
 
 
 def create_internal_search_agent() -> Agent:
@@ -203,7 +193,7 @@ Check the criticism first. If the criticism is EXACTLY "The document meets all c
 3. If changes needed: Take the updated_strategy_doc and modify it based on the criticism
 
 # OUTPUT REQUIREMENTS
-- If calling exit_loop: Call the function exit_loop() and provide no text output
+- If calling exit_loop: First output the final approved document (updated_strategy_doc), THEN call exit_loop()
 - If editing: Return ONLY the complete revised JSON document (the modified updated_strategy_doc)
 """,
         output_key="updated_strategy_doc"
@@ -358,7 +348,7 @@ If criticism is EXACTLY "The document meets all criteria." then immediately call
 - updated_strategy_doc: The current competitive strategy document
 
 # OUTPUT REQUIREMENTS
-- If calling exit_loop: Call the function exit_loop() and provide no text output
+- If calling exit_loop: First output the final approved document (updated_strategy_doc), THEN call exit_loop()
 - If editing: Return ONLY the complete revised JSON document (the modified updated_strategy_doc)
 """,
         output_key="updated_strategy_doc"
@@ -519,7 +509,7 @@ If criticism is EXACTLY "The document meets all criteria." then immediately call
 - updated_strategy_doc: The current customer strategy document
 
 # OUTPUT REQUIREMENTS
-- If calling exit_loop: Call the function exit_loop() and provide no text output
+- If calling exit_loop: First output the final approved document (updated_strategy_doc), THEN call exit_loop()
 - If editing: Return ONLY the complete revised JSON document (the modified updated_strategy_doc)
 """,
         output_key="updated_strategy_doc"
@@ -687,7 +677,7 @@ If criticism is EXACTLY "The document meets all criteria." then immediately call
 - updated_strategy_doc: The current marketing strategy document
 
 # OUTPUT REQUIREMENTS
-- If calling exit_loop: Call the function exit_loop() and provide no text output
+- If calling exit_loop: First output the final approved document (updated_strategy_doc), THEN call exit_loop()
 - If editing: Return ONLY the complete revised JSON document (the modified updated_strategy_doc)
 """,
         output_key="updated_strategy_doc"
@@ -857,7 +847,7 @@ If criticism is EXACTLY "The document meets all criteria." then immediately call
 - updated_strategy_doc: The current brand guidelines document
 
 # OUTPUT REQUIREMENTS
-- If calling exit_loop: Call the function exit_loop() and provide no text output
+- If calling exit_loop: First output the final approved document (updated_strategy_doc), THEN call exit_loop()
 - If editing: Return ONLY the complete revised JSON document (the modified updated_strategy_doc)
 """,
         output_key="updated_strategy_doc"
