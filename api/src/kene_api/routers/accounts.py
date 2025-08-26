@@ -583,23 +583,28 @@ async def create_account(
             raise HTTPException(status_code=400, detail="timezone is required")
 
         # Check if organization exists
+        logger.info(f"[ACCOUNT_CREATION] Checking if organization {request.organization_id} exists...")
         org_exists = await _check_organization_exists(db, request.organization_id)
         if not org_exists:
             raise HTTPException(
                 status_code=404,
                 detail=f"Organization {request.organization_id} not found",
             )
+        logger.info(f"[ACCOUNT_CREATION] Organization {request.organization_id} exists")
 
         # Check if organization is an agency (agency organizations cannot create accounts)
+        logger.info(f"[ACCOUNT_CREATION] Checking agency status for {request.organization_id}...")
         is_agency = await _get_organization_agency_status(db, request.organization_id)
         if is_agency is True:
             raise HTTPException(
                 status_code=403,
                 detail="Account creation is not permitted for agency organizations",
             )
+        logger.info(f"[ACCOUNT_CREATION] Organization is not an agency (agency={is_agency})")
 
         # Account ID was already generated at the beginning
         # Check if account already exists (extremely unlikely with UUID4)
+        logger.info(f"[ACCOUNT_CREATION] Checking if account {account_id} already exists...")
         existing_acc = await _check_account_exists(db, account_id)
         if existing_acc:
             logger.warning(f"UUID collision detected for account_id: {account_id}")
@@ -654,7 +659,16 @@ async def create_account(
             "setup_completed_at": None,
         }
 
-        await db.execute_write_query(create_query, params)
+        logger.info(f"[ACCOUNT_CREATION] About to execute write query for account {account_id}")
+        logger.info(f"[ACCOUNT_CREATION] Query params: organization_id={request.organization_id}")
+        
+        try:
+            result = await db.execute_write_query(create_query, params)
+            logger.info(f"[ACCOUNT_CREATION] Write query successful! Result: {result}")
+        except Exception as e:
+            logger.error(f"[ACCOUNT_CREATION] Write query failed: {e}")
+            logger.error(f"[ACCOUNT_CREATION] Error type: {type(e).__name__}")
+            raise
 
         # Invalidate the creating user's cache to ensure their context includes the new account
         from ..auth.cached_user_context import get_cached_user_context_service
