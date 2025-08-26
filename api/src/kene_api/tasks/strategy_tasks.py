@@ -65,10 +65,18 @@ Customer regions: {', '.join(customer_regions)}"""
             new_information += f"\nAnnual advertising budget: ${annual_ad_budget:,.0f}"
         
         # Prepare the message for the strategy agent
-        message = f"""Generate all 5 strategy documents for {company_name}
+        # The agent expects a specific format to trigger the execute_strategy_generation tool
+        message = f"""Please execute strategy generation with these parameters:
+- company_name: {company_name}
+- industry: {industry}
+- websites: {','.join(websites)}
+- customer_regions: {','.join(customer_regions)}
+- account_id: {account_id}
+- user_id: {user_id}
+- annual_ad_budget: {annual_ad_budget or 0}
+- project_id: {project_id}
 
-NEW INFORMATION:
-{new_information}"""
+Use the execute_strategy_generation tool to generate all 5 strategy documents."""
         
         # Call the strategy agent directly
         logger.info(f"Invoking strategy agent for {company_name} via Agent Engine")

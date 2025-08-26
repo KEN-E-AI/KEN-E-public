@@ -11,18 +11,13 @@ import os
 # Add app directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../app'))
 
-from app.simple_company_chatbot.agents.strategy_agent.models import (
+from app.adk.agents.strategy_agent.models import (
     StrategyContext,
-    BusinessStrategy,
-    CompetitiveStrategy,
-    CustomerStrategy,
-    MarketingStrategy,
-    BrandGuidelines,
     StrategyGenerationRequest,
     StrategyGenerationResponse
 )
-from app.simple_company_chatbot.agents.strategy_agent.context import ContextManager
-from app.simple_company_chatbot.agents.strategy_agent.utils import (
+from app.adk.agents.strategy_agent.firestore import (
+    ContextManager,
     parse_json_response,
     format_new_information
 )

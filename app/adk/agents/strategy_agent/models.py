@@ -1,200 +1,88 @@
 """
-Models for V3 Strategy Agent System - Multi-agent sequential architecture.
-Defines models for all 5 strategy document types and context management.
+Models for Strategy Agent - Multi-agent sequential architecture.
+Defines context and API models for strategy generation.
 """
 
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ============================================================================
-# Business Strategy Model
-# ============================================================================
-
-class BusinessStrategy(BaseModel):
-    """Business strategy document model."""
-    
-    businessStrategySummary: str = Field(
-        ...,
-        description="A high-level summary of the company's situation, strategic direction, and key findings or recommendations."
-    )
-    
-    companyOverview: str = Field(
-        ...,
-        description="A comprehensive narrative that introduces the company's identity and background."
-    )
-    
-    marketAndIndustryAnalysis: str = Field(
-        ...,
-        description="A comprehensive review of the market environment including competitive landscape, TAM, and industry trends."
-    )
-    
-    productsAndServices: str = Field(
-        ...,
-        description="A comprehensive description of the company's offerings, value proposition, and pricing model."
-    )
-    
-    marketingAndCustomerStrategy: str = Field(
-        ...,
-        description="A comprehensive analysis of how the company engages its market, including segmentation and acquisition strategies."
-    )
-    
-    swotAnalysis: str = Field(
-        ...,
-        description="A comprehensive SWOT analysis covering strengths, weaknesses, opportunities, and threats."
-    )
-
-
-# ============================================================================
-# Competitive Strategy Model
-# ============================================================================
-
-class CompetitiveStrategy(BaseModel):
-    """Competitive strategy document model."""
-    
-    competitiveStrategySummary: str = Field(
-        ...,
-        description="A high-level overview of the market, competitor landscape, and the company's position."
-    )
-    
-    competitiveLandscape: str = Field(
-        ...,
-        description="A comprehensive analysis of the competitive landscape including geography, success factors, and opportunities."
-    )
-    
-    strategicRecommendations: str = Field(
-        ...,
-        description="A comprehensive set of strategic recommendations based on the competitive analysis."
-    )
-
-
-# ============================================================================
-# Customer Strategy Model
-# ============================================================================
-
-class CustomerStrategy(BaseModel):
-    """Customer strategy document model."""
-    
-    customerProfiles: List[Dict[str, Any]] = Field(
-        ...,
-        description="3-5 detailed ideal customer personas with pain points and motivations."
-    )
-    
-    customerJourneyMaps: List[Dict[str, Any]] = Field(
-        ...,
-        description="Journey maps for each persona showing awareness, consideration, and loyalty stages."
-    )
-    
-    personaInsights: Dict[str, Any] = Field(
-        ...,
-        description="Key insights about each customer segment and their behaviors."
-    )
-
-
-# ============================================================================
-# Marketing Strategy Model
-# ============================================================================
-
-class MarketingStrategy(BaseModel):
-    """Marketing strategy document model."""
-    
-    channelStrategies: Dict[str, Any] = Field(
-        ...,
-        description="Strategies for each marketing channel (Search, YouTube, Display, Gmail)."
-    )
-    
-    campaignPlans: List[Dict[str, Any]] = Field(
-        ...,
-        description="Detailed campaign plans with objectives, audiences, budgets, CPM/CPC, and KPIs."
-    )
-    
-    messagingFramework: Dict[str, Any] = Field(
-        ...,
-        description="Core messaging, positioning, and value propositions for campaigns."
-    )
-
-
-# ============================================================================
-# Brand Guidelines Model
-# ============================================================================
-
-class BrandGuidelines(BaseModel):
-    """Brand guidelines document model."""
-    
-    brandIdentity: Dict[str, Any] = Field(
-        ...,
-        description="Core brand elements, values, mission, and vision."
-    )
-    
-    visualGuidelines: Dict[str, Any] = Field(
-        ...,
-        description="Visual identity standards including colors, typography, and imagery."
-    )
-    
-    voiceAndTone: Dict[str, Any] = Field(
-        ...,
-        description="Brand voice, tone guidelines, and communication principles."
-    )
-    
-    brandApplications: Dict[str, Any] = Field(
-        ...,
-        description="How to apply brand across different channels and touchpoints."
-    )
-
-
-# ============================================================================
-# Strategy Context Model (For passing data between agents)
+# Strategy Context Model
 # ============================================================================
 
 class StrategyContext(BaseModel):
-    """Context passed between strategy agents in the sequential flow."""
+    """
+    Main context object passed between strategy agents.
+    Stores company information and generated strategy documents.
     
-    # Project configuration
-    project_id: str = Field(..., description="Google Cloud project ID")
+    Note: Strategy documents are stored as Dict[str, Any] rather than 
+    typed models for flexibility during agent generation.
+    """
     
-    # Account information
-    account_id: str = Field(..., description="Account ID for document scoping")
-    user_id: Optional[str] = Field(None, description="User ID for attribution")
-    
-    # Input data from account creation
-    company_name: str = Field(..., description="Company name to analyze")
+    # Basic company information
+    account_id: str = Field(..., description="Unique account identifier")
+    company_name: str = Field(..., description="Company name")
     websites: List[str] = Field(default_factory=list, description="Company websites")
-    industry: str = Field(..., description="Industry description")
-    customer_regions: List[str] = Field(default_factory=list, description="Target regions")
-    annual_ad_budget: Optional[float] = Field(None, description="Estimated annual advertising budget")
-    supporting_documents: Optional[List[str]] = Field(None, description="Additional documents provided")
+    industry: str = Field(..., description="Company industry")
+    customer_regions: List[str] = Field(default_factory=list, description="Customer regions")
+    annual_ad_budget: Optional[float] = Field(None, description="Annual advertising budget")
     
-    # Progressive strategy documents (filled as agents complete)
-    business_strategy: Optional[Dict[str, Any]] = Field(None, description="Completed business strategy")
-    competitive_strategy: Optional[Dict[str, Any]] = Field(None, description="Completed competitive strategy")
-    customer_strategy: Optional[Dict[str, Any]] = Field(None, description="Completed customer strategy")
-    marketing_strategy: Optional[Dict[str, Any]] = Field(None, description="Completed marketing strategy")
-    brand_guidelines: Optional[Dict[str, Any]] = Field(None, description="Completed brand guidelines")
+    # Optional supporting documents and context
+    supporting_documents: Optional[List[str]] = Field(None, description="Paths to supporting documents")
+    user_id: Optional[str] = Field(None, description="User ID making the request")
     
-    # Processing metadata
-    current_stage: str = Field(default="business_strategy", description="Current processing stage")
-    stages_completed: List[str] = Field(default_factory=list, description="Completed stages")
+    # Strategy documents (stored as dicts during generation)
+    business_strategy: Optional[Dict[str, Any]] = None
+    competitive_strategy: Optional[Dict[str, Any]] = None
+    customer_strategy: Optional[Dict[str, Any]] = None
+    marketing_strategy: Optional[Dict[str, Any]] = None
+    brand_guidelines: Optional[Dict[str, Any]] = None
+    
+    # Tracking fields
+    stages_completed: List[str] = Field(default_factory=list)
     stages_remaining: List[str] = Field(
-        default_factory=lambda: ["business_strategy", "competitive_strategy", "customer_strategy", "marketing_strategy", "brand_guidelines"],
-        description="Remaining stages"
+        default_factory=lambda: [
+            "business_strategy",
+            "competitive_strategy", 
+            "customer_strategy",
+            "marketing_strategy",
+            "brand_guidelines"
+        ]
     )
-    iteration_counts: Dict[str, int] = Field(default_factory=dict, description="Iteration count per stage")
-    processing_errors: List[str] = Field(default_factory=list, description="Any errors encountered")
+    current_stage: str = Field(default="business_strategy")
     
     # Timestamps
-    started_at: Optional[datetime] = Field(None, description="Processing start time")
-    completed_at: Optional[datetime] = Field(None, description="Processing completion time")
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: Optional[datetime] = None
+    
+    # Error tracking
+    errors: List[str] = Field(default_factory=list)
     
     def get_previous_outputs(self, for_agent: str) -> Dict[str, Any]:
         """
-        Get relevant outputs from previous agents for the current agent.
-        Based on the Excel specifications for variable passing.
+        Get the outputs from previous agents formatted for the current agent.
+        Each agent needs specific fields from previous agents as defined in the V3 spec.
+        
+        Args:
+            for_agent: The agent requesting previous outputs
+            
+        Returns:
+            Dictionary of previous outputs formatted for the agent
         """
         outputs = {}
         
+        # Always include basic context
+        outputs["company_name"] = self.company_name
+        outputs["industry"] = self.industry
+        outputs["websites"] = self.websites
+        outputs["customer_regions"] = self.customer_regions
+        outputs["annual_ad_budget"] = self.annual_ad_budget
+        
+        # Add stage-specific previous outputs based on V3 requirements
         if for_agent == "competitive_strategy":
-            # Competitive strategy needs all 6 fields from business strategy
+            # Competitive strategy needs all fields from business strategy
             if self.business_strategy:
                 outputs.update({
                     "business_strategy.businessStrategySummary": self.business_strategy.get("businessStrategySummary"),
@@ -288,7 +176,7 @@ class StrategyContext(BaseModel):
     def mark_stage_complete(self, stage: str, result: Dict[str, Any]):
         """Mark a stage as complete and update context."""
         # Store the result
-        setattr(self, stage.replace("_", "_"), result)
+        setattr(self, stage.replace("-", "_"), result)
         
         # Update tracking
         if stage not in self.stages_completed:
@@ -304,7 +192,7 @@ class StrategyContext(BaseModel):
             self.current_stage = sequence[current_index + 1]
         else:
             self.current_stage = "completed"
-            self.completed_at = datetime.utcnow()
+            self.completed_at = datetime.now(timezone.utc)
 
 
 # ============================================================================
@@ -334,8 +222,3 @@ class StrategyGenerationResponse(BaseModel):
     errors: List[str] = Field(default_factory=list)
     started_at: datetime
     completed_at: Optional[datetime] = None
-
-
-# Backward compatibility exports (these will be removed after full migration)
-StrategyDocument = BusinessStrategy  # Alias for backward compatibility
-StrategyRequest = StrategyGenerationRequest  # Alias for backward compatibility

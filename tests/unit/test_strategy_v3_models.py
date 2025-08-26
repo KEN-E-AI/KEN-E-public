@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../'))
 
 def test_strategy_context():
     """Test StrategyContext model and methods"""
-    from app.simple_company_chatbot.agents.strategy_agent.models import StrategyContext
+    from app.adk.agents.strategy_agent.models import StrategyContext
     
     # Test initialization
     context = StrategyContext(
@@ -51,7 +51,7 @@ def test_strategy_context():
 
 def test_context_passing():
     """Test context passing between agents"""
-    from app.simple_company_chatbot.agents.strategy_agent.models import StrategyContext
+    from app.adk.agents.strategy_agent.models import StrategyContext
     
     context = StrategyContext(
         account_id='test',
@@ -84,7 +84,7 @@ def test_context_passing():
 
 def test_all_stages_progression():
     """Test completing all stages in sequence"""
-    from app.simple_company_chatbot.agents.strategy_agent.models import StrategyContext
+    from app.adk.agents.strategy_agent.models import StrategyContext
     
     context = StrategyContext(
         account_id='test',
@@ -120,7 +120,7 @@ def test_all_stages_progression():
 
 def test_parse_json_response():
     """Test JSON parsing utility"""
-    from app.simple_company_chatbot.agents.strategy_agent.utils import parse_json_response
+    from app.adk.agents.strategy_agent.firestore import parse_json_response
     
     # Test direct JSON
     json_str = '{"key": "value", "number": 42}'
@@ -147,7 +147,7 @@ def test_parse_json_response():
 
 def test_format_new_information():
     """Test formatting new information for prompt"""
-    from app.simple_company_chatbot.agents.strategy_agent.utils import format_new_information
+    from app.adk.agents.strategy_agent.firestore import format_new_information
     
     info = format_new_information(
         company_name='Test Corp',
@@ -169,7 +169,7 @@ def test_format_new_information():
 
 def test_strategy_generation_request():
     """Test StrategyGenerationRequest model"""
-    from app.simple_company_chatbot.agents.strategy_agent.models import StrategyGenerationRequest
+    from app.adk.agents.strategy_agent.models import StrategyGenerationRequest
     
     # Test minimal request
     request = StrategyGenerationRequest(
@@ -206,7 +206,7 @@ def test_strategy_generation_request():
 
 def test_strategy_generation_response():
     """Test StrategyGenerationResponse model"""
-    from app.simple_company_chatbot.agents.strategy_agent.models import StrategyGenerationResponse
+    from app.adk.agents.strategy_agent.models import StrategyGenerationResponse
     
     response = StrategyGenerationResponse(
         success=True,
@@ -245,7 +245,7 @@ def test_strategy_generation_response():
 
 def test_context_accumulation():
     """Test that context accumulates correctly through all stages"""
-    from app.simple_company_chatbot.agents.strategy_agent.models import StrategyContext
+    from app.adk.agents.strategy_agent.models import StrategyContext
     
     context = StrategyContext(
         account_id='test',
