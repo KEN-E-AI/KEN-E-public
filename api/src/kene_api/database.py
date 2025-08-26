@@ -48,7 +48,11 @@ class Neo4jService:
     async def get_session(self):
         """Get an async session for database operations."""
         if not self.driver:
-            raise RuntimeError("Database driver not initialized. Call connect() first.")
+            logger.warning("Database driver not initialized. Attempting to connect...")
+            try:
+                await self.connect()
+            except Exception as e:
+                raise RuntimeError(f"Failed to connect to database: {e}")
 
         session = self.driver.session(database=settings.neo4j_database)
         try:
@@ -142,12 +146,28 @@ class Neo4jService:
             True if connection is healthy, False otherwise
         """
         try:
+            # If no driver exists, try to connect
             if not self.driver:
-                return False
+                logger.warning("Neo4j driver not initialized, attempting to connect...")
+                try:
+                    await self.connect()
+                except Exception as e:
+                    logger.error(f"Failed to reconnect to Neo4j: {e}")
+                    return False
+            
+            # Verify connectivity
             await self.driver.verify_connectivity()
             return True
-        except Neo4jError:
-            return False
+        except Neo4jError as e:
+            logger.error(f"Neo4j health check failed: {e}")
+            # Try to reconnect once
+            try:
+                await self.connect()
+                await self.driver.verify_connectivity()
+                logger.info("Neo4j reconnected successfully")
+                return True
+            except:
+                return False
 
 
 # Global instance
