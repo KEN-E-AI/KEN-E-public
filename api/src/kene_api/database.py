@@ -1,5 +1,6 @@
 """Neo4j database connection and query utilities."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
@@ -25,8 +26,12 @@ class Neo4jService:
             self.driver = AsyncGraphDatabase.driver(
                 settings.neo4j_uri,
                 auth=(settings.neo4j_username, settings.neo4j_password),
+                connection_timeout=10.0,  # 10 second timeout
+                max_connection_lifetime=3600,  # 1 hour
+                max_connection_pool_size=50,
+                connection_acquisition_timeout=60.0,  # 60 second timeout for getting connection from pool
             )
-            # Verify connectivity
+            # Verify connectivity with timeout
             await self.driver.verify_connectivity()
             logger.info("Successfully connected to Neo4j database")
         except Neo4jError as e:
@@ -96,24 +101,38 @@ class Neo4jService:
         if parameters is None:
             parameters = {}
 
-        try:
-            async with self.get_session() as session:
-                # Use session.execute_write for write queries
-                async def _execute_write_query(tx):
-                    result = await tx.run(query, parameters)
-                    summary = await result.consume()
-                    return {
-                        "nodes_created": summary.counters.nodes_created,
-                        "nodes_deleted": summary.counters.nodes_deleted,
-                        "relationships_created": summary.counters.relationships_created,
-                        "relationships_deleted": summary.counters.relationships_deleted,
-                        "properties_set": summary.counters.properties_set,
-                    }
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                async with self.get_session() as session:
+                    # Use session.execute_write for write queries
+                    async def _execute_write_query(tx):
+                        result = await tx.run(query, parameters)
+                        summary = await result.consume()
+                        return {
+                            "nodes_created": summary.counters.nodes_created,
+                            "nodes_deleted": summary.counters.nodes_deleted,
+                            "relationships_created": summary.counters.relationships_created,
+                            "relationships_deleted": summary.counters.relationships_deleted,
+                            "properties_set": summary.counters.properties_set,
+                        }
 
-                return await session.execute_write(_execute_write_query)
-        except Neo4jError as e:
-            logger.error(f"Write query execution failed: {e}")
-            raise
+                    return await session.execute_write(_execute_write_query)
+            except Neo4jError as e:
+                if attempt < max_retries - 1 and "defunct connection" in str(e).lower():
+                    logger.warning(f"Neo4j write query failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    # Try to reconnect if driver exists
+                    if self.driver:
+                        try:
+                            await self.driver.verify_connectivity()
+                        except:
+                            pass  # Continue with retry
+                else:
+                    logger.error(f"Write query execution failed after {attempt + 1} attempts: {e}")
+                    raise
 
     async def health_check(self) -> bool:
         """
