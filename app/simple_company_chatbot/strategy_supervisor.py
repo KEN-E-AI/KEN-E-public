@@ -268,7 +268,22 @@ def generate_strategy_documents(
                             
                             try:
                                 import json
-                                parsed_doc = json.loads(doc_content.strip())
+                                import re
+                                
+                                # Clean the JSON string before parsing
+                                # Remove any stray backslashes that aren't part of valid escape sequences
+                                cleaned_content = doc_content.strip()
+                                
+                                # Fix common JSON issues
+                                # Replace single backslashes that aren't part of valid escape sequences
+                                # Valid escapes are: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+                                cleaned_content = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', cleaned_content)
+                                
+                                # Log if we had to clean anything
+                                if cleaned_content != doc_content.strip():
+                                    logger.warning(f"[DOCUMENT] Had to clean JSON - fixed invalid escape sequences")
+                                
+                                parsed_doc = json.loads(cleaned_content)
                                 
                                 # Determine document type from author
                                 doc_type = None
@@ -319,6 +334,17 @@ def generate_strategy_documents(
                                             
                             except json.JSONDecodeError as e:
                                 logger.error(f"[DOCUMENT] Failed to parse JSON: {e}")
+                                # Log the problematic section of JSON around the error position
+                                if hasattr(e, 'pos'):
+                                    start = max(0, e.pos - 50)
+                                    end = min(len(doc_content), e.pos + 50)
+                                    logger.error(f"[DOCUMENT] JSON around error position {e.pos}:")
+                                    logger.error(f"[DOCUMENT] ...{repr(doc_content[start:end])}...")
+                                    
+                                    # Try to identify the specific issue
+                                    if e.pos > 0 and e.pos < len(doc_content):
+                                        char_at_pos = doc_content[e.pos - 1:e.pos + 1]
+                                        logger.error(f"[DOCUMENT] Character at error position: {repr(char_at_pos)}")
         
         logger.info(f"[EXECUTION] Completed strategy generation for {company_name}")
         logger.info(f"[EXECUTION] Generated documents: {list(generated_documents.keys())}")
