@@ -27,9 +27,10 @@ class Neo4jService:
                 settings.neo4j_uri,
                 auth=(settings.neo4j_username, settings.neo4j_password),
                 connection_timeout=10.0,  # 10 second timeout
-                max_connection_lifetime=3600,  # 1 hour
-                max_connection_pool_size=50,
+                max_connection_lifetime=300,  # 5 minutes (reduced from 1 hour to avoid stale connections)
+                max_connection_pool_size=25,  # Reduced from 50 to avoid overwhelming the server
                 connection_acquisition_timeout=60.0,  # 60 second timeout for getting connection from pool
+                keep_alive=True,  # Enable keep-alive to detect defunct connections earlier
             )
             # Verify connectivity with timeout
             await self.driver.verify_connectivity()
@@ -123,10 +124,14 @@ class Neo4jService:
                             "properties_set": summary.counters.properties_set,
                         }
 
-                    return await session.execute_write(_execute_write_query)
+                    result = await session.execute_write(_execute_write_query)
+                    if attempt > 0:
+                        logger.info(f"Neo4j write query succeeded on retry {attempt + 1}")
+                    return result
             except Neo4jError as e:
                 if attempt < max_retries - 1 and "defunct connection" in str(e).lower():
-                    logger.warning(f"Neo4j write query failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    # This is expected occasionally with connection pools - we'll retry
+                    logger.debug(f"Neo4j connection issue (attempt {attempt + 1}/{max_retries}), retrying...")
                     await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
                     # Try to reconnect if driver exists
                     if self.driver:
