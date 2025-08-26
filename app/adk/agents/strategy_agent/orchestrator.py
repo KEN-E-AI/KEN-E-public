@@ -244,6 +244,13 @@ def process_and_save_documents(
         event_info = f"[EVENT #{event_count}]"
         if hasattr(event, 'author'):
             event_info += f" author='{event.author}'"
+            
+            # Log specific agent transitions
+            if 'marketing_strategy_agent' in str(event.author):
+                logger.info(f"[MARKETING AGENT] Event from marketing agent: {event.author}")
+            elif 'brand_' in str(event.author):
+                logger.info(f"[BRAND AGENT] Event from brand agent: {event.author}")
+                
         logger.info(event_info)
         
         # Check for documents in state delta
@@ -251,10 +258,15 @@ def process_and_save_documents(
             if hasattr(event.actions, 'state_delta') and event.actions.state_delta:
                 state_delta = event.actions.state_delta
                 
+                # Log all keys in state_delta for debugging
+                if state_delta:
+                    logger.info(f"[STATE_DELTA] Keys present: {list(state_delta.keys())[:10]}")  # Limit to first 10 keys
+                
                 # Check for each document type's unique key
                 for doc_key, doc_type in DOCUMENT_KEY_MAPPING.items():
                     if doc_key in state_delta:
                         doc_content = state_delta[doc_key]
+                        logger.info(f"[DOCUMENT] Found {doc_key} in state_delta for {doc_type}")
                         
                         # Parse the document
                         parsed_doc = parse_document_content(doc_content)
@@ -262,7 +274,7 @@ def process_and_save_documents(
                         if parsed_doc:
                             # Save to memory
                             generated_documents[doc_type] = parsed_doc
-                            logger.info(f"[DOCUMENT] Captured {doc_type} from key {doc_key}")
+                            logger.info(f"[DOCUMENT] Captured {doc_type} from key {doc_key} - {len(json.dumps(parsed_doc))} bytes")
                             
                             # Save to Firestore immediately
                             try:
@@ -279,6 +291,8 @@ def process_and_save_documents(
                                     logger.error(f"[FIRESTORE] Failed to save {doc_type}")
                             except Exception as e:
                                 logger.error(f"[FIRESTORE] Error saving {doc_type}: {e}")
+                        else:
+                            logger.error(f"[DOCUMENT] Failed to parse content for {doc_type} from key {doc_key}")
     
     return generated_documents
 
