@@ -84,7 +84,7 @@ class EmailService:
                         )
                     except Exception as e:
                         logger.error(
-                            f"Failed to initialize SendGrid client: {e}",
+                            f"Failed to initialize SendGrid client: {e}. Email service will be disabled.",
                             extra={
                                 "service": "email",
                                 "error_type": "sendgrid_client_init_failure",
@@ -92,13 +92,16 @@ class EmailService:
                             }
                         )
                         self.client = None
-                        raise EmailServiceInitializationError(
-                            f"SendGrid client initialization failed: {e}"
-                        ) from e
+                        # Don't raise here - allow graceful degradation
 
             except EmailServiceInitializationError:
-                # Re-raise initialization errors
-                raise
+                # This shouldn't happen anymore, but keep for safety
+                logger.error(
+                    "EmailServiceInitializationError caught during initialization",
+                    extra={"service": "email", "error_type": "initialization_error"}
+                )
+                self.api_key = None
+                self.client = None
             except Exception as e:
                 logger.error(
                     f"Unexpected error during EmailService initialization: {e}. "
@@ -134,20 +137,8 @@ class EmailService:
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
-        # Ensure service is initialized - handle initialization errors gracefully
-        try:
-            self._ensure_initialized()
-        except EmailServiceInitializationError as e:
-            logger.error(
-                f"Email service initialization failed. Cannot send email to {to_email}. Error: {e}",
-                extra={
-                    "service": "email",
-                    "error_type": "initialization_failure",
-                    "recipient": to_email,
-                    "organization": organization_name
-                }
-            )
-            return False
+        # Ensure service is initialized
+        self._ensure_initialized()
 
         if not self.client:
             logger.warning(
@@ -269,21 +260,8 @@ The KEN-E Team
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
-        # Ensure service is initialized - handle initialization errors gracefully
-        try:
-            self._ensure_initialized()
-        except EmailServiceInitializationError as e:
-            logger.error(
-                f"Email service initialization failed. Cannot send acceptance notification. Error: {e}",
-                extra={
-                    "service": "email",
-                    "error_type": "initialization_failure",
-                    "recipient": to_email,
-                    "accepter": accepter_email,
-                    "organization": organization_name
-                }
-            )
-            return False
+        # Ensure service is initialized
+        self._ensure_initialized()
 
         if not self.client:
             logger.warning(
