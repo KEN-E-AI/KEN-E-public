@@ -61,6 +61,7 @@ export const useCreateAccount = () => {
 
   return useMutation({
     mutationFn: async (accountData: {
+      accountId?: string;  // Optional pre-generated account ID for progress tracking
       accountName: string;
       organizationId: string;
       industry: string;
@@ -81,6 +82,8 @@ export const useCreateAccount = () => {
         // Transform camelCase to snake_case for API with runtime validation
         const result = await createAccountApi(
           {
+            // Include account_id if pre-generated for progress tracking
+            ...(accountData.accountId && { account_id: accountData.accountId }),
             account_name: accountData.accountName,
             organization_id: accountData.organizationId,
             industry: accountData.industry,

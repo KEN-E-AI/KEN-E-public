@@ -204,7 +204,7 @@ export async function createAccount(
       method: "POST",
       data: accountDataWithoutFiles,
       headers,
-      timeout: options?.timeout || 300000, // 5 minutes for account creation
+      timeout: options?.timeout || 600000, // 10 minutes for account creation
     });
 
     // Then upload the files
@@ -241,7 +241,7 @@ export async function createAccount(
     method: "POST",
     data: accountData,
     headers,
-    timeout: options?.timeout || 300000, // 5 minutes for account creation
+    timeout: options?.timeout || 600000, // 10 minutes for account creation
   });
 }
 

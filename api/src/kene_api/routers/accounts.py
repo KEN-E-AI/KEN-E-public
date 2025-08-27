@@ -4,13 +4,23 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Path,
+    Query,
+    UploadFile,
+)
 from pydantic import BaseModel, Field
 
 from ..auth import UserContext, get_current_user_context
 from ..bigquery import BigQueryService, get_bigquery_service
+from ..services.progress_cache import progress_cache
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
@@ -29,6 +39,28 @@ router = APIRouter(tags=["accounts"])
 
 # Logger
 logger = logging.getLogger(__name__)
+
+# Use shared cache service for progress tracking
+_cache_service = progress_cache
+
+
+# Progress tracking models
+class ProgressStep(BaseModel):
+    """Individual step in the progress tracking."""
+
+    name: str
+    status: Literal["pending", "processing", "completed"]
+
+
+class AccountCreationProgress(BaseModel):
+    """Account creation progress information."""
+
+    status: Literal["pending", "processing", "completed", "failed"]
+    percentage: int
+    current_step: int
+    total_steps: int
+    message: str
+    steps: list[ProgressStep]
 
 
 def generate_unique_account_id() -> str:
@@ -94,15 +126,18 @@ async def get_accounts(
     **Note:** User must have access to the accounts and organization (if specified).
     """
     import time
+
     start_time = time.time()
-    
+
     try:
         # Check Neo4j connectivity
         health_check_start = time.time()
         is_healthy = await db.health_check()
         health_check_time = time.time() - health_check_start
-        logger.info(f"[TIMING] Neo4j health check for get_accounts took {health_check_time:.3f}s")
-        
+        logger.info(
+            f"[TIMING] Neo4j health check for get_accounts took {health_check_time:.3f}s"
+        )
+
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
@@ -214,7 +249,9 @@ async def get_accounts(
                 accounts.append(account)
 
         total_time = time.time() - start_time
-        logger.info(f"[TIMING] Total get_accounts execution took {total_time:.3f}s for {len(accounts)} accounts")
+        logger.info(
+            f"[TIMING] Total get_accounts execution took {total_time:.3f}s for {len(accounts)} accounts"
+        )
         return AccountListResponse(accounts=accounts, total=len(accounts))
 
     except HTTPException:
@@ -550,21 +587,34 @@ async def create_account(
 
     **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
-    # Generate unique account_id FIRST - this will always succeed
-    account_id = generate_unique_account_id()
+    # Use provided account_id if present, otherwise generate a new one
+    # This allows frontend to pre-generate the ID for progress tracking
+    account_id = request.account_id if request.account_id else generate_unique_account_id()
     print(f"[ACCOUNT_CREATION] Starting for: {account_id}")
-    logger.info(f"[ACCOUNT_CREATION] Starting account creation for account_id: {account_id}")
-    
+    logger.info(
+        f"[ACCOUNT_CREATION] Starting account creation for account_id: {account_id}"
+    )
+
+    # Initialize progress tracking
+    update_account_progress(
+        account_id,
+        1,
+        "Creating account in database...",
+        ["processing", "pending", "pending", "pending", "pending"],
+    )
+
     # CRITICAL: Trigger strategy generation IMMEDIATELY
     # This ensures it runs regardless of any failures below
     # User explicitly requested: "feel free to create strategy generation regardless of whatever else fails"
     strategy_generation_triggered = False
     try:
         print(f"[STRATEGY] About to trigger generation for {account_id}")
-        logger.info(f"[STRATEGY] Triggering strategy generation for account {account_id} BEFORE any database operations")
-        
+        logger.info(
+            f"[STRATEGY] Triggering strategy generation for account {account_id} BEFORE any database operations"
+        )
+
         from ..tasks.strategy_tasks import trigger_strategy_generation
-        
+
         # Use FastAPI's background tasks to run strategy generation truly asynchronously
         # This will run after the response is sent, ensuring no blocking
         background_tasks.add_task(
@@ -576,26 +626,34 @@ async def create_account(
             customer_regions=request.region or [],
             user_id=user.user_id,
             annual_ad_budget=request.estimated_annual_ad_budget,
-            user_context=None  # No user context for background task
+            user_context=None,  # No user context for background task
         )
-        
+
         strategy_generation_triggered = True
-        logger.info(f"[STRATEGY] Successfully triggered strategy generation for account {account_id} as background task")
+        logger.info(
+            f"[STRATEGY] Successfully triggered strategy generation for account {account_id} as background task"
+        )
     except Exception as e:
-        logger.error(f"[STRATEGY] Failed to trigger strategy generation for account {account_id}: {e}", exc_info=True)
-    
+        logger.error(
+            f"[STRATEGY] Failed to trigger strategy generation for account {account_id}: {e}",
+            exc_info=True,
+        )
+
     # Now proceed with the rest of account creation
     # Even if this fails, strategy generation has already been triggered
     try:
         # Get Neo4j service (we removed it from dependencies to ensure strategy runs first)
         from ..database import get_neo4j_service
+
         db = await get_neo4j_service()
-        
+
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
             # Neo4j is down, but strategy generation was already triggered
-            logger.warning(f"Neo4j unavailable, but strategy generation already triggered for {account_id}")
+            logger.warning(
+                f"Neo4j unavailable, but strategy generation already triggered for {account_id}"
+            )
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
         # Validate required fields
@@ -613,7 +671,9 @@ async def create_account(
             raise HTTPException(status_code=400, detail="timezone is required")
 
         # Check if organization exists
-        logger.info(f"[ACCOUNT_CREATION] Checking if organization {request.organization_id} exists...")
+        logger.info(
+            f"[ACCOUNT_CREATION] Checking if organization {request.organization_id} exists..."
+        )
         org_exists = await _check_organization_exists(db, request.organization_id)
         if not org_exists:
             raise HTTPException(
@@ -623,18 +683,24 @@ async def create_account(
         logger.info(f"[ACCOUNT_CREATION] Organization {request.organization_id} exists")
 
         # Check if organization is an agency (agency organizations cannot create accounts)
-        logger.info(f"[ACCOUNT_CREATION] Checking agency status for {request.organization_id}...")
+        logger.info(
+            f"[ACCOUNT_CREATION] Checking agency status for {request.organization_id}..."
+        )
         is_agency = await _get_organization_agency_status(db, request.organization_id)
         if is_agency is True:
             raise HTTPException(
                 status_code=403,
                 detail="Account creation is not permitted for agency organizations",
             )
-        logger.info(f"[ACCOUNT_CREATION] Organization is not an agency (agency={is_agency})")
+        logger.info(
+            f"[ACCOUNT_CREATION] Organization is not an agency (agency={is_agency})"
+        )
 
         # Account ID was already generated at the beginning
         # Check if account already exists (extremely unlikely with UUID4)
-        logger.info(f"[ACCOUNT_CREATION] Checking if account {account_id} already exists...")
+        logger.info(
+            f"[ACCOUNT_CREATION] Checking if account {account_id} already exists..."
+        )
         existing_acc = await _check_account_exists(db, account_id)
         if existing_acc:
             logger.warning(f"UUID collision detected for account_id: {account_id}")
@@ -649,7 +715,9 @@ async def create_account(
                 )
             # Update the strategy generation with new account_id if we had to regenerate
             if strategy_generation_triggered:
-                logger.info(f"[STRATEGY] Updating strategy generation from {old_account_id} to {account_id}")
+                logger.info(
+                    f"[STRATEGY] Updating strategy generation from {old_account_id} to {account_id}"
+                )
 
         # Create account node and BELONGS_TO relationship
         create_query = """
@@ -693,9 +761,13 @@ async def create_account(
             "product_integrations": request.product_integrations or [],
         }
 
-        logger.info(f"[ACCOUNT_CREATION] About to execute write query for account {account_id}")
-        logger.info(f"[ACCOUNT_CREATION] Query params: organization_id={request.organization_id}")
-        
+        logger.info(
+            f"[ACCOUNT_CREATION] About to execute write query for account {account_id}"
+        )
+        logger.info(
+            f"[ACCOUNT_CREATION] Query params: organization_id={request.organization_id}"
+        )
+
         try:
             result = await db.execute_write_query(create_query, params)
             logger.info(f"[ACCOUNT_CREATION] Write query successful! Result: {result}")
@@ -706,6 +778,14 @@ async def create_account(
 
         # Account creation successful - log completion
         logger.info(f"=== ACCOUNT CREATION COMPLETE for {account_id} ===")
+
+        # Update progress: database setup complete
+        update_account_progress(
+            account_id,
+            2,
+            "Setting up database relationships...",
+            ["completed", "processing", "pending", "pending", "pending"],
+        )
 
         # Invalidate the creating user's cache to ensure their context includes the new account
         from ..auth.cached_user_context import get_cached_user_context_service
@@ -756,12 +836,28 @@ async def create_account(
                 f"Failed to create Firestore collection for account {account_id}: {e}"
             )
 
+        # Update progress: moving to strategy generation
+        update_account_progress(
+            account_id,
+            3,
+            "Generating marketing strategy...",
+            ["completed", "completed", "processing", "pending", "pending"],
+        )
+
         # Create initial activities for the new account
         activities_created = await _create_initial_activities(db, firestore, account_id)
         if activities_created > 0:
             logger.info(
                 f"Successfully created {activities_created} initial activities for account {account_id}"
             )
+
+        # Update progress: syncing activities
+        update_account_progress(
+            account_id,
+            4,
+            "Syncing holiday activities...",
+            ["completed", "completed", "completed", "processing", "pending"],
+        )
 
         # Create initial activity logs for act_00 if regions are specified
         if request.region:
@@ -824,7 +920,7 @@ async def create_account(
             )
 
             # Try to initialize notification for user if method exists
-            if hasattr(notification_service, 'initialize_notification_for_user'):
+            if hasattr(notification_service, "initialize_notification_for_user"):
                 await notification_service.initialize_notification_for_user(
                     notification_id=notification_id,
                     user_id=user.user_id,
@@ -848,15 +944,19 @@ async def create_account(
             logger.error(
                 f"Failed to create notification for new account {account_id}: {e}"
             )
-        
+
         logger.info(f"Completed notification section for account {account_id}")
 
         # Strategy generation was already triggered at the beginning
         # Log the status for clarity
         if strategy_generation_triggered:
-            logger.info(f"[STRATEGY] Strategy generation was already triggered for account {account_id}")
+            logger.info(
+                f"[STRATEGY] Strategy generation was already triggered for account {account_id}"
+            )
         else:
-            logger.warning(f"[STRATEGY] Strategy generation was not triggered for account {account_id}")
+            logger.warning(
+                f"[STRATEGY] Strategy generation was not triggered for account {account_id}"
+            )
 
         # Grant the creating user admin permissions on the new account
         try:
@@ -888,18 +988,31 @@ async def create_account(
                 "but account was created successfully"
             )
 
+        # DON'T mark progress as complete here - the background task will do it
+        # The strategy generation is still running and will update progress to 100% when done
+        logger.info(
+            f"Account {account_id} created, strategy generation running in background"
+        )
+
+        # Clear the progress from cache after a short delay to ensure final status is seen
+        # (The progress will be cleared automatically after TTL anyway)
+
         # Fetch the created account
         return await get_account(account_id, user, db)
 
     except HTTPException:
         # Even if account creation failed, strategy generation was already triggered
         if strategy_generation_triggered:
-            logger.info(f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}")
+            logger.info(
+                f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}"
+            )
         raise
     except Exception as e:
         # Even if account creation failed, strategy generation was already triggered
         if strategy_generation_triggered:
-            logger.info(f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}")
+            logger.info(
+                f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}"
+            )
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(
                 status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
@@ -1947,3 +2060,100 @@ async def list_business_documents(
         raise HTTPException(
             status_code=500, detail=f"Error listing documents: {e!s}"
         ) from e
+
+
+def update_account_progress(
+    account_id: str,
+    step: int,
+    message: str,
+    steps_status: list[str],
+) -> None:
+    """
+    Helper function to update account creation progress.
+
+    Args:
+        account_id: Account ID being created
+        step: Current step number (1-5)
+        message: Progress message to display
+        steps_status: List of status strings for each step
+    """
+    percentage = int((step / 5) * 100)
+    steps = [
+        ProgressStep(name="Creating account", status=steps_status[0]),
+        ProgressStep(name="Setting up database", status=steps_status[1]),
+        ProgressStep(name="Generating strategy", status=steps_status[2]),
+        ProgressStep(name="Syncing activities", status=steps_status[3]),
+        ProgressStep(name="Finalizing setup", status=steps_status[4]),
+    ]
+
+    progress = AccountCreationProgress(
+        status="processing",
+        percentage=percentage,
+        current_step=step,
+        total_steps=5,
+        message=message,
+        steps=steps,
+    )
+
+    cache_key = f"account_creation:{account_id}"
+    progress_data = progress.model_dump()
+    print(f"[PROGRESS UPDATE] Storing progress for {account_id}: step={step}, percentage={percentage}%, message={message}")
+    _cache_service.set(cache_key, progress_data, ttl_seconds=3600)  # 1 hour TTL
+
+
+@router.get("/{account_id}/creation-status", response_model=AccountCreationProgress)
+async def get_account_creation_status(
+    account_id: str = Path(..., description="Account ID"),
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+) -> AccountCreationProgress:
+    """
+    Get the current status of account creation process.
+
+    **Parameters:**
+    - `account_id`: Account ID to check status for
+
+    **Returns:**
+    - Current account creation progress information
+
+    **Example:**
+    ```
+    GET /api/v1/accounts/{account_id}/creation-status
+    ```
+    """
+    # Check user has access to the account
+    account_query = """
+    MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+    RETURN org.organization_id as organization_id
+    """
+    result = await db.execute_query(account_query, {"account_id": account_id})
+
+    if result and len(result) > 0:
+        org_id = result[0]["organization_id"]
+        if not user.is_super_admin and not user.has_organization_access(org_id):
+            raise HTTPException(status_code=403, detail="Access denied to account")
+
+    # Try to get progress from cache
+    cache_key = f"account_creation:{account_id}"
+    cached_progress = _cache_service.get(cache_key)
+    
+    print(f"[PROGRESS GET] Fetching progress for {account_id}: found={cached_progress is not None}")
+    if cached_progress:
+        print(f"[PROGRESS GET] Progress data: step={cached_progress.get('current_step')}, percentage={cached_progress.get('percentage')}%")
+        return AccountCreationProgress(**cached_progress)
+
+    # Default response if no progress tracked (account already created)
+    return AccountCreationProgress(
+        status="completed",
+        percentage=100,
+        current_step=5,
+        total_steps=5,
+        message="Account creation completed",
+        steps=[
+            ProgressStep(name="Creating account", status="completed"),
+            ProgressStep(name="Setting up database", status="completed"),
+            ProgressStep(name="Generating strategy", status="completed"),
+            ProgressStep(name="Syncing activities", status="completed"),
+            ProgressStep(name="Finalizing setup", status="completed"),
+        ],
+    )

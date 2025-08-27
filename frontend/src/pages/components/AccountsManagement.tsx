@@ -12,7 +12,9 @@ import {
   accountKeys,
 } from "@/queries/accounts";
 import { useAccountConsistency } from "@/hooks/useAccountConsistency";
+import { useAccountCreationProgress } from "@/hooks/useAccountCreationProgress";
 import { useQueryClient } from "@tanstack/react-query";
+import { generateAccountId } from "@/lib/idGenerator";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
@@ -203,6 +205,7 @@ const AccountsManagement = ({
     startOperation,
     endOperation,
     updateOperationMessage,
+    updateOperationProgress,
     isOperationInProgress,
   } = useAccountOperations();
 
@@ -214,6 +217,44 @@ const AccountsManagement = ({
   const deleteAccountMutation = useDeleteAccount();
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
+
+  // State for tracking account creation
+  const [creatingAccountId, setCreatingAccountId] = useState<string | null>(
+    null,
+  );
+
+  // Hook for tracking account creation progress
+  const accountCreationProgress = useAccountCreationProgress(creatingAccountId);
+
+  // Update the operation progress when progress changes
+  useEffect(() => {
+    if (accountCreationProgress) {
+      console.log("[AccountsManagement] Progress update received:", accountCreationProgress);
+      updateOperationProgress(accountCreationProgress);
+      
+      // Check if account creation is complete (100%)
+      if (accountCreationProgress.percentage === 100) {
+        console.log("[AccountsManagement] Account creation complete! Navigating...");
+        
+        // Show success toast
+        toast({
+          title: "Success",
+          description: "Account created successfully with all strategy documents!",
+        });
+        
+        // Give user a moment to see the completion message
+        setTimeout(() => {
+          endOperation();
+          setCreatingAccountId(null);
+          
+          // Navigate to account settings page if it exists, otherwise stay on current page
+          // Since /account-settings doesn't exist, we'll refresh the current page
+          // to show the new account
+          window.location.reload();
+        }, 2000); // 2 second delay to show completion
+      }
+    }
+  }, [accountCreationProgress, updateOperationProgress, endOperation, toast]);
 
   // Debug: Log accounts data when it changes
   useEffect(() => {
@@ -601,14 +642,24 @@ const AccountsManagement = ({
     }
 
     try {
+      // Generate account ID upfront for progress tracking
+      const newAccountId = generateAccountId();
+      
+      // Start tracking progress immediately
+      console.log("[AccountsManagement] Setting creatingAccountId to:", newAccountId);
+      setCreatingAccountId(newAccountId);
+      
       // Start loading operation
       startOperation(
         "Creating account...",
         "Please wait while we set up your new account",
       );
 
-      // Transform and create account
-      const accountData = transformWizardData(wizardData, currentOrgId!);
+      // Transform and create account with pre-generated ID
+      const accountData = {
+        ...transformWizardData(wizardData, currentOrgId!),
+        accountId: newAccountId, // Include the pre-generated ID
+      };
       const result = await createAccountMutation.mutateAsync(accountData);
 
       // Schedule consistency check after a brief delay for data propagation
@@ -653,11 +704,8 @@ const AccountsManagement = ({
         }
       }, 2000);
 
-      // Show success message
-      toast({
-        title: "Success",
-        description: "Account created successfully!",
-      });
+      // Don't show success message yet - wait for completion
+      // The progress tracking will show the success when strategy generation is done
 
       await refreshAccountQueries(currentOrgId!);
       updateContextsAfterCreation(result, currentOrgId!);
@@ -665,8 +713,11 @@ const AccountsManagement = ({
       // Refresh notifications to show the new account notification
       await refreshNotifications();
 
-      // Close wizard
+      // Close wizard but keep the loading overlay open
       setIsCreateAccountModalOpen(false);
+      
+      // Don't call endOperation here - let the progress tracking handle it
+      console.log("[AccountsManagement] Wizard account created, waiting for strategy generation to complete...");
     } catch (error: unknown) {
       console.error("[AccountsManagement] Error creating account:", error);
 
@@ -680,8 +731,10 @@ const AccountsManagement = ({
         description: errorMessage,
         variant: "destructive",
       });
-    } finally {
+      
+      // Only end operation on error
       endOperation();
+      setCreatingAccountId(null);
     }
   };
 
@@ -714,6 +767,13 @@ const AccountsManagement = ({
 
     try {
       // Start the loading overlay
+      // Generate account ID upfront for progress tracking
+      const newAccountId = generateAccountId();
+      
+      // Start tracking progress immediately
+      console.log("[AccountsManagement] Setting creatingAccountId to:", newAccountId);
+      setCreatingAccountId(newAccountId);
+      
       startOperation(
         "Creating account...",
         "Please wait while we set up your new account",
@@ -722,8 +782,9 @@ const AccountsManagement = ({
       // Close the modal immediately to prevent duplicate clicks
       setIsCreateAccountModalOpen(false);
 
-      // Create account in Neo4j (source of truth)
+      // Create account in Neo4j (source of truth) with pre-generated ID
       const newAccount = await createAccountMutation.mutateAsync({
+        accountId: newAccountId,
         accountName: createAccountFormData.account_name,
         organizationId: currentOrgId,
         industry: createAccountFormData.industry,
@@ -742,9 +803,8 @@ const AccountsManagement = ({
         "[AccountsManagement] Account created successfully:",
         newAccount,
       );
-      const newAccountId = newAccount.account_id;
 
-      // Update loading message
+      // Update loading message (progress will be handled by the hook)
       updateOperationMessage(
         "Setting up account features...",
         "Syncing holiday activities",
@@ -885,14 +945,13 @@ const AccountsManagement = ({
       // Set the selected account in auth context
       setSelectedOrgAccount(selectedOrgAccount);
 
-      // Redirect to account settings page
-      navigate("/account-settings");
-
-      // End the loading state
-      endOperation();
+      // Don't end operation or navigate yet - wait for progress to complete
+      // The progress tracking will handle closing the modal and navigation
+      console.log("[AccountsManagement] Account created, waiting for strategy generation to complete...");
     } catch (error: any) {
       // Make sure to end the loading state on error
       endOperation();
+      setCreatingAccountId(null);
 
       console.error("[AccountsManagement] Error creating account:", error);
       console.error("[AccountsManagement] Error details:", {

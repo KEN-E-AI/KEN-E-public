@@ -339,10 +339,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // First, validate and clean any corrupted auth state
     validateAndCleanAuthState().then((result) => {
       if (result.clearedItems.length > 0) {
-        console.warn('Auth state recovery performed:', result.message);
+        console.warn("Auth state recovery performed:", result.message);
       }
     });
-    
+
     const savedWorkspaceSelection = localStorage.getItem(
       "hasSelectedWorkspace",
     );

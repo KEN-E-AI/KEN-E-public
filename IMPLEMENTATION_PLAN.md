@@ -9,157 +9,277 @@ This document outlines the comprehensive implementation plan for the five key re
 
 ---
 
-## 1. Add Progress Tracking (Server-Sent Events)
-**Timeline**: 3-4 days  
+## 1. Add Progress Tracking (Modal-Based with Polling)
+**Timeline**: 1-2 days  
 **Priority**: HIGH  
-**Complexity**: Medium
+**Complexity**: Low-Medium
 
 ### Objectives
 - Provide real-time feedback during long-running strategy generation
-- Improve user experience with visible progress indicators
+- Improve user experience with visible progress indicators in existing modal
 - Prevent timeout perception issues
+- Maintain non-interactive DOM state during account creation
+
+### Implementation Approach
+Instead of SSE, we'll use a simpler polling-based approach that updates the existing `LoadingOverlay` modal with detailed progress information. This approach:
+- Reuses existing infrastructure (LoadingOverlay component)
+- Maintains non-interactive state as required
+- Provides better user feedback without complexity of SSE
+- Gracefully degrades if progress API fails
 
 ### Implementation Steps
 
-#### Phase 1: Backend SSE Infrastructure (Day 1-2)
+#### Phase 1: Backend Progress Tracking (4 hours)
 ```python
-# api/src/kene_api/routers/strategy_progress.py
-from fastapi import APIRouter
-from sse_starlette.sse import EventSourceResponse
-import asyncio
-from typing import AsyncGenerator
-
-router = APIRouter(tags=["strategy-progress"])
-
-@router.get("/api/v1/strategy/{account_id}/progress")
-async def strategy_progress(account_id: str) -> EventSourceResponse:
-    async def event_generator() -> AsyncGenerator:
-        while True:
-            progress = await get_strategy_progress(account_id)
-            yield {
-                "event": "progress",
-                "data": json.dumps({
-                    "account_id": account_id,
-                    "status": progress.status,
-                    "percentage": progress.percentage,
-                    "current_step": progress.current_step,
-                    "message": progress.message
-                })
-            }
-            if progress.status in ["completed", "failed"]:
-                break
-            await asyncio.sleep(1)
-    
-    return EventSourceResponse(event_generator())
-```
-
-#### Phase 2: Progress Storage (Day 2)
-```python
-# api/src/kene_api/services/progress_service.py
-import redis.asyncio as redis
-from typing import Optional
+# api/src/kene_api/routers/accounts.py (add to existing file)
+from typing import List, Literal
 from pydantic import BaseModel
 
-class StrategyProgress(BaseModel):
-    account_id: str
-    status: str  # pending, processing, completed, failed
-    percentage: int
-    current_step: str
-    message: str
-    started_at: datetime
-    updated_at: datetime
+class ProgressStep(BaseModel):
+    name: str
+    status: Literal["pending", "processing", "completed"]
 
-class ProgressService:
-    def __init__(self):
-        self.redis_client = redis.Redis(
-            host=settings.redis_host,
-            port=settings.redis_port,
-            decode_responses=True
-        )
+class AccountCreationProgress(BaseModel):
+    status: Literal["pending", "processing", "completed", "failed"]
+    percentage: int
+    current_step: int
+    total_steps: int
+    message: str
+    steps: List[ProgressStep]
+
+@router.get("/api/v1/accounts/{account_id}/creation-status")
+async def get_account_creation_status(
+    account_id: str,
+    neo4j_service: Neo4jService = Depends(get_neo4j_service),
+    cache_service: CacheService = Depends(get_cache_service),
+) -> AccountCreationProgress:
+    """Get the current status of account creation process."""
+    # Try to get progress from cache
+    cache_key = f"account_creation:{account_id}"
+    cached_progress = await cache_service.get(cache_key)
     
-    async def update_progress(
-        self, 
-        account_id: str, 
-        percentage: int, 
-        step: str, 
-        message: str
-    ):
-        key = f"strategy:progress:{account_id}"
-        progress = StrategyProgress(
-            account_id=account_id,
-            status="processing",
-            percentage=percentage,
-            current_step=step,
-            message=message,
-            updated_at=datetime.now()
-        )
-        await self.redis_client.setex(
-            key, 
-            3600,  # 1 hour TTL
-            progress.json()
-        )
+    if cached_progress:
+        return AccountCreationProgress(**cached_progress)
+    
+    # Default response if no progress tracked
+    return AccountCreationProgress(
+        status="completed",
+        percentage=100,
+        current_step=5,
+        total_steps=5,
+        message="Account creation completed",
+        steps=[
+            ProgressStep(name="Creating account", status="completed"),
+            ProgressStep(name="Setting up database", status="completed"),
+            ProgressStep(name="Generating strategy", status="completed"),
+            ProgressStep(name="Syncing activities", status="completed"),
+            ProgressStep(name="Finalizing setup", status="completed")
+        ]
+    )
 ```
 
-#### Phase 3: Frontend Integration (Day 3-4)
-```typescript
-// frontend/src/hooks/useStrategyProgress.ts
-import { useEffect, useState } from 'react';
+#### Phase 2: Update Account Creation to Track Progress (2 hours)
+```python
+# api/src/kene_api/routers/accounts.py (modify existing create_account function)
+async def update_account_progress(
+    cache_service: CacheService,
+    account_id: str,
+    step: int,
+    message: str,
+    steps_status: List[str]
+):
+    """Helper function to update account creation progress."""
+    percentage = int((step / 5) * 100)
+    steps = [
+        ProgressStep(name="Creating account", status=steps_status[0]),
+        ProgressStep(name="Setting up database", status=steps_status[1]),
+        ProgressStep(name="Generating strategy", status=steps_status[2]),
+        ProgressStep(name="Syncing activities", status=steps_status[3]),
+        ProgressStep(name="Finalizing setup", status=steps_status[4])
+    ]
+    
+    progress = AccountCreationProgress(
+        status="processing",
+        percentage=percentage,
+        current_step=step,
+        total_steps=5,
+        message=message,
+        steps=steps
+    )
+    
+    cache_key = f"account_creation:{account_id}"
+    await cache_service.set(cache_key, progress.dict(), ttl=3600)  # 1 hour TTL
 
-interface StrategyProgress {
-  status: string;
-  percentage: number;
-  currentStep: string;
-  message: string;
+# In create_account endpoint, add progress updates:
+async def create_account(...):
+    # Step 1: Create account
+    await update_account_progress(
+        cache_service, account_id, 1, "Creating account in database...",
+        ["processing", "pending", "pending", "pending", "pending"]
+    )
+    
+    # ... existing account creation logic ...
+    
+    # Step 2: Database setup
+    await update_account_progress(
+        cache_service, account_id, 2, "Setting up database relationships...",
+        ["completed", "processing", "pending", "pending", "pending"]
+    )
+    
+    # ... and so on for each step ...
+```
+
+#### Phase 3: Frontend Integration (4 hours)
+
+##### 3.1 Enhance LoadingOverlay Component
+```typescript
+// frontend/src/components/ui/loading-overlay.tsx (enhanced version)
+import * as React from "react";
+import { cn } from "@/lib/utils";
+import { Loader2, CheckCircle2, Circle } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+
+export interface ProgressStep {
+  name: string;
+  status: "pending" | "processing" | "completed";
 }
 
-export function useStrategyProgress(accountId: string) {
-  const [progress, setProgress] = useState<StrategyProgress>();
-  const [error, setError] = useState<string>();
+export interface ProgressInfo {
+  percentage: number;
+  currentStep: number;
+  totalSteps: number;
+  steps?: ProgressStep[];
+}
+
+interface LoadingOverlayProps {
+  isLoading: boolean;
+  message?: string;
+  subMessage?: string;
+  progress?: ProgressInfo;
+  className?: string;
+  variant?: "fullscreen" | "local";
+}
+
+export const LoadingOverlay = React.forwardRef<HTMLDivElement, LoadingOverlayProps>(
+  ({ isLoading, message = "Processing...", subMessage, progress, className, variant = "local" }, ref) => {
+    if (!isLoading) return null;
+
+    const getStepIcon = (status: string) => {
+      switch (status) {
+        case "completed":
+          return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+        case "processing":
+          return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+        default:
+          return <Circle className="h-4 w-4 text-muted-foreground" />;
+      }
+    };
+
+    return (
+      <div ref={ref} className={cn(
+        "absolute inset-0 z-50 flex items-center justify-center",
+        "bg-background/80 backdrop-blur-sm",
+        variant === "fullscreen" && "fixed",
+        className,
+      )}>
+        <div className="flex flex-col items-center space-y-4 rounded-lg bg-card p-6 shadow-lg min-w-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          
+          <div className="text-center w-full">
+            <p className="text-sm font-medium">{message}</p>
+            {subMessage && (
+              <p className="mt-1 text-xs text-muted-foreground">{subMessage}</p>
+            )}
+          </div>
+
+          {progress && (
+            <div className="w-full space-y-3">
+              <Progress value={progress.percentage} className="w-full h-2" />
+              <p className="text-xs text-center text-muted-foreground">
+                Step {progress.currentStep} of {progress.totalSteps}
+              </p>
+              
+              {progress.steps && (
+                <div className="space-y-2 text-left">
+                  {progress.steps.map((step, index) => (
+                    <div key={index} className="flex items-center gap-2 text-xs">
+                      {getStepIcon(step.status)}
+                      <span className={cn(
+                        step.status === "completed" && "text-muted-foreground",
+                        step.status === "processing" && "font-medium"
+                      )}>
+                        {step.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  },
+);
+```
+
+##### 3.2 Create Progress Hook
+```typescript
+// frontend/src/hooks/useAccountCreationProgress.ts
+import { useEffect, useState } from 'react';
+import { apiClient } from '@/lib/api';
+import type { ProgressInfo, ProgressStep } from '@/components/ui/loading-overlay';
+
+interface AccountCreationProgress {
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  percentage: number;
+  current_step: number;
+  total_steps: number;
+  message: string;
+  steps: ProgressStep[];
+}
+
+export function useAccountCreationProgress(accountId: string | null) {
+  const [progress, setProgress] = useState<ProgressInfo | null>(null);
 
   useEffect(() => {
     if (!accountId) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const response = await apiClient.get<AccountCreationProgress>(
+          `/api/v1/accounts/${accountId}/creation-status`
+        );
+        
+        setProgress({
+          percentage: response.data.percentage,
+          currentStep: response.data.current_step,
+          totalSteps: response.data.total_steps,
+          steps: response.data.steps
+        });
+        
+        if (response.data.status === 'completed' || response.data.status === 'failed') {
+          clearInterval(interval);
+        }
+      } catch (error) {
+        console.error('Failed to fetch progress:', error);
+      }
+    }, 1000); // Poll every second
 
-    const eventSource = new EventSource(
-      `${API_BASE_URL}/api/v1/strategy/${accountId}/progress`
-    );
-
-    eventSource.addEventListener('progress', (event) => {
-      const data = JSON.parse(event.data);
-      setProgress(data);
-    });
-
-    eventSource.onerror = (error) => {
-      setError('Connection lost');
-      eventSource.close();
-    };
-
-    return () => eventSource.close();
+    return () => clearInterval(interval);
   }, [accountId]);
 
-  return { progress, error };
-}
-
-// Component usage
-function AccountCreationProgress({ accountId }) {
-  const { progress } = useStrategyProgress(accountId);
-  
-  return (
-    <div className="space-y-4">
-      <Progress value={progress?.percentage || 0} />
-      <p className="text-sm text-gray-600">{progress?.message}</p>
-      <Badge>{progress?.currentStep}</Badge>
-    </div>
-  );
+  return progress;
 }
 ```
 
 ### Files to Create/Modify
-- [ ] `api/src/kene_api/routers/strategy_progress.py` (new)
-- [ ] `api/src/kene_api/services/progress_service.py` (new)
-- [ ] `api/src/kene_api/tasks/strategy_tasks.py` (modify to update progress)
-- [ ] `frontend/src/hooks/useStrategyProgress.ts` (new)
-- [ ] `frontend/src/components/ui/StrategyProgress.tsx` (new)
-- [ ] `frontend/src/pages/components/AccountsManagement.tsx` (modify)
+- [ ] `api/src/kene_api/routers/accounts.py` (modify - add progress endpoint and tracking)
+- [ ] `frontend/src/components/ui/loading-overlay.tsx` (modify - enhance with progress display)
+- [ ] `frontend/src/hooks/useAccountCreationProgress.ts` (new)
+- [ ] `frontend/src/hooks/useOperationLoading.ts` (modify - support progress)
+- [ ] `frontend/src/contexts/AccountOperationsContext.tsx` (modify - pass progress to overlay)
+- [ ] `frontend/src/pages/components/AccountsManagement.tsx` (modify - integrate progress tracking)
 
 ---
 

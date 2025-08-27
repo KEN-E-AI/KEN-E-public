@@ -356,7 +356,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     const filteredEntries = entries.filter(([_, value]) => value !== null);
     const result = Object.fromEntries(filteredEntries);
 
-    // Also remove deleted organizations from orgsFromFirestore
+    // Log deleted organizations but don't update state to avoid infinite loop
     const deletedOrgIds = entries
       .filter(([_, value]) => value === null)
       .map(([orgId, _]) => orgId);
@@ -366,13 +366,8 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         `Found ${deletedOrgIds.length} deleted organizations in user permissions:`,
         deletedOrgIds,
       );
-
-      // Update orgsFromFirestore to remove deleted organizations
-      setOrgsFromFirestore((prev) => {
-        const updated = { ...prev };
-        deletedOrgIds.forEach((orgId) => delete updated[orgId]);
-        return updated;
-      });
+      // Note: We don't update orgsFromFirestore here to avoid infinite loop
+      // The deleted organizations will be filtered out in the result
     }
 
     setLocalOrgMetadata(result);
@@ -425,8 +420,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     }
   }, [orgsFromFirestore]);
 
-  const organizationList = Object.entries(orgsFromFirestore).map(
-    ([orgId, permission]) => {
+  const organizationList = Object.entries(orgsFromFirestore)
+    .filter(([orgId]) => localOrgMetadata[orgId] !== undefined) // Filter out deleted organizations
+    .map(([orgId, permission]) => {
       const metadata = localOrgMetadata[orgId] || {};
       return {
         organization_id: orgId,
@@ -436,8 +432,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
         error: metadata.error || false,
         ...metadata,
       };
-    },
-  );
+    });
 
   const handleCreateOrganization = () => {
     setIsLoading(true);
@@ -560,6 +555,9 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
   useEffect(() => {
     if (loadingUserData || Object.keys(localOrgMetadata).length === 0) return;
 
+    // Prevent running if already selected
+    if (selectedOrganization || selectedAccount) return;
+
     // Get all accounts across all organizations
     let totalAccounts: any[] = [];
     let singleOrg: string | null = null;
@@ -617,7 +615,8 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     setSelectedOrgAccount,
     setCurrentOrganization,
     completeWorkspaceSelection,
-    formatWorkspaceMetadata,
+    selectedOrganization,
+    selectedAccount,
   ]);
 
   const handleOrganizationSelect = async (orgId: string) => {
