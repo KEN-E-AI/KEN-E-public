@@ -14,6 +14,7 @@ import {
 import { useAccountConsistency } from "@/hooks/useAccountConsistency";
 import { useAccountCreationProgress } from "@/hooks/useAccountCreationProgress";
 import { useQueryClient } from "@tanstack/react-query";
+import { generateAccountId } from "@/lib/idGenerator";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
@@ -737,6 +738,12 @@ const AccountsManagement = ({
 
     try {
       // Start the loading overlay
+      // Generate account ID upfront for progress tracking
+      const newAccountId = generateAccountId();
+      
+      // Start tracking progress immediately
+      setCreatingAccountId(newAccountId);
+      
       startOperation(
         "Creating account...",
         "Please wait while we set up your new account",
@@ -745,8 +752,9 @@ const AccountsManagement = ({
       // Close the modal immediately to prevent duplicate clicks
       setIsCreateAccountModalOpen(false);
 
-      // Create account in Neo4j (source of truth)
+      // Create account in Neo4j (source of truth) with pre-generated ID
       const newAccount = await createAccountMutation.mutateAsync({
+        accountId: newAccountId,
         accountName: createAccountFormData.account_name,
         organizationId: currentOrgId,
         industry: createAccountFormData.industry,
@@ -765,10 +773,6 @@ const AccountsManagement = ({
         "[AccountsManagement] Account created successfully:",
         newAccount,
       );
-      const newAccountId = newAccount.account_id;
-
-      // Start tracking progress for this account
-      setCreatingAccountId(newAccountId);
 
       // Update loading message (progress will be handled by the hook)
       updateOperationMessage(

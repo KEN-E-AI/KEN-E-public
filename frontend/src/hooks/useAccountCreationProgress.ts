@@ -54,7 +54,8 @@ export function useAccountCreationProgress(accountId: string | null) {
     fetchProgress();
 
     // Set up polling interval
-    const interval = setInterval(fetchProgress, 1000); // Poll every second
+    // Poll every 2 seconds to avoid rate limiting (30 requests per minute max)
+    const interval = setInterval(fetchProgress, 2000);
 
     // Cleanup
     return () => clearInterval(interval);

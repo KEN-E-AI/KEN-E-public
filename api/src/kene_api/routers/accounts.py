@@ -588,8 +588,9 @@ async def create_account(
 
     **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
-    # Generate unique account_id FIRST - this will always succeed
-    account_id = generate_unique_account_id()
+    # Use provided account_id if present, otherwise generate a new one
+    # This allows frontend to pre-generate the ID for progress tracking
+    account_id = request.account_id if request.account_id else generate_unique_account_id()
     print(f"[ACCOUNT_CREATION] Starting for: {account_id}")
     logger.info(
         f"[ACCOUNT_CREATION] Starting account creation for account_id: {account_id}"

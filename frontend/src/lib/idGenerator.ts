@@ -25,6 +25,16 @@ export function generateOrganizationId(): string {
 }
 
 /**
+ * Generate a unique account ID - matches backend format
+ * @returns Unique account ID string in format 'acc_<uuid>'
+ */
+export function generateAccountId(): string {
+  // Generate a UUID v4 equivalent using crypto API
+  const uuid = crypto.randomUUID().replace(/-/g, '');
+  return `acc_${uuid}`;
+}
+
+/**
  * Generate a unique metric ID - follows existing pattern from MetricsPage.tsx
  * @returns Unique metric ID string
  */
