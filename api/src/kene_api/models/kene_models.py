@@ -1,5 +1,6 @@
 """Kene API data models based on Excel specifications."""
 
+from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -955,6 +956,16 @@ class Account(BaseModel):
     )
     estimated_annual_ad_budget: int | None = Field(
         None, description="Estimated annual advertising budget in USD"
+    )
+    setup_status: str | None = Field(
+        default="pending",
+        description="Setup status for strategy generation (pending, processing, ready)"
+    )
+    setup_started_at: datetime | None = Field(
+        default=None, description="When strategy generation started"
+    )
+    setup_completed_at: datetime | None = Field(
+        default=None, description="When strategy generation completed"
     )
     marketing_channels: list[str] = Field(
         default_factory=list, description="List of marketing channels"

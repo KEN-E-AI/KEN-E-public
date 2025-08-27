@@ -25,6 +25,8 @@ dependencies = [
     "firebase-admin>=6.1.0",
     "redis>=5.0.0",
     "google-adk>=0.1.0",
+    "weave>=0.51.59",
+    "wandb>=0.21.1",
     "importlib-metadata<8.0",
 ]
 

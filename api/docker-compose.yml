@@ -32,7 +32,7 @@ services:
       - GOOGLE_CLOUD_PROJECT_ID=${GOOGLE_CLOUD_PROJECT_ID}
       - FIRESTORE_DATABASE_ID=${FIRESTORE_DATABASE_ID}
     env_file:
-      - .env.dev
+      - .env.development
     volumes:
       # Mount source code for development (comment out for production)
       - ./src:/app/src

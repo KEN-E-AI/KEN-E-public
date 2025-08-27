@@ -1,5 +1,6 @@
 """Neo4j database connection and query utilities."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
@@ -25,8 +26,13 @@ class Neo4jService:
             self.driver = AsyncGraphDatabase.driver(
                 settings.neo4j_uri,
                 auth=(settings.neo4j_username, settings.neo4j_password),
+                connection_timeout=10.0,  # 10 second timeout
+                max_connection_lifetime=300,  # 5 minutes (reduced from 1 hour to avoid stale connections)
+                max_connection_pool_size=25,  # Reduced from 50 to avoid overwhelming the server
+                connection_acquisition_timeout=60.0,  # 60 second timeout for getting connection from pool
+                keep_alive=True,  # Enable keep-alive to detect defunct connections earlier
             )
-            # Verify connectivity
+            # Verify connectivity with timeout
             await self.driver.verify_connectivity()
             logger.info("Successfully connected to Neo4j database")
         except Neo4jError as e:
@@ -38,12 +44,32 @@ class Neo4jService:
         if self.driver:
             await self.driver.close()
             logger.info("Neo4j connection closed")
+    
+    async def refresh_connection(self) -> None:
+        """
+        Refresh the database connection by closing and reopening it.
+        Useful after heavy operations to clear connection pool.
+        """
+        logger.info("Refreshing Neo4j connection...")
+        if self.driver:
+            try:
+                await self.driver.close()
+            except:
+                pass  # Ignore errors when closing
+            self.driver = None
+        
+        await self.connect()
+        logger.info("Neo4j connection refreshed")
 
     @asynccontextmanager
     async def get_session(self):
         """Get an async session for database operations."""
         if not self.driver:
-            raise RuntimeError("Database driver not initialized. Call connect() first.")
+            logger.warning("Database driver not initialized. Attempting to connect...")
+            try:
+                await self.connect()
+            except Exception as e:
+                raise RuntimeError(f"Failed to connect to database: {e}")
 
         session = self.driver.session(database=settings.neo4j_database)
         try:
@@ -109,17 +135,35 @@ class Neo4jService:
         if parameters is None:
             parameters = {}
 
-        try:
-            async with self.get_session() as session:
-                # Use session.execute_write for write queries
-                async def _execute_write_query(tx):
-                    result = await tx.run(query, parameters)
-                    return await result.data()
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                async with self.get_session() as session:
+                    # Use session.execute_write for write queries
+                    async def _execute_write_query(tx):
+                        result = await tx.run(query, parameters)
+                        return await result.data()
 
-                return await session.execute_write(_execute_write_query)
-        except Neo4jError as e:
-            logger.error(f"Write query execution failed: {e}")
-            raise
+                    result = await session.execute_write(_execute_write_query)
+                    if attempt > 0:
+                        logger.info(f"Neo4j write query succeeded on retry {attempt + 1}")
+                    return result
+            except Neo4jError as e:
+                if attempt < max_retries - 1 and "defunct connection" in str(e).lower():
+                    # This is expected occasionally with connection pools - we'll retry
+                    logger.debug(f"Neo4j connection issue (attempt {attempt + 1}/{max_retries}), retrying...")
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    # Try to reconnect if driver exists
+                    if self.driver:
+                        try:
+                            await self.driver.verify_connectivity()
+                        except:
+                            pass  # Continue with retry
+                else:
+                    logger.error(f"Write query execution failed after {attempt + 1} attempts: {e}")
+                    raise
 
     async def execute_write_operation(
         self, query: str, parameters: dict[str, Any] | None = None
@@ -138,24 +182,40 @@ class Neo4jService:
         if parameters is None:
             parameters = {}
 
-        try:
-            async with self.get_session() as session:
-                # Use session.execute_write for write operations
-                async def _execute_write_operation(tx):
-                    result = await tx.run(query, parameters)
-                    summary = await result.consume()
-                    return {
-                        "nodes_created": summary.counters.nodes_created,
-                        "nodes_deleted": summary.counters.nodes_deleted,
-                        "relationships_created": summary.counters.relationships_created,
-                        "relationships_deleted": summary.counters.relationships_deleted,
-                        "properties_set": summary.counters.properties_set,
-                    }
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                async with self.get_session() as session:
+                    # Use session.execute_write for write operations
+                    async def _execute_write_operation(tx):
+                        result = await tx.run(query, parameters)
+                        summary = await result.consume()
+                        return {
+                            "nodes_created": summary.counters.nodes_created,
+                            "nodes_deleted": summary.counters.nodes_deleted,
+                            "relationships_created": summary.counters.relationships_created,
+                            "relationships_deleted": summary.counters.relationships_deleted,
+                            "properties_set": summary.counters.properties_set,
+                        }
 
-                return await session.execute_write(_execute_write_operation)
-        except Neo4jError as e:
-            logger.error(f"Write operation execution failed: {e}")
-            raise
+                    result = await session.execute_write(_execute_write_operation)
+                    if attempt > 0:
+                        logger.info(f"Neo4j write operation succeeded on retry {attempt + 1}")
+                    return result
+            except Neo4jError as e:
+                if attempt < max_retries - 1 and "defunct connection" in str(e).lower():
+                    logger.debug(f"Neo4j connection issue (attempt {attempt + 1}/{max_retries}), retrying...")
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    if self.driver:
+                        try:
+                            await self.driver.verify_connectivity()
+                        except:
+                            pass  # Continue with retry
+                else:
+                    logger.error(f"Write operation execution failed after {attempt + 1} attempts: {e}")
+                    raise
 
     async def health_check(self) -> bool:
         """
@@ -165,11 +225,48 @@ class Neo4jService:
             True if connection is healthy, False otherwise
         """
         try:
+            # If no driver exists, try to connect
             if not self.driver:
-                return False
-            await self.driver.verify_connectivity()
-            return True
-        except Neo4jError:
+                logger.warning("Neo4j driver not initialized, attempting to connect...")
+                try:
+                    await self.connect()
+                except Exception as e:
+                    logger.error(f"Failed to reconnect to Neo4j: {e}")
+                    return False
+            
+            # First try a quick connectivity check
+            try:
+                await self.driver.verify_connectivity()
+                return True
+            except Exception as e:
+                # Only if verify_connectivity fails, try a ping query
+                logger.warning(f"Neo4j verify_connectivity failed: {e}, trying ping query...")
+                try:
+                    async with self.get_session() as session:
+                        result = await session.run("RETURN 1 as ping")
+                        await result.consume()
+                    return True
+                except Exception as ping_error:
+                    logger.warning(f"Neo4j ping also failed: {ping_error}, attempting reconnection...")
+                    # Connection is bad, close and reconnect
+                    if self.driver:
+                        try:
+                            await self.driver.close()
+                        except:
+                            pass  # Ignore errors when closing bad connection
+                        self.driver = None
+                    
+                    # Try to reconnect
+                    await self.connect()
+                    # Test the new connection
+                    async with self.get_session() as session:
+                        result = await session.run("RETURN 1 as ping")
+                        await result.consume()
+                    logger.info("Neo4j reconnected successfully")
+                    return True
+                
+        except Exception as e:
+            logger.error(f"Neo4j health check failed completely: {e}")
             return False
 
 

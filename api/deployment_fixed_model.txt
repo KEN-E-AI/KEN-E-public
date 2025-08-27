@@ -1,0 +1,24 @@
+Copying agent source code...
+Copying agent source code complete.
+Initializing Vertex AI...
+Resolving files and dependencies...
+Creating /var/folders/qx/wz6fxp6n30q_kmrz7w_prpv40000gn/T/agent_engine_deploy_src/20250819_230020/requirements.txt...
+Created /var/folders/qx/wz6fxp6n30q_kmrz7w_prpv40000gn/T/agent_engine_deploy_src/20250819_230020/requirements.txt
+Reading environment variables from /var/folders/qx/wz6fxp6n30q_kmrz7w_prpv40000gn/T/agent_engine_deploy_src/20250819_230020/.env
+Vertex AI initialized.
+Created /var/folders/qx/wz6fxp6n30q_kmrz7w_prpv40000gn/T/agent_engine_deploy_src/20250819_230020/agent_engine_app.py
+Files and dependencies resolved
+Deploying to agent engine...
+Reading requirements from requirements='/var/folders/qx/wz6fxp6n30q_kmrz7w_prpv40000gn/T/agent_engine_deploy_src/20250819_230020/requirements.txt'
+Read the following lines: ['google-cloud-aiplatform[adk,agent_engines]']
+Identified the following requirements: {'google-cloud-aiplatform': '1.105.0', 'cloudpickle': '3.1.1', 'pydantic': '2.11.5'}
+The following requirements are missing: {'cloudpickle', 'pydantic'}
+The following requirements are appended: {'pydantic==2.11.5', 'cloudpickle==3.1.1'}
+The final list of requirements: ['google-cloud-aiplatform[adk,agent_engines]', 'pydantic==2.11.5', 'cloudpickle==3.1.1']
+Using bucket ken-e-dev-vertex-ai-staging
+Wrote to gs://ken-e-dev-vertex-ai-staging/agent_engine/agent_engine.pkl
+Writing to gs://ken-e-dev-vertex-ai-staging/agent_engine/requirements.txt
+Creating in-memory tarfile of extra_packages
+Writing to gs://ken-e-dev-vertex-ai-staging/agent_engine/dependencies.tar.gz
+Cleaning up the temp folder: /var/folders/qx/wz6fxp6n30q_kmrz7w_prpv40000gn/T/agent_engine_deploy_src/20250819_230020
+Deploy failed: Failed to set up agent engine <vertexai.agent_engines._agent_engines.ModuleAgent object at 0x10d6e3b60>: No module named 'agent'

@@ -1,0 +1,16 @@
+[project]
+name = "company-news-chatbot"
+version = "0.1.0"
+description = "Simple company news chatbot using ADK and Vertex AI Search"
+dependencies = [
+    "google-adk",
+    "google-cloud-firestore>=2.20.0",
+    "newsapi-python>=0.2.7",
+    "pypdf2>=3.0.1",
+    "python-dotenv",
+    "requests>=2.32.4",
+    "wandb>=0.21.1",
+    "weave>=0.52.1",
+]
+
+# Remove the tool.adk section - let's try without it first

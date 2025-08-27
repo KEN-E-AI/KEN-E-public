@@ -24,7 +24,7 @@ async function apiCall<T>(
       data: options.data,
       params: options.params,
       headers: options.headers,
-      timeout: options.timeout || 30000, // Default 30 second timeout
+      timeout: options.timeout || 300000, // Default 5 minute timeout
     });
 
     return response.data;
@@ -204,7 +204,7 @@ export async function createAccount(
       method: "POST",
       data: accountDataWithoutFiles,
       headers,
-      timeout: options?.timeout || 45000, // 45 seconds for account creation
+      timeout: options?.timeout || 300000, // 5 minutes for account creation
     });
 
     // Then upload the files
@@ -241,7 +241,7 @@ export async function createAccount(
     method: "POST",
     data: accountData,
     headers,
-    timeout: options?.timeout || 45000, // 45 seconds for account creation
+    timeout: options?.timeout || 300000, // 5 minutes for account creation
   });
 }
 
