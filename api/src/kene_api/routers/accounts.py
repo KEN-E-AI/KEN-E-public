@@ -597,7 +597,7 @@ async def create_account(
     )
 
     # Initialize progress tracking
-    await update_account_progress(
+    update_account_progress(
         account_id,
         1,
         "Creating account in database...",
@@ -781,7 +781,7 @@ async def create_account(
         logger.info(f"=== ACCOUNT CREATION COMPLETE for {account_id} ===")
 
         # Update progress: database setup complete
-        await update_account_progress(
+        update_account_progress(
             account_id,
             2,
             "Setting up database relationships...",
@@ -838,7 +838,7 @@ async def create_account(
             )
 
         # Update progress: moving to strategy generation
-        await update_account_progress(
+        update_account_progress(
             account_id,
             3,
             "Generating marketing strategy...",
@@ -853,7 +853,7 @@ async def create_account(
             )
 
         # Update progress: syncing activities
-        await update_account_progress(
+        update_account_progress(
             account_id,
             4,
             "Syncing holiday activities...",
@@ -960,7 +960,7 @@ async def create_account(
             )
 
         # Update progress: finalizing setup
-        await update_account_progress(
+        update_account_progress(
             account_id,
             5,
             "Finalizing account setup...",
@@ -998,7 +998,7 @@ async def create_account(
             )
 
         # Mark progress as complete
-        await update_account_progress(
+        update_account_progress(
             account_id,
             5,
             "Account creation completed!",
@@ -2073,7 +2073,7 @@ async def list_business_documents(
         ) from e
 
 
-async def update_account_progress(
+def update_account_progress(
     account_id: str,
     step: int,
     message: str,
@@ -2107,7 +2107,9 @@ async def update_account_progress(
     )
 
     cache_key = f"account_creation:{account_id}"
-    _cache_service.set(cache_key, progress.model_dump(), ttl_seconds=3600)  # 1 hour TTL
+    progress_data = progress.model_dump()
+    print(f"[PROGRESS UPDATE] Storing progress for {account_id}: step={step}, percentage={percentage}%, message={message}")
+    _cache_service.set(cache_key, progress_data, ttl_seconds=3600)  # 1 hour TTL
 
 
 @router.get("/{account_id}/creation-status", response_model=AccountCreationProgress)
@@ -2145,8 +2147,10 @@ async def get_account_creation_status(
     # Try to get progress from cache
     cache_key = f"account_creation:{account_id}"
     cached_progress = _cache_service.get(cache_key)
-
+    
+    print(f"[PROGRESS GET] Fetching progress for {account_id}: found={cached_progress is not None}")
     if cached_progress:
+        print(f"[PROGRESS GET] Progress data: step={cached_progress.get('current_step')}, percentage={cached_progress.get('percentage')}%")
         return AccountCreationProgress(**cached_progress)
 
     # Default response if no progress tracked (account already created)
