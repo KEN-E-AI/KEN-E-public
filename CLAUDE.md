@@ -35,343 +35,63 @@ ken-e/
     └── load_test/        # Load testing with Locust
 ```
 
-## Common Development Commands
+## Quick Start Commands
 
-### Root Level (Main Application)
-- `make install` - Install all dependencies using uv package manager
-- `make test` - Run unit and integration tests
-- `make lint` - Run code quality checks (codespell, ruff, mypy)
-- `make ken-e` - Launch local interface (Note: Currently misconfigured)
-- `make backend` - Deploy agent to Google Cloud Agent Engine
-- `uv run jupyter lab` - Launch Jupyter notebooks for prototyping
-
-### API Service (api/) - Python/FastAPI
-**Note:** The API is a Python project using `pyproject.toml`. Do NOT use npm commands here.
-- `cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000` - Run FastAPI development server
-- `cd api && python run_dev.py` - Alternative dev server launcher
-- `cd api && pytest tests/` - Run API tests
-- `cd api && ./docker.sh dev` - Run API in Docker container
-- `cd api && ./docker.sh test` - Run tests in Docker
-- `cd api && ./scripts/set_environment.sh [development|staging|production]` - Switch API environment
-
-### Frontend (frontend/) - React/TypeScript
-**Note:** The frontend is a Node.js project using `package.json`. Use npm commands here.
-- `cd frontend && npm run dev:development` - Start development server on port 8080 (development env)
-- `cd frontend && npm run dev:staging` - Start development server on port 8080 (staging env)
-- `cd frontend && npm run dev:production` - Start development server on port 8080 (production env)
-- `cd frontend && npm run build` - Build for production
-- `cd frontend && npm run build:staging` - Build for staging
-- `cd frontend && npm run build:production` - Build for production
-- `cd frontend && npm test` - Run Vitest tests
-- `cd frontend && npm run typecheck` - Type checking
-- `cd frontend && npm run format.fix` - Format with Prettier
-- `cd frontend && ./scripts/set_environment.sh [development|staging|production]` - Switch frontend environment
-
-**Important CSS Note**: The frontend's `src/App.css` file should be kept minimal or empty. Default Vite/React template styles (like `text-align: center` on `#root`) can break dashboard layouts. See frontend/CLAUDE.md for CSS architecture details.
-
-### Data Ingestion (data_ingestion/)
-- `cd data_ingestion && python data_ingestion_pipeline/submit_pipeline.py` - Submit pipeline to Vertex AI
-
-## Architecture Overview
-
-### Core Components
-
-1. **Agent System** (`app/`):
-   - **Main Agent** (`app/agent.py`): LangGraph-based orchestration using ChatVertexAI (Gemini 2.0 Flash)
-   - **CrewAI Multi-Agent** (`app/crew/`): Three specialized agents:
-     - **KEN-E**: Main execution agent
-     - **BET-E**: Web scraping and data collection agent
-     - **VIK-E**: Reporting and analysis agent
-   - **Agent Engine App** (`app/agent_engine_app.py`): Deployment wrapper for Google Cloud Agent Engine
-   - **Utilities**: GCS operations, OpenTelemetry tracing, type definitions
-
-2. **API Service** (`api/`):
-   - **FastAPI Application** (`api/src/kene_api/main.py`): RESTful API with async support
-   - **Database Layer**: 
-     - Neo4j for graph data and relationships
-     - Firestore for document storage and user data
-   - **Routers**: Modular endpoints for:
-     - Metrics and KPIs
-     - Activities and tasks
-     - Insights and intuitions
-     - Items and entities
-     - Funnel reports
-   - **Authentication**: Firebase Auth integration
-   - **Docker Support**: Multiple compose configurations for dev/prod
-
-3. **Frontend** (`frontend/`):
-   - **React 18 + TypeScript**: Modern SPA built with Vite
-   - **UI Components**: ~50 components based on Radix UI primitives
-   - **Styling**: TailwindCSS with custom configuration
-   - **Routing**: React Router 6 with protected routes
-   - **State Management**: 
-     - AuthContext for authentication
-     - TanStack Query for server state
-   - **Data Visualization**: Recharts and React Three Fiber
-
-4. **Data Ingestion** (`data_ingestion/`):
-   - **Vertex AI Pipeline**: Kubeflow-based pipeline
-   - **Components**: Modular data processing stages
-   - **Embedding Generation**: Vector embeddings for RAG
-
-### Key Technologies
-
-- **Python Stack**: 
-  - LangGraph & LangChain for AI orchestration
-  - CrewAI for multi-agent collaboration
-  - FastAPI for REST API
-  - Neo4j Python driver
-  - Firebase Admin SDK
-  - OpenTelemetry for tracing
-  
-- **JavaScript Stack**: 
-  - React 18 with TypeScript
-  - Vite for fast builds
-  - TailwindCSS for styling
-  - Radix UI for accessible components
-  - React Hook Form + Zod for forms
-  - Axios for API calls
-
-- **Infrastructure**: 
-  - Google Cloud Platform (primary)
-  - Vertex AI for ML workloads
-  - Cloud Run for containerized services
-  - Firebase for auth and Firestore
-  - Neo4j Aura for graph database
-  - BigQuery for analytics
-
-## Development Workflow
-
-### Agent Development
-1. Prototype agent logic in Jupyter notebooks (`notebooks/`)
-2. Implement agent logic in `app/agent.py`
-3. Configure CrewAI agents in `app/crew/config/`
-4. Test locally with appropriate commands
-5. Deploy with `make backend` to Agent Engine
-
-### API Development
-1. Define Pydantic models in `api/src/kene_api/models/`
-2. Create routers in `api/src/kene_api/routers/`
-3. Add tests in `api/tests/`
-4. Test endpoints with auto-generated docs at `/docs`
-5. Use `./docker.sh` for containerized development
-
-### Frontend Development
-1. Create components in `frontend/src/components/`
-2. Define TypeScript types in `frontend/src/types/`
-3. Add pages in `frontend/src/pages/`
-4. Use existing UI components from `frontend/src/components/ui/`
-5. Test with appropriate environment:
-   - Development: `npm run dev:development` (port 8080)
-   - Staging: `npm run dev:staging` (port 8080)
-   - Production: `npm run dev:production` (port 8080)
-
-### Data Pipeline Development
-1. Define pipeline components in `data_ingestion/data_ingestion_pipeline/`
-2. Test components locally
-3. Submit to Vertex AI with `submit_pipeline.py`
-
-## Testing Strategy
-
-- **Unit Tests**: 
-  - Python: pytest in `tests/unit/` and component directories
-  - Frontend: Vitest with `.spec.ts` files
-  
-- **Integration Tests**: 
-  - End-to-end testing in `tests/integration/`
-  - Database integration tests in API
-  
-- **Load Testing**: 
-  - Locust-based tests in `tests/load_test/`
-  - Integrated into CI/CD pipeline
-  - Results stored in GCS
-
-- **Test Commands**:
-  - Root: `make test`
-  - API: `cd api && pytest tests/`
-  - Frontend: `cd frontend && npm test`
-  - Docker: `cd api && ./docker.sh test`
-
-## Infrastructure & Deployment
-
-### Terraform Infrastructure (`deployment/terraform/`)
-- **Multi-environment**: Separate staging and production projects
-- **Resources managed**:
-  - API enablement (30+ Google Cloud APIs)
-  - Cloud Build triggers
-  - Cloud SQL (PostgreSQL) instances
-  - IAM policies and service accounts
-  - Storage buckets for artifacts
-  - Log sinks for monitoring
-  - Secret Manager for credentials
-
-### CI/CD Pipelines
-
-- **PR Checks** (`deployment/ci/pr_checks.yaml`):
-  - Dependency installation with uv
-  - Unit and integration tests
-  - Code quality checks
-  - Runs on every pull request
-
-- **Staging Deployment** (`deployment/cd/staging.yaml`):
-  - Deploys data pipeline to Vertex AI
-  - Deploys agent to Agent Engine
-  - Builds and deploys frontend to Cloud Run
-  - Builds and deploys API to Cloud Run
-  - Runs load tests
-  - Triggers production deployment on success
-
-- **Production Deployment** (`deployment/cd/deploy-to-prod.yaml`):
-  - Requires manual approval
-  - Mirrors staging deployment steps
-  - Additional monitoring and alerts
-
-### Environment Configuration
-
-#### Switching Environments
-
-**API Environment Switching:**
+### API Service (Python/FastAPI)
 ```bash
-cd api
-./scripts/set_environment.sh [development|staging|production]
-```
-
-**Frontend Environment Switching:**
-```bash
-cd frontend
-./scripts/set_environment.sh [development|staging|production]
-```
-
-**Complete Environment Switch Workflow:**
-```bash
-# Switch API environment
-cd api && ./scripts/set_environment.sh staging
-
-# Switch frontend environment
-cd frontend && ./scripts/set_environment.sh staging
-
-# Restart services to pick up new environment
+# Development server (recommended - avoids reload issues)
 cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-cd frontend && npm run dev:staging  # or dev:development / dev:production
+
+# Run tests
+cd api && pytest tests/
+
+# Switch environment
+cd api && ./scripts/set_environment.sh [development|staging|production]
 ```
 
-#### API Environment Variables:
-- `DEBUG`: Enable debug mode
-- `HOST`, `PORT`: Server configuration
-- `CORS_ORIGINS`: Allowed origins
-- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`: Graph database
-- `GOOGLE_CLOUD_PROJECT_ID`: GCP project ID
-- `FIRESTORE_DATABASE_ID`: Firestore instance
-- `LOG_LEVEL`: Logging configuration
-- `ENVIRONMENT`: Environment indicator (development|staging|production)
+### Frontend (React/TypeScript)
+```bash
+# Development server (port 8080)
+cd frontend && npm run dev:[development|staging|production]
 
-#### Frontend Environment Variables:
+# Build & test
+cd frontend && npm run build
+cd frontend && npm test
+cd frontend && npm run typecheck
+cd frontend && npm run format.fix
+
+# Switch environment
+cd frontend && ./scripts/set_environment.sh [development|staging|production]
+```
+
+### Root Level Commands
+```bash
+make install  # Install dependencies
+make test     # Run all tests
+make lint     # Run code quality checks
+make backend  # Deploy to Agent Engine
+```
+
+## Core Architecture
+
+- **Agent System** (`app/`): LangGraph orchestration with CrewAI agents (KEN-E, BET-E, VIK-E)
+- **API** (`api/`): FastAPI with Neo4j graph DB and Firestore
+- **Frontend** (`frontend/`): React 18 + TypeScript, TailwindCSS, Radix UI
+- **Infrastructure**: GCP (Vertex AI, Cloud Run, Firebase)
+
+## Key Environment Variables
+
+### API
+- `GOOGLE_CLOUD_PROJECT_ID`: GCP project ID
+- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`: Graph database
+- `VERTEX_AI_LOCATION`, `VERTEX_AI_AGENT_ENGINE_ID`: Agent Engine config
+- `ENVIRONMENT`: development|staging|production
+
+### Frontend
 - `VITE_API_BASE_URL`: Backend API URL
 - `VITE_FIREBASE_*`: Firebase configuration
-- `VITE_ENVIRONMENT`: Environment indicator (development|staging|production)
+- `VITE_ENVIRONMENT`: Environment indicator
 - All frontend env vars must be prefixed with `VITE_`
-
-## Data Architecture
-
-- **Neo4j**: Graph database for entity relationships
-  - Marketing metrics relationships
-  - Activity dependencies
-  - Knowledge graph structure
-  
-- **Firestore**: Document storage
-  - User profiles and preferences
-  - Organization configurations
-  - Session data
-  
-- **BigQuery**: Analytics and data warehouse
-  - Event logs
-  - Aggregated metrics
-  - Historical data
-  
-- **Vertex AI Search**: RAG-enabled search
-  - Document embeddings
-  - Semantic search capabilities
-
-## Monitoring & Observability
-
-- **OpenTelemetry**: Distributed tracing across all services
-- **Google Cloud Logging**: Centralized log aggregation
-- **Cloud Monitoring**: Metrics and alerting
-- **Health Endpoints**: 
-  - API: `/health` endpoint
-  - Frontend: Build-time health checks
-
-## Development Tools
-
-- **Package Management**:
-  - Python: `uv` (modern, fast alternative to pip)
-  - JavaScript: `npm`
-  
-- **Code Quality**:
-  - Python: ruff (formatter & linter), mypy (type checking), codespell
-  - JavaScript: Prettier, TypeScript compiler
-  
-- **Development Environment**:
-  - Hot reload for both API and frontend
-  - Docker support for consistent environments
-  - Jupyter notebooks for experimentation
-
-## Security Considerations
-
-- **Authentication**: Firebase Auth across all services
-- **API Security**: 
-  - CORS configuration
-  - Request validation
-  - Rate limiting (planned)
-  
-- **Secrets Management**: 
-  - Google Secret Manager for production
-  - Environment files for local development
-  - Never commit secrets to repository
-
-## Common Issues & Solutions
-
-1. **Port Conflicts**: Frontend runs on 8080, API on 8000
-2. **Database Connections**: Ensure Neo4j and Firestore credentials are set
-3. **Build Errors**: Check all environment variables are configured
-4. **Type Errors**: Some TypeScript strict checks are disabled in frontend
-
-## Best Practices
-
-1. **Code Style**:
-   - Follow existing patterns in each service
-   - Run formatters before committing
-   - Write meaningful commit messages
-   
-2. **Testing**:
-   - Write tests for new features
-   - Maintain test coverage above 80%
-   - Use integration tests for complex flows
-   
-3. **Documentation**:
-   - Update relevant CLAUDE.md files when adding features
-   - Document API endpoints in OpenAPI format
-   - Keep TypeScript types well-documented
-
-4. **Performance**:
-   - Use proper database indexes
-   - Implement caching where appropriate
-   - Monitor API response times
-
-## Getting Started
-
-1. Clone the repository
-2. Install Python dependencies: `make install`
-3. Install frontend dependencies: `cd frontend && npm install`
-4. Copy environment files:
-   - `cp api/.env.example api/.env`
-   - Create `frontend/.env.local` with required vars
-5. Start services:
-   - API: `cd api && uvicorn src.kene_api.main:app --reload`
-   - Frontend: `cd frontend && npm run dev:development` (or dev:staging/dev:production)
-6. Access applications:
-   - Frontend: http://localhost:8080
-   - API Docs: http://localhost:8000/docs
 
 ## Implementation Best Practices
 
@@ -604,235 +324,19 @@ types other than fix: and feat: are allowed, for example @commitlint/config-conv
 footers other than BREAKING CHANGE: <description> may be provided and follow a convention similar to git trailer format.
 ```
 
-## Vertex AI Agent Engine Integration
+## Common Issues & Solutions
 
-This section documents the complete process and lessons learned from integrating the KEN-E frontend chatbot with a Vertex AI Agent Engine deployed on Google Cloud Platform.
+1. **Port Conflicts**: Frontend runs on 8080, API on 8000
+2. **Database Connections**: Ensure Neo4j and Firestore credentials are set
+3. **Build Errors**: Check all environment variables are configured
+4. **Type Errors**: Some TypeScript strict checks are disabled in frontend
+5. **API Server Reload Loop**: 
+   - Use `uv run` WITHOUT the `--active` flag (recommended)
+   - Alternative: `cd api && python -m uvicorn src.kene_api.main:app --reload`
 
-### Overview
+## Vertex AI Agent Engine API Endpoints
 
-The integration connects existing frontend chatbot components (`HomeChatArea.tsx` and `ChatSidebar.tsx`) with a deployed ADK (Agent Development Kit) chatbot via Vertex AI Agent Engine, replacing simulated responses with real AI-powered responses.
-
-### Architecture
-
-```
-Frontend (React) → API (FastAPI) → Vertex AI Agent Engine (GCP)
-    ↓                  ↓                      ↓
-chatService.ts   chat.py router      Deployed ADK Agent
-```
-
-### Key Components
-
-1. **API Router**: `api/src/kene_api/routers/chat.py`
-   - `AgentEngineClient` class for Agent Engine communication
-   - `/api/v1/chat/completions` endpoint (POST)
-   - `/api/v1/chat/health` endpoint (GET)
-
-2. **Frontend Service**: `frontend/src/services/chatService.ts`
-   - `ChatService` class with Firebase Auth integration
-   - Methods: `sendMessage()`, `streamMessage()`, `checkHealth()`
-
-3. **Test Scripts**: `api/scripts/`
-   - `test_agent_chat.py` - Local testing without full API deployment
-   - `test_reasoning_engine_methods.py` - Debug Agent Engine API methods
-
-### Critical Lessons Learned
-
-#### 1. **API Discovery Issue**
-- **Problem**: Initially used `reasoning_engines` API
-- **Solution**: Must use `agent_engines` API for deployed Agent Engines
-- **Code**: 
-  ```python
-  from vertexai import agent_engines  # NOT reasoning_engines
-  agent_engine = agent_engines.get(agent_engine_id)
-  ```
-
-#### 2. **Parameter Mismatch Issue**
-- **Problem**: Agent expected `message` and `user_id`, we sent `input`
-- **Error Log**: `TypeError: AdkApp.stream_query() missing 2 required keyword-only arguments: 'message' and 'user_id'`
-- **Solution**: 
-  ```python
-  # WRONG
-  agent_engine.stream_query(input=user_input)
-  
-  # CORRECT
-  agent_engine.stream_query(message=user_input, user_id=user_id)
-  ```
-
-#### 3. **Response Structure Issue**
-- **Problem**: Agent returns nested structure, not simple text
-- **Agent Response Format**:
-  ```python
-  {
-    'content': {
-      'parts': [{'text': 'Actual response text here'}]
-    },
-    'grounding_metadata': {...},
-    'usage_metadata': {...},
-    'invocation_id': '...',
-    'author': '...',
-    'actions': [...],
-    'id': '...',
-    'timestamp': '...'
-  }
-  ```
-- **Solution**: Parse nested structure to extract text:
-  ```python
-  if 'content' in chunk and isinstance(chunk['content'], dict):
-      content = chunk['content']
-      if 'parts' in content and isinstance(content['parts'], list):
-          for part in content['parts']:
-              if isinstance(part, dict) and 'text' in part:
-                  response_parts.append(part['text'])
-  ```
-
-#### 4. **Authentication Configuration**
-- **Development**: Use user credentials via `gcloud auth application-default login`
-- **Production**: Use service account credentials via `GOOGLE_APPLICATION_CREDENTIALS`
-- **Environment Variables**:
-  ```bash
-  GOOGLE_CLOUD_PROJECT_ID=ken-e-staging
-  VERTEX_AI_LOCATION=us-central1
-  VERTEX_AI_AGENT_ENGINE_ID=projects/ken-e-staging/locations/us-central1/reasoningEngines/YOUR_ID
-  ```
-
-### Debugging Agent Engine Issues
-
-#### 1. **Check Agent Logs**
-```bash
-# Get recent logs for specific reasoning engine
-gcloud logging read "resource.labels.reasoning_engine_id=\"YOUR_ENGINE_ID\"" \
-  --project=YOUR_PROJECT --limit=20
-
-# Search for specific errors
-gcloud logging read "resource.labels.reasoning_engine_id=\"YOUR_ENGINE_ID\" AND textPayload:\"TypeError\"" \
-  --project=YOUR_PROJECT --limit=10
-```
-
-#### 2. **Local Testing Scripts**
-```bash
-# Test integration without full API deployment
-cd api
-uv run -- python scripts/test_agent_chat.py
-
-# Debug Agent Engine API methods and signatures
-uv run -- python scripts/test_reasoning_engine_methods.py
-```
-
-#### 3. **Common Error Patterns**
-- **400 Reasoning Engine Execution failed**: Check parameter names and types
-- **TypeError: missing required keyword-only arguments**: Verify method signature
-- **InvalidRequestError**: Check deployed agent configuration
-- **Authentication errors**: Verify credentials and project access
-
-### Environment Configuration
-
-#### API Environment Variables (`.env.development`, `.env.staging`, `.env.production`)
-```bash
-# Required for Vertex AI Agent Engine
-VERTEX_AI_LOCATION=us-central1
-VERTEX_AI_AGENT_ENGINE_ID=projects/PROJECT/locations/LOCATION/reasoningEngines/ID
-GOOGLE_CLOUD_PROJECT_ID=your-project-id
-
-# Optional: Service account path (for production)
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-```
-
-#### Frontend Environment Variables
-```bash
-# No changes needed - uses existing API_BASE_URL
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-### Implementation Checklist
-
-#### Backend (API)
-- [x] Add `google-cloud-aiplatform>=1.90.0` to `pyproject.toml`
-- [x] Create `AgentEngineClient` class in chat router
-- [x] Use `agent_engines.get()` not `reasoning_engines`
-- [x] Pass `message=user_input, user_id=user_id` parameters
-- [x] Parse nested response structure `content.parts[].text`
-- [x] Handle both streaming and non-streaming responses
-- [x] Add proper error handling and logging
-
-#### Frontend
-- [x] Create `ChatService` class with Firebase Auth
-- [x] Update chatbot components to use real API calls
-- [x] Remove `setTimeout()` simulated responses
-- [x] Add loading states and error handling
-
-#### Testing
-- [x] Create local test scripts for debugging (`api/scripts/`)
-- [x] Test with user credentials (`gcloud auth application-default login`)
-- [x] Verify response parsing extracts clean text
-- [x] Test both streaming and non-streaming modes
-
-### Deployment Considerations
-
-1. **Service Account Setup**: Ensure proper IAM roles for Vertex AI access
-2. **Environment Variables**: Configure all required variables in deployment (see Cloud Build configuration below)
-3. **Error Monitoring**: Monitor logs for Agent Engine execution errors
-4. **Session Management**: Agent Engine creates/manages sessions automatically
-5. **Rate Limiting**: Consider implementing rate limiting for chat endpoints
-
-#### Cloud Build Deployment Configuration
-
-The Vertex AI Agent Engine environment variables have been added to both staging and production Cloud Build pipelines:
-
-**Staging** (`deployment/cd/staging.yaml`):
-- Environment variables: `VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_STAGING}`
-- Substitutions:
-  ```yaml
-  _VERTEX_AI_LOCATION: us-central1
-  _VERTEX_AI_AGENT_ENGINE_ID_STAGING: ${_VERTEX_AI_AGENT_ENGINE_ID_STAGING}
-  ```
-
-**Production** (`deployment/cd/deploy-to-prod.yaml`):
-- Environment variables: `VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_PROD}`
-- Substitutions:
-  ```yaml
-  _VERTEX_AI_LOCATION: us-central1
-  _VERTEX_AI_AGENT_ENGINE_ID_PROD: ${_VERTEX_AI_AGENT_ENGINE_ID_PROD}
-  ```
-
-**Configuration Details:**
-
-**Staging**: Uses the actual Agent Engine ID directly in the substitutions:
-```
-_VERTEX_AI_AGENT_ENGINE_ID_STAGING: projects/ken-e-staging/locations/us-central1/reasoningEngines/98331523895263232
-```
-
-**Production**: Requires Cloud Build trigger variable configuration:
-- `_VERTEX_AI_AGENT_ENGINE_ID_PROD`: Must be set in the production Cloud Build trigger settings to the actual production Agent Engine ID
-
-**How to Configure Cloud Build Trigger Variables:**
-1. Go to Google Cloud Console → Cloud Build → Triggers
-2. Edit the production deployment trigger
-3. Under "Substitution variables", add:
-   - Variable: `_VERTEX_AI_AGENT_ENGINE_ID_PROD`
-   - Value: `projects/ken-e-production/locations/us-central1/reasoningEngines/YOUR_PROD_ENGINE_ID`
-
-### Troubleshooting Common Issues
-
-#### "No module named 'vertexai'" 
-```bash
-cd api && uv add google-cloud-aiplatform
-```
-
-#### "ReasoningEngine object has no attribute 'query'"
-Switch from `reasoning_engines` to `agent_engines` API.
-
-#### "TypeError: missing required keyword-only arguments"
-Check deployed agent's expected parameters via logs. Use `message` and `user_id`, not `input`.
-
-#### Response is raw dictionary string
-Implement nested structure parsing for `{'content': {'parts': [{'text': '...'}]}}` format.
-
-#### Authentication failures
-Verify credentials: `gcloud auth application-default login` for development, service account for production.
-
-### API Endpoint Documentation
-
-#### POST `/api/v1/chat/completions`
+### POST `/api/v1/chat/completions`
 **Request:**
 ```json
 {
@@ -846,224 +350,17 @@ Verify credentials: `gcloud auth application-default login` for development, ser
 ```json
 {
   "role": "assistant",
-  "content": "Hi there! How can I help you with company news today?",
+  "content": "Response text",
   "session_id": "chat_1234567890_abc123def"
 }
 ```
 
-#### GET `/api/v1/chat/health`
-**Response:**
-```json
-{
-  "status": "healthy",
-  "agent_engine_status": "connected",
-  "project_id": "ken-e-staging",
-  "location": "us-central1"
-}
-```
+### GET `/api/v1/chat/health`
+Check Agent Engine connectivity and status.
 
-This integration provides a robust, production-ready connection between the KEN-E frontend and Vertex AI Agent Engine, with comprehensive error handling, logging, and debugging capabilities.
+## Additional Documentation
 
-## Critical Cross-Project Authentication Fix (January 2025)
-
-### Issue Summary
-**Problem**: Conversations not being saved due to Agent Engine returning empty responses despite successful authentication and session creation.
-
-**Root Cause**: Complex multi-service authentication where different Google Cloud APIs used different credential contexts:
-- Firebase Admin SDK: Used `ken-e-dev` project credentials (for user authentication)
-- Vertex AI Agent Engine: Required `ken-e-staging` project credentials (for AI responses)
-- Individual Agent Engine API calls (`stream_query`) weren't inheriting the staging credentials properly
-
-### Symptoms Observed
-- ✅ User authentication worked (no 401 errors)
-- ✅ Sessions created successfully (fallback manual sessions)  
-- ✅ Agent Engine connection appeared successful (`agent_engines.get()` worked)
-- ❌ `stream_query` calls returned empty response arrays `[]`
-- ❌ Frontend showed "Received empty response from Agent Engine"
-
-### The Fix: Global Credential Context Management
-
-**Location**: `/api/src/kene_api/routers/chat.py` in `AgentEngineClient.chat_completion()`
-
-**Solution**: Set `GOOGLE_APPLICATION_CREDENTIALS` globally for the entire chat completion process:
-
-```python
-async def chat_completion(self, messages, user_context, session_id=None, conversation_name=None):
-    # Set staging credentials for the ENTIRE chat completion process
-    original_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if self._staging_credentials_path:
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self._staging_credentials_path
-        
-    try:
-        # ALL Agent Engine operations now use staging credentials
-        # including stream_query calls
-        if not self.agent_engine:
-            return "Unable to connect to AI service", ""
-            
-        # ... rest of chat completion logic ...
-        
-    finally:
-        # Always restore original credentials
-        if original_creds:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = original_creds
-        elif "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
-            del os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
-```
-
-**Key Architecture**:
-- **Firebase Auth**: Uses `ken-e-dev.json` service account for validating frontend tokens
-- **Agent Engine**: Uses `ken-e-staging.json` service account for AI API calls  
-- **Credential Switching**: Temporarily sets staging credentials only during Agent Engine operations
-- **Isolation**: Each chat request gets isolated credential context
-
-### Why This Was Difficult to Debug
-1. **Silent Failures**: Agent Engine connected successfully but queries returned empty arrays
-2. **Multiple Credential Scopes**: Firebase vs Vertex AI vs Agent Engine APIs each needed different credentials
-3. **Lazy Loading**: Agent Engine initialization happened separately from actual API calls
-4. **Cross-Project Complexity**: Development frontend + staging backend is an unusual setup
-5. **Credential Inheritance**: Vertex AI initialization didn't guarantee individual API calls would use same credentials
-
-### Local Development Configuration
-**Environment Variables** (`.env.development`):
-```bash
-# Main project (for Firebase auth)
-GOOGLE_CLOUD_PROJECT_ID=ken-e-dev
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/ken-e-dev.json
-
-# Agent Engine project (for AI responses)  
-VERTEX_AI_PROJECT_ID=ken-e-staging
-VERTEX_AI_CREDENTIALS=/path/to/ken-e-staging.json
-```
-
-**Testing Setup**:
-- Frontend: http://localhost:8081 (dev Firebase tokens)
-- API: http://localhost:8000 (validates dev tokens, uses staging Agent Engine)
-
-### Production Implications
-This fix ensures proper credential isolation in production deployments where different services may use different Google Cloud projects or service accounts.
-
-**Monitoring**: Check Agent Engine responses are non-empty and sessions are properly persisted to verify the fix is working.
-
-**Date Resolved**: January 31, 2025
-
-## Critical Conversation Persistence UI Fix (January 2025)
-
-### Issue Summary
-**Problem**: Chat functionality worked fine (messages sent/received), but conversations were not persisting in the UI. Users couldn't see previous conversations or resume chat sessions, even though sessions were being stored correctly in the ADK Session Service.
-
-**Root Cause**: Frontend API response parsing mismatch. The API returns conversation lists as:
-```json
-{
-  "conversations": [ConversationInfo[], ...],
-  "total_count": number
-}
-```
-
-But the frontend expected a direct array of `ConversationInfo[]`.
-
-### The Fix: Frontend API Response Structure Update
-
-**Location**: `/frontend/src/services/chatService.ts`
-
-**Problem Code**:
-```typescript
-async getConversations(): Promise<ConversationInfo[]> {
-  const response = await this.apiClient.get<ConversationInfo[]>(
-    "/api/v1/chat/conversations"
-  );
-  return Array.isArray(response.data) ? response.data : [];
-}
-```
-
-**Fixed Code**:
-```typescript
-export interface ConversationListResponse {
-  conversations: ConversationInfo[];
-  total_count: number;
-}
-
-async getConversations(): Promise<ConversationInfo[]> {
-  const response = await this.apiClient.get<ConversationListResponse>(
-    "/api/v1/chat/conversations"
-  );
-  // API returns {conversations: ConversationInfo[], total_count: number}
-  const data = response.data;
-  if (data && Array.isArray(data.conversations)) {
-    return data.conversations;
-  }
-  // Fallback for backward compatibility
-  return Array.isArray(response.data) ? response.data : [];
-}
-```
-
-### Key Architecture Confirmation
-- **Sessions ARE stored** by Vertex AI Agent Engine Session Service (ADK)
-- **Backend conversation logic was correct** - it properly calls `session_service.list_sessions()`
-- **Frontend conversation loading was correct** - it calls `getConversations()` on component mount  
-- **Only the response parsing was broken** - simple API contract mismatch
-
-### Files Changed (Production-Safe)
-1. **`frontend/src/services/chatService.ts`**:
-   - Added `ConversationListResponse` interface
-   - Updated `getConversations()` method to parse nested response structure
-   - Maintained backward compatibility with direct array responses
-
-### What NOT to Include in Production
-The following changes were made only for local development debugging and should NOT be deployed:
-- Cross-project authentication setup (`ken-e-dev` + `ken-e-staging`)
-- Local service account credential files  
-- Development-specific environment variable configurations
-- Any credential switching or global authentication modifications in chat.py
-
-### Verification
-After this fix:
-- ✅ Conversations appear in sidebar on page load
-- ✅ Previous chat sessions can be resumed
-- ✅ New conversations are properly persisted
-- ✅ Session management works as expected
-
-**Date Resolved**: January 31, 2025
-**Impact**: Frontend conversation persistence now works correctly without any backend or architectural changes.
-
-## Troubleshooting Common Issues
-
-### API Server Reload Loop on Startup
-
-**Issue**: When starting the API with `uv run --active`, the server repeatedly reloads due to package reinstallation.
-
-**Symptoms**:
-- Multiple messages: `WARNING: WatchFiles detected changes in '.venv/lib/python3.12/site-packages/requests/...'`
-- Warning about missing `RECORD` file: `Failed to uninstall package... due to missing RECORD file`
-- Server restarts 4-5 times before stabilizing
-
-**Root Cause**: 
-1. The `--active` flag can cause issues when `VIRTUAL_ENV` path doesn't match the project's `.venv` path
-2. Corrupted package installations with missing `RECORD` files
-3. Lockfile version mismatches causing `uv` to repeatedly reinstall packages
-
-**Solutions**:
-
-1. **Use `uv run` without the `--active` flag** (Recommended):
-   ```bash
-   cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-2. **If packages are corrupted, clean and reinstall**:
-   ```bash
-   # Remove corrupted package directories
-   rm -rf .venv/lib/python3.12/site-packages/requests*
-   
-   # Update lockfile and sync packages
-   uv lock --upgrade-package requests
-   uv sync
-   ```
-
-3. **Alternative: Use Python directly**:
-   ```bash
-   cd api && python -m uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-**Prevention**: 
-- Always use `uv run` without `--active` for consistent behavior
-- Keep lockfile updated with `uv lock` when adding/updating dependencies
-- Report any `VIRTUAL_ENV` path mismatches in the terminal output
+For detailed information about:
+- **Troubleshooting**: See `TROUBLESHOOTING.md` for historical issues and fixes
+- **Deployment**: See deployment files in `deployment/` directory
+- **Frontend specifics**: See `frontend/CLAUDE.md` for CSS architecture details

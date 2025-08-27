@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import UserContext, get_current_user_context
 from ..bigquery import BigQueryService, get_bigquery_service
-from ..cache import InMemoryCache
+from ..services.progress_cache import progress_cache
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
@@ -40,9 +40,8 @@ router = APIRouter(tags=["accounts"])
 # Logger
 logger = logging.getLogger(__name__)
 
-# Create a module-level cache service (in-memory for now)
-# In production, this would be initialized with Redis
-_cache_service = InMemoryCache()
+# Use shared cache service for progress tracking
+_cache_service = progress_cache
 
 
 # Progress tracking models
@@ -959,14 +958,6 @@ async def create_account(
                 f"[STRATEGY] Strategy generation was not triggered for account {account_id}"
             )
 
-        # Update progress: finalizing setup
-        update_account_progress(
-            account_id,
-            5,
-            "Finalizing account setup...",
-            ["completed", "completed", "completed", "completed", "processing"],
-        )
-
         # Grant the creating user admin permissions on the new account
         try:
             success = firestore.set_nested_field(
@@ -997,12 +988,10 @@ async def create_account(
                 "but account was created successfully"
             )
 
-        # Mark progress as complete
-        update_account_progress(
-            account_id,
-            5,
-            "Account creation completed!",
-            ["completed", "completed", "completed", "completed", "completed"],
+        # DON'T mark progress as complete here - the background task will do it
+        # The strategy generation is still running and will update progress to 100% when done
+        logger.info(
+            f"Account {account_id} created, strategy generation running in background"
         )
 
         # Clear the progress from cache after a short delay to ensure final status is seen

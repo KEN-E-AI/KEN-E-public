@@ -175,32 +175,34 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
               <Trash2 className="h-5 w-5 text-red-600" />
               Delete Organization
             </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>
-                Are you sure you want to delete the organization{" "}
-                <span className="font-semibold">
-                  "{orgData.organization_name}"
-                </span>
-                ?
-              </p>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
-                <p className="text-sm text-amber-800 font-medium">
-                  📋 Required: You must delete all accounts first
-                </p>
-                <p className="text-sm text-amber-700 mt-1">
-                  Before deleting this organization, please remove all accounts
-                  from the Accounts section above. This ensures you understand
-                  exactly what data will be lost.
-                </p>
-              </div>
-              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-800 font-medium">
-                  ⚠️ Warning: This action cannot be undone
-                </p>
-                <p className="text-sm text-red-700 mt-1">
-                  Deleting this organization will permanently remove all
-                  associated data, reports, and settings.
-                </p>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <div>
+                  Are you sure you want to delete the organization{" "}
+                  <span className="font-semibold">
+                    "{orgData.organization_name}"
+                  </span>
+                  ?
+                </div>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                  <div className="text-sm text-amber-800 font-medium">
+                    📋 Required: You must delete all accounts first
+                  </div>
+                  <div className="text-sm text-amber-700 mt-1">
+                    Before deleting this organization, please remove all accounts
+                    from the Accounts section above. This ensures you understand
+                    exactly what data will be lost.
+                  </div>
+                </div>
+                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                  <div className="text-sm text-red-800 font-medium">
+                    ⚠️ Warning: This action cannot be undone
+                  </div>
+                  <div className="text-sm text-red-700 mt-1">
+                    Deleting this organization will permanently remove all
+                    associated data, reports, and settings.
+                  </div>
+                </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

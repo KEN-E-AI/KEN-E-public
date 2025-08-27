@@ -18,6 +18,7 @@ export function useAccountCreationProgress(accountId: string | null) {
   const [progress, setProgress] = useState<ProgressInfo | null>(null);
 
   useEffect(() => {
+    console.log("[useAccountCreationProgress] Hook called with accountId:", accountId);
     if (!accountId) return;
 
     let isSubscribed = true;
@@ -43,6 +44,8 @@ export function useAccountCreationProgress(accountId: string | null) {
           // Reset retry count on successful fetch
           retryCount = 0;
           successfulFetches++;
+          
+          console.log("[useAccountCreationProgress] Progress data received:", response.data);
           
           setProgress({
             percentage: response.data.percentage,

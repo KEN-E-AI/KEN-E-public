@@ -12,8 +12,7 @@ from src.kene_api.routers.accounts import (
 )
 
 
-@pytest.mark.asyncio
-async def test_update_account_progress():
+def test_update_account_progress():
     """Test updating account creation progress."""
     # Test data
     account_id = "acc_test123"
@@ -21,8 +20,8 @@ async def test_update_account_progress():
     message = "Generating strategy..."
     steps_status = ["completed", "completed", "processing", "pending", "pending"]
 
-    # Update progress
-    await update_account_progress(account_id, step, message, steps_status)
+    # Update progress (not async)
+    update_account_progress(account_id, step, message, steps_status)
 
     # Since we're using InMemoryCache, we can't directly verify the cache
     # but we can ensure the function runs without errors
