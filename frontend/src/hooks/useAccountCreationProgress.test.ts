@@ -1,10 +1,10 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import axios from "axios";
+import api from "@/lib/api";
 import { useAccountCreationProgress } from "./useAccountCreationProgress";
 
-// Mock axios
-vi.mock("axios");
+// Mock api
+vi.mock("@/lib/api");
 
 describe("useAccountCreationProgress", () => {
   beforeEach(() => {
@@ -37,7 +37,7 @@ describe("useAccountCreationProgress", () => {
       ],
     };
 
-    (axios.get as any).mockResolvedValue({ data: mockProgress });
+    (api.get as any).mockResolvedValue({ data: mockProgress });
 
     const { result } = renderHook(() =>
       useAccountCreationProgress("acc_test123"),
@@ -52,7 +52,7 @@ describe("useAccountCreationProgress", () => {
       });
     });
 
-    expect(axios.get).toHaveBeenCalledWith(
+    expect(api.get).toHaveBeenCalledWith(
       expect.stringContaining("/api/v1/accounts/acc_test123/creation-status"),
       expect.any(Object),
     );
@@ -77,7 +77,7 @@ describe("useAccountCreationProgress", () => {
       steps: [{ name: "Setting up database", status: "processing" }],
     };
 
-    (axios.get as any)
+    (api.get as any)
       .mockResolvedValueOnce({ data: mockProgress1 })
       .mockResolvedValueOnce({ data: mockProgress2 });
 
@@ -97,7 +97,7 @@ describe("useAccountCreationProgress", () => {
       expect(result.current?.percentage).toBe(40);
     });
 
-    expect(axios.get).toHaveBeenCalledTimes(2);
+    expect(api.get).toHaveBeenCalledTimes(2);
   });
 
   test("stops polling when status is completed", async () => {
@@ -116,19 +116,19 @@ describe("useAccountCreationProgress", () => {
       ],
     };
 
-    (axios.get as any).mockResolvedValue({ data: mockProgress });
+    (api.get as any).mockResolvedValue({ data: mockProgress });
 
     renderHook(() => useAccountCreationProgress("acc_test123"));
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(api.get).toHaveBeenCalledTimes(1);
     });
 
     // Advance timer - should not trigger more calls
     vi.advanceTimersByTime(5000);
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(1); // Still only 1 call
+      expect(api.get).toHaveBeenCalledTimes(1); // Still only 1 call
     });
   });
 
@@ -142,24 +142,24 @@ describe("useAccountCreationProgress", () => {
       steps: [],
     };
 
-    (axios.get as any).mockResolvedValue({ data: mockProgress });
+    (api.get as any).mockResolvedValue({ data: mockProgress });
 
     renderHook(() => useAccountCreationProgress("acc_test123"));
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(api.get).toHaveBeenCalledTimes(1);
     });
 
     // Advance timer - should not trigger more calls
     vi.advanceTimersByTime(5000);
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(1); // Still only 1 call
+      expect(api.get).toHaveBeenCalledTimes(1); // Still only 1 call
     });
   });
 
   test("continues polling on error", async () => {
-    (axios.get as any)
+    (api.get as any)
       .mockRejectedValueOnce(new Error("Network error"))
       .mockResolvedValueOnce({
         data: {
@@ -194,7 +194,7 @@ describe("useAccountCreationProgress", () => {
       expect(result.current?.percentage).toBe(40);
     });
 
-    expect(axios.get).toHaveBeenCalledTimes(2);
+    expect(api.get).toHaveBeenCalledTimes(2);
     consoleSpy.mockRestore();
   });
 
@@ -202,7 +202,7 @@ describe("useAccountCreationProgress", () => {
     const mockToken = "test-auth-token";
     Storage.prototype.getItem = vi.fn(() => mockToken);
 
-    (axios.get as any).mockResolvedValue({
+    (api.get as any).mockResolvedValue({
       data: {
         status: "processing",
         percentage: 50,
@@ -216,7 +216,7 @@ describe("useAccountCreationProgress", () => {
     renderHook(() => useAccountCreationProgress("acc_test123"));
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledWith(
+      expect(api.get).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
           headers: { Authorization: `Bearer ${mockToken}` },
@@ -228,7 +228,7 @@ describe("useAccountCreationProgress", () => {
   test("works without auth token", async () => {
     Storage.prototype.getItem = vi.fn(() => null);
 
-    (axios.get as any).mockResolvedValue({
+    (api.get as any).mockResolvedValue({
       data: {
         status: "processing",
         percentage: 50,
@@ -242,7 +242,7 @@ describe("useAccountCreationProgress", () => {
     renderHook(() => useAccountCreationProgress("acc_test123"));
 
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledWith(
+      expect(api.get).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
           headers: {},
@@ -254,7 +254,7 @@ describe("useAccountCreationProgress", () => {
   test("cleans up interval on unmount", () => {
     const clearIntervalSpy = vi.spyOn(global, "clearInterval");
 
-    (axios.get as any).mockResolvedValue({
+    (api.get as any).mockResolvedValue({
       data: {
         status: "processing",
         percentage: 50,

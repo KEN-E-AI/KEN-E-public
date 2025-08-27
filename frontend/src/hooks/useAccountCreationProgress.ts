@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import type {
   ProgressInfo,
   ProgressStep,
@@ -23,14 +23,9 @@ export function useAccountCreationProgress(accountId: string | null) {
 
     const fetchProgress = async () => {
       try {
-        // Get auth token if available
-        const token = localStorage.getItem("authToken");
-
-        const response = await axios.get<AccountCreationProgress>(
-          `${import.meta.env.VITE_API_BASE_URL}/api/v1/accounts/${accountId}/creation-status`,
-          {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          },
+        // Use the configured api instance which handles auth automatically
+        const response = await api.get<AccountCreationProgress>(
+          `/api/v1/accounts/${accountId}/creation-status`
         );
 
         if (response.data) {
