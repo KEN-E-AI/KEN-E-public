@@ -1,0 +1,44 @@
+# Redis Memory Utilization Alert Policy
+displayName: "KEN-E Redis High Memory Usage"
+documentation:
+  content: |
+    This alert fires when Redis memory utilization exceeds 85% for more than 5 minutes.
+    This may indicate:
+    1. Cache keys are not expiring properly
+    2. Memory limits need to be increased
+    3. Application is caching too much data
+
+    **Immediate Actions:**
+    1. Check Redis memory usage: `redis-cli info memory`
+    2. Review cache key TTL policies
+    3. Identify large keys: `redis-cli --bigkeys`
+    4. Consider scaling Redis instance
+
+    **Escalation:**
+    If memory usage continues to grow, contact the development team immediately.
+  mimeType: "text/markdown"
+
+conditions:
+  - displayName: "Redis memory utilization > 85%"
+    conditionThreshold:
+      filter: 'resource.type="redis_instance" AND metric.type="redis.googleapis.com/stats/memory/utilization"'
+      comparison: COMPARISON_GREATER_THAN
+      thresholdValue: 85.0
+      duration: 300s  # 5 minutes
+      aggregations:
+        - alignmentPeriod: 60s
+          perSeriesAligner: ALIGN_MEAN
+          crossSeriesReducer: REDUCE_MEAN
+          groupByFields:
+            - "resource.label.instance_id"
+
+alertStrategy:
+  autoClose: 86400s  # 24 hours
+
+combiner: OR
+
+enabled: true
+
+notificationChannels:
+  # Add your notification channels here
+  # - "projects/PROJECT_ID/notificationChannels/CHANNEL_ID"
