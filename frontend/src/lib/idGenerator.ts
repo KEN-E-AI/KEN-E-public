@@ -66,13 +66,6 @@ export function generateLogId(): string {
   return generateId("l");
 }
 
-/**
- * Generate a unique account ID - follows organization pattern
- * @returns Unique account ID string
- */
-export function generateAccountId(): string {
-  return generateId("acc_");
-}
 
 /**
  * Validate that an ID follows the expected format
