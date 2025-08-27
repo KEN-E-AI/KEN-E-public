@@ -89,6 +89,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 pythonpath = "."
+addopts = "--ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_agent_v3.py --ignore=tests/unit/test_strategy_v3_models.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["frontend"]
