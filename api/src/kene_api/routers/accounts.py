@@ -692,40 +692,8 @@ async def create_account(
             logger.error(f"[ACCOUNT_CREATION] Error type: {type(e).__name__}")
             raise
 
-        # DEBUG: Log the Neo4j query parameters
-        logger.info("=== NEO4J EXECUTION DEBUG ===")
-        logger.info(f"Query: {create_query}")
-        logger.info(f"Parameters: {params}")
-        logger.info(f"Params marketing_channels: {params.get('marketing_channels')}")
-        logger.info(
-            f"Params product_integrations: {params.get('product_integrations')}"
-        )
-
-        result = await db.execute_write_query(create_query, params)
-        logger.info(f"Neo4j query result: {result}")
-
-        # DEBUG: Verify the data was actually stored
-        verify_query = """
-        MATCH (acc:Account {account_id: $account_id})
-        RETURN acc.account_id, acc.marketing_channels, acc.product_integrations, acc
-        """
-        verify_result = await db.execute_query(verify_query, {"account_id": account_id})
-        logger.info("=== VERIFICATION RESULT ===")
-        logger.info(f"Verification query result: {verify_result}")
-        if verify_result and len(verify_result) > 0:
-            account_data = verify_result[0]
-            logger.info(f"Found account: {account_data}")
-            logger.info(
-                f"Stored marketing_channels: {account_data.get('acc.marketing_channels')}"
-            )
-            logger.info(
-                f"Stored product_integrations: {account_data.get('acc.product_integrations')}"
-            )
-        else:
-            logger.error(
-                f"CRITICAL: Account {account_id} not found in Neo4j after creation!"
-            )
-        logger.info("=== ACCOUNT CREATION DEBUG END ===")
+        # Account creation successful - log completion
+        logger.info(f"=== ACCOUNT CREATION COMPLETE for {account_id} ===")
 
         # Invalidate the creating user's cache to ensure their context includes the new account
         from ..auth.cached_user_context import get_cached_user_context_service
