@@ -82,7 +82,20 @@ class Neo4jService:
                 # Use session.execute_read for read queries
                 async def _execute_query(tx):
                     result = await tx.run(query, parameters)
-                    return await result.data()
+                    data = await result.data()
+                    
+                    # Debug logging for account queries
+                    if "Account" in query and data:
+                        logger.info(f"[DEBUG Neo4j] Query contains 'Account', checking data structure")
+                        for i, record in enumerate(data[:1]):  # Just log first record
+                            if 'acc' in record:
+                                acc = record['acc']
+                                logger.info(f"[DEBUG Neo4j] Account properties present: {list(acc.keys()) if isinstance(acc, dict) else 'not a dict'}")
+                                if isinstance(acc, dict) and 'marketing_channels' in acc:
+                                    mc = acc['marketing_channels']
+                                    logger.info(f"[DEBUG Neo4j] marketing_channels value: {mc}, type: {type(mc)}")
+                    
+                    return data
 
                 records = await session.execute_read(_execute_query)
                 return records
@@ -92,16 +105,16 @@ class Neo4jService:
 
     async def execute_write_query(
         self, query: str, parameters: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    ) -> list[dict[str, Any]]:
         """
-        Execute a write query (CREATE, UPDATE, DELETE) and return summary.
+        Execute a write query that returns data (CREATE/MERGE with RETURN).
 
         Args:
             query: Cypher query string
             parameters: Query parameters
 
         Returns:
-            Dictionary containing query summary information
+            List of dictionaries representing query results
         """
         if parameters is None:
             parameters = {}
@@ -115,14 +128,7 @@ class Neo4jService:
                     # Use session.execute_write for write queries
                     async def _execute_write_query(tx):
                         result = await tx.run(query, parameters)
-                        summary = await result.consume()
-                        return {
-                            "nodes_created": summary.counters.nodes_created,
-                            "nodes_deleted": summary.counters.nodes_deleted,
-                            "relationships_created": summary.counters.relationships_created,
-                            "relationships_deleted": summary.counters.relationships_deleted,
-                            "properties_set": summary.counters.properties_set,
-                        }
+                        return await result.data()
 
                     result = await session.execute_write(_execute_write_query)
                     if attempt > 0:
@@ -141,6 +147,58 @@ class Neo4jService:
                             pass  # Continue with retry
                 else:
                     logger.error(f"Write query execution failed after {attempt + 1} attempts: {e}")
+                    raise
+
+    async def execute_write_operation(
+        self, query: str, parameters: dict[str, Any] | None = None
+    ) -> dict[str, int]:
+        """
+        Execute a write operation that returns summary (DELETE/UPDATE without RETURN).
+
+        Args:
+            query: Cypher query string
+            parameters: Query parameters
+
+        Returns:
+            Dictionary with operation summary counters
+            (nodes_created, nodes_deleted, relationships_created, relationships_deleted, properties_set)
+        """
+        if parameters is None:
+            parameters = {}
+
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                async with self.get_session() as session:
+                    # Use session.execute_write for write operations
+                    async def _execute_write_operation(tx):
+                        result = await tx.run(query, parameters)
+                        summary = await result.consume()
+                        return {
+                            "nodes_created": summary.counters.nodes_created,
+                            "nodes_deleted": summary.counters.nodes_deleted,
+                            "relationships_created": summary.counters.relationships_created,
+                            "relationships_deleted": summary.counters.relationships_deleted,
+                            "properties_set": summary.counters.properties_set,
+                        }
+
+                    result = await session.execute_write(_execute_write_operation)
+                    if attempt > 0:
+                        logger.info(f"Neo4j write operation succeeded on retry {attempt + 1}")
+                    return result
+            except Neo4jError as e:
+                if attempt < max_retries - 1 and "defunct connection" in str(e).lower():
+                    logger.debug(f"Neo4j connection issue (attempt {attempt + 1}/{max_retries}), retrying...")
+                    await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    if self.driver:
+                        try:
+                            await self.driver.verify_connectivity()
+                        except:
+                            pass  # Continue with retry
+                else:
+                    logger.error(f"Write operation execution failed after {attempt + 1} attempts: {e}")
                     raise
 
     async def health_check(self) -> bool:

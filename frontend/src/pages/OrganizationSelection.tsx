@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -306,90 +306,122 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
     }
   }, [loadingUserData, orgsFromFirestore, isSuperAdmin]);
 
-  useEffect(() => {
-    const fetchOrgMetadata = async () => {
-      const entries: [string, any][] = await Promise.all(
-        Object.keys(orgsFromFirestore).map(async (orgId) => {
-          try {
-            // Fetch from Neo4j as the source of truth
-            const org = await getOrganizationById(orgId);
+  // Extract fetchOrgMetadata as a standalone function for reuse
+  const fetchOrgMetadata = async () => {
+    const entries: [string, any][] = await Promise.all(
+      Object.keys(orgsFromFirestore).map(async (orgId) => {
+        try {
+          // Fetch from Neo4j as the source of truth
+          const org = await getOrganizationById(orgId);
 
-            // Fetch accounts for this organization
-            const accounts = await getAccountsByOrganizationId(orgId);
+          // Fetch accounts for this organization
+          const accounts = await getAccountsByOrganizationId(orgId);
 
-            if (org) {
-              return [orgId, { ...org, accounts }];
-            } else {
-              // Organization not found - this is expected for some users
-              return [
-                orgId,
-                { organization_id: orgId, organization_name: orgId, accounts },
-              ];
-            }
-          } catch (err: any) {
-            // Handle deleted organizations gracefully
-            if (
-              err.response?.status === 404 ||
-              err.message ===
-                `Resource not found: /api/v1/organizations/${orgId}`
-            ) {
-              // Organization was deleted but user still has permissions
-              // Return null to filter it out later
-              return [orgId, null];
-            }
-
-            // Log other errors
-            console.error(`Failed to load org metadata for ${orgId}`, err);
+          if (org) {
+            return [orgId, { ...org, accounts }];
+          } else {
+            // Organization not found - this is expected for some users
             return [
               orgId,
-              {
-                organization_id: orgId,
-                organization_name: orgId,
-                accounts: [],
-                error: true,
-              },
+              { organization_id: orgId, organization_name: orgId, accounts },
             ];
           }
-        }),
+        } catch (err: any) {
+          // Handle deleted organizations gracefully
+          if (
+            err.response?.status === 404 ||
+            err.message === `Resource not found: /api/v1/organizations/${orgId}`
+          ) {
+            // Organization was deleted but user still has permissions
+            // Return null to filter it out later
+            return [orgId, null];
+          }
+
+          // Log other errors
+          console.error(`Failed to load org metadata for ${orgId}`, err);
+          return [
+            orgId,
+            {
+              organization_id: orgId,
+              organization_name: orgId,
+              accounts: [],
+              error: true,
+            },
+          ];
+        }
+      }),
+    );
+
+    // Filter out null entries (deleted organizations)
+    const filteredEntries = entries.filter(([_, value]) => value !== null);
+    const result = Object.fromEntries(filteredEntries);
+
+    // Also remove deleted organizations from orgsFromFirestore
+    const deletedOrgIds = entries
+      .filter(([_, value]) => value === null)
+      .map(([orgId, _]) => orgId);
+
+    if (deletedOrgIds.length > 0) {
+      console.warn(
+        `Found ${deletedOrgIds.length} deleted organizations in user permissions:`,
+        deletedOrgIds,
       );
 
-      // Filter out null entries (deleted organizations)
-      const filteredEntries = entries.filter(([_, value]) => value !== null);
-      const result = Object.fromEntries(filteredEntries);
-
-      // Also remove deleted organizations from orgsFromFirestore
-      const deletedOrgIds = entries
-        .filter(([_, value]) => value === null)
-        .map(([orgId, _]) => orgId);
-
-      if (deletedOrgIds.length > 0) {
-        console.warn(
-          `Found ${deletedOrgIds.length} deleted organizations in user permissions:`,
-          deletedOrgIds,
-        );
-
-        // Update orgsFromFirestore to remove deleted organizations
-        setOrgsFromFirestore((prev) => {
-          const updated = { ...prev };
-          deletedOrgIds.forEach((orgId) => delete updated[orgId]);
-          return updated;
-        });
-      }
-
-      setLocalOrgMetadata(result);
-      setOrgMetadata(result); // from context
-
-      const flattenedAccounts: Record<string, any> = {};
-      Object.values(result).forEach((org: any) => {
-        (org.accounts || []).forEach((acc: any) => {
-          flattenedAccounts[acc.account_id] = acc;
-        });
+      // Update orgsFromFirestore to remove deleted organizations
+      setOrgsFromFirestore((prev) => {
+        const updated = { ...prev };
+        deletedOrgIds.forEach((orgId) => delete updated[orgId]);
+        return updated;
       });
-      setAccountMetadata(flattenedAccounts); // from context
-    };
+    }
 
+    setLocalOrgMetadata(result);
+    setOrgMetadata(result); // from context
+
+    const flattenedAccounts: Record<string, any> = {};
+    Object.values(result).forEach((org: any) => {
+      (org.accounts || []).forEach((acc: any) => {
+        flattenedAccounts[acc.account_id] = acc;
+      });
+    });
+    setAccountMetadata(flattenedAccounts); // from context
+  };
+
+  useEffect(() => {
     if (Object.keys(orgsFromFirestore).length > 0) {
       fetchOrgMetadata();
+    }
+  }, [orgsFromFirestore]);
+
+  // Function to refresh organization metadata after account creation
+  const refreshOrgMetadata = async () => {
+    if (Object.keys(orgsFromFirestore).length > 0) {
+      await fetchOrgMetadata();
+    }
+  };
+
+  // Add a ref to track last refresh time to avoid excessive API calls
+  const lastRefreshTime = useRef<number>(0);
+
+  // Refresh metadata when component mounts or when returning from other pages
+  useEffect(() => {
+    const now = Date.now();
+    // Only refresh if more than 30 seconds have passed since last refresh
+    if (now - lastRefreshTime.current > 30000) {
+      refreshOrgMetadata();
+      lastRefreshTime.current = now;
+    }
+  }, []); // Run only on mount
+
+  // Also refresh when orgsFromFirestore changes (user permissions updated)
+  useEffect(() => {
+    if (Object.keys(orgsFromFirestore).length > 0) {
+      const now = Date.now();
+      if (now - lastRefreshTime.current > 5000) {
+        // 5 second minimum between refreshes
+        refreshOrgMetadata();
+        lastRefreshTime.current = now;
+      }
     }
   }, [orgsFromFirestore]);
 

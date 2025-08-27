@@ -13,6 +13,8 @@ async function apiCall<T>(
     method?: string;
     data?: any;
     params?: any;
+    headers?: Record<string, string>;
+    timeout?: number;
   } = {},
 ): Promise<T> {
   try {
@@ -21,10 +23,20 @@ async function apiCall<T>(
       method: options.method || "GET",
       data: options.data,
       params: options.params,
+      headers: options.headers,
+      timeout: options.timeout || 30000, // Default 30 second timeout
     });
 
     return response.data;
   } catch (error: any) {
+    // Enhanced error handling for timeout and connection issues
+    if (error.code === "ECONNABORTED" || error.code === "ETIME") {
+      console.error(`[organizationApi] Request timeout for: ${path}`);
+      throw new Error(
+        `Request timeout. The operation took too long to complete.`,
+      );
+    }
+
     // Only log non-404 errors at error level
     if (error.response?.status === 404) {
       console.debug(`[organizationApi] Resource not found: ${path}`);
@@ -32,6 +44,7 @@ async function apiCall<T>(
       console.error(`[organizationApi] API Error:`, error);
       console.error(`[organizationApi] Response data:`, error.response?.data);
     }
+
     if (error.response?.data?.detail) {
       throw new Error(error.response.data.detail);
     }
@@ -144,19 +157,40 @@ export async function getAccountById(
   }
 }
 
-export async function createAccount(accountData: {
-  account_name: string;
-  organization_id: string;
-  industry: string;
-  status: string;
-  websites: string[];
-  timezone: string;
-  data_region?: string;
-  region?: string[];
-  estimated_annual_ad_budget?: number | null;
-  business_strategy_documents?: File[];
-}): Promise<Account> {
+export async function createAccount(
+  accountData: {
+    account_name: string;
+    organization_id: string;
+    industry: string;
+    status: string;
+    websites: string[];
+    timezone: string;
+    data_region?: string;
+    region?: string[];
+    marketing_channels?: string[];
+    product_integrations?: string[];
+    estimated_annual_ad_budget?: number | null;
+    business_strategy_documents?: File[];
+  },
+  options?: {
+    idempotencyKey?: string;
+    timeout?: number;
+  },
+): Promise<Account> {
   console.log("[organizationApi] Creating account with data:", accountData);
+
+  // Prepare headers with idempotency support
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (options?.idempotencyKey) {
+    headers["Idempotency-Key"] = options.idempotencyKey;
+    console.log(
+      "[organizationApi] Using idempotency key:",
+      options.idempotencyKey,
+    );
+  }
 
   // If there are files to upload, we need to handle it separately
   if (
@@ -169,6 +203,8 @@ export async function createAccount(accountData: {
     const newAccount = await apiCall<Account>("/api/v1/accounts/", {
       method: "POST",
       data: accountDataWithoutFiles,
+      headers,
+      timeout: options?.timeout || 45000, // 45 seconds for account creation
     });
 
     // Then upload the files
@@ -204,6 +240,8 @@ export async function createAccount(accountData: {
   return apiCall<Account>("/api/v1/accounts/", {
     method: "POST",
     data: accountData,
+    headers,
+    timeout: options?.timeout || 45000, // 45 seconds for account creation
   });
 }
 

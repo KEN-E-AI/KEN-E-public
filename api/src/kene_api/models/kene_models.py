@@ -967,6 +967,12 @@ class Account(BaseModel):
     setup_completed_at: datetime | None = Field(
         default=None, description="When strategy generation completed"
     )
+    marketing_channels: list[str] = Field(
+        default_factory=list, description="List of marketing channels"
+    )
+    product_integrations: list[str] = Field(
+        default_factory=list, description="List of product integrations"
+    )
 
 
 class OrganizationRequest(BaseModel):
@@ -1010,6 +1016,12 @@ class AccountRequest(BaseModel):
     )
     estimated_annual_ad_budget: int | None = Field(
         None, description="Estimated annual advertising budget in USD"
+    )
+    marketing_channels: list[str] | None = Field(
+        None, description="List of marketing channels"
+    )
+    product_integrations: list[str] | None = Field(
+        None, description="List of product integrations"
     )
 
 
@@ -1075,3 +1087,78 @@ class ChangeSubscriptionRequest(BaseModel):
     """Request model for changing organization subscription plan."""
 
     plan_id: str = Field(..., description="The ID of the new subscription plan")
+
+
+# Industry Template Models
+class IndustryTemplateSettings(BaseModel):
+    """Settings recommended for an industry template."""
+
+    timezone: str = Field(..., description="Recommended timezone")
+    data_region: str = Field(..., description="Recommended data region")
+    industry: str = Field(..., description="Industry name")
+
+
+class IndustryTemplateDefaults(BaseModel):
+    """Default settings for an industry template."""
+
+    data_retention: int = Field(90, description="Data retention period in days")
+
+
+class IndustryTemplate(BaseModel):
+    """Industry template model for account creation guidance."""
+
+    id: str = Field(..., description="Unique identifier for the template")
+    industry: str = Field(..., description="Industry name")
+    name: str | None = Field(None, description="Template display name (deprecated)")
+    description: str = Field(..., description="Industry description")
+    default_objectives: list[str] = Field(
+        default_factory=list,
+        description="Default marketing objectives",
+        alias="defaultObjectives",
+    )
+    default_channels: list[str] = Field(
+        default_factory=list,
+        description="Default marketing channels",
+        alias="defaultChannels",
+    )
+    default_kpis: list[str] = Field(
+        default_factory=list, description="Default KPIs to track", alias="defaultKPIs"
+    )
+    marketing_channels: list[str] = Field(
+        default_factory=list,
+        description="Recommended marketing channels",
+        alias="marketingChannels",
+    )
+    product_integrations: list[str] = Field(
+        default_factory=list,
+        description="Recommended product integrations",
+        alias="productIntegrations",
+    )
+    recommended_settings: IndustryTemplateSettings | None = Field(
+        None,
+        description="Recommended configuration settings (deprecated)",
+        alias="recommendedSettings",
+    )
+    default_settings: IndustryTemplateDefaults | None = Field(
+        None,
+        description="Default settings values (deprecated)",
+        alias="defaultSettings",
+    )
+    is_active: bool = Field(
+        True, description="Whether this template is currently available"
+    )
+    created_at: str = Field(..., description="Template creation timestamp")
+    updated_at: str = Field(..., description="Template last update timestamp")
+
+    class Config:
+        populate_by_name = True  # Allow both field name and alias to work
+        by_alias = False  # Use field names (snake_case) in output, not aliases
+
+
+class IndustryTemplateListResponse(BaseModel):
+    """Response model for industry template list."""
+
+    templates: list[IndustryTemplate] = Field(
+        ..., description="List of industry templates"
+    )
+    total: int = Field(..., description="Total number of templates")

@@ -13,6 +13,7 @@ import {
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import "./App.css";
 
 import Index from "./pages/Index";
@@ -95,12 +96,13 @@ const AuthenticationPage = () => {
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <AuthProvider>
-        <AccountOperationsProvider>
-          <BrowserRouter>
-            <Routes>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <AuthProvider>
+          <AccountOperationsProvider>
+            <BrowserRouter>
+              <Routes>
               {/* Unprotected routes */}
               <Route path="/auth/signin" element={<AuthenticationPage />} />
               <Route path="/auth/signup" element={<AuthenticationPage />} />
@@ -318,6 +320,7 @@ const App = () => (
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

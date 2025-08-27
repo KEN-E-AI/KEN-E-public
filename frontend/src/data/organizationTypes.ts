@@ -59,6 +59,10 @@ export interface Account {
   timezone: string;
   data_region: string;
   region: string[];
+  marketing_channels?: string[];
+  product_integrations?: string[];
+  estimated_annual_ad_budget?: number | null;
+  description?: string;
   created_at?: string;
   updated_at?: string;
 }

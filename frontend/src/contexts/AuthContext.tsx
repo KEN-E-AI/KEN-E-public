@@ -16,6 +16,7 @@ import {
   tryOrganizationId,
   tryAccountId,
 } from "@/lib/branded-types";
+import { validateAndCleanAuthState } from "@/utils/authRecovery";
 
 interface User {
   id: UserId;
@@ -111,6 +112,7 @@ interface AuthContextType {
   setAccountMetadata: (data: Record<string, any>) => void;
   notifications: Notification[];
   setNotifications: (n: Notification[]) => void;
+  refreshNotifications: () => Promise<void>;
   notificationSettings: NotificationSetting[];
   securitySettings: SecuritySetting[];
   setNotificationSettings: (settings: NotificationSetting[]) => void;
@@ -282,6 +284,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  /**
+   * Refreshes notifications for the currently selected account.
+   * This can be called after creating an account or when notifications need to be updated.
+   */
+  const refreshNotifications = async () => {
+    if (selectedOrgAccount?.accountId) {
+      console.log(
+        "🔄 Refreshing notifications for account:",
+        selectedOrgAccount.accountId,
+      );
+      await fetchNotifications(selectedOrgAccount.accountId);
+    } else {
+      console.log("⚠️ No account selected, cannot refresh notifications");
+    }
+  };
+
   // Sync with Firebase auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -318,6 +336,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Initialize auth state from localStorage on component mount
   useEffect(() => {
+    // First, validate and clean any corrupted auth state
+    validateAndCleanAuthState().then((result) => {
+      if (result.clearedItems.length > 0) {
+        console.warn('Auth state recovery performed:', result.message);
+      }
+    });
+    
     const savedWorkspaceSelection = localStorage.getItem(
       "hasSelectedWorkspace",
     );
@@ -342,21 +367,32 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     if (savedOrgAccount) {
       try {
         const parsedOrgAccount = JSON.parse(savedOrgAccount);
-        // Convert IDs to branded types
-        if (parsedOrgAccount.orgId) {
-          parsedOrgAccount.orgId = toOrganizationId(parsedOrgAccount.orgId);
+        // Ensure the parsed object is valid and has the expected structure
+        if (parsedOrgAccount && typeof parsedOrgAccount === "object") {
+          // Convert IDs to branded types
+          if (parsedOrgAccount.orgId) {
+            parsedOrgAccount.orgId = toOrganizationId(parsedOrgAccount.orgId);
+          }
+          if (parsedOrgAccount.accountId) {
+            parsedOrgAccount.accountId = toAccountId(
+              parsedOrgAccount.accountId,
+            );
+          }
+          setSelectedOrgAccountState(parsedOrgAccount);
+        } else {
+          console.warn("Invalid savedOrgAccount structure:", parsedOrgAccount);
+          // Clear invalid data from localStorage
+          localStorage.removeItem("selectedOrgAccount");
         }
-        if (parsedOrgAccount.accountId) {
-          parsedOrgAccount.accountId = toAccountId(parsedOrgAccount.accountId);
-        }
-        setSelectedOrgAccountState(parsedOrgAccount);
         // Don't fetch notifications here - wait for Firebase auth
       } catch (err) {
         console.warn("Failed to parse savedOrgAccount", err);
+        // Clear invalid data from localStorage
+        localStorage.removeItem("selectedOrgAccount");
       }
     }
 
-    if (savedOrgMetadata) {
+    if (savedOrgMetadata && savedOrgMetadata !== "undefined") {
       try {
         setOrgMetadataState(JSON.parse(savedOrgMetadata));
       } catch (err) {
@@ -364,7 +400,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
     }
 
-    if (savedAccountMetadata) {
+    if (savedAccountMetadata && savedAccountMetadata !== "undefined") {
       try {
         setAccountMetadataState(JSON.parse(savedAccountMetadata));
       } catch (err) {
@@ -372,6 +408,38 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
     }
   }, []); // Add empty dependency array to run only on mount
+
+  // Synchronize accountMetadata with orgMetadata.accounts to fix EntitySelector
+  useEffect(() => {
+    const flattenAccounts = (
+      orgData: Record<string, any>,
+    ): Record<string, any> => {
+      const flattened: Record<string, any> = {};
+
+      for (const org of Object.values(orgData)) {
+        if (org?.accounts && Array.isArray(org.accounts)) {
+          for (const account of org.accounts) {
+            if (account?.account_id) {
+              flattened[account.account_id] = account;
+            }
+          }
+        }
+      }
+
+      return flattened;
+    };
+
+    const newAccountMetadata = flattenAccounts(orgMetadata);
+
+    // Only update if there's actual data and it's different from current state
+    if (Object.keys(newAccountMetadata).length > 0) {
+      setAccountMetadataState(newAccountMetadata);
+      localStorage.setItem(
+        "accountMetadata",
+        JSON.stringify(newAccountMetadata),
+      );
+    }
+  }, [orgMetadata]);
 
   // Fetch notifications when we have both auth and selected account
   useEffect(() => {
@@ -405,6 +473,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setAccountMetadata,
     notifications,
     setNotifications,
+    refreshNotifications,
     notificationSettings,
     securitySettings,
     setNotificationSettings,

@@ -13,6 +13,7 @@ class TestEmailService:
         """Test initialization with API key present."""
         with patch.dict(os.environ, {"SENDGRID_API_KEY": "test-key"}):
             service = EmailService()
+            service._ensure_initialized()  # Trigger lazy initialization
             assert service.api_key == "test-key"
             assert service.client is not None
             assert service.from_email == "noreply@ken-e.ai"
@@ -22,7 +23,8 @@ class TestEmailService:
         """Test initialization without API key."""
         with patch.dict(os.environ, {}, clear=True):
             service = EmailService()
-            assert service.api_key is None
+            service._ensure_initialized()  # Trigger lazy initialization
+            assert service.api_key == ""  # get_env_var_or_secret returns empty string by default
             assert service.client is None
 
     def test_init_with_custom_values(self):
@@ -37,6 +39,7 @@ class TestEmailService:
             },
         ):
             service = EmailService()
+            service._ensure_initialized()  # Trigger lazy initialization
             assert service.from_email == "custom@example.com"
             assert service.from_name == "Custom Team"
             assert service.app_base_url == "https://app.example.com"

@@ -104,6 +104,7 @@ class TestCachedUserContextService:
             "accessible_accounts": user_context.accessible_accounts,
             "permissions": user_context.permissions,
             "organization_permissions": user_context.organization_permissions,
+            "account_permissions": user_context.account_permissions,
         }
         cached_service.redis.set_json.assert_called_once_with(
             "user_context:test-user-123",

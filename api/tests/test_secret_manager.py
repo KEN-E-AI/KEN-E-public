@@ -35,9 +35,13 @@ class TestGetSecret:
         
         # Assert
         assert result == "test_secret_value"
-        mock_client.access_secret_version.assert_called_once_with(
-            request={"name": secret_path}
-        )
+        # Check that access_secret_version was called with the correct request
+        # Note: We now also pass timeout and retry parameters
+        mock_client.access_secret_version.assert_called_once()
+        call_args = mock_client.access_secret_version.call_args
+        assert call_args.kwargs['request'] == {"name": secret_path}
+        assert call_args.kwargs['timeout'] == 10.0
+        assert 'retry' in call_args.kwargs
 
     @patch('src.kene_api.secret_manager.secretmanager.SecretManagerServiceClient')
     def test_get_secret_failure(self, mock_client_class):
@@ -157,8 +161,27 @@ class TestGetEnvVarOrSecret:
             mock_get_secret.assert_called_once_with(secret_path)
 
     @patch('src.kene_api.secret_manager.get_secret')
-    def test_get_env_var_or_secret_secret_failure_fallback(self, mock_get_secret):
-        """Test fallback to original value when Secret Manager fails."""
+    def test_get_env_var_or_secret_secret_failure_raises(self, mock_get_secret):
+        """Test raises SecretManagerError when Secret Manager fails."""
+        # Arrange
+        from src.kene_api.exceptions import SecretManagerError
+        
+        env_var = "TEST_SECRET_VAR"
+        secret_path = "projects/123/secrets/test-secret/versions/latest"
+        mock_get_secret.side_effect = Exception("Secret access failed")
+        
+        with patch.dict(os.environ, {env_var: secret_path}):
+            # Act & Assert
+            with pytest.raises(SecretManagerError) as exc_info:
+                get_env_var_or_secret(env_var)
+            
+            assert "Secret Manager access failed" in str(exc_info.value)
+            assert exc_info.value.env_var == env_var
+            assert exc_info.value.secret_path == secret_path
+    
+    @patch('src.kene_api.secret_manager.get_secret')
+    def test_get_env_var_or_secret_with_allow_failure(self, mock_get_secret):
+        """Test returns empty string when allow_failure=True and Secret Manager fails."""
         # Arrange
         env_var = "TEST_SECRET_VAR"
         secret_path = "projects/123/secrets/test-secret/versions/latest"
@@ -166,10 +189,10 @@ class TestGetEnvVarOrSecret:
         
         with patch.dict(os.environ, {env_var: secret_path}):
             # Act
-            result = get_env_var_or_secret(env_var)
+            result = get_env_var_or_secret(env_var, allow_failure=True)
             
             # Assert
-            assert result == secret_path  # Falls back to original path
+            assert result == ""  # Returns empty string with allow_failure=True
 
     def test_get_env_var_or_secret_missing_env_var(self):
         """Test with missing environment variable."""
@@ -339,8 +362,8 @@ class TestSecretManagerIntegration:
             secret_path = f"projects/123/secrets/{env_var.lower().replace('_', '-')}/versions/latest"
             
             with patch.dict(os.environ, {env_var: secret_path}):
-                # Act
-                result = get_env_var_or_secret(env_var)
+                # Act - Use allow_failure=True for backward compatibility in tests
+                result = get_env_var_or_secret(env_var, allow_failure=True)
                 
                 # Assert
                 assert result == api_key

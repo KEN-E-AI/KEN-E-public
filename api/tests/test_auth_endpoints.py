@@ -40,8 +40,8 @@ def mock_user_permissions():
                 "acc_456": "viewer",
             },
             "organizations": {
-                "org_123": "owner",
-                "org_456": "member",
+                "org_123": "admin",
+                "org_456": "view",
             },
         },
     }

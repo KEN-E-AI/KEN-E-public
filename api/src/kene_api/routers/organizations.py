@@ -301,14 +301,14 @@ async def create_organization(
 
         await db.execute_write_query(create_query, params)
 
-        # Grant the creating user owner permissions on the new organization
+        # Grant the creating user admin permissions on the new organization
         firestore_service = get_firestore_service()
         try:
             success = firestore_service.set_nested_field(
                 collection="users",
                 document_id=user.user_id,
                 field_path=f"permissions.organizations.{organization_id}",
-                value="owner",
+                value="admin",
             )
             if not success:
                 # If we can't grant permissions, rollback the organization creation
@@ -323,7 +323,7 @@ async def create_organization(
                     MATCH (org:Organization {organization_id: $organization_id})
                     DELETE org
                     """
-                    await db.execute_write_query(
+                    await db.execute_write_operation(
                         delete_query, {"organization_id": organization_id}
                     )
                     logger.info(
@@ -340,7 +340,16 @@ async def create_organization(
                 )
 
             logger.info(
-                f"Granted owner permissions to user {user.user_id} for organization {organization_id}"
+                f"Granted admin permissions to user {user.user_id} for organization {organization_id}"
+            )
+
+            # Invalidate the creating user's cache to ensure their context includes the new organization
+            from ..auth.cached_user_context import get_cached_user_context_service
+
+            cached_user_service = get_cached_user_context_service()
+            cached_user_service.invalidate_user_context(user.user_id)
+            logger.info(
+                f"Invalidated cache for user {user.user_id} after creating organization {organization_id}"
             )
 
         except HTTPException:
@@ -358,7 +367,7 @@ async def create_organization(
                 MATCH (org:Organization {organization_id: $organization_id})
                 DELETE org
                 """
-                await db.execute_write_query(
+                await db.execute_write_operation(
                     delete_query, {"organization_id": organization_id}
                 )
                 logger.info(f"Successfully rolled back organization {organization_id}")
@@ -516,7 +525,7 @@ async def check_user_organization_permission(
     Args:
         account_id: The user's account ID
         organization_id: The organization ID
-        required_roles: List of acceptable roles (e.g., ["admin", "owner"])
+        required_roles: List of acceptable roles (e.g., ["admin", "view"])
         firestore_service: Firestore service instance
 
     Returns:
@@ -618,7 +627,7 @@ async def verify_subscription_prerequisites(
 
     # Check user permissions
     has_permission = await check_user_organization_permission(
-        account_id, organization_id, ["admin", "owner"], firestore_service
+        account_id, organization_id, ["admin"], firestore_service
     )
     if not has_permission:
         raise HTTPException(
@@ -716,7 +725,7 @@ async def change_organization_subscription(
     - Updated organization object with new subscription details
 
     **Authorization:**
-    - User must have admin or owner permissions for the organization
+    - User must have admin permissions for the organization
     """
     try:
         # Get Firestore service
@@ -1078,6 +1087,7 @@ async def move_account_to_organization(
 @router.delete("/{organization_id}", response_model=SuccessResponse)
 async def delete_organization(
     organization_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
     firestore_service=Depends(get_firestore_service),
 ) -> SuccessResponse:
@@ -1094,8 +1104,19 @@ async def delete_organization(
     ```
     DELETE /api/v1/organizations/healthway
     ```
+    
+    **Note:** User must have admin permissions for the organization.
     """
     try:
+        # Check if user has permission to delete this organization
+        if not user.is_super_admin:
+            # Check if user has admin role for this organization
+            user_role = user.organization_permissions.get(organization_id)
+            if user_role != "admin":
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"You do not have permission to delete organization {organization_id}",
+                )
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
@@ -1128,7 +1149,7 @@ async def delete_organization(
         DETACH DELETE org
         """
 
-        summary = await db.execute_write_query(
+        summary = await db.execute_write_operation(
             delete_query, {"organization_id": organization_id}
         )
 

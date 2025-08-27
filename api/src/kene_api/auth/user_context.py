@@ -50,18 +50,18 @@ async def get_current_user_context(
     user_agent = request.headers.get("User-Agent")
     audit_logger = get_audit_logger()
 
-    # Apply rate limiting
-    try:
-        token_rate_limiter.check_rate_limit(request)
-    except HTTPException as e:
-        if e.status_code == 429:
-            await audit_logger.log_rate_limit_exceeded(
-                ip_address=client_ip or "unknown",
-                endpoint=str(request.url),
-            )
-        raise
-
     if not credentials:
+        # Apply rate limiting for missing credentials
+        try:
+            token_rate_limiter.check_rate_limit(request)
+        except HTTPException as e:
+            if e.status_code == 429:
+                await audit_logger.log_rate_limit_exceeded(
+                    ip_address=client_ip or "unknown",
+                    endpoint=str(request.url),
+                )
+            raise
+        
         await audit_logger.log_login_failure(
             ip_address=client_ip,
             user_agent=user_agent,
@@ -78,6 +78,34 @@ async def get_current_user_context(
         decoded_token = verify_id_token(credentials.credentials)
         user_id = decoded_token["uid"]
         email = decoded_token.get("email", "")
+
+        # Check if user is super admin (before rate limiting)
+        # Super admins are identified by @ken-e.ai email domain
+        is_super_admin = email.lower().endswith("@ken-e.ai")
+        
+        # Apply rate limiting only for non-super admins
+        if not is_super_admin:
+            try:
+                token_rate_limiter.check_rate_limit(request)
+            except HTTPException as e:
+                if e.status_code == 429:
+                    await audit_logger.log_rate_limit_exceeded(
+                        ip_address=client_ip or "unknown",
+                        endpoint=str(request.url),
+                    )
+                raise
+        else:
+            # Log that super admin bypassed rate limiting
+            logger.debug(f"Super admin {email} bypassed rate limiting")
+            await audit_logger.log_event(
+                event_type=SecurityEventType.LOGIN_SUCCESS,
+                user_id=user_id,
+                email=email,
+                ip_address=client_ip,
+                user_agent=user_agent,
+                details={"action": "rate_limit_bypass", "reason": "super_admin"},
+                severity="INFO",
+            )
 
         # Check if token is revoked
         token_revocation = get_token_revocation_service()
@@ -105,6 +133,19 @@ async def get_current_user_context(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
+        # Apply rate limiting for failed authentication attempts
+        try:
+            token_rate_limiter.check_rate_limit(request)
+        except HTTPException as rate_error:
+            if rate_error.status_code == 429:
+                await audit_logger.log_rate_limit_exceeded(
+                    ip_address=client_ip or "unknown",
+                    endpoint=str(request.url),
+                )
+            # Log both the auth failure and rate limit
+            logger.error(f"Failed to verify token: {e}")
+            raise rate_error
+            
         logger.error(f"Failed to verify token: {e}")
         await audit_logger.log_event(
             event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,

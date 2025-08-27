@@ -2,13 +2,12 @@
 
 import logging
 import os
+from datetime import datetime
 from typing import Any
 
 from fastapi import UploadFile
 from google.api_core import exceptions
 from google.cloud import storage
-
-from ..models.kene_models import SuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +140,11 @@ class StorageService:
 
         try:
             bucket = self.client.get_bucket(bucket_name)
-        except exceptions.NotFound:
+        except exceptions.NotFound as e:
             # This shouldn't happen since we ensured bucket exists, but handle it
-            raise Exception(f"Bucket {bucket_name} not found after ensuring it exists")
+            raise Exception(
+                f"Bucket {bucket_name} not found after ensuring it exists"
+            ) from e
 
         uploaded_files = []
 
@@ -170,7 +171,9 @@ class StorageService:
                     "content_type": file.content_type,
                     "bucket": bucket_name,
                     "gcs_url": f"gs://{bucket_name}/{blob_path}",
-                    "public_url": blob.public_url if blob.public_url_set else None,
+                    "public_url": blob.public_url
+                    if hasattr(blob, "public_url")
+                    else None,
                 }
 
                 uploaded_files.append(file_info)
@@ -287,6 +290,53 @@ class StorageService:
                 f"from bucket {bucket_name}: {e}"
             )
             return []
+
+    async def ensure_account_folder(self, account_id: str, data_region: str) -> bool:
+        """
+        Ensure that a Google Cloud Storage folder exists for the account.
+
+        This creates a placeholder file in the account's folder to ensure the folder
+        structure exists, even when no documents have been uploaded yet.
+
+        Args:
+            account_id: Account ID
+            data_region: User's selected data region ("US" or "EU")
+
+        Returns:
+            bool: True if folder was created/exists, False if creation failed
+        """
+        try:
+            # Ensure bucket exists for the environment and data region
+            bucket_name, location = await self.ensure_bucket_exists(data_region)
+            bucket = self.client.get_bucket(bucket_name)
+
+            # Create a placeholder file to ensure the folder exists
+            placeholder_path = f"accounts/{account_id}/.placeholder"
+            placeholder_blob = bucket.blob(placeholder_path)
+
+            # Check if placeholder already exists
+            if placeholder_blob.exists():
+                logger.debug(f"Account folder for {account_id} already exists in {bucket_name}")
+                return True
+
+            # Create placeholder file with minimal content
+            placeholder_content = f"Account folder created for {account_id}\nCreated at: {datetime.now().isoformat()}"
+            placeholder_blob.upload_from_string(
+                placeholder_content,
+                content_type="text/plain"
+            )
+
+            logger.info(
+                f"Created account folder for {account_id} in bucket {bucket_name} "
+                f"(region: {data_region})"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create account folder for {account_id} in region {data_region}: {e}"
+            )
+            return False
 
 
 def get_storage_service() -> StorageService:

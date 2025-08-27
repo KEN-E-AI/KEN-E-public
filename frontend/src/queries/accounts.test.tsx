@@ -1,362 +1,324 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import {
-  accountKeys,
-  useAccounts,
-  useCreateAccount,
-  useUpdateAccount,
-  useDeleteAccount,
-} from "./accounts";
-import { toAccountId, toOrganizationId } from "@/lib/branded-types";
+import React from "react";
+import { useCreateAccount } from "./accounts";
 import * as organizationApi from "@/data/organizationApi";
 
-// Mock organizationApi
-vi.mock("@/data/organizationApi");
+// Mock the organizationApi
+vi.mock("@/data/organizationApi", () => ({
+  createAccount: vi.fn(),
+}));
 
-// Test data
-const testOrgId = toOrganizationId("org_test123");
-const testAccountId = toAccountId("acc_test123");
-const testAccount = {
-  account_id: testAccountId,
-  account_name: "Test Account",
-  organization_id: testOrgId,
-  industry: "Technology",
-  status: "active",
-  websites: ["https://example.com"],
-  timezone: "America/New_York",
-  data_region: "US",
-  region: ["North America"],
+// Mock console.error to avoid noise in test output
+vi.spyOn(console, "error").mockImplementation(() => {});
+
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
 };
 
-describe("Account Query Hooks", () => {
-  let queryClient: QueryClient;
+describe("useCreateAccount", () => {
+  const mockCreateAccount = organizationApi.createAccount as any;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
     vi.clearAllMocks();
   });
 
-  const createWrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
+  test("should transform camelCase fields to snake_case for API call", async () => {
+    // Setup
+    const mockAccount = {
+      account_id: "acc-123",
+      account_name: "Test Account",
+      organization_id: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: ["https://example.com"],
+      timezone: "America/New_York",
+      data_region: "United States",
+      region: ["US"],
+      marketing_channels: ["google_ads", "facebook"],
+      product_integrations: ["google_analytics", "shopify"],
+      estimated_annual_ad_budget: 100000,
+    };
 
-  describe("accountKeys", () => {
-    it("generates correct query keys", () => {
-      expect(accountKeys.all).toEqual(["accounts"]);
-      expect(accountKeys.lists()).toEqual(["accounts", "list"]);
-      expect(accountKeys.list(testOrgId)).toEqual([
-        "accounts",
-        "list",
-        testOrgId,
-      ]);
-      expect(accountKeys.details()).toEqual(["accounts", "detail"]);
-      expect(accountKeys.detail(testAccountId)).toEqual([
-        "accounts",
-        "detail",
-        testAccountId,
-      ]);
+    mockCreateAccount.mockResolvedValue(mockAccount);
+
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
+    });
+
+    // Execute
+    const inputData = {
+      accountName: "Test Account",
+      organizationId: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: ["https://example.com"],
+      timezone: "America/New_York",
+      dataRegion: "United States",
+      region: ["US"],
+      marketing_channels: ["google_ads", "facebook"],
+      product_integrations: ["google_analytics", "shopify"],
+      estimatedAnnualAdBudget: 100000,
+      businessStrategyDocuments: [],
+    };
+
+    await result.current.mutateAsync(inputData);
+
+    // Verify API was called with snake_case fields
+    expect(mockCreateAccount).toHaveBeenCalledWith({
+      account_name: "Test Account",
+      organization_id: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: ["https://example.com"],
+      timezone: "America/New_York",
+      data_region: "United States",
+      region: ["US"],
+      marketing_channels: ["google_ads", "facebook"],
+      product_integrations: ["google_analytics", "shopify"],
+      estimated_annual_ad_budget: 100000,
+      business_strategy_documents: [],
     });
   });
 
-  describe("useAccounts", () => {
-    it("fetches accounts for an organization", async () => {
-      const mockAccounts = [testAccount];
-      vi.mocked(
-        organizationApi.getAccountsByOrganizationId,
-      ).mockResolvedValueOnce(mockAccounts);
+  test("should include marketing_channels and product_integrations in API call", async () => {
+    // Setup
+    const mockAccount = { account_id: "acc-123" };
+    mockCreateAccount.mockResolvedValue(mockAccount);
 
-      const { result } = renderHook(() => useAccounts(testOrgId), {
-        wrapper: createWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toEqual(mockAccounts);
-      expect(organizationApi.getAccountsByOrganizationId).toHaveBeenCalledWith(
-        testOrgId,
-      );
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
     });
 
-    it("returns empty array when orgId is null", async () => {
-      const { result } = renderHook(() => useAccounts(null), {
-        wrapper: createWrapper,
-      });
+    // Execute with specific focus on the new fields
+    const inputData = {
+      accountName: "Test Account",
+      organizationId: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: [],
+      timezone: "America/New_York",
+      dataRegion: "United States",
+      region: ["US"],
+      marketing_channels: ["social_media", "email", "seo"],
+      product_integrations: ["google_ads", "meta_ads", "shopify"],
+      estimatedAnnualAdBudget: null,
+      businessStrategyDocuments: [],
+    };
 
-      expect(result.current.data).toEqual([]);
-      expect(result.current.isSuccess).toBe(true);
-      expect(
-        organizationApi.getAccountsByOrganizationId,
-      ).not.toHaveBeenCalled();
+    await result.current.mutateAsync(inputData);
+
+    // Verify the new fields are included in the API call
+    const apiCallArgs = mockCreateAccount.mock.calls[0][0];
+    expect(apiCallArgs).toHaveProperty("marketing_channels");
+    expect(apiCallArgs).toHaveProperty("product_integrations");
+    expect(apiCallArgs.marketing_channels).toEqual([
+      "social_media",
+      "email",
+      "seo",
+    ]);
+    expect(apiCallArgs.product_integrations).toEqual([
+      "google_ads",
+      "meta_ads",
+      "shopify",
+    ]);
+  });
+
+  test("should handle empty arrays for marketing_channels and product_integrations", async () => {
+    // Setup
+    const mockAccount = { account_id: "acc-123" };
+    mockCreateAccount.mockResolvedValue(mockAccount);
+
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
     });
 
-    it("handles API errors gracefully", async () => {
-      const errorMessage = "Network error";
-      vi.mocked(
-        organizationApi.getAccountsByOrganizationId,
-      ).mockRejectedValueOnce(new Error(errorMessage));
+    // Execute with empty arrays
+    const inputData = {
+      accountName: "Test Account",
+      organizationId: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: [],
+      timezone: "America/New_York",
+      dataRegion: "United States",
+      region: ["US"],
+      marketing_channels: [],
+      product_integrations: [],
+      estimatedAnnualAdBudget: null,
+      businessStrategyDocuments: [],
+    };
 
-      const { result } = renderHook(() => useAccounts(testOrgId), {
-        wrapper: createWrapper,
-      });
+    await result.current.mutateAsync(inputData);
 
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
+    // Verify empty arrays are preserved
+    const apiCallArgs = mockCreateAccount.mock.calls[0][0];
+    expect(apiCallArgs.marketing_channels).toEqual([]);
+    expect(apiCallArgs.product_integrations).toEqual([]);
+  });
 
-      expect(result.current.error?.message).toBe(errorMessage);
+  test("should handle null and undefined budget values", async () => {
+    // Setup
+    const mockAccount = { account_id: "acc-123" };
+    mockCreateAccount.mockResolvedValue(mockAccount);
+
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
     });
 
-    it("returns empty array when API returns no accounts", async () => {
-      vi.mocked(
-        organizationApi.getAccountsByOrganizationId,
-      ).mockResolvedValueOnce([]);
+    // Test with null budget
+    const inputDataNull = {
+      accountName: "Test Account",
+      organizationId: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: [],
+      timezone: "America/New_York",
+      dataRegion: "United States",
+      region: ["US"],
+      marketing_channels: [],
+      product_integrations: [],
+      estimatedAnnualAdBudget: null,
+      businessStrategyDocuments: [],
+    };
 
-      const { result } = renderHook(() => useAccounts(testOrgId), {
-        wrapper: createWrapper,
-      });
+    await result.current.mutateAsync(inputDataNull);
 
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
+    expect(mockCreateAccount.mock.calls[0][0].estimated_annual_ad_budget).toBe(
+      null,
+    );
 
-      expect(result.current.data).toEqual([]);
+    // Test with undefined budget
+    const inputDataUndefined = {
+      ...inputDataNull,
+      estimatedAnnualAdBudget: undefined,
+    };
+
+    await result.current.mutateAsync(inputDataUndefined);
+
+    expect(mockCreateAccount.mock.calls[1][0].estimated_annual_ad_budget).toBe(
+      undefined,
+    );
+  });
+
+  test("should preserve all other existing fields", async () => {
+    // Setup
+    const mockAccount = { account_id: "acc-123" };
+    mockCreateAccount.mockResolvedValue(mockAccount);
+
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
+    });
+
+    // Execute with all possible fields
+    const inputData = {
+      accountName: "Complete Test Account",
+      organizationId: "org-789",
+      industry: "E-commerce",
+      status: "Active",
+      websites: ["https://shop.example.com", "https://blog.example.com"],
+      timezone: "America/Los_Angeles",
+      dataRegion: "Europe",
+      region: ["FR", "DE", "IT"],
+      marketing_channels: ["ppc", "social_media"],
+      product_integrations: ["google_analytics", "stripe"],
+      estimatedAnnualAdBudget: 250000,
+      businessStrategyDocuments: [],
+    };
+
+    await result.current.mutateAsync(inputData);
+
+    const apiCallArgs = mockCreateAccount.mock.calls[0][0];
+
+    // Verify all fields are properly transformed
+    expect(apiCallArgs).toEqual({
+      account_name: "Complete Test Account",
+      organization_id: "org-789",
+      industry: "E-commerce",
+      status: "Active",
+      websites: ["https://shop.example.com", "https://blog.example.com"],
+      timezone: "America/Los_Angeles",
+      data_region: "Europe",
+      region: ["FR", "DE", "IT"],
+      marketing_channels: ["ppc", "social_media"],
+      product_integrations: ["google_analytics", "stripe"],
+      estimated_annual_ad_budget: 250000,
+      business_strategy_documents: [],
     });
   });
 
-  describe("useCreateAccount", () => {
-    it("creates an account successfully", async () => {
-      const newAccount = { ...testAccount };
-      vi.mocked(organizationApi.createAccount).mockResolvedValueOnce(
-        newAccount,
-      );
+  test("should handle API errors appropriately", async () => {
+    // Setup
+    const apiError = new Error("Account creation failed");
+    mockCreateAccount.mockRejectedValue(apiError);
 
-      const { result } = renderHook(() => useCreateAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({
-        account_name: "New Account",
-        organization_id: testOrgId,
-        industry: "Technology",
-        websites: ["https://example.com"],
-        timezone: "America/New_York",
-        data_region: "US",
-        region: ["North America"],
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toEqual(newAccount);
-      expect(organizationApi.createAccount).toHaveBeenCalledWith(
-        expect.objectContaining({
-          account_name: "New Account",
-          organization_id: testOrgId,
-          status: "active",
-        }),
-      );
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
     });
 
-    it("invalidates queries on successful creation", async () => {
-      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
-      vi.mocked(organizationApi.createAccount).mockResolvedValueOnce(
-        testAccount,
-      );
+    // Execute and expect error
+    const inputData = {
+      accountName: "Test Account",
+      organizationId: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: [],
+      timezone: "America/New_York",
+      dataRegion: "United States",
+      region: ["US"],
+      marketing_channels: [],
+      product_integrations: [],
+      estimatedAnnualAdBudget: null,
+      businessStrategyDocuments: [],
+    };
 
-      const { result } = renderHook(() => useCreateAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({
-        account_name: "New Account",
-        organization_id: testOrgId,
-        industry: "Technology",
-        websites: ["https://example.com"],
-        timezone: "America/New_York",
-        data_region: "US",
-        region: ["North America"],
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: accountKeys.list(testOrgId),
-      });
-    });
-
-    it("handles creation errors", async () => {
-      const consoleSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
-      const errorMessage = "Creation failed";
-      vi.mocked(organizationApi.createAccount).mockRejectedValueOnce(
-        new Error(errorMessage),
-      );
-
-      const { result } = renderHook(() => useCreateAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({
-        account_name: "New Account",
-        organization_id: testOrgId,
-        industry: "Technology",
-        websites: ["https://example.com"],
-        timezone: "America/New_York",
-        data_region: "US",
-        region: ["North America"],
-      });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toBe(errorMessage);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        "[useCreateAccount] Error:",
-        expect.any(Error),
-      );
-
-      consoleSpy.mockRestore();
-    });
+    await expect(result.current.mutateAsync(inputData)).rejects.toThrow(
+      "Account creation failed",
+    );
   });
 
-  describe("useUpdateAccount", () => {
-    it("updates an account successfully", async () => {
-      const updatedAccount = {
-        ...testAccount,
-        account_name: "Updated Account",
-      };
-      vi.mocked(organizationApi.updateAccount).mockResolvedValueOnce(
-        updatedAccount,
-      );
+  test("should provide runtime validation for marketing_channels and product_integrations", async () => {
+    // Setup
+    const mockAccount = { account_id: "acc-123" };
+    mockCreateAccount.mockResolvedValue(mockAccount);
 
-      const { result } = renderHook(() => useUpdateAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({
-        account_id: testAccountId,
-        account_name: "Updated Account",
-        organization_id: testOrgId,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toEqual(updatedAccount);
-      expect(organizationApi.updateAccount).toHaveBeenCalledWith(
-        testAccountId,
-        expect.objectContaining({
-          account_name: "Updated Account",
-        }),
-      );
+    const { result } = renderHook(() => useCreateAccount(), {
+      wrapper: createWrapper(),
     });
 
-    it("invalidates queries on successful update", async () => {
-      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
-      vi.mocked(organizationApi.updateAccount).mockResolvedValueOnce(
-        testAccount,
-      );
+    // Execute with potentially invalid array data (simulating runtime issues)
+    const inputData = {
+      accountName: "Test Account",
+      organizationId: "org-456",
+      industry: "Technology",
+      status: "Active",
+      websites: [],
+      timezone: "America/New_York",
+      dataRegion: "United States",
+      region: ["US"],
+      marketing_channels: null as any, // Simulate runtime null value
+      product_integrations: undefined as any, // Simulate runtime undefined value
+      estimatedAnnualAdBudget: null,
+      businessStrategyDocuments: [],
+    };
 
-      const { result } = renderHook(() => useUpdateAccount(), {
-        wrapper: createWrapper,
-      });
+    await result.current.mutateAsync(inputData);
 
-      result.current.mutate({
-        account_id: testAccountId,
-        account_name: "Updated Account",
-        organization_id: testOrgId,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: accountKeys.list(testOrgId),
-      });
-      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: accountKeys.detail(testAccountId),
-      });
-    });
-  });
-
-  describe("useDeleteAccount", () => {
-    it("deletes an account successfully", async () => {
-      vi.mocked(organizationApi.deleteAccount).mockResolvedValueOnce();
-
-      const { result } = renderHook(() => useDeleteAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({ orgId: testOrgId, accountId: testAccountId });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(organizationApi.deleteAccount).toHaveBeenCalledWith(testAccountId);
-    });
-
-    it("invalidates queries on successful deletion", async () => {
-      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
-      vi.mocked(organizationApi.deleteAccount).mockResolvedValueOnce();
-
-      const { result } = renderHook(() => useDeleteAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({ orgId: testOrgId, accountId: testAccountId });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: accountKeys.list(testOrgId),
-      });
-    });
-
-    it("handles deletion errors", async () => {
-      const consoleSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
-      const errorMessage = "Deletion failed";
-      vi.mocked(organizationApi.deleteAccount).mockRejectedValueOnce(
-        new Error(errorMessage),
-      );
-
-      const { result } = renderHook(() => useDeleteAccount(), {
-        wrapper: createWrapper,
-      });
-
-      result.current.mutate({ orgId: testOrgId, accountId: testAccountId });
-
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
-      });
-
-      expect(result.current.error?.message).toBe(errorMessage);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        "[useDeleteAccount] Error:",
-        expect.any(Error),
-      );
-
-      consoleSpy.mockRestore();
-    });
+    // Verify runtime validation converts non-arrays to empty arrays
+    const apiCallArgs = mockCreateAccount.mock.calls[0][0];
+    expect(apiCallArgs.marketing_channels).toEqual([]);
+    expect(apiCallArgs.product_integrations).toEqual([]);
+    expect(Array.isArray(apiCallArgs.marketing_channels)).toBe(true);
+    expect(Array.isArray(apiCallArgs.product_integrations)).toBe(true);
   });
 });

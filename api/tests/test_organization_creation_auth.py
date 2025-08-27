@@ -61,7 +61,7 @@ def mock_user_context():
         email="test@example.com",
         accessible_accounts=[],
         permissions={},
-        organization_permissions={"existing-org": "owner"},
+        organization_permissions={"existing-org": "admin"},
         account_permissions={}
     )
 

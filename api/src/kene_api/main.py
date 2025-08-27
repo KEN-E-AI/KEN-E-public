@@ -18,6 +18,7 @@ from .routers import (
     funnel_reports,
     home,
     industry_keywords,
+    industry_templates,
     insights,
     intuitions,
     items,
@@ -54,6 +55,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize Firestore: {e}")
         # Continue without Firestore if initialization fails
+
+    # Initialize Redis (non-blocking - will work with or without Redis)
+    try:
+        from .redis_client import get_redis_service
+
+        redis_service = get_redis_service()
+        if redis_service.is_available():
+            logger.info("Redis cache enabled and connected")
+        else:
+            logger.info("Redis cache not available - running without caching")
+    except Exception as e:
+        logger.warning(f"Redis initialization check failed: {e}")
 
     yield
 
@@ -126,6 +139,11 @@ app.include_router(
     prefix="/api/v1/industry-keywords",
     tags=["industry-keywords"],
 )
+app.include_router(
+    industry_templates.router,
+    prefix="/api/v1",
+    tags=["industry-templates"],
+)
 
 
 @app.get("/")
@@ -152,6 +170,17 @@ async def health_check():
     except Exception:
         firestore_healthy = False
 
+    # Check Redis health
+    try:
+        from .redis_client import get_redis_service
+
+        redis_service = get_redis_service()
+        redis_healthy = redis_service.is_available()
+    except Exception:
+        redis_healthy = False
+
+    # Overall health is true if critical services are healthy
+    # Redis is not critical - system works without it
     overall_healthy = neo4j_healthy and firestore_healthy
 
     return {
@@ -160,5 +189,6 @@ async def health_check():
         "services": {
             "neo4j": "healthy" if neo4j_healthy else "unhealthy",
             "firestore": "healthy" if firestore_healthy else "unhealthy",
+            "redis": "healthy" if redis_healthy else "unavailable",
         },
     }

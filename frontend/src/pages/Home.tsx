@@ -21,6 +21,7 @@ const Home = () => {
 
   if (!selectedOrgAccount) {
     navigate("/organization-selection");
+    return null; // Prevent rendering while redirecting
   }
 
   return (
