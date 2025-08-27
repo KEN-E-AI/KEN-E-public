@@ -719,7 +719,6 @@ async def create_account(
                 f"CRITICAL: Account {account_id} not found in Neo4j after creation!"
             )
         logger.info("=== ACCOUNT CREATION DEBUG END ===")
->>>>>>> origin/main
 
         # Invalidate the creating user's cache to ensure their context includes the new account
         from ..auth.cached_user_context import get_cached_user_context_service
