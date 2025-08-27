@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from ..auth import UserContext, get_current_user_context
@@ -499,6 +499,7 @@ async def _create_initial_activity_logs(
 @router.post("/", response_model=Account)
 async def create_account(
     request: AccountRequest,
+    background_tasks: BackgroundTasks,
     user: UserContext = Depends(get_current_user_context),
     firestore: FirestoreService = Depends(get_firestore_service),
     storage: StorageService = Depends(get_storage_service),
@@ -550,13 +551,10 @@ async def create_account(
         print(f"[STRATEGY] About to trigger generation for {account_id}")
         logger.info(f"[STRATEGY] Triggering strategy generation for account {account_id} BEFORE any database operations")
         
-        # Use FastAPI's background tasks to run strategy generation truly asynchronously
-        # This won't block the request/response cycle
-        from fastapi import BackgroundTasks
         from ..tasks.strategy_tasks import trigger_strategy_generation
         
-        # Create a background task that will run after the response is sent
-        background_tasks = BackgroundTasks()
+        # Use FastAPI's background tasks to run strategy generation truly asynchronously
+        # This will run after the response is sent, ensuring no blocking
         background_tasks.add_task(
             trigger_strategy_generation,
             account_id=account_id,
@@ -567,22 +565,6 @@ async def create_account(
             user_id=user.user_id,
             annual_ad_budget=request.estimated_annual_ad_budget,
             user_context=None  # No user context for background task
-        )
-        
-        # Actually schedule the background task using asyncio
-        # This ensures it starts immediately without blocking
-        import asyncio
-        asyncio.create_task(
-            trigger_strategy_generation(
-                account_id=account_id,
-                company_name=request.account_name,
-                websites=request.websites,
-                industry=request.industry,
-                customer_regions=request.region or [],
-                user_id=user.user_id,
-                annual_ad_budget=request.estimated_annual_ad_budget,
-                user_context=None
-            )
         )
         
         strategy_generation_triggered = True
