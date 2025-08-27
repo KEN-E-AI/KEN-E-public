@@ -34,21 +34,21 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("ErrorBoundary caught an error:", error, errorInfo);
-    
+
     // Update state with error details
     this.setState({
       error,
       errorInfo,
     });
-    
+
     // Check if this is an auth-related error
-    const isAuthError = 
+    const isAuthError =
       error.message?.includes("auth") ||
       error.message?.includes("organization") ||
       error.message?.includes("account") ||
       error.stack?.includes("AuthContext") ||
       error.stack?.includes("OrganizationSelection");
-      
+
     if (isAuthError) {
       console.warn("Auth-related error detected, may require state cleanup");
     }
@@ -61,7 +61,7 @@ class ErrorBoundary extends Component<Props, State> {
       error: null,
       errorInfo: null,
     });
-    
+
     // Reload the page
     window.location.reload();
   };
@@ -70,7 +70,7 @@ class ErrorBoundary extends Component<Props, State> {
     try {
       // Clear localStorage
       localStorage.clear();
-      
+
       // Force reload
       window.location.reload();
     } catch (error) {
@@ -94,7 +94,7 @@ class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       const isProduction = import.meta.env.VITE_ENVIRONMENT === "production";
-      
+
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
           <Card className="max-w-2xl w-full">
@@ -110,7 +110,7 @@ class ErrorBoundary extends Component<Props, State> {
                   ? "We encountered an unexpected error. This might be related to your account or organization data."
                   : "An error occurred in the application. This could be due to corrupted local data or deleted entities."}
               </p>
-              
+
               {!isProduction && this.state.error && (
                 <div className="bg-gray-100 p-4 rounded-md space-y-2">
                   <p className="font-semibold text-sm">Error Details:</p>
@@ -129,7 +129,7 @@ class ErrorBoundary extends Component<Props, State> {
                   )}
                 </div>
               )}
-              
+
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
                   onClick={this.handleReset}
@@ -139,7 +139,7 @@ class ErrorBoundary extends Component<Props, State> {
                   <RefreshCw className="h-4 w-4" />
                   Try Again
                 </Button>
-                
+
                 <Button
                   onClick={this.handleClearAndReset}
                   variant="outline"
@@ -147,7 +147,7 @@ class ErrorBoundary extends Component<Props, State> {
                 >
                   Clear Cache & Reload
                 </Button>
-                
+
                 <Button
                   onClick={this.handleFullReset}
                   variant="destructive"
@@ -156,7 +156,7 @@ class ErrorBoundary extends Component<Props, State> {
                   Sign Out & Reset
                 </Button>
               </div>
-              
+
               <div className="text-sm text-gray-500 mt-4">
                 <p>If the problem persists after trying these options:</p>
                 <ul className="list-disc list-inside mt-2 space-y-1">

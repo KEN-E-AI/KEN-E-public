@@ -12,6 +12,7 @@ import {
   accountKeys,
 } from "@/queries/accounts";
 import { useAccountConsistency } from "@/hooks/useAccountConsistency";
+import { useAccountCreationProgress } from "@/hooks/useAccountCreationProgress";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
@@ -203,6 +204,7 @@ const AccountsManagement = ({
     startOperation,
     endOperation,
     updateOperationMessage,
+    updateOperationProgress,
     isOperationInProgress,
   } = useAccountOperations();
 
@@ -214,6 +216,21 @@ const AccountsManagement = ({
   const deleteAccountMutation = useDeleteAccount();
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
+
+  // State for tracking account creation
+  const [creatingAccountId, setCreatingAccountId] = useState<string | null>(
+    null,
+  );
+
+  // Hook for tracking account creation progress
+  const accountCreationProgress = useAccountCreationProgress(creatingAccountId);
+
+  // Update the operation progress when progress changes
+  useEffect(() => {
+    if (accountCreationProgress) {
+      updateOperationProgress(accountCreationProgress);
+    }
+  }, [accountCreationProgress, updateOperationProgress]);
 
   // Debug: Log accounts data when it changes
   useEffect(() => {
@@ -611,6 +628,11 @@ const AccountsManagement = ({
       const accountData = transformWizardData(wizardData, currentOrgId!);
       const result = await createAccountMutation.mutateAsync(accountData);
 
+      // Start tracking progress for this account
+      if (result && result.account_id) {
+        setCreatingAccountId(result.account_id);
+      }
+
       // Schedule consistency check after a brief delay for data propagation
       setTimeout(async () => {
         try {
@@ -682,6 +704,7 @@ const AccountsManagement = ({
       });
     } finally {
       endOperation();
+      setCreatingAccountId(null);
     }
   };
 
@@ -744,7 +767,10 @@ const AccountsManagement = ({
       );
       const newAccountId = newAccount.account_id;
 
-      // Update loading message
+      // Start tracking progress for this account
+      setCreatingAccountId(newAccountId);
+
+      // Update loading message (progress will be handled by the hook)
       updateOperationMessage(
         "Setting up account features...",
         "Syncing holiday activities",
@@ -888,11 +914,13 @@ const AccountsManagement = ({
       // Redirect to account settings page
       navigate("/account-settings");
 
-      // End the loading state
+      // End the loading state and clear progress tracking
       endOperation();
+      setCreatingAccountId(null);
     } catch (error: any) {
       // Make sure to end the loading state on error
       endOperation();
+      setCreatingAccountId(null);
 
       console.error("[AccountsManagement] Error creating account:", error);
       console.error("[AccountsManagement] Error details:", {

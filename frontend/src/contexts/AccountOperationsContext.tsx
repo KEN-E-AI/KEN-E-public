@@ -1,11 +1,19 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { useOperationLoading } from "@/hooks/useOperationLoading";
-import { LoadingOverlay } from "@/components/ui/loading-overlay";
+import {
+  LoadingOverlay,
+  type ProgressInfo,
+} from "@/components/ui/loading-overlay";
 
 interface AccountOperationsContextType {
-  startOperation: (message: string, subMessage?: string) => void;
+  startOperation: (
+    message: string,
+    subMessage?: string,
+    progress?: ProgressInfo,
+  ) => void;
   endOperation: () => void;
   updateOperationMessage: (message: string, subMessage?: string) => void;
+  updateOperationProgress: (progress: ProgressInfo) => void;
   isOperationInProgress: boolean;
 }
 
@@ -23,6 +31,7 @@ export function AccountOperationsProvider({
     startOperation,
     endOperation,
     updateOperationMessage,
+    updateOperationProgress,
   } = useOperationLoading();
 
   return (
@@ -31,6 +40,7 @@ export function AccountOperationsProvider({
         startOperation,
         endOperation,
         updateOperationMessage,
+        updateOperationProgress,
         isOperationInProgress: operationState.isLoading,
       }}
     >
@@ -40,6 +50,7 @@ export function AccountOperationsProvider({
           isLoading={operationState.isLoading}
           message={operationState.message}
           subMessage={operationState.subMessage}
+          progress={operationState.progress}
           variant="fullscreen"
         />
       </div>
