@@ -93,9 +93,16 @@ async def get_accounts(
 
     **Note:** User must have access to the accounts and organization (if specified).
     """
+    import time
+    start_time = time.time()
+    
     try:
         # Check Neo4j connectivity
+        health_check_start = time.time()
         is_healthy = await db.health_check()
+        health_check_time = time.time() - health_check_start
+        logger.info(f"[TIMING] Neo4j health check for get_accounts took {health_check_time:.3f}s")
+        
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
@@ -187,7 +194,10 @@ async def get_accounts(
                 """
                 params = {"account_ids": accessible_account_ids}
 
+        query_start = time.time()
         result = await db.execute_query(accounts_query, params)
+        query_time = time.time() - query_start
+        logger.info(f"[TIMING] Neo4j query execution took {query_time:.3f}s")
 
         # Debug logging
         logger.info(f"[DEBUG] Neo4j query executed: {accounts_query}")
@@ -203,6 +213,8 @@ async def get_accounts(
                 account = _create_account_from_record(acc_data)
                 accounts.append(account)
 
+        total_time = time.time() - start_time
+        logger.info(f"[TIMING] Total get_accounts execution took {total_time:.3f}s for {len(accounts)} accounts")
         return AccountListResponse(accounts=accounts, total=len(accounts))
 
     except HTTPException:

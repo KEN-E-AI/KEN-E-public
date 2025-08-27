@@ -234,31 +234,36 @@ class Neo4jService:
                     logger.error(f"Failed to reconnect to Neo4j: {e}")
                     return False
             
-            # Verify connectivity with a simple query instead of just verify_connectivity
-            # This ensures the connection is actually working
+            # First try a quick connectivity check
             try:
-                async with self.get_session() as session:
-                    result = await session.run("RETURN 1 as ping")
-                    await result.consume()
+                await self.driver.verify_connectivity()
                 return True
             except Exception as e:
-                logger.warning(f"Neo4j ping failed: {e}, attempting reconnection...")
-                # Connection is bad, close and reconnect
-                if self.driver:
-                    try:
-                        await self.driver.close()
-                    except:
-                        pass  # Ignore errors when closing bad connection
-                    self.driver = None
-                
-                # Try to reconnect
-                await self.connect()
-                # Test the new connection
-                async with self.get_session() as session:
-                    result = await session.run("RETURN 1 as ping")
-                    await result.consume()
-                logger.info("Neo4j reconnected successfully")
-                return True
+                # Only if verify_connectivity fails, try a ping query
+                logger.warning(f"Neo4j verify_connectivity failed: {e}, trying ping query...")
+                try:
+                    async with self.get_session() as session:
+                        result = await session.run("RETURN 1 as ping")
+                        await result.consume()
+                    return True
+                except Exception as ping_error:
+                    logger.warning(f"Neo4j ping also failed: {ping_error}, attempting reconnection...")
+                    # Connection is bad, close and reconnect
+                    if self.driver:
+                        try:
+                            await self.driver.close()
+                        except:
+                            pass  # Ignore errors when closing bad connection
+                        self.driver = None
+                    
+                    # Try to reconnect
+                    await self.connect()
+                    # Test the new connection
+                    async with self.get_session() as session:
+                        result = await session.run("RETURN 1 as ping")
+                        await result.consume()
+                    logger.info("Neo4j reconnected successfully")
+                    return True
                 
         except Exception as e:
             logger.error(f"Neo4j health check failed completely: {e}")
