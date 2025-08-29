@@ -110,6 +110,44 @@ class CacheService:
         except RedisError as e:
             logger.error(f"Error deleting cache pattern {pattern}: {str(e)}")
             return 0
+    
+    def increment(self, key: str) -> bool:
+        """Increment a counter in cache.
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.enabled:
+            return False
+        
+        try:
+            self.redis.incr(key)
+            return True
+        except RedisError as e:
+            logger.error(f"Error incrementing cache key {key}: {str(e)}")
+            return False
+    
+    def ttl(self, key: str) -> Optional[int]:
+        """Get time-to-live for a key in seconds.
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            TTL in seconds, or None if key doesn't exist or error
+        """
+        if not self.enabled:
+            return None
+        
+        try:
+            ttl = self.redis.ttl(key)
+            return ttl if ttl > 0 else None
+        except RedisError as e:
+            logger.error(f"Error getting TTL for cache key {key}: {str(e)}")
+            return None
 
 
 class InMemoryCache:
