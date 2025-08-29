@@ -6,8 +6,9 @@ Each agent has its own strategist-reviewer-editor refinement loop.
 import logging
 from typing import Dict, Any, Optional
 
+from google.adk import types
 from google.adk.agents import Agent, SequentialAgent, LoopAgent
-from google.adk.tools import google_search, ToolContext, VertexAiSearchTool, AgentTool
+from google.adk.tools import google_search, ToolContext, AgentTool
 
 # Use absolute imports for deployment, fall back to relative for local testing
 try:
@@ -45,17 +46,6 @@ def exit_loop(tool_context: ToolContext):
     return {"status": "Loop terminated successfully"}
 
 
-def create_internal_search_agent() -> Agent:
-    """Create the internal search agent that uses Vertex AI Search."""
-    return Agent(
-        name="internal_search_agent",
-        model="gemini-2.0-flash",
-        instruction="Answer questions using Vertex AI Search to find information from internal documents. Always cite sources when available.",
-        description="Enterprise document search assistant with Vertex AI Search capabilities",
-        tools=[VertexAiSearchTool(data_store_id=DATASTORE_ID)]
-    )
-
-
 def create_google_search_agent() -> Agent:
     """Create the Google search agent for external research."""
     return Agent(
@@ -73,7 +63,6 @@ def create_google_search_agent() -> Agent:
 
 def create_business_strategist(context: Optional[StrategyContext] = None) -> Agent:
     """Create the business strategy strategist agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     # Extract company details from context for template substitution
@@ -104,11 +93,61 @@ def create_business_strategist(context: Optional[StrategyContext] = None) -> Age
     # Get instruction from Excel specification
     instruction = f"""
 # ROLE & GOAL
-You are a Strategic Business Expert creating a comprehensive business strategy document.
+You are a Strategic Marketing Expert. 
+Your goal is to create a comprehensive business strategy document based on the provided information.
 
-Your task is to create a comprehensive business strategy document that follows the BEST PRACTICES for the company specified in the NEW INFORMATION.
-This document will serve as the foundation for downstream tactical marketing plans.
-Use your tool 'google_search_agent' to review the website provided in the NEW INFORMATION, and search for relevant information about the business on the Internet.
+CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
+
+# TOOLS
+- google_search_agent: Uses Google search to find relevant information on the Internet
+
+# YOUR TASK
+You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
+- NEW INFORMATION: Details about the company to research and analyze
+
+# PERSONA
+You are an expert business consultant, meticulous in your analysis and precise in your writing. 
+You ensure all outputs are professional, robust, and strictly adhere to provided guidelines. 
+You are a critical thinker who can synthesize disparate information into a coherent strategic plan.
+
+# PROCESS
+You must follow this logic precisely:
+1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`NEW INFORMATION`, and `BEST PRACTICES`).
+
+2. **Create New Document**
+   - **MANDATORY**: Use the `google_search` tool extensively to research each item defined in the BEST PRACTICES.
+   - Search for multiple queries related to each section you need to complete.
+   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+
+3. **Research Requirements:**
+   - For EVERY section of the document that requires external information, you MUST search for it
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - Think carefully and take your time to ensure the document is comprehensive and accurate
+   - Use specific, targeted search queries like:
+    - '{company_name} industry'
+    - '{company_name} competitors in the industry: {industry}'
+    - '{company_name} mission vision values'
+    - '{company_name} financial performance revenue'
+    - '{company_name} market size trends'
+    - '{company_name} products services'
+    - '{company_name} customer segments'
+   - If you cannot find information needed for a section, insert the text: "requires further research"
+
+6. **Final Review and Formatting:**
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
+
+# OUTPUT REQUIREMENTS
+- Your response must be ONLY the complete JSON strategy document
+- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
+- For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
+- DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT leave any placeholder text or "requires further research" statements.
+
+Remember: Your sole job is to output the complete JSON strategy document. Nothing else.
 
 # NEW INFORMATION
 {new_information}
@@ -116,24 +155,19 @@ Use your tool 'google_search_agent' to review the website provided in the NEW IN
 # BEST PRACTICES
 {best_practices}
 
-Some queries you can use to learn about the business strategy include:
-- '{company_name} industry'
-- '{company_name} competitors in the industry: {industry}'
-- '{company_name} mission vision values'
-- '{company_name} financial performance revenue'
-- '{company_name} market size trends'
-- '{company_name} products services'
-- '{company_name} customer segments'
-
-{output_requirements}
 """
+    #{output_requirements}
     
     return Agent(
         name="business_strategist",
-        model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent)],
+        model="gemini-2.5-pro",
+        tools=[AgentTool(agent=google_search_agent)],
         description="Strategic business expert that creates comprehensive business strategy documents",
         instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="business_strategy_doc"
     )
 
@@ -186,13 +220,12 @@ You are an experienced Business Strategy Reviewer. Your goal is to review a busi
 
 def create_business_editor() -> Agent:
     """Create the business strategy editor agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     return Agent(
         name="business_editor",
         model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent), exit_loop],
+        tools=[AgentTool(agent=google_search_agent), exit_loop],
         description="Expert editor for business strategy documents",
         instruction="""
 # ROLE & GOAL
@@ -244,7 +277,6 @@ def create_business_strategy_agent(context: Optional[StrategyContext] = None) ->
 
 def create_competitive_strategist(context: Optional[StrategyContext] = None) -> Agent:
     """Create the competitive strategy strategist agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     # Import the synchronous versions for use in agent context
@@ -302,10 +334,14 @@ TOOLS: Use your tool 'google_search_agent' to conduct research on the business a
     
     return Agent(
         name="competitive_strategist",
-        model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent)],
+        model="gemini-2.5-pro",
+        tools=[AgentTool(agent=google_search_agent)],
         description="Competitive strategy expert that analyzes market competition",
         instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="competitive_strategy_doc"
     )
 
@@ -358,13 +394,12 @@ You are an experienced Competitive Strategy Reviewer.
 
 def create_competitive_editor() -> Agent:
     """Create the competitive strategy editor agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     return Agent(
         name="competitive_editor",
         model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent), exit_loop],
+        tools=[AgentTool(agent=google_search_agent), exit_loop],
         description="Expert editor for competitive strategy documents",
         instruction="""
 # ROLE & GOAL
@@ -411,7 +446,6 @@ def create_competitive_strategy_agent(context: Optional[StrategyContext] = None)
 
 def create_customer_strategist(context: Optional[StrategyContext] = None) -> Agent:
     """Create the customer strategy strategist agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     # Import the synchronous versions for use in agent context
@@ -477,10 +511,14 @@ TOOLS: Use your tool 'google_search_agent' to conduct research on the business, 
     
     return Agent(
         name="customer_strategist",
-        model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent)],
+        model="gemini-2.5-pro",
+        tools=[AgentTool(agent=google_search_agent)],
         description="Customer strategy expert that creates detailed personas and journey maps",
         instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="customer_strategy_doc"
     )
 
@@ -533,13 +571,12 @@ You are an experienced Customer Strategy Reviewer.
 
 def create_customer_editor() -> Agent:
     """Create the customer strategy editor agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     return Agent(
         name="customer_editor",
         model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent), exit_loop],
+        tools=[AgentTool(agent=google_search_agent), exit_loop],
         description="Expert editor for customer strategy documents",
         instruction="""
 # ROLE & GOAL
@@ -586,7 +623,6 @@ def create_customer_strategy_agent(context: Optional[StrategyContext] = None) ->
 
 def create_marketing_strategist(context: Optional[StrategyContext] = None) -> Agent:
     """Create the marketing strategy strategist agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     # Import the synchronous versions for use in agent context
@@ -659,10 +695,14 @@ TOOLS: Use your tool 'google_search_agent' to conduct research on marketing best
     
     return Agent(
         name="marketing_strategist",
-        model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent)],
+        model="gemini-2.5-pro",
+        tools=[AgentTool(agent=google_search_agent)],
         description="Marketing strategy expert that creates comprehensive campaign plans",
         instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="marketing_strategy_doc"
     )
 
@@ -715,13 +755,12 @@ You are an experienced Marketing Strategy Reviewer.
 
 def create_marketing_editor() -> Agent:
     """Create the marketing strategy editor agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     return Agent(
         name="marketing_editor",
         model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent), exit_loop],
+        tools=[AgentTool(agent=google_search_agent), exit_loop],
         description="Expert editor for marketing strategy documents",
         instruction="""
 # ROLE & GOAL
@@ -768,7 +807,6 @@ def create_marketing_strategy_agent(context: Optional[StrategyContext] = None) -
 
 def create_brand_strategist(context: Optional[StrategyContext] = None) -> Agent:
     """Create the brand guidelines strategist agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     # Import the synchronous versions for use in agent context
@@ -844,10 +882,14 @@ TOOLS: Use your tool 'google_search_agent' to research the company's current bra
     
     return Agent(
         name="brand_strategist",
-        model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent)],
+        model="gemini-2.5-pro",
+        tools=[AgentTool(agent=google_search_agent)],
         description="Brand strategy expert that creates comprehensive brand guidelines",
         instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="brand_guidelines_doc"
     )
 
@@ -900,13 +942,12 @@ You are an experienced Brand Guidelines Reviewer.
 
 def create_brand_editor() -> Agent:
     """Create the brand guidelines editor agent."""
-    internal_search = create_internal_search_agent()
     google_search_agent = create_google_search_agent()
     
     return Agent(
         name="brand_editor",
         model="gemini-2.0-flash",
-        tools=[AgentTool(agent=internal_search), AgentTool(agent=google_search_agent), exit_loop],
+        tools=[AgentTool(agent=google_search_agent), exit_loop],
         description="Expert editor for brand guidelines documents",
         instruction="""
 # ROLE & GOAL
