@@ -1,12 +1,61 @@
 """Data models for news and social media monitoring feature."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from ..validators import CompetitorValidators, KeywordValidators
 from .kene_models import BaseRequest
+
+
+class ConceptType(str, Enum):
+    """Types of concepts for disambiguation."""
+
+    COMPANY = "company"
+    LOCATION = "location"
+    TOPIC = "topic"
+    PERSON = "person"
+    PRODUCT = "product"
+    EVENT = "event"
+    OTHER = "other"
+
+
+class ConceptReference(BaseModel):
+    """Reference to disambiguate a concept."""
+
+    url: str = Field(..., description="Wikipedia, Wikidata, or official website URL")
+    title: str = Field(..., description="Display title for the reference")
+    description: str = Field(..., description="Brief description (50-100 characters)")
+    source_type: str = Field(
+        ...,
+        description="Source type: wikipedia, wikidata, official_website, gemini_search",
+    )
+
+
+class ConceptOption(BaseModel):
+    """A possible interpretation of an ambiguous term."""
+
+    id: str = Field(..., description="Unique identifier (UUID)")
+    label: str = Field(..., description="Display name for the concept")
+    type: ConceptType = Field(..., description="Type of concept")
+    description: str = Field(..., description="Brief description of the concept")
+    reference: ConceptReference = Field(..., description="Reference information")
+    confidence_score: float = Field(
+        ..., ge=0, le=1, description="Confidence score from 0 to 1"
+    )
+
+
+class CustomerKeywordConcept(BaseModel):
+    """A customer keyword with disambiguated concept."""
+
+    keyword: str = Field(..., description="The original search term")
+    concept_id: str = Field(..., description="Selected concept ID")
+    concept_type: ConceptType = Field(..., description="Type of the concept")
+    reference: ConceptReference = Field(..., description="Reference information")
+    added_by: str = Field(..., description="User ID who added this concept")
+    added_at: str = Field(..., description="ISO timestamp when added")
 
 
 class CompetitorEntry(BaseModel):
@@ -51,7 +100,11 @@ class MonitoringTopics(BaseModel):
         default_factory=list, description="Keywords describing the company"
     )
     customer_keywords: list[str] = Field(
-        default_factory=list, description="Keywords related to customers"
+        default_factory=list, description="Keywords related to customers (legacy)"
+    )
+    customer_concepts: list[CustomerKeywordConcept] = Field(
+        default_factory=list,
+        description="Customer keywords with disambiguated concepts",
     )
     competitor_entries: list[CompetitorEntry] = Field(
         default_factory=list, description="List of competitors to monitor"
@@ -115,6 +168,17 @@ class UpdateCustomerKeywordsRequest(BaseRequest):
     def validate_keywords(cls, v: list[str]) -> list[str]:
         """Validate customer keywords list."""
         return KeywordValidators.validate_keyword_list(v)
+
+
+class AddCustomerConceptRequest(BaseRequest):
+    """Request to add a customer keyword with concept disambiguation."""
+
+    keyword: str = Field(..., description="The keyword/term to add")
+    concept_id: str = Field(..., description="Selected concept ID from search results")
+    concept_type: ConceptType = Field(..., description="Type of the concept")
+    reference: ConceptReference = Field(
+        ..., description="Reference information for the concept"
+    )
 
 
 class AddCompetitorRequest(BaseRequest):
