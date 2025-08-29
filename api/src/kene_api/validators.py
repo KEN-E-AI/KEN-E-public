@@ -1,7 +1,6 @@
 """Validators for KEN-E API."""
 
 import re
-from typing import Optional
 
 from pydantic import field_validator
 
@@ -80,7 +79,7 @@ class KeywordValidators:
                     validated.append(validated_keyword)
                     seen_lower.add(keyword_lower)
             except ValueError as e:
-                raise ValueError(f"Invalid keyword '{keyword}': {str(e)}")
+                raise ValueError(f"Invalid keyword '{keyword}': {e!s}")
 
         return validated
 
@@ -91,7 +90,7 @@ class KeywordValidators:
         @field_validator(
             "company_keywords", "customer_keywords", "keywords", mode="before"
         )
-        def validate_keywords(v: Optional[list[str]]) -> list[str]:
+        def validate_keywords(v: list[str] | None) -> list[str]:
             if v is None:
                 return []
             return cls.validate_keyword_list(v)
@@ -103,7 +102,7 @@ class CompetitorValidators:
     """Validators for competitor-related fields."""
 
     @classmethod
-    def validate_website(cls, website: Optional[str]) -> Optional[str]:
+    def validate_website(cls, website: str | None) -> str | None:
         """Validate a website URL.
 
         Args:
@@ -169,3 +168,93 @@ class CompetitorValidators:
             raise ValueError("Competitor name contains invalid characters")
 
         return name
+
+
+class ConceptValidators:
+    """Validators for concept-related fields."""
+
+    # Allowed domains for concept references
+    ALLOWED_REFERENCE_DOMAINS = [
+        "wikipedia.org",
+        "wikidata.org",
+        "britannica.com",
+        "reuters.com",
+        "bloomberg.com",
+        "investopedia.com",
+    ]
+
+    @classmethod
+    def validate_reference_url(cls, url: str) -> str:
+        """Validate reference URL for concepts.
+        
+        Args:
+            url: The URL to validate
+            
+        Returns:
+            Normalized URL
+            
+        Raises:
+            ValueError: If URL is invalid or from untrusted source
+        """
+        if not url:
+            raise ValueError("Reference URL is required")
+
+        url = url.strip()
+
+        # Add https:// if no protocol
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+
+        # Basic URL structure validation
+        url_pattern = re.compile(
+            r"^https?://"  # Protocol
+            r"(?:[a-zA-Z0-9-]+\.)*"  # Subdomains
+            r"[a-zA-Z0-9-]+"  # Domain
+            r"(?:\.[a-zA-Z]{2,})"  # TLD
+            r"(?:/.*)?$"  # Path (optional)
+        )
+
+        if not url_pattern.match(url):
+            raise ValueError("Invalid reference URL format")
+
+        # Check if from allowed domain or is a reputable source
+        url_lower = url.lower()
+
+        # Check for known trusted domains
+        is_trusted = any(domain in url_lower for domain in cls.ALLOWED_REFERENCE_DOMAINS)
+
+        # Allow any .com, .org, .gov, .edu for official websites
+        if not is_trusted:
+            if not re.search(r"\.(com|org|net|gov|edu)", url_lower):
+                raise ValueError(
+                    "Reference URL must be from a recognized source (Wikipedia, Wikidata, "
+                    "official websites, or other trusted domains)"
+                )
+
+        return url
+
+    @classmethod
+    def validate_concept_description(cls, description: str) -> str:
+        """Validate concept description.
+        
+        Args:
+            description: The description to validate
+            
+        Returns:
+            Validated description
+            
+        Raises:
+            ValueError: If description is invalid
+        """
+        if not description:
+            raise ValueError("Concept description is required")
+
+        description = description.strip()
+
+        if len(description) < 10:
+            raise ValueError("Concept description must be at least 10 characters")
+
+        if len(description) > 500:
+            raise ValueError("Concept description must not exceed 500 characters")
+
+        return description

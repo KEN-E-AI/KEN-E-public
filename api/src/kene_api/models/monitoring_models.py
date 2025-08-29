@@ -1,12 +1,11 @@
 """Data models for news and social media monitoring feature."""
 
-from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..validators import CompetitorValidators, KeywordValidators
+from ..validators import CompetitorValidators, ConceptValidators, KeywordValidators
 from .kene_models import BaseRequest
 
 
@@ -32,6 +31,23 @@ class ConceptReference(BaseModel):
         ...,
         description="Source type: wikipedia, wikidata, official_website, gemini_search",
     )
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        """Validate the reference URL."""
+        return ConceptValidators.validate_reference_url(v)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        """Validate the description length and content."""
+        if not v:
+            return v  # Allow empty for references
+        v = v.strip()
+        if len(v) > 200:
+            v = v[:197] + "..."
+        return v
 
 
 class ConceptOption(BaseModel):

@@ -79,17 +79,14 @@ export default function CustomerKeywordsConfiguration() {
       if (!selectedOrgAccount?.accountId)
         throw new Error("No account selected");
       
-      // Combine plain keywords with concept keywords for backward compatibility
-      const allKeywords = [
-        ...updatedKeywords,
-        ...concepts.map(c => c.keyword)
-      ];
-      
+      // Only send plain keywords to the update endpoint
+      // Concept keywords are managed separately through add-concept/remove-concept endpoints
+      // The backend will combine them when storing
       const response = await api.put(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/customers`,
         {
           account_id: selectedOrgAccount.accountId,
-          customer_keywords: allKeywords,
+          customer_keywords: updatedKeywords,
         },
       );
       return response.data;
@@ -104,10 +101,28 @@ export default function CustomerKeywordsConfiguration() {
       });
     },
     onError: (error: any) => {
+      console.error("Failed to update customer keywords:", error);
+      let errorMessage = "Failed to update customer keywords";
+      
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (typeof detail === 'string') {
+          errorMessage = detail;
+        } else if (Array.isArray(detail)) {
+          // Handle validation error array
+          errorMessage = detail.map((e: any) => {
+            if (typeof e === 'string') return e;
+            return e.msg || e.message || JSON.stringify(e);
+          }).join(', ');
+        } else if (typeof detail === 'object') {
+          // Handle single validation error object
+          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
+        }
+      }
+      
       toast({
         title: "Error",
-        description:
-          error.response?.data?.detail || "Failed to update customer keywords",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -307,7 +322,7 @@ export default function CustomerKeywordsConfiguration() {
     setPendingKeyword("");
   };
 
-  const handleSkipConcept = () => {
+  const handleSkipConcept = async () => {
     // If we're editing, just close the dialog
     if (editingConcept) {
       setShowConceptDialog(false);
@@ -325,15 +340,25 @@ export default function CustomerKeywordsConfiguration() {
     }
     
     // Otherwise, add as plain keyword without concept
-    const updatedKeywords = [...keywords, pendingKeyword.toLowerCase()];
-    setKeywords(updatedKeywords);
-    setShowConceptDialog(false);
-    setPendingKeyword("");
+    // Don't convert to lowercase - let the validator handle normalization
+    const keywordToAdd = pendingKeyword.trim();
+    const updatedKeywords = [...keywords, keywordToAdd];
     
-    toast({
-      title: "Keyword added",
-      description: `"${pendingKeyword}" added without concept disambiguation`,
-    });
+    // Save immediately to backend
+    try {
+      await updateMutation.mutateAsync(updatedKeywords);
+      setKeywords(updatedKeywords);
+      setShowConceptDialog(false);
+      setPendingKeyword("");
+      
+      toast({
+        title: "Keyword added",
+        description: `"${keywordToAdd}" added without concept disambiguation`,
+      });
+    } catch (error) {
+      // Error is already handled by the mutation's onError
+      console.error("Failed to add keyword:", error);
+    }
   };
 
   const handleEditConcept = (concept: CustomerKeywordConcept) => {
@@ -342,9 +367,22 @@ export default function CustomerKeywordsConfiguration() {
     setShowConceptDialog(true);
   };
 
-  const handleRemoveKeyword = (keyword: string) => {
+  const handleRemoveKeyword = async (keyword: string) => {
     const updatedKeywords = keywords.filter((k) => k !== keyword);
-    setKeywords(updatedKeywords);
+    
+    // Save immediately to backend
+    try {
+      await updateMutation.mutateAsync(updatedKeywords);
+      setKeywords(updatedKeywords);
+      
+      toast({
+        title: "Keyword removed",
+        description: `"${keyword}" has been removed`,
+      });
+    } catch (error) {
+      // Error is already handled by the mutation's onError
+      console.error("Failed to remove keyword:", error);
+    }
   };
 
   const handleRemoveConcept = (conceptId: string) => {
