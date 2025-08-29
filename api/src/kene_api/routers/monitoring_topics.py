@@ -585,17 +585,29 @@ async def remove_customer_concept(
 
         # Find and remove the concept
         updated_concepts = []
+        found_concept = False
         for c in concepts:
             if c.get("concept_id") != concept_id:
                 updated_concepts.append(c)
             else:
                 keyword_to_remove = c.get("keyword")
+                found_concept = True
+                logger.info(f"Found concept to remove: {concept_id}, keyword: {keyword_to_remove}")
 
-        # Also update legacy customer_keywords
+        if not found_concept:
+            logger.warning(f"Concept {concept_id} not found in concepts list")
+            raise HTTPException(status_code=404, detail=f"Concept {concept_id} not found")
+
+        # Also update legacy customer_keywords by removing the keyword
         keywords = doc.get("customer_keywords", [])
         if keyword_to_remove and keyword_to_remove in keywords:
             keywords.remove(keyword_to_remove)
+            logger.info(f"Removed keyword '{keyword_to_remove}' from customer_keywords")
 
+        # Log what we're updating
+        logger.info(f"Updating document with {len(updated_concepts)} concepts (was {len(concepts)})")
+        logger.info(f"Updating document with {len(keywords)} keywords (was {len(doc.get('customer_keywords', []))})")
+        
         # Update document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,

@@ -46,15 +46,30 @@ export default function CustomerKeywordsConfiguration() {
   // Initialize keywords and concepts when data loads
   useEffect(() => {
     if (monitoringTopics) {
+      // Convert snake_case concepts from API to camelCase for frontend
+      const convertedConcepts: CustomerKeywordConcept[] = (monitoringTopics.customer_concepts || []).map((c: any) => ({
+        keyword: c.keyword,
+        conceptId: c.concept_id,
+        conceptType: c.concept_type,
+        reference: {
+          url: c.reference.url,
+          title: c.reference.title,
+          description: c.reference.description,
+          sourceType: c.reference.source_type,
+        },
+        addedBy: c.added_by,
+        addedAt: c.added_at,
+      }));
+      
       // Set legacy keywords that don't have concepts
-      const conceptKeywords = monitoringTopics.customer_concepts?.map(c => c.keyword) || [];
+      const conceptKeywords = convertedConcepts.map(c => c.keyword);
       const plainKeywords = monitoringTopics.customer_keywords.filter(
         k => !conceptKeywords.includes(k)
       );
       setKeywords(plainKeywords);
       
-      // Set concepts
-      setConcepts(monitoringTopics.customer_concepts || []);
+      // Set concepts with converted data
+      setConcepts(convertedConcepts);
     }
   }, [monitoringTopics]);
 
@@ -165,16 +180,20 @@ export default function CustomerKeywordsConfiguration() {
   // Remove concept mutation
   const removeConceptMutation = useMutation({
     mutationFn: async (conceptId: string) => {
+      if (!selectedOrgAccount?.accountId) {
+        throw new Error("No account selected");
+      }
+      
       const response = await api.delete(
-        `/api/v1/monitoring-topics/${selectedOrgAccount?.accountId}/customers/concepts/${conceptId}`
+        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/customers/concepts/${conceptId}`
       );
       return response.data;
     },
     onSuccess: (_, conceptId) => {
-      // Remove from local state
+      // Update local state immediately
       setConcepts(prev => prev.filter(c => c.conceptId !== conceptId));
       
-      // Invalidate queries
+      // Then invalidate to sync with server
       queryClient.invalidateQueries({
         queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
       });
@@ -192,10 +211,6 @@ export default function CustomerKeywordsConfiguration() {
         const detail = error.response.data.detail;
         if (typeof detail === 'string') {
           errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ');
-        } else if (typeof detail === 'object') {
-          errorMessage = detail.msg || detail.message || JSON.stringify(detail);
         }
       }
       
