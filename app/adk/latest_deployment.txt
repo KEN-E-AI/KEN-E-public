@@ -1,3 +1,0 @@
-Deployment: create-strategy-docs-20250830-072228
-Timestamp: 20250830-072228
-Engine ID: Resource name: projects/525657242938/locations/us-central1/reasoningEngines/7602150937792086016

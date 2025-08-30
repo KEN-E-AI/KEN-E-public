@@ -1,6 +1,5 @@
 """
-Strategy agent implementations for KEN-E marketing analysis.
-These agents create the 5 core strategy documents.
+Agents used for creating strategy documents and saving to Firestore.
 """
 
 import logging
@@ -108,7 +107,7 @@ CRITICAL: You MUST output a complete JSON strategy document that follows the pro
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
-- NEW INFORMATION: Details about the company to research and analyze
+- BUSINESS INFORMATION: Details about the company to research and analyze
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -313,10 +312,10 @@ def create_competitive_strategist(context: Optional[StrategyContext] = None) -> 
     # Build instruction that will access state at runtime
     instruction = f"""
 # ROLE & GOAL
-You are a Competitive Strategy Expert creating a comprehensive competitive strategy document.
+You are a Strategic Marketing Expert. 
+Your goal is to create a comprehensive competitive strategy document based on the provided information.
 
-Your task is to create a comprehensive competitive strategy document that follows the BEST PRACTICES document for the company specified in the NEW INFORMATION provided.
-This document will serve as the foundation for downstream tactical marketing plans.
+CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
@@ -324,35 +323,54 @@ This document will serve as the foundation for downstream tactical marketing pla
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
-- NEW INFORMATION: Details about the company to research and analyze
+- BUSINESS INFORMATION: Details about the company to research and analyze
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
+
+# PERSONA
+You are an expert business consultant, meticulous in your analysis and precise in your writing. 
+You ensure all outputs are professional, robust, and strictly adhere to provided guidelines. 
+You are a critical thinker who can synthesize disparate information into a coherent strategic plan.
 
 # PROCESS
-Follow this process:
-1. Research {company_name} and its competitive landscape
-2. Identify key competitors in {industry}
-3. Analyze competitive positioning and strategies
-4. Create comprehensive competitive analysis following BEST PRACTICES
+You must follow this logic precisely:
+1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
 
-Use specific search queries like:
-- '{company_name} competitors'
-- '{industry} market leaders'
-- '{company_name} vs competitor comparison'
-- '{industry} market share analysis'
+3. **Research Requirements:**
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - Think carefully and take your time to ensure the document is comprehensive and accurate
+   - Use specific search queries like:
+     - '{company_name} competitors'
+     - '{industry} market leaders'
+     - '{company_name} vs competitor comparison'
+     - '{industry} market share analysis'
+
+4. **Create New Document**
+   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+
+5. **Final Review and Formatting:**
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
-- Output ONLY the complete JSON strategy document
-- Follow the BEST PRACTICES structure exactly
-- Include all required sections with detailed analysis
+- Your response must be ONLY the complete JSON strategy document
+- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
+- For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
+- DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT leave any placeholder text or "requires further research" statements.
 
 === BEGIN INPUT DATA ===
 
 BEST PRACTICES DOCUMENT:
 {best_practices}
 
-OUTPUT REQUIREMENTS:
-{output_requirements}
-
-NEW INFORMATION:
+BUSINESS INFORMATION:
 {new_information}
 
 === END INPUT DATA ===
@@ -505,40 +523,66 @@ def create_customer_strategist(context: Optional[StrategyContext] = None) -> Age
     
     instruction = f"""
 # ROLE & GOAL
-You are a Customer Insights Expert creating a comprehensive customer strategy document.
+You are a Strategic Marketing Expert. 
+Your goal is to create a comprehensive customer strategy document based on the provided information.
+
+CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
-- google_search_agent: Research customer demographics, behaviors, and preferences
+- google_search_agent: Uses Google search to find relevant information on the Internet
 
 # YOUR TASK
-Create a customer strategy document following BEST PRACTICES for {company_name} in {industry}.
+You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
+- BUSINESS INFORMATION: Details about the company to research and analyze
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
+- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
+
+# PERSONA
+You are an expert business consultant, meticulous in your analysis and precise in your writing. 
+You ensure all outputs are professional, robust, and strictly adhere to provided guidelines. 
+You are a critical thinker who can synthesize disparate information into a coherent strategic plan.
 
 # PROCESS
-1. Research target customer segments
-2. Analyze customer needs and pain points
-3. Map customer journey and touchpoints
-4. Develop customer engagement strategies
+You must follow this logic precisely:
+1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc and competitive_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
 
-Use search queries like:
-- '{company_name} target customers'
-- '{industry} customer demographics'
-- '{company_name} customer reviews feedback'
-- '{industry} buyer behavior trends'
+3. **Research Requirements:**
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - Think carefully and take your time to ensure the document is comprehensive and accurate
+   - Use specific search queries like:
+     - '{company_name} target customers'
+     - '{industry} customer demographics'
+     - '{company_name} customer reviews feedback'
+     - '{industry} buyer behavior trends'
+
+4. **Create New Document**
+   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+
+5. **Final Review and Formatting:**
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
-- Output ONLY the complete JSON strategy document
-- Follow BEST PRACTICES structure exactly
-- Include detailed customer insights
+- Your response must be ONLY the complete JSON strategy document
+- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
+- For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
+- DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT leave any placeholder text or "requires further research" statements.
 
 === BEGIN INPUT DATA ===
 
 BEST PRACTICES DOCUMENT:
 {best_practices}
 
-OUTPUT REQUIREMENTS:
-{output_requirements}
-
-NEW INFORMATION:
+BUSINESS INFORMATION:
 {new_information}
 
 === END INPUT DATA ===
@@ -691,45 +735,73 @@ def create_marketing_strategist(context: Optional[StrategyContext] = None) -> Ag
     
     instruction = f"""
 # ROLE & GOAL
-You are a Marketing Strategy Expert creating a comprehensive marketing strategy document.
+You are a Strategic Marketing Expert. 
+Your goal is to create a comprehensive marketing strategy document based on the provided information.
+
+CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
-- google_search_agent: Research marketing trends, channels, and best practices
+- google_search_agent: Uses Google search to find relevant information on the Internet
 
 # YOUR TASK
-Create a marketing strategy document following BEST PRACTICES for {company_name} in {industry}.
+You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
+- BUSINESS INFORMATION: Details about the company to research and analyze
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
+- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
+- CUSTOMER STRATEGY: A customer_strategy_doc exists in the conversation state. Review this document to ensure your marketing strategy effectively targets and engages the defined customer segments.
+
+# PERSONA
+You are an expert business consultant, meticulous in your analysis and precise in your writing. 
+You ensure all outputs are professional, robust, and strictly adhere to provided guidelines. 
+You are a critical thinker who can synthesize disparate information into a coherent strategic plan.
 
 # PROCESS
-1. Define marketing objectives and KPIs
-2. Develop positioning and messaging
-3. Plan marketing mix and channels
-4. Create campaign and content strategies
+You must follow this logic precisely:
+1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc, competitive_strategy_doc, and customer_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
 
-Use search queries like:
-- '{industry} marketing trends 2024'
-- '{company_name} marketing campaigns'
-- '{industry} marketing channels effectiveness'
-- 'digital marketing best practices {industry}'
+3. **Research Requirements:**
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - Think carefully and take your time to ensure the document is comprehensive and accurate
+   - Use specific search queries like:
+     - '{industry} marketing trends 2025'
+     - '{company_name} marketing campaigns'
+     - '{industry} marketing channels effectiveness'
+     - 'digital marketing best practices {industry}'
+
+4. **Create New Document**
+   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+
+5. **Final Review and Formatting:**
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
-- Output ONLY the complete JSON strategy document
-- Follow BEST PRACTICES structure exactly
-- Include actionable marketing plans
+- Your response must be ONLY the complete JSON strategy document
+- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
+- For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
+- DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT leave any placeholder text or "requires further research" statements.
 
 === BEGIN INPUT DATA ===
 
 BEST PRACTICES DOCUMENT:
 {best_practices}
 
-OUTPUT REQUIREMENTS:
-{output_requirements}
-
-NEW INFORMATION:
+BUSINESS INFORMATION:
 {new_information}
 
 === END INPUT DATA ===
 
 Create the complete Marketing Strategy document now.
+
 """
     
     return Agent(
@@ -883,39 +955,54 @@ You are a Brand Strategy Expert creating comprehensive brand guidelines.
 - google_search_agent: Research brand positioning and industry standards
 
 # YOUR TASK
-Create brand guidelines following BEST PRACTICES for {company_name} in {industry}.
+Your task is to analyze the provided website(s) to document a company's existing brand guidelines.
+Carefully follow the instructions in the BEST PRACTICES document to ensure your final report follows the required structure.
+The BUSINESS INFORMATION may provide you with additional information about the business and its brand.
 
 # PROCESS
-1. Define brand mission, vision, and values
-2. Develop brand personality and voice
-3. Create messaging framework
-4. Establish brand standards and guidelines
+You must follow this logic precisely:
+1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
 
-Use search queries like:
-- '{company_name} brand identity'
-- '{industry} branding best practices'
-- '{company_name} mission vision values'
-- 'brand voice examples {industry}'
+2. **Research Requirements:**
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - Think carefully and take your time to ensure the document is comprehensive and accurate
+   - Use specific, targeted search queries like:
+     - '{company_name} brand identity'
+     - '{industry} branding best practices'
+     - '{company_name} mission vision values'
+     - 'brand voice examples {industry}'
+
+3. **Create New Document**
+   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+
+4. **Final Review and Formatting:**
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
-- Output ONLY the complete JSON guidelines document
-- Follow BEST PRACTICES structure exactly
-- Include comprehensive brand standards
+- Your response must be ONLY the complete JSON strategy document
+- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
+- For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
+- DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT leave any placeholder text or "requires further research" statements.
 
 === BEGIN INPUT DATA ===
 
 BEST PRACTICES DOCUMENT:
 {best_practices}
 
-OUTPUT REQUIREMENTS:
-{output_requirements}
-
-NEW INFORMATION:
+BUSINESS INFORMATION:
 {new_information}
 
 === END INPUT DATA ===
 
-Create the complete Brand Guidelines document now.
+Based on the above inputs, create the complete Brand Guidelines document now.
 """
     
     return Agent(

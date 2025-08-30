@@ -214,31 +214,84 @@ def dispatch_to_strategy(
     try:
         logger.info(f"🔄 Routing strategy query to specialized agent...")
         
-        # Extract account and user context
-        account_id = None
-        user_id = None
-        strategy_params = {}
+        # Parse the query to extract strategy generation parameters
+        # The query format from API is:
+        # "Generate all 5 strategy documents for {company_name}
+        #  Please execute strategy generation with these parameters:
+        #  - company_name: ...
+        #  - industry: ...
+        #  - websites: ...
+        #  - customer_regions: ...
+        #  - account_id: ...
+        #  - user_id: ...
+        #  - annual_ad_budget: ...
+        #  - project_id: ..."
         
+        import re
+        
+        # Extract parameters from the formatted message
+        params = {}
+        
+        # Try to extract parameters from the structured format
+        param_patterns = {
+            'company_name': r'[-•]\s*company_name:\s*(.+?)(?:\n|$)',
+            'industry': r'[-•]\s*industry:\s*(.+?)(?:\n|$)',
+            'websites': r'[-•]\s*websites:\s*(.+?)(?:\n|$)',
+            'customer_regions': r'[-•]\s*customer_regions:\s*(.+?)(?:\n|$)',
+            'account_id': r'[-•]\s*account_id:\s*(.+?)(?:\n|$)',
+            'user_id': r'[-•]\s*user_id:\s*(.+?)(?:\n|$)',
+            'annual_ad_budget': r'[-•]\s*annual_ad_budget:\s*(.+?)(?:\n|$)',
+            'project_id': r'[-•]\s*project_id:\s*(.+?)(?:\n|$)'
+        }
+        
+        for param_name, pattern in param_patterns.items():
+            match = re.search(pattern, query, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip()
+                # Convert annual_ad_budget to float
+                if param_name == 'annual_ad_budget':
+                    try:
+                        params[param_name] = float(value)
+                    except (ValueError, TypeError):
+                        params[param_name] = 0.0
+                else:
+                    params[param_name] = value
+        
+        # Use tenant_context to fill in missing values
         if tenant_context:
-            # In production, this would come from authenticated session
-            account_id = tenant_context.get('account_id') or tenant_context.get('tenant_id')
-            user_id = tenant_context.get('user_id')
-            
-            # Pass any strategy-specific parameters
-            strategy_params = {
-                'doc_type': tenant_context.get('doc_type', 'business_strategy'),
-                'existing_document': tenant_context.get('existing_document'),
-                'best_practices': tenant_context.get('best_practices'),
-                'reviewer_guidelines': tenant_context.get('reviewer_guidelines'),
-                'new_information': tenant_context.get('new_information')
-            }
+            if 'account_id' not in params:
+                params['account_id'] = tenant_context.get('account_id') or tenant_context.get('tenant_id')
+            if 'user_id' not in params:
+                params['user_id'] = tenant_context.get('user_id')
+            if 'project_id' not in params:
+                params['project_id'] = tenant_context.get('project_id')
         
-        # Invoke the strategy agent
+        # Check if we have the required parameters
+        required_params = ['company_name', 'industry', 'websites', 'customer_regions', 'account_id', 'user_id']
+        missing_params = [p for p in required_params if p not in params or not params[p]]
+        
+        if missing_params:
+            logger.warning(f"Missing required parameters for strategy generation: {missing_params}")
+            logger.info(f"Extracted parameters: {params}")
+            logger.info(f"Query preview: {query[:500]}")
+            # Try to proceed with what we have
+        
+        # Set defaults for optional parameters
+        params.setdefault('annual_ad_budget', 0.0)
+        params.setdefault('project_id', os.getenv('VERTEX_AI_PROJECT_ID', 'ken-e-dev'))
+        
+        logger.info(f"Calling execute_strategy_generation with params: {params}")
+        
+        # Invoke the strategy agent with the correct parameters
         result = invoke_strategy_agent_sync(
-            query=query,
-            account_id=account_id,
-            user_id=user_id,
-            strategy_params=strategy_params if strategy_params else None
+            company_name=params.get('company_name', 'Unknown Company'),
+            industry=params.get('industry', 'Unknown Industry'),
+            websites=params.get('websites', ''),
+            customer_regions=params.get('customer_regions', ''),
+            account_id=params.get('account_id', ''),
+            user_id=params.get('user_id', ''),
+            annual_ad_budget=params.get('annual_ad_budget', 0.0),
+            project_id=params.get('project_id')
         )
         
         return {
