@@ -1,59 +1,60 @@
 """
-V3 Strategy Agent System - 5 Specialized Sequential Agents.
-Each agent has its own strategist-reviewer-editor refinement loop.
+Strategy agent implementations for KEN-E marketing analysis.
+These agents create the 5 core strategy documents.
 """
 
 import logging
-from typing import Dict, Any, Optional
-
-from google.adk import types
+import json
+from typing import Optional, Dict, Any, List
 from google.adk.agents import Agent, SequentialAgent, LoopAgent
-from google.adk.tools import google_search, ToolContext, AgentTool
+from google.adk.tools import AgentTool, exit_loop, google_search
+from google.genai import types
 
-# Use absolute imports for deployment, fall back to relative for local testing
-try:
-    from agents.strategy_agent.models import StrategyContext
-    from agents.strategy_agent.firestore import (
-        get_best_practices,
-        get_reviewer_guidelines,
-        context_manager
-    )
-except ImportError:
-    from .models import StrategyContext
-    from .firestore import (
-        get_best_practices,
-        get_reviewer_guidelines,
-        context_manager
-    )
+# Import models
+from .models import StrategyContext
 
+# Set up logging
 logger = logging.getLogger(__name__)
 
-# Configuration - will be loaded from environment or Firestore
-DATASTORE_ID = "projects/ken-e-dev/locations/us-central1/collections/default_collection/dataStores/strategy-docs-acc-test-account_1755429117747"
+# Import Firestore utilities
+try:
+    from .firestore import (
+        get_best_practices_sync,
+        get_reviewer_guidelines_sync,
+        extract_field_requirements_from_best_practices,
+        format_new_information
+    )
+    FIRESTORE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Firestore utilities not available: {e}")
+    FIRESTORE_AVAILABLE = False
+    # Define stubs
+    def get_best_practices_sync(doc_type: str) -> Optional[str]:
+        return None
+    def get_reviewer_guidelines_sync(doc_type: str) -> Optional[str]:
+        return None
+    def extract_field_requirements_from_best_practices(best_practices: str) -> str:
+        return ""
+    def format_new_information(**kwargs) -> str:
+        return json.dumps(kwargs)
 
 
 # ============================================================================
-# Common Tools and Helper Functions
+# SHARED COMPONENTS
 # ============================================================================
-
-def exit_loop(tool_context: ToolContext):
-    """Call this function ONLY when the document is approved, signaling the loop should end."""
-    print(f"  [Tool Call] exit_loop triggered by {tool_context.agent_name}")
-    
-    # The approved document should already be in state_delta['updated_strategy_doc']
-    # Just signal to exit the loop
-    tool_context.actions.escalate = True
-    return {"status": "Loop terminated successfully"}
-
 
 def create_google_search_agent() -> Agent:
-    """Create the Google search agent for external research."""
+    """Create the Google search sub-agent used by all strategy agents."""
     return Agent(
         name="google_search_agent",
-        model="gemini-2.0-flash",
-        instruction="Answer questions using Google Search to find information on the Internet. Always cite sources when available.",
-        description="Internet research assistant with Google Search capabilities",
-        tools=[google_search]
+        model="gemini-2.5-flash",
+        tools=[google_search],
+        description="Expert web researcher that searches Google for public information",
+        instruction="Search for relevant public information about the topic. Focus on official sources and recent data.",
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192
+        )
     )
 
 
@@ -65,12 +66,24 @@ def create_business_strategist(context: Optional[StrategyContext] = None) -> Age
     """Create the business strategy strategist agent."""
     google_search_agent = create_google_search_agent()
     
-    # Extract company details from context for template substitution
-    company_name = context.company_name if context else "the company"
-    industry = context.industry if context else "the industry"
+    # Safely extract context information with proper None handling
+    if context:
+        company_name = context.company_name
+        industry = context.industry
+        new_information = format_new_information(
+            company_name=context.company_name,
+            websites=context.websites,
+            industry=context.industry,
+            customer_regions=context.customer_regions,
+            annual_ad_budget=context.annual_ad_budget
+        )
+    else:
+        company_name = "the company"
+        industry = "the industry"
+        new_information = "No context provided"
     
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices, format_new_information
+    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
     
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("business_strategy")
@@ -80,15 +93,6 @@ def create_business_strategist(context: Optional[StrategyContext] = None) -> Age
     
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
-    
-    # Format the context information
-    new_information = format_new_information(
-        company_name=context.company_name,
-        websites=context.websites,
-        industry=context.industry,
-        customer_regions=context.customer_regions,
-        annual_ad_budget=context.annual_ad_budget
-    )
     
     # Get instruction from Excel specification
     instruction = f"""
@@ -113,16 +117,13 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`NEW INFORMATION`, and `BEST PRACTICES`).
+1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
 
-2. **Create New Document**
-   - **MANDATORY**: Use the `google_search` tool extensively to research each item defined in the BEST PRACTICES.
-   - Search for multiple queries related to each section you need to complete.
-   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
-
-3. **Research Requirements:**
-   - For EVERY section of the document that requires external information, you MUST search for it
+2. **Research Requirements:**
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
    - Think carefully and take your time to ensure the document is comprehensive and accurate
    - Use specific, targeted search queries like:
@@ -133,9 +134,12 @@ You must follow this logic precisely:
     - '{company_name} market size trends'
     - '{company_name} products services'
     - '{company_name} customer segments'
-   - If you cannot find information needed for a section, insert the text: "requires further research"
 
-6. **Final Review and Formatting:**
+3. **Create New Document**
+   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
+   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+
+4. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
@@ -147,16 +151,18 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - DO NOT leave any placeholder text or "requires further research" statements.
 
-Remember: Your sole job is to output the complete JSON strategy document. Nothing else.
+=== BEGIN INPUT DATA ===
 
-# NEW INFORMATION
-{new_information}
-
-# BEST PRACTICES
+BEST PRACTICES DOCUMENT:
 {best_practices}
 
+BUSINESS INFORMATION:
+{new_information}
+
+=== END INPUT DATA ===
+
+Based on the above inputs, create the complete Business Strategy document now.
 """
-    #{output_requirements}
     
     return Agent(
         name="business_strategist",
@@ -174,47 +180,45 @@ Remember: Your sole job is to output the complete JSON strategy document. Nothin
 
 def create_business_reviewer() -> Agent:
     """Create the business strategy reviewer agent."""
-    # Import the synchronous versions for use in agent context
-    from .firestore import (
-        get_reviewer_guidelines_sync, 
-        get_best_practices_sync,
-        extract_validation_criteria_from_guidelines
-    )
+    from .firestore import get_reviewer_guidelines_sync
     
-    # Fetch reviewer guidelines from Firestore
-    reviewer_guidelines = get_reviewer_guidelines_sync("business_strategy")
-    if not reviewer_guidelines:
-        logger.warning("Using default reviewer guidelines for business_strategy")
-        reviewer_guidelines = "Review the document for completeness, accuracy, and strategic alignment."
+    guidelines = get_reviewer_guidelines_sync("business_strategy")
+    if not guidelines:
+        logger.warning("Using default review guidelines for business_strategy")
+        guidelines = "Review the business strategy document for completeness and accuracy."
     
-    # Fetch best practices to know what fields to validate
-    best_practices = get_best_practices_sync("business_strategy")
-    if not best_practices:
-        logger.warning("Using default best practices for business_strategy validation")
-        best_practices = "{}"
-    
-    # Dynamically extract validation criteria
-    validation_process = extract_validation_criteria_from_guidelines(reviewer_guidelines, best_practices)
+    instruction = f"""
+You are a Senior Strategy Reviewer. Review the business strategy document and provide specific feedback.
+
+# REVIEW GUIDELINES
+{guidelines}
+
+# YOUR TASK
+1. Check if all required sections from BEST PRACTICES are present
+2. Verify information accuracy and completeness
+3. Identify any gaps or areas needing improvement
+4. Provide specific, actionable feedback
+
+# OUTPUT FORMAT
+Provide your review as a structured list of:
+- Missing sections (if any)
+- Incomplete areas needing more detail
+- Specific improvements needed
+- Quality assessment (1-10 score)
+
+Be constructive and specific in your feedback.
+"""
     
     return Agent(
         name="business_reviewer",
-        model="gemini-2.0-flash",
-        tools=[],
-        description="Expert reviewer for business strategy documents",
-        instruction=f"""
-# ROLE & GOAL
-You are an experienced Business Strategy Reviewer. Your goal is to review a business strategy document against provided guidelines.
-
-# REVIEWER GUIDELINES
-{reviewer_guidelines}
-
-{validation_process}
-
-# OUTPUT REQUIREMENTS
-- IF any issues found: Provide specific, actionable feedback listing EXACTLY which fields are missing or incorrect
-- ELSE: Respond exactly with: 'The document meets all criteria.'
-""",
-        output_key="criticism"
+        model="gemini-2.5-flash",
+        description="Reviews business strategy documents for quality and completeness",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192
+        ),
+        output_key="review_feedback"
     )
 
 
@@ -222,31 +226,30 @@ def create_business_editor() -> Agent:
     """Create the business strategy editor agent."""
     google_search_agent = create_google_search_agent()
     
+    instruction = """
+You are a Strategy Document Editor. Based on the review feedback, improve the business strategy document.
+
+# YOUR TASK
+1. Address each point of feedback from the reviewer
+2. Use google_search_agent to find missing information
+3. Enhance sections that need more detail
+4. Ensure the final document meets all requirements
+
+# OUTPUT FORMAT
+Provide the complete, updated business strategy document in JSON format.
+All feedback points must be addressed.
+"""
+    
     return Agent(
         name="business_editor",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
-        description="Expert editor for business strategy documents",
-        instruction="""
-# ROLE & GOAL
-You are a Senior Business Strategy Editor refining documents based on feedback.
-
-# CRITICAL INSTRUCTION
-Check the criticism first. If the criticism is EXACTLY "The document meets all criteria." (case-sensitive match), then immediately call exit_loop().
-
-# INPUTS AVAILABLE
-- criticism: The reviewer's feedback
-- business_strategy_doc: The current business strategy document (from strategist or previous editor iteration)
-
-# PROCESS
-1. Read the criticism carefully
-2. If criticism == "The document meets all criteria.": Call exit_loop() with no parameters
-3. If changes needed: Take the business_strategy_doc and modify it based on the criticism
-
-# OUTPUT REQUIREMENTS
-- If calling exit_loop: First output the final approved document (business_strategy_doc), THEN call exit_loop()
-- If editing: Return ONLY the complete revised JSON document (the modified business_strategy_doc)
-""",
+        description="Edits and improves business strategy documents based on feedback",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="business_strategy_doc"
     )
 
@@ -279,8 +282,24 @@ def create_competitive_strategist(context: Optional[StrategyContext] = None) -> 
     """Create the competitive strategy strategist agent."""
     google_search_agent = create_google_search_agent()
     
+    # Safely extract context information with proper None handling
+    if context:
+        company_name = context.company_name
+        industry = context.industry
+        new_information = format_new_information(
+            company_name=context.company_name,
+            websites=context.websites,
+            industry=context.industry,
+            customer_regions=context.customer_regions,
+            annual_ad_budget=context.annual_ad_budget
+        )
+    else:
+        company_name = "the company"
+        industry = "the industry"
+        new_information = "No context provided"
+    
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices, format_new_information
+    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
     
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("competitive_strategy")
@@ -291,15 +310,6 @@ def create_competitive_strategist(context: Optional[StrategyContext] = None) -> 
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
     
-    # Format the context information
-    new_information = format_new_information(
-        company_name=context.company_name,
-        websites=context.websites,
-        industry=context.industry,
-        customer_regions=context.customer_regions,
-        annual_ad_budget=context.annual_ad_budget
-    )
-    
     # Build instruction that will access state at runtime
     instruction = f"""
 # ROLE & GOAL
@@ -308,35 +318,53 @@ You are a Competitive Strategy Expert creating a comprehensive competitive strat
 Your task is to create a comprehensive competitive strategy document that follows the BEST PRACTICES document for the company specified in the NEW INFORMATION provided.
 This document will serve as the foundation for downstream tactical marketing plans.
 
-# NEW INFORMATION
-{new_information}
+# TOOLS
+- google_search_agent: Uses Google search to find relevant information on the Internet
 
-# BEST PRACTICES
+# YOUR TASK
+You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
+- NEW INFORMATION: Details about the company to research and analyze
+
+# PROCESS
+Follow this process:
+1. Research {company_name} and its competitive landscape
+2. Identify key competitors in {industry}
+3. Analyze competitive positioning and strategies
+4. Create comprehensive competitive analysis following BEST PRACTICES
+
+Use specific search queries like:
+- '{company_name} competitors'
+- '{industry} market leaders'
+- '{company_name} vs competitor comparison'
+- '{industry} market share analysis'
+
+# OUTPUT REQUIREMENTS
+- Output ONLY the complete JSON strategy document
+- Follow the BEST PRACTICES structure exactly
+- Include all required sections with detailed analysis
+
+=== BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
 {best_practices}
 
-# PREVIOUS STRATEGY OUTPUTS
-You have access to the business strategy document from the previous agent.
-The business strategy document (if available) will be in the state as 'business_strategy_doc'.
-Use ALL 6 fields from the business strategy to inform your competitive analysis:
-- businessStrategySummary
-- companyOverview  
-- marketAndIndustryAnalysis
-- productsAndServices
-- marketingAndCustomerStrategy
-- swotAnalysis
-
-If a business strategy document is available in the state, incorporate its insights into your competitive analysis.
-
-TOOLS: Use your tool 'google_search_agent' to conduct research on the business and its competitors using Google search.
-
+OUTPUT REQUIREMENTS:
 {output_requirements}
+
+NEW INFORMATION:
+{new_information}
+
+=== END INPUT DATA ===
+
+Create the complete Competitive Strategy document now.
 """
     
     return Agent(
         name="competitive_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
-        description="Competitive strategy expert that analyzes market competition",
+        description="Competitive intelligence expert that creates detailed competitive analysis",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
@@ -348,47 +376,43 @@ TOOLS: Use your tool 'google_search_agent' to conduct research on the business a
 
 def create_competitive_reviewer() -> Agent:
     """Create the competitive strategy reviewer agent."""
-    # Import the synchronous versions for use in agent context
-    from .firestore import (
-        get_reviewer_guidelines_sync, 
-        get_best_practices_sync,
-        extract_validation_criteria_from_guidelines
-    )
+    from .firestore import get_reviewer_guidelines_sync
     
-    # Fetch reviewer guidelines from Firestore
-    reviewer_guidelines = get_reviewer_guidelines_sync("competitive_strategy")
-    if not reviewer_guidelines:
-        logger.warning("Using default reviewer guidelines for competitive_strategy")
-        reviewer_guidelines = "Review the document for competitive analysis completeness."
+    guidelines = get_reviewer_guidelines_sync("competitive_strategy")
+    if not guidelines:
+        logger.warning("Using default review guidelines for competitive_strategy")
+        guidelines = "Review the competitive strategy document for completeness and accuracy."
     
-    # Fetch best practices to know what fields to validate
-    best_practices = get_best_practices_sync("competitive_strategy")
-    if not best_practices:
-        logger.warning("Using default best practices for competitive_strategy validation")
-        best_practices = "{}"
-    
-    # Dynamically extract validation criteria
-    validation_process = extract_validation_criteria_from_guidelines(reviewer_guidelines, best_practices)
+    instruction = f"""
+You are a Senior Competitive Intelligence Reviewer. Review the competitive strategy document.
+
+# REVIEW GUIDELINES
+{guidelines}
+
+# YOUR TASK
+1. Verify competitor identification is comprehensive
+2. Check competitive analysis depth and accuracy
+3. Assess strategic recommendations quality
+4. Provide specific improvement feedback
+
+# OUTPUT FORMAT
+Provide structured feedback with:
+- Missing competitors or analysis gaps
+- Areas needing deeper analysis
+- Strategic insights quality (1-10)
+- Specific improvements needed
+"""
     
     return Agent(
         name="competitive_reviewer",
-        model="gemini-2.0-flash",
-        tools=[],
-        description="Expert reviewer for competitive strategy documents",
-        instruction=f"""
-# ROLE & GOAL
-You are an experienced Competitive Strategy Reviewer.
-
-# REVIEWER GUIDELINES
-{reviewer_guidelines}
-
-{validation_process}
-
-# OUTPUT REQUIREMENTS
-- IF any issues found: Provide specific feedback
-- ELSE: Respond exactly with: 'The document meets all criteria.'
-""",
-        output_key="criticism"
+        model="gemini-2.5-flash",
+        description="Reviews competitive strategy documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192
+        ),
+        output_key="review_feedback"
     )
 
 
@@ -396,26 +420,29 @@ def create_competitive_editor() -> Agent:
     """Create the competitive strategy editor agent."""
     google_search_agent = create_google_search_agent()
     
+    instruction = """
+You are a Competitive Strategy Editor. Improve the document based on review feedback.
+
+# YOUR TASK
+1. Address all reviewer feedback points
+2. Research missing competitor information
+3. Deepen analysis where needed
+4. Enhance strategic recommendations
+
+# OUTPUT FORMAT
+Provide the complete, updated competitive strategy document in JSON format.
+"""
+    
     return Agent(
         name="competitive_editor",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
-        description="Expert editor for competitive strategy documents",
-        instruction="""
-# ROLE & GOAL
-You are a Senior Competitive Strategy Editor.
-
-# CRITICAL INSTRUCTION
-If criticism is EXACTLY "The document meets all criteria." then immediately call exit_loop().
-
-# INPUTS AVAILABLE
-- criticism: The reviewer's feedback
-- competitive_strategy_doc: The current competitive strategy document
-
-# OUTPUT REQUIREMENTS
-- If calling exit_loop: First output the final approved document (competitive_strategy_doc), THEN call exit_loop()
-- If editing: Return ONLY the complete revised JSON document (the modified competitive_strategy_doc)
-""",
+        description="Edits competitive strategy documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="competitive_strategy_doc"
     )
 
@@ -448,72 +475,82 @@ def create_customer_strategist(context: Optional[StrategyContext] = None) -> Age
     """Create the customer strategy strategist agent."""
     google_search_agent = create_google_search_agent()
     
+    # Safely extract context information with proper None handling
+    if context:
+        company_name = context.company_name
+        industry = context.industry
+        new_information = format_new_information(
+            company_name=context.company_name,
+            websites=context.websites,
+            industry=context.industry,
+            customer_regions=context.customer_regions,
+            annual_ad_budget=context.annual_ad_budget
+        )
+    else:
+        company_name = "the company"
+        industry = "the industry"
+        new_information = "No context provided"
+    
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices, format_new_information
+    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
     
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("customer_strategy")
     if not best_practices:
         logger.warning("Using default best practices for customer_strategy")
-        best_practices = "Create a comprehensive customer strategy document with detailed personas."
+        best_practices = "Create a comprehensive customer strategy document with all required sections."
     
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
     
-    # Format the context information
-    new_information = format_new_information(
-        company_name=context.company_name,
-        websites=context.websites,
-        industry=context.industry,
-        customer_regions=context.customer_regions,
-        annual_ad_budget=context.annual_ad_budget
-    )
-    
-    # Build instruction that will access state at runtime
     instruction = f"""
 # ROLE & GOAL
-You are a Customer Strategy Expert creating a comprehensive customer strategy document.
+You are a Customer Insights Expert creating a comprehensive customer strategy document.
 
-Your task is to create a comprehensive customer strategy document that follows the BEST PRACTICES document for the company specified in the NEW INFORMATION provided.
+# TOOLS
+- google_search_agent: Research customer demographics, behaviors, and preferences
 
-# NEW INFORMATION
+# YOUR TASK
+Create a customer strategy document following BEST PRACTICES for {company_name} in {industry}.
+
+# PROCESS
+1. Research target customer segments
+2. Analyze customer needs and pain points
+3. Map customer journey and touchpoints
+4. Develop customer engagement strategies
+
+Use search queries like:
+- '{company_name} target customers'
+- '{industry} customer demographics'
+- '{company_name} customer reviews feedback'
+- '{industry} buyer behavior trends'
+
+# OUTPUT REQUIREMENTS
+- Output ONLY the complete JSON strategy document
+- Follow BEST PRACTICES structure exactly
+- Include detailed customer insights
+
+=== BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
+{best_practices}
+
+OUTPUT REQUIREMENTS:
+{output_requirements}
+
+NEW INFORMATION:
 {new_information}
 
-# BEST PRACTICES
-{best_practices}
-Think carefully about the ideal customer profiles, and create 3-5 ideal customer profiles that showcase the different pain points and buyer motivation for each persona.
-Consider how customers within each persona might become aware of the company, the critical information that they are looking for when considering making a purchase, and how they might become loyal return customers in the future.
+=== END INPUT DATA ===
 
-# PREVIOUS STRATEGY OUTPUTS
-You have access to strategy documents from previous agents in the state.
-The business strategy document (if available) will be in the state as 'business_strategy_doc'.
-The competitive strategy document (if available) will be in the state as 'competitive_strategy_doc'.
-
-The business strategy document contains these 6 fields:
-   - businessStrategySummary
-   - companyOverview
-   - marketAndIndustryAnalysis
-   - productsAndServices
-   - marketingAndCustomerStrategy
-   - swotAnalysis
-
-The competitive strategy document contains these 3 fields:
-   - competitiveLandscape
-   - competitiveStrategySummary
-   - strategicRecommendations
-
-Use insights from BOTH the business and competitive strategies to inform your customer personas and journey maps.
-
-TOOLS: Use your tool 'google_search_agent' to conduct research on the business, its customers, and its competitors with Google search.
-
-{output_requirements}
+Create the complete Customer Strategy document now.
 """
     
     return Agent(
         name="customer_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
-        description="Customer strategy expert that creates detailed personas and journey maps",
+        description="Customer insights expert that creates detailed customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
@@ -525,47 +562,43 @@ TOOLS: Use your tool 'google_search_agent' to conduct research on the business, 
 
 def create_customer_reviewer() -> Agent:
     """Create the customer strategy reviewer agent."""
-    # Import the synchronous versions for use in agent context
-    from .firestore import (
-        get_reviewer_guidelines_sync, 
-        get_best_practices_sync,
-        extract_validation_criteria_from_guidelines
-    )
+    from .firestore import get_reviewer_guidelines_sync
     
-    # Fetch reviewer guidelines from Firestore
-    reviewer_guidelines = get_reviewer_guidelines_sync("customer_strategy")
-    if not reviewer_guidelines:
-        logger.warning("Using default reviewer guidelines for customer_strategy")
-        reviewer_guidelines = "Review the document for detailed personas and journey maps."
+    guidelines = get_reviewer_guidelines_sync("customer_strategy")
+    if not guidelines:
+        logger.warning("Using default review guidelines for customer_strategy")
+        guidelines = "Review the customer strategy document for completeness and accuracy."
     
-    # Fetch best practices to know what fields to validate
-    best_practices = get_best_practices_sync("customer_strategy")
-    if not best_practices:
-        logger.warning("Using default best practices for customer_strategy validation")
-        best_practices = "{}"
-    
-    # Dynamically extract validation criteria
-    validation_process = extract_validation_criteria_from_guidelines(reviewer_guidelines, best_practices)
+    instruction = f"""
+You are a Senior Customer Experience Reviewer. Review the customer strategy document.
+
+# REVIEW GUIDELINES
+{guidelines}
+
+# YOUR TASK
+1. Verify customer segmentation completeness
+2. Check persona development quality
+3. Assess journey mapping accuracy
+4. Review engagement strategy effectiveness
+
+# OUTPUT FORMAT
+Provide structured feedback with:
+- Missing customer insights
+- Persona development gaps
+- Journey mapping improvements
+- Quality score (1-10)
+"""
     
     return Agent(
         name="customer_reviewer",
-        model="gemini-2.0-flash",
-        tools=[],
-        description="Expert reviewer for customer strategy documents",
-        instruction=f"""
-# ROLE & GOAL
-You are an experienced Customer Strategy Reviewer.
-
-# REVIEWER GUIDELINES
-{reviewer_guidelines}
-
-{validation_process}
-
-# OUTPUT REQUIREMENTS
-- IF any issues found: Provide specific feedback
-- ELSE: Respond exactly with: 'The document meets all criteria.'
-""",
-        output_key="criticism"
+        model="gemini-2.5-flash",
+        description="Reviews customer strategy documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192
+        ),
+        output_key="review_feedback"
     )
 
 
@@ -573,26 +606,29 @@ def create_customer_editor() -> Agent:
     """Create the customer strategy editor agent."""
     google_search_agent = create_google_search_agent()
     
+    instruction = """
+You are a Customer Strategy Editor. Improve the document based on review feedback.
+
+# YOUR TASK
+1. Address all feedback points
+2. Research missing customer insights
+3. Enhance personas and journey maps
+4. Strengthen engagement strategies
+
+# OUTPUT FORMAT
+Provide the complete, updated customer strategy document in JSON format.
+"""
+    
     return Agent(
         name="customer_editor",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
-        description="Expert editor for customer strategy documents",
-        instruction="""
-# ROLE & GOAL
-You are a Senior Customer Strategy Editor.
-
-# CRITICAL INSTRUCTION
-If criticism is EXACTLY "The document meets all criteria." then immediately call exit_loop().
-
-# INPUTS AVAILABLE
-- criticism: The reviewer's feedback
-- customer_strategy_doc: The current customer strategy document
-
-# OUTPUT REQUIREMENTS
-- If calling exit_loop: First output the final approved document (customer_strategy_doc), THEN call exit_loop()
-- If editing: Return ONLY the complete revised JSON document (the modified customer_strategy_doc)
-""",
+        description="Edits customer strategy documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="customer_strategy_doc"
     )
 
@@ -625,79 +661,82 @@ def create_marketing_strategist(context: Optional[StrategyContext] = None) -> Ag
     """Create the marketing strategy strategist agent."""
     google_search_agent = create_google_search_agent()
     
+    # Safely extract context information with proper None handling
+    if context:
+        company_name = context.company_name
+        industry = context.industry
+        new_information = format_new_information(
+            company_name=context.company_name,
+            websites=context.websites,
+            industry=context.industry,
+            customer_regions=context.customer_regions,
+            annual_ad_budget=context.annual_ad_budget
+        )
+    else:
+        company_name = "the company"
+        industry = "the industry"
+        new_information = "No context provided"
+    
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices, format_new_information
+    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
     
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("marketing_strategy")
     if not best_practices:
         logger.warning("Using default best practices for marketing_strategy")
-        best_practices = "Create a comprehensive marketing strategy document with campaign plans."
+        best_practices = "Create a comprehensive marketing strategy document with all required sections."
     
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
     
-    # Format the context information
-    new_information = format_new_information(
-        company_name=context.company_name,
-        websites=context.websites,
-        industry=context.industry,
-        customer_regions=context.customer_regions,
-        annual_ad_budget=context.annual_ad_budget
-    )
-    
-    # Build instruction that will access state at runtime
     instruction = f"""
 # ROLE & GOAL
 You are a Marketing Strategy Expert creating a comprehensive marketing strategy document.
 
-Your task is to create a comprehensive marketing strategy document that follows the BEST PRACTICES document for the company specified in the NEW INFORMATION provided.
+# TOOLS
+- google_search_agent: Research marketing trends, channels, and best practices
 
-# NEW INFORMATION
-{new_information}
+# YOUR TASK
+Create a marketing strategy document following BEST PRACTICES for {company_name} in {industry}.
 
-# BEST PRACTICES
+# PROCESS
+1. Define marketing objectives and KPIs
+2. Develop positioning and messaging
+3. Plan marketing mix and channels
+4. Create campaign and content strategies
+
+Use search queries like:
+- '{industry} marketing trends 2024'
+- '{company_name} marketing campaigns'
+- '{industry} marketing channels effectiveness'
+- 'digital marketing best practices {industry}'
+
+# OUTPUT REQUIREMENTS
+- Output ONLY the complete JSON strategy document
+- Follow BEST PRACTICES structure exactly
+- Include actionable marketing plans
+
+=== BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
 {best_practices}
 
-# PREVIOUS STRATEGY OUTPUTS
-You have access to strategy documents from ALL previous agents in the state.
-The business strategy document (if available) will be in the state as 'business_strategy_doc'.
-The competitive strategy document (if available) will be in the state as 'competitive_strategy_doc'.
-The customer strategy document (if available) will be in the state as 'customer_strategy_doc'.
-
-The business strategy document contains these 6 fields:
-   - businessStrategySummary
-   - companyOverview
-   - marketAndIndustryAnalysis
-   - productsAndServices
-   - marketingAndCustomerStrategy
-   - swotAnalysis
-
-The competitive strategy document contains these 3 fields:
-   - competitiveLandscape
-   - competitiveStrategySummary
-   - strategicRecommendations
-
-The customer strategy document contains these 3 fields:
-   - customerProfiles
-   - customerJourneyMaps
-   - personaInsights
-
-Use insights from ALL three previous strategies (business, competitive, and customer) to inform your marketing campaigns and channel strategies.
-
-You must propose paid digital marketing campaigns for key channels such as Search, Youtube, Display and Gmail. 
-For each campaign, describe the objective, audience, budget allocation, expected outcomes, expected CPM or CPC, and KPIs.
-
-TOOLS: Use your tool 'google_search_agent' to conduct research on marketing best practices and channel strategies.
-
+OUTPUT REQUIREMENTS:
 {output_requirements}
+
+NEW INFORMATION:
+{new_information}
+
+=== END INPUT DATA ===
+
+Create the complete Marketing Strategy document now.
 """
     
     return Agent(
         name="marketing_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
-        description="Marketing strategy expert that creates comprehensive campaign plans",
+        description="Marketing strategy expert that creates comprehensive marketing plans",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
@@ -709,47 +748,43 @@ TOOLS: Use your tool 'google_search_agent' to conduct research on marketing best
 
 def create_marketing_reviewer() -> Agent:
     """Create the marketing strategy reviewer agent."""
-    # Import the synchronous versions for use in agent context
-    from .firestore import (
-        get_reviewer_guidelines_sync, 
-        get_best_practices_sync,
-        extract_validation_criteria_from_guidelines
-    )
+    from .firestore import get_reviewer_guidelines_sync
     
-    # Fetch reviewer guidelines from Firestore
-    reviewer_guidelines = get_reviewer_guidelines_sync("marketing_strategy")
-    if not reviewer_guidelines:
-        logger.warning("Using default reviewer guidelines for marketing_strategy")
-        reviewer_guidelines = "Review the document for comprehensive campaign strategies."
+    guidelines = get_reviewer_guidelines_sync("marketing_strategy")
+    if not guidelines:
+        logger.warning("Using default review guidelines for marketing_strategy")
+        guidelines = "Review the marketing strategy document for completeness and accuracy."
     
-    # Fetch best practices to know what fields to validate
-    best_practices = get_best_practices_sync("marketing_strategy")
-    if not best_practices:
-        logger.warning("Using default best practices for marketing_strategy validation")
-        best_practices = "{}"
-    
-    # Dynamically extract validation criteria
-    validation_process = extract_validation_criteria_from_guidelines(reviewer_guidelines, best_practices)
+    instruction = f"""
+You are a Senior Marketing Reviewer. Review the marketing strategy document.
+
+# REVIEW GUIDELINES
+{guidelines}
+
+# YOUR TASK
+1. Verify marketing objectives clarity
+2. Check channel strategy effectiveness
+3. Assess campaign planning quality
+4. Review budget allocation logic
+
+# OUTPUT FORMAT
+Provide structured feedback with:
+- Missing marketing elements
+- Channel strategy gaps
+- Campaign planning improvements
+- Quality score (1-10)
+"""
     
     return Agent(
         name="marketing_reviewer",
-        model="gemini-2.0-flash",
-        tools=[],
-        description="Expert reviewer for marketing strategy documents",
-        instruction=f"""
-# ROLE & GOAL
-You are an experienced Marketing Strategy Reviewer.
-
-# REVIEWER GUIDELINES
-{reviewer_guidelines}
-
-{validation_process}
-
-# OUTPUT REQUIREMENTS
-- IF any issues found: Provide specific feedback
-- ELSE: Respond exactly with: 'The document meets all criteria.'
-""",
-        output_key="criticism"
+        model="gemini-2.5-flash",
+        description="Reviews marketing strategy documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192
+        ),
+        output_key="review_feedback"
     )
 
 
@@ -757,26 +792,29 @@ def create_marketing_editor() -> Agent:
     """Create the marketing strategy editor agent."""
     google_search_agent = create_google_search_agent()
     
+    instruction = """
+You are a Marketing Strategy Editor. Improve the document based on review feedback.
+
+# YOUR TASK
+1. Address all feedback points
+2. Research marketing best practices
+3. Enhance channel and campaign strategies
+4. Optimize budget recommendations
+
+# OUTPUT FORMAT
+Provide the complete, updated marketing strategy document in JSON format.
+"""
+    
     return Agent(
         name="marketing_editor",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
-        description="Expert editor for marketing strategy documents",
-        instruction="""
-# ROLE & GOAL
-You are a Senior Marketing Strategy Editor.
-
-# CRITICAL INSTRUCTION
-If criticism is EXACTLY "The document meets all criteria." then immediately call exit_loop().
-
-# INPUTS AVAILABLE
-- criticism: The reviewer's feedback
-- marketing_strategy_doc: The current marketing strategy document
-
-# OUTPUT REQUIREMENTS
-- If calling exit_loop: First output the final approved document (marketing_strategy_doc), THEN call exit_loop()
-- If editing: Return ONLY the complete revised JSON document (the modified marketing_strategy_doc)
-""",
+        description="Edits marketing strategy documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="marketing_strategy_doc"
     )
 
@@ -809,75 +847,75 @@ def create_brand_strategist(context: Optional[StrategyContext] = None) -> Agent:
     """Create the brand guidelines strategist agent."""
     google_search_agent = create_google_search_agent()
     
+    # Safely extract context information with proper None handling
+    if context:
+        company_name = context.company_name
+        industry = context.industry
+        new_information = format_new_information(
+            company_name=context.company_name,
+            websites=context.websites,
+            industry=context.industry,
+            customer_regions=context.customer_regions,
+            annual_ad_budget=context.annual_ad_budget
+        )
+    else:
+        company_name = "the company"
+        industry = "the industry"
+        new_information = "No context provided"
+    
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices, format_new_information
+    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
     
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("brand_guidelines")
     if not best_practices:
         logger.warning("Using default best practices for brand_guidelines")
-        best_practices = "Create comprehensive brand guidelines with visual and messaging frameworks."
+        best_practices = "Create comprehensive brand guidelines with all required sections."
     
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
     
-    # Format the context information
-    new_information = format_new_information(
-        company_name=context.company_name,
-        websites=context.websites,
-        industry=context.industry,
-        customer_regions=context.customer_regions,
-        annual_ad_budget=context.annual_ad_budget
-    )
-    
-    # Build instruction that will access state at runtime
     instruction = f"""
 # ROLE & GOAL
 You are a Brand Strategy Expert creating comprehensive brand guidelines.
 
-Your task is to create a comprehensive brand guidelines document that follows the BEST PRACTICES document for the company specified in the NEW INFORMATION provided.
+# TOOLS
+- google_search_agent: Research brand positioning and industry standards
 
-# NEW INFORMATION
-{new_information}
+# YOUR TASK
+Create brand guidelines following BEST PRACTICES for {company_name} in {industry}.
 
-# BEST PRACTICES
+# PROCESS
+1. Define brand mission, vision, and values
+2. Develop brand personality and voice
+3. Create messaging framework
+4. Establish brand standards and guidelines
+
+Use search queries like:
+- '{company_name} brand identity'
+- '{industry} branding best practices'
+- '{company_name} mission vision values'
+- 'brand voice examples {industry}'
+
+# OUTPUT REQUIREMENTS
+- Output ONLY the complete JSON guidelines document
+- Follow BEST PRACTICES structure exactly
+- Include comprehensive brand standards
+
+=== BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
 {best_practices}
 
-# PREVIOUS STRATEGY OUTPUTS
-You have access to strategy documents from ALL previous agents in the state.
-The business strategy document (if available) will be in the state as 'business_strategy_doc'.
-The competitive strategy document (if available) will be in the state as 'competitive_strategy_doc'.
-The customer strategy document (if available) will be in the state as 'customer_strategy_doc'.
-The marketing strategy document (if available) will be in the state as 'marketing_strategy_doc'.
-
-The business strategy document contains these 5 fields (excluding SWOT):
-   - businessStrategySummary
-   - companyOverview
-   - marketAndIndustryAnalysis
-   - productsAndServices
-   - marketingAndCustomerStrategy
-
-The competitive strategy document contains these 2 fields (excluding competitiveLandscape):
-   - competitiveStrategySummary
-   - strategicRecommendations
-
-The customer strategy document contains these 3 fields:
-   - customerProfiles
-   - customerJourneyMaps
-   - personaInsights
-
-The marketing strategy document contains these 3 fields:
-   - channelStrategies
-   - campaignPlans
-   - messagingFramework
-
-Use insights from ALL four previous strategies to inform your brand guidelines.
-
-This document will serve as the foundation for all marketing communications and ensure brand consistency across all touchpoints.
-
-TOOLS: Use your tool 'google_search_agent' to research the company's current brand presence and industry best practices.
-
+OUTPUT REQUIREMENTS:
 {output_requirements}
+
+NEW INFORMATION:
+{new_information}
+
+=== END INPUT DATA ===
+
+Create the complete Brand Guidelines document now.
 """
     
     return Agent(
@@ -896,47 +934,43 @@ TOOLS: Use your tool 'google_search_agent' to research the company's current bra
 
 def create_brand_reviewer() -> Agent:
     """Create the brand guidelines reviewer agent."""
-    # Import the synchronous versions for use in agent context
-    from .firestore import (
-        get_reviewer_guidelines_sync, 
-        get_best_practices_sync,
-        extract_validation_criteria_from_guidelines
-    )
+    from .firestore import get_reviewer_guidelines_sync
     
-    # Fetch reviewer guidelines from Firestore
-    reviewer_guidelines = get_reviewer_guidelines_sync("brand_guidelines")
-    if not reviewer_guidelines:
-        logger.warning("Using default reviewer guidelines for brand_guidelines")
-        reviewer_guidelines = "Review the document for comprehensive brand elements."
+    guidelines = get_reviewer_guidelines_sync("brand_guidelines")
+    if not guidelines:
+        logger.warning("Using default review guidelines for brand_guidelines")
+        guidelines = "Review the brand guidelines for completeness and consistency."
     
-    # Fetch best practices to know what fields to validate
-    best_practices = get_best_practices_sync("brand_guidelines")
-    if not best_practices:
-        logger.warning("Using default best practices for brand_guidelines validation")
-        best_practices = "{}"
-    
-    # Dynamically extract validation criteria
-    validation_process = extract_validation_criteria_from_guidelines(reviewer_guidelines, best_practices)
+    instruction = f"""
+You are a Senior Brand Reviewer. Review the brand guidelines document.
+
+# REVIEW GUIDELINES
+{guidelines}
+
+# YOUR TASK
+1. Verify brand identity completeness
+2. Check voice and tone consistency
+3. Assess visual guidelines quality
+4. Review usage standards clarity
+
+# OUTPUT FORMAT
+Provide structured feedback with:
+- Missing brand elements
+- Consistency issues
+- Guidelines clarity improvements
+- Quality score (1-10)
+"""
     
     return Agent(
         name="brand_reviewer",
-        model="gemini-2.0-flash",
-        tools=[],
-        description="Expert reviewer for brand guidelines documents",
-        instruction=f"""
-# ROLE & GOAL
-You are an experienced Brand Guidelines Reviewer.
-
-# REVIEWER GUIDELINES
-{reviewer_guidelines}
-
-{validation_process}
-
-# OUTPUT REQUIREMENTS
-- IF any issues found: Provide specific feedback
-- ELSE: Respond exactly with: 'The document meets all criteria.'
-""",
-        output_key="criticism"
+        model="gemini-2.5-flash",
+        description="Reviews brand guidelines documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=8192
+        ),
+        output_key="review_feedback"
     )
 
 
@@ -944,26 +978,29 @@ def create_brand_editor() -> Agent:
     """Create the brand guidelines editor agent."""
     google_search_agent = create_google_search_agent()
     
+    instruction = """
+You are a Brand Guidelines Editor. Improve the document based on review feedback.
+
+# YOUR TASK
+1. Address all feedback points
+2. Research brand best practices
+3. Enhance brand standards clarity
+4. Ensure comprehensive coverage
+
+# OUTPUT FORMAT
+Provide the complete, updated brand guidelines document in JSON format.
+"""
+    
     return Agent(
         name="brand_editor",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
-        description="Expert editor for brand guidelines documents",
-        instruction="""
-# ROLE & GOAL
-You are a Senior Brand Guidelines Editor.
-
-# CRITICAL INSTRUCTION
-If criticism is EXACTLY "The document meets all criteria." then immediately call exit_loop().
-
-# INPUTS AVAILABLE
-- criticism: The reviewer's feedback
-- brand_guidelines_doc: The current brand guidelines document
-
-# OUTPUT REQUIREMENTS
-- If calling exit_loop: First output the final approved document (brand_guidelines_doc), THEN call exit_loop()
-- If editing: Return ONLY the complete revised JSON document (the modified brand_guidelines_doc)
-""",
+        description="Edits brand guidelines documents",
+        instruction=instruction,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=65535
+        ),
         output_key="brand_guidelines_doc"
     )
 
