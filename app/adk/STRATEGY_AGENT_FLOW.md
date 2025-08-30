@@ -1,7 +1,7 @@
 # Strategy Agent Interaction Flow
 
 ## Overview
-This diagram illustrates how the KEN-E Strategy Agent System creates comprehensive business strategy documents through a sequential pipeline of 5 specialized agents, each with internal refinement loops. The system uses an orchestrator pattern where `create_strategy_docs.py` routes requests to `orchestrator.py` which manages the sequential execution.
+This diagram illustrates how the KEN-E Strategy Agent System creates comprehensive business strategy documents through a sequential pipeline of 5 specialized agents, each with internal refinement loops. The system uses a multi-agent supervisor pattern where `multi_agent_supervisor_v2.py` routes strategy requests to `orchestrator.py` which manages the sequential execution.
 
 ## Architecture Diagram
 
@@ -21,7 +21,7 @@ graph TB
     User[User Request<br/>Company Info]:::userNode
     
     %% Main Router/Supervisor
-    Supervisor[Strategy Supervisor<br/>create_strategy_docs.py<br/>Routes to orchestrator]:::routerNode
+    Supervisor[Multi-Agent Supervisor V2<br/>multi_agent_supervisor_v2.py<br/>Routes to strategy orchestrator]:::routerNode
     
     %% Orchestrator
     Orchestrator[Strategy Orchestrator<br/>orchestrator.py<br/>execute_strategy_generation()]:::orchestratorNode
@@ -225,18 +225,19 @@ Each agent's instructions now include:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| Main Supervisor | `create_strategy_docs.py` | Routes requests to orchestrator (renamed from agent_standalone.py) |
-| Orchestrator | `orchestrator.py` | Manages sequential execution with Runner class |
+| Main Supervisor | `multi_agent_supervisor_v2.py` | Routes requests between News, Analytics, and Strategy agents |
+| Strategy Orchestrator | `orchestrator.py` | Manages sequential execution with Runner class |
 | Agent Definitions | `agents.py` | Contains all 5 strategy agent definitions |
 | Data Models | `models.py` | StrategyContext and data structures |
 | Firestore Integration | `firestore.py` | Document storage and retrieval |
-| Deployment Scripts | `deploy_with_execution.py` | Deploys to Vertex AI Agent Engine |
+| Dependency Injection | `providers.py` | Abstract interfaces for external dependencies |
+| Deployment Scripts | `deploy_supervisor.py` | Deploys to Vertex AI Agent Engine |
 
 ## Execution Flow
 
 1. **Account Creation** triggers strategy generation via API
-2. **Supervisor** (`create_strategy_docs.py`) receives request
-3. **Orchestrator** (`orchestrator.py`) is invoked via `execute_strategy_generation()`
+2. **Multi-Agent Supervisor** (`multi_agent_supervisor_v2.py`) receives and routes request
+3. **Strategy Orchestrator** (`orchestrator.py`) is invoked via `execute_strategy_generation()`
 4. **Runner** class executes the SequentialAgent with all 5 sub-agents
 5. **Events** are monitored and documents saved immediately upon completion
 6. **Firestore** stores completed documents in `strategy_docs_{account_id}`
