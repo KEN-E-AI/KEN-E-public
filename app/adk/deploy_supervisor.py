@@ -35,24 +35,18 @@ def deploy_supervisor():
         shutil.copy2(supervisor_file, temp_path / "agent.py")
         logger.info("Copied multi_agent_supervisor_v2.py to agent.py")
         
-        # Copy agent_engine_app.py
-        app_file = Path("agents/agent_engine_app.py")
-        if app_file.exists():
-            shutil.copy2(app_file, temp_path / "agent_engine_app.py")
-            logger.info("Copied agent_engine_app.py")
-        else:
-            # Create a minimal agent_engine_app.py if it doesn't exist
-            app_content = """from vertexai.preview import reasoning_engines
-from agents.multi_agent_supervisor_v2 import supervisor_agent_v2
+        # Create agent_engine_app.py that imports from agent.py (the renamed file)
+        app_content = """from vertexai.preview import reasoning_engines
+from agent import supervisor_agent_v2
 
 app = reasoning_engines.AdkApp(
     agent=supervisor_agent_v2,
     enable_tracing=True
 )
 """
-            with open(temp_path / "agent_engine_app.py", "w") as f:
-                f.write(app_content)
-            logger.info("Created agent_engine_app.py")
+        with open(temp_path / "agent_engine_app.py", "w") as f:
+            f.write(app_content)
+        logger.info("Created agent_engine_app.py with correct import")
         
         # Copy the entire agents directory (supervisor needs all sub-agents)
         agents_src = Path("agents")

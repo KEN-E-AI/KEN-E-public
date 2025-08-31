@@ -5,6 +5,7 @@
 import type { Organization, Account } from "./organizationTypes";
 import { getDefaultPlan } from "./subscriptionPlansApi";
 import api from "@/lib/api";
+import { FormDataBuilder } from "@/lib/form-data-builder";
 
 // Helper function for API calls
 async function apiCall<T>(
@@ -180,9 +181,8 @@ export async function createAccount(
   console.log("[organizationApi] Creating account with data:", accountData);
 
   // Prepare headers with idempotency support
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  // DO NOT set Content-Type for FormData - let browser set it with boundary
+  const headers: Record<string, string> = {};
 
   if (options?.idempotencyKey) {
     headers["Idempotency-Key"] = options.idempotencyKey;
@@ -192,57 +192,42 @@ export async function createAccount(
     );
   }
 
-  // If there are files to upload, we need to handle it separately
-  if (
-    accountData.business_strategy_documents &&
-    accountData.business_strategy_documents.length > 0
-  ) {
-    // First create the account without files
-    const { business_strategy_documents, ...accountDataWithoutFiles } =
-      accountData;
-    const newAccount = await apiCall<Account>("/api/v1/accounts/", {
-      method: "POST",
-      data: accountDataWithoutFiles,
-      headers,
-      timeout: options?.timeout || 600000, // 10 minutes for account creation
-    });
-
-    // Then upload the files
-    try {
-      const formData = new FormData();
-      business_strategy_documents.forEach((file, index) => {
-        formData.append("files", file);
-      });
-
-      await api.post(
-        `/api/v1/accounts/${newAccount.account_id}/documents`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        },
-      );
-
-      console.log(
-        "[organizationApi] Files uploaded successfully for account:",
-        newAccount.account_id,
-      );
-    } catch (uploadError) {
-      console.error("[organizationApi] Failed to upload files:", uploadError);
-      // Account was created but file upload failed - this is logged but doesn't fail the creation
-    }
-
-    return newAccount;
+  // Use FormDataBuilder for consistent serialization
+  const builder = new FormDataBuilder();
+  
+  // Add required fields
+  builder
+    .append("account_name", accountData.account_name)
+    .append("organization_id", accountData.organization_id)
+    .append("industry", accountData.industry)
+    .append("status", accountData.status)
+    .append("websites", accountData.websites)
+    .append("timezone", accountData.timezone);
+  
+  // Add optional fields
+  builder
+    .append("account_id", accountData.account_id)
+    .append("data_region", accountData.data_region)
+    .append("region", accountData.region)
+    .append("marketing_channels", accountData.marketing_channels)
+    .append("product_integrations", accountData.product_integrations)
+    .append("estimated_annual_ad_budget", accountData.estimated_annual_ad_budget);
+  
+  // Add files if they exist
+  if (accountData.business_strategy_documents && accountData.business_strategy_documents.length > 0) {
+    builder.appendFiles("files", accountData.business_strategy_documents);
+    console.log("[organizationApi] Sending account creation with files as multipart/form-data");
+  } else {
+    console.log("[organizationApi] Sending account creation without files as multipart/form-data");
   }
-
-  // No files to upload, simple account creation
-  return apiCall<Account>("/api/v1/accounts/", {
-    method: "POST",
-    data: accountData,
-    headers,
+  
+  const formData = builder.build();
+  
+  // Always send as multipart/form-data
+  return api.post<Account>("/api/v1/accounts/", formData, {
+    headers: headers,  // Don't spread or modify - let axios handle Content-Type for FormData
     timeout: options?.timeout || 600000, // 10 minutes for account creation
-  });
+  }).then(response => response.data);
 }
 
 export async function updateAccount(

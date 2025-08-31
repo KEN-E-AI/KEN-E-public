@@ -28,19 +28,92 @@ def update_strategy_progress(
     """
     try:
         # Create progress data using the proper model for consistency
+        # Map percentage to specific steps
+        if percentage <= 20:
+            current_step = 1
+            steps = [
+                ProgressStep(name="Setting up database", status="processing"),
+                ProgressStep(name="Researching your business", status="pending"),
+                ProgressStep(name="Researching your competitors", status="pending"),
+                ProgressStep(name="Researching your customers", status="pending"),
+                ProgressStep(name="Inferring your marketing strategy", status="pending"),
+                ProgressStep(name="Reviewing your brand styles", status="pending"),
+                ProgressStep(name="Finalizing setup", status="pending"),
+            ]
+        elif percentage <= 30:
+            current_step = 2
+            steps = [
+                ProgressStep(name="Setting up database", status="completed"),
+                ProgressStep(name="Researching your business", status="processing"),
+                ProgressStep(name="Researching your competitors", status="pending"),
+                ProgressStep(name="Researching your customers", status="pending"),
+                ProgressStep(name="Inferring your marketing strategy", status="pending"),
+                ProgressStep(name="Reviewing your brand styles", status="pending"),
+                ProgressStep(name="Finalizing setup", status="pending"),
+            ]
+        elif percentage <= 45:
+            current_step = 3
+            steps = [
+                ProgressStep(name="Setting up database", status="completed"),
+                ProgressStep(name="Researching your business", status="completed"),
+                ProgressStep(name="Researching your competitors", status="processing"),
+                ProgressStep(name="Researching your customers", status="pending"),
+                ProgressStep(name="Inferring your marketing strategy", status="pending"),
+                ProgressStep(name="Reviewing your brand styles", status="pending"),
+                ProgressStep(name="Finalizing setup", status="pending"),
+            ]
+        elif percentage <= 60:
+            current_step = 4
+            steps = [
+                ProgressStep(name="Setting up database", status="completed"),
+                ProgressStep(name="Researching your business", status="completed"),
+                ProgressStep(name="Researching your competitors", status="completed"),
+                ProgressStep(name="Researching your customers", status="processing"),
+                ProgressStep(name="Inferring your marketing strategy", status="pending"),
+                ProgressStep(name="Reviewing your brand styles", status="pending"),
+                ProgressStep(name="Finalizing setup", status="pending"),
+            ]
+        elif percentage <= 75:
+            current_step = 5
+            steps = [
+                ProgressStep(name="Setting up database", status="completed"),
+                ProgressStep(name="Researching your business", status="completed"),
+                ProgressStep(name="Researching your competitors", status="completed"),
+                ProgressStep(name="Researching your customers", status="completed"),
+                ProgressStep(name="Inferring your marketing strategy", status="processing"),
+                ProgressStep(name="Reviewing your brand styles", status="pending"),
+                ProgressStep(name="Finalizing setup", status="pending"),
+            ]
+        elif percentage <= 90:
+            current_step = 6
+            steps = [
+                ProgressStep(name="Setting up database", status="completed"),
+                ProgressStep(name="Researching your business", status="completed"),
+                ProgressStep(name="Researching your competitors", status="completed"),
+                ProgressStep(name="Researching your customers", status="completed"),
+                ProgressStep(name="Inferring your marketing strategy", status="completed"),
+                ProgressStep(name="Reviewing your brand styles", status="processing"),
+                ProgressStep(name="Finalizing setup", status="pending"),
+            ]
+        else:
+            current_step = 7
+            steps = [
+                ProgressStep(name="Setting up database", status="completed"),
+                ProgressStep(name="Researching your business", status="completed"),
+                ProgressStep(name="Researching your competitors", status="completed"),
+                ProgressStep(name="Researching your customers", status="completed"),
+                ProgressStep(name="Inferring your marketing strategy", status="completed"),
+                ProgressStep(name="Reviewing your brand styles", status="completed"),
+                ProgressStep(name="Finalizing setup", status="processing"),
+            ]
+        
         progress = AccountCreationProgress(
             status="processing",
             percentage=percentage,
-            current_step=3,
-            total_steps=5,
+            current_step=current_step,
+            total_steps=7,
             message=message,
-            steps=[
-                ProgressStep(name="Creating account", status="completed"),
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Generating strategy", status="processing"),
-                ProgressStep(name="Syncing activities", status="pending"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ],
+            steps=steps,
         )
 
         cache_key = f"account_creation:{account_id}"
@@ -65,6 +138,7 @@ async def trigger_strategy_generation(
     customer_regions: list[str],
     user_id: str,
     annual_ad_budget: float | None = None,
+    uploaded_document_urls: list[str] | None = None,
     user_context: Any | None = None,  # Allow passing existing UserContext for chat-triggered calls
 ) -> None:
     """
@@ -79,13 +153,14 @@ async def trigger_strategy_generation(
         customer_regions: Customer regions
         user_id: User ID who created the account
         annual_ad_budget: Optional annual ad budget
+        uploaded_document_urls: Optional list of GCS URLs for uploaded strategy documents
     """
     try:
         print(f"[STRATEGY_GENERATION] Starting for account {account_id}")
         logger.info(f"Starting strategy generation for account {account_id}")
 
         # Update progress to show strategy generation is starting
-        update_strategy_progress(account_id, "Preparing strategy generation...", 45)
+        update_strategy_progress(account_id, "Setting up database structures...", 15)
 
         # Update account status to processing
         await update_account_setup_status(account_id, "processing")
@@ -125,13 +200,17 @@ Please execute strategy generation with these parameters:
 - user_id: {user_id}
 - annual_ad_budget: {annual_ad_budget or 0}
 - project_id: {project_id}"""
+        
+        if uploaded_document_urls:
+            message += f"\n- uploaded_documents: {','.join(uploaded_document_urls)}"
+            logger.info(f"Including {len(uploaded_document_urls)} uploaded documents in strategy generation request")
 
         # Call the strategy agent directly
         logger.info(f"Invoking strategy agent for {company_name} via Agent Engine")
 
-        # Update progress to show we're calling the AI agent
+        # Update progress to show we're starting research
         update_strategy_progress(
-            account_id, "Analyzing business and generating strategy documents...", 50
+            account_id, "Researching your business...", 25
         )
 
         try:
@@ -210,10 +289,27 @@ Please execute strategy generation with these parameters:
                 response_parts = []
                 chunk_count = 0
                 logger.info("Starting to collect response chunks...")
+                
+                # Track progress through chunks to update UI
+                last_progress_update = 25
 
                 for chunk in response:
                     chunk_count += 1
                     logger.info(f"Processing chunk {chunk_count}...")
+                    
+                    # Update progress based on chunk count to simulate document creation
+                    if chunk_count == 5 and last_progress_update < 40:
+                        update_strategy_progress(account_id, "Researching your competitors...", 40)
+                        last_progress_update = 40
+                    elif chunk_count == 10 and last_progress_update < 55:
+                        update_strategy_progress(account_id, "Researching your customers...", 55)
+                        last_progress_update = 55
+                    elif chunk_count == 15 and last_progress_update < 70:
+                        update_strategy_progress(account_id, "Inferring your marketing strategy...", 70)
+                        last_progress_update = 70
+                    elif chunk_count == 20 and last_progress_update < 85:
+                        update_strategy_progress(account_id, "Reviewing your brand styles...", 85)
+                        last_progress_update = 85
 
                     if isinstance(chunk, dict):
                         logger.info(
@@ -285,24 +381,26 @@ Please execute strategy generation with these parameters:
 
         # Update progress to show strategy generation is complete
         update_strategy_progress(
-            account_id, "Strategy documents generated successfully!", 75
+            account_id, "Finalizing account setup...", 95
         )
 
         # Update account status to ready
         await update_account_setup_status(account_id, "ready", completed=True)
 
-        # Final progress update - mark as complete
+        # Final progress update - mark as complete with all 7 steps
         final_progress = AccountCreationProgress(
             status="completed",
             percentage=100,
-            current_step=5,
-            total_steps=5,
+            current_step=7,
+            total_steps=7,
             message="Account setup complete!",
             steps=[
-                ProgressStep(name="Creating account", status="completed"),
                 ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Generating strategy", status="completed"),
-                ProgressStep(name="Syncing activities", status="completed"),
+                ProgressStep(name="Researching your business", status="completed"),
+                ProgressStep(name="Researching your competitors", status="completed"),
+                ProgressStep(name="Researching your customers", status="completed"),
+                ProgressStep(name="Inferring your marketing strategy", status="completed"),
+                ProgressStep(name="Reviewing your brand styles", status="completed"),
                 ProgressStep(name="Finalizing setup", status="completed"),
             ],
         )
@@ -472,6 +570,7 @@ def trigger_strategy_generation_sync(
     customer_regions: list[str],
     user_id: str,
     annual_ad_budget: float | None = None,
+    uploaded_document_urls: list[str] | None = None,
     user_context: Any | None = None,
 ) -> None:
     """
@@ -492,6 +591,7 @@ def trigger_strategy_generation_sync(
                     customer_regions=customer_regions,
                     user_id=user_id,
                     annual_ad_budget=annual_ad_budget,
+                    uploaded_document_urls=uploaded_document_urls,
                     user_context=user_context,
                 )
             )
@@ -506,6 +606,7 @@ def trigger_strategy_generation_sync(
                     customer_regions=customer_regions,
                     user_id=user_id,
                     annual_ad_budget=annual_ad_budget,
+                    uploaded_document_urls=uploaded_document_urls,
                     user_context=user_context,
                 )
             )
@@ -520,6 +621,7 @@ def trigger_strategy_generation_sync(
                 customer_regions=customer_regions,
                 user_id=user_id,
                 annual_ad_budget=annual_ad_budget,
+                uploaded_document_urls=uploaded_document_urls,
                 user_context=user_context,
             )
         )

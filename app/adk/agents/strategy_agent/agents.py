@@ -116,10 +116,24 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **Check for Uploaded Strategy Documents:**
+   - IMPORTANT: Check if any artifacts starting with 'input_strategy_' are available
+   - To access artifacts:
+     a. List available artifacts: artifacts = context.list_artifacts()
+     b. Filter for strategy documents: strategy_docs = [a for a in artifacts if a.filename.startswith('input_strategy_')]
+     c. Load each document: for doc in strategy_docs: content = context.load_artifact(doc.filename)
+   - Analyze loaded documents to extract:
+     - Company's mission, vision, and values
+     - Strategic goals and objectives
+     - Key initiatives and priorities
+     - Market positioning and differentiation
+   - Use this information to ensure alignment and consistency in your strategy creation
 
-2. **Research Requirements:**
+2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+   - If uploaded strategy documents were found, incorporate their insights
+
+3. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
    - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
@@ -134,11 +148,12 @@ You must follow this logic precisely:
     - '{company_name} products services'
     - '{company_name} customer segments'
 
-3. **Create New Document**
+4. **Create New Document**
    - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
 
-4. **Final Review and Formatting:**
+5. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
@@ -333,11 +348,25 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
-2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **Check for Uploaded Strategy Documents:**
+   - IMPORTANT: Check if any artifacts starting with 'input_strategy_' are available
+   - To access artifacts:
+     a. List available artifacts: artifacts = context.list_artifacts()
+     b. Filter for strategy documents: strategy_docs = [a for a in artifacts if a.filename.startswith('input_strategy_')]
+     c. Load each document: for doc in strategy_docs: content = context.load_artifact(doc.filename)
+   - Extract competitive insights from uploaded documents:
+     - Current competitive landscape analysis
+     - Identified competitors and their positioning
+     - Competitive advantages and differentiators
+     - Market share and positioning goals
 
-3. **Research Requirements:**
+2. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+
+3. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+   - If uploaded strategy documents were found, incorporate their insights
+
+4. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
    - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
@@ -349,11 +378,12 @@ You must follow this logic precisely:
      - '{company_name} vs competitor comparison'
      - '{industry} market share analysis'
 
-4. **Create New Document**
+5. **Create New Document**
    - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
 
-5. **Final Review and Formatting:**
+6. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 

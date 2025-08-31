@@ -1,5 +1,6 @@
 """Accounts router for CRUD operations on account entities."""
 
+import json
 import logging
 import os
 import uuid
@@ -11,9 +12,11 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     Path,
     Query,
+    Request,
     UploadFile,
 )
 from pydantic import BaseModel, Field
@@ -34,6 +37,8 @@ from ..models.kene_models import (
 from ..repositories import FirestoreNotificationRepository
 from ..services.notification_service_v2 import NotificationService
 from ..services.storage_service import StorageService, get_storage_service
+from ..services.form_parsing_service import parse_account_form_data
+from ..services.account_service import create_account_internal
 
 router = APIRouter(tags=["accounts"])
 
@@ -547,11 +552,26 @@ async def _create_initial_activity_logs(
 
 @router.post("/", response_model=Account)
 async def create_account(
-    request: AccountRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
+    account_name: str = Form(...),
+    organization_id: str = Form(...),
+    industry: str = Form(...),
+    status: str = Form(...),
+    websites: str = Form(...),  # JSON string of array
+    timezone: str = Form(...),
+    account_id: str | None = Form(None),
+    data_region: str | None = Form(None),
+    region: str | None = Form(None),  # JSON string of array
+    marketing_channels: str | None = Form(None),  # JSON string of array
+    product_integrations: str | None = Form(None),  # JSON string of array
+    estimated_annual_ad_budget: int | None = Form(None),
+    files: list[UploadFile] | None = File(None),
     user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
     firestore: FirestoreService = Depends(get_firestore_service),
     storage: StorageService = Depends(get_storage_service),
+    bigquery: BigQueryService = Depends(get_bigquery_service),
 ) -> Account:
     """
     Create a new account.
@@ -587,438 +607,122 @@ async def create_account(
 
     **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
     """
-    # Use provided account_id if present, otherwise generate a new one
-    # This allows frontend to pre-generate the ID for progress tracking
-    account_id = request.account_id if request.account_id else generate_unique_account_id()
-    print(f"[ACCOUNT_CREATION] Starting for: {account_id}")
-    logger.info(
-        f"[ACCOUNT_CREATION] Starting account creation for account_id: {account_id}"
-    )
-
-    # Initialize progress tracking
-    update_account_progress(
-        account_id,
-        1,
-        "Creating account in database...",
-        ["processing", "pending", "pending", "pending", "pending"],
-    )
-
-    # CRITICAL: Trigger strategy generation IMMEDIATELY
-    # This ensures it runs regardless of any failures below
-    # User explicitly requested: "feel free to create strategy generation regardless of whatever else fails"
-    strategy_generation_triggered = False
+    # Debug logging
+    content_type = request.headers.get("content-type", "")
+    logger.info(f"[ACCOUNT_CREATION] Request details:")
+    logger.info(f"  Content-Type: {content_type}")
+    logger.info(f"  account_name: {account_name}")
+    logger.info(f"  organization_id: {organization_id}")
+    logger.info(f"  websites (raw): {websites}")
+    logger.info(f"  files: {files}")
+    
+    # Parse form data into AccountRequest using the service
     try:
-        print(f"[STRATEGY] About to trigger generation for {account_id}")
-        logger.info(
-            f"[STRATEGY] Triggering strategy generation for account {account_id} BEFORE any database operations"
-        )
-
-        from ..tasks.strategy_tasks import trigger_strategy_generation
-
-        # Use FastAPI's background tasks to run strategy generation truly asynchronously
-        # This will run after the response is sent, ensuring no blocking
-        background_tasks.add_task(
-            trigger_strategy_generation,
+        account_request = parse_account_form_data(
+            account_name=account_name,
+            organization_id=organization_id,
+            industry=industry,
+            status=status,
+            websites=websites,
+            timezone=timezone,
             account_id=account_id,
-            company_name=request.account_name,
-            websites=request.websites,
-            industry=request.industry,
-            customer_regions=request.region or [],
-            user_id=user.user_id,
-            annual_ad_budget=request.estimated_annual_ad_budget,
-            user_context=None,  # No user context for background task
+            data_region=data_region,
+            region=region,
+            marketing_channels=marketing_channels,
+            product_integrations=product_integrations,
+            estimated_annual_ad_budget=estimated_annual_ad_budget
         )
-
-        strategy_generation_triggered = True
-        logger.info(
-            f"[STRATEGY] Successfully triggered strategy generation for account {account_id} as background task"
-        )
-    except Exception as e:
-        logger.error(
-            f"[STRATEGY] Failed to trigger strategy generation for account {account_id}: {e}",
-            exc_info=True,
-        )
-
-    # Now proceed with the rest of account creation
-    # Even if this fails, strategy generation has already been triggered
-    try:
-        # Get Neo4j service (we removed it from dependencies to ensure strategy runs first)
-        from ..database import get_neo4j_service
-
-        db = await get_neo4j_service()
-
-        # Check Neo4j connectivity
-        is_healthy = await db.health_check()
-        if not is_healthy:
-            # Neo4j is down, but strategy generation was already triggered
-            logger.warning(
-                f"Neo4j unavailable, but strategy generation already triggered for {account_id}"
-            )
-            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
-
-        # Validate required fields
-        if not request.account_name:
-            raise HTTPException(status_code=400, detail="account_name is required")
-        if not request.organization_id:
-            raise HTTPException(status_code=400, detail="organization_id is required")
-        if not request.industry:
-            raise HTTPException(status_code=400, detail="industry is required")
-        if not request.status:
-            raise HTTPException(status_code=400, detail="status is required")
-        if request.websites is None:
-            raise HTTPException(status_code=400, detail="websites is required")
-        if not request.timezone:
-            raise HTTPException(status_code=400, detail="timezone is required")
-
-        # Check if organization exists
-        logger.info(
-            f"[ACCOUNT_CREATION] Checking if organization {request.organization_id} exists..."
-        )
-        org_exists = await _check_organization_exists(db, request.organization_id)
-        if not org_exists:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Organization {request.organization_id} not found",
-            )
-        logger.info(f"[ACCOUNT_CREATION] Organization {request.organization_id} exists")
-
-        # Check if organization is an agency (agency organizations cannot create accounts)
-        logger.info(
-            f"[ACCOUNT_CREATION] Checking agency status for {request.organization_id}..."
-        )
-        is_agency = await _get_organization_agency_status(db, request.organization_id)
-        if is_agency is True:
-            raise HTTPException(
-                status_code=403,
-                detail="Account creation is not permitted for agency organizations",
-            )
-        logger.info(
-            f"[ACCOUNT_CREATION] Organization is not an agency (agency={is_agency})"
-        )
-
-        # Account ID was already generated at the beginning
-        # Check if account already exists (extremely unlikely with UUID4)
-        logger.info(
-            f"[ACCOUNT_CREATION] Checking if account {account_id} already exists..."
-        )
-        existing_acc = await _check_account_exists(db, account_id)
-        if existing_acc:
-            logger.warning(f"UUID collision detected for account_id: {account_id}")
-            # Generate a new UUID if collision occurs (extremely rare)
-            old_account_id = account_id
-            account_id = generate_unique_account_id()
-            existing_acc = await _check_account_exists(db, account_id)
-            if existing_acc:
+    except ValueError as e:
+        logger.error(f"[ACCOUNT_CREATION] Form parsing error: {e}")
+        raise HTTPException(status_code=422, detail=str(e))
+    
+    # Upload files if provided
+    uploaded_document_urls = []
+    if files:
+        try:
+            # Validate and upload files
+            ALLOWED_EXTENSIONS = {".pdf", ".xlsx", ".docx", ".pptx", ".txt", ".png", ".jpg", ".jpeg"}
+            MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
+            MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100MB
+            
+            total_size = 0
+            for file in files:
+                if file.filename:
+                    file_ext = "." + file.filename.split(".")[-1].lower()
+                    if file_ext not in ALLOWED_EXTENSIONS:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"File type {file_ext} not allowed"
+                        )
+                
+                content = await file.read()
+                file_size = len(content)
+                total_size += file_size
+                
+                if file_size > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File {file.filename} exceeds 25MB"
+                    )
+                
+                await file.seek(0)
+            
+            if total_size > MAX_TOTAL_SIZE:
                 raise HTTPException(
-                    status_code=500,
-                    detail="Unable to generate unique account ID. Please try again.",
+                    status_code=400,
+                    detail="Total file size exceeds 100MB"
                 )
-            # Update the strategy generation with new account_id if we had to regenerate
-            if strategy_generation_triggered:
-                logger.info(
-                    f"[STRATEGY] Updating strategy generation from {old_account_id} to {account_id}"
-                )
-
-        # Create account node and BELONGS_TO relationship
-        create_query = """
-        MATCH (org:Organization {organization_id: $organization_id})
-        CREATE (acc:Account {
-            account_id: $account_id,
-            account_name: $account_name,
-            organization_id: $organization_id,
-            industry: $industry,
-            status: $status,
-            websites: $websites,
-            timezone: $timezone,
-            data_region: $data_region,
-            region: $region,
-            estimated_annual_ad_budget: $estimated_annual_ad_budget,
-            setup_status: $setup_status,
-            setup_started_at: $setup_started_at,
-            setup_completed_at: $setup_completed_at,
-            marketing_channels: $marketing_channels,
-            product_integrations: $product_integrations
-        })
-        CREATE (acc)-[:BELONGS_TO]->(org)
-        RETURN acc
-        """
-
-        params = {
-            "account_id": account_id,
-            "account_name": request.account_name,
-            "organization_id": request.organization_id,
-            "industry": request.industry,
-            "status": request.status,
-            "websites": request.websites,
-            "timezone": request.timezone,
-            "data_region": request.data_region or "",
-            "region": request.region or [],
-            "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
-            "setup_status": "pending",  # Initial status
-            "setup_started_at": None,
-            "setup_completed_at": None,
-            "marketing_channels": request.marketing_channels or [],
-            "product_integrations": request.product_integrations or [],
-        }
-
-        logger.info(
-            f"[ACCOUNT_CREATION] About to execute write query for account {account_id}"
-        )
-        logger.info(
-            f"[ACCOUNT_CREATION] Query params: organization_id={request.organization_id}"
-        )
-
-        try:
-            result = await db.execute_write_query(create_query, params)
-            logger.info(f"[ACCOUNT_CREATION] Write query successful! Result: {result}")
-        except Exception as e:
-            logger.error(f"[ACCOUNT_CREATION] Write query failed: {e}")
-            logger.error(f"[ACCOUNT_CREATION] Error type: {type(e).__name__}")
+            
+            # Upload to GCS
+            uploaded_files = await storage.upload_business_documents(
+                account_id=account_request.account_id or generate_unique_account_id(),
+                data_region=account_request.data_region or "US",
+                files=files
+            )
+            
+            # Extract URLs from successful uploads
+            uploaded_document_urls = [
+                f["url"] for f in uploaded_files 
+                if "url" in f and "error" not in f
+            ]
+            
+            logger.info(f"[ACCOUNT_CREATION] Uploaded {len(uploaded_document_urls)} documents")
+            
+        except HTTPException:
             raise
-
-        # Account creation successful - log completion
-        logger.info(f"=== ACCOUNT CREATION COMPLETE for {account_id} ===")
-
-        # Update progress: database setup complete
-        update_account_progress(
-            account_id,
-            2,
-            "Setting up database relationships...",
-            ["completed", "processing", "pending", "pending", "pending"],
-        )
-
-        # Invalidate the creating user's cache to ensure their context includes the new account
-        from ..auth.cached_user_context import get_cached_user_context_service
-
-        cached_user_service = get_cached_user_context_service()
-        cached_user_service.invalidate_user_context(user.user_id)
-        logger.info(
-            f"Invalidated cache for user {user.user_id} after creating account {account_id}"
-        )
-
-        # Ensure GCS bucket exists for business strategy documents
-        try:
-            storage_service = get_storage_service()
-            bucket_name, location = await storage_service.ensure_bucket_exists(
-                request.data_region or "US"
-            )
-            logger.info(
-                f"Ensured GCS bucket {bucket_name} exists in {location} "
-                f"for account {account_id} with data region {request.data_region or 'US'}"
-            )
         except Exception as e:
-            # Log error but don't fail account creation if bucket creation fails
-            logger.error(
-                f"Failed to ensure GCS bucket for account {account_id} "
-                f"with data region {request.data_region or 'US'}: {e}"
-            )
+            logger.error(f"[ACCOUNT_CREATION] File upload failed: {e}")
+            # Don't fail account creation if file upload fails
+            uploaded_document_urls = []
 
-        # Create Firestore collection strategy_docs_{account_id} with initial placeholder document
-        try:
-            collection_name = f"strategy_docs_{account_id}"
-            initial_doc_data = {
-                "account_id": account_id,
-                "created_at": datetime.now().isoformat(),
-                "created_by": user.user_id,
-                "type": "placeholder",
-                "description": "Initial placeholder document - collection ready for business strategy documents",
-                "organization_id": request.organization_id,
-            }
-            doc_id = firestore.create_document(
-                collection_name, "_placeholder", initial_doc_data
-            )
-            logger.info(
-                f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
-            )
-        except Exception as e:
-            # Log error but don't fail account creation if collection creation fails
-            logger.error(
-                f"Failed to create Firestore collection for account {account_id}: {e}"
-            )
-
-        # Update progress: moving to strategy generation
-        update_account_progress(
-            account_id,
-            3,
-            "Generating marketing strategy...",
-            ["completed", "completed", "processing", "pending", "pending"],
+    # Use the internal service to create the account
+    try:
+        account = await create_account_internal(
+            request=account_request,
+            uploaded_document_urls=uploaded_document_urls,
+            background_tasks=background_tasks,
+            user=user,
+            firestore=firestore,
+            storage=storage,
+            neo4j_service=db,
+            bigquery_service=bigquery
         )
-
-        # Create initial activities for the new account
-        activities_created = await _create_initial_activities(db, firestore, account_id)
-        if activities_created > 0:
-            logger.info(
-                f"Successfully created {activities_created} initial activities for account {account_id}"
-            )
-
-        # Update progress: syncing activities
-        update_account_progress(
-            account_id,
-            4,
-            "Syncing holiday activities...",
-            ["completed", "completed", "completed", "processing", "pending"],
-        )
-
-        # Create initial activity logs for act_00 if regions are specified
-        if request.region:
-            logger.info(
-                f"Account {account_id} has regions: {request.region}, attempting to create holiday activity logs"
-            )
-            bigquery = get_bigquery_service()
-            logs_created = await _create_initial_activity_logs(
-                db, bigquery, account_id, request.organization_id, request.region
-            )
-            if logs_created > 0:
-                logger.info(
-                    f"Successfully created {logs_created} holiday activity logs for account {account_id}"
-                )
-            else:
-                logger.info(
-                    f"No regional holidays found - no activity logs created for account {account_id}"
-                )
-
-        # Create Google Cloud Storage folder for the account
-        try:
-            data_region = request.data_region or "US"
-            folder_created = await storage.ensure_account_folder(
-                account_id, data_region
-            )
-            if folder_created:
-                logger.info(
-                    f"Created GCS folder for account {account_id} in region {data_region}"
-                )
-            else:
-                logger.warning(
-                    f"Failed to create GCS folder for account {account_id} in region {data_region}"
-                )
-        except Exception as e:
-            # Don't fail account creation if storage folder creation fails
-            logger.error(
-                f"Failed to create GCS folder for new account {account_id}: {e}"
-            )
-
-        # Create notification for the new account
-        logger.info(f"Starting notification creation for account {account_id}")
-        try:
-            # Create repository and service instances
-            notification_repository = FirestoreNotificationRepository(
-                firestore.get_client()
-            )
-            notification_service = NotificationService(notification_repository)
-            notification_id = await notification_service.create_notification(
-                account_id=account_id,
-                category=NotificationCategory.NEW_FEATURES,
-                description="Configure your new account",
-                data={
-                    "account_name": request.account_name,
-                    "created_by": user.user_id,
-                    "created_at": datetime.now().isoformat(),
-                },
-            )
-            logger.info(
-                f"Created new account notification {notification_id} for account {account_id}"
-            )
-
-            # Try to initialize notification for user if method exists
-            if hasattr(notification_service, "initialize_notification_for_user"):
-                await notification_service.initialize_notification_for_user(
-                    notification_id=notification_id,
-                    user_id=user.user_id,
-                    category=NotificationCategory.NEW_FEATURES,
-                )
-            else:
-                # Ensure the creating user can see the notification immediately
-                # Create notification status directly for the creating user
-                await notification_repository.batch_create_user_statuses(
-                    [
-                        {
-                            "user_id": user.user_id,
-                            "notification_id": notification_id,
-                            "status": NotificationStatus.UNREAD.value,
-                            "updated_at": datetime.now().isoformat(),
-                        }
-                    ]
-                )
-        except Exception as e:
-            # Don't fail account creation if notification fails
-            logger.error(
-                f"Failed to create notification for new account {account_id}: {e}"
-            )
-
-        logger.info(f"Completed notification section for account {account_id}")
-
-        # Strategy generation was already triggered at the beginning
-        # Log the status for clarity
-        if strategy_generation_triggered:
-            logger.info(
-                f"[STRATEGY] Strategy generation was already triggered for account {account_id}"
-            )
-        else:
-            logger.warning(
-                f"[STRATEGY] Strategy generation was not triggered for account {account_id}"
-            )
-
-        # Grant the creating user admin permissions on the new account
-        try:
-            success = firestore.set_nested_field(
-                collection="users",
-                document_id=user.user_id,
-                field_path=f"permissions.accounts.{account_id}",
-                value="admin",
-            )
-            if success:
-                logger.info(
-                    f"Granted admin permissions to user {user.user_id} for account {account_id}"
-                )
-
-                # Invalidate the user's cache again to ensure permissions are updated
-                cached_user_service.invalidate_user_context(user.user_id)
-                logger.info(
-                    f"Invalidated cache again for user {user.user_id} after granting account permissions"
-                )
-            else:
-                logger.warning(
-                    f"Failed to grant permissions to user {user.user_id} for account {account_id}, "
-                    "but account was created successfully"
-                )
-        except Exception as e:
-            # Don't fail account creation if permission grant fails
-            logger.error(
-                f"Error granting permissions to user {user.user_id} for account {account_id}: {e}, "
-                "but account was created successfully"
-            )
-
-        # DON'T mark progress as complete here - the background task will do it
-        # The strategy generation is still running and will update progress to 100% when done
-        logger.info(
-            f"Account {account_id} created, strategy generation running in background"
-        )
-
-        # Clear the progress from cache after a short delay to ensure final status is seen
-        # (The progress will be cleared automatically after TTL anyway)
-
-        # Fetch the created account
-        return await get_account(account_id, user, db)
-
+        
+        logger.info(f"[ACCOUNT_CREATION] Successfully created account: {account.account_id}")
+        return account
+        
     except HTTPException:
-        # Even if account creation failed, strategy generation was already triggered
-        if strategy_generation_triggered:
-            logger.info(
-                f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}"
-            )
         raise
     except Exception as e:
-        # Even if account creation failed, strategy generation was already triggered
-        if strategy_generation_triggered:
-            logger.info(
-                f"[STRATEGY] Account creation failed but strategy generation was triggered for {account_id}"
-            )
+        logger.error(f"[ACCOUNT_CREATION] Account creation failed: {e}")
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(
-                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+                status_code=503,
+                detail=DATABASE_UNAVAILABLE_MESSAGE
             ) from e
         raise HTTPException(
-            status_code=500, detail=f"Error creating account: {e!s}"
+            status_code=500,
+            detail=f"Error creating account: {str(e)}"
         ) from e
 
 
@@ -2070,35 +1774,11 @@ def update_account_progress(
 ) -> None:
     """
     Helper function to update account creation progress.
-
-    Args:
-        account_id: Account ID being created
-        step: Current step number (1-5)
-        message: Progress message to display
-        steps_status: List of status strings for each step
+    
+    This is a wrapper for backward compatibility - actual implementation is in progress_service.
     """
-    percentage = int((step / 5) * 100)
-    steps = [
-        ProgressStep(name="Creating account", status=steps_status[0]),
-        ProgressStep(name="Setting up database", status=steps_status[1]),
-        ProgressStep(name="Generating strategy", status=steps_status[2]),
-        ProgressStep(name="Syncing activities", status=steps_status[3]),
-        ProgressStep(name="Finalizing setup", status=steps_status[4]),
-    ]
-
-    progress = AccountCreationProgress(
-        status="processing",
-        percentage=percentage,
-        current_step=step,
-        total_steps=5,
-        message=message,
-        steps=steps,
-    )
-
-    cache_key = f"account_creation:{account_id}"
-    progress_data = progress.model_dump()
-    print(f"[PROGRESS UPDATE] Storing progress for {account_id}: step={step}, percentage={percentage}%, message={message}")
-    _cache_service.set(cache_key, progress_data, ttl_seconds=3600)  # 1 hour TTL
+    from ..services.progress_service import update_account_creation_progress
+    update_account_creation_progress(account_id, step, message, steps_status)
 
 
 @router.get("/{account_id}/creation-status", response_model=AccountCreationProgress)
@@ -2142,18 +1822,48 @@ async def get_account_creation_status(
         print(f"[PROGRESS GET] Progress data: step={cached_progress.get('current_step')}, percentage={cached_progress.get('percentage')}%")
         return AccountCreationProgress(**cached_progress)
 
-    # Default response if no progress tracked (account already created)
+    # Check if account exists and has a setup_status to determine if it's being created
+    account_status_query = """
+    MATCH (a:Account {account_id: $account_id})
+    RETURN a.setup_status as setup_status, a.created_at as created_at
+    """
+    status_result = await db.execute_query(account_status_query, {"account_id": account_id})
+    
+    if status_result and len(status_result) > 0:
+        setup_status = status_result[0].get("setup_status")
+        if setup_status == "processing":
+            # Account is being created but no progress cached yet - return initial state
+            return AccountCreationProgress(
+                status="processing",
+                percentage=14,  # 1/7 steps
+                current_step=1,
+                total_steps=7,
+                message="Setting up database structures...",
+                steps=[
+                    ProgressStep(name="Setting up database", status="processing"),
+                    ProgressStep(name="Researching your business", status="pending"),
+                    ProgressStep(name="Researching your competitors", status="pending"),
+                    ProgressStep(name="Researching your customers", status="pending"),
+                    ProgressStep(name="Inferring your marketing strategy", status="pending"),
+                    ProgressStep(name="Reviewing your brand styles", status="pending"),
+                    ProgressStep(name="Finalizing setup", status="pending"),
+                ],
+            )
+
+    # Default response for completed accounts (no active creation)
     return AccountCreationProgress(
         status="completed",
         percentage=100,
-        current_step=5,
-        total_steps=5,
+        current_step=7,
+        total_steps=7,
         message="Account creation completed",
         steps=[
-            ProgressStep(name="Creating account", status="completed"),
             ProgressStep(name="Setting up database", status="completed"),
-            ProgressStep(name="Generating strategy", status="completed"),
-            ProgressStep(name="Syncing activities", status="completed"),
+            ProgressStep(name="Researching your business", status="completed"),
+            ProgressStep(name="Researching your competitors", status="completed"),
+            ProgressStep(name="Researching your customers", status="completed"),
+            ProgressStep(name="Inferring your marketing strategy", status="completed"),
+            ProgressStep(name="Reviewing your brand styles", status="completed"),
             ProgressStep(name="Finalizing setup", status="completed"),
         ],
     )

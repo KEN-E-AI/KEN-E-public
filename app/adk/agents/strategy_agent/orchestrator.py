@@ -32,6 +32,9 @@ try:
         get_strategy_document,
         update_strategy_document
     )
+    from agents.strategy_agent.artifact_utils import (
+        load_uploaded_documents_as_artifacts
+    )
 except ImportError:
     # Relative imports for local testing
     from .models import StrategyContext
@@ -47,6 +50,9 @@ except ImportError:
         save_strategy_document_sync,
         get_strategy_document,
         update_strategy_document
+    )
+    from .artifact_utils import (
+        load_uploaded_documents_as_artifacts
     )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +121,7 @@ def execute_strategy_generation(
     user_id: str,
     annual_ad_budget: float = 0.0,
     project_id: Optional[str] = None,
+    uploaded_documents: Optional[List[str]] = None,
     firestore_client: Optional[FirestoreClient] = None
 ) -> str:
     """
@@ -175,11 +182,22 @@ def execute_strategy_generation(
         )
         logger.info(f"[EXECUTION] Created session: {session_id}")
         
-        # Create runner
+        # Set up artifact service using the extracted utility function
+        # This simplifies the function and improves testability
+        artifact_service = load_uploaded_documents_as_artifacts(
+            uploaded_documents=uploaded_documents,
+            account_id=account_id,
+            session_user_id=session_user_id,
+            session_id=session_id,
+            project_id=project_id
+        )
+        
+        # Create runner with artifact service
         runner = Runner(
             agent=strategy_sequential_agent,
             app_name=app_name,
-            session_service=session_service
+            session_service=session_service,
+            artifact_service=artifact_service
         )
         
         # Prepare execution message

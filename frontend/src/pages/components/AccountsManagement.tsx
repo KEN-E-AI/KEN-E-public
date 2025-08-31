@@ -18,7 +18,7 @@ import { generateAccountId } from "@/lib/idGenerator";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
-import { moveAccount, getOrganizations } from "@/data/organizationApi";
+import { moveAccount, getOrganizations, getOrganizationById, getAccountsByOrganizationId } from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -234,7 +234,7 @@ const AccountsManagement = ({
       
       // Check if account creation is complete (100%)
       if (accountCreationProgress.percentage === 100) {
-        console.log("[AccountsManagement] Account creation complete! Navigating...");
+        console.log("[AccountsManagement] Account creation complete! Refreshing data...");
         
         // Show success toast
         toast({
@@ -242,19 +242,42 @@ const AccountsManagement = ({
           description: "Account created successfully with all strategy documents!",
         });
         
-        // Give user a moment to see the completion message
-        setTimeout(() => {
-          endOperation();
-          setCreatingAccountId(null);
-          
-          // Navigate to account settings page if it exists, otherwise stay on current page
-          // Since /account-settings doesn't exist, we'll refresh the current page
-          // to show the new account
-          window.location.reload();
+        // Give user a moment to see the completion message, then refresh data
+        setTimeout(async () => {
+          // Refresh data once at completion to avoid rate limiting
+          try {
+            // Refresh account queries
+            await refreshAccountQueries(currentOrgId);
+            
+            // Refresh organization metadata
+            const updatedOrg = await getOrganizationById(currentOrgId);
+            const updatedAccounts = await getAccountsByOrganizationId(currentOrgId);
+            
+            if (updatedOrg) {
+              setOrgMetadata((prev) => ({
+                ...prev,
+                [currentOrgId]: {
+                  ...updatedOrg,
+                  accounts: updatedAccounts || [],
+                },
+              }));
+            }
+            
+            // Refresh notifications
+            await refreshNotifications();
+            
+            console.log("[AccountsManagement] Data refreshed successfully after account creation");
+          } catch (error) {
+            console.error("[AccountsManagement] Error refreshing data after account creation:", error);
+          } finally {
+            // Always end the operation and clear the tracking ID
+            endOperation();
+            setCreatingAccountId(null);
+          }
         }, 2000); // 2 second delay to show completion
       }
     }
-  }, [accountCreationProgress, updateOperationProgress, endOperation, toast]);
+  }, [accountCreationProgress, updateOperationProgress, endOperation, toast, currentOrgId, setOrgMetadata, refreshNotifications]);
 
   // Debug: Log accounts data when it changes
   useEffect(() => {
@@ -649,10 +672,10 @@ const AccountsManagement = ({
       console.log("[AccountsManagement] Setting creatingAccountId to:", newAccountId);
       setCreatingAccountId(newAccountId);
       
-      // Start loading operation
+      // Start loading operation with clear messaging
       startOperation(
         "Creating account...",
-        "Please wait while we set up your new account",
+        "Conducting research on your business to configure your account. This may take up to 15 minutes.",
       );
 
       // Transform and create account with pre-generated ID
@@ -689,12 +712,7 @@ const AccountsManagement = ({
             console.warn(
               "[AccountsManagement] Account created but some expected data may be missing",
             );
-            toast({
-              title: "Account Created",
-              description:
-                "Account created successfully, but some data may need verification. Please check the account settings.",
-              variant: "default",
-            });
+            // Don't show toast here - wait for strategy completion
           }
         } catch (error) {
           console.error(
@@ -707,11 +725,9 @@ const AccountsManagement = ({
       // Don't show success message yet - wait for completion
       // The progress tracking will show the success when strategy generation is done
 
-      await refreshAccountQueries(currentOrgId!);
+      // Don't refresh queries here - wait for completion to avoid rate limiting
+      // Just update the local context with the new account
       updateContextsAfterCreation(result, currentOrgId!);
-
-      // Refresh notifications to show the new account notification
-      await refreshNotifications();
 
       // Close wizard but keep the loading overlay open
       setIsCreateAccountModalOpen(false);
@@ -776,7 +792,7 @@ const AccountsManagement = ({
       
       startOperation(
         "Creating account...",
-        "Please wait while we set up your new account",
+        "Conducting research on your business to configure your account. This may take up to 15 minutes.",
       );
 
       // Close the modal immediately to prevent duplicate clicks

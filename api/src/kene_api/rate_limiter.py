@@ -89,3 +89,10 @@ recaptcha_rate_limiter = RateLimiter(
     requests_per_minute=5,  # 5 verification attempts per minute
     requests_per_hour=20,  # 20 verification attempts per hour
 )
+
+# Create a rate limiter for progress polling endpoints
+# More permissive since these are polled frequently during long operations
+progress_rate_limiter = RateLimiter(
+    requests_per_minute=120,  # 120 requests per minute (every 0.5 seconds if needed)
+    requests_per_hour=2000,  # 2000 requests per hour
+)

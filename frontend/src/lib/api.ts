@@ -4,12 +4,19 @@ import { auth } from "./firebase";
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000",
-  headers: {
-    "Content-Type": "application/json",
-  },
+  // Don't set default Content-Type - let axios detect it based on data type
+  // For FormData, axios will set multipart/form-data with boundary
+  // For JSON, axios will set application/json
 });
 
-// Request interceptor to add auth token
+// Helper function for case-insensitive header check
+function hasHeader(headers: Record<string, any>, headerName: string): boolean {
+  return Object.keys(headers).some(
+    key => key.toLowerCase() === headerName.toLowerCase()
+  );
+}
+
+// Request interceptor to add auth token and set content type
 api.interceptors.request.use(
   async (config) => {
     try {
@@ -17,6 +24,17 @@ api.interceptors.request.use(
       if (user) {
         const token = await user.getIdToken();
         config.headers.Authorization = `Bearer ${token}`;
+      }
+      
+      // Set Content-Type based on data type if not already set
+      if (!hasHeader(config.headers, 'content-type')) {
+        if (config.data instanceof FormData) {
+          // Let axios handle multipart/form-data boundary
+          // Don't set Content-Type for FormData
+        } else if (config.data && typeof config.data === "object") {
+          // Set JSON content type for object data
+          config.headers["Content-Type"] = "application/json";
+        }
       }
     } catch (error) {
       console.error("Error getting auth token:", error);
