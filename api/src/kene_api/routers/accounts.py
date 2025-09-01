@@ -568,13 +568,22 @@ async def create_account(
     """
     Create a new account.
 
-    **Request Body:**
+    This endpoint accepts multipart/form-data with the following fields:
+
+    **Form Fields:**
     - `account_name` (required): Name of the account
     - `organization_id` (required): ID of the organization this account belongs to
     - `industry` (required): Industry category
     - `status` (required): Account status (e.g., Active, Inactive)
-    - `websites` (required): List of websites associated with the account
+    - `websites` (required): JSON string array of websites (e.g., '["https://example.com"]')
     - `timezone` (required): Timezone for the account
+    - `account_id` (optional): Pre-generated account ID for idempotency
+    - `data_region` (optional): Data region for the account
+    - `region` (optional): JSON string array of regions
+    - `marketing_channels` (optional): JSON string array of marketing channels
+    - `product_integrations` (optional): JSON string array of product integrations
+    - `estimated_annual_ad_budget` (optional): Estimated annual advertising budget
+    - `files` (optional): Business strategy documents (multiple files supported)
 
     **Returns:**
     - Created account object with generated account_id
@@ -582,22 +591,27 @@ async def create_account(
     **Errors:**
     - `403 Forbidden`: If the organization is an agency (agency=true). Agency organizations cannot create accounts.
     - `404 Not Found`: If the organization does not exist
-    - `400 Bad Request`: If required fields are missing
+    - `400 Bad Request`: If required fields are missing or JSON parsing fails
+    - `422 Unprocessable Entity`: If data validation fails
 
-    **Example:**
-    ```
-    POST /api/v1/accounts/
-    {
-        "account_name": "New Account",
-        "organization_id": "healthway",
-        "industry": "Technology",
-        "status": "Active",
-        "websites": ["https://example.com"],
-        "timezone": "America/New_York"
-    }
+    **Example (using curl):**
+    ```bash
+    curl -X POST https://api.example.com/api/v1/accounts/ \
+      -H "Authorization: Bearer <token>" \
+      -F "account_name=New Account" \
+      -F "organization_id=healthway" \
+      -F "industry=Technology" \
+      -F "status=Active" \
+      -F 'websites=["https://example.com"]' \
+      -F "timezone=America/New_York" \
+      -F 'marketing_channels=["Google Ads", "Facebook"]' \
+      -F "files=@strategy.pdf"
     ```
 
-    **Note:** Only regular organizations (agency=false) can create accounts. Agency organizations are restricted from creating accounts.
+    **Note:** 
+    - Only regular organizations (agency=false) can create accounts. Agency organizations are restricted.
+    - Array fields must be JSON-encoded strings (e.g., '["item1", "item2"]')
+    - Files are optional and can be used to upload business strategy documents
     """
     # Debug logging
     content_type = request.headers.get("content-type", "")

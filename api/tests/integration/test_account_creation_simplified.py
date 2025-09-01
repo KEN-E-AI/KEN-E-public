@@ -13,13 +13,10 @@ from src.kene_api.tasks.strategy_tasks import (
 )
 
 
-@pytest.mark.skip(reason="get_user_context_for_polling no longer exists")
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Test needs update for refactored code")
 async def test_account_creation_status_uses_progress_rate_limiter():
     """Test that the creation-status endpoint uses higher rate limits."""
-    return  # Skip this test as get_user_context_for_polling no longer exists
-    from src.kene_api.auth.user_context import get_user_context_for_polling
+    from src.kene_api.auth.dependencies import get_user_context_for_polling
     from src.kene_api.rate_limiter import progress_rate_limiter
     
     # Mock request
@@ -32,7 +29,7 @@ async def test_account_creation_status_uses_progress_rate_limiter():
     mock_credentials.credentials = "test_token"
     
     # Mock Firebase token verification
-    with patch("src.kene_api.auth.user_context.verify_id_token") as mock_verify:
+    with patch("src.kene_api.auth.dependencies.verify_id_token") as mock_verify:
         mock_verify.return_value = {
             "uid": "test_user",
             "email": "test@example.com",
@@ -40,7 +37,7 @@ async def test_account_creation_status_uses_progress_rate_limiter():
         }
         
         # Mock Firestore
-        with patch("src.kene_api.auth.user_context.get_firestore_service") as mock_firestore:
+        with patch("src.kene_api.auth.dependencies.get_firestore_service") as mock_firestore:
             mock_firestore_service = MagicMock()
             mock_firestore_client = MagicMock()
             mock_user_doc = MagicMock()
@@ -64,7 +61,6 @@ async def test_account_creation_status_uses_progress_rate_limiter():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Test needs update for refactored code")
 async def test_strategy_generation_timeout_handling():
     """Test that strategy generation properly handles timeouts."""
     account_id = "test_account"
@@ -110,7 +106,6 @@ async def test_strategy_generation_timeout_handling():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Test needs update for refactored code")
 async def test_empty_agent_response_handling():
     """Test that empty agent responses are handled properly."""
     account_id = "test_account"
@@ -154,7 +149,6 @@ async def test_empty_agent_response_handling():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Test needs update for refactored code")
 async def test_document_verification_failure():
     """Test that incomplete documents prevent account completion."""
     account_id = "test_account"
@@ -204,7 +198,6 @@ async def test_document_verification_failure():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Test needs update for refactored code")
 async def test_successful_account_creation():
     """Test successful account creation with all documents complete."""
     account_id = "test_account"
@@ -251,10 +244,10 @@ async def test_successful_account_creation():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Test needs update for refactored code")
+@pytest.mark.skip(reason="get_account_creation_status function was removed in refactoring")
 async def test_account_creation_status_endpoint_responses():
     """Test the different status responses from the creation-status endpoint."""
-    from src.kene_api.routers.accounts import get_account_creation_status
+    # from src.kene_api.routers.accounts import get_account_creation_status  # Function no longer exists
     from src.kene_api.auth import UserContext
     
     # Create mock user context
