@@ -18,15 +18,32 @@ export const accountKeys = {
 
 // Queries
 export const useAccounts = (organizationId: string | null) => {
+  console.log(`[useAccounts] Hook called for organization: ${organizationId}`);
+  console.log(`[useAccounts] Time: ${new Date().toISOString()}`);
+  
   return useQuery({
     queryKey: accountKeys.list(organizationId || ""),
     queryFn: async () => {
+      console.log(`[useAccounts] queryFn executing for organization: ${organizationId}`);
+      console.log(`[useAccounts] queryFn called at: ${new Date().toISOString()}`);
+      
       if (!organizationId) return [];
       const accounts = await getAccountsByOrganizationId(organizationId);
       return accounts;
     },
     enabled: !!organizationId,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: false, // Disable automatic refetch on window focus
+    refetchOnMount: false, // Disable automatic refetch on mount
+    retry: (failureCount, error: any) => {
+      console.log(`[useAccounts] Query retry attempt ${failureCount} after error:`, error.message);
+      // Don't retry on timeout errors
+      if (error.message?.includes('timeout')) {
+        console.log(`[useAccounts] Not retrying due to timeout error`);
+        return false;
+      }
+      return failureCount < 2;
+    },
   });
 };
 

@@ -18,7 +18,15 @@ function hasHeader(headers: Record<string, any>, headerName: string): boolean {
 
 // Request interceptor to add auth token and set content type
 api.interceptors.request.use(
-  async (config) => {
+  async (config: any) => {
+    // Add request timing metadata
+    config.metadata = { startTime: Date.now() };
+    
+    // Log timeout configuration for debugging
+    console.log(`[axios] Request starting: ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(`[axios] Timeout setting: ${config.timeout}ms (${config.timeout ? (config.timeout/60000).toFixed(1) : 'undefined'} minutes)`);
+    console.log(`[axios] Request time: ${new Date().toISOString()}`);
+    
     try {
       const user = auth.currentUser;
       if (user) {
@@ -48,9 +56,26 @@ api.interceptors.request.use(
 
 // Response interceptor for error handling and token refresh
 api.interceptors.response.use(
-  (response) => response,
+  (response: any) => {
+    // Log successful response timing
+    const endTime = Date.now();
+    const duration = endTime - (response.config.metadata?.startTime || endTime);
+    console.log(`[axios] Response received: ${response.config.method?.toUpperCase()} ${response.config.url}`);
+    console.log(`[axios] Duration: ${duration}ms (${(duration/1000).toFixed(1)}s)`);
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
+    
+    // Log error timing
+    if (originalRequest?.metadata?.startTime) {
+      const endTime = Date.now();
+      const duration = endTime - originalRequest.metadata.startTime;
+      console.error(`[axios] Request failed: ${originalRequest.method?.toUpperCase()} ${originalRequest.url}`);
+      console.error(`[axios] Duration before error: ${duration}ms (${(duration/1000).toFixed(1)}s)`);
+      console.error(`[axios] Error code: ${error.code}`);
+      console.error(`[axios] Error message: ${error.message}`);
+    }
 
     // If the error is 401 and we haven't already tried to refresh
     if (error.response?.status === 401 && !originalRequest._retry) {

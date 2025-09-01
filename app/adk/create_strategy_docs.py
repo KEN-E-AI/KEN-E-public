@@ -463,7 +463,15 @@ Please ensure the 'agents' directory is properly packaged during deployment."""
                 if initialize_firestore:
                     # Save context for agents to use
                     from google.cloud import firestore
-                    db = firestore.Client(project=project_id)
+                    
+                    # CRITICAL: Force using the correct project ID
+                    # The agent may be running in project 525657242938 but needs to access ken-e-dev
+                    firestore_project_id = project_id
+                    if firestore_project_id == "525657242938":
+                        firestore_project_id = "ken-e-dev"
+                        logger.warning(f"Detected numeric project ID {project_id}, using ken-e-dev for Firestore")
+                    
+                    db = firestore.Client(project=firestore_project_id)
                     
                     # Create initial document structure
                     strategy_context_ref = db.collection(f"strategy_docs_{account_id}").document("context")
