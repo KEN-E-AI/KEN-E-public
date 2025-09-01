@@ -1,15 +1,15 @@
 """User context and authentication utilities."""
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.cloud import firestore
 
-from ..firestore import get_firestore_service
+from ..firestore import FirestoreService, get_firestore_service
 from ..rate_limiter import RateLimiter
-from .audit_logger import SecurityEventType, get_audit_logger
+from .audit_logger import AuditLogger, SecurityEventType, get_audit_logger
 from .cached_user_context import get_cached_user_context_service
 from .firebase_admin import initialize_firebase_admin, verify_id_token
 from .models import UserContext
@@ -25,116 +25,73 @@ initialize_firebase_admin()
 security = HTTPBearer(auto_error=False)
 
 
-async def _get_user_context_with_limiter(
+async def _apply_rate_limiting(
     request: Request,
-    credentials: HTTPAuthorizationCredentials,
-    firestore_service,
-    rate_limiter: Optional[RateLimiter] = None,
-) -> UserContext:
-    """Internal function to get user context with custom rate limiter.
+    rate_limiter: RateLimiter,
+    audit_logger: AuditLogger,
+    client_ip: Optional[str],
+) -> None:
+    """Apply rate limiting and log if exceeded.
 
-    This is the actual implementation that accepts a custom rate limiter.
+    Args:
+        request: The FastAPI request object
+        rate_limiter: The rate limiter to use
+        audit_logger: Audit logger instance
+        client_ip: Client IP address for logging
+
+    Raises:
+        HTTPException: If rate limit is exceeded
     """
-    # Choose which rate limiter to use
-    active_limiter = rate_limiter if rate_limiter is not None else token_rate_limiter
-    # Get client info for audit logging
-    client_ip = request.client.host if request.client else None
-    user_agent = request.headers.get("User-Agent")
-    audit_logger = get_audit_logger()
-
-    if not credentials:
-        # Apply rate limiting for missing credentials
-        try:
-            active_limiter.check_rate_limit(request)
-        except HTTPException as e:
-            if e.status_code == 429:
-                await audit_logger.log_rate_limit_exceeded(
-                    ip_address=client_ip or "unknown",
-                    endpoint=str(request.url),
-                )
-            raise
-
-        await audit_logger.log_login_failure(
-            ip_address=client_ip,
-            user_agent=user_agent,
-            reason="Missing authentication credentials",
-        )
-        raise HTTPException(
-            status_code=401,
-            detail="Missing authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
     try:
-        # Verify the Firebase ID token
+        rate_limiter.check_rate_limit(request)
+    except HTTPException as e:
+        if e.status_code == 429:
+            await audit_logger.log_rate_limit_exceeded(
+                ip_address=client_ip or "unknown",
+                endpoint=str(request.url),
+            )
+        raise
+
+
+async def _verify_and_decode_token(
+    credentials: HTTPAuthorizationCredentials,
+    audit_logger: AuditLogger,
+    client_ip: Optional[str],
+    user_agent: Optional[str],
+    rate_limiter: RateLimiter,
+    request: Request,
+) -> tuple[dict[str, Any], str, str]:
+    """Verify and decode Firebase ID token.
+
+    Args:
+        credentials: HTTP Bearer credentials
+        audit_logger: Audit logger instance
+        client_ip: Client IP address
+        user_agent: User agent string
+        rate_limiter: Rate limiter to use for failed attempts
+        request: FastAPI request object
+
+    Returns:
+        Tuple of (decoded_token, user_id, email)
+
+    Raises:
+        HTTPException: If token verification fails
+    """
+    try:
         decoded_token = verify_id_token(credentials.credentials)
         user_id = decoded_token["uid"]
         email = decoded_token.get("email", "")
-
-        # Check if user is super admin (before rate limiting)
-        # Super admins are identified by @ken-e.ai email domain
-        is_super_admin = email.lower().endswith("@ken-e.ai")
-
-        # Apply rate limiting only for non-super admins
-        if not is_super_admin:
-            try:
-                active_limiter.check_rate_limit(request)
-            except HTTPException as e:
-                if e.status_code == 429:
-                    await audit_logger.log_rate_limit_exceeded(
-                        ip_address=client_ip or "unknown",
-                        endpoint=str(request.url),
-                    )
-                raise
-        else:
-            # Log that super admin bypassed rate limiting
-            logger.debug(f"Super admin {email} bypassed rate limiting")
-            await audit_logger.log_event(
-                event_type=SecurityEventType.LOGIN_SUCCESS,
-                user_id=user_id,
-                email=email,
-                ip_address=client_ip,
-                user_agent=user_agent,
-                details={"action": "rate_limit_bypass", "reason": "super_admin"},
-                severity="INFO",
-            )
-
-        # Check if token is revoked
-        token_revocation = get_token_revocation_service()
-        token_id = decoded_token.get("jti") or decoded_token.get("sub", "") + str(
-            decoded_token.get("iat", "")
-        )
-        issued_at = decoded_token.get("iat")
-
-        if await token_revocation.is_token_revoked(token_id, user_id, issued_at):
-            await audit_logger.log_event(
-                event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
-                user_id=user_id,
-                ip_address=client_ip,
-                user_agent=user_agent,
-                details={"reason": "Token has been revoked"},
-                severity="WARNING",
-            )
-            raise HTTPException(
-                status_code=401,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
+        return decoded_token, user_id, email
     except Exception as e:
         # Apply rate limiting for failed authentication attempts
         try:
-            active_limiter.check_rate_limit(request)
+            rate_limiter.check_rate_limit(request)
         except HTTPException as rate_error:
             if rate_error.status_code == 429:
                 await audit_logger.log_rate_limit_exceeded(
                     ip_address=client_ip or "unknown",
                     endpoint=str(request.url),
                 )
-            # Log both the auth failure and rate limit
             logger.error(f"Failed to verify token: {e}")
             raise rate_error
 
@@ -152,21 +109,72 @@ async def _get_user_context_with_limiter(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Try to get from cache first
-    cached_user_service = get_cached_user_context_service()
-    cached_context = cached_user_service.get_user_context(user_id)
-    if cached_context:
-        logger.debug(f"Found cached user context for {user_id}")
-        return cached_context
 
-    # Get Firestore client
-    firestore_db = firestore_service.get_client()
+async def _check_token_revocation(
+    decoded_token: dict[str, Any],
+    user_id: str,
+    audit_logger: AuditLogger,
+    client_ip: Optional[str],
+    user_agent: Optional[str],
+) -> None:
+    """Check if token has been revoked.
 
-    # Load user data from Firestore
+    Args:
+        decoded_token: Decoded JWT token
+        user_id: User ID from token
+        audit_logger: Audit logger instance
+        client_ip: Client IP address
+        user_agent: User agent string
+
+    Raises:
+        HTTPException: If token has been revoked
+    """
+    token_revocation = get_token_revocation_service()
+    token_id = decoded_token.get("jti") or decoded_token.get("sub", "") + str(
+        decoded_token.get("iat", "")
+    )
+    issued_at = decoded_token.get("iat")
+
+    if await token_revocation.is_token_revoked(token_id, user_id, issued_at):
+        await audit_logger.log_event(
+            event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
+            user_id=user_id,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            details={"reason": "Token has been revoked"},
+            severity="WARNING",
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+async def _get_or_create_user_document(
+    firestore_db: firestore.Client,
+    user_id: str,
+    email: str,
+    audit_logger: AuditLogger,
+    client_ip: Optional[str],
+    user_agent: Optional[str],
+) -> dict[str, Any]:
+    """Get or create user document in Firestore.
+
+    Args:
+        firestore_db: Firestore client instance
+        user_id: User ID
+        email: User email
+        audit_logger: Audit logger instance
+        client_ip: Client IP address
+        user_agent: User agent string
+
+    Returns:
+        User data dictionary
+    """
     user_doc = firestore_db.collection("users").document(user_id).get()
 
     if not user_doc.exists:
-        # Create basic user document if it doesn't exist
         logger.info(f"Creating user document for {user_id}")
         user_data = {
             "uid": user_id,
@@ -182,7 +190,6 @@ async def _get_user_context_with_limiter(
         }
         firestore_db.collection("users").document(user_id).set(user_data)
 
-        # Log user creation
         await audit_logger.log_event(
             event_type=SecurityEventType.USER_CREATED,
             user_id=user_id,
@@ -191,31 +198,128 @@ async def _get_user_context_with_limiter(
             user_agent=user_agent,
             severity="INFO",
         )
+        return user_data
     else:
-        user_data = user_doc.to_dict()
+        return user_doc.to_dict()
 
-    # Extract permissions
+
+def _build_user_context_from_data(
+    user_id: str,
+    email: str,
+    user_data: dict[str, Any],
+) -> UserContext:
+    """Build UserContext from user data.
+
+    Args:
+        user_id: User ID
+        email: User email
+        user_data: User data from Firestore
+
+    Returns:
+        UserContext object
+    """
     permissions = user_data.get("permissions", {})
     account_permissions = permissions.get("accounts", {})
     organization_permissions = permissions.get("organizations", {})
-
-    # Extract account permissions (new structure)
-    # accounts field contains specific permissions for view-role users
     account_level_permissions = permissions.get("account_permissions", {})
 
-    # Combine all accessible accounts from both old and new permission structures
     all_accessible_accounts = set(account_permissions.keys())
     all_accessible_accounts.update(account_level_permissions.keys())
 
-    # Build user context
-    user_context = UserContext(
+    return UserContext(
         user_id=user_id,
         email=email,
         accessible_accounts=list(all_accessible_accounts),
-        permissions=account_permissions,  # Keep for backward compatibility
+        permissions=account_permissions,
         organization_permissions=organization_permissions,
-        account_permissions=account_level_permissions,  # New field for view-role users
+        account_permissions=account_level_permissions,
     )
+
+
+async def _get_user_context_with_limiter(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials,
+    firestore_service: FirestoreService,
+    rate_limiter: Optional[RateLimiter] = None,
+) -> UserContext:
+    """Internal function to get user context with custom rate limiter.
+
+    This is the actual implementation that accepts a custom rate limiter.
+    """
+    # Choose which rate limiter to use
+    active_limiter = rate_limiter if rate_limiter is not None else token_rate_limiter
+    # Get client info for audit logging
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("User-Agent")
+    audit_logger = get_audit_logger()
+
+    if not credentials:
+        # Apply rate limiting for missing credentials
+        await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
+
+        await audit_logger.log_login_failure(
+            ip_address=client_ip,
+            user_agent=user_agent,
+            reason="Missing authentication credentials",
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Missing authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        # Verify the Firebase ID token
+        decoded_token, user_id, email = await _verify_and_decode_token(
+            credentials, audit_logger, client_ip, user_agent, active_limiter, request
+        )
+
+        # Check if user is super admin (before rate limiting)
+        # Super admins are identified by @ken-e.ai email domain
+        is_super_admin = email.lower().endswith("@ken-e.ai")
+
+        # Apply rate limiting only for non-super admins
+        if not is_super_admin:
+            await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
+        else:
+            # Log that super admin bypassed rate limiting
+            logger.debug(f"Super admin {email} bypassed rate limiting")
+            await audit_logger.log_event(
+                event_type=SecurityEventType.LOGIN_SUCCESS,
+                user_id=user_id,
+                email=email,
+                ip_address=client_ip,
+                user_agent=user_agent,
+                details={"action": "rate_limit_bypass", "reason": "super_admin"},
+                severity="INFO",
+            )
+
+        # Check if token is revoked
+        await _check_token_revocation(
+            decoded_token, user_id, audit_logger, client_ip, user_agent
+        )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+
+    # Try to get from cache first
+    cached_user_service = get_cached_user_context_service()
+    cached_context = cached_user_service.get_user_context(user_id)
+    if cached_context:
+        logger.debug(f"Found cached user context for {user_id}")
+        return cached_context
+
+    # Get Firestore client
+    firestore_db = firestore_service.get_client()
+
+    # Get or create user document
+    user_data = await _get_or_create_user_document(
+        firestore_db, user_id, email, audit_logger, client_ip, user_agent
+    )
+
+    # Build user context from data
+    user_context = _build_user_context_from_data(user_id, email, user_data)
 
     # Cache the user context
     cached_user_service.set_user_context(user_context)
@@ -234,7 +338,7 @@ async def _get_user_context_with_limiter(
 async def get_current_user_context(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> UserContext:
     """Get the current user context from Firebase auth token.
 
@@ -259,7 +363,7 @@ async def get_current_user_context(
 async def get_optional_user_context(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> UserContext | None:
     """Get optional user context from Firebase auth token.
 
@@ -285,7 +389,7 @@ async def get_optional_user_context(
 def require_account_access(
     account_id: str,
     required_roles: list[str] | None = None,
-) -> None:
+) -> Any:
     """Verify user has access to an account.
 
     To be used within route handlers after getting user context.
@@ -298,7 +402,7 @@ def require_account_access(
         HTTPException: If access is denied
     """
 
-    def check_access(user: UserContext):
+    def check_access(user: UserContext) -> None:
         if not user.has_account_access(account_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
 
@@ -326,7 +430,7 @@ def require_account_access(
 def require_organization_access(
     organization_id: str,
     required_roles: list[str] | None = None,
-) -> None:
+) -> Any:
     """Verify user has access to an organization.
 
     To be used within route handlers after getting user context.
@@ -339,7 +443,7 @@ def require_organization_access(
         HTTPException: If access is denied
     """
 
-    def check_access(user: UserContext):
+    def check_access(user: UserContext) -> None:
         if not user.has_organization_access(organization_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
 

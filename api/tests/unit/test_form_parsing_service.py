@@ -2,8 +2,8 @@
 
 import json
 import pytest
-from kene_api.services.form_parsing_service import parse_json_field, parse_account_form_data
-from kene_api.models.kene_models import AccountRequest
+from src.kene_api.services.form_parsing_service import parse_json_field, parse_account_form_data
+from src.kene_api.models.kene_models import AccountRequest
 
 
 class TestParseJsonField:

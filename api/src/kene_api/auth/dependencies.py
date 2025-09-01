@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from ..firestore import get_firestore_service
+from ..firestore import FirestoreService, get_firestore_service
 from ..rate_limiter import progress_rate_limiter
 from .firebase_admin import verify_id_token
 from .models import UserContext
@@ -20,7 +20,7 @@ security = HTTPBearer(auto_error=False)
 
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> Optional[UserContext]:
     """
     Get current user from Bearer token (optional).
@@ -73,7 +73,7 @@ async def get_current_user_optional(
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> UserContext:
     """
     Get current user from Bearer token (required).
@@ -177,7 +177,7 @@ def require_organization_access(
 async def get_user_context_for_polling(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> UserContext:
     """Get user context with higher rate limits for polling endpoints.
 

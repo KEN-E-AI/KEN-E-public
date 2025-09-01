@@ -6,6 +6,7 @@ Handles asynchronous strategy generation after account creation.
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 from google.cloud import firestore
@@ -27,7 +28,8 @@ async def trigger_strategy_generation(
     user_id: str,
     annual_ad_budget: float | None = None,
     uploaded_document_urls: list[str] | None = None,
-    user_context: Any | None = None,  # Allow passing existing UserContext for chat-triggered calls
+    user_context: Any
+    | None = None,  # Allow passing existing UserContext for chat-triggered calls
 ) -> None:
     """
     Trigger strategy document generation for a new account.
@@ -88,10 +90,12 @@ Please execute strategy generation with these parameters:
 - user_id: {user_id}
 - annual_ad_budget: {annual_ad_budget or 0}
 - project_id: {project_id}"""
-        
+
         if uploaded_document_urls:
             message += f"\n- uploaded_documents: {','.join(uploaded_document_urls)}"
-            logger.info(f"Including {len(uploaded_document_urls)} uploaded documents in strategy generation request")
+            logger.info(
+                f"Including {len(uploaded_document_urls)} uploaded documents in strategy generation request"
+            )
 
         # Call the strategy agent directly
         logger.info(f"Invoking strategy agent for {company_name} via Agent Engine")
@@ -122,30 +126,44 @@ Please execute strategy generation with these parameters:
                 if response_content:
                     logger.info(f"Strategy generation completed for {company_name}")
                     result = response_content
-                    
+
                     # IMPORTANT: Wait for documents to be created, same as system-triggered path
                     max_wait_time = 1800  # 30 minutes max wait for documents
-                    poll_interval = 15   # Check every 15 seconds
+                    poll_interval = 15  # Check every 15 seconds
                     elapsed_time = 0
                     all_docs_complete = False
-                    
-                    logger.info(f"[User-triggered] Waiting for all strategy documents to be complete for account {account_id}...")
-                    
+
+                    logger.info(
+                        f"[User-triggered] Waiting for all strategy documents to be complete for account {account_id}..."
+                    )
+
                     while elapsed_time < max_wait_time:
-                        all_docs_complete = await verify_strategy_documents_created(account_id, require_all=True)
-                        
+                        all_docs_complete = await verify_strategy_documents_created(
+                            account_id, require_all=True
+                        )
+
                         if all_docs_complete:
-                            logger.info(f"✅ [User-triggered] All strategy documents are complete for account {account_id}")
+                            logger.info(
+                                f"✅ [User-triggered] All strategy documents are complete for account {account_id}"
+                            )
                             break
-                        
-                        logger.info(f"[User-triggered] Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)")
+
+                        logger.info(
+                            f"[User-triggered] Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)"
+                        )
                         await asyncio.sleep(poll_interval)
                         elapsed_time += poll_interval
-                    
+
                     if not all_docs_complete:
-                        logger.error(f"❌ [User-triggered] Strategy documents not all complete after {max_wait_time} seconds for account {account_id}")
-                        await update_account_setup_status(account_id, "failed", completed=False)
-                        logger.error(f"[User-triggered] Account {account_id} marked as failed due to incomplete strategy documents")
+                        logger.error(
+                            f"❌ [User-triggered] Strategy documents not all complete after {max_wait_time} seconds for account {account_id}"
+                        )
+                        await update_account_setup_status(
+                            account_id, "failed", completed=False
+                        )
+                        logger.error(
+                            f"[User-triggered] Account {account_id} marked as failed due to incomplete strategy documents"
+                        )
                         return  # Exit early without marking as completed
                 else:
                     logger.error(
@@ -154,12 +172,14 @@ Please execute strategy generation with these parameters:
                     result = "Empty response from strategy agent"
                     # Mark account as failed if no response from agent
                     await update_account_setup_status(
-                        account_id, 
-                        "failed", 
+                        account_id,
+                        "failed",
                         completed=False,
-                        error_message="Strategy generation failed - no response from agent. Please try again."
+                        error_message="Strategy generation failed - no response from agent. Please try again.",
                     )
-                    logger.error(f"Account {account_id} marked as failed due to empty agent response")
+                    logger.error(
+                        f"Account {account_id} marked as failed due to empty agent response"
+                    )
                     return  # Exit early
 
             else:
@@ -204,17 +224,17 @@ Please execute strategy generation with these parameters:
                     )
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
-                    
+
                     # Try to check if response is iterable
                     try:
                         # Check if it has __iter__ method
-                        if hasattr(response, '__iter__'):
+                        if hasattr(response, "__iter__"):
                             logger.info("Response is iterable")
                         else:
                             logger.warning("Response is NOT iterable")
                     except Exception as check_error:
                         logger.error(f"Error checking response type: {check_error}")
-                        
+
                 except Exception as e:
                     logger.error(f"Failed to call stream_query: {e}", exc_info=True)
                     raise
@@ -223,36 +243,46 @@ Please execute strategy generation with these parameters:
                 response_parts = []
                 chunk_count = 0
                 logger.info("Starting to collect response chunks...")
-                
+
                 # Set a timeout for collecting chunks (25 minutes max for agent response)
                 agent_timeout = 1500  # 25 minutes
-                start_time = asyncio.get_event_loop().time()
-                
+                start_time = time.time()
+
                 try:
                     logger.info(f"Agent response object type: {type(response)}")
                     # Add a flag to track if we got any response
                     got_response = False
-                    
+
                     for chunk in response:
                         got_response = True
                         # Check if we've exceeded the timeout
-                        elapsed = asyncio.get_event_loop().time() - start_time
+                        elapsed = time.time() - start_time
                         if elapsed > agent_timeout:
-                            logger.error(f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received")
+                            logger.error(
+                                f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received"
+                            )
                             break
-                        
+
                         chunk_count += 1
                         logger.info(f"Processing chunk {chunk_count}...")
-                        
+
                         # Log progress for debugging (progress tracking simplified)
                         if chunk_count == 5:
-                            logger.info(f"Researching competitors for account {account_id}")
+                            logger.info(
+                                f"Researching competitors for account {account_id}"
+                            )
                         elif chunk_count == 10:
-                            logger.info(f"Researching customers for account {account_id}")
+                            logger.info(
+                                f"Researching customers for account {account_id}"
+                            )
                         elif chunk_count == 15:
-                            logger.info(f"Inferring marketing strategy for account {account_id}")
+                            logger.info(
+                                f"Inferring marketing strategy for account {account_id}"
+                            )
                         elif chunk_count == 20:
-                            logger.info(f"Reviewing brand styles for account {account_id}")
+                            logger.info(
+                                f"Reviewing brand styles for account {account_id}"
+                            )
 
                         if isinstance(chunk, dict):
                             logger.info(
@@ -272,7 +302,9 @@ Please execute strategy generation with these parameters:
                                 )
 
                             # Handle nested response structure
-                            if "content" in chunk and isinstance(chunk["content"], dict):
+                            if "content" in chunk and isinstance(
+                                chunk["content"], dict
+                            ):
                                 content = chunk["content"]
                                 if "parts" in content and isinstance(
                                     content["parts"], list
@@ -296,21 +328,27 @@ Please execute strategy generation with these parameters:
                             logger.info(
                                 f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                             )
-                    
+
                 except Exception as e:
-                    logger.error(f"Error iterating over agent response chunks: {e}", exc_info=True)
+                    logger.error(
+                        f"Error iterating over agent response chunks: {e}",
+                        exc_info=True,
+                    )
                     logger.error(f"Only received {chunk_count} chunks before error")
-                    got_response = False
-                    
+
                 # Check if we actually got a response
                 if not got_response:
-                    logger.error("No response received from agent engine - response iterator was empty or failed")
+                    logger.error(
+                        "No response received from agent engine - response iterator was empty or failed"
+                    )
                     result = ""
                 else:
-                    logger.info(f"✅ Received total {chunk_count} chunks from agent engine")
+                    logger.info(
+                        f"✅ Received total {chunk_count} chunks from agent engine"
+                    )
                     result = "".join(response_parts).strip()
                     logger.info(f"Total response length: {len(result)} chars")
-                
+
                 # Log first 500 chars of result for debugging
                 if result:
                     logger.info(f"Response preview: {result[:500]}...")
@@ -319,42 +357,54 @@ Please execute strategy generation with these parameters:
                     )
                 else:
                     logger.warning("Agent returned empty response!")
-                
+
                 # Only proceed with document verification if we got a valid response
                 if result and got_response:
                     # Wait for all documents to be fully created before marking as complete
                     # Poll for document completion with timeout
                     max_wait_time = 1800  # 30 minutes max wait for documents
-                    poll_interval = 15   # Check every 15 seconds
+                    poll_interval = 15  # Check every 15 seconds
                     elapsed_time = 0
                     all_docs_complete = False
-                    
-                    logger.info(f"Waiting for all strategy documents to be complete for account {account_id}...")
-                    
+
+                    logger.info(
+                        f"Waiting for all strategy documents to be complete for account {account_id}..."
+                    )
+
                     while elapsed_time < max_wait_time:
                         # Check if all documents are complete (strict mode)
-                        all_docs_complete = await verify_strategy_documents_created(account_id, require_all=True)
-                        
+                        all_docs_complete = await verify_strategy_documents_created(
+                            account_id, require_all=True
+                        )
+
                         if all_docs_complete:
-                            logger.info(f"✅ All strategy documents are complete for account {account_id}")
+                            logger.info(
+                                f"✅ All strategy documents are complete for account {account_id}"
+                            )
                             break
-                        
+
                         # Wait before checking again
-                        logger.info(f"Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)")
+                        logger.info(
+                            f"Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)"
+                        )
                         await asyncio.sleep(poll_interval)
                         elapsed_time += poll_interval
-                    
+
                     if not all_docs_complete:
-                        logger.error(f"❌ Strategy documents not all complete after {max_wait_time} seconds for account {account_id}")
+                        logger.error(
+                            f"❌ Strategy documents not all complete after {max_wait_time} seconds for account {account_id}"
+                        )
                         # DO NOT mark as completed if documents are not ready
                         # Mark as failed instead
                         await update_account_setup_status(
-                            account_id, 
-                            "failed", 
+                            account_id,
+                            "failed",
                             completed=False,
-                            error_message="Strategy document generation timed out. Please try again."
+                            error_message="Strategy document generation timed out. Please try again.",
                         )
-                        logger.error(f"Account {account_id} marked as failed due to incomplete strategy documents")
+                        logger.error(
+                            f"Account {account_id} marked as failed due to incomplete strategy documents"
+                        )
                         return  # Exit early without marking as completed
                 else:
                     logger.error(
@@ -362,29 +412,35 @@ Please execute strategy generation with these parameters:
                     )
                     # Mark as failed if no response from agent
                     await update_account_setup_status(
-                        account_id, 
-                        "failed", 
+                        account_id,
+                        "failed",
                         completed=False,
-                        error_message="Strategy generation returned no content. Please try again."
+                        error_message="Strategy generation returned no content. Please try again.",
                     )
-                    logger.error(f"Account {account_id} marked as failed due to empty agent response")
+                    logger.error(
+                        f"Account {account_id} marked as failed due to empty agent response"
+                    )
                     return  # Exit early without marking as completed
 
         except Exception as e:
             logger.error(f"Failed to call strategy agent: {e}")
             # Mark as failed on exception
             await update_account_setup_status(
-                account_id, 
-                "failed", 
+                account_id,
+                "failed",
                 completed=False,
-                error_message=f"Strategy generation failed: {str(e)[:200]}"
+                error_message=f"Strategy generation failed: {str(e)[:200]}",
             )
-            logger.error(f"Account {account_id} marked as failed due to agent error: {e}")
+            logger.error(
+                f"Account {account_id} marked as failed due to agent error: {e}"
+            )
             return  # Exit early without marking as completed
 
         # Only reach here if everything succeeded
-        logger.info(f"✅ Successfully completed strategy generation for account {account_id}")
-        
+        logger.info(
+            f"✅ Successfully completed strategy generation for account {account_id}"
+        )
+
         # Update account status to completed
         await update_account_setup_status(account_id, "completed", completed=True)
 
@@ -433,9 +489,9 @@ async def update_account_setup_status(
             RETURN a
             """
             params = {
-                "account_id": account_id, 
+                "account_id": account_id,
                 "status": status,
-                "error_message": error_message or "Strategy generation failed"
+                "error_message": error_message or "Strategy generation failed",
             }
         elif completed:
             # Completed processing
@@ -462,7 +518,9 @@ async def update_account_setup_status(
         logger.error(f"Failed to update setup_status for account {account_id}: {e}")
 
 
-async def verify_strategy_documents_created(account_id: str, require_all: bool = True) -> bool:
+async def verify_strategy_documents_created(
+    account_id: str, require_all: bool = True
+) -> bool:
     """
     Verify that strategy documents were created by the agent.
 
@@ -505,23 +563,30 @@ async def verify_strategy_documents_created(account_id: str, require_all: bool =
                 # Check document quality and completeness
                 content = doc_data.get("content", {})
                 status = doc_data.get("status", "")  # May not have status field
-                
+
                 if isinstance(content, dict):
                     content_size = len(json.dumps(content))
                     has_keys = len(content.keys())
-                    
+
                     # Consider document complete based primarily on content size and structure
                     # Status field is optional - many docs don't have it
                     is_complete = content_size > 1000 and has_keys > 3
-                    
+
                     # If status field exists and indicates not ready, override
-                    if status and status.lower() in ["draft", "in_progress", "pending", "generating"]:
+                    if status and status.lower() in [
+                        "draft",
+                        "in_progress",
+                        "pending",
+                        "generating",
+                    ]:
                         is_complete = False
-                        logger.info(f"Document {doc_type} marked incomplete due to status: {status}")
-                    
+                        logger.info(
+                            f"Document {doc_type} marked incomplete due to status: {status}"
+                        )
+
                     if is_complete:
                         complete_docs.append(doc_type)
-                    
+
                     doc_quality[doc_type] = {
                         "size": content_size,
                         "keys": has_keys,
@@ -540,9 +605,13 @@ async def verify_strategy_documents_created(account_id: str, require_all: bool =
         # Log detailed summary
         logger.info(f"Document verification summary for {account_id}:")
         logger.info(f"  Expected documents: {expected_docs}")
-        logger.info(f"  Found documents: {found_docs} ({len(found_docs)}/{len(expected_docs)})")
-        logger.info(f"  Complete documents: {complete_docs} ({len(complete_docs)}/{len(expected_docs)})")
-        
+        logger.info(
+            f"  Found documents: {found_docs} ({len(found_docs)}/{len(expected_docs)})"
+        )
+        logger.info(
+            f"  Complete documents: {complete_docs} ({len(complete_docs)}/{len(expected_docs)})"
+        )
+
         if doc_quality:
             logger.info(f"Document quality details:")
             for doc_type, quality in doc_quality.items():
@@ -579,7 +648,8 @@ async def verify_strategy_documents_created(account_id: str, require_all: bool =
 
     except Exception as e:
         logger.error(
-            f"Failed to verify strategy documents for account {account_id}: {e}", exc_info=True
+            f"Failed to verify strategy documents for account {account_id}: {e}",
+            exc_info=True,
         )
         # Return False in strict mode, True in lenient mode if error occurs
         # This prevents account from being stuck if Firestore is temporarily unavailable
