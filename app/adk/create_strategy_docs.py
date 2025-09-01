@@ -285,11 +285,15 @@ def dispatch_to_strategy(
                     regions_str = line.replace("- customer_regions:", "").strip()
                     customer_regions = [r.strip() for r in regions_str.split(',')]
                 elif line.startswith("- account_id:"):
-                    account_id = line.replace("- account_id:", "").strip()
+                    # Extract only the account ID, handling cases where multiple parameters might be on same line
+                    account_id_raw = line.replace("- account_id:", "").strip()
+                    # Split on common delimiters that might appear if lines are concatenated
+                    account_id = account_id_raw.split(' - ')[0].strip()
+                    logger.info(f"Parsed account_id: '{account_id}' from line: '{line}'")
                 elif line.startswith("- user_id:"):
-                    user_id = line.replace("- user_id:", "").strip()
+                    user_id = line.replace("- user_id:", "").strip().split(' - ')[0].strip()
                 elif line.startswith("- annual_ad_budget:"):
-                    budget_str = line.replace("- annual_ad_budget:", "").replace("$", "").replace(",", "").strip()
+                    budget_str = line.replace("- annual_ad_budget:", "").replace("$", "").replace(",", "").strip().split(' - ')[0].strip()
                     try:
                         annual_ad_budget = float(budget_str)
                     except:
