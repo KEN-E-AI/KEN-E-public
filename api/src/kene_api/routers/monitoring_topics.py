@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 
@@ -19,18 +18,21 @@ from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import SuccessResponse
 from ..models.monitoring_models import (
     AddCompetitorRequest,
+    AddCustomerConceptRequest,
     CompetitorEntry,
+    ConceptOption,
+    CustomerKeywordConcept,
     IndustryKeywords,
     IndustryKeywordsListResponse,
     MonitoringTopics,
     MonitoringTopicsResponse,
-    PaginatedKeywordsRequest,
     PaginatedKeywordsResponse,
     UpdateCompanyKeywordsRequest,
     UpdateCompetitorRequest,
     UpdateCustomerKeywordsRequest,
     UpdateIndustryKeywordsRequest,
 )
+from ..services.concept_service import ConceptDisambiguationService
 
 # Create a module-level cache service (in-memory for now)
 # In production, this would be initialized with Redis
@@ -133,7 +135,7 @@ async def get_or_create_monitoring_topics(
 
         return monitoring_topics
     except Exception as e:
-        logger.error(f"Error getting/creating monitoring topics: {str(e)}")
+        logger.error(f"Error getting/creating monitoring topics: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve monitoring topics"
         )
@@ -165,7 +167,7 @@ async def get_industry_keywords_for_industry(
 
         return keywords
     except Exception as e:
-        logger.error(f"Error getting industry keywords: {str(e)}")
+        logger.error(f"Error getting industry keywords: {e!s}")
         return []
 
 
@@ -196,7 +198,7 @@ async def update_accounts_with_industry(
                 },
             )
     except Exception as e:
-        logger.error(f"Error updating accounts with industry keywords: {str(e)}")
+        logger.error(f"Error updating accounts with industry keywords: {e!s}")
 
 
 @router.get("/{account_id}", response_model=MonitoringTopicsResponse)
@@ -238,7 +240,7 @@ async def get_monitoring_topics(
                     record = await result.single()
             except Exception as e:
                 logger.error(
-                    f"Neo4j query error for account {account_id}: {str(e)}",
+                    f"Neo4j query error for account {account_id}: {e!s}",
                     exc_info=True,
                 )
                 raise
@@ -258,11 +260,11 @@ async def get_monitoring_topics(
             return MonitoringTopicsResponse(success=True, data=monitoring_topics)
     except Exception as e:
         logger.error(
-            f"Error retrieving monitoring topics for account {account_id}: {str(e)}",
+            f"Error retrieving monitoring topics for account {account_id}: {e!s}",
             exc_info=True,
         )
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve monitoring topics: {str(e)}"
+            status_code=500, detail=f"Failed to retrieve monitoring topics: {e!s}"
         )
 
 
@@ -333,7 +335,7 @@ async def update_company_keywords(
             data={"company_keywords": request.company_keywords},
         )
     except Exception as e:
-        logger.error(f"Error updating company keywords: {str(e)}")
+        logger.error(f"Error updating company keywords: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update company keywords")
 
 
@@ -389,25 +391,256 @@ async def update_customer_keywords(
                 account_id, organization_id, industry, firestore
             )
 
+        # Get existing concept keywords to preserve them
+        existing_concepts = doc.get("customer_concepts", []) if doc else []
+        concept_keywords = [c.get("keyword") for c in existing_concepts if c.get("keyword")]
+        
+        # Combine the plain keywords from request with concept keywords
+        # This maintains backward compatibility with the customer_keywords field
+        all_keywords = list(set(request.customer_keywords + concept_keywords))
+        
         # Now update the document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
             document_id=account_id,
             data={
-                "customer_keywords": request.customer_keywords,
+                "customer_keywords": all_keywords,
                 "updated_at": datetime.utcnow().isoformat(),
             },
         )
 
         return SuccessResponse(
             message="Customer keywords updated successfully",
-            data={"customer_keywords": request.customer_keywords},
+            data={"customer_keywords": all_keywords},
         )
     except Exception as e:
-        logger.error(f"Error updating customer keywords: {str(e)}")
+        logger.error(f"Error updating customer keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update customer keywords"
         )
+
+
+@router.get("/{account_id}/customers/search-concepts", response_model=list[ConceptOption])
+async def search_customer_concepts(
+    account_id: str = Path(..., description="Account ID"),
+    term: str = Query(..., description="Term to disambiguate"),
+    user: UserContext = Depends(get_current_user_context),
+) -> list[ConceptOption]:
+    """Search for concept interpretations using free APIs and Gemini."""
+    logger.info(f"Concept search request - account: {account_id}, term: {term}, user: {user.email}")
+
+    # Check user has access to this account
+    if not user.has_account_access(account_id) and not user.is_super_admin:
+        logger.warning(f"Access denied for user {user.email} to account {account_id}")
+        raise HTTPException(
+            status_code=403, detail=f"Access denied to account {account_id}"
+        )
+
+    try:
+        # Check cache first (if available)
+        cache_key = f"concepts:{term.lower()}"
+        try:
+            cached_results = await _cache_service.get(cache_key)
+            if cached_results:
+                logger.info(f"Returning cached concepts for term: {term}")
+                return cached_results
+        except AttributeError as e:
+            # Cache service not available, continue without cache
+            logger.debug(f"Cache service not available: {e}")
+        except TypeError as e:
+            # Cache service likely not initialized properly
+            logger.debug(f"Cache service type error, likely not initialized: {e}")
+
+        # Search for concepts
+        logger.info(f"Initializing ConceptDisambiguationService for term: {term}")
+        service = ConceptDisambiguationService()
+        concepts = await service.search_concepts(term)
+
+        # Cache results for 1 hour to reduce API calls (if cache is available)
+        if concepts:
+            try:
+                # Note: CacheService.set uses ttl_seconds, not ttl
+                _cache_service.set(cache_key, concepts, ttl_seconds=3600)
+                logger.info(f"Cached {len(concepts)} concepts for term: {term}")
+            except AttributeError as e:
+                logger.debug(f"Could not cache concepts, cache service not available: {e}")
+            except TypeError as e:
+                logger.debug(f"Could not cache concepts, type error: {e}")
+        else:
+            logger.warning(f"No concepts found for term: {term}")
+
+        return concepts
+
+    except Exception as e:
+        logger.error(f"Error in search_customer_concepts for term '{term}': {e!s}", exc_info=True)
+        # Return empty list instead of raising error to allow frontend to handle gracefully
+        return []
+
+
+@router.post("/{account_id}/customers/add-concept", response_model=CustomerKeywordConcept)
+async def add_customer_concept(
+    account_id: str = Path(..., description="Account ID"),
+    request: AddCustomerConceptRequest = Body(...),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> CustomerKeywordConcept:
+    """Add a customer keyword with selected concept disambiguation."""
+    # Check user has write access to this account
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Write access denied to account {account_id}"
+        )
+
+    # Validate account_id matches
+    if request.account_id != account_id:
+        raise HTTPException(
+            status_code=400, detail="Account ID in path does not match request body"
+        )
+
+    # Create concept entry
+    concept = CustomerKeywordConcept(
+        keyword=request.keyword,
+        concept_id=request.concept_id,
+        concept_type=request.concept_type,
+        reference=request.reference,
+        added_by=user.user_id,
+        added_at=datetime.utcnow().isoformat(),
+    )
+
+    try:
+        # Get current document
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            # Need to create the document first
+            neo4j = await get_neo4j_service()
+            account_query = """
+            MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+            RETURN acc.industry as industry, org.organization_id as organization_id
+            """
+
+            async with neo4j.get_session() as session:
+                result = await session.run(account_query, {"account_id": account_id})
+                record = await result.single()
+
+                if not record:
+                    raise HTTPException(status_code=404, detail="Account not found")
+
+                industry = record["industry"]
+                organization_id = record["organization_id"]
+
+            # Create monitoring topics document
+            monitoring_topics = await get_or_create_monitoring_topics(
+                account_id, organization_id, industry, firestore
+            )
+            doc = monitoring_topics.model_dump()
+
+        # Add the new concept
+        concepts = doc.get("customer_concepts", [])
+        concepts.append(concept.model_dump())
+
+        # Also update legacy customer_keywords for backward compatibility
+        keywords = doc.get("customer_keywords", [])
+        if request.keyword not in keywords:
+            keywords.append(request.keyword)
+
+        # Update document
+        firestore.update_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+            data={
+                "customer_concepts": concepts,
+                "customer_keywords": keywords,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+        return concept
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding customer concept: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to add customer concept")
+
+
+@router.delete("/{account_id}/customers/concepts/{concept_id}", response_model=SuccessResponse)
+async def remove_customer_concept(
+    account_id: str = Path(..., description="Account ID"),
+    concept_id: str = Path(..., description="Concept ID to remove"),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """Remove a customer concept."""
+    # Check user has write access to this account
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Write access denied to account {account_id}"
+        )
+
+    try:
+        # Get current document
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            raise HTTPException(status_code=404, detail="Monitoring topics not found")
+
+        # Remove the concept
+        concepts = doc.get("customer_concepts", [])
+        keyword_to_remove = None
+
+        # Find and remove the concept
+        updated_concepts = []
+        found_concept = False
+        for c in concepts:
+            if c.get("concept_id") != concept_id:
+                updated_concepts.append(c)
+            else:
+                keyword_to_remove = c.get("keyword")
+                found_concept = True
+                logger.info(f"Found concept to remove: {concept_id}, keyword: {keyword_to_remove}")
+
+        if not found_concept:
+            logger.warning(f"Concept {concept_id} not found in concepts list")
+            raise HTTPException(status_code=404, detail=f"Concept {concept_id} not found")
+
+        # Also update legacy customer_keywords by removing the keyword
+        keywords = doc.get("customer_keywords", [])
+        if keyword_to_remove and keyword_to_remove in keywords:
+            keywords.remove(keyword_to_remove)
+            logger.info(f"Removed keyword '{keyword_to_remove}' from customer_keywords")
+
+        # Log what we're updating
+        logger.info(f"Updating document with {len(updated_concepts)} concepts (was {len(concepts)})")
+        logger.info(f"Updating document with {len(keywords)} keywords (was {len(doc.get('customer_keywords', []))})")
+
+        # Update document
+        firestore.update_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+            data={
+                "customer_concepts": updated_concepts,
+                "customer_keywords": keywords,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+        return SuccessResponse(
+            message="Customer concept removed successfully",
+            data={"removed_concept_id": concept_id},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing customer concept: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to remove customer concept")
 
 
 @router.post("/{account_id}/competitors", response_model=SuccessResponse)
@@ -489,7 +722,7 @@ async def add_competitor(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error adding competitor: {str(e)}")
+        logger.error(f"Error adding competitor: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to add competitor")
 
 
@@ -568,7 +801,7 @@ async def update_competitor(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating competitor: {str(e)}")
+        logger.error(f"Error updating competitor: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to update competitor")
 
 
@@ -628,7 +861,7 @@ async def delete_competitor(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting competitor: {str(e)}")
+        logger.error(f"Error deleting competitor: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to delete competitor")
 
 
@@ -684,7 +917,7 @@ async def get_company_keywords_paginated(
             total_pages=total_pages,
         )
     except Exception as e:
-        logger.error(f"Error retrieving paginated company keywords: {str(e)}")
+        logger.error(f"Error retrieving paginated company keywords: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to retrieve keywords")
 
 
@@ -727,7 +960,7 @@ async def get_all_industry_keywords(
 
         return IndustryKeywordsListResponse(success=True, industries=industries)
     except Exception as e:
-        logger.error(f"Error retrieving industry keywords: {str(e)}")
+        logger.error(f"Error retrieving industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve industry keywords"
         )
@@ -781,7 +1014,7 @@ async def update_industry_keywords(
             data={"keywords": request.keywords},
         )
     except Exception as e:
-        logger.error(f"Error updating industry keywords: {str(e)}")
+        logger.error(f"Error updating industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update industry keywords"
         )
