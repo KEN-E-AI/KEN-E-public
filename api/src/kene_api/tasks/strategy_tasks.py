@@ -62,9 +62,15 @@ async def trigger_strategy_generation(
         from ..routers.chat import AgentEngineClient
 
         # Get project ID from environment
+        # CRITICAL: Always use ken-e-dev for Firestore access, regardless of where the agent is running
         project_id = os.getenv(
             "VERTEX_AI_PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
         )
+        
+        # Force ken-e-dev to ensure Firestore access works correctly
+        if project_id != "ken-e-dev":
+            logger.warning(f"Project ID was {project_id}, forcing to ken-e-dev for Firestore access")
+            project_id = "ken-e-dev"
 
         # Format the information for the strategy agent
         new_information = f"""Project ID: {project_id}
@@ -310,14 +316,49 @@ Please execute strategy generation with these parameters:
                                     content["parts"], list
                                 ):
                                     for part in content["parts"]:
-                                        if isinstance(part, dict) and "text" in part:
-                                            response_parts.append(part["text"])
-                                            logger.info(
-                                                f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
-                                            )
-                                            logger.debug(
-                                                f"  Text preview: {part['text'][:200]}..."
-                                            )
+                                        if isinstance(part, dict):
+                                            # Handle text parts
+                                            if "text" in part:
+                                                response_parts.append(part["text"])
+                                                logger.info(
+                                                    f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
+                                                )
+                                                logger.debug(
+                                                    f"  Text preview: {part['text'][:200]}..."
+                                                )
+                                            # Handle function_call parts (likely contains strategy documents)
+                                            elif "function_call" in part:
+                                                function_call = part["function_call"]
+                                                logger.info(
+                                                    f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
+                                                )
+                                                # Extract the function call content
+                                                if isinstance(function_call, dict):
+                                                    # Log the function name if available
+                                                    if "name" in function_call:
+                                                        logger.info(f"    Function: {function_call['name']}")
+                                                    # Extract arguments/response
+                                                    if "response" in function_call:
+                                                        response_parts.append(str(function_call["response"]))
+                                                        logger.info(f"    Added function response: {len(str(function_call['response']))} chars")
+                                                    elif "output" in function_call:
+                                                        response_parts.append(str(function_call["output"]))
+                                                        logger.info(f"    Added function output: {len(str(function_call['output']))} chars")
+                                                    elif "args" in function_call:
+                                                        response_parts.append(str(function_call["args"]))
+                                                        logger.info(f"    Added function args: {len(str(function_call['args']))} chars")
+                                                    else:
+                                                        # Just append the whole function_call as string
+                                                        response_parts.append(str(function_call))
+                                                        logger.info(f"    Added entire function_call: {len(str(function_call))} chars")
+                                                else:
+                                                    response_parts.append(str(function_call))
+                                                    logger.info(f"    Added function_call as string: {len(str(function_call))} chars")
+                                            # Log other part types for debugging
+                                            elif "thought_signature" in part:
+                                                logger.info(f"  Found thought_signature in chunk {chunk_count} (skipping)")
+                                            else:
+                                                logger.info(f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}")
                             else:
                                 response_parts.append(str(chunk))
                                 logger.info(

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Strategy Orchestrator Agent for Vertex AI Agent Engine
-This module imports and exposes the new strategy orchestrator for deployment.
+Create Strategy Docs Supervisor for Vertex AI Agent Engine
+This module imports and exposes the strategy document creation supervisor for deployment.
 """
 
 import sys
@@ -10,14 +10,14 @@ from pathlib import Path
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Import the new strategy orchestrator instead of the old create_strategy_docs
-from agents.strategy_agent.orchestrator import app, strategy_agent
+# Import the strategy docs supervisor
+from agents.create_strategy_docs_supervisor import create_strategy_docs_supervisor
 
 # Export for ADK deployment - ADK looks for 'app' or 'root_agent'
-root_agent = strategy_agent
-agent = strategy_agent  # Also export as 'agent' for compatibility
+root_agent = create_strategy_docs_supervisor
+agent = create_strategy_docs_supervisor  # Also export as 'agent' for compatibility
 
 # Export all required names
-__all__ = ["app", "strategy_agent", "root_agent", "agent"]
+__all__ = ["create_strategy_docs_supervisor", "root_agent", "agent"]
 
-print("✅ Strategy orchestrator loaded (replacing old create_strategy_docs)")
+print("✅ Create strategy docs supervisor loaded")

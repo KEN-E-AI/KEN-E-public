@@ -89,11 +89,17 @@ def create_strategy_sequential_agent(context: StrategyContext) -> SequentialAgen
     logger.info(f"Creating Sequential Agent for {context.company_name}")
     
     # Create all 5 strategy agents in order
+    logger.info("[AGENT CREATION] Creating business_strategy_agent")
     business_agent = create_business_strategy_agent(context)
+    logger.info("[AGENT CREATION] Creating competitive_strategy_agent")
     competitive_agent = create_competitive_strategy_agent(context)
+    logger.info("[AGENT CREATION] Creating customer_strategy_agent")
     customer_agent = create_customer_strategy_agent(context)
+    logger.info("[AGENT CREATION] Creating marketing_strategy_agent")
     marketing_agent = create_marketing_strategy_agent(context)
+    logger.info("[AGENT CREATION] Creating brand_guidelines_agent")
     brand_agent = create_brand_guidelines_agent(context)
+    logger.info("[AGENT CREATION] All 5 agents created successfully")
     
     # Chain them together in a SequentialAgent
     strategy_sequential_agent = SequentialAgent(
@@ -208,6 +214,7 @@ def execute_strategy_generation(
         )
         
         # Run the agent pipeline
+        logger.info(f"[EXECUTION] Starting runner with 5 sequential agents")
         events = runner.run(
             user_id=session_user_id,
             session_id=session_id,
@@ -215,9 +222,11 @@ def execute_strategy_generation(
         )
         
         # Process events and save documents
+        logger.info(f"[EXECUTION] Processing events from agent execution")
         generated_documents = process_and_save_documents(
             events, account_id, user_id, client
         )
+        logger.info(f"[EXECUTION] Document processing complete - found {len(generated_documents)} documents")
         
         logger.info(f"[EXECUTION] Completed strategy generation for {company_name}")
         logger.info(f"[EXECUTION] Generated documents: {list(generated_documents.keys())}")
@@ -264,7 +273,13 @@ def process_and_save_documents(
             event_info += f" author='{event.author}'"
             
             # Log specific agent transitions
-            if 'marketing_strategy_agent' in str(event.author):
+            if 'business_strategy_agent' in str(event.author):
+                logger.info(f"[BUSINESS AGENT] Event from business agent: {event.author}")
+            elif 'competitive_strategy_agent' in str(event.author):
+                logger.info(f"[COMPETITIVE AGENT] Event from competitive agent: {event.author}")
+            elif 'customer_strategy_agent' in str(event.author):
+                logger.info(f"[CUSTOMER AGENT] Event from customer agent: {event.author}")
+            elif 'marketing_strategy_agent' in str(event.author):
                 logger.info(f"[MARKETING AGENT] Event from marketing agent: {event.author}")
             elif 'brand_' in str(event.author):
                 logger.info(f"[BRAND AGENT] Event from brand agent: {event.author}")
@@ -311,6 +326,14 @@ def process_and_save_documents(
                                 logger.error(f"[FIRESTORE] Error saving {doc_type}: {e}")
                         else:
                             logger.error(f"[DOCUMENT] Failed to parse content for {doc_type} from key {doc_key}")
+    
+    # Log final summary
+    logger.info(f"[EXECUTION SUMMARY] Total events processed: {event_count}")
+    logger.info(f"[EXECUTION SUMMARY] Documents generated: {list(generated_documents.keys())}")
+    expected_docs = ['business_strategy', 'competitive_strategy', 'customer_strategy', 'marketing_strategy', 'brand_guidelines']
+    missing_docs = [doc for doc in expected_docs if doc not in generated_documents]
+    if missing_docs:
+        logger.warning(f"[EXECUTION SUMMARY] Missing documents: {missing_docs}")
     
     return generated_documents
 

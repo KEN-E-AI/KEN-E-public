@@ -366,7 +366,7 @@ def create_supervisor_agent():
     create_update_strategy.__doc__ = "Create or update business strategy documents, competitive strategy documents, or channel strategy documents using iterative refinement"
     
     supervisor = Agent(
-        name="multi_capability_supervisor_v2",
+        name="create_strategy_docs_supervisor",
         model="gemini-2.0-flash",
         instruction="""You are an intelligent routing supervisor that provides access to three specialized capabilities.
 
@@ -452,4 +452,4 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
 
 
 # Export the supervisor agent
-supervisor_agent_v2 = create_supervisor_agent()
+create_strategy_docs_supervisor = create_supervisor_agent()
