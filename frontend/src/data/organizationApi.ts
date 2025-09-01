@@ -19,22 +19,25 @@ async function apiCall<T>(
   } = {},
 ): Promise<T> {
   try {
+    const timeoutMs = options.timeout || 300000; // Default 5 minute timeout
     const response = await api.request<T>({
       url: path,
       method: options.method || "GET",
       data: options.data,
       params: options.params,
       headers: options.headers,
-      timeout: options.timeout || 300000, // Default 5 minute timeout
+      timeout: timeoutMs,
     });
 
     return response.data;
   } catch (error: any) {
     // Enhanced error handling for timeout and connection issues
     if (error.code === "ECONNABORTED" || error.code === "ETIME") {
-      console.error(`[organizationApi] Request timeout for: ${path}`);
+      const timeoutMs = options.timeout || 300000;
+      const timeoutMinutes = Math.round(timeoutMs / 60000);
+      console.error(`[organizationApi] Request timed out after ${timeoutMinutes} minutes for: ${path}`);
       throw new Error(
-        `Request timeout. The operation took too long to complete.`,
+        `Request timed out after ${timeoutMinutes} minutes. The operation took too long to complete.`,
       );
     }
 
@@ -166,6 +169,7 @@ export async function createAccount(
     status: string;
     websites: string[];
     timezone: string;
+    account_id?: string;
     data_region?: string;
     region?: string[];
     marketing_channels?: string[];
@@ -223,11 +227,23 @@ export async function createAccount(
   
   const formData = builder.build();
   
+  const timeoutMs = options?.timeout || 1800000; // 30 minutes for account creation
+  
   // Always send as multipart/form-data
   return api.post<Account>("/api/v1/accounts/", formData, {
     headers: headers,  // Don't spread or modify - let axios handle Content-Type for FormData
-    timeout: options?.timeout || 600000, // 10 minutes for account creation
-  }).then(response => response.data);
+    timeout: timeoutMs,
+  }).then(response => response.data).catch(error => {
+    // Handle timeout errors specifically for account creation
+    if (error.code === "ECONNABORTED" || error.code === "ETIME") {
+      const timeoutMinutes = Math.round(timeoutMs / 60000);
+      console.error(`[organizationApi] Request timed out after ${timeoutMinutes} minutes for: /api/v1/accounts/`);
+      throw new Error(
+        `Request timed out after ${timeoutMinutes} minutes. The operation took too long to complete.`,
+      );
+    }
+    throw error;
+  });
 }
 
 export async function updateAccount(

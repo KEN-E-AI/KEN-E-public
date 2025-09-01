@@ -56,9 +56,26 @@ export const useDeleteAccount = () => {
   });
 };
 
-export const useCreateAccount = () => {
+// Manual cache invalidation helper
+export const useInvalidateAccounts = () => {
   const queryClient = useQueryClient();
+  
+  return (organizationId: string) => {
+    // Invalidate the specific organization's account list
+    queryClient.invalidateQueries({
+      queryKey: accountKeys.list(organizationId),
+    });
+    // Also invalidate all lists for broader cache consistency
+    queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
+    
+    console.log(
+      "[useInvalidateAccounts] Cache invalidated for organization:",
+      organizationId,
+    );
+  };
+};
 
+export const useCreateAccount = () => {
   return useMutation({
     mutationFn: async (accountData: {
       accountId?: string;  // Optional pre-generated account ID for progress tracking
@@ -163,16 +180,13 @@ export const useCreateAccount = () => {
     },
 
     onSuccess: (_, variables) => {
-      // Invalidate the specific organization's account list
-      queryClient.invalidateQueries({
-        queryKey: accountKeys.list(variables.organizationId),
-      });
-      // Also invalidate all lists for broader cache consistency
-      queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
-
+      // Don't automatically invalidate queries here
+      // The component using this mutation should decide when to refresh
+      // based on whether the account creation fully completed
       console.log(
-        "[useCreateAccount] Cache invalidated for organization:",
+        "[useCreateAccount] Account created for organization:",
         variables.organizationId,
+        "- cache invalidation should be handled by the component"
       );
     },
 

@@ -9,6 +9,7 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useUpdateAccount,
+  useInvalidateAccounts,
   accountKeys,
 } from "@/queries/accounts";
 import { useAccountConsistency } from "@/hooks/useAccountConsistency";
@@ -18,7 +19,7 @@ import { generateAccountId } from "@/lib/idGenerator";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
-import { moveAccount, getOrganizations, getOrganizationById, getAccountsByOrganizationId } from "@/data/organizationApi";
+import { moveAccount, getOrganizations, getOrganizationById } from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -216,6 +217,7 @@ const AccountsManagement = ({
   const deleteAccountMutation = useDeleteAccount();
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
+  const invalidateAccounts = useInvalidateAccounts();
 
   // State for tracking account creation
   const [creatingAccountId, setCreatingAccountId] = useState<string | null>(
@@ -249,19 +251,21 @@ const AccountsManagement = ({
         setTimeout(async () => {
           // Refresh data once at completion to avoid rate limiting
           try {
-            // Refresh account queries
-            await refreshAccountQueries(currentOrgId);
+            // Use manual cache invalidation instead of automatic refetch
+            // This allows the component to control when to refresh
+            invalidateAccounts(currentOrgId);
             
-            // Refresh organization metadata
+            // Refresh organization metadata (quick operation)
             const updatedOrg = await getOrganizationById(currentOrgId);
-            const updatedAccounts = await getAccountsByOrganizationId(currentOrgId);
             
             if (updatedOrg) {
+              // Use the accounts from the cache that will be populated when ready
+              // instead of triggering a new fetch that might timeout
               setOrgMetadata((prev) => ({
                 ...prev,
                 [currentOrgId]: {
                   ...updatedOrg,
-                  accounts: updatedAccounts || [],
+                  accounts: accounts || [], // Use the accounts from React Query cache
                 },
               }));
             }
@@ -269,7 +273,7 @@ const AccountsManagement = ({
             // Refresh notifications
             await refreshNotifications();
             
-            console.log("[AccountsManagement] Data refreshed successfully after account creation");
+            console.log("[AccountsManagement] Cache invalidated successfully after account creation");
           } catch (error) {
             console.error("[AccountsManagement] Error refreshing data after account creation:", error);
           } finally {
@@ -354,14 +358,6 @@ const AccountsManagement = ({
     }));
   };
 
-  const refreshAccountQueries = async (orgId: string) => {
-    await queryClient.invalidateQueries({
-      queryKey: accountKeys.list(orgId),
-    });
-    await queryClient.refetchQueries({
-      queryKey: accountKeys.list(orgId),
-    });
-  };
 
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
