@@ -8,7 +8,8 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 
-from ..auth import UserContext, get_current_user_context
+from ..auth import UserContext
+from ..auth.user_context import get_current_user_context
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
     IndustryTemplate,

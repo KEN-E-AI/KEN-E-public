@@ -10,7 +10,6 @@ from google.cloud import firestore
 from ..firestore import FirestoreService, get_firestore_service
 from ..rate_limiter import RateLimiter
 from .audit_logger import AuditLogger, SecurityEventType, get_audit_logger
-from .cached_user_context import get_cached_user_context_service
 from .firebase_admin import initialize_firebase_admin, verify_id_token
 from .models import UserContext
 from .rate_limiting import token_rate_limiter
@@ -303,7 +302,8 @@ async def _get_user_context_with_limiter(
         # Re-raise HTTP exceptions
         raise
 
-    # Try to get from cache first
+    # Try to get from cache first (lazy import to avoid Redis initialization at module load)
+    from .cached_user_context import get_cached_user_context_service
     cached_user_service = get_cached_user_context_service()
     cached_context = cached_user_service.get_user_context(user_id)
     if cached_context:

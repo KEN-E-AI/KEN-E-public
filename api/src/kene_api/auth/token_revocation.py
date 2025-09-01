@@ -7,7 +7,6 @@ from typing import Optional
 from google.cloud import firestore
 
 from ..firestore import get_firestore_service
-from ..redis_client import get_redis_service
 from .audit_logger import get_audit_logger, SecurityEventType
 
 logger = logging.getLogger(__name__)
@@ -19,9 +18,17 @@ class TokenRevocationService:
     def __init__(self):
         """Initialize the token revocation service."""
         self.collection_name = "revoked_tokens"
-        self.redis = get_redis_service()
+        self._redis = None  # Lazy initialization to avoid Redis connection at import time
         # Cache revoked tokens for 1 hour
         self.cache_ttl = 3600
+    
+    @property
+    def redis(self):
+        """Lazy-load Redis service to avoid initialization at module import."""
+        if self._redis is None:
+            from ..redis_client import get_redis_service
+            self._redis = get_redis_service()
+        return self._redis
 
     async def revoke_token(
         self,

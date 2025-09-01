@@ -21,7 +21,8 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from ..auth import UserContext, get_current_user_context
+from ..auth import UserContext
+from ..auth.user_context import get_current_user_context
 from ..auth.dependencies import get_user_context_for_polling
 from ..bigquery import BigQueryService, get_bigquery_service
 
