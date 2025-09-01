@@ -16,15 +16,7 @@ from ..database import Neo4jService
 
 logger = logging.getLogger(__name__)
 
-def update_account_progress(account_id: str, step: int, message: str, step_statuses: List[str], error_message: Optional[str] = None) -> None:
-    """Update account creation progress by storing in cache."""
-    logger.info(f"[ACCOUNT_PROGRESS] {account_id}: Step {step} - {message}")
-    
-    # Import the progress service
-    from .progress_service import update_account_creation_progress
-    
-    # Call the progress service implementation
-    update_account_creation_progress(account_id, step, message, step_statuses)
+# Removed update_account_progress function - simplified progress tracking
 
 def generate_unique_account_id() -> str:
     """Generate a unique account ID."""
@@ -76,13 +68,8 @@ async def create_account_internal(
     
     logger.info(f"[ACCOUNT_CREATION] Starting internal account creation for: {account_id}")
     
-    # Initialize progress tracking with 7-step process
-    update_account_progress(
-        account_id,
-        1,
-        "Setting up database structures...",
-        ["processing", "pending", "pending", "pending", "pending", "pending", "pending"],
-    )
+    # Log account creation start (progress tracking simplified)
+    logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
     
     # Trigger strategy generation in background
     # Import here to avoid circular dependency
@@ -104,13 +91,8 @@ async def create_account_internal(
         user_context=None,  # No user context for background task
     )
     
-    # Update progress - account structure created, research starting
-    update_account_progress(
-        account_id,
-        1,
-        "Account structure created, preparing research...",
-        ["processing", "pending", "pending", "pending", "pending", "pending", "pending"],
-    )
+    # Log account structure created (progress tracking simplified)
+    logger.info(f"[ACCOUNT_CREATION] Account structure created for {account_id}, preparing research")
     
     # Check if organization exists in Neo4j
     logger.info(f"[ACCOUNT_CREATION] Checking if organization exists: {request.organization_id}")
@@ -197,13 +179,8 @@ async def create_account_internal(
         logger.error(f"[ACCOUNT_CREATION] Failed to create account in Neo4j: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create account: {str(e)}")
     
-    # Update progress - database setup continuing
-    update_account_progress(
-        account_id,
-        1,
-        "Setting up database structures...",
-        ["processing", "pending", "pending", "pending", "pending", "pending", "pending"],
-    )
+    # Log database setup continuing (progress tracking simplified)
+    logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
     
     # Create initial activity logs if BigQuery service is available
     if bigquery_service:
@@ -218,13 +195,8 @@ async def create_account_internal(
             logger.error(f"[ACCOUNT_CREATION] Failed to create activity logs: {e}")
             # Don't fail account creation if activity logs fail
     
-    # Update progress - database setup continuing
-    update_account_progress(
-        account_id,
-        1,
-        "Configuring data streams...",
-        ["processing", "pending", "pending", "pending", "pending", "pending", "pending"],
-    )
+    # Log database setup continuing (progress tracking simplified)
+    logger.info(f"[ACCOUNT_CREATION] Configuring data streams for {account_id}")
     
     # Ensure GCS bucket and folder exist for the account
     try:
@@ -285,14 +257,9 @@ async def create_account_internal(
         logger.error(f"Failed to invalidate user cache: {e}")
         # Don't fail account creation if cache invalidation fails
     
-    # Update progress - database setup complete, strategy generation will handle next steps
+    # Log database setup complete (progress tracking simplified)
     # Don't mark as fully complete yet - the strategy generation task will do that
-    update_account_progress(
-        account_id,
-        1,
-        "Database setup complete. Starting business research...",
-        ["completed", "pending", "pending", "pending", "pending", "pending", "pending"],
-    )
+    logger.info(f"[ACCOUNT_CREATION] Database setup complete for {account_id}, starting business research")
     
     logger.info(f"[ACCOUNT_CREATION] Successfully created account: {account_id}, strategy generation in progress")
     

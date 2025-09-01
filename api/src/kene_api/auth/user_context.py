@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.cloud import firestore
 
 from ..firestore import get_firestore_service
+from ..rate_limiter import RateLimiter
 from .audit_logger import SecurityEventType, get_audit_logger
 from .cached_user_context import get_cached_user_context_service
 from .firebase_admin import initialize_firebase_admin, verify_id_token
@@ -24,27 +25,18 @@ initialize_firebase_admin()
 security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user_context(
+async def _get_user_context_with_limiter(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    credentials: HTTPAuthorizationCredentials,
+    firestore_service,
+    rate_limiter: Optional[RateLimiter] = None,
 ) -> UserContext:
-    """Get the current user context from Firebase auth token.
+    """Internal function to get user context with custom rate limiter.
 
-    Extracts and verifies the Firebase ID token from the Authorization header,
-    then loads user permissions from Firestore.
-
-    Args:
-        request: The FastAPI request object
-        credentials: HTTP Bearer credentials containing Firebase ID token
-        firestore_service: Firestore service instance
-
-    Returns:
-        UserContext object with user info and permissions
-
-    Raises:
-        HTTPException: If authentication fails or rate limit exceeded
+    This is the actual implementation that accepts a custom rate limiter.
     """
+    # Choose which rate limiter to use
+    active_limiter = rate_limiter if rate_limiter is not None else token_rate_limiter
     # Get client info for audit logging
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("User-Agent")
@@ -53,7 +45,7 @@ async def get_current_user_context(
     if not credentials:
         # Apply rate limiting for missing credentials
         try:
-            token_rate_limiter.check_rate_limit(request)
+            active_limiter.check_rate_limit(request)
         except HTTPException as e:
             if e.status_code == 429:
                 await audit_logger.log_rate_limit_exceeded(
@@ -61,7 +53,7 @@ async def get_current_user_context(
                     endpoint=str(request.url),
                 )
             raise
-        
+
         await audit_logger.log_login_failure(
             ip_address=client_ip,
             user_agent=user_agent,
@@ -82,11 +74,11 @@ async def get_current_user_context(
         # Check if user is super admin (before rate limiting)
         # Super admins are identified by @ken-e.ai email domain
         is_super_admin = email.lower().endswith("@ken-e.ai")
-        
+
         # Apply rate limiting only for non-super admins
         if not is_super_admin:
             try:
-                token_rate_limiter.check_rate_limit(request)
+                active_limiter.check_rate_limit(request)
             except HTTPException as e:
                 if e.status_code == 429:
                     await audit_logger.log_rate_limit_exceeded(
@@ -135,7 +127,7 @@ async def get_current_user_context(
     except Exception as e:
         # Apply rate limiting for failed authentication attempts
         try:
-            token_rate_limiter.check_rate_limit(request)
+            active_limiter.check_rate_limit(request)
         except HTTPException as rate_error:
             if rate_error.status_code == 429:
                 await audit_logger.log_rate_limit_exceeded(
@@ -145,7 +137,7 @@ async def get_current_user_context(
             # Log both the auth failure and rate limit
             logger.error(f"Failed to verify token: {e}")
             raise rate_error
-            
+
         logger.error(f"Failed to verify token: {e}")
         await audit_logger.log_event(
             event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
@@ -237,6 +229,31 @@ async def get_current_user_context(
     )
 
     return user_context
+
+
+async def get_current_user_context(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    firestore_service=Depends(get_firestore_service),
+) -> UserContext:
+    """Get the current user context from Firebase auth token.
+
+    FastAPI-compatible wrapper that uses the default token_rate_limiter.
+
+    Args:
+        request: The FastAPI request object
+        credentials: HTTP Bearer credentials containing Firebase ID token
+        firestore_service: Firestore service instance
+
+    Returns:
+        UserContext object with user info and permissions
+
+    Raises:
+        HTTPException: If authentication fails or rate limit exceeded
+    """
+    return await _get_user_context_with_limiter(
+        request, credentials, firestore_service, rate_limiter=None
+    )
 
 
 async def get_optional_user_context(

@@ -10,124 +10,12 @@ from typing import Any
 
 from google.cloud import firestore
 
-from ..routers.accounts import AccountCreationProgress, ProgressStep
-from ..services.progress_cache import progress_cache
+# Removed progress tracking imports - simplified progress tracking
 
 logger = logging.getLogger(__name__)
 
 
-def update_strategy_progress(
-    account_id: str, message: str, percentage: int = 60
-) -> None:
-    """Update the account creation progress during strategy generation.
-
-    Args:
-        account_id: Account ID being created
-        message: Progress message to display
-        percentage: Progress percentage (0-100)
-    """
-    try:
-        # Create progress data using the proper model for consistency
-        # Map percentage to specific steps
-        if percentage <= 20:
-            current_step = 1
-            steps = [
-                ProgressStep(name="Setting up database", status="processing"),
-                ProgressStep(name="Researching your business", status="pending"),
-                ProgressStep(name="Researching your competitors", status="pending"),
-                ProgressStep(name="Researching your customers", status="pending"),
-                ProgressStep(name="Inferring your marketing strategy", status="pending"),
-                ProgressStep(name="Reviewing your brand styles", status="pending"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ]
-        elif percentage <= 30:
-            current_step = 2
-            steps = [
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="processing"),
-                ProgressStep(name="Researching your competitors", status="pending"),
-                ProgressStep(name="Researching your customers", status="pending"),
-                ProgressStep(name="Inferring your marketing strategy", status="pending"),
-                ProgressStep(name="Reviewing your brand styles", status="pending"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ]
-        elif percentage <= 45:
-            current_step = 3
-            steps = [
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="completed"),
-                ProgressStep(name="Researching your competitors", status="processing"),
-                ProgressStep(name="Researching your customers", status="pending"),
-                ProgressStep(name="Inferring your marketing strategy", status="pending"),
-                ProgressStep(name="Reviewing your brand styles", status="pending"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ]
-        elif percentage <= 60:
-            current_step = 4
-            steps = [
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="completed"),
-                ProgressStep(name="Researching your competitors", status="completed"),
-                ProgressStep(name="Researching your customers", status="processing"),
-                ProgressStep(name="Inferring your marketing strategy", status="pending"),
-                ProgressStep(name="Reviewing your brand styles", status="pending"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ]
-        elif percentage <= 75:
-            current_step = 5
-            steps = [
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="completed"),
-                ProgressStep(name="Researching your competitors", status="completed"),
-                ProgressStep(name="Researching your customers", status="completed"),
-                ProgressStep(name="Inferring your marketing strategy", status="processing"),
-                ProgressStep(name="Reviewing your brand styles", status="pending"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ]
-        elif percentage <= 90:
-            current_step = 6
-            steps = [
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="completed"),
-                ProgressStep(name="Researching your competitors", status="completed"),
-                ProgressStep(name="Researching your customers", status="completed"),
-                ProgressStep(name="Inferring your marketing strategy", status="completed"),
-                ProgressStep(name="Reviewing your brand styles", status="processing"),
-                ProgressStep(name="Finalizing setup", status="pending"),
-            ]
-        else:
-            current_step = 7
-            steps = [
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="completed"),
-                ProgressStep(name="Researching your competitors", status="completed"),
-                ProgressStep(name="Researching your customers", status="completed"),
-                ProgressStep(name="Inferring your marketing strategy", status="completed"),
-                ProgressStep(name="Reviewing your brand styles", status="completed"),
-                ProgressStep(name="Finalizing setup", status="processing"),
-            ]
-        
-        progress = AccountCreationProgress(
-            status="processing",
-            percentage=percentage,
-            current_step=current_step,
-            total_steps=7,
-            message=message,
-            steps=steps,
-        )
-
-        cache_key = f"account_creation:{account_id}"
-        progress_cache.set(cache_key, progress.model_dump(), ttl_seconds=3600)
-        logger.info(
-            f"[PROGRESS UPDATE] Strategy generation for {account_id}: {message} ({percentage}%)"
-        )
-    except ImportError as e:
-        logger.error(f"Failed to import progress cache for {account_id}: {e}")
-    except (AttributeError, TypeError) as e:
-        logger.error(f"Failed to update progress for {account_id}: {e}")
-    except Exception as e:
-        # Catch any other unexpected errors
-        logger.error(f"Unexpected error updating progress for {account_id}: {e}")
+# Removed update_strategy_progress function - simplified progress tracking
 
 
 async def trigger_strategy_generation(
@@ -159,8 +47,8 @@ async def trigger_strategy_generation(
         print(f"[STRATEGY_GENERATION] Starting for account {account_id}")
         logger.info(f"Starting strategy generation for account {account_id}")
 
-        # Update progress to show strategy generation is starting
-        update_strategy_progress(account_id, "Setting up database structures...", 15)
+        # Log strategy generation is starting (progress tracking simplified)
+        logger.info(f"Setting up database structures for account {account_id}")
 
         # Update account status to processing
         await update_account_setup_status(account_id, "processing")
@@ -208,10 +96,8 @@ Please execute strategy generation with these parameters:
         # Call the strategy agent directly
         logger.info(f"Invoking strategy agent for {company_name} via Agent Engine")
 
-        # Update progress to show we're starting research
-        update_strategy_progress(
-            account_id, "Researching your business...", 25
-        )
+        # Log we're starting research (progress tracking simplified)
+        logger.info(f"Researching business for account {account_id}")
 
         try:
             # Two paths for calling the strategy agent:
@@ -236,11 +122,45 @@ Please execute strategy generation with these parameters:
                 if response_content:
                     logger.info(f"Strategy generation completed for {company_name}")
                     result = response_content
+                    
+                    # IMPORTANT: Wait for documents to be created, same as system-triggered path
+                    max_wait_time = 1800  # 30 minutes max wait for documents
+                    poll_interval = 15   # Check every 15 seconds
+                    elapsed_time = 0
+                    all_docs_complete = False
+                    
+                    logger.info(f"[User-triggered] Waiting for all strategy documents to be complete for account {account_id}...")
+                    
+                    while elapsed_time < max_wait_time:
+                        all_docs_complete = await verify_strategy_documents_created(account_id, require_all=True)
+                        
+                        if all_docs_complete:
+                            logger.info(f"✅ [User-triggered] All strategy documents are complete for account {account_id}")
+                            break
+                        
+                        logger.info(f"[User-triggered] Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)")
+                        await asyncio.sleep(poll_interval)
+                        elapsed_time += poll_interval
+                    
+                    if not all_docs_complete:
+                        logger.error(f"❌ [User-triggered] Strategy documents not all complete after {max_wait_time} seconds for account {account_id}")
+                        await update_account_setup_status(account_id, "failed", completed=False)
+                        logger.error(f"[User-triggered] Account {account_id} marked as failed due to incomplete strategy documents")
+                        return  # Exit early without marking as completed
                 else:
                     logger.error(
                         f"Strategy generation returned empty response for {company_name}"
                     )
                     result = "Empty response from strategy agent"
+                    # Mark account as failed if no response from agent
+                    await update_account_setup_status(
+                        account_id, 
+                        "failed", 
+                        completed=False,
+                        error_message="Strategy generation failed - no response from agent. Please try again."
+                    )
+                    logger.error(f"Account {account_id} marked as failed due to empty agent response")
+                    return  # Exit early
 
             else:
                 # Path 2: System-triggered from account creation - call Vertex AI directly
@@ -274,6 +194,8 @@ Please execute strategy generation with these parameters:
                 logger.info(f"Message preview: {message[:200]}...")
                 logger.info(f"Agent Engine ID: {agent_engine_id}")
                 logger.info(f"Project: {project_id}, Location: {location}")
+                logger.info(f"Agent engine object: {agent_engine}")
+                logger.info(f"Agent engine type: {type(agent_engine)}")
 
                 try:
                     logger.info("About to call agent_engine.stream_query...")
@@ -281,137 +203,190 @@ Please execute strategy generation with these parameters:
                         message=message, user_id=user_id
                     )
                     logger.info("stream_query call initiated successfully")
+                    logger.info(f"Response type: {type(response)}")
+                    
+                    # Try to check if response is iterable
+                    try:
+                        # Check if it has __iter__ method
+                        if hasattr(response, '__iter__'):
+                            logger.info("Response is iterable")
+                        else:
+                            logger.warning("Response is NOT iterable")
+                    except Exception as check_error:
+                        logger.error(f"Error checking response type: {check_error}")
+                        
                 except Exception as e:
                     logger.error(f"Failed to call stream_query: {e}", exc_info=True)
                     raise
 
-                # Collect response
+                # Collect response with timeout
                 response_parts = []
                 chunk_count = 0
                 logger.info("Starting to collect response chunks...")
                 
-                # Track progress through chunks to update UI
-                last_progress_update = 25
-
-                for chunk in response:
-                    chunk_count += 1
-                    logger.info(f"Processing chunk {chunk_count}...")
+                # Set a timeout for collecting chunks (25 minutes max for agent response)
+                agent_timeout = 1500  # 25 minutes
+                start_time = asyncio.get_event_loop().time()
+                
+                try:
+                    logger.info(f"Agent response object type: {type(response)}")
+                    # Add a flag to track if we got any response
+                    got_response = False
                     
-                    # Update progress based on chunk count to simulate document creation
-                    if chunk_count == 5 and last_progress_update < 40:
-                        update_strategy_progress(account_id, "Researching your competitors...", 40)
-                        last_progress_update = 40
-                    elif chunk_count == 10 and last_progress_update < 55:
-                        update_strategy_progress(account_id, "Researching your customers...", 55)
-                        last_progress_update = 55
-                    elif chunk_count == 15 and last_progress_update < 70:
-                        update_strategy_progress(account_id, "Inferring your marketing strategy...", 70)
-                        last_progress_update = 70
-                    elif chunk_count == 20 and last_progress_update < 85:
-                        update_strategy_progress(account_id, "Reviewing your brand styles...", 85)
-                        last_progress_update = 85
+                    for chunk in response:
+                        got_response = True
+                        # Check if we've exceeded the timeout
+                        elapsed = asyncio.get_event_loop().time() - start_time
+                        if elapsed > agent_timeout:
+                            logger.error(f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received")
+                            break
+                        
+                        chunk_count += 1
+                        logger.info(f"Processing chunk {chunk_count}...")
+                        
+                        # Log progress for debugging (progress tracking simplified)
+                        if chunk_count == 5:
+                            logger.info(f"Researching competitors for account {account_id}")
+                        elif chunk_count == 10:
+                            logger.info(f"Researching customers for account {account_id}")
+                        elif chunk_count == 15:
+                            logger.info(f"Inferring marketing strategy for account {account_id}")
+                        elif chunk_count == 20:
+                            logger.info(f"Reviewing brand styles for account {account_id}")
 
-                    if isinstance(chunk, dict):
-                        logger.info(
-                            f"Chunk {chunk_count} is dict with keys: {list(chunk.keys())[:10]}"
-                        )
-
-                        # Log the full chunk for debugging
-                        import json
-
-                        try:
-                            logger.debug(
-                                f"Full chunk {chunk_count}: {json.dumps(chunk, default=str)[:500]}"
-                            )
-                        except Exception:
-                            logger.debug(
-                                f"Chunk {chunk_count} (non-serializable): {str(chunk)[:500]}"
+                        if isinstance(chunk, dict):
+                            logger.info(
+                                f"Chunk {chunk_count} is dict with keys: {list(chunk.keys())[:10]}"
                             )
 
-                        # Handle nested response structure
-                        if "content" in chunk and isinstance(chunk["content"], dict):
-                            content = chunk["content"]
-                            if "parts" in content and isinstance(
-                                content["parts"], list
-                            ):
-                                for part in content["parts"]:
-                                    if isinstance(part, dict) and "text" in part:
-                                        response_parts.append(part["text"])
-                                        logger.info(
-                                            f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
-                                        )
-                                        logger.debug(
-                                            f"  Text preview: {part['text'][:200]}..."
-                                        )
+                            # Log the full chunk for debugging
+                            import json
+
+                            try:
+                                logger.debug(
+                                    f"Full chunk {chunk_count}: {json.dumps(chunk, default=str)[:500]}"
+                                )
+                            except Exception:
+                                logger.debug(
+                                    f"Chunk {chunk_count} (non-serializable): {str(chunk)[:500]}"
+                                )
+
+                            # Handle nested response structure
+                            if "content" in chunk and isinstance(chunk["content"], dict):
+                                content = chunk["content"]
+                                if "parts" in content and isinstance(
+                                    content["parts"], list
+                                ):
+                                    for part in content["parts"]:
+                                        if isinstance(part, dict) and "text" in part:
+                                            response_parts.append(part["text"])
+                                            logger.info(
+                                                f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
+                                            )
+                                            logger.debug(
+                                                f"  Text preview: {part['text'][:200]}..."
+                                            )
+                            else:
+                                response_parts.append(str(chunk))
+                                logger.info(
+                                    f"  Added chunk {chunk_count} as string: {len(str(chunk))} chars"
+                                )
                         else:
                             response_parts.append(str(chunk))
                             logger.info(
-                                f"  Added chunk {chunk_count} as string: {len(str(chunk))} chars"
+                                f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                             )
-                    else:
-                        response_parts.append(str(chunk))
-                        logger.info(
-                            f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
-                        )
-
-                logger.info(f"✅ Received total {chunk_count} chunks from agent engine")
-
-                result = "".join(response_parts).strip()
+                    
+                except Exception as e:
+                    logger.error(f"Error iterating over agent response chunks: {e}", exc_info=True)
+                    logger.error(f"Only received {chunk_count} chunks before error")
+                    got_response = False
+                    
+                # Check if we actually got a response
+                if not got_response:
+                    logger.error("No response received from agent engine - response iterator was empty or failed")
+                    result = ""
+                else:
+                    logger.info(f"✅ Received total {chunk_count} chunks from agent engine")
+                    result = "".join(response_parts).strip()
+                    logger.info(f"Total response length: {len(result)} chars")
+                
+                # Log first 500 chars of result for debugging
                 if result:
+                    logger.info(f"Response preview: {result[:500]}...")
                     logger.info(
                         f"Strategy generation completed for {company_name}: {len(result)} chars"
                     )
-
-                    # The strategy agent saves documents internally during execution
-                    # We just need to verify they were created
-                    await verify_strategy_documents_created(account_id)
+                else:
+                    logger.warning("Agent returned empty response!")
+                
+                # Only proceed with document verification if we got a valid response
+                if result and got_response:
+                    # Wait for all documents to be fully created before marking as complete
+                    # Poll for document completion with timeout
+                    max_wait_time = 1800  # 30 minutes max wait for documents
+                    poll_interval = 15   # Check every 15 seconds
+                    elapsed_time = 0
+                    all_docs_complete = False
+                    
+                    logger.info(f"Waiting for all strategy documents to be complete for account {account_id}...")
+                    
+                    while elapsed_time < max_wait_time:
+                        # Check if all documents are complete (strict mode)
+                        all_docs_complete = await verify_strategy_documents_created(account_id, require_all=True)
+                        
+                        if all_docs_complete:
+                            logger.info(f"✅ All strategy documents are complete for account {account_id}")
+                            break
+                        
+                        # Wait before checking again
+                        logger.info(f"Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)")
+                        await asyncio.sleep(poll_interval)
+                        elapsed_time += poll_interval
+                    
+                    if not all_docs_complete:
+                        logger.error(f"❌ Strategy documents not all complete after {max_wait_time} seconds for account {account_id}")
+                        # DO NOT mark as completed if documents are not ready
+                        # Mark as failed instead
+                        await update_account_setup_status(
+                            account_id, 
+                            "failed", 
+                            completed=False,
+                            error_message="Strategy document generation timed out. Please try again."
+                        )
+                        logger.error(f"Account {account_id} marked as failed due to incomplete strategy documents")
+                        return  # Exit early without marking as completed
                 else:
                     logger.error(
                         f"Strategy generation returned empty response for {company_name}"
                     )
-                    result = "Empty response from strategy agent"
+                    # Mark as failed if no response from agent
+                    await update_account_setup_status(
+                        account_id, 
+                        "failed", 
+                        completed=False,
+                        error_message="Strategy generation returned no content. Please try again."
+                    )
+                    logger.error(f"Account {account_id} marked as failed due to empty agent response")
+                    return  # Exit early without marking as completed
 
         except Exception as e:
             logger.error(f"Failed to call strategy agent: {e}")
-            result = f"Error calling strategy agent: {e}"
+            # Mark as failed on exception
+            await update_account_setup_status(
+                account_id, 
+                "failed", 
+                completed=False,
+                error_message=f"Strategy generation failed: {str(e)[:200]}"
+            )
+            logger.error(f"Account {account_id} marked as failed due to agent error: {e}")
+            return  # Exit early without marking as completed
 
-        logger.info(
-            f"Strategy generation result preview: {result[:500] if result else 'Empty'}..."
-        )
-
-        # Update progress to show strategy generation is complete
-        update_strategy_progress(
-            account_id, "Finalizing account setup...", 95
-        )
-
-        # Update account status to ready
-        await update_account_setup_status(account_id, "ready", completed=True)
-
-        # Final progress update - mark as complete with all 7 steps
-        final_progress = AccountCreationProgress(
-            status="completed",
-            percentage=100,
-            current_step=7,
-            total_steps=7,
-            message="Account setup complete!",
-            steps=[
-                ProgressStep(name="Setting up database", status="completed"),
-                ProgressStep(name="Researching your business", status="completed"),
-                ProgressStep(name="Researching your competitors", status="completed"),
-                ProgressStep(name="Researching your customers", status="completed"),
-                ProgressStep(name="Inferring your marketing strategy", status="completed"),
-                ProgressStep(name="Reviewing your brand styles", status="completed"),
-                ProgressStep(name="Finalizing setup", status="completed"),
-            ],
-        )
-        cache_key = f"account_creation:{account_id}"
-        progress_cache.set(
-            cache_key, final_progress.model_dump(), ttl_seconds=300
-        )  # Keep for 5 minutes after completion
-
-        logger.info(
-            f"Successfully completed strategy generation for account {account_id}"
-        )
+        # Only reach here if everything succeeded
+        logger.info(f"✅ Successfully completed strategy generation for account {account_id}")
+        
+        # Update account status to completed
+        await update_account_setup_status(account_id, "completed", completed=True)
 
     except Exception as e:
         logger.error(
@@ -422,15 +397,16 @@ Please execute strategy generation with these parameters:
 
 
 async def update_account_setup_status(
-    account_id: str, status: str, completed: bool = False
+    account_id: str, status: str, completed: bool = False, error_message: str = None
 ) -> None:
     """
     Update the setup status of an account in Neo4j.
 
     Args:
         account_id: Account ID
-        status: New status (pending, processing, ready)
+        status: New status (pending, processing, ready, failed)
         completed: Whether setup is completed
+        error_message: Optional error message when status is "failed"
     """
     try:
         from ..database import get_neo4j_service
@@ -447,6 +423,20 @@ async def update_account_setup_status(
             RETURN a
             """
             params = {"account_id": account_id, "status": status}
+        elif status == "failed":
+            # Failed processing
+            query = """
+            MATCH (a:Account {account_id: $account_id})
+            SET a.setup_status = $status,
+                a.setup_error = $error_message,
+                a.setup_failed_at = datetime()
+            RETURN a
+            """
+            params = {
+                "account_id": account_id, 
+                "status": status,
+                "error_message": error_message or "Strategy generation failed"
+            }
         elif completed:
             # Completed processing
             query = """
@@ -472,7 +462,7 @@ async def update_account_setup_status(
         logger.error(f"Failed to update setup_status for account {account_id}: {e}")
 
 
-async def verify_strategy_documents_created(account_id: str) -> bool:
+async def verify_strategy_documents_created(account_id: str, require_all: bool = True) -> bool:
     """
     Verify that strategy documents were created by the agent.
 
@@ -481,9 +471,10 @@ async def verify_strategy_documents_created(account_id: str) -> bool:
 
     Args:
         account_id: Account ID to check
+        require_all: If True, all 5 documents must exist and be complete. If False, partial success is allowed.
 
     Returns:
-        True if documents exist, False otherwise
+        True if documents meet the requirement, False otherwise
     """
     try:
         db = firestore.Client()
@@ -501,6 +492,7 @@ async def verify_strategy_documents_created(account_id: str) -> bool:
         ]
 
         found_docs = []
+        complete_docs = []
         doc_quality = {}
 
         for doc_type in expected_docs:
@@ -510,56 +502,88 @@ async def verify_strategy_documents_created(account_id: str) -> bool:
                 found_docs.append(doc_type)
                 doc_data = doc.to_dict()
 
-                # Check document quality
+                # Check document quality and completeness
                 content = doc_data.get("content", {})
+                status = doc_data.get("status", "")  # May not have status field
+                
                 if isinstance(content, dict):
                     content_size = len(json.dumps(content))
                     has_keys = len(content.keys())
+                    
+                    # Consider document complete based primarily on content size and structure
+                    # Status field is optional - many docs don't have it
+                    is_complete = content_size > 1000 and has_keys > 3
+                    
+                    # If status field exists and indicates not ready, override
+                    if status and status.lower() in ["draft", "in_progress", "pending", "generating"]:
+                        is_complete = False
+                        logger.info(f"Document {doc_type} marked incomplete due to status: {status}")
+                    
+                    if is_complete:
+                        complete_docs.append(doc_type)
+                    
                     doc_quality[doc_type] = {
                         "size": content_size,
                         "keys": has_keys,
-                        "status": doc_data.get("status", "unknown"),
+                        "status": status,
                         "version": doc_data.get("version", 0),
+                        "complete": is_complete,
                     }
                     logger.info(
-                        f"Found {doc_type} document - size: {content_size} bytes, keys: {has_keys}, status: {doc_data.get('status', 'unknown')}"
+                        f"Found {doc_type} document - size: {content_size} bytes, keys: {has_keys}, status: {status}, complete: {is_complete}"
                     )
                 else:
                     logger.warning(
                         f"Found {doc_type} but content is not a dict: {type(content).__name__}"
                     )
 
-        # Log summary
+        # Log detailed summary
+        logger.info(f"Document verification summary for {account_id}:")
+        logger.info(f"  Expected documents: {expected_docs}")
+        logger.info(f"  Found documents: {found_docs} ({len(found_docs)}/{len(expected_docs)})")
+        logger.info(f"  Complete documents: {complete_docs} ({len(complete_docs)}/{len(expected_docs)})")
+        
         if doc_quality:
-            logger.info(f"Document quality summary for {account_id}:")
+            logger.info(f"Document quality details:")
             for doc_type, quality in doc_quality.items():
                 logger.info(
-                    f"  - {doc_type}: {quality['size']} bytes, {quality['keys']} keys, v{quality['version']}"
+                    f"  - {doc_type}: {quality['size']} bytes, {quality['keys']} keys, status: '{quality['status']}', complete: {quality['complete']}"
                 )
 
-        if len(found_docs) == len(expected_docs):
-            logger.info(
-                f"✅ All {len(expected_docs)} strategy documents found for account {account_id}"
-            )
-            return True
-        elif len(found_docs) > 0:
-            logger.warning(
-                f"⚠️ Only {len(found_docs)}/{len(expected_docs)} strategy documents found for account {account_id}"
-            )
-            logger.warning(f"  Found: {found_docs}")
-            logger.warning(
-                f"  Missing: {[d for d in expected_docs if d not in found_docs]}"
-            )
-            return True  # Partial success
+        if require_all:
+            # Strict mode: all 5 documents must be complete
+            if len(complete_docs) == len(expected_docs):
+                logger.info(
+                    f"✅ All {len(expected_docs)} strategy documents are complete for account {account_id}"
+                )
+                return True
+            else:
+                logger.warning(
+                    f"⚠️ Only {len(complete_docs)}/{len(expected_docs)} strategy documents are complete for account {account_id}"
+                )
+                logger.warning(f"  Complete: {complete_docs}")
+                logger.warning(
+                    f"  Incomplete: {[d for d in expected_docs if d not in complete_docs]}"
+                )
+                return False
         else:
-            logger.error(f"❌ No strategy documents found for account {account_id}")
-            return False
+            # Lenient mode: partial success is acceptable
+            if len(found_docs) > 0:
+                logger.info(
+                    f"✅ {len(found_docs)}/{len(expected_docs)} strategy documents found for account {account_id}"
+                )
+                return True
+            else:
+                logger.error(f"❌ No strategy documents found for account {account_id}")
+                return False
 
     except Exception as e:
         logger.error(
-            f"Failed to verify strategy documents for account {account_id}: {e}"
+            f"Failed to verify strategy documents for account {account_id}: {e}", exc_info=True
         )
-        return False
+        # Return False in strict mode, True in lenient mode if error occurs
+        # This prevents account from being stuck if Firestore is temporarily unavailable
+        return not require_all
 
 
 def trigger_strategy_generation_sync(

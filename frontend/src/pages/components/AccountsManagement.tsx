@@ -205,7 +205,6 @@ const AccountsManagement = ({
     startOperation,
     endOperation,
     updateOperationMessage,
-    updateOperationProgress,
     isOperationInProgress,
   } = useAccountOperations();
 
@@ -226,14 +225,18 @@ const AccountsManagement = ({
   // Hook for tracking account creation progress
   const accountCreationProgress = useAccountCreationProgress(creatingAccountId);
 
-  // Update the operation progress when progress changes
+  // Update the operation message when progress changes (simplified)
   useEffect(() => {
-    if (accountCreationProgress) {
+    if (accountCreationProgress && accountCreationProgress.status !== "idle") {
       console.log("[AccountsManagement] Progress update received:", accountCreationProgress);
-      updateOperationProgress(accountCreationProgress);
       
-      // Check if account creation is complete (100%)
-      if (accountCreationProgress.percentage === 100) {
+      // Update the operation message based on status
+      if (accountCreationProgress.status === "processing") {
+        updateOperationMessage("Creating account...", accountCreationProgress.message);
+      }
+      
+      // Check if account creation is complete
+      if (accountCreationProgress.status === "completed") {
         console.log("[AccountsManagement] Account creation complete! Refreshing data...");
         
         // Show success toast
@@ -276,8 +279,20 @@ const AccountsManagement = ({
           }
         }, 2000); // 2 second delay to show completion
       }
+      
+      // Handle failure
+      if (accountCreationProgress.status === "failed") {
+        console.error("[AccountsManagement] Account creation failed");
+        toast({
+          title: "Error",
+          description: accountCreationProgress.message || "Account creation failed. Please try again.",
+          variant: "destructive",
+        });
+        endOperation();
+        setCreatingAccountId(null);
+      }
     }
-  }, [accountCreationProgress, updateOperationProgress, endOperation, toast, currentOrgId, setOrgMetadata, refreshNotifications]);
+  }, [accountCreationProgress, updateOperationMessage, endOperation, toast, currentOrgId, setOrgMetadata, refreshNotifications]);
 
   // Debug: Log accounts data when it changes
   useEffect(() => {
@@ -675,7 +690,7 @@ const AccountsManagement = ({
       // Start loading operation with clear messaging
       startOperation(
         "Creating account...",
-        "Conducting research on your business to configure your account. This may take up to 15 minutes.",
+        "Conducting research on your business to configure your account. This may take 15-20 minutes.",
       );
 
       // Transform and create account with pre-generated ID
@@ -792,7 +807,7 @@ const AccountsManagement = ({
       
       startOperation(
         "Creating account...",
-        "Conducting research on your business to configure your account. This may take up to 15 minutes.",
+        "Conducting research on your business to configure your account. This may take 15-20 minutes.",
       );
 
       // Close the modal immediately to prevent duplicate clicks

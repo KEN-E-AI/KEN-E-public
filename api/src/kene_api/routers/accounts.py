@@ -22,8 +22,10 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from ..auth import UserContext, get_current_user_context
+from ..auth.dependencies import get_user_context_for_polling
 from ..bigquery import BigQueryService, get_bigquery_service
-from ..services.progress_cache import progress_cache
+
+# Removed progress_cache import - simplified progress tracking
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
@@ -46,26 +48,15 @@ router = APIRouter(tags=["accounts"])
 logger = logging.getLogger(__name__)
 
 # Use shared cache service for progress tracking
-_cache_service = progress_cache
+# Removed _cache_service - simplified progress tracking
 
 
-# Progress tracking models
-class ProgressStep(BaseModel):
-    """Individual step in the progress tracking."""
-
-    name: str
-    status: Literal["pending", "processing", "completed"]
-
-
-class AccountCreationProgress(BaseModel):
-    """Account creation progress information."""
+# Simplified progress tracking model
+class AccountCreationStatus(BaseModel):
+    """Simplified account creation status."""
 
     status: Literal["pending", "processing", "completed", "failed"]
-    percentage: int
-    current_step: int
-    total_steps: int
     message: str
-    steps: list[ProgressStep]
 
 
 def generate_unique_account_id() -> str:
@@ -615,7 +606,7 @@ async def create_account(
     logger.info(f"  organization_id: {organization_id}")
     logger.info(f"  websites (raw): {websites}")
     logger.info(f"  files: {files}")
-    
+
     # Parse form data into AccountRequest using the service
     try:
         account_request = parse_account_form_data(
@@ -630,64 +621,71 @@ async def create_account(
             region=region,
             marketing_channels=marketing_channels,
             product_integrations=product_integrations,
-            estimated_annual_ad_budget=estimated_annual_ad_budget
+            estimated_annual_ad_budget=estimated_annual_ad_budget,
         )
     except ValueError as e:
         logger.error(f"[ACCOUNT_CREATION] Form parsing error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
-    
+
     # Upload files if provided
     uploaded_document_urls = []
     if files:
         try:
             # Validate and upload files
-            ALLOWED_EXTENSIONS = {".pdf", ".xlsx", ".docx", ".pptx", ".txt", ".png", ".jpg", ".jpeg"}
+            ALLOWED_EXTENSIONS = {
+                ".pdf",
+                ".xlsx",
+                ".docx",
+                ".pptx",
+                ".txt",
+                ".png",
+                ".jpg",
+                ".jpeg",
+            }
             MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
             MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100MB
-            
+
             total_size = 0
             for file in files:
                 if file.filename:
                     file_ext = "." + file.filename.split(".")[-1].lower()
                     if file_ext not in ALLOWED_EXTENSIONS:
                         raise HTTPException(
-                            status_code=400,
-                            detail=f"File type {file_ext} not allowed"
+                            status_code=400, detail=f"File type {file_ext} not allowed"
                         )
-                
+
                 content = await file.read()
                 file_size = len(content)
                 total_size += file_size
-                
+
                 if file_size > MAX_FILE_SIZE:
                     raise HTTPException(
-                        status_code=400,
-                        detail=f"File {file.filename} exceeds 25MB"
+                        status_code=400, detail=f"File {file.filename} exceeds 25MB"
                     )
-                
+
                 await file.seek(0)
-            
+
             if total_size > MAX_TOTAL_SIZE:
                 raise HTTPException(
-                    status_code=400,
-                    detail="Total file size exceeds 100MB"
+                    status_code=400, detail="Total file size exceeds 100MB"
                 )
-            
+
             # Upload to GCS
             uploaded_files = await storage.upload_business_documents(
                 account_id=account_request.account_id or generate_unique_account_id(),
                 data_region=account_request.data_region or "US",
-                files=files
+                files=files,
             )
-            
+
             # Extract URLs from successful uploads
             uploaded_document_urls = [
-                f["url"] for f in uploaded_files 
-                if "url" in f and "error" not in f
+                f["url"] for f in uploaded_files if "url" in f and "error" not in f
             ]
-            
-            logger.info(f"[ACCOUNT_CREATION] Uploaded {len(uploaded_document_urls)} documents")
-            
+
+            logger.info(
+                f"[ACCOUNT_CREATION] Uploaded {len(uploaded_document_urls)} documents"
+            )
+
         except HTTPException:
             raise
         except Exception as e:
@@ -705,24 +703,24 @@ async def create_account(
             firestore=firestore,
             storage=storage,
             neo4j_service=db,
-            bigquery_service=bigquery
+            bigquery_service=bigquery,
         )
-        
-        logger.info(f"[ACCOUNT_CREATION] Successfully created account: {account.account_id}")
+
+        logger.info(
+            f"[ACCOUNT_CREATION] Successfully created account: {account.account_id}"
+        )
         return account
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[ACCOUNT_CREATION] Account creation failed: {e}")
         if "Neo4j" in str(e) or "connect" in str(e).lower():
             raise HTTPException(
-                status_code=503,
-                detail=DATABASE_UNAVAILABLE_MESSAGE
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
             ) from e
         raise HTTPException(
-            status_code=500,
-            detail=f"Error creating account: {str(e)}"
+            status_code=500, detail=f"Error creating account: {str(e)}"
         ) from e
 
 
@@ -1774,96 +1772,86 @@ def update_account_progress(
 ) -> None:
     """
     Helper function to update account creation progress.
-    
+
     This is a wrapper for backward compatibility - actual implementation is in progress_service.
     """
     from ..services.progress_service import update_account_creation_progress
+
     update_account_creation_progress(account_id, step, message, steps_status)
 
 
-@router.get("/{account_id}/creation-status", response_model=AccountCreationProgress)
+@router.get("/{account_id}/creation-status", response_model=AccountCreationStatus)
 async def get_account_creation_status(
     account_id: str = Path(..., description="Account ID"),
-    user: UserContext = Depends(get_current_user_context),
+    user: UserContext = Depends(get_user_context_for_polling),
     db: Neo4jService = Depends(get_neo4j_service),
-) -> AccountCreationProgress:
+) -> AccountCreationStatus:
     """
-    Get the current status of account creation process.
+    Get simplified account creation status.
 
     **Parameters:**
     - `account_id`: Account ID to check status for
 
     **Returns:**
-    - Current account creation progress information
+    - Simplified account creation status
 
     **Example:**
     ```
     GET /api/v1/accounts/{account_id}/creation-status
     ```
     """
-    # Check user has access to the account
+    # Check if account exists and user has access
     account_query = """
     MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
-    RETURN org.organization_id as organization_id
+    RETURN acc.setup_status as setup_status, 
+           acc.setup_completed_at as setup_completed_at,
+           org.organization_id as organization_id
     """
     result = await db.execute_query(account_query, {"account_id": account_id})
 
-    if result and len(result) > 0:
-        org_id = result[0]["organization_id"]
-        if not user.is_super_admin and not user.has_organization_access(org_id):
-            raise HTTPException(status_code=403, detail="Access denied to account")
+    if not result or len(result) == 0:
+        # Account might be in the process of being created
+        # Return processing status instead of 404 to avoid frontend errors
+        logger.info(f"Account {account_id} not found yet, likely being created")
+        return AccountCreationStatus(
+            status="processing",
+            message="Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+        )
 
-    # Try to get progress from cache
-    cache_key = f"account_creation:{account_id}"
-    cached_progress = _cache_service.get(cache_key)
-    
-    print(f"[PROGRESS GET] Fetching progress for {account_id}: found={cached_progress is not None}")
-    if cached_progress:
-        print(f"[PROGRESS GET] Progress data: step={cached_progress.get('current_step')}, percentage={cached_progress.get('percentage')}%")
-        return AccountCreationProgress(**cached_progress)
+    account_data = result[0]
+    org_id = account_data["organization_id"]
 
-    # Check if account exists and has a setup_status to determine if it's being created
-    account_status_query = """
-    MATCH (a:Account {account_id: $account_id})
-    RETURN a.setup_status as setup_status, a.created_at as created_at
-    """
-    status_result = await db.execute_query(account_status_query, {"account_id": account_id})
-    
-    if status_result and len(status_result) > 0:
-        setup_status = status_result[0].get("setup_status")
-        if setup_status == "processing":
-            # Account is being created but no progress cached yet - return initial state
-            return AccountCreationProgress(
-                status="processing",
-                percentage=14,  # 1/7 steps
-                current_step=1,
-                total_steps=7,
-                message="Setting up database structures...",
-                steps=[
-                    ProgressStep(name="Setting up database", status="processing"),
-                    ProgressStep(name="Researching your business", status="pending"),
-                    ProgressStep(name="Researching your competitors", status="pending"),
-                    ProgressStep(name="Researching your customers", status="pending"),
-                    ProgressStep(name="Inferring your marketing strategy", status="pending"),
-                    ProgressStep(name="Reviewing your brand styles", status="pending"),
-                    ProgressStep(name="Finalizing setup", status="pending"),
-                ],
-            )
+    # Check user has access to the account
+    if not user.is_super_admin and not user.has_organization_access(org_id):
+        raise HTTPException(status_code=403, detail="Access denied to account")
 
-    # Default response for completed accounts (no active creation)
-    return AccountCreationProgress(
-        status="completed",
-        percentage=100,
-        current_step=7,
-        total_steps=7,
-        message="Account creation completed",
-        steps=[
-            ProgressStep(name="Setting up database", status="completed"),
-            ProgressStep(name="Researching your business", status="completed"),
-            ProgressStep(name="Researching your competitors", status="completed"),
-            ProgressStep(name="Researching your customers", status="completed"),
-            ProgressStep(name="Inferring your marketing strategy", status="completed"),
-            ProgressStep(name="Reviewing your brand styles", status="completed"),
-            ProgressStep(name="Finalizing setup", status="completed"),
-        ],
+    # Check basic status
+    setup_status = account_data.get("setup_status", "pending")
+    setup_completed_at = account_data.get("setup_completed_at")
+
+    # Log for debugging
+    logger.info(
+        f"Account {account_id} creation status check: status={setup_status}, completed_at={setup_completed_at}"
     )
+
+    if setup_completed_at or setup_status == "completed":
+        return AccountCreationStatus(
+            status="completed", message="Account setup complete"
+        )
+    elif setup_status == "failed":
+        # Get error details if available
+        error_query = """
+        MATCH (acc:Account {account_id: $account_id})
+        RETURN acc.setup_error as error
+        """
+        error_result = await db.execute_query(error_query, {"account_id": account_id})
+        error_msg = "Account setup failed. Please try again."
+        if error_result and error_result[0].get("error"):
+            error_msg = f"Account setup failed: {error_result[0]['error']}"
+
+        return AccountCreationStatus(status="failed", message=error_msg)
+    else:
+        return AccountCreationStatus(
+            status="processing",
+            message="Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+        )
