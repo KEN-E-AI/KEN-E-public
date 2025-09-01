@@ -132,8 +132,12 @@ class TestAccountCreationEndpoint:
     @pytest.mark.skip(reason="create_account_internal function does not exist")
     async def test_create_account_with_formdata(self):
         """Test creating an account with FormData."""
+        # This test is skipped because create_account_internal doesn't exist
+        pass
+        
+    async def _test_create_account_with_formdata_impl(self):
+        """Implementation kept for reference."""
         from fastapi import UploadFile
-        # from src.kene_api.services.account_service import create_account_internal
         
         # Mock dependencies
         mock_user_context = Mock(
@@ -196,7 +200,11 @@ class TestAccountCreationEndpoint:
     @pytest.mark.skip(reason="create_account_internal function does not exist")
     async def test_create_account_agency_forbidden(self):
         """Test that agency organizations cannot create accounts."""
-        # from src.kene_api.services.account_service import create_account_internal
+        # This test is skipped because create_account_internal doesn't exist
+        pass
+        
+    async def _test_create_account_agency_forbidden_impl(self):
+        """Implementation kept for reference."""
         from fastapi import HTTPException
         
         # Mock dependencies
