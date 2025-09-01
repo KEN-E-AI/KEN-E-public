@@ -13,10 +13,10 @@ print("Testing agent imports and functionality...")
 
 try:
     # Test importing the supervisor
-    from agents.multi_agent_supervisor_v2 import supervisor_agent_v2
-    print("✅ Successfully imported supervisor_agent_v2")
-    print(f"   Agent type: {type(supervisor_agent_v2)}")
-    print(f"   Agent name: {supervisor_agent_v2.name}")
+    from agents.create_strategy_docs_supervisor import create_strategy_docs_supervisor
+    print("✅ Successfully imported create_strategy_docs_supervisor")
+    print(f"   Agent type: {type(create_strategy_docs_supervisor)}")
+    print(f"   Agent name: {create_strategy_docs_supervisor.name}")
     
     # Test importing strategy components
     from agents.strategy_agent.orchestrator import execute_strategy_generation

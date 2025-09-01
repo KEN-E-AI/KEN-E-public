@@ -737,9 +737,9 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
 
 
 # Export the supervisor agent
-supervisor_agent_v2 = create_supervisor_agent()
-agent = supervisor_agent_v2
-root_agent = supervisor_agent_v2
+create_strategy_docs_supervisor = create_supervisor_agent()
+agent = create_strategy_docs_supervisor
+root_agent = create_strategy_docs_supervisor
 
 # Wrap with AdkApp for proper deployment
 app = reasoning_engines.AdkApp(
