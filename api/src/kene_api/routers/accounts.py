@@ -1,5 +1,7 @@
 """Accounts router for CRUD operations on account entities."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
