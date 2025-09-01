@@ -1,6 +1,6 @@
 {
-  "agent_engine_id": "projects/525657242938/locations/us-central1/reasoningEngines/7598984344304091136",
-  "deployment_timestamp": "2025-08-22T18:48:41.389173",
+  "agent_engine_id": "projects/525657242938/locations/us-central1/reasoningEngines/6854342293416050688",
+  "deployment_timestamp": "2025-08-30T20:43:54.685420",
   "project": "ken-e-dev",
   "location": "us-central1",
   "deployment_method": "adk_cli",

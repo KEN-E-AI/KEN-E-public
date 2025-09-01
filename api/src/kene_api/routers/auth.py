@@ -6,7 +6,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from ..auth import UserContext, get_current_user_context
+from ..auth import UserContext
+from ..auth.user_context import get_current_user_context
 from ..auth.token_revocation import get_token_revocation_service
 from ..config import settings
 from ..rate_limiter import recaptcha_rate_limiter

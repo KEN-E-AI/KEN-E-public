@@ -157,20 +157,47 @@ class StorageService:
                 blob_path = f"accounts/{account_id}/{file.filename}"
                 blob = bucket.blob(blob_path)
 
-                # Set content type if available
-                if file.content_type:
-                    blob.content_type = file.content_type
+                # Determine correct content type
+                content_type = file.content_type
+                
+                # Fix common content type issues
+                if file.filename:
+                    file_ext = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+                    
+                    # Map file extensions to correct content types
+                    content_type_map = {
+                        'pdf': 'application/pdf',
+                        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                        'txt': 'text/plain',
+                        'png': 'image/png',
+                        'jpg': 'image/jpeg',
+                        'jpeg': 'image/jpeg'
+                    }
+                    
+                    # Override content type based on file extension if it's wrong
+                    if file_ext in content_type_map:
+                        correct_content_type = content_type_map[file_ext]
+                        if content_type != correct_content_type:
+                            logger.debug(f"Correcting content type for {file.filename} from {content_type} to {correct_content_type}")
+                            content_type = correct_content_type
+                
+                # Set content type on blob
+                if content_type:
+                    blob.content_type = content_type
 
-                # Upload file
-                blob.upload_from_string(file_content)
+                # Upload file with correct content type
+                blob.upload_from_string(file_content, content_type=content_type)
 
                 file_info = {
                     "filename": file.filename,
                     "blob_path": blob_path,
                     "size": len(file_content),
-                    "content_type": file.content_type,
+                    "content_type": content_type,  # Use the corrected content type
                     "bucket": bucket_name,
                     "gcs_url": f"gs://{bucket_name}/{blob_path}",
+                    "url": f"gs://{bucket_name}/{blob_path}",  # Add 'url' field for compatibility
                     "public_url": blob.public_url
                     if hasattr(blob, "public_url")
                     else None,

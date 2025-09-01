@@ -8,7 +8,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..auth import UserContext, get_current_user_context
+from ..auth import UserContext
+from ..auth.user_context import get_current_user_context
 from ..config import settings
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import get_firestore_service

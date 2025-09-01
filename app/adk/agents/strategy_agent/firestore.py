@@ -27,7 +27,15 @@ class FirestoreClient:
         if client:
             self.db = client
         else:
+            # CRITICAL: Always use the project name, not the numeric ID
+            # The agent engine may run in project 525657242938 but needs to access Firestore in ken-e-dev
             project_id = project_id or os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+            
+            # Force the project ID to be the project name, not numeric
+            if project_id == "525657242938":
+                project_id = "ken-e-dev"
+                logger.warning(f"Detected numeric project ID, forcing to use ken-e-dev instead")
+            
             try:
                 self.db = firestore.Client(project=project_id)
                 logger.info(f"Firestore client initialized with project: {project_id}")

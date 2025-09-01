@@ -5,7 +5,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 
-from ..auth import UserContext, get_current_user_context
+from ..auth import UserContext
+from ..auth.user_context import get_current_user_context
 from ..cache import (
     CacheService,
     InMemoryCache,

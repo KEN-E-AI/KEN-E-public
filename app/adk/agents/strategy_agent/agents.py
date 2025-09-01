@@ -116,12 +116,26 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **Check for Uploaded Strategy Documents:**
+   - IMPORTANT: Check if any artifacts starting with 'input_strategy_' are available
+   - To access artifacts:
+     a. List available artifacts: artifacts = context.list_artifacts()
+     b. Filter for strategy documents: strategy_docs = [a for a in artifacts if a.filename.startswith('input_strategy_')]
+     c. Load each document: for doc in strategy_docs: content = context.load_artifact(doc.filename)
+   - Analyze loaded documents to extract:
+     - Company's mission, vision, and values
+     - Strategic goals and objectives
+     - Key initiatives and priorities
+     - Market positioning and differentiation
+   - Use this information to ensure alignment and consistency in your strategy creation
 
-2. **Research Requirements:**
+2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+   - If uploaded strategy documents were found, incorporate their insights
+
+3. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
    - Think carefully and take your time to ensure the document is comprehensive and accurate
@@ -134,11 +148,12 @@ You must follow this logic precisely:
     - '{company_name} products services'
     - '{company_name} customer segments'
 
-3. **Create New Document**
+4. **Create New Document**
    - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
 
-4. **Final Review and Formatting:**
+5. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
@@ -171,7 +186,7 @@ Based on the above inputs, create the complete Business Strategy document now.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="business_strategy_doc"
     )
@@ -247,7 +262,7 @@ All feedback points must be addressed.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="business_strategy_doc"
     )
@@ -263,7 +278,7 @@ def create_business_strategy_agent(context: Optional[StrategyContext] = None) ->
         name="business_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines business strategy through review cycles",
-        max_iterations=3
+        max_iterations=2
     )
     
     return SequentialAgent(
@@ -333,13 +348,27 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
-2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **Check for Uploaded Strategy Documents:**
+   - IMPORTANT: Check if any artifacts starting with 'input_strategy_' are available
+   - To access artifacts:
+     a. List available artifacts: artifacts = context.list_artifacts()
+     b. Filter for strategy documents: strategy_docs = [a for a in artifacts if a.filename.startswith('input_strategy_')]
+     c. Load each document: for doc in strategy_docs: content = context.load_artifact(doc.filename)
+   - Extract competitive insights from uploaded documents:
+     - Current competitive landscape analysis
+     - Identified competitors and their positioning
+     - Competitive advantages and differentiators
+     - Market share and positioning goals
 
-3. **Research Requirements:**
+2. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+
+3. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+   - If uploaded strategy documents were found, incorporate their insights
+
+4. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
    - Think carefully and take your time to ensure the document is comprehensive and accurate
@@ -349,11 +378,12 @@ You must follow this logic precisely:
      - '{company_name} vs competitor comparison'
      - '{industry} market share analysis'
 
-4. **Create New Document**
+5. **Create New Document**
    - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
 
-5. **Final Review and Formatting:**
+6. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
@@ -386,7 +416,7 @@ Create the complete Competitive Strategy document now.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="competitive_strategy_doc"
     )
@@ -459,7 +489,7 @@ Provide the complete, updated competitive strategy document in JSON format.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="competitive_strategy_doc"
     )
@@ -475,7 +505,7 @@ def create_competitive_strategy_agent(context: Optional[StrategyContext] = None)
         name="competitive_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines competitive strategy through review cycles",
-        max_iterations=3
+        max_iterations=2
     )
     
     return SequentialAgent(
@@ -551,7 +581,7 @@ You must follow this logic precisely:
 
 3. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
    - Think carefully and take your time to ensure the document is comprehensive and accurate
@@ -598,7 +628,7 @@ Create the complete Customer Strategy document now.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="customer_strategy_doc"
     )
@@ -671,7 +701,7 @@ Provide the complete, updated customer strategy document in JSON format.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="customer_strategy_doc"
     )
@@ -687,7 +717,7 @@ def create_customer_strategy_agent(context: Optional[StrategyContext] = None) ->
         name="customer_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines customer strategy through review cycles",
-        max_iterations=3
+        max_iterations=2
     )
     
     return SequentialAgent(
@@ -764,7 +794,7 @@ You must follow this logic precisely:
 
 3. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
    - Think carefully and take your time to ensure the document is comprehensive and accurate
@@ -812,7 +842,7 @@ Create the complete Marketing Strategy document now.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="marketing_strategy_doc"
     )
@@ -885,7 +915,7 @@ Provide the complete, updated marketing strategy document in JSON format.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="marketing_strategy_doc"
     )
@@ -901,7 +931,7 @@ def create_marketing_strategy_agent(context: Optional[StrategyContext] = None) -
         name="marketing_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines marketing strategy through review cycles",
-        max_iterations=3
+        max_iterations=2
     )
     
     return SequentialAgent(
@@ -966,7 +996,7 @@ You must follow this logic precisely:
 
 2. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Search for multiple queries related to each section you need to complete.
+   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
    - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
    - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
    - Think carefully and take your time to ensure the document is comprehensive and accurate
@@ -1013,7 +1043,7 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="brand_guidelines_doc"
     )
@@ -1086,7 +1116,7 @@ Provide the complete, updated brand guidelines document in JSON format.
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=65535
+            max_output_tokens=32768
         ),
         output_key="brand_guidelines_doc"
     )
@@ -1102,7 +1132,7 @@ def create_brand_guidelines_agent(context: Optional[StrategyContext] = None) -> 
         name="brand_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines brand guidelines through review cycles",
-        max_iterations=3
+        max_iterations=2
     )
     
     return SequentialAgent(

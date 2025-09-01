@@ -3,12 +3,14 @@
 import logging
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from ..firestore import get_firestore_service
+from ..firestore import FirestoreService, get_firestore_service
+from ..rate_limiter import progress_rate_limiter
 from .firebase_admin import verify_id_token
 from .models import UserContext
+from .user_context import _get_user_context_with_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ security = HTTPBearer(auto_error=False)
 
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> Optional[UserContext]:
     """
     Get current user from Bearer token (optional).
@@ -71,7 +73,7 @@ async def get_current_user_optional(
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    firestore_service=Depends(get_firestore_service),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> UserContext:
     """
     Get current user from Bearer token (required).
@@ -170,3 +172,33 @@ def require_organization_access(
         )
 
     return True
+
+
+async def get_user_context_for_polling(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    firestore_service: FirestoreService = Depends(get_firestore_service),
+) -> UserContext:
+    """Get user context with higher rate limits for polling endpoints.
+
+    This function uses the progress_rate_limiter which allows 120 requests/minute
+    instead of the default 60 requests/minute, making it suitable for polling
+    endpoints during long-running operations.
+
+    Args:
+        request: The FastAPI request object
+        credentials: HTTP Bearer credentials containing Firebase ID token
+        firestore_service: Firestore service instance
+
+    Returns:
+        UserContext object with user info and permissions
+
+    Raises:
+        HTTPException: If authentication fails or rate limit exceeded
+    """
+    return await _get_user_context_with_limiter(
+        request=request,
+        credentials=credentials,
+        firestore_service=firestore_service,
+        rate_limiter=progress_rate_limiter,  # Use progress rate limiter for polling
+    )

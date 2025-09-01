@@ -3,7 +3,6 @@
 import logging
 from typing import Optional
 
-from ..redis_client import get_redis_service
 from .models import UserContext
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,15 @@ class CachedUserContextService:
 
     def __init__(self):
         """Initialize the cached user context service."""
-        self.redis = get_redis_service()
+        self._redis = None  # Lazy initialization
+    
+    @property
+    def redis(self):
+        """Lazy-load Redis service to avoid initialization at module import."""
+        if self._redis is None:
+            from ..redis_client import get_redis_service
+            self._redis = get_redis_service()
+        return self._redis
 
     def _get_cache_key(self, user_id: str) -> str:
         """Generate cache key for user context."""

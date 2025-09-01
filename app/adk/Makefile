@@ -11,11 +11,11 @@ test-local:
 
 # Deploy to Vertex AI Agent Engine  
 deploy:
-	uv run python agent_engine_app.py
+	uv run python deploy_supervisor.py
 
 # Deploy with specific project
 deploy-staging:
-	uv run python agent_engine_app.py --project ken-e-staging --location us-central1
+	GOOGLE_CLOUD_PROJECT_ID=ken-e-staging VERTEX_AI_PROJECT_ID=ken-e-staging VERTEX_AI_LOCATION=us-central1 uv run python deploy_supervisor.py
 
 # Setup dev environment resources
 setup-dev:
@@ -23,7 +23,7 @@ setup-dev:
 
 # Deploy to dev environment
 deploy-dev:
-	uv run python agent_engine_app.py --project ken-e-dev --location us-central1
+	GOOGLE_CLOUD_PROJECT_ID=ken-e-dev VERTEX_AI_PROJECT_ID=ken-e-dev VERTEX_AI_LOCATION=us-central1 uv run python deploy_supervisor.py
 
 # Test the deployed agent
 test-deployed:

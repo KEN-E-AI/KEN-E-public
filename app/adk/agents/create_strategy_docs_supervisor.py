@@ -241,7 +241,8 @@ def dispatch_to_strategy(
             'account_id': r'[-•]\s*account_id:\s*(.+?)(?:\n|$)',
             'user_id': r'[-•]\s*user_id:\s*(.+?)(?:\n|$)',
             'annual_ad_budget': r'[-•]\s*annual_ad_budget:\s*(.+?)(?:\n|$)',
-            'project_id': r'[-•]\s*project_id:\s*(.+?)(?:\n|$)'
+            'project_id': r'[-•]\s*project_id:\s*(.+?)(?:\n|$)',
+            'uploaded_documents': r'[-•]\s*uploaded_documents:\s*(.+?)(?:\n|$)'
         }
         
         for param_name, pattern in param_patterns.items():
@@ -254,6 +255,10 @@ def dispatch_to_strategy(
                         params[param_name] = float(value)
                     except (ValueError, TypeError):
                         params[param_name] = 0.0
+                # Convert uploaded_documents to list
+                elif param_name == 'uploaded_documents':
+                    # Split comma-separated URLs
+                    params[param_name] = [url.strip() for url in value.split(',') if url.strip()]
                 else:
                     params[param_name] = value
         
@@ -291,7 +296,8 @@ def dispatch_to_strategy(
             account_id=params.get('account_id', ''),
             user_id=params.get('user_id', ''),
             annual_ad_budget=params.get('annual_ad_budget', 0.0),
-            project_id=params.get('project_id')
+            project_id=params.get('project_id'),
+            uploaded_documents=params.get('uploaded_documents', [])
         )
         
         return {
@@ -300,7 +306,7 @@ def dispatch_to_strategy(
             'result': result,
             'source': 'strategy_specialist',
             'agent': 'strategy',
-            'account_id': account_id
+            'account_id': params.get('account_id', '')
         }
     except Exception as e:
         logger.error(f"Error in strategy agent dispatch: {e}")
@@ -360,7 +366,7 @@ def create_supervisor_agent():
     create_update_strategy.__doc__ = "Create or update business strategy documents, competitive strategy documents, or channel strategy documents using iterative refinement"
     
     supervisor = Agent(
-        name="multi_capability_supervisor_v2",
+        name="create_strategy_docs_supervisor",
         model="gemini-2.0-flash",
         instruction="""You are an intelligent routing supervisor that provides access to three specialized capabilities.
 
@@ -446,4 +452,4 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
 
 
 # Export the supervisor agent
-supervisor_agent_v2 = create_supervisor_agent()
+create_strategy_docs_supervisor = create_supervisor_agent()

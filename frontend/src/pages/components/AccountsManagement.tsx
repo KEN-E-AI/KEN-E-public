@@ -9,6 +9,7 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useUpdateAccount,
+  useInvalidateAccounts,
   accountKeys,
 } from "@/queries/accounts";
 import { useAccountConsistency } from "@/hooks/useAccountConsistency";
@@ -18,7 +19,7 @@ import { generateAccountId } from "@/lib/idGenerator";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
-import { moveAccount, getOrganizations } from "@/data/organizationApi";
+import { moveAccount, getOrganizations, getOrganizationById } from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -205,7 +206,6 @@ const AccountsManagement = ({
     startOperation,
     endOperation,
     updateOperationMessage,
-    updateOperationProgress,
     isOperationInProgress,
   } = useAccountOperations();
 
@@ -217,6 +217,7 @@ const AccountsManagement = ({
   const deleteAccountMutation = useDeleteAccount();
   const updateAccountMutation = useUpdateAccount();
   const syncHolidayMutation = useSyncHolidayActivityLogs();
+  const invalidateAccounts = useInvalidateAccounts();
 
   // State for tracking account creation
   const [creatingAccountId, setCreatingAccountId] = useState<string | null>(
@@ -226,15 +227,19 @@ const AccountsManagement = ({
   // Hook for tracking account creation progress
   const accountCreationProgress = useAccountCreationProgress(creatingAccountId);
 
-  // Update the operation progress when progress changes
+  // Update the operation message when progress changes (simplified)
   useEffect(() => {
-    if (accountCreationProgress) {
+    if (accountCreationProgress && accountCreationProgress.status !== "idle") {
       console.log("[AccountsManagement] Progress update received:", accountCreationProgress);
-      updateOperationProgress(accountCreationProgress);
       
-      // Check if account creation is complete (100%)
-      if (accountCreationProgress.percentage === 100) {
-        console.log("[AccountsManagement] Account creation complete! Navigating...");
+      // Update the operation message based on status
+      if (accountCreationProgress.status === "processing") {
+        updateOperationMessage("Creating account...", accountCreationProgress.message);
+      }
+      
+      // Check if account creation is complete
+      if (accountCreationProgress.status === "completed") {
+        console.log("[AccountsManagement] Account creation complete! Refreshing data...");
         
         // Show success toast
         toast({
@@ -242,19 +247,56 @@ const AccountsManagement = ({
           description: "Account created successfully with all strategy documents!",
         });
         
-        // Give user a moment to see the completion message
-        setTimeout(() => {
-          endOperation();
-          setCreatingAccountId(null);
-          
-          // Navigate to account settings page if it exists, otherwise stay on current page
-          // Since /account-settings doesn't exist, we'll refresh the current page
-          // to show the new account
-          window.location.reload();
+        // Give user a moment to see the completion message, then refresh data
+        setTimeout(async () => {
+          // Refresh data once at completion to avoid rate limiting
+          try {
+            // Use manual cache invalidation instead of automatic refetch
+            // This allows the component to control when to refresh
+            invalidateAccounts(currentOrgId);
+            
+            // Refresh organization metadata (quick operation)
+            const updatedOrg = await getOrganizationById(currentOrgId);
+            
+            if (updatedOrg) {
+              // Use the accounts from the cache that will be populated when ready
+              // instead of triggering a new fetch that might timeout
+              setOrgMetadata((prev) => ({
+                ...prev,
+                [currentOrgId]: {
+                  ...updatedOrg,
+                  accounts: accounts || [], // Use the accounts from React Query cache
+                },
+              }));
+            }
+            
+            // Refresh notifications
+            await refreshNotifications();
+            
+            console.log("[AccountsManagement] Cache invalidated successfully after account creation");
+          } catch (error) {
+            console.error("[AccountsManagement] Error refreshing data after account creation:", error);
+          } finally {
+            // Always end the operation and clear the tracking ID
+            endOperation();
+            setCreatingAccountId(null);
+          }
         }, 2000); // 2 second delay to show completion
       }
+      
+      // Handle failure
+      if (accountCreationProgress.status === "failed") {
+        console.error("[AccountsManagement] Account creation failed");
+        toast({
+          title: "Error",
+          description: accountCreationProgress.message || "Account creation failed. Please try again.",
+          variant: "destructive",
+        });
+        endOperation();
+        setCreatingAccountId(null);
+      }
     }
-  }, [accountCreationProgress, updateOperationProgress, endOperation, toast]);
+  }, [accountCreationProgress, updateOperationMessage, endOperation, toast, currentOrgId, setOrgMetadata, refreshNotifications]);
 
   // Debug: Log accounts data when it changes
   useEffect(() => {
@@ -316,14 +358,6 @@ const AccountsManagement = ({
     }));
   };
 
-  const refreshAccountQueries = async (orgId: string) => {
-    await queryClient.invalidateQueries({
-      queryKey: accountKeys.list(orgId),
-    });
-    await queryClient.refetchQueries({
-      queryKey: accountKeys.list(orgId),
-    });
-  };
 
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -649,10 +683,10 @@ const AccountsManagement = ({
       console.log("[AccountsManagement] Setting creatingAccountId to:", newAccountId);
       setCreatingAccountId(newAccountId);
       
-      // Start loading operation
+      // Start loading operation with clear messaging
       startOperation(
         "Creating account...",
-        "Please wait while we set up your new account",
+        "Conducting research on your business to configure your account. This may take 15-20 minutes.",
       );
 
       // Transform and create account with pre-generated ID
@@ -689,12 +723,7 @@ const AccountsManagement = ({
             console.warn(
               "[AccountsManagement] Account created but some expected data may be missing",
             );
-            toast({
-              title: "Account Created",
-              description:
-                "Account created successfully, but some data may need verification. Please check the account settings.",
-              variant: "default",
-            });
+            // Don't show toast here - wait for strategy completion
           }
         } catch (error) {
           console.error(
@@ -707,11 +736,9 @@ const AccountsManagement = ({
       // Don't show success message yet - wait for completion
       // The progress tracking will show the success when strategy generation is done
 
-      await refreshAccountQueries(currentOrgId!);
+      // Don't refresh queries here - wait for completion to avoid rate limiting
+      // Just update the local context with the new account
       updateContextsAfterCreation(result, currentOrgId!);
-
-      // Refresh notifications to show the new account notification
-      await refreshNotifications();
 
       // Close wizard but keep the loading overlay open
       setIsCreateAccountModalOpen(false);
@@ -776,7 +803,7 @@ const AccountsManagement = ({
       
       startOperation(
         "Creating account...",
-        "Please wait while we set up your new account",
+        "Conducting research on your business to configure your account. This may take 15-20 minutes.",
       );
 
       // Close the modal immediately to prevent duplicate clicks
