@@ -1,5 +1,4 @@
 """
-Multi-Agent Supervisor V2 - Stateless orchestration with tenant context support
 Handles routing between Company News, Google Analytics, and Strategy agents
 """
 

@@ -4,10 +4,11 @@ Following T-1 through T-8: Comprehensive testing of extracted functions
 """
 
 import pytest
+import asyncio
 from unittest.mock import Mock, MagicMock, patch
 from google.genai.types import Part
 
-from artifact_utils import (
+from agents.strategy_agent.artifact_utils import (
     parse_gcs_url,
     determine_artifact_bucket,
     create_artifact_from_gcs,
@@ -135,26 +136,38 @@ class TestSaveArtifactToService:
         mock_service = Mock()
         mock_artifact = Mock(spec=Part)
         
+        # Create an async mock for save_artifact method
+        async def mock_save_artifact(**kwargs):
+            return 1
+        
+        mock_service.save_artifact = MagicMock(side_effect=mock_save_artifact)
+        
         result = save_artifact_to_service(
             mock_service,
             mock_artifact,
             "test.pdf",
             "user_123",
-            "session_456"
+            "session_456",
+            app_name="test_app"
         )
         
         assert result is True
-        mock_service.save_artifact_sync.assert_called_once_with(
-            filename=f"{UPLOADED_STRATEGY_PREFIX}test.pdf",
-            artifact=mock_artifact,
-            user_id="user_123",
-            session_id="session_456"
-        )
+        # Verify save_artifact was called with correct params
+        mock_service.save_artifact.assert_called_once()
+        call_kwargs = mock_service.save_artifact.call_args[1]
+        assert call_kwargs['app_name'] == "test_app"
+        assert call_kwargs['user_id'] == "user_123"
+        assert call_kwargs['session_id'] == "session_456"
+        assert call_kwargs['filename'] == f"{UPLOADED_STRATEGY_PREFIX}test.pdf"
+        assert call_kwargs['artifact'] == mock_artifact
     
-    def test_save_failure(self):
+    @patch('asyncio.run')
+    def test_save_failure(self, mock_asyncio_run):
         mock_service = Mock()
-        mock_service.save_artifact_sync.side_effect = Exception("Save failed")
         mock_artifact = Mock(spec=Part)
+        
+        # Mock the async save to raise an exception
+        mock_asyncio_run.side_effect = Exception("Save failed")
         
         result = save_artifact_to_service(
             mock_service,
@@ -170,9 +183,10 @@ class TestSaveArtifactToService:
 class TestLoadUploadedDocumentsAsArtifacts:
     """Test the main orchestration function"""
     
-    @patch('artifact_utils.GcsArtifactService')
-    @patch('artifact_utils.storage.Client')
-    def test_full_flow_with_documents(self, mock_storage_client_class, mock_artifact_service_class):
+    @patch('asyncio.run')
+    @patch('agents.strategy_agent.artifact_utils.GcsArtifactService')
+    @patch('agents.strategy_agent.artifact_utils.storage.Client')
+    def test_full_flow_with_documents(self, mock_storage_client_class, mock_artifact_service_class, mock_asyncio_run):
         # Setup mocks
         mock_storage_client = Mock()
         mock_storage_client_class.return_value = mock_storage_client
@@ -197,12 +211,16 @@ class TestLoadUploadedDocumentsAsArtifacts:
             project_id="test-project"
         )
         
+        # Mock async save_artifact to return a version
+        mock_asyncio_run.return_value = 1
+        
         # Assertions
         assert result == mock_artifact_service
-        mock_artifact_service_class.assert_called_once()
+        # GcsArtifactService should be called with bucket_name only (no namespace)
+        mock_artifact_service_class.assert_called_once_with(bucket_name="test-bucket")
         mock_storage_client_class.assert_called_once_with(project="test-project")
     
-    @patch('artifact_utils.InMemoryArtifactService')
+    @patch('agents.strategy_agent.artifact_utils.InMemoryArtifactService')
     def test_no_documents_returns_inmemory_service(self, mock_inmemory_service_class):
         mock_service = Mock()
         mock_inmemory_service_class.return_value = mock_service
@@ -233,8 +251,8 @@ class TestLoadUploadedDocumentsAsArtifacts:
         
         assert result == mock_artifact_service
     
-    @patch('artifact_utils.GcsArtifactService')
-    @patch('artifact_utils.InMemoryArtifactService')
+    @patch('agents.strategy_agent.artifact_utils.GcsArtifactService')
+    @patch('agents.strategy_agent.artifact_utils.InMemoryArtifactService')
     def test_fallback_on_gcs_setup_failure(self, mock_inmemory_class, mock_gcs_class):
         # Make GCS setup fail
         mock_gcs_class.side_effect = Exception("GCS setup failed")

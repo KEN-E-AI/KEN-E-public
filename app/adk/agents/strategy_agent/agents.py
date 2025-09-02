@@ -2,10 +2,10 @@
 Agents used for creating strategy documents and saving to Firestore.
 """
 
-import logging
 import json
-from typing import Optional, Dict, Any, List
-from google.adk.agents import Agent, SequentialAgent, LoopAgent
+import logging
+
+from google.adk.agents import Agent, LoopAgent, SequentialAgent
 from google.adk.tools import AgentTool, exit_loop, google_search
 from google.genai import types
 
@@ -18,22 +18,27 @@ logger = logging.getLogger(__name__)
 # Import Firestore utilities
 try:
     from .firestore import (
+        extract_field_requirements_from_best_practices,
+        format_new_information,
         get_best_practices_sync,
         get_reviewer_guidelines_sync,
-        extract_field_requirements_from_best_practices,
-        format_new_information
     )
+
     FIRESTORE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Firestore utilities not available: {e}")
     FIRESTORE_AVAILABLE = False
+
     # Define stubs
-    def get_best_practices_sync(doc_type: str) -> Optional[str]:
+    def get_best_practices_sync(doc_type: str) -> str | None:
         return None
-    def get_reviewer_guidelines_sync(doc_type: str) -> Optional[str]:
+
+    def get_reviewer_guidelines_sync(doc_type: str) -> str | None:
         return None
+
     def extract_field_requirements_from_best_practices(best_practices: str) -> str:
         return ""
+
     def format_new_information(**kwargs) -> str:
         return json.dumps(kwargs)
 
@@ -41,6 +46,7 @@ except ImportError as e:
 # ============================================================================
 # SHARED COMPONENTS
 # ============================================================================
+
 
 def create_google_search_agent() -> Agent:
     """Create the Google search sub-agent used by all strategy agents."""
@@ -51,9 +57,8 @@ def create_google_search_agent() -> Agent:
         description="Expert web researcher that searches Google for public information",
         instruction="Search for relevant public information about the topic. Focus on official sources and recent data.",
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8192
-        )
+            temperature=0.2, max_output_tokens=8192
+        ),
     )
 
 
@@ -61,10 +66,11 @@ def create_google_search_agent() -> Agent:
 # 1. BUSINESS STRATEGY AGENT
 # ============================================================================
 
-def create_business_strategist(context: Optional[StrategyContext] = None) -> Agent:
+
+def create_business_strategist(context: StrategyContext | None = None) -> Agent:
     """Create the business strategy strategist agent."""
     google_search_agent = create_google_search_agent()
-    
+
     # Safely extract context information with proper None handling
     if context:
         company_name = context.company_name
@@ -74,25 +80,28 @@ def create_business_strategist(context: Optional[StrategyContext] = None) -> Age
             websites=context.websites,
             industry=context.industry,
             customer_regions=context.customer_regions,
-            annual_ad_budget=context.annual_ad_budget
+            annual_ad_budget=context.annual_ad_budget,
         )
     else:
         company_name = "the company"
         industry = "the industry"
         new_information = "No context provided"
-    
+
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
-    
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("business_strategy")
     if not best_practices:
         logger.warning("Using default best practices for business_strategy")
         best_practices = "Create a comprehensive business strategy document with all required sections."
-    
+
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
-    
+
     # Get instruction from Excel specification
     instruction = f"""
 # ROLE & GOAL
@@ -116,30 +125,45 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Check for Uploaded Strategy Documents:**
-   - IMPORTANT: Check if any artifacts starting with 'input_strategy_' are available
-   - To access artifacts:
-     a. List available artifacts: artifacts = context.list_artifacts()
-     b. Filter for strategy documents: strategy_docs = [a for a in artifacts if a.filename.startswith('input_strategy_')]
-     c. Load each document: for doc in strategy_docs: content = context.load_artifact(doc.filename)
-   - Analyze loaded documents to extract:
+1. **MANDATORY FIRST STEP - Check for Uploaded Strategy Documents:**
+   - BEFORE using any search tools, you MUST check for uploaded documents
+   - Look for a section titled "=== UPLOADED STRATEGY DOCUMENTS ===" in the initial message
+   - These documents contain existing strategy information that you MUST use as your primary source
+   - To access uploaded documents:
+     a. Check the initial message for the "UPLOADED STRATEGY DOCUMENTS" section
+     b. Each document is clearly marked with "--- Document: [name] ---"
+     c. Documents with names starting with 'input_strategy_' contain strategy information
+     d. Analyze EACH uploaded document thoroughly:
+        - The document content is provided in full text format
+        - Extract ALL relevant information from each document
+   - From uploaded documents, extract and note:
      - Company's mission, vision, and values
      - Strategic goals and objectives
      - Key initiatives and priorities
      - Market positioning and differentiation
-   - Use this information to ensure alignment and consistency in your strategy creation
+     - Financial targets and budgets
+     - Competitor analysis
+     - Customer segments and personas
+     - Product/service offerings
+     - Any other strategic insights
+   - Use this extracted information as the PRIMARY SOURCE for your strategy
+   - Only use search tools to fill gaps NOT covered in uploaded documents
 
-2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
-   - If uploaded strategy documents were found, incorporate their insights
+2. **Analyze All Inputs:** After reviewing uploaded documents, analyze other inputs:
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Prioritize information from uploaded strategy documents over general web searches
+   - Identify gaps that need to be filled through additional research
 
-3. **Research Requirements:**
-   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
-   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+3. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
+   - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
+   - If information exists in uploaded documents, use that instead of searching
+   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
+   - If you are unable to find information needed for a section anywhere, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
    - Think carefully and take your time to ensure the document is comprehensive and accurate
-   - Use specific, targeted search queries like:
+   - Use specific, targeted search queries ONLY for information not in uploaded documents:
     - '{company_name} industry'
     - '{company_name} competitors in the industry: {industry}'
     - '{company_name} mission vision values'
@@ -149,9 +173,13 @@ You must follow this logic precisely:
     - '{company_name} customer segments'
 
 4. **Create New Document**
-   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
-   - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
+   - Synthesize information prioritizing uploaded documents, then research findings
+   - Build upon and extend the strategic direction found in uploaded documents
+   - **MANDATORY**: Include references for all information, indicating source:
+     - For uploaded document info: "Source: Uploaded strategy document"
+     - For searched info: Include the actual URL
+   - Ensure your new strategy is consistent with and builds upon uploaded strategy documents
+   - Fill all required sections, using uploaded document content as the foundation
 
 5. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
@@ -177,7 +205,7 @@ BUSINESS INFORMATION:
 
 Based on the above inputs, create the complete Business Strategy document now.
 """
-    
+
     return Agent(
         name="business_strategist",
         model="gemini-2.5-pro",
@@ -185,22 +213,23 @@ Based on the above inputs, create the complete Business Strategy document now.
         description="Strategic business expert that creates comprehensive business strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="business_strategy_doc"
+        output_key="business_strategy_doc",
     )
 
 
 def create_business_reviewer() -> Agent:
     """Create the business strategy reviewer agent."""
     from .firestore import get_reviewer_guidelines_sync
-    
+
     guidelines = get_reviewer_guidelines_sync("business_strategy")
     if not guidelines:
         logger.warning("Using default review guidelines for business_strategy")
-        guidelines = "Review the business strategy document for completeness and accuracy."
-    
+        guidelines = (
+            "Review the business strategy document for completeness and accuracy."
+        )
+
     instruction = f"""
 You are a Senior Strategy Reviewer. Review the business strategy document and provide specific feedback.
 
@@ -222,24 +251,23 @@ Provide your review as a structured list of:
 
 Be constructive and specific in your feedback.
 """
-    
+
     return Agent(
         name="business_reviewer",
         model="gemini-2.5-flash",
         description="Reviews business strategy documents for quality and completeness",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8192
+            temperature=0.2, max_output_tokens=8192
         ),
-        output_key="review_feedback"
+        output_key="review_feedback",
     )
 
 
 def create_business_editor() -> Agent:
     """Create the business strategy editor agent."""
     google_search_agent = create_google_search_agent()
-    
+
     instruction = """
 You are a Strategy Document Editor. Based on the review feedback, improve the business strategy document.
 
@@ -253,7 +281,7 @@ You are a Strategy Document Editor. Based on the review feedback, improve the bu
 Provide the complete, updated business strategy document in JSON format.
 All feedback points must be addressed.
 """
-    
+
     return Agent(
         name="business_editor",
         model="gemini-2.5-flash",
@@ -261,30 +289,31 @@ All feedback points must be addressed.
         description="Edits and improves business strategy documents based on feedback",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="business_strategy_doc"
+        output_key="business_strategy_doc",
     )
 
 
-def create_business_strategy_agent(context: Optional[StrategyContext] = None) -> SequentialAgent:
+def create_business_strategy_agent(
+    context: StrategyContext | None = None,
+) -> SequentialAgent:
     """Create the complete business strategy agent with refinement loop."""
     strategist = create_business_strategist(context)
     reviewer = create_business_reviewer()
     editor = create_business_editor()
-    
+
     refinement_loop = LoopAgent(
         name="business_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines business strategy through review cycles",
-        max_iterations=2
+        max_iterations=2,
     )
-    
+
     return SequentialAgent(
         name="business_strategy_agent",
         sub_agents=[strategist, refinement_loop],
-        description="Creates comprehensive business strategy documents"
+        description="Creates comprehensive business strategy documents",
     )
 
 
@@ -292,10 +321,11 @@ def create_business_strategy_agent(context: Optional[StrategyContext] = None) ->
 # 2. COMPETITIVE STRATEGY AGENT
 # ============================================================================
 
-def create_competitive_strategist(context: Optional[StrategyContext] = None) -> Agent:
+
+def create_competitive_strategist(context: StrategyContext | None = None) -> Agent:
     """Create the competitive strategy strategist agent."""
     google_search_agent = create_google_search_agent()
-    
+
     # Safely extract context information with proper None handling
     if context:
         company_name = context.company_name
@@ -305,25 +335,28 @@ def create_competitive_strategist(context: Optional[StrategyContext] = None) -> 
             websites=context.websites,
             industry=context.industry,
             customer_regions=context.customer_regions,
-            annual_ad_budget=context.annual_ad_budget
+            annual_ad_budget=context.annual_ad_budget,
         )
     else:
         company_name = "the company"
         industry = "the industry"
         new_information = "No context provided"
-    
+
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
-    
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("competitive_strategy")
     if not best_practices:
         logger.warning("Using default best practices for competitive_strategy")
         best_practices = "Create a comprehensive competitive strategy document with all required sections."
-    
+
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
-    
+
     # Build instruction that will access state at runtime
     instruction = f"""
 # ROLE & GOAL
@@ -348,23 +381,33 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Check for Uploaded Strategy Documents:**
-   - IMPORTANT: Check if any artifacts starting with 'input_strategy_' are available
-   - To access artifacts:
-     a. List available artifacts: artifacts = context.list_artifacts()
-     b. Filter for strategy documents: strategy_docs = [a for a in artifacts if a.filename.startswith('input_strategy_')]
-     c. Load each document: for doc in strategy_docs: content = context.load_artifact(doc.filename)
+1. **MANDATORY FIRST STEP - Check for Uploaded Strategy Documents:**
+   - BEFORE using any search tools, you MUST check for uploaded documents
+   - Look for a section titled "=== UPLOADED STRATEGY DOCUMENTS ===" in the initial message
+   - These documents contain existing strategy information that you MUST use as your primary source
+   - To access uploaded documents:
+     a. Check the initial message for the "UPLOADED STRATEGY DOCUMENTS" section
+     b. Each document is clearly marked with "--- Document: [name] ---"
+     c. Documents with names starting with 'input_strategy_' contain strategy information
+     d. Analyze EACH uploaded document thoroughly:
+        - The document content is provided in full text format
+        - Extract ALL relevant information from each document
    - Extract competitive insights from uploaded documents:
      - Current competitive landscape analysis
      - Identified competitors and their positioning
      - Competitive advantages and differentiators
      - Market share and positioning goals
+     - Pricing strategies and models
+     - SWOT analysis if present
+   - Use this extracted information as the PRIMARY SOURCE for your competitive analysis
 
-2. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
 
-3. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
-   - If uploaded strategy documents were found, incorporate their insights
+3. **Analyze All Inputs:** After reviewing uploaded documents and prior analysis:
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Prioritize information from uploaded strategy documents over general web searches
+   - Identify competitive gaps that need additional research
 
 4. **Research Requirements:**
    - **MANDATORY**: Research each item defined in the BEST PRACTICES.
@@ -407,7 +450,7 @@ BUSINESS INFORMATION:
 
 Create the complete Competitive Strategy document now.
 """
-    
+
     return Agent(
         name="competitive_strategist",
         model="gemini-2.5-pro",
@@ -415,22 +458,23 @@ Create the complete Competitive Strategy document now.
         description="Competitive intelligence expert that creates detailed competitive analysis",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="competitive_strategy_doc"
+        output_key="competitive_strategy_doc",
     )
 
 
 def create_competitive_reviewer() -> Agent:
     """Create the competitive strategy reviewer agent."""
     from .firestore import get_reviewer_guidelines_sync
-    
+
     guidelines = get_reviewer_guidelines_sync("competitive_strategy")
     if not guidelines:
         logger.warning("Using default review guidelines for competitive_strategy")
-        guidelines = "Review the competitive strategy document for completeness and accuracy."
-    
+        guidelines = (
+            "Review the competitive strategy document for completeness and accuracy."
+        )
+
     instruction = f"""
 You are a Senior Competitive Intelligence Reviewer. Review the competitive strategy document.
 
@@ -450,24 +494,23 @@ Provide structured feedback with:
 - Strategic insights quality (1-10)
 - Specific improvements needed
 """
-    
+
     return Agent(
         name="competitive_reviewer",
         model="gemini-2.5-flash",
         description="Reviews competitive strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8192
+            temperature=0.2, max_output_tokens=8192
         ),
-        output_key="review_feedback"
+        output_key="review_feedback",
     )
 
 
 def create_competitive_editor() -> Agent:
     """Create the competitive strategy editor agent."""
     google_search_agent = create_google_search_agent()
-    
+
     instruction = """
 You are a Competitive Strategy Editor. Improve the document based on review feedback.
 
@@ -480,7 +523,7 @@ You are a Competitive Strategy Editor. Improve the document based on review feed
 # OUTPUT FORMAT
 Provide the complete, updated competitive strategy document in JSON format.
 """
-    
+
     return Agent(
         name="competitive_editor",
         model="gemini-2.5-flash",
@@ -488,30 +531,31 @@ Provide the complete, updated competitive strategy document in JSON format.
         description="Edits competitive strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="competitive_strategy_doc"
+        output_key="competitive_strategy_doc",
     )
 
 
-def create_competitive_strategy_agent(context: Optional[StrategyContext] = None) -> SequentialAgent:
+def create_competitive_strategy_agent(
+    context: StrategyContext | None = None,
+) -> SequentialAgent:
     """Create the complete competitive strategy agent with refinement loop."""
     strategist = create_competitive_strategist(context)
     reviewer = create_competitive_reviewer()
     editor = create_competitive_editor()
-    
+
     refinement_loop = LoopAgent(
         name="competitive_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines competitive strategy through review cycles",
-        max_iterations=2
+        max_iterations=2,
     )
-    
+
     return SequentialAgent(
         name="competitive_strategy_agent",
         sub_agents=[strategist, refinement_loop],
-        description="Creates comprehensive competitive strategy documents"
+        description="Creates comprehensive competitive strategy documents",
     )
 
 
@@ -519,10 +563,11 @@ def create_competitive_strategy_agent(context: Optional[StrategyContext] = None)
 # 3. CUSTOMER STRATEGY AGENT
 # ============================================================================
 
-def create_customer_strategist(context: Optional[StrategyContext] = None) -> Agent:
+
+def create_customer_strategist(context: StrategyContext | None = None) -> Agent:
     """Create the customer strategy strategist agent."""
     google_search_agent = create_google_search_agent()
-    
+
     # Safely extract context information with proper None handling
     if context:
         company_name = context.company_name
@@ -532,25 +577,28 @@ def create_customer_strategist(context: Optional[StrategyContext] = None) -> Age
             websites=context.websites,
             industry=context.industry,
             customer_regions=context.customer_regions,
-            annual_ad_budget=context.annual_ad_budget
+            annual_ad_budget=context.annual_ad_budget,
         )
     else:
         company_name = "the company"
         industry = "the industry"
         new_information = "No context provided"
-    
+
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
-    
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("customer_strategy")
     if not best_practices:
         logger.warning("Using default best practices for customer_strategy")
         best_practices = "Create a comprehensive customer strategy document with all required sections."
-    
+
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
-    
+
     instruction = f"""
 # ROLE & GOAL
 You are a Strategic Marketing Expert. 
@@ -575,17 +623,42 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc and competitive_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
-2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **MANDATORY FIRST STEP - Check for Uploaded Strategy Documents:**
+   - BEFORE using any search tools, you MUST check for uploaded documents
+   - Look for a section titled "=== UPLOADED STRATEGY DOCUMENTS ===" in the initial message
+   - These documents contain existing strategy information that you MUST use as your primary source
+   - To access uploaded documents:
+     a. Check the initial message for the "UPLOADED STRATEGY DOCUMENTS" section
+     b. Each document is clearly marked with "--- Document: [name] ---"
+     c. Documents with names starting with 'input_strategy_' contain strategy information
+     d. Analyze EACH uploaded document thoroughly:
+        - The document content is provided in full text format
+        - Extract ALL relevant information from each document
+            # Extract ALL customer-relevant information from this document
+   - Extract customer insights from uploaded documents:
+     - Customer segments and personas
+     - Customer needs and pain points
+     - Customer journey mapping
+     - Customer acquisition strategies
+     - Customer retention strategies
+     - Customer satisfaction metrics
+   - Use this extracted information as the PRIMARY SOURCE for your customer strategy
 
-3. **Research Requirements:**
-   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
-   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
-   - Think carefully and take your time to ensure the document is comprehensive and accurate
-   - Use specific search queries like:
+2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc and competitive_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
+
+3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Prioritize information from uploaded strategy documents over general web searches
+
+4. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
+   - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
+   - If information exists in uploaded documents, use that instead of searching
+   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
+   - If you are unable to find information anywhere, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
+   - Use specific, targeted search queries ONLY for information not in uploaded documents:
      - '{company_name} target customers'
      - '{industry} customer demographics'
      - '{company_name} customer reviews feedback'
@@ -619,7 +692,7 @@ BUSINESS INFORMATION:
 
 Create the complete Customer Strategy document now.
 """
-    
+
     return Agent(
         name="customer_strategist",
         model="gemini-2.5-pro",
@@ -627,22 +700,23 @@ Create the complete Customer Strategy document now.
         description="Customer insights expert that creates detailed customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="customer_strategy_doc"
+        output_key="customer_strategy_doc",
     )
 
 
 def create_customer_reviewer() -> Agent:
     """Create the customer strategy reviewer agent."""
     from .firestore import get_reviewer_guidelines_sync
-    
+
     guidelines = get_reviewer_guidelines_sync("customer_strategy")
     if not guidelines:
         logger.warning("Using default review guidelines for customer_strategy")
-        guidelines = "Review the customer strategy document for completeness and accuracy."
-    
+        guidelines = (
+            "Review the customer strategy document for completeness and accuracy."
+        )
+
     instruction = f"""
 You are a Senior Customer Experience Reviewer. Review the customer strategy document.
 
@@ -662,24 +736,23 @@ Provide structured feedback with:
 - Journey mapping improvements
 - Quality score (1-10)
 """
-    
+
     return Agent(
         name="customer_reviewer",
         model="gemini-2.5-flash",
         description="Reviews customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8192
+            temperature=0.2, max_output_tokens=8192
         ),
-        output_key="review_feedback"
+        output_key="review_feedback",
     )
 
 
 def create_customer_editor() -> Agent:
     """Create the customer strategy editor agent."""
     google_search_agent = create_google_search_agent()
-    
+
     instruction = """
 You are a Customer Strategy Editor. Improve the document based on review feedback.
 
@@ -692,7 +765,7 @@ You are a Customer Strategy Editor. Improve the document based on review feedbac
 # OUTPUT FORMAT
 Provide the complete, updated customer strategy document in JSON format.
 """
-    
+
     return Agent(
         name="customer_editor",
         model="gemini-2.5-flash",
@@ -700,30 +773,31 @@ Provide the complete, updated customer strategy document in JSON format.
         description="Edits customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="customer_strategy_doc"
+        output_key="customer_strategy_doc",
     )
 
 
-def create_customer_strategy_agent(context: Optional[StrategyContext] = None) -> SequentialAgent:
+def create_customer_strategy_agent(
+    context: StrategyContext | None = None,
+) -> SequentialAgent:
     """Create the complete customer strategy agent with refinement loop."""
     strategist = create_customer_strategist(context)
     reviewer = create_customer_reviewer()
     editor = create_customer_editor()
-    
+
     refinement_loop = LoopAgent(
         name="customer_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines customer strategy through review cycles",
-        max_iterations=2
+        max_iterations=2,
     )
-    
+
     return SequentialAgent(
         name="customer_strategy_agent",
         sub_agents=[strategist, refinement_loop],
-        description="Creates comprehensive customer strategy documents"
+        description="Creates comprehensive customer strategy documents",
     )
 
 
@@ -731,10 +805,11 @@ def create_customer_strategy_agent(context: Optional[StrategyContext] = None) ->
 # 4. MARKETING STRATEGY AGENT
 # ============================================================================
 
-def create_marketing_strategist(context: Optional[StrategyContext] = None) -> Agent:
+
+def create_marketing_strategist(context: StrategyContext | None = None) -> Agent:
     """Create the marketing strategy strategist agent."""
     google_search_agent = create_google_search_agent()
-    
+
     # Safely extract context information with proper None handling
     if context:
         company_name = context.company_name
@@ -744,25 +819,28 @@ def create_marketing_strategist(context: Optional[StrategyContext] = None) -> Ag
             websites=context.websites,
             industry=context.industry,
             customer_regions=context.customer_regions,
-            annual_ad_budget=context.annual_ad_budget
+            annual_ad_budget=context.annual_ad_budget,
         )
     else:
         company_name = "the company"
         industry = "the industry"
         new_information = "No context provided"
-    
+
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
-    
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("marketing_strategy")
     if not best_practices:
         logger.warning("Using default best practices for marketing_strategy")
         best_practices = "Create a comprehensive marketing strategy document with all required sections."
-    
+
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
-    
+
     instruction = f"""
 # ROLE & GOAL
 You are a Strategic Marketing Expert. 
@@ -788,17 +866,42 @@ You are a critical thinker who can synthesize disparate information into a coher
 
 # PROCESS
 You must follow this logic precisely:
-1. **Review Prior Analysis:**: Before starting your research, carefully review the existing business_strategy_doc, competitive_strategy_doc, and customer_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
-2. **Analyze All Inputs:** Begin by thoroughly reading and understanding the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **MANDATORY FIRST STEP - Check for Uploaded Strategy Documents:**
+   - BEFORE using any search tools, you MUST check for uploaded documents
+   - Look for a section titled "=== UPLOADED STRATEGY DOCUMENTS ===" in the initial message
+   - These documents contain existing strategy information that you MUST use as your primary source
+   - To access uploaded documents:
+     a. Check the initial message for the "UPLOADED STRATEGY DOCUMENTS" section
+     b. Each document is clearly marked with "--- Document: [name] ---"
+     c. Documents with names starting with 'input_strategy_' contain strategy information
+     d. Analyze EACH uploaded document thoroughly:
+        - The document content is provided in full text format
+        - Extract ALL relevant information from each document
+            # Extract ALL marketing-relevant information from this document
+   - Extract marketing insights from uploaded documents:
+     - Marketing objectives and KPIs
+     - Target audience definitions
+     - Marketing channels and tactics
+     - Budget allocations
+     - Campaign plans
+     - Brand messaging and positioning
+   - Use this extracted information as the PRIMARY SOURCE for your marketing strategy
 
-3. **Research Requirements:**
-   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
-   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
-   - Think carefully and take your time to ensure the document is comprehensive and accurate
-   - Use specific search queries like:
+2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc, competitive_strategy_doc, and customer_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
+
+3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Prioritize information from uploaded strategy documents over general web searches
+
+4. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
+   - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
+   - If information exists in uploaded documents, use that instead of searching
+   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
+   - If you are unable to find information anywhere, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
+   - Use specific, targeted search queries ONLY for information not in uploaded documents:
      - '{industry} marketing trends 2025'
      - '{company_name} marketing campaigns'
      - '{industry} marketing channels effectiveness'
@@ -833,7 +936,7 @@ BUSINESS INFORMATION:
 Create the complete Marketing Strategy document now.
 
 """
-    
+
     return Agent(
         name="marketing_strategist",
         model="gemini-2.5-pro",
@@ -841,22 +944,23 @@ Create the complete Marketing Strategy document now.
         description="Marketing strategy expert that creates comprehensive marketing plans",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="marketing_strategy_doc"
+        output_key="marketing_strategy_doc",
     )
 
 
 def create_marketing_reviewer() -> Agent:
     """Create the marketing strategy reviewer agent."""
     from .firestore import get_reviewer_guidelines_sync
-    
+
     guidelines = get_reviewer_guidelines_sync("marketing_strategy")
     if not guidelines:
         logger.warning("Using default review guidelines for marketing_strategy")
-        guidelines = "Review the marketing strategy document for completeness and accuracy."
-    
+        guidelines = (
+            "Review the marketing strategy document for completeness and accuracy."
+        )
+
     instruction = f"""
 You are a Senior Marketing Reviewer. Review the marketing strategy document.
 
@@ -876,24 +980,23 @@ Provide structured feedback with:
 - Campaign planning improvements
 - Quality score (1-10)
 """
-    
+
     return Agent(
         name="marketing_reviewer",
         model="gemini-2.5-flash",
         description="Reviews marketing strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8192
+            temperature=0.2, max_output_tokens=8192
         ),
-        output_key="review_feedback"
+        output_key="review_feedback",
     )
 
 
 def create_marketing_editor() -> Agent:
     """Create the marketing strategy editor agent."""
     google_search_agent = create_google_search_agent()
-    
+
     instruction = """
 You are a Marketing Strategy Editor. Improve the document based on review feedback.
 
@@ -906,7 +1009,7 @@ You are a Marketing Strategy Editor. Improve the document based on review feedba
 # OUTPUT FORMAT
 Provide the complete, updated marketing strategy document in JSON format.
 """
-    
+
     return Agent(
         name="marketing_editor",
         model="gemini-2.5-flash",
@@ -914,30 +1017,31 @@ Provide the complete, updated marketing strategy document in JSON format.
         description="Edits marketing strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="marketing_strategy_doc"
+        output_key="marketing_strategy_doc",
     )
 
 
-def create_marketing_strategy_agent(context: Optional[StrategyContext] = None) -> SequentialAgent:
+def create_marketing_strategy_agent(
+    context: StrategyContext | None = None,
+) -> SequentialAgent:
     """Create the complete marketing strategy agent with refinement loop."""
     strategist = create_marketing_strategist(context)
     reviewer = create_marketing_reviewer()
     editor = create_marketing_editor()
-    
+
     refinement_loop = LoopAgent(
         name="marketing_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines marketing strategy through review cycles",
-        max_iterations=2
+        max_iterations=2,
     )
-    
+
     return SequentialAgent(
         name="marketing_strategy_agent",
         sub_agents=[strategist, refinement_loop],
-        description="Creates comprehensive marketing strategy documents"
+        description="Creates comprehensive marketing strategy documents",
     )
 
 
@@ -945,10 +1049,11 @@ def create_marketing_strategy_agent(context: Optional[StrategyContext] = None) -
 # 5. BRAND GUIDELINES AGENT
 # ============================================================================
 
-def create_brand_strategist(context: Optional[StrategyContext] = None) -> Agent:
+
+def create_brand_strategist(context: StrategyContext | None = None) -> Agent:
     """Create the brand guidelines strategist agent."""
     google_search_agent = create_google_search_agent()
-    
+
     # Safely extract context information with proper None handling
     if context:
         company_name = context.company_name
@@ -958,25 +1063,30 @@ def create_brand_strategist(context: Optional[StrategyContext] = None) -> Agent:
             websites=context.websites,
             industry=context.industry,
             customer_regions=context.customer_regions,
-            annual_ad_budget=context.annual_ad_budget
+            annual_ad_budget=context.annual_ad_budget,
         )
     else:
         company_name = "the company"
         industry = "the industry"
         new_information = "No context provided"
-    
+
     # Import the synchronous versions for use in agent context
-    from .firestore import get_best_practices_sync, extract_field_requirements_from_best_practices
-    
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
     # Fetch best practices from Firestore
     best_practices = get_best_practices_sync("brand_guidelines")
     if not best_practices:
         logger.warning("Using default best practices for brand_guidelines")
-        best_practices = "Create comprehensive brand guidelines with all required sections."
-    
+        best_practices = (
+            "Create comprehensive brand guidelines with all required sections."
+        )
+
     # Dynamically extract output requirements from best practices
     output_requirements = extract_field_requirements_from_best_practices(best_practices)
-    
+
     instruction = f"""
 # ROLE & GOAL
 You are a Brand Strategy Expert creating comprehensive brand guidelines.
@@ -991,16 +1101,40 @@ The BUSINESS INFORMATION may provide you with additional information about the b
 
 # PROCESS
 You must follow this logic precisely:
-1. **Analyze All Inputs:** Begin by thoroughly reading and understanding the provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`).
-   - Review the contents of the company websites `BUSINESS INFORMATION` section.
+1. **MANDATORY FIRST STEP - Check for Uploaded Strategy Documents:**
+   - BEFORE using any search tools, you MUST check for uploaded documents
+   - Look for a section titled "=== UPLOADED STRATEGY DOCUMENTS ===" in the initial message
+   - These documents contain existing strategy information that you MUST use as your primary source
+   - To access uploaded documents:
+     a. Check the initial message for the "UPLOADED STRATEGY DOCUMENTS" section
+     b. Each document is clearly marked with "--- Document: [name] ---"
+     c. Documents with names starting with 'input_strategy_' contain strategy information
+     d. Analyze EACH uploaded document thoroughly:
+        - The document content is provided in full text format
+        - Extract ALL relevant information from each document
+            # Extract ALL brand-relevant information from this document
+   - Extract brand insights from uploaded documents:
+     - Brand mission, vision, and values
+     - Brand personality and voice
+     - Visual identity guidelines
+     - Logo usage and specifications
+     - Color palettes and typography
+     - Brand messaging frameworks
+   - Use this extracted information as the PRIMARY SOURCE for your brand guidelines
 
-2. **Research Requirements:**
-   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
-   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
-   - Think carefully and take your time to ensure the document is comprehensive and accurate
-   - Use specific, targeted search queries like:
+2. **Analyze All Inputs:** After reviewing uploaded documents:
+   - Review the provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
+   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Prioritize information from uploaded strategy documents over general web searches
+
+3. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
+   - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
+   - If information exists in uploaded documents, use that instead of searching
+   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
+   - If you are unable to find information anywhere, insert the text: "requires further research"
+   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
+   - Use specific, targeted search queries ONLY for information not in uploaded documents:
      - '{company_name} brand identity'
      - '{industry} branding best practices'
      - '{company_name} mission vision values'
@@ -1034,7 +1168,7 @@ BUSINESS INFORMATION:
 
 Based on the above inputs, create the complete Brand Guidelines document now.
 """
-    
+
     return Agent(
         name="brand_strategist",
         model="gemini-2.5-pro",
@@ -1042,22 +1176,21 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         description="Brand strategy expert that creates comprehensive brand guidelines",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="brand_guidelines_doc"
+        output_key="brand_guidelines_doc",
     )
 
 
 def create_brand_reviewer() -> Agent:
     """Create the brand guidelines reviewer agent."""
     from .firestore import get_reviewer_guidelines_sync
-    
+
     guidelines = get_reviewer_guidelines_sync("brand_guidelines")
     if not guidelines:
         logger.warning("Using default review guidelines for brand_guidelines")
         guidelines = "Review the brand guidelines for completeness and consistency."
-    
+
     instruction = f"""
 You are a Senior Brand Reviewer. Review the brand guidelines document.
 
@@ -1077,24 +1210,23 @@ Provide structured feedback with:
 - Guidelines clarity improvements
 - Quality score (1-10)
 """
-    
+
     return Agent(
         name="brand_reviewer",
         model="gemini-2.5-flash",
         description="Reviews brand guidelines documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8192
+            temperature=0.2, max_output_tokens=8192
         ),
-        output_key="review_feedback"
+        output_key="review_feedback",
     )
 
 
 def create_brand_editor() -> Agent:
     """Create the brand guidelines editor agent."""
     google_search_agent = create_google_search_agent()
-    
+
     instruction = """
 You are a Brand Guidelines Editor. Improve the document based on review feedback.
 
@@ -1107,7 +1239,7 @@ You are a Brand Guidelines Editor. Improve the document based on review feedback
 # OUTPUT FORMAT
 Provide the complete, updated brand guidelines document in JSON format.
 """
-    
+
     return Agent(
         name="brand_editor",
         model="gemini-2.5-flash",
@@ -1115,28 +1247,29 @@ Provide the complete, updated brand guidelines document in JSON format.
         description="Edits brand guidelines documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=32768
+            temperature=0.2, max_output_tokens=32768
         ),
-        output_key="brand_guidelines_doc"
+        output_key="brand_guidelines_doc",
     )
 
 
-def create_brand_guidelines_agent(context: Optional[StrategyContext] = None) -> SequentialAgent:
+def create_brand_guidelines_agent(
+    context: StrategyContext | None = None,
+) -> SequentialAgent:
     """Create the complete brand guidelines agent with refinement loop."""
     strategist = create_brand_strategist(context)
     reviewer = create_brand_reviewer()
     editor = create_brand_editor()
-    
+
     refinement_loop = LoopAgent(
         name="brand_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines brand guidelines through review cycles",
-        max_iterations=2
+        max_iterations=2,
     )
-    
+
     return SequentialAgent(
         name="brand_guidelines_agent",
         sub_agents=[strategist, refinement_loop],
-        description="Creates comprehensive brand guidelines documents"
+        description="Creates comprehensive brand guidelines documents",
     )
