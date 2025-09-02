@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
+import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import { useToast } from "@/hooks/use-toast";
@@ -87,6 +88,8 @@ import {
   Info,
   DollarSign,
   Search,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import {
   INDUSTRY_OPTIONS,
@@ -182,6 +185,8 @@ interface AccountsManagementProps {
   currentOrgId: string;
   openCreateModal?: boolean;
   hasAdminAccess?: boolean;
+  accountsInSetup?: Set<string>;
+  setAccountsInSetup?: React.Dispatch<React.SetStateAction<Set<string>>>;
 }
 
 const AccountsManagement = ({
@@ -189,6 +194,8 @@ const AccountsManagement = ({
   currentOrgId,
   openCreateModal = false,
   hasAdminAccess = true,
+  accountsInSetup: accountsInSetupProp,
+  setAccountsInSetup: setAccountsInSetupProp,
 }: AccountsManagementProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -227,6 +234,14 @@ const AccountsManagement = ({
   const [creatingAccountId, setCreatingAccountId] = useState<string | null>(
     null,
   );
+
+  // State for tracking accounts still being set up (strategy generation in progress)
+  // Use prop if provided, otherwise use local state
+  const [localAccountsInSetup, setLocalAccountsInSetup] = useState<Set<string>>(
+    new Set(),
+  );
+  const accountsInSetup = accountsInSetupProp ?? localAccountsInSetup;
+  const setAccountsInSetup = setAccountsInSetupProp ?? setLocalAccountsInSetup;
 
   // Hook for tracking account creation progress
   const accountCreationProgress = useAccountCreationProgress(creatingAccountId);
@@ -298,6 +313,15 @@ const AccountsManagement = ({
             // Always end the operation and clear the tracking ID
             endOperation();
             setCreatingAccountId(null);
+
+            // Remove from accounts in setup
+            if (creatingAccountId) {
+              setAccountsInSetup((prev) => {
+                const next = new Set(prev);
+                next.delete(creatingAccountId);
+                return next;
+              });
+            }
           }
         }, 2000); // 2 second delay to show completion
       }
@@ -314,6 +338,15 @@ const AccountsManagement = ({
         });
         endOperation();
         setCreatingAccountId(null);
+
+        // Remove from accounts in setup on failure
+        if (creatingAccountId) {
+          setAccountsInSetup((prev) => {
+            const next = new Set(prev);
+            next.delete(creatingAccountId);
+            return next;
+          });
+        }
       }
     }
   }, [
@@ -483,6 +516,54 @@ const AccountsManagement = ({
       return user?.permissions?.accounts?.[account.account_id];
     });
   }, [accounts, user?.permissions?.accounts, isSuperAdmin, hasAdminAccess]);
+
+  // Check all accounts for their creation status on mount and when accounts change
+  useEffect(() => {
+    const checkAccountStatuses = async () => {
+      if (!organizationAccounts || organizationAccounts.length === 0) return;
+
+      const setupAccounts = new Set<string>();
+
+      // Check each account's creation status
+      for (const account of organizationAccounts) {
+        try {
+          const response = await api.get(
+            `/api/v1/accounts/${account.account_id}/creation-status`,
+          );
+
+          if (
+            response.data &&
+            (response.data.status === "pending" ||
+              response.data.status === "processing")
+          ) {
+            console.log(
+              `[AccountsManagement] Account ${account.account_id} is still being set up`,
+            );
+            setupAccounts.add(account.account_id);
+          }
+        } catch (error) {
+          // Account might not have a creation status, which is fine
+          console.debug(
+            `[AccountsManagement] No creation status for account ${account.account_id}`,
+          );
+        }
+      }
+
+      setAccountsInSetup(setupAccounts);
+    };
+
+    // Check immediately
+    checkAccountStatuses();
+
+    // Check periodically while there are accounts in setup
+    const intervalId = setInterval(() => {
+      if (accountsInSetup.size > 0) {
+        checkAccountStatuses();
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => clearInterval(intervalId);
+  }, [organizationAccounts.length, accountsInSetup.size]); // Re-run when accounts change
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
@@ -713,6 +794,9 @@ const AccountsManagement = ({
       );
       setCreatingAccountId(newAccountId);
 
+      // Add to accounts in setup
+      setAccountsInSetup((prev) => new Set(prev).add(newAccountId));
+
       // Start loading operation with clear messaging
       startOperation(
         "Creating account...",
@@ -772,6 +856,34 @@ const AccountsManagement = ({
 
       // Close wizard but keep the loading overlay open
       setIsCreateAccountModalOpen(false);
+
+      // Check if Google Analytics was selected and needs OAuth setup
+      if (wizardData.product_integrations?.includes("google_analytics")) {
+        console.log(
+          "[AccountsManagement] Google Analytics selected, initiating OAuth flow for account:",
+          result.account_id,
+        );
+
+        // Trigger OAuth flow for the newly created account
+        try {
+          const response = await api.get(
+            `/api/oauth/authorize/google-analytics?account_id=${result.account_id}`,
+          );
+
+          // Redirect to Google OAuth
+          window.location.href = response.data.auth_url;
+        } catch (error) {
+          console.error(
+            "[AccountsManagement] Failed to initiate OAuth:",
+            error,
+          );
+          toast({
+            title: "OAuth Setup",
+            description:
+              "Account created successfully. You can set up Google Analytics later in Account Settings.",
+          });
+        }
+      }
 
       // Don't call endOperation here - let the progress tracking handle it
       console.log(
@@ -835,6 +947,9 @@ const AccountsManagement = ({
         newAccountId,
       );
       setCreatingAccountId(newAccountId);
+
+      // Add to accounts in setup
+      setAccountsInSetup((prev) => new Set(prev).add(newAccountId));
 
       startOperation(
         "Creating account...",
@@ -1414,47 +1529,89 @@ const AccountsManagement = ({
               <p>Loading accounts...</p>
             </div>
           ) : organizationAccounts.length > 0 ? (
-            organizationAccounts.map((account) => (
-              <div
-                key={account.account_id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-brand-medium-blue" />
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-gray-900">
-                      {account.account_name}
-                    </h4>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {getIndustryDisplayName(account.industry)}
-                      </Badge>
-                      <Badge
-                        variant={
-                          account.status === "Active" ? "secondary" : "outline"
-                        }
-                        className="text-xs"
-                      >
-                        {account.status}
-                      </Badge>
+            organizationAccounts.map((account) => {
+              const isInSetup = accountsInSetup.has(account.account_id);
+              return (
+                <div
+                  key={account.account_id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors relative"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
+                      <User className="h-4 w-4 text-brand-medium-blue" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-gray-900">
+                          {account.account_name}
+                        </h4>
+                        {isInSetup && (
+                          <div className="flex items-center gap-1.5 text-amber-600">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span className="text-xs font-medium">
+                              Setting up...
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          {getIndustryDisplayName(account.industry)}
+                        </Badge>
+                        <Badge
+                          variant={
+                            account.status === "Active"
+                              ? "secondary"
+                              : "outline"
+                          }
+                          className="text-xs"
+                        >
+                          {account.status}
+                        </Badge>
+                        {isInSetup && (
+                          <Badge
+                            variant="outline"
+                            className="text-xs border-amber-200 bg-amber-50 text-amber-700"
+                          >
+                            Strategy generation in progress (15-20 min)
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    {isInSetup && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="text-amber-600 mr-2">
+                            <Info className="h-4 w-4" />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="max-w-xs">
+                          <p className="text-sm">
+                            Your account is being configured with personalized
+                            business strategies. This process typically takes
+                            15-20 minutes. You can use other features while this
+                            completes in the background.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {hasAdminAccess && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditAccount(account)}
+                        className="h-8 w-8 p-0"
+                        disabled={isOperationInProgress || isInSetup}
+                      >
+                        <Settings className="h-4 w-4 text-gray-500" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                {hasAdminAccess && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleEditAccount(account)}
-                    className="h-8 w-8 p-0"
-                    disabled={isOperationInProgress}
-                  >
-                    <Settings className="h-4 w-4 text-gray-500" />
-                  </Button>
-                )}
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-center py-8 text-gray-500">
               <User className="h-12 w-12 mx-auto mb-4 text-gray-300" />

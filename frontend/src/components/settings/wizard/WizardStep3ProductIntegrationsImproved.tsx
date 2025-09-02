@@ -17,6 +17,7 @@ import {
 } from "@/data/productIntegrationsWithLogos";
 import { ValidationAlert } from "@/components/ui/ValidationAlert";
 import { validateProductIntegrations } from "@/lib/validation/productIntegrationValidation";
+import { GoogleAnalyticsOAuth } from "@/components/integrations/GoogleAnalyticsOAuth";
 import type { AccountCreationData } from "../AccountCreationWizard";
 import type { IndustryTemplate } from "@/services/templateService";
 import type { ValidationMessage } from "@/types/validation";
@@ -38,6 +39,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(
     null,
   );
+  const [showGAOAuth, setShowGAOAuth] = useState(false);
   const [enabledIntegrations, setEnabledIntegrations] = useState<Set<string>>(
     new Set(formData.product_integrations),
   );
@@ -52,7 +54,14 @@ export const WizardStep3ProductIntegrationsImproved = ({
       (int) => int.id === integrationId,
     );
     if (integration?.status === "available") {
-      setSelectedIntegration(integrationId);
+      // Special handling for Google Analytics - show OAuth flow
+      if (integrationId === "google_analytics") {
+        // We'll show OAuth dialog but note that account doesn't exist yet
+        // The actual OAuth setup will happen after account creation
+        setShowGAOAuth(true);
+      } else {
+        setSelectedIntegration(integrationId);
+      }
     }
   };
 
@@ -244,7 +253,36 @@ export const WizardStep3ProductIntegrationsImproved = ({
           ),
         )}
 
-        {/* Integration Setup Modal */}
+        {/* Google Analytics OAuth Dialog */}
+        {/* During account creation, we show the OAuth dialog but note that actual connection */}
+        {/* will happen after account is created. For now, we just mark it as pending. */}
+        <GoogleAnalyticsOAuth
+          accountId="pending-account-creation" // Special ID for account creation flow
+          isOpen={showGAOAuth}
+          onClose={() => setShowGAOAuth(false)}
+          onSuccess={() => {
+            // Add Google Analytics to enabled integrations
+            setEnabledIntegrations((prev) =>
+              new Set(prev).add("google_analytics"),
+            );
+
+            // Add to form data if not already there
+            if (!formData.product_integrations.includes("google_analytics")) {
+              setFormData({
+                ...formData,
+                product_integrations: [
+                  ...formData.product_integrations,
+                  "google_analytics",
+                ],
+              });
+            }
+
+            setShowGAOAuth(false);
+          }}
+          isAccountCreation={true} // Pass flag to indicate this is during account creation
+        />
+
+        {/* Generic Integration Dialog for non-OAuth integrations */}
         <Dialog
           open={!!selectedIntegration}
           onOpenChange={(open) => !open && setSelectedIntegration(null)}
@@ -259,28 +297,10 @@ export const WizardStep3ProductIntegrationsImproved = ({
                 }
               </DialogTitle>
               <DialogDescription>
-                Follow these instructions to enable this integration:
+                This integration will be available after account creation
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm">Integration Steps:</h4>
-                <ol className="list-decimal list-inside space-y-2 text-sm text-dashboard-gray-600">
-                  <li>
-                    Navigate to your{" "}
-                    {
-                      PRODUCT_INTEGRATIONS.find(
-                        (i) => i.id === selectedIntegration,
-                      )?.name
-                    }{" "}
-                    account settings
-                  </li>
-                  <li>Generate an API key or access token</li>
-                  <li>Copy the API credentials</li>
-                  <li>Return here and paste the credentials</li>
-                  <li>Test the connection to verify setup</li>
-                </ol>
-              </div>
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <p className="text-sm text-blue-800">
                   <strong>Note:</strong> You can complete this setup after

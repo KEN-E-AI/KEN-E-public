@@ -37,6 +37,7 @@ interface GoogleAnalyticsOAuthProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  isAccountCreation?: boolean; // Flag to indicate this is during account creation
 }
 
 export const GoogleAnalyticsOAuth = ({
@@ -44,6 +45,7 @@ export const GoogleAnalyticsOAuth = ({
   isOpen,
   onClose,
   onSuccess,
+  isAccountCreation = false,
 }: GoogleAnalyticsOAuthProps) => {
   const [status, setStatus] = useState<{
     configured: boolean;
@@ -56,10 +58,15 @@ export const GoogleAnalyticsOAuth = ({
   const { toast } = useToast();
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isAccountCreation) {
+      // Only check status if not during account creation
       checkStatus();
+    } else if (isOpen && isAccountCreation) {
+      // During account creation, set default status
+      setStatus({ configured: false });
+      setIsLoading(false);
     }
-  }, [isOpen]);
+  }, [isOpen, isAccountCreation]);
 
   const checkStatus = async () => {
     setIsLoading(true);
@@ -81,6 +88,19 @@ export const GoogleAnalyticsOAuth = ({
   };
 
   const handleConnect = async () => {
+    // During account creation, just mark as selected and inform user
+    if (isAccountCreation) {
+      toast({
+        title: "Google Analytics Enabled",
+        description:
+          "You'll be redirected to connect your Google account after creating the account.",
+      });
+      if (onSuccess) {
+        onSuccess();
+      }
+      return;
+    }
+
     setIsConnecting(true);
     try {
       // Get authorization URL from backend
@@ -150,7 +170,9 @@ export const GoogleAnalyticsOAuth = ({
           <DialogHeader>
             <DialogTitle>Google Analytics Integration</DialogTitle>
             <DialogDescription>
-              Connect your Google Analytics account to import data
+              {isAccountCreation
+                ? "Enable Google Analytics for your new account"
+                : "Connect your Google Analytics account to import data"}
             </DialogDescription>
           </DialogHeader>
 
@@ -207,10 +229,13 @@ export const GoogleAnalyticsOAuth = ({
                 <>
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Not Connected</AlertTitle>
+                    <AlertTitle>
+                      {isAccountCreation ? "Ready to Connect" : "Not Connected"}
+                    </AlertTitle>
                     <AlertDescription>
-                      Connect your Google account to enable Google Analytics
-                      data import for this account.
+                      {isAccountCreation
+                        ? "After clicking 'Create Account', you'll be redirected to Google to authorize access to your Analytics data."
+                        : "Connect your Google account to enable Google Analytics data import for this account."}
                     </AlertDescription>
                   </Alert>
 
@@ -246,13 +271,17 @@ export const GoogleAnalyticsOAuth = ({
                     {isConnecting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Connecting...
+                        {isAccountCreation ? "Enabling..." : "Connecting..."}
                       </>
                     ) : (
                       <>
                         <Link className="mr-2 h-4 w-4" />
-                        Connect Google Analytics
-                        <ExternalLink className="ml-2 h-3 w-3" />
+                        {isAccountCreation
+                          ? "Enable Google Analytics"
+                          : "Connect Google Analytics"}
+                        {!isAccountCreation && (
+                          <ExternalLink className="ml-2 h-3 w-3" />
+                        )}
                       </>
                     )}
                   </Button>
