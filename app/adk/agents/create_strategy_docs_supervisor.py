@@ -361,9 +361,9 @@ def create_supervisor_agent():
     query_google_analytics.__name__ = "query_google_analytics"
     query_google_analytics.__doc__ = "Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties"
     
-    create_update_strategy = dispatch_with_context(dispatch_to_strategy)
-    create_update_strategy.__name__ = "create_update_strategy"
-    create_update_strategy.__doc__ = "Create or update business strategy documents, competitive strategy documents, or channel strategy documents using iterative refinement"
+    create_strategy = dispatch_with_context(dispatch_to_strategy)
+    create_strategy.__name__ = "create_strategy"
+    create_strategy.__doc__ = "Create business strategy documents, competitive strategy documents, or channel strategy documents using iterative refinement"
     
     supervisor = Agent(
         name="create_strategy_docs_supervisor",
@@ -390,13 +390,11 @@ Use `query_google_analytics` for queries about:
 - Custom reports with specific metrics and dimensions
 - GA4 property configuration and account information
 
-**CAPABILITY 3 - Strategy Document Creation & Management:**
-Use `create_update_strategy` for queries about:
+**CAPABILITY 3 - Strategy Document Creation:**
+Use `create_strategy` for queries about:
 - Creating business strategy documents
 - Creating competitive strategy documents
 - Creating channel strategy documents (email, social media, etc.)
-- Updating existing strategy documents with new information
-- Refining or improving strategy documents
 - Strategic planning and recommendations
 - Marketing strategy development
 - **Generate all 5 strategy documents** (this is a strategy creation request)
@@ -408,9 +406,9 @@ Use `create_update_strategy` for queries about:
 2. **Route based on the primary focus of the query:**
    - Company/business/market focus → search_company_news
    - Website/traffic/analytics focus → query_google_analytics
-   - Strategy creation/planning focus → create_update_strategy
-   - **Messages starting with "Generate all 5 strategy documents" → create_update_strategy**
-   - **Messages starting with "Generate strategy documents" → create_update_strategy**
+   - Strategy creation/planning focus → create_strategy
+   - **Messages starting with "Generate all 5 strategy documents" → create_strategy**
+   - **Messages starting with "Generate strategy documents" → create_strategy**
 
 3. **When routing, ALWAYS pass the COMPLETE user input to the tool** - if you received JSON, pass the entire JSON string, not just the message
 
@@ -437,15 +435,15 @@ Use `create_update_strategy` for queries about:
 - "Tesla earnings report" → search_company_news
 - "Bounce rate by country" → query_google_analytics
 - "Microsoft acquisition news" → search_company_news
-- "Create a business strategy for my company" → create_update_strategy
-- "Update our competitive strategy document" → create_update_strategy
-- "Develop an email marketing strategy" → create_update_strategy
-- "Help me with strategic planning" → create_update_strategy
-- "Generate all 5 strategy documents for Acme Corp" → create_update_strategy
-- "Generate strategy documents for my company" → create_update_strategy
+- "Create a business strategy for my company" → create_strategy
+- "Create a competitive strategy document" → create_strategy
+- "Develop an email marketing strategy" → create_strategy
+- "Help me with strategic planning" → create_strategy
+- "Generate all 5 strategy documents for Acme Corp" → create_strategy
+- "Generate strategy documents for my company" → create_strategy
 
 Remember: You are a router, not a data source. ALWAYS delegate to the appropriate specialized agent using the provided tools.""",
-        tools=[search_company_news, query_google_analytics, create_update_strategy]
+        tools=[search_company_news, query_google_analytics, create_strategy]
     )
     
     return supervisor

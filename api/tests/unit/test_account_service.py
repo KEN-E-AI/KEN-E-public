@@ -38,7 +38,10 @@ class TestCreateAccountInternal:
         mocks['firestore'].set_nested_field = MagicMock(return_value=True)
         
         # Setup Neo4j mock - organization exists and is not an agency
-        mocks['neo4j'].execute_query = AsyncMock(return_value=[{"agency": False}])
+        mocks['neo4j'].execute_query = AsyncMock(return_value=[{
+            "agency": False,
+            "organization_name": "Test Organization"
+        }])
         mocks['neo4j'].execute_write_query = AsyncMock(return_value=True)
         
         # Setup storage mock
@@ -86,7 +89,7 @@ class TestCreateAccountInternal:
             assert result.status == "Active"
             
             # Verify firestore was called
-            mock_dependencies['firestore'].set_document.assert_called_once()
+            mock_dependencies['firestore'].create_document.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_organization_not_found(self, mock_dependencies, sample_request):
@@ -107,13 +110,16 @@ class TestCreateAccountInternal:
             )
         
         assert exc_info.value.status_code == 404
-        assert "Organization not found" in str(exc_info.value.detail)
+        assert "not found" in str(exc_info.value.detail)
     
     @pytest.mark.asyncio
     async def test_agency_organization_forbidden(self, mock_dependencies, sample_request):
         """Test that agency organizations cannot create accounts."""
         # Mock Neo4j to return agency=True
-        mock_dependencies['neo4j'].execute_query.return_value = [{"agency": True}]
+        mock_dependencies['neo4j'].execute_query.return_value = [{
+            "agency": True,
+            "organization_name": "Test Agency Organization"
+        }]
         
         with pytest.raises(HTTPException) as exc_info:
             await create_account_internal(
@@ -158,11 +164,20 @@ class TestCreateAccountInternal:
             "gs://bucket/doc2.docx"
         ]
         
+        # Create a mock BackgroundTasks that tracks the added tasks
+        mock_bg_tasks = MagicMock(spec=BackgroundTasks)
+        added_tasks = []
+        
+        def track_task(func, *args, **kwargs):
+            added_tasks.append((func, args, kwargs))
+        
+        mock_bg_tasks.add_task = MagicMock(side_effect=track_task)
+        
         with patch('src.kene_api.tasks.strategy_tasks.trigger_strategy_generation') as mock_task:
             await create_account_internal(
                 request=sample_request,
                 uploaded_document_urls=uploaded_urls,
-                background_tasks=mock_dependencies['background_tasks'],
+                background_tasks=mock_bg_tasks,
                 user=mock_dependencies['user'],
                 firestore=mock_dependencies['firestore'],
                 storage=mock_dependencies['storage'],
@@ -171,12 +186,17 @@ class TestCreateAccountInternal:
             )
             
             # Verify background task was added with correct parameters
-            assert len(mock_dependencies['background_tasks'].tasks) == 1
-            task_func, task_args, task_kwargs = mock_dependencies['background_tasks'].tasks[0]
+            mock_bg_tasks.add_task.assert_called_once()
+            call_args = mock_bg_tasks.add_task.call_args
             
-            assert task_kwargs['uploaded_document_urls'] == uploaded_urls
-            assert task_kwargs['company_name'] == "Test Account"
-            assert task_kwargs['industry'] == "Technology"
+            # Check that the trigger_strategy_generation function was passed
+            assert call_args[0][0] == mock_task
+            
+            # Check the keyword arguments
+            kwargs = call_args[1]
+            assert kwargs['uploaded_document_urls'] == uploaded_urls
+            assert kwargs['company_name'] == "Test Organization"  # Now uses organization_name
+            assert kwargs['industry'] == "Technology"
     
     @pytest.mark.asyncio
     async def test_firestore_failure_raises_500(self, mock_dependencies, sample_request):

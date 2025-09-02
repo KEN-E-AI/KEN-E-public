@@ -386,9 +386,9 @@ def invoke_agent_sync(
         return f"Error invoking agent: {str(e)}"
 
 
-def dispatch_to_create_update_strategy(query: str, tenant_context: Dict[str, Any] = None) -> Dict[str, Any]:
+def dispatch_to_create_strategy(query: str, tenant_context: Dict[str, Any] = None) -> Dict[str, Any]:
     """
-    Dispatch strategy creation/update queries to the embedded strategy agents.
+    Dispatch strategy creation queries to the embedded strategy agents.
     """
     try:
         logger.info("🔄 Routing to embedded strategy generation agents...")
@@ -576,7 +576,7 @@ def route_query(query: str, tenant_context: Dict[str, Any] = None) -> Dict[str, 
         'strategy generation',
         'execute strategy generation'
     ]):
-        return dispatch_to_create_update_strategy(query, tenant_context)
+        return dispatch_to_create_strategy(query, tenant_context)
     
     # Default response for other queries
     return {
