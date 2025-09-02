@@ -71,34 +71,11 @@ async def create_account_internal(
     # Log account creation start (progress tracking simplified)
     logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
     
-    # Trigger strategy generation in background
-    # Import here to avoid circular dependency
-    from ..tasks.strategy_tasks import trigger_strategy_generation
-    
-    if uploaded_document_urls:
-        logger.info(f"[ACCOUNT_CREATION] {len(uploaded_document_urls)} documents uploaded for strategy generation")
-    
-    background_tasks.add_task(
-        trigger_strategy_generation,
-        account_id=account_id,
-        company_name=request.account_name,
-        websites=request.websites,
-        industry=request.industry,
-        customer_regions=request.region or [],
-        user_id=user.user_id,  # Fixed: use user_id instead of uid
-        annual_ad_budget=request.estimated_annual_ad_budget,
-        uploaded_document_urls=uploaded_document_urls,
-        user_context=None,  # No user context for background task
-    )
-    
-    # Log account structure created (progress tracking simplified)
-    logger.info(f"[ACCOUNT_CREATION] Account structure created for {account_id}, preparing research")
-    
-    # Check if organization exists in Neo4j
+    # Check if organization exists in Neo4j and get organization details
     logger.info(f"[ACCOUNT_CREATION] Checking if organization exists: {request.organization_id}")
     org_query = """
     MATCH (org:Organization {organization_id: $organization_id})
-    RETURN org.agency as agency
+    RETURN org.agency as agency, org.organization_name as organization_name
     """
     org_result = await neo4j_service.execute_query(org_query, {"organization_id": request.organization_id})
     
@@ -106,14 +83,44 @@ async def create_account_internal(
         logger.error(f"[ACCOUNT_CREATION] Organization not found: {request.organization_id}")
         raise HTTPException(status_code=404, detail=f"Organization {request.organization_id} not found")
     
+    # Extract organization details
+    organization_name = org_result[0].get("organization_name", request.account_name)  # Fallback to account_name if not found
+    is_agency = org_result[0].get("agency", False)
+    
+    logger.info(f"[ACCOUNT_CREATION] Organization found: {organization_name} (agency: {is_agency})")
+    
     # Check if organization is an agency
-    is_agency = org_result[0].get("agency", False) if org_result else None
     if is_agency is True:
         logger.warning(f"[ACCOUNT_CREATION] Attempted to create account for agency organization: {request.organization_id}")
         raise HTTPException(
             status_code=403,
             detail="Agency organizations cannot create accounts. Only regular organizations can have accounts."
         )
+    
+    # Trigger strategy generation in background using organization_name as company_name
+    # Import here to avoid circular dependency
+    from ..tasks.strategy_tasks import trigger_strategy_generation
+    
+    if uploaded_document_urls:
+        logger.info(f"[ACCOUNT_CREATION] {len(uploaded_document_urls)} documents uploaded for strategy generation")
+    
+    logger.info(f"[ACCOUNT_CREATION] Triggering strategy generation for organization: {organization_name}")
+    
+    background_tasks.add_task(
+        trigger_strategy_generation,
+        account_id=account_id,
+        company_name=organization_name,  # Use organization_name instead of account_name
+        websites=request.websites,
+        industry=request.industry,
+        customer_regions=request.region or [],
+        user_id=user.user_id,
+        annual_ad_budget=request.estimated_annual_ad_budget,
+        uploaded_document_urls=uploaded_document_urls,
+        user_context=None,  # No user context for background task
+    )
+    
+    # Log account structure created (progress tracking simplified)
+    logger.info(f"[ACCOUNT_CREATION] Account structure created for {account_id}, preparing research")
     
     # Prepare account data for Firestore
     account_data = {

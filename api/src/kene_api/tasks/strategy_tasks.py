@@ -61,16 +61,21 @@ async def trigger_strategy_generation(
 
         from ..routers.chat import AgentEngineClient
 
-        # Get project ID from environment
-        # CRITICAL: Always use ken-e-dev for Firestore access, regardless of where the agent is running
-        project_id = os.getenv(
-            "VERTEX_AI_PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
-        )
+        # Get project ID based on environment
+        environment = os.getenv("ENVIRONMENT", "development").lower()
         
-        # Force ken-e-dev to ensure Firestore access works correctly
-        if project_id != "ken-e-dev":
-            logger.warning(f"Project ID was {project_id}, forcing to ken-e-dev for Firestore access")
-            project_id = "ken-e-dev"
+        # Map environment to project ID
+        project_mapping = {
+            "development": "ken-e-dev",
+            "staging": "ken-e-staging",
+            "production": "ken-e-production"
+        }
+        
+        # Get the appropriate project ID for the environment
+        project_id = project_mapping.get(environment, "ken-e-dev")
+        
+        # Log the project being used
+        logger.info(f"Using project ID '{project_id}' for environment '{environment}'")
 
         # Format the information for the strategy agent
         new_information = f"""Project ID: {project_id}
@@ -84,7 +89,7 @@ Customer regions: {", ".join(customer_regions)}"""
             new_information += f"\nAnnual advertising budget: ${annual_ad_budget:,.0f}"
 
         # Prepare the message for the strategy agent
-        # The supervisor agent routes to create_update_strategy tool
+        # The supervisor agent routes to create_strategy tool
         message = f"""Generate all 5 strategy documents for {company_name}
 
 Please execute strategy generation with these parameters:
@@ -135,7 +140,7 @@ Please execute strategy generation with these parameters:
 
                     # IMPORTANT: Wait for documents to be created, same as system-triggered path
                     max_wait_time = 1800  # 30 minutes max wait for documents
-                    poll_interval = 15  # Check every 15 seconds
+                    poll_interval = 60  # Check every 60 seconds
                     elapsed_time = 0
                     all_docs_complete = False
 
@@ -196,10 +201,22 @@ Please execute strategy generation with these parameters:
                 import vertexai
                 from vertexai import agent_engines
 
-                # Get environment variables
-                project_id = os.getenv(
+                # Get environment variables and map to correct project
+                environment = os.getenv("ENVIRONMENT", "development").lower()
+                
+                # Map environment to project ID
+                project_mapping = {
+                    "development": "ken-e-dev",
+                    "staging": "ken-e-staging",
+                    "production": "ken-e-production"
+                }
+                
+                # Use environment-specific project or fall back to env vars
+                default_project = os.getenv(
                     "VERTEX_AI_PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT_ID")
                 )
+                project_id = project_mapping.get(environment, default_project or "ken-e-dev")
+                
                 location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
                 agent_engine_id = os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
 
@@ -273,6 +290,7 @@ Please execute strategy generation with these parameters:
                         logger.info(f"Processing chunk {chunk_count}...")
 
                         # Log progress for debugging (progress tracking simplified)
+                        # TODO: Progress logs are failing
                         if chunk_count == 5:
                             logger.info(
                                 f"Researching competitors for account {account_id}"
