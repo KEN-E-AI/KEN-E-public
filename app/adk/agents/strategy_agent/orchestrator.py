@@ -256,93 +256,35 @@ def execute_strategy_generation(
             except Exception as e:
                 logger.error(f"[ARTIFACT_VERIFICATION] Failed to verify artifacts: {e}")
         
-        # Load uploaded documents into session state for agents to access
-        loaded_docs = {}  # Initialize outside the if block so it's available later
-        logger.info(f"[DOCUMENT_CHECK] Uploaded documents parameter: {uploaded_documents}")
-        logger.info(f"[DOCUMENT_CHECK] Type of uploaded_documents: {type(uploaded_documents)}")
+        # Load uploaded documents from GCS if URLs provided
+        from .document_utils import (
+            load_documents_from_gcs_urls,
+            create_document_loading_summary,
+            DocumentProcessingError
+        )
         
-        # Handle uploaded documents - can be either GCS URLs or artifact keys
+        loaded_docs = {}
         if uploaded_documents:
-            # Check if these are GCS URLs (start with gs://) or artifact keys
+            # Handle both string and list formats
             if isinstance(uploaded_documents, str):
-                # Parse comma-separated string of URLs
                 uploaded_documents = [url.strip() for url in uploaded_documents.split(',') if url.strip()]
             
-            logger.info(f"[DOCUMENT_CHECK] Processing {len(uploaded_documents)} documents")
-            
-            # Check if these are GCS URLs
+            # Only process if we have GCS URLs
             if uploaded_documents and uploaded_documents[0].startswith('gs://'):
-                logger.info("[DOCUMENT_LOADING] Loading documents from GCS URLs")
-                from google.cloud import storage
-                storage_client = storage.Client(project=project_id)
+                logger.info(f"[DOCUMENT_LOADING] Loading {len(uploaded_documents)} documents from GCS")
                 
-                for gcs_url in uploaded_documents:
-                    try:
-                        # Parse GCS URL: gs://bucket/path/to/file
-                        if gcs_url.startswith('gs://'):
-                            parts = gcs_url[5:].split('/', 1)
-                            if len(parts) == 2:
-                                bucket_name, blob_path = parts
-                                bucket = storage_client.bucket(bucket_name)
-                                blob = bucket.blob(blob_path)
-                                
-                                # Download the content
-                                content = None
-                                
-                                # Check if it's a PDF file
-                                if blob_path.lower().endswith('.pdf'):
-                                    logger.info(f"[DOCUMENT_LOADING] Detected PDF file: {blob_path}")
-                                    try:
-                                        # Download as bytes for PDF processing
-                                        content_bytes = blob.download_as_bytes()
-                                        
-                                        # Try to extract text from PDF
-                                        try:
-                                            import PyPDF2
-                                            import io
-                                            
-                                            pdf_file = io.BytesIO(content_bytes)
-                                            pdf_reader = PyPDF2.PdfReader(pdf_file)
-                                            
-                                            extracted_text = []
-                                            for page_num in range(len(pdf_reader.pages)):
-                                                page = pdf_reader.pages[page_num]
-                                                text = page.extract_text()
-                                                if text:
-                                                    extracted_text.append(text)
-                                            
-                                            content = "\n".join(extracted_text)
-                                            logger.info(f"[DOCUMENT_LOADING] Extracted {len(content)} chars from PDF")
-                                        except ImportError:
-                                            logger.warning("[DOCUMENT_LOADING] PyPDF2 not available, returning placeholder")
-                                            content = f"[PDF document - {len(content_bytes)} bytes - text extraction requires PyPDF2]"
-                                        except Exception as pdf_error:
-                                            logger.error(f"[DOCUMENT_LOADING] PDF extraction failed: {pdf_error}")
-                                            content = f"[PDF document - {len(content_bytes)} bytes - extraction failed]"
-                                    except Exception as download_error:
-                                        logger.error(f"[DOCUMENT_LOADING] Failed to download PDF: {download_error}")
-                                else:
-                                    # Try downloading as text for non-PDF files
-                                    try:
-                                        content = blob.download_as_text()
-                                    except Exception as download_error:
-                                        # Try downloading as bytes if text fails
-                                        logger.info(f"[DOCUMENT_LOADING] Text download failed, trying as bytes: {download_error}")
-                                        content_bytes = blob.download_as_bytes()
-                                        content = f"[Binary document - {len(content_bytes)} bytes]"
-                                        logger.warning(f"[DOCUMENT_LOADING] Downloaded binary file {blob_path}")
-                                
-                                # Extract filename from path
-                                filename = blob_path.split('/')[-1]
-                                doc_key = f"input_strategy_{filename}"
-                                
-                                if content:
-                                    loaded_docs[doc_key] = content
-                                    logger.info(f"[DOCUMENT_LOADING] Loaded {doc_key} from GCS - {len(content) if content else 0} chars")
-                                else:
-                                    logger.error(f"[DOCUMENT_LOADING] No content retrieved for {doc_key}")
-                    except Exception as e:
-                        logger.error(f"[DOCUMENT_LOADING] Failed to load {gcs_url}: {e}")
+                try:
+                    loaded_docs = load_documents_from_gcs_urls(uploaded_documents, project_id)
+                    
+                    # Log summary
+                    summary = create_document_loading_summary(loaded_docs, uploaded_documents)
+                    if summary:
+                        logger.info(f"[DOCUMENT_LOADING] {summary}")
+                    
+                except DocumentProcessingError as e:
+                    logger.error(f"[DOCUMENT_LOADING] Document processing error: {e}")
+                except Exception as e:
+                    logger.error(f"[DOCUMENT_LOADING] Failed to load GCS documents: {e}")
             
         # Also try loading from artifact service if available
         if uploaded_documents and hasattr(artifact_service, '_load_artifact') and not loaded_docs:
