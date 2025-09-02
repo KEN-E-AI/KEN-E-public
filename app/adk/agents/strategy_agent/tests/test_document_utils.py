@@ -5,11 +5,15 @@ Following existing test patterns from test_integration.py.
 
 import pytest
 import io
+import time
+import sys
+import concurrent.futures
 from unittest.mock import Mock, patch, MagicMock
 from google.cloud import storage
 
 from app.adk.agents.strategy_agent.document_utils import (
     extract_text_from_pdf,
+    _extract_text_from_pdf_impl,
     load_document_from_gcs,
     load_documents_from_gcs_urls,
     validate_document_size,
@@ -62,7 +66,8 @@ class TestPDFExtraction:
     
     def test_extract_text_from_valid_pdf(self, sample_pdf_bytes):
         """Test extracting text from valid PDF."""
-        with patch('app.adk.agents.strategy_agent.document_utils.PyPDF2') as mock_pypdf2:
+        mock_pypdf2 = Mock()
+        with patch.dict('sys.modules', {'PyPDF2': mock_pypdf2}):
             mock_reader = Mock()
             mock_page = Mock()
             mock_page.extract_text.return_value = "Test PDF Content\nPage 1"
@@ -75,7 +80,8 @@ class TestPDFExtraction:
     
     def test_extract_text_from_multipage_pdf(self, sample_pdf_bytes):
         """Test extracting text from multi-page PDF."""
-        with patch('app.adk.agents.strategy_agent.document_utils.PyPDF2') as mock_pypdf2:
+        mock_pypdf2 = Mock()
+        with patch.dict('sys.modules', {'PyPDF2': mock_pypdf2}):
             mock_reader = Mock()
             mock_pages = []
             for i in range(5):
@@ -91,7 +97,8 @@ class TestPDFExtraction:
     
     def test_extract_text_truncates_long_content(self, sample_pdf_bytes):
         """Test that very long PDF content is truncated."""
-        with patch('app.adk.agents.strategy_agent.document_utils.PyPDF2') as mock_pypdf2:
+        mock_pypdf2 = Mock()
+        with patch.dict('sys.modules', {'PyPDF2': mock_pypdf2}):
             mock_reader = Mock()
             mock_page = Mock()
             # Create content longer than MAX_TEXT_LENGTH
@@ -107,7 +114,8 @@ class TestPDFExtraction:
     def test_extract_text_from_corrupt_pdf(self):
         """Test handling of corrupt PDF."""
         corrupt_pdf = b"Not a real PDF"
-        with patch('app.adk.agents.strategy_agent.document_utils.PyPDF2') as mock_pypdf2:
+        mock_pypdf2 = Mock()
+        with patch.dict('sys.modules', {'PyPDF2': mock_pypdf2}):
             mock_pypdf2.PdfReader.side_effect = Exception("Invalid PDF")
             
             with pytest.raises(DocumentProcessingError) as exc_info:
@@ -116,10 +124,50 @@ class TestPDFExtraction:
     
     def test_extract_text_without_pypdf2(self, sample_pdf_bytes):
         """Test handling when PyPDF2 is not available."""
-        with patch('app.adk.agents.strategy_agent.document_utils.PyPDF2', side_effect=ImportError):
+        with patch.dict('sys.modules', {'PyPDF2': None}):
             with pytest.raises(DocumentProcessingError) as exc_info:
                 extract_text_from_pdf(sample_pdf_bytes, "test.pdf")
             assert "PyPDF2 not available" in str(exc_info.value)
+    
+    def test_extract_text_with_custom_timeout(self, sample_pdf_bytes):
+        """Test PDF extraction with custom timeout parameter."""
+        mock_pypdf2 = Mock()
+        with patch.dict('sys.modules', {'PyPDF2': mock_pypdf2}):
+            mock_reader = Mock()
+            mock_page = Mock()
+            mock_page.extract_text.return_value = "Quick extraction"
+            mock_reader.pages = [mock_page]
+            mock_pypdf2.PdfReader.return_value = mock_reader
+            
+            # Test with custom timeout
+            result = extract_text_from_pdf(sample_pdf_bytes, "test.pdf", timeout=5.0)
+            assert "Quick extraction" in result
+    
+    def test_extract_text_timeout_error(self, sample_pdf_bytes):
+        """Test that PDF extraction raises timeout error when taking too long."""
+        def slow_extraction(pdf_bytes, filename):
+            time.sleep(2)  # Simulate slow extraction
+            return "This should timeout"
+        
+        with patch('app.adk.agents.strategy_agent.document_utils._extract_text_from_pdf_impl', side_effect=slow_extraction):
+            with pytest.raises(DocumentProcessingError) as exc_info:
+                # Use very short timeout to trigger timeout error
+                extract_text_from_pdf(sample_pdf_bytes, "slow.pdf", timeout=0.1)
+            assert "timed out after 0.1s" in str(exc_info.value)
+            assert "slow.pdf" in str(exc_info.value)
+    
+    def test_extract_text_handles_executor_errors(self, sample_pdf_bytes):
+        """Test that executor errors are properly handled."""
+        with patch('concurrent.futures.ThreadPoolExecutor') as mock_executor_class:
+            mock_executor = Mock()
+            mock_future = Mock()
+            mock_future.result.side_effect = RuntimeError("Executor failed")
+            mock_executor.submit.return_value = mock_future
+            mock_executor_class.return_value.__enter__.return_value = mock_executor
+            
+            with pytest.raises(DocumentProcessingError) as exc_info:
+                extract_text_from_pdf(sample_pdf_bytes, "test.pdf")
+            assert "Failed to extract text" in str(exc_info.value)
 
 
 class TestGCSDocumentLoading:
