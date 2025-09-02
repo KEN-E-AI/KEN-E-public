@@ -20,11 +20,13 @@ from .routers import (
     industry_keywords,
     industry_templates,
     insights,
+    integrations,
     intuitions,
     items,
     metrics,
     monitoring_topics,
     notifications_v2 as notifications,
+    oauth_integrations,
     organizations,
     products,
     strategy,
@@ -100,6 +102,8 @@ app.include_router(
     organizations.router, prefix="/api/v1/organizations", tags=["organizations"]
 )
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"])
+app.include_router(integrations.router)  # Integrations router already has its prefix
+app.include_router(oauth_integrations.router)  # OAuth router already has its prefix
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])

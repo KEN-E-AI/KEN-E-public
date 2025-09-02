@@ -19,7 +19,11 @@ import { generateAccountId } from "@/lib/idGenerator";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { HolidaySyncError } from "@/types/activities";
 import type { AxiosError } from "axios";
-import { moveAccount, getOrganizations, getOrganizationById } from "@/data/organizationApi";
+import {
+  moveAccount,
+  getOrganizations,
+  getOrganizationById,
+} from "@/data/organizationApi";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -230,23 +234,32 @@ const AccountsManagement = ({
   // Update the operation message when progress changes (simplified)
   useEffect(() => {
     if (accountCreationProgress && accountCreationProgress.status !== "idle") {
-      console.log("[AccountsManagement] Progress update received:", accountCreationProgress);
-      
+      console.log(
+        "[AccountsManagement] Progress update received:",
+        accountCreationProgress,
+      );
+
       // Update the operation message based on status
       if (accountCreationProgress.status === "processing") {
-        updateOperationMessage("Creating account...", accountCreationProgress.message);
+        updateOperationMessage(
+          "Creating account...",
+          accountCreationProgress.message,
+        );
       }
-      
+
       // Check if account creation is complete
       if (accountCreationProgress.status === "completed") {
-        console.log("[AccountsManagement] Account creation complete! Refreshing data...");
-        
+        console.log(
+          "[AccountsManagement] Account creation complete! Refreshing data...",
+        );
+
         // Show success toast
         toast({
           title: "Success",
-          description: "Account created successfully with all strategy documents!",
+          description:
+            "Account created successfully with all strategy documents!",
         });
-        
+
         // Give user a moment to see the completion message, then refresh data
         setTimeout(async () => {
           // Refresh data once at completion to avoid rate limiting
@@ -254,10 +267,10 @@ const AccountsManagement = ({
             // Use manual cache invalidation instead of automatic refetch
             // This allows the component to control when to refresh
             invalidateAccounts(currentOrgId);
-            
+
             // Refresh organization metadata (quick operation)
             const updatedOrg = await getOrganizationById(currentOrgId);
-            
+
             if (updatedOrg) {
               // Use the accounts from the cache that will be populated when ready
               // instead of triggering a new fetch that might timeout
@@ -269,13 +282,18 @@ const AccountsManagement = ({
                 },
               }));
             }
-            
+
             // Refresh notifications
             await refreshNotifications();
-            
-            console.log("[AccountsManagement] Cache invalidated successfully after account creation");
+
+            console.log(
+              "[AccountsManagement] Cache invalidated successfully after account creation",
+            );
           } catch (error) {
-            console.error("[AccountsManagement] Error refreshing data after account creation:", error);
+            console.error(
+              "[AccountsManagement] Error refreshing data after account creation:",
+              error,
+            );
           } finally {
             // Always end the operation and clear the tracking ID
             endOperation();
@@ -283,20 +301,30 @@ const AccountsManagement = ({
           }
         }, 2000); // 2 second delay to show completion
       }
-      
+
       // Handle failure
       if (accountCreationProgress.status === "failed") {
         console.error("[AccountsManagement] Account creation failed");
         toast({
           title: "Error",
-          description: accountCreationProgress.message || "Account creation failed. Please try again.",
+          description:
+            accountCreationProgress.message ||
+            "Account creation failed. Please try again.",
           variant: "destructive",
         });
         endOperation();
         setCreatingAccountId(null);
       }
     }
-  }, [accountCreationProgress, updateOperationMessage, endOperation, toast, currentOrgId, setOrgMetadata, refreshNotifications]);
+  }, [
+    accountCreationProgress,
+    updateOperationMessage,
+    endOperation,
+    toast,
+    currentOrgId,
+    setOrgMetadata,
+    refreshNotifications,
+  ]);
 
   // Debug: Log accounts data when it changes
   useEffect(() => {
@@ -357,7 +385,6 @@ const AccountsManagement = ({
       },
     }));
   };
-
 
   // State for account management
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -678,11 +705,14 @@ const AccountsManagement = ({
     try {
       // Generate account ID upfront for progress tracking
       const newAccountId = generateAccountId();
-      
+
       // Start tracking progress immediately
-      console.log("[AccountsManagement] Setting creatingAccountId to:", newAccountId);
+      console.log(
+        "[AccountsManagement] Setting creatingAccountId to:",
+        newAccountId,
+      );
       setCreatingAccountId(newAccountId);
-      
+
       // Start loading operation with clear messaging
       startOperation(
         "Creating account...",
@@ -742,9 +772,11 @@ const AccountsManagement = ({
 
       // Close wizard but keep the loading overlay open
       setIsCreateAccountModalOpen(false);
-      
+
       // Don't call endOperation here - let the progress tracking handle it
-      console.log("[AccountsManagement] Wizard account created, waiting for strategy generation to complete...");
+      console.log(
+        "[AccountsManagement] Wizard account created, waiting for strategy generation to complete...",
+      );
     } catch (error: unknown) {
       console.error("[AccountsManagement] Error creating account:", error);
 
@@ -758,7 +790,7 @@ const AccountsManagement = ({
         description: errorMessage,
         variant: "destructive",
       });
-      
+
       // Only end operation on error
       endOperation();
       setCreatingAccountId(null);
@@ -796,11 +828,14 @@ const AccountsManagement = ({
       // Start the loading overlay
       // Generate account ID upfront for progress tracking
       const newAccountId = generateAccountId();
-      
+
       // Start tracking progress immediately
-      console.log("[AccountsManagement] Setting creatingAccountId to:", newAccountId);
+      console.log(
+        "[AccountsManagement] Setting creatingAccountId to:",
+        newAccountId,
+      );
       setCreatingAccountId(newAccountId);
-      
+
       startOperation(
         "Creating account...",
         "Conducting research on your business to configure your account. This may take 15-20 minutes.",
@@ -974,7 +1009,9 @@ const AccountsManagement = ({
 
       // Don't end operation or navigate yet - wait for progress to complete
       // The progress tracking will handle closing the modal and navigation
-      console.log("[AccountsManagement] Account created, waiting for strategy generation to complete...");
+      console.log(
+        "[AccountsManagement] Account created, waiting for strategy generation to complete...",
+      );
     } catch (error: any) {
       // Make sure to end the loading state on error
       endOperation();
@@ -2016,6 +2053,7 @@ const AccountsManagement = ({
                 </Tooltip>
               </div>
               <ProductIntegrationsEditor
+                accountId={selectedAccount?.account_id}
                 value={editFormData.product_integrations}
                 onChange={(integrations) =>
                   setEditFormData({

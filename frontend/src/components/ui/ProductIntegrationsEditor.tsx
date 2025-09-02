@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { GoogleAnalyticsOAuth } from "@/components/integrations/GoogleAnalyticsOAuth";
+import api from "@/lib/api";
 
 interface ProductIntegrationsEditorProps {
   value: string[];
@@ -28,6 +30,7 @@ interface ProductIntegrationsEditorProps {
   enabledIntegrations?: string[]; // List of integrations that are currently enabled/configured
   onConfigure?: (integrationId: string) => void; // Callback when gear icon is clicked
   compact?: boolean;
+  accountId?: string; // Account ID for API calls
 }
 
 export const ProductIntegrationsEditor = ({
@@ -36,18 +39,47 @@ export const ProductIntegrationsEditor = ({
   enabledIntegrations = [],
   onConfigure,
   compact = false,
+  accountId,
 }: ProductIntegrationsEditorProps) => {
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(
     null,
   );
+  const [gaConfigStatus, setGaConfigStatus] = useState<boolean>(false);
+  const [showGAOAuth, setShowGAOAuth] = useState(false);
+
+  // Check GA configuration status when account changes
+  useEffect(() => {
+    if (accountId && value.includes("google_analytics")) {
+      checkGAStatus();
+    }
+  }, [accountId, value]);
+
+  const checkGAStatus = async () => {
+    if (!accountId) return;
+    try {
+      const response = await api.get(
+        `/api/oauth/status/${accountId}/google-analytics`,
+      );
+      setGaConfigStatus(response.data.status === "configured");
+    } catch (error) {
+      console.error("Failed to check GA status:", error);
+    }
+  };
 
   const handleIntegrationClick = (integrationId: string) => {
     const integration = PRODUCT_INTEGRATIONS.find(
       (int) => int.id === integrationId,
     );
     if (integration?.status === "available") {
-      setSelectedIntegration(integrationId);
+      // Special handling for Google Analytics
+      if (integrationId === "google_analytics" && accountId) {
+        // Show OAuth dialog for Google Analytics
+        setShowGAOAuth(true);
+      } else {
+        // Default behavior for other integrations
+        setSelectedIntegration(integrationId);
+      }
     }
   };
 
@@ -72,6 +104,10 @@ export const ProductIntegrationsEditor = ({
   };
 
   const isIntegrationEnabled = (integrationId: string) => {
+    // For Google Analytics, check our status
+    if (integrationId === "google_analytics" && accountId) {
+      return gaConfigStatus;
+    }
     return enabledIntegrations.includes(integrationId);
   };
 
@@ -188,6 +224,12 @@ export const ProductIntegrationsEditor = ({
                                     e.stopPropagation();
                                     handleIntegrationClick(integration.id);
                                   }}
+                                  title={
+                                    integration.id === "google_analytics" &&
+                                    accountId
+                                      ? "Configure"
+                                      : "Settings"
+                                  }
                                 >
                                   <Settings className="h-4 w-4" />
                                 </Button>
@@ -271,6 +313,23 @@ export const ProductIntegrationsEditor = ({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Google Analytics OAuth Dialog */}
+        {accountId && (
+          <GoogleAnalyticsOAuth
+            accountId={accountId}
+            isOpen={showGAOAuth}
+            onClose={() => setShowGAOAuth(false)}
+            onSuccess={() => {
+              // Add to integrations if not already there
+              if (!value.includes("google_analytics")) {
+                onChange([...value, "google_analytics"]);
+              }
+              checkGAStatus();
+              setShowGAOAuth(false);
+            }}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
