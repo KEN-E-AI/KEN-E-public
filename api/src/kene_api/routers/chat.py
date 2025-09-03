@@ -20,6 +20,8 @@ from typing import Any, Dict, List, AsyncGenerator, Union
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
+from ..firestore import get_firestore_service
+from ..services.ga_credential_helper import GACredentialHelper
 
 logger = logging.getLogger(__name__)
 
@@ -589,6 +591,45 @@ class AgentEngineClient:
 
             user_input = latest_message.content
             user_id = user_context.user_id
+            
+            # Check if this might be a Google Analytics query and inject OAuth credentials
+            ga_keywords = ['analytics', 'traffic', 'users', 'sessions', 'pageviews', 
+                          'bounce rate', 'ga4', 'google analytics', 'website visitors',
+                          'conversion', 'acquisition', 'real-time', 'realtime']
+            
+            is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
+            
+            if is_ga_query:
+                # Try to get GA OAuth credentials for the user's first accessible account
+                # In a production system, you might want to let users select which account to use
+                if user_context.accessible_accounts:
+                    try:
+                        firestore_service = get_firestore_service()
+                        db = firestore_service.get_client()
+                        ga_helper = GACredentialHelper(db)
+                        
+                        # Use the first accessible account (or could implement account selection)
+                        account_id = user_context.accessible_accounts[0]
+                        
+                        # Get and format GA credentials
+                        ga_creds = await ga_helper.get_and_format_credentials(account_id)
+                        
+                        if ga_creds:
+                            # Create a structured message with credentials embedded
+                            enhanced_message = {
+                                "message": user_input,
+                                "tenant_id": ga_creds["tenant_id"],
+                                "tenant_credentials": ga_creds["tenant_credentials"]
+                            }
+                            # Convert to JSON string for the agent
+                            import json
+                            user_input = json.dumps(enhanced_message)
+                            logger.info(f"Injected GA OAuth credentials for account {account_id}")
+                        else:
+                            logger.warning(f"No GA OAuth credentials found for account {account_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to inject GA credentials: {e}")
+                        # Continue with original message if credential injection fails
 
             # Get or create session for this user
             actual_session_id = await self.get_or_create_session(
@@ -835,6 +876,44 @@ class AgentEngineClient:
 
             user_input = latest_message.content
             user_id = user_context.user_id
+            
+            # Check if this might be a Google Analytics query and inject OAuth credentials
+            ga_keywords = ['analytics', 'traffic', 'users', 'sessions', 'pageviews', 
+                          'bounce rate', 'ga4', 'google analytics', 'website visitors',
+                          'conversion', 'acquisition', 'real-time', 'realtime']
+            
+            is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
+            
+            if is_ga_query:
+                # Try to get GA OAuth credentials for the user's first accessible account
+                if user_context.accessible_accounts:
+                    try:
+                        firestore_service = get_firestore_service()
+                        db = firestore_service.get_client()
+                        ga_helper = GACredentialHelper(db)
+                        
+                        # Use the first accessible account (or could implement account selection)
+                        account_id = user_context.accessible_accounts[0]
+                        
+                        # Get and format GA credentials
+                        ga_creds = await ga_helper.get_and_format_credentials(account_id)
+                        
+                        if ga_creds:
+                            # Create a structured message with credentials embedded
+                            enhanced_message = {
+                                "message": user_input,
+                                "tenant_id": ga_creds["tenant_id"],
+                                "tenant_credentials": ga_creds["tenant_credentials"]
+                            }
+                            # Convert to JSON string for the agent
+                            import json
+                            user_input = json.dumps(enhanced_message)
+                            logger.info(f"Injected GA OAuth credentials for account {account_id}")
+                        else:
+                            logger.warning(f"No GA OAuth credentials found for account {account_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to inject GA credentials: {e}")
+                        # Continue with original message if credential injection fails
 
             # Get or create session for this user
             actual_session_id = await self.get_or_create_session(

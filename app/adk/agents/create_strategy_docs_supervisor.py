@@ -154,31 +154,29 @@ def dispatch_to_google_analytics(
     tenant_context: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
-    Dispatch Google Analytics queries with tenant context.
-    In production, tenant context comes from the authenticated user's session.
-    For testing, we use environment variables.
+    Dispatch Google Analytics queries with OAuth credentials.
+    OAuth credentials must be provided via tenant context from the authenticated user's session.
     """
     try:
         logger.info(f"🔄 Routing Google Analytics query to specialized agent...")
         
-        # In production, credentials would come from the KEN-E app's user session
-        # For testing/development, use environment variables
+        # Check if OAuth credentials are available
         if not tenant_context or not tenant_context.get('tenant_credentials'):
-            # Testing mode: use environment credentials
-            env_creds = os.getenv('GA_PERSONAL_CREDENTIALS')
-            if env_creds:
-                tenant_context = {
-                    'tenant_id': os.getenv('GA_TENANT_ID', 'test-org'),
-                    'tenant_credentials': env_creds
-                }
-                logger.info("Using test credentials from environment")
+            logger.warning("No OAuth credentials provided for Google Analytics query")
+            return {
+                'status': 'error',
+                'query': query,
+                'error': 'Google Analytics integration requires OAuth authentication. Please connect your Google account in Account Settings.',
+                'source': 'google_analytics_specialist',
+                'agent': 'analytics'
+            }
         
-        # Prepare query with tenant context
-        if tenant_context and tenant_context.get('tenant_id') and tenant_context.get('tenant_credentials'):
-            # Inject tenant context into the query for the GA agent
+        # Prepare query with OAuth credentials
+        if tenant_context.get('tenant_id') and tenant_context.get('tenant_credentials'):
+            # Inject OAuth context into the query for the GA agent
             enhanced_query = f"TENANT_ID:{tenant_context['tenant_id']} TENANT_CREDS:{tenant_context['tenant_credentials']} {query}"
         else:
-            # No credentials available
+            logger.error("Invalid tenant context structure")
             enhanced_query = query
         
         result = invoke_agent_sync(google_analytics_agent_v4, enhanced_query)
