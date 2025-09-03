@@ -252,6 +252,44 @@ grep "max_output_tokens" agents/strategy_agent/agents.py
 ls deploy*.py.old
 ```
 
+## Managing Reasoning Engines
+
+After deployments, you may accumulate multiple reasoning engines that are no longer in use. Use the `manage_reasoning_engines.py` script to list and clean up unused engines.
+
+### List All Engines
+```bash
+# List all reasoning engines in the project
+uv run python manage_reasoning_engines.py --list
+
+# List engines in a specific project
+uv run python manage_reasoning_engines.py --project my-project --list
+```
+
+### Delete Unused Engines
+```bash
+# Delete all engines except a specific one (interactive confirmation)
+uv run python manage_reasoning_engines.py --delete --keep-id 1824877040805871616
+
+# Delete without confirmation prompt
+uv run python manage_reasoning_engines.py --delete --keep-id 1824877040805871616 --yes
+
+# Dry run - see what would be deleted without actually deleting
+uv run python manage_reasoning_engines.py --delete --keep-id 1824877040805871616 --dry-run
+```
+
+### Important Notes About Engine Management
+- **Rate Limits**: The script handles rate limiting automatically (8 requests/minute)
+- **Force Deletion**: The script uses force=true to delete engines with active sessions
+- **Retries**: Failed deletions due to rate limits are automatically retried
+- **Verification**: After deletion, the script verifies the final state
+- **Safety**: Always specify --keep-id to avoid deleting all engines accidentally
+
+### Finding the Current Engine ID
+The current engine ID in use can be found in:
+- `supervisor_deployment.txt` (latest deployment record)
+- API environment files (`/api/.env*`)
+- Look for variables like `VERTEX_AI_AGENT_ENGINE_ID`
+
 ## Notes
 
 - Deployment typically takes 3-5 minutes
@@ -259,6 +297,7 @@ ls deploy*.py.old
 - Use timestamps in deployment names for tracking
 - The deployment script outputs progress to console
 - Deployment info is saved to `supervisor_deployment.txt`
+- Clean up old engines regularly using `manage_reasoning_engines.py`
 
 ---
 
