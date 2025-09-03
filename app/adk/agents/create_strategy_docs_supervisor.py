@@ -21,7 +21,12 @@ from .company_news_chatbot.agent import root_agent as news_agent
 from .google_analytics_agent_v4 import google_analytics_agent_v4
 from .strategy_agent.orchestrator import strategy_agent, execute_strategy_generation as invoke_strategy_agent_sync
 
+# Import monitoring utilities
+from .strategy_agent.logging_config import StrategyAgentLogger
+from .strategy_agent.token_utils import check_and_log_tokens
+
 logger = logging.getLogger(__name__)
+supervisor_logger = StrategyAgentLogger("create_strategy_docs_supervisor")
 
 
 def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[str], str]:
@@ -112,10 +117,15 @@ def invoke_agent_sync(
             # If we're already in an async context, use ThreadPoolExecutor
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
-                return future.result(timeout=300)  # 5 minute timeout
+                # Increased timeout to 30 minutes to allow for extensive Google searches 
+                # and document generation by strategy agents
+                return future.result(timeout=1800)  # 30 minute timeout
         else:
             # If no event loop is running, create one
             return loop.run_until_complete(invoke_agent())
+    except concurrent.futures.TimeoutError as e:
+        logger.error(f"Agent invocation timed out after 30 minutes: {str(e)}")
+        return "Error: Strategy generation timed out after 30 minutes. This can happen with complex documents. Please try again with fewer documents or simpler requirements."
     except Exception as e:
         logger.error(f"Error in sync agent invocation: {str(e)}")
         return f"Error invoking agent: {str(e)}"
@@ -210,8 +220,21 @@ def dispatch_to_strategy(
     Dispatch strategy queries to the iterative strategy agent.
     Strategy agent needs account context for document persistence.
     """
+    execution_id = str(uuid.uuid4())
     try:
-        logger.info(f"🔄 Routing strategy query to specialized agent...")
+        logger.info(f"🔄 [SUPERVISOR] Routing strategy query to specialized agent...")
+        supervisor_logger.log_agent_start(
+            execution_id=execution_id,
+            input_tokens=len(query) // 4,  # Rough estimate
+            context={"query_preview": query[:200], "tenant_context": tenant_context}
+        )
+        
+        # Log the full query for debugging
+        logger.info(f"[SUPERVISOR] Full query length: {len(query)} chars")
+        logger.info(f"[SUPERVISOR] Query preview: {query[:500]}")
+        
+        # Check token usage
+        check_and_log_tokens(query, "supervisor_strategy_dispatch", raise_on_exceed=False)
         
         # Parse the query to extract strategy generation parameters
         # The query format from API is:
@@ -275,18 +298,32 @@ def dispatch_to_strategy(
         missing_params = [p for p in required_params if p not in params or not params[p]]
         
         if missing_params:
-            logger.warning(f"Missing required parameters for strategy generation: {missing_params}")
-            logger.info(f"Extracted parameters: {params}")
-            logger.info(f"Query preview: {query[:500]}")
+            logger.warning(f"[SUPERVISOR] Missing required parameters for strategy generation: {missing_params}")
+            logger.info(f"[SUPERVISOR] Extracted parameters: {params}")
+            logger.info(f"[SUPERVISOR] Query preview: {query[:500]}")
+            supervisor_logger.log_token_usage(
+                phase="parameter_extraction",
+                tokens={"params_missing": len(missing_params), "params_found": len(params)},
+                percentage_of_limit=0.01  # Very small
+            )
             # Try to proceed with what we have
         
         # Set defaults for optional parameters
         params.setdefault('annual_ad_budget', 0.0)
         params.setdefault('project_id', os.getenv('VERTEX_AI_PROJECT_ID', 'ken-e-dev'))
         
-        logger.info(f"Calling execute_strategy_generation with params: {params}")
+        logger.info(f"[SUPERVISOR] Calling execute_strategy_generation with params: {params}")
+        supervisor_logger.log_token_usage(
+            phase="pre_strategy_invocation",
+            tokens={"param_count": len(params)},
+            percentage_of_limit=0.01
+        )
         
         # Invoke the strategy agent with the correct parameters
+        logger.info(f"[SUPERVISOR] Invoking strategy agent with timeout monitoring...")
+        import time
+        start_time = time.time()
+        
         result = invoke_strategy_agent_sync(
             company_name=params.get('company_name', 'Unknown Company'),
             industry=params.get('industry', 'Unknown Industry'),
@@ -299,6 +336,18 @@ def dispatch_to_strategy(
             uploaded_documents=params.get('uploaded_documents', [])
         )
         
+        elapsed_time = time.time() - start_time
+        logger.info(f"[SUPERVISOR] Strategy agent completed successfully in {elapsed_time:.2f} seconds")
+        
+        supervisor_logger.log_completion(
+            success=True,
+            output_tokens=len(str(result)) // 4,
+            metadata={
+                "account_id": params.get('account_id', ''),
+                "execution_time_seconds": elapsed_time
+            }
+        )
+        
         return {
             'status': 'success',
             'query': query,
@@ -308,7 +357,12 @@ def dispatch_to_strategy(
             'account_id': params.get('account_id', '')
         }
     except Exception as e:
-        logger.error(f"Error in strategy agent dispatch: {e}")
+        logger.error(f"[SUPERVISOR] Error in strategy agent dispatch: {e}")
+        supervisor_logger.log_error(e, {"phase": "strategy_dispatch", "query_preview": query[:200]})
+        supervisor_logger.log_completion(
+            success=False,
+            metadata={"error": str(e)}
+        )
         return {
             'status': 'error',
             'query': query,
@@ -329,6 +383,10 @@ def create_supervisor_agent():
     def dispatch_with_context(dispatch_func):
         """Wrapper to extract tenant context from the full input"""
         def wrapper(full_input: str) -> str:  # Return string, not dict!
+            logger.info(f"[SUPERVISOR-WRAPPER] Tool called: {dispatch_func.__name__}")
+            logger.info(f"[SUPERVISOR-WRAPPER] Input length: {len(full_input)} chars")
+            logger.info(f"[SUPERVISOR-WRAPPER] Input preview: {full_input[:200]}")
+            
             # Try to parse as JSON first (for structured input from web service)
             try:
                 input_data = json.loads(full_input)
@@ -337,6 +395,7 @@ def create_supervisor_agent():
                     'tenant_id': tenant_id,
                     'tenant_credentials': tenant_credentials
                 } if tenant_id and tenant_credentials else None
+                logger.info(f"[SUPERVISOR-WRAPPER] Parsed JSON input, extracted message length: {len(message)}")
                 result = dispatch_func(message, tenant_context)
                 # Return just the result string, not the full dict
                 if isinstance(result, dict) and 'result' in result:
@@ -344,6 +403,7 @@ def create_supervisor_agent():
                 return str(result)
             except json.JSONDecodeError:
                 # Fall back to string input
+                logger.info(f"[SUPERVISOR-WRAPPER] Using raw string input")
                 result = dispatch_func(full_input, None)
                 # Return just the result string, not the full dict
                 if isinstance(result, dict) and 'result' in result:
