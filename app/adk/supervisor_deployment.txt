@@ -1,5 +1,5 @@
-Deployment: multi-agent-supervisor-v2-20250901-152447
-Timestamp: 20250901-152447
-Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/3590569569711816704
+Deployment: create-strategy-docs-supervisor-20250902-124343
+Timestamp: 20250902-124343
+Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/8316252953707020288
 Project: ken-e-dev
 Location: us-central1

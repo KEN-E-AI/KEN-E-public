@@ -27,14 +27,34 @@ class FirestoreClient:
         if client:
             self.db = client
         else:
-            # CRITICAL: Always use the project name, not the numeric ID
-            # The agent engine may run in project 525657242938 but needs to access Firestore in ken-e-dev
-            project_id = project_id or os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+            # Get environment and map to correct project
+            environment = os.getenv("ENVIRONMENT", "development").lower()
             
-            # Force the project ID to be the project name, not numeric
-            if project_id == "525657242938":
-                project_id = "ken-e-dev"
-                logger.warning(f"Detected numeric project ID, forcing to use ken-e-dev instead")
+            # Map environment to project ID
+            project_mapping = {
+                "development": "ken-e-dev",
+                "staging": "ken-e-staging",
+                "production": "ken-e-production"
+            }
+            
+            # Use provided project_id, or map from environment, or use env var
+            if not project_id:
+                project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+            
+            # Map numeric project IDs to project names
+            numeric_id_mapping = {
+                "525657242938": "ken-e-dev"  # Development project numeric ID
+            }
+            
+            if project_id in numeric_id_mapping:
+                mapped_id = numeric_id_mapping[project_id]
+                logger.warning(f"Detected numeric project ID {project_id}, mapping to {mapped_id}")
+                project_id = mapped_id
+            
+            # If still no project_id or if it doesn't match expected format, use environment mapping
+            if not project_id or project_id not in project_mapping.values():
+                project_id = project_mapping.get(environment, "ken-e-dev")
+                logger.info(f"Using environment-based project ID: {project_id} for environment: {environment}")
             
             try:
                 self.db = firestore.Client(project=project_id)

@@ -9,3 +9,5 @@ google-analytics-data
 newsapi-python
 weave
 wandb
+nest-asyncio
+PyPDF2
