@@ -649,10 +649,10 @@ class AgentEngineClient:
                                         session_id=actual_session_id
                                     ))
                                 ),
-                                timeout=600.0  # 10 minute timeout for complex requests like strategy generation
+                                timeout=1800.0  # 30 minute timeout for complex requests like strategy generation
                             )
                         except asyncio.TimeoutError:
-                            logger.error(f"Agent Engine timed out after 600 seconds for user {user_id}")
+                            logger.error(f"Agent Engine timed out after 1800 seconds for user {user_id}")
                             return "I'm sorry, your request is taking longer than expected. Please try a simpler question or try again later.", actual_session_id
                         for chunk in stream_iterator:
                             logger.info(

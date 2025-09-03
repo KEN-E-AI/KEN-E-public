@@ -167,7 +167,7 @@ describe("useAccountCreationProgress", () => {
     consoleSpy.mockRestore();
   });
 
-  test("shows timeout message after 20 minutes", async () => {
+  test("shows timeout message after 30 minutes", async () => {
     const mockStatus = {
       status: "processing",
       message: "Creating account...",
@@ -184,8 +184,8 @@ describe("useAccountCreationProgress", () => {
       expect(result.current.status).toBe("processing");
     });
 
-    // Advance timer by 20 minutes + 1 second
-    vi.advanceTimersByTime(20 * 60 * 1000 + 1000);
+    // Advance timer by 30 minutes + 1 second
+    vi.advanceTimersByTime(30 * 60 * 1000 + 1000);
 
     await waitFor(() => {
       expect(result.current.status).toBe("failed");

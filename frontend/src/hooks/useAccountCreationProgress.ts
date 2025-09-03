@@ -28,7 +28,7 @@ export function useAccountCreationProgress(accountId: string | null): Simplified
     let isSubscribed = true;
     let intervalId: NodeJS.Timeout | null = null;
     startTimeRef.current = Date.now();
-    const maxPollingTime = 20 * 60 * 1000; // 20 minutes timeout
+    const maxPollingTime = 30 * 60 * 1000; // 30 minutes timeout
 
     const checkStatus = async () => {
       if (!isSubscribed) return;
