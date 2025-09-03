@@ -3,8 +3,7 @@
 import logging
 import os
 import secrets
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime
 from urllib.parse import urlencode
 
 import httpx
@@ -19,7 +18,9 @@ from ..models.integration_models import (
     IntegrationStatusResponse,
     IntegrationType,
 )
+from ..models.oauth_models import OAuthErrorCode
 from ..services.encryption_service import IntegrationCredentialsService
+from ..services.oauth_state_service import OAuthStateService
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,16 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
-GOOGLE_REDIRECT_URI = os.getenv(
-    "GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/api/oauth/callback/google"
-)
+
+# OAuth redirect URI - must be configured via environment variable
+def get_google_redirect_uri() -> str:
+    """Get the Google OAuth redirect URI from environment."""
+    redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
+    if not redirect_uri:
+        raise ValueError(
+            "GOOGLE_OAUTH_REDIRECT_URI environment variable is required"
+        )
+    return redirect_uri
 
 # Google Analytics scopes
 GA_SCOPES = [
@@ -40,23 +48,18 @@ GA_SCOPES = [
     "https://www.googleapis.com/auth/analytics.manage.users.readonly",
 ]
 
-# Temporary state storage (in production, use Redis or database)
-oauth_states: dict[str, dict[str, Any]] = {}
+# Frontend URL configuration
+def get_frontend_url() -> str:
+    """Get the frontend URL from environment."""
+    frontend_url = os.getenv("FRONTEND_URL")
+    if not frontend_url:
+        raise ValueError("FRONTEND_URL environment variable is required")
+    return frontend_url.rstrip("/")  # Remove trailing slash if present
 
 
 def generate_state_token() -> str:
     """Generate a secure random state token."""
     return secrets.token_urlsafe(32)
-
-
-def verify_state_token(state: str) -> dict[str, Any] | None:
-    """Verify and retrieve state data."""
-    data = oauth_states.get(state)
-    if data:
-        # Check if state is not expired (15 minutes)
-        if datetime.now() - data.get("created_at", datetime.now()) < timedelta(minutes=15):
-            return data
-    return None
 
 
 @router.get("/authorize/google-analytics")
@@ -84,18 +87,35 @@ async def authorize_google_analytics(
             detail="Google OAuth is not configured. Please set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.",
         )
 
-    # Generate state token and store it with user/account info
+    try:
+        redirect_uri = get_google_redirect_uri()
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
+
+    # Generate state token and store it persistently
     state = generate_state_token()
-    oauth_states[state] = {
-        "user_id": current_user.user_id,
-        "account_id": account_id,
-        "created_at": datetime.now(),
-    }
+
+    # Get OAuth state service
+    firestore_service = get_firestore_service()
+    db = firestore_service.get_client()
+    oauth_state_service = OAuthStateService(db)
+
+    # Store state in database
+    await oauth_state_service.create_state(
+        state_token=state,
+        user_id=current_user.user_id,
+        account_id=account_id,
+        integration_type="google_analytics",
+        ttl_minutes=15,
+    )
 
     # Build authorization URL
     params = {
         "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(GA_SCOPES),
         "state": state,
@@ -121,33 +141,48 @@ async def google_oauth_callback(
     Handle OAuth 2.0 callback from Google.
     Exchange authorization code for access and refresh tokens.
     """
-    # Handle errors from Google
+    try:
+        frontend_url = get_frontend_url()
+    except ValueError:
+        # Fallback to a generic error page if frontend URL is not configured
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="System configuration error: FRONTEND_URL not set",
+        ) from None
+
+    # Handle errors from Google using error codes
     if error:
         logger.error(f"OAuth error from Google: {error}")
-        # Redirect to frontend with error
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+        # Map Google errors to our error codes
+        error_code = OAuthErrorCode.AUTHORIZATION_DENIED if error == "access_denied" else OAuthErrorCode.UNKNOWN_ERROR
         return RedirectResponse(
-            url=f"{frontend_url}/account-settings?oauth_error={error}"
+            url=f"{frontend_url}/account-settings?oauth_error={error_code.value}"
         )
 
     if not code or not state:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing authorization code or state",
+        return RedirectResponse(
+            url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.STATE_INVALID.value}"
         )
 
-    # Verify state token
-    state_data = verify_state_token(state)
-    if not state_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired state token",
+    # Get OAuth state service
+    firestore_service = get_firestore_service()
+    db = firestore_service.get_client()
+    oauth_state_service = OAuthStateService(db)
+
+    # Verify state token from database
+    oauth_state = await oauth_state_service.get_state(state)
+    if not oauth_state:
+        logger.warning(f"Invalid or expired state token: {state}")
+        return RedirectResponse(
+            url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.STATE_EXPIRED.value}"
         )
 
-    user_id = state_data["user_id"]
-    account_id = state_data["account_id"]
+    user_id = oauth_state.user_id
+    account_id = oauth_state.account_id
 
     try:
+        redirect_uri = get_google_redirect_uri()
+
         # Exchange authorization code for tokens
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
@@ -156,7 +191,7 @@ async def google_oauth_callback(
                     "client_id": GOOGLE_CLIENT_ID,
                     "client_secret": GOOGLE_CLIENT_SECRET,
                     "code": code,
-                    "redirect_uri": GOOGLE_REDIRECT_URI,
+                    "redirect_uri": redirect_uri,
                     "grant_type": "authorization_code",
                 },
             )
@@ -201,21 +236,25 @@ async def google_oauth_callback(
             user_id=user_id,
         )
 
-        # Clean up state
-        del oauth_states[state]
+        # Clean up state from database
+        await oauth_state_service.delete_state(state)
 
         # Redirect to frontend with success
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
         return RedirectResponse(
             url=f"{frontend_url}/account-settings?oauth_success=google_analytics&account={account_id}"
         )
 
+    except ValueError as e:
+        # Configuration errors
+        logger.error(f"OAuth configuration error: {e}")
+        return RedirectResponse(
+            url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.CONFIGURATION_ERROR.value}"
+        )
     except Exception as e:
         logger.error(f"OAuth callback error: {e}")
-        # Redirect to frontend with error
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+        # Use error code instead of raw error message
         return RedirectResponse(
-            url=f"{frontend_url}/account-settings?oauth_error=token_exchange_failed"
+            url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.TOKEN_EXCHANGE_FAILED.value}"
         )
 
 

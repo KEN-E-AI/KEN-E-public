@@ -3,6 +3,7 @@ Encryption service for secure storage of integration credentials.
 Uses Google Cloud KMS for encryption/decryption.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -173,7 +174,10 @@ class IntegrationCredentialsService:
                 "updated_by": user_id,
             }
 
-            self.db.collection(self.collection_name).document(doc_id).set(doc_data)
+            # Run sync Firestore operation in thread pool
+            loop = asyncio.get_event_loop()
+            doc_ref = self.db.collection(self.collection_name).document(doc_id)
+            await loop.run_in_executor(None, doc_ref.set, doc_data)
 
             logger.info(
                 f"Stored credentials for {integration_type} in account {account_id}"
@@ -198,7 +202,10 @@ class IntegrationCredentialsService:
         """
         try:
             doc_id = f"{account_id}_{integration_type}"
-            doc = self.db.collection(self.collection_name).document(doc_id).get()
+            # Run sync Firestore operation in thread pool
+            loop = asyncio.get_event_loop()
+            doc_ref = self.db.collection(self.collection_name).document(doc_id)
+            doc = await loop.run_in_executor(None, doc_ref.get)
 
             if not doc.exists:
                 return None
@@ -250,9 +257,10 @@ class IntegrationCredentialsService:
                 "updated_by": user_id,
             }
 
-            self.db.collection(self.collection_name).document(doc_id).update(
-                update_data
-            )
+            # Run sync Firestore operation in thread pool
+            loop = asyncio.get_event_loop()
+            doc_ref = self.db.collection(self.collection_name).document(doc_id)
+            await loop.run_in_executor(None, doc_ref.update, update_data)
 
             logger.info(
                 f"Updated credentials for {integration_type} in account {account_id}"
@@ -274,7 +282,10 @@ class IntegrationCredentialsService:
         """
         try:
             doc_id = f"{account_id}_{integration_type}"
-            self.db.collection(self.collection_name).document(doc_id).delete()
+            # Run sync Firestore operation in thread pool
+            loop = asyncio.get_event_loop()
+            doc_ref = self.db.collection(self.collection_name).document(doc_id)
+            await loop.run_in_executor(None, doc_ref.delete)
 
             logger.info(
                 f"Deleted credentials for {integration_type} in account {account_id}"
@@ -299,7 +310,10 @@ class IntegrationCredentialsService:
         """
         try:
             doc_id = f"{account_id}_{integration_type}"
-            doc = self.db.collection(self.collection_name).document(doc_id).get()
+            # Run sync Firestore operation in thread pool
+            loop = asyncio.get_event_loop()
+            doc_ref = self.db.collection(self.collection_name).document(doc_id)
+            doc = await loop.run_in_executor(None, doc_ref.get)
             return doc.exists
 
         except Exception as e:
