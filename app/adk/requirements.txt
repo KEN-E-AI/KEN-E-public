@@ -11,3 +11,4 @@ weave
 wandb
 nest-asyncio
 PyPDF2
+certifi

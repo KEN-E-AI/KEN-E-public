@@ -25,16 +25,30 @@ WeaveTracer.init_tracing(project_name="strategy-agents")
 logger = logging.getLogger(__name__)
 module_logger = StrategyAgentLogger("strategy_agents_module")
 
-# Import Firestore utilities for format_new_information only
+# Import Firestore utilities
 try:
-    from .firestore import format_new_information
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        format_new_information,
+        get_best_practices_sync,
+        get_reviewer_guidelines_sync,
+    )
 
     FIRESTORE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Firestore utilities not available: {e}")
     FIRESTORE_AVAILABLE = False
 
-    # Define stub for format_new_information
+    # Define stubs
+    def get_best_practices_sync(doc_type: str) -> str | None:
+        return None
+
+    def get_reviewer_guidelines_sync(doc_type: str) -> str | None:
+        return None
+
+    def extract_field_requirements_from_best_practices(best_practices: str) -> str:
+        return ""
+
     def format_new_information(**kwargs) -> str:
         return json.dumps(kwargs)
 
@@ -62,7 +76,8 @@ class BusinessStrategy(BaseModel):
         ...,
         description=(
             "A comprehensive narrative that introduces the company's identity and "
-            "background. Synthesize your research on the following topics: the company's history and background "
+            "background. Synthesize your research on the following topics into a "
+            "single, cohesive string: the company's history and background "
             "(founding details, major milestones, evolution), its mission, vision, "
             "and values, an overview of its leadership and organizational structure, "
             "and its brand identity and customer base. Explain your reasoning and "
@@ -72,7 +87,8 @@ class BusinessStrategy(BaseModel):
     productsAndServices: str = Field(
         ...,
         description=(
-            "A comprehensive description of the company's offerings. Synthesize your research on the following topics: the "
+            "A comprehensive description of the company's offerings. Synthesize your "
+            "research on the following topics into a single, cohesive string: the "
             "flagship products/services and their features, the core value "
             "proposition for customers, the competitive positioning of the "
             "offerings, and the company's pricing model. Explain your reasoning and "
@@ -82,7 +98,8 @@ class BusinessStrategy(BaseModel):
     marketAndIndustryAnalysis: str = Field(
         ...,
         description=(
-            "A comprehensive review of the market environment. Synthesize your research on the following topics: the "
+            "A comprehensive review of the market environment. Synthesize your "
+            "research on the following topics into a single, cohesive string: the "
             "competitive landscape (key players and competitors), an estimate of "
             "the Total Addressable Market (TAM), and an overview of the industry "
             "including its current state, size, growth rate, and key trends. "
@@ -93,7 +110,8 @@ class BusinessStrategy(BaseModel):
     swotAnalysis: str = Field(
         ...,
         description=(
-            "A comprehensive SWOT analysis. Synthesize your research on the following topics: Strengths (internal "
+            "A comprehensive SWOT analysis. Synthesize your findings for all four "
+            "quadrants into a single, cohesive string: Strengths (internal "
             "advantages), Weaknesses (internal limitations), Opportunities "
             "(external chances for growth), and Threats (external factors that "
             "could cause harm). Explain your reasoning and include references to "
@@ -104,7 +122,8 @@ class BusinessStrategy(BaseModel):
         ...,
         description=(
             "A comprehensive PESTEL analysis of macro-environmental factors. "
-            "Synthesize your research on the following topics: Political (government policies, stability), Economic "
+            "Synthesize your findings for each of the six topics into a single, "
+            "cohesive string: Political (government policies, stability), Economic "
             "(inflation, growth), Social (demographic trends, consumer behavior), "
             "Technological (innovation, R&D), Environmental (sustainability, "
             "regulations), and Legal (labor laws, industry regulations). Explain "
@@ -116,7 +135,8 @@ class BusinessStrategy(BaseModel):
         ...,
         description=(
             "A comprehensive analysis of how the company engages its market. "
-            "Synthesize your research on the following topics: target market and customer segmentation, customer "
+            "Synthesize your research on the following topics into a single, "
+            "cohesive string: target market and customer segmentation, customer "
             "acquisition strategies, customer experience and retention efforts, "
             "digital and social media presence, and overall brand positioning. "
             "Explain your reasoning and include references to public website "
@@ -127,7 +147,8 @@ class BusinessStrategy(BaseModel):
         ...,
         description=(
             "A comprehensive analysis of the company's internal workings. "
-            "Synthesize your research on the following topics: the company's operational efficiency, its business "
+            "Synthesize your research on the following topics into a single, "
+            "cohesive string: the company's operational efficiency, its business "
             "model (revenue streams, cost structure), its value and supply chain, "
             "and its sales and distribution channels. Explain your reasoning and "
             "include references to public website URL's when available."
@@ -136,7 +157,8 @@ class BusinessStrategy(BaseModel):
     financialPerformanceAndAnalysis: str = Field(
         ...,
         description=(
-            "A comprehensive review of the company's financial health. Synthesize your research on the following topics: "
+            "A comprehensive review of the company's financial health. Synthesize "
+            "your research on the following topics into a single, cohesive string: "
             "revenue and growth rates, overall profitability (margins, trends), "
             "cash flow and financial stability (debt levels, risk), key financial "
             "ratios (ROI, LTV/CAC), and the company's financial outlook. Explain "
@@ -148,7 +170,7 @@ class BusinessStrategy(BaseModel):
         ...,
         description=(
             "A comprehensive summary of conclusions and suggested actions. "
-            "Synthesize your research on the following topics: "
+            "Synthesize your analysis into a single, cohesive string covering: "
             "the key strategic issues identified, specific and actionable strategic "
             "recommendations to address them, and a concluding perspective on the "
             "company's future outlook. Explain your reasoning and include "
@@ -177,7 +199,8 @@ class CompetitiveAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive analysis of the competitive landscape. "
-            "Synthesize your research on the following topics: the importance of geography and physical locations, "
+            "Synthesize your research on the following topics into a single, "
+            "cohesive string: the importance of geography and physical locations, "
             "the key success factors required to succeed in the industry (e.g., "
             "innovation, cost efficiency, distribution network), and any "
             "identified opportunities such as unmet customer needs or market gaps "
@@ -204,7 +227,9 @@ class CompetitiveAnalysis(BaseModel):
     portersFiveForces: str = Field(
         ...,
         description=(
-            "Provide a comprehensive Porter's Five Forces analysis. Synthesize your research on the following topics: the threat of new entrants, the bargaining power of "
+            "Provide a comprehensive Porter's Five Forces analysis. Synthesize "
+            "your assessment of the following five areas into a single, cohesive "
+            "string: the threat of new entrants, the bargaining power of "
             "suppliers, the intensity of competitive rivalry, the threat of "
             "substitute products or services, and the bargaining power of buyers. "
             "For each force, explain your reasoning and add references when "
@@ -215,7 +240,8 @@ class CompetitiveAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive set of strategic recommendations based on "
-            "the competitive analysis. Synthesize your research on the following topics: how to "
+            "the competitive analysis. Synthesize your analysis and proposals "
+            "on the following topics into a single, cohesive string: how to "
             "leverage the company's unique strengths for competitive advantage, "
             "suggestions for product/service strategy based on market needs, "
             "recommendations for refining market positioning to stand out, "
@@ -230,7 +256,7 @@ class CustomerJourneyAnalysis(BaseModel):
     """
     Defines the structured output for a comprehensive customer journey analysis.
     Each field represents a key component of the journey and should be a
-    synthesized narrative.
+    synthesized narrative string.
     """
     customerJourneySummary: str = Field(
         ...,
@@ -262,7 +288,7 @@ class CustomerJourneyAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive analysis of customer needs and motivations. "
-            "Synthesize your research on the following topics: "
+            "Synthesize your research into a single, cohesive string that covers: "
             "the unique value proposition the company's products/services offer, "
             "the core customer needs they solve, and an explanation of how current "
             "industry trends influence customer expectations and behaviors. "
@@ -273,7 +299,8 @@ class CustomerJourneyAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive description of the 'Awareness' phase of the "
-            "customer journey. Synthesize your research on the following topics: how prospective customers typically behave when first "
+            "customer journey. Synthesize your analysis into a single, cohesive "
+            "string covering: how prospective customers typically behave when first "
             "discovering the brand or its competitors, and the most influential "
             "marketing channels and touchpoints during this initial phase (e.g., "
             "'Blog posts,' 'PPC ads'). Explain your reasoning and add references "
@@ -284,7 +311,8 @@ class CustomerJourneyAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive description of the 'Consideration' phase of "
-            "the customer journey. Synthesize your research on the following topics: the typical customer behavior and actions during this "
+            "the customer journey. Synthesize your analysis into a single, cohesive "
+            "string covering: the typical customer behavior and actions during this "
             "evaluation process (e.g., comparing features, seeking reviews), what "
             "motivates them, and the most influential marketing channels and "
             "touchpoints that help them decide (e.g., 'Website feature pages,' "
@@ -296,7 +324,8 @@ class CustomerJourneyAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive description of the 'Conversion' (or 'Purchase') "
-            "phase of the customer journey. Synthesize your research on the following topics: the specific actions customers take to make "
+            "phase of the customer journey. Synthesize your analysis into a single, "
+            "cohesive string covering: the specific actions customers take to make "
             "a purchase (e.g., 'Online checkout,' 'Contract negotiation'), and the "
             "critical factors and influential touchpoints that lead to the final "
             "decision (e.g., 'Sales representative,' 'Onboarding flow'). Explain "
@@ -307,7 +336,8 @@ class CustomerJourneyAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive description of the 'Loyalty' (or 'Advocacy') "
-            "phase of the customer journey. Synthesize your research on the following topics: the post-purchase actions loyal customers "
+            "phase of the customer journey. Synthesize your analysis into a single, "
+            "cohesive string covering: the post-purchase actions loyal customers "
             "take (e.g., 'Leaves a positive review,' 'Refers a colleague'), and the "
             "influential factors and touchpoints that foster retention and advocacy "
             "(e.g., 'Customer support,' 'Loyalty program'). Explain your reasoning "
@@ -632,7 +662,32 @@ def create_business_strategist(context: StrategyContext | None = None) -> Agent:
             annual_ad_budget=context.annual_ad_budget,
         )
     else:
+        company_name = "the company"
+        industry = "the industry"
         new_information = "No context provided"
+
+    # Import the synchronous versions for use in agent context
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
+    # Fetch best practices from Firestore
+    best_practices = get_best_practices_sync("business_strategy")
+    if not best_practices:
+        logger.warning("Using default best practices for business_strategy")
+        best_practices = "Create a comprehensive business strategy document with all required sections."
+
+    # Define output schema
+    # Check token usage for best practices
+    check_and_log_tokens(
+        best_practices,
+        "business_strategy_best_practices",
+        raise_on_exceed=False
+    )
+
+    # Dynamically extract output requirements from best practices
+    output_requirements = extract_field_requirements_from_best_practices(best_practices)
 
     # Get instruction from Excel specification
     instruction = f"""
@@ -644,13 +699,14 @@ Your goal is to create a comprehensive business strategy document based on the p
 1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
 2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
 3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
-4.  **JSON OUTPUT:** You MUST output a complete JSON strategy document that follows the defined output schema exactly.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
 
 # YOUR TASK
 You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
 - BUSINESS INFORMATION: Details about the company to research and analyze
 
 # PERSONA
@@ -685,14 +741,14 @@ You must follow this logic precisely:
    - Only use search tools to fill gaps NOT covered in uploaded documents
 
 2. **Analyze All Inputs:** After reviewing uploaded documents, analyze other inputs:
-   - Review the query and all provided documents (`BUSINESS INFORMATION`)
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
    - Review the contents of the company websites `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
    - Identify gaps that need to be filled through additional research
 
 3. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
-   - **MANDATORY**: Research each required field that wasn't found in uploaded documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
    - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
    - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
@@ -707,18 +763,21 @@ You must follow this logic precisely:
    - Fill all required sections, using the directives above.
 
 5. **Final Review and Formatting:**
-   - This is the most critical step. Before providing your response, validate your entire draft against the required schema.
-   - Ensure every section and field from the schema is properly filled.
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document
 - Your final output MUST be complete with some text entered for ALL sections.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
-- The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 
 === BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
+{best_practices}
 
 BUSINESS INFORMATION:
 {new_information}
@@ -760,7 +819,7 @@ You are a Senior Strategy Reviewer. Review the business strategy document and pr
 {guidelines}
 
 # YOUR TASK
-1. Check if all required sections from the output schema are present
+1. Check if all required sections from BEST PRACTICES are present
 2. Verify information accuracy and completeness
 3. Identify any gaps or areas needing improvement
 4. Provide specific, actionable feedback
@@ -815,7 +874,6 @@ All feedback points must be addressed.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy
     )
 
 
@@ -862,7 +920,25 @@ def create_competitive_strategist(context: StrategyContext | None = None) -> Age
             annual_ad_budget=context.annual_ad_budget,
         )
     else:
+        company_name = "the company"
+        industry = "the industry"
         new_information = "No context provided"
+
+    # Import the synchronous versions for use in agent context
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
+    # Fetch best practices from Firestore
+    best_practices = get_best_practices_sync("competitive_strategy")
+    if not best_practices:
+        logger.warning("Using default best practices for competitive_strategy")
+        best_practices = "Create a comprehensive competitive strategy document with all required sections."
+
+    # Define output schema
+    # Dynamically extract output requirements from best practices
+    output_requirements = extract_field_requirements_from_best_practices(best_practices)
 
     # Build instruction that will access state at runtime
     instruction = f"""
@@ -874,13 +950,14 @@ Your goal is to create a comprehensive competitive strategy document based on th
 1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
 2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
 3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
-4.  **JSON OUTPUT:** You MUST output a complete JSON strategy document that follows the defined output schema exactly.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
 
 # YOUR TASK
 You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
 - BUSINESS INFORMATION: Details about the company to research and analyze
 - BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
 
@@ -914,14 +991,14 @@ You must follow this logic precisely:
 2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analysis:
-   - Review the query and all provided documents (`BUSINESS INFORMATION`)
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
    - Review the contents of the company websites `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
    - Identify competitive gaps that need additional research
 
 4. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
-   - **MANDATORY**: Research each required field that wasn't found in uploaded documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
    - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
    - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
@@ -937,18 +1014,21 @@ You must follow this logic precisely:
    - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
 
 6. **Final Review and Formatting:**
-   - This is the most critical step. Before providing your response, validate your entire draft against the required schema.
-   - Ensure every section and field from the schema is properly filled.
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document
 - Your final output MUST be complete with some text entered for ALL sections.
-- The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
+{best_practices}
 
 BUSINESS INFORMATION:
 {new_information}
@@ -968,7 +1048,7 @@ Create the complete Competitive Strategy document now.
             temperature=0.2, max_output_tokens=16384
         ),
         output_key="competitive_strategy_doc",
-        output_schema=CompetitiveAnalysis
+        output_schama=CompetitiveAnalysis
     )
 
 
@@ -1042,7 +1122,6 @@ Provide the complete, updated competitive strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="competitive_strategy_doc",
-        output_schema=CompetitiveAnalysis
     )
 
 
@@ -1089,7 +1168,25 @@ def create_customer_strategist(context: StrategyContext | None = None) -> Agent:
             annual_ad_budget=context.annual_ad_budget,
         )
     else:
+        company_name = "the company"
+        industry = "the industry"
         new_information = "No context provided"
+
+    # Import the synchronous versions for use in agent context
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
+    # Fetch best practices from Firestore
+    best_practices = get_best_practices_sync("customer_strategy")
+    if not best_practices:
+        logger.warning("Using default best practices for customer_strategy")
+        best_practices = "Create a comprehensive customer strategy document with all required sections."
+
+    # Define output schema
+    # Dynamically extract output requirements from best practices
+    output_requirements = extract_field_requirements_from_best_practices(best_practices)
 
     instruction = f"""
 # ROLE & GOAL
@@ -1100,13 +1197,14 @@ Your goal is to create a comprehensive customer strategy document based on the p
 1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
 2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
 3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
-4.  **JSON OUTPUT:** You MUST output a complete JSON strategy document that follows the defined output schema exactly.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
 
 # YOUR TASK
 You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
 - BUSINESS INFORMATION: Details about the company to research and analyze
 - BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
 - COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
@@ -1142,13 +1240,13 @@ You must follow this logic precisely:
 2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc and competitive_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
-   - Review the query and all provided documents (`BUSINESS INFORMATION`)
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
    - Review the contents of the company websites `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
 
 4. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
-   - **MANDATORY**: Research each required field that wasn't found in uploaded documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
    - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
    - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
@@ -1163,18 +1261,21 @@ You must follow this logic precisely:
    - Fill all required sections, using the directives above.
 
 6. **Final Review and Formatting:**
-   - This is the most critical step. Before providing your response, validate your entire draft against the required schema.
-   - Ensure every section and field from the schema is properly filled.
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document
 - Your final output MUST be complete with some text entered for ALL sections.
-- The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
+{best_practices}
 
 BUSINESS INFORMATION:
 {new_information}
@@ -1268,7 +1369,6 @@ Provide the complete, updated customer strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="customer_strategy_doc",
-        output_schema=CustomerJourneyAnalysis
     )
 
 
@@ -1315,9 +1415,26 @@ def create_marketing_strategist(context: StrategyContext | None = None) -> Agent
             annual_ad_budget=context.annual_ad_budget,
         )
     else:
+        company_name = "the company"
+        industry = "the industry"
         new_information = "No context provided"
 
+    # Import the synchronous versions for use in agent context
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
+    # Fetch best practices from Firestore
+    best_practices = get_best_practices_sync("marketing_strategy")
+    if not best_practices:
+        logger.warning("Using default best practices for marketing_strategy")
+        best_practices = "Create a comprehensive marketing strategy document with all required sections."
+
     # Define the output schema
+    # Dynamically extract output requirements from best practices
+    output_requirements = extract_field_requirements_from_best_practices(best_practices)
+
     instruction = f"""
 # ROLE & GOAL
 You are a Strategic Marketing Expert. 
@@ -1327,13 +1444,14 @@ Your goal is to create a comprehensive marketing strategy document based on the 
 1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
 2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
 3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
-4.  **JSON OUTPUT:** You MUST output a complete JSON strategy document that follows the defined output schema exactly.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
 
 # YOUR TASK
 You will receive several inputs in your conversation:
+- BEST PRACTICES: A JSON schema that defines the exact structure your output must follow
 - BUSINESS INFORMATION: Details about the company to research and analyze
 - BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
 - COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
@@ -1370,13 +1488,13 @@ You must follow this logic precisely:
 2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc, competitive_strategy_doc, and customer_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
-   - Review the query and all provided documents (`BUSINESS INFORMATION`)
+   - Review the query and all provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
    - Review the contents of the company websites `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
 
 4. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
-   - **MANDATORY**: Research each required field that wasn't found in uploaded documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
    - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
    - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
@@ -1391,18 +1509,21 @@ You must follow this logic precisely:
    - Fill all required sections, using the directives above.
 
 6. **Final Review and Formatting:**
-   - This is the most critical step. Before providing your response, validate your entire draft against the required schema.
-   - Ensure every section and field from the schema is properly filled.
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document.
 - Your final output MUST be complete with some text entered for ALL sections.
-- The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
+{best_practices}
 
 BUSINESS INFORMATION:
 {new_information}
@@ -1497,7 +1618,6 @@ Provide the complete, updated marketing strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="marketing_strategy_doc",
-        output_schema=MarketingStrategy
     )
 
 
@@ -1534,6 +1654,8 @@ def create_brand_strategist(context: StrategyContext | None = None) -> Agent:
 
     # Safely extract context information with proper None handling
     if context:
+        company_name = context.company_name
+        industry = context.industry
         new_information = format_new_information(
             company_name=context.company_name,
             websites=context.websites,
@@ -1542,7 +1664,27 @@ def create_brand_strategist(context: StrategyContext | None = None) -> Agent:
             annual_ad_budget=context.annual_ad_budget,
         )
     else:
+        company_name = "the company"
+        industry = "the industry"
         new_information = "No context provided"
+
+    # Import the synchronous versions for use in agent context
+    from .firestore import (
+        extract_field_requirements_from_best_practices,
+        get_best_practices_sync,
+    )
+
+    # Fetch best practices from Firestore
+    best_practices = get_best_practices_sync("brand_guidelines")
+    if not best_practices:
+        logger.warning("Using default best practices for brand_guidelines")
+        best_practices = (
+            "Create comprehensive brand guidelines with all required sections."
+        )
+
+    # Define the output schema
+    # Dynamically extract output requirements from best practices
+    output_requirements = extract_field_requirements_from_best_practices(best_practices)
 
     instruction = f"""
 # ROLE & GOAL
@@ -1552,13 +1694,14 @@ You are a Brand Strategy Expert creating comprehensive brand guidelines.
 1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
 2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
 3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
-4.  **JSON OUTPUT:** You MUST output a complete JSON strategy document that follows the defined output schema exactly.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Research brand positioning and industry standards
 
 # YOUR TASK
 Your task is to analyze the provided website(s) to document a company's existing brand guidelines.
+Carefully follow the instructions in the BEST PRACTICES document to ensure your final report follows the required structure.
 The BUSINESS INFORMATION may provide you with additional information about the business and its brand.
 
 # PROCESS
@@ -1585,13 +1728,13 @@ You must follow this logic precisely:
    - Use this extracted information as the PRIMARY SOURCE for your brand guidelines
 
 2. **Analyze All Inputs:** After reviewing uploaded documents:
-   - Review the provided documents (`BUSINESS INFORMATION`)
+   - Review the provided documents (`BUSINESS INFORMATION`, and `BEST PRACTICES`)
    - Review the contents of the company websites `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
 
 3. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
-   - **MANDATORY**: Research each required field that wasn't found in uploaded documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
    - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
    - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
@@ -1606,18 +1749,21 @@ You must follow this logic precisely:
    - Fill all required sections, using the directives above.
 
 5. **Final Review and Formatting:**
-   - This is the most critical step. Before providing your response, validate your entire draft against the required schema.
-   - Ensure every section and field from the schema is properly filled.
+   - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
+   - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document.
 - Your final output MUST be complete with some text entered for ALL sections.
-- The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
+- The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
+
+BEST PRACTICES DOCUMENT:
+{best_practices}
 
 BUSINESS INFORMATION:
 {new_information}
