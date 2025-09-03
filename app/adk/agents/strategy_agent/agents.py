@@ -108,7 +108,11 @@ def create_business_strategist(context: StrategyContext | None = None) -> Agent:
 You are a Strategic Marketing Expert. 
 Your goal is to create a comprehensive business strategy document based on the provided information.
 
-CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
+# CRITICAL DIRECTIVES & BOUNDARIES
+1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
+2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
+3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
@@ -159,27 +163,17 @@ You must follow this logic precisely:
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
    - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
-   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
-   - If you are unable to find information needed for a section anywhere, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
-   - Think carefully and take your time to ensure the document is comprehensive and accurate
-   - Use specific, targeted search queries ONLY for information not in uploaded documents:
-    - '{company_name} industry'
-    - '{company_name} competitors in the industry: {industry}'
-    - '{company_name} mission vision values'
-    - '{company_name} financial performance revenue'
-    - '{company_name} market size trends'
-    - '{company_name} products services'
-    - '{company_name} customer segments'
+   - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
+   - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
+   - **MANDATORY FALLBACK:** If credible information is not found in uploaded documents, the provided website, or after two targeted search queries, you MUST insert the text: "requires further research". Do not attempt to synthesize an answer from vague or irrelevant search results.
 
 4. **Create New Document**
-   - Synthesize information prioritizing uploaded documents, then research findings
-   - Build upon and extend the strategic direction found in uploaded documents
+   - Synthesize information prioritizing uploaded documents, then credible research findings.
+   - **MANDATORY - FACT CHECKING:** For every single data point you add to the document, double-check that you have a direct source. If you cannot point to the exact sentence in a document or a specific URL, you must replace the data with "requires further research".
    - **MANDATORY**: Include references for all information, indicating source:
-     - For uploaded document info: "Source: Uploaded strategy document"
-     - For searched info: Include the actual URL
-   - Ensure your new strategy is consistent with and builds upon uploaded strategy documents
-   - Fill all required sections, using uploaded document content as the foundation
+     - For uploaded document info: "Source: Uploaded strategy document '[document_name]'"
+     - For searched info: Include the specific URL
+   - Fill all required sections, using the directives above.
 
 5. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
@@ -187,11 +181,11 @@ You must follow this logic precisely:
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document
-- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- Your final output MUST be complete with some text entered for ALL sections.
+- Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
-- DO NOT leave any placeholder text or "requires further research" statements.
 
 === BEGIN INPUT DATA ===
 
@@ -213,7 +207,7 @@ Based on the above inputs, create the complete Business Strategy document now.
         description="Strategic business expert that creates comprehensive business strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=16384
         ),
         output_key="business_strategy_doc",
     )
@@ -289,7 +283,7 @@ All feedback points must be addressed.
         description="Edits and improves business strategy documents based on feedback",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=8192
         ),
         output_key="business_strategy_doc",
     )
@@ -363,7 +357,11 @@ def create_competitive_strategist(context: StrategyContext | None = None) -> Age
 You are a Strategic Marketing Expert. 
 Your goal is to create a comprehensive competitive strategy document based on the provided information.
 
-CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
+# CRITICAL DIRECTIVES & BOUNDARIES
+1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
+2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
+3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
@@ -409,21 +407,21 @@ You must follow this logic precisely:
    - Prioritize information from uploaded strategy documents over general web searches
    - Identify competitive gaps that need additional research
 
-4. **Research Requirements:**
-   - **MANDATORY**: Research each item defined in the BEST PRACTICES.
-   - If you cannot find information needed for a section on the provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout.
-   - If you are unable to find information needed for a section on the provided website or through a search, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
-   - Think carefully and take your time to ensure the document is comprehensive and accurate
-   - Use specific search queries like:
-     - '{company_name} competitors'
-     - '{industry} market leaders'
-     - '{company_name} vs competitor comparison'
-     - '{industry} market share analysis'
+4. **Research Requirements (ONLY for gaps not covered in uploaded documents):**
+   - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
+   - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
+   - If information exists in uploaded documents, use that instead of searching
+   - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
+   - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
+   - **MANDATORY FALLBACK:** If credible information is not found in uploaded documents, the provided website, or after two targeted search queries, you MUST insert the text: "requires further research". Do not attempt to synthesize an answer from vague or irrelevant search results.
 
 5. **Create New Document**
-   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+   - Synthesize information prioritizing uploaded documents, then credible research findings.
+   - **MANDATORY - FACT CHECKING:** For every single data point you add to the document, double-check that you have a direct source. If you cannot point to the exact sentence in a document or a specific URL, you must replace the data with "requires further research".
+   - **MANDATORY**: Include references for all information, indicating source:
+     - For uploaded document info: "Source: Uploaded strategy document '[document_name]'"
+     - For searched info: Include the specific URL
+   - Fill all required sections, using the directives above.
    - If uploaded strategy documents were found, ensure your new strategy aligns with and builds upon the existing strategic direction
 
 6. **Final Review and Formatting:**
@@ -432,11 +430,11 @@ You must follow this logic precisely:
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document
-- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- Your final output MUST be complete with some text entered for ALL sections.
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
-- DO NOT leave any placeholder text or "requires further research" statements.
+- Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
 
@@ -458,7 +456,7 @@ Create the complete Competitive Strategy document now.
         description="Competitive intelligence expert that creates detailed competitive analysis",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=16384
         ),
         output_key="competitive_strategy_doc",
     )
@@ -531,7 +529,7 @@ Provide the complete, updated competitive strategy document in JSON format.
         description="Edits competitive strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=8192
         ),
         output_key="competitive_strategy_doc",
     )
@@ -604,7 +602,11 @@ def create_customer_strategist(context: StrategyContext | None = None) -> Agent:
 You are a Strategic Marketing Expert. 
 Your goal is to create a comprehensive customer strategy document based on the provided information.
 
-CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
+# CRITICAL DIRECTIVES & BOUNDARIES
+1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
+2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
+3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
@@ -655,30 +657,29 @@ You must follow this logic precisely:
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
    - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
-   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
-   - If you are unable to find information anywhere, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
-   - Use specific, targeted search queries ONLY for information not in uploaded documents:
-     - '{company_name} target customers'
-     - '{industry} customer demographics'
-     - '{company_name} customer reviews feedback'
-     - '{industry} buyer behavior trends'
+   - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
+   - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
+   - **MANDATORY FALLBACK:** If credible information is not found in uploaded documents, the provided website, or after two targeted search queries, you MUST insert the text: "requires further research". Do not attempt to synthesize an answer from vague or irrelevant search results.
 
-4. **Create New Document**
-   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+5. **Create New Document**
+   - Synthesize information prioritizing uploaded documents, then credible research findings.
+   - **MANDATORY - FACT CHECKING:** For every single data point you add to the document, double-check that you have a direct source. If you cannot point to the exact sentence in a document or a specific URL, you must replace the data with "requires further research".
+   - **MANDATORY**: Include references for all information, indicating source:
+     - For uploaded document info: "Source: Uploaded strategy document '[document_name]'"
+     - For searched info: Include the specific URL
+   - Fill all required sections, using the directives above.
 
-5. **Final Review and Formatting:**
+6. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
 - Your response must be ONLY the complete JSON strategy document
-- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- Your final output MUST be complete with some text entered for ALL sections.
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
-- DO NOT leave any placeholder text or "requires further research" statements.
+- Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
 
@@ -700,7 +701,7 @@ Create the complete Customer Strategy document now.
         description="Customer insights expert that creates detailed customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=16384
         ),
         output_key="customer_strategy_doc",
     )
@@ -773,7 +774,7 @@ Provide the complete, updated customer strategy document in JSON format.
         description="Edits customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=8192
         ),
         output_key="customer_strategy_doc",
     )
@@ -846,7 +847,11 @@ def create_marketing_strategist(context: StrategyContext | None = None) -> Agent
 You are a Strategic Marketing Expert. 
 Your goal is to create a comprehensive marketing strategy document based on the provided information.
 
-CRITICAL: You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
+# CRITICAL DIRECTIVES & BOUNDARIES
+1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
+2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
+3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
 
 # TOOLS
 - google_search_agent: Uses Google search to find relevant information on the Internet
@@ -898,30 +903,29 @@ You must follow this logic precisely:
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
    - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
-   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
-   - If you are unable to find information anywhere, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
-   - Use specific, targeted search queries ONLY for information not in uploaded documents:
-     - '{industry} marketing trends 2025'
-     - '{company_name} marketing campaigns'
-     - '{industry} marketing channels effectiveness'
-     - 'digital marketing best practices {industry}'
+   - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
+   - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
+   - **MANDATORY FALLBACK:** If credible information is not found in uploaded documents, the provided website, or after two targeted search queries, you MUST insert the text: "requires further research". Do not attempt to synthesize an answer from vague or irrelevant search results.
 
-4. **Create New Document**
-   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+5. **Create New Document**
+   - Synthesize information prioritizing uploaded documents, then credible research findings.
+   - **MANDATORY - FACT CHECKING:** For every single data point you add to the document, double-check that you have a direct source. If you cannot point to the exact sentence in a document or a specific URL, you must replace the data with "requires further research".
+   - **MANDATORY**: Include references for all information, indicating source:
+     - For uploaded document info: "Source: Uploaded strategy document '[document_name]'"
+     - For searched info: Include the specific URL
+   - Fill all required sections, using the directives above.
 
-5. **Final Review and Formatting:**
+6. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
-- Your response must be ONLY the complete JSON strategy document
-- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- Your response must be ONLY the complete JSON strategy document.
+- Your final output MUST be complete with some text entered for ALL sections.
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
-- DO NOT leave any placeholder text or "requires further research" statements.
+- Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
 
@@ -944,7 +948,7 @@ Create the complete Marketing Strategy document now.
         description="Marketing strategy expert that creates comprehensive marketing plans",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=16384
         ),
         output_key="marketing_strategy_doc",
     )
@@ -1017,7 +1021,7 @@ Provide the complete, updated marketing strategy document in JSON format.
         description="Edits marketing strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=8192
         ),
         output_key="marketing_strategy_doc",
     )
@@ -1091,6 +1095,12 @@ def create_brand_strategist(context: StrategyContext | None = None) -> Agent:
 # ROLE & GOAL
 You are a Brand Strategy Expert creating comprehensive brand guidelines.
 
+# CRITICAL DIRECTIVES & BOUNDARIES
+1.  **ZERO FABRICATION:** Your primary directive is accuracy. You are strictly forbidden from inventing, guessing, assuming, or inferring any information that is not explicitly present in the provided source materials (uploaded documents, website, or credible search results).
+2.  **ADMIT UNCERTAINTY:** If, after following the research process, you cannot find the information required for a specific field, you MUST insert the exact string: "requires further research". There are no exceptions to this rule.
+3.  **SOURCE EVERYTHING:** Every piece of data you include MUST be attributable to a source. No information should exist without a corresponding reference.
+4.  **JSON OUTPUT:**You MUST output a complete JSON strategy document that follows the provided BEST PRACTICES schema exactly.
+
 # TOOLS
 - google_search_agent: Research brand positioning and industry standards
 
@@ -1131,30 +1141,29 @@ You must follow this logic precisely:
    - **IMPORTANT**: Only research items NOT already covered in uploaded strategy documents
    - **MANDATORY**: Research each item defined in the BEST PRACTICES that wasn't found in uploaded documents
    - If information exists in uploaded documents, use that instead of searching
-   - If you cannot find information needed for a section in uploaded documents OR provided websites, try searching for it. Limit to 2 search queries per section to avoid timeout
-   - If you are unable to find information anywhere, insert the text: "requires further research"
-   - **MANDATORY**: You MUST add references any time you insert information, noting whether it came from uploaded documents or search agents
-   - Use specific, targeted search queries ONLY for information not in uploaded documents:
-     - '{company_name} brand identity'
-     - '{industry} branding best practices'
-     - '{company_name} mission vision values'
-     - 'brand voice examples {industry}'
+   - Use the `Google Search_agent` to search. Limit to 2 targeted search queries per section.
+   - **EVALUATE SEARCH RESULTS CRITICALLY:** After searching, if you do not find a credible, specific source (e.g., a financial report, a company's official blog post, a reputable news article), you MUST conclude that the information is not available.
+   - **MANDATORY FALLBACK:** If credible information is not found in uploaded documents, the provided website, or after two targeted search queries, you MUST insert the text: "requires further research". Do not attempt to synthesize an answer from vague or irrelevant search results.
 
-3. **Create New Document**
-   - Synthesize your research findings into a complete, new strategy document that is well referenced with the URL's of the sources.
-   - **MANDATORY**: You MUST add references any time you insert information that was found through one of your search agents so that the source document can be reviewed later.
+4. **Create New Document**
+   - Synthesize information prioritizing uploaded documents, then credible research findings.
+   - **MANDATORY - FACT CHECKING:** For every single data point you add to the document, double-check that you have a direct source. If you cannot point to the exact sentence in a document or a specific URL, you must replace the data with "requires further research".
+   - **MANDATORY**: Include references for all information, indicating source:
+     - For uploaded document info: "Source: Uploaded strategy document '[document_name]'"
+     - For searched info: Include the specific URL
+   - Fill all required sections, using the directives above.
 
-4. **Final Review and Formatting:**
+5. **Final Review and Formatting:**
    - This is the most critical step. Before providing your response, validate your entire draft against the `BEST PRACTICES`.
    - Ensure every section, heading, and requirement from the guide is perfectly represented in your output document.
 
 # OUTPUT REQUIREMENTS
-- Your response must be ONLY the complete JSON strategy document
-- Your final output MUST be the complete and final strategy document with ALL sections filled out based on your research.
+- Your response must be ONLY the complete JSON strategy document.
+- Your final output MUST be complete with some text entered for ALL sections.
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the specifications in the `BEST PRACTICES`.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
-- DO NOT leave any placeholder text or "requires further research" statements.
+- Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 === BEGIN INPUT DATA ===
 
@@ -1176,7 +1185,7 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         description="Brand strategy expert that creates comprehensive brand guidelines",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=16384
         ),
         output_key="brand_guidelines_doc",
     )
@@ -1247,7 +1256,7 @@ Provide the complete, updated brand guidelines document in JSON format.
         description="Edits brand guidelines documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=32768
+            temperature=0.2, max_output_tokens=8192
         ),
         output_key="brand_guidelines_doc",
     )
