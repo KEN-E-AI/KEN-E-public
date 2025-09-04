@@ -1603,7 +1603,7 @@ const AccountsManagement = ({
                         size="sm"
                         onClick={() => handleEditAccount(account)}
                         className="h-8 w-8 p-0"
-                        disabled={isOperationInProgress || isInSetup}
+                        disabled={isOperationInProgress}
                       >
                         <Settings className="h-4 w-4 text-gray-500" />
                       </Button>
