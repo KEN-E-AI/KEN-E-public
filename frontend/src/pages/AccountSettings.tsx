@@ -59,6 +59,15 @@ const AccountSettings = () => {
   const shouldOpenCreateAccount =
     searchParams.get("openCreateAccount") === "true";
 
+  // Check if returning from OAuth with a newly created account
+  const oauthSuccess = searchParams.get("oauth_success");
+  const oauthAccount = searchParams.get("account");
+
+  // State to track accounts being set up
+  const [accountsInSetup, setAccountsInSetup] = useState<Set<string>>(
+    new Set(),
+  );
+
   // Clear the openCreateAccount param after reading it
   useEffect(() => {
     if (shouldOpenCreateAccount) {
@@ -74,6 +83,39 @@ const AccountSettings = () => {
       );
     }
   }, [shouldOpenCreateAccount, navigate, location]);
+
+  // Handle OAuth return - mark account as in setup
+  useEffect(() => {
+    if (oauthSuccess === "google_analytics" && oauthAccount) {
+      console.log(
+        "[AccountSettings] OAuth completed for account:",
+        oauthAccount,
+      );
+
+      // Add the account to the setup tracking
+      setAccountsInSetup((prev) => new Set(prev).add(oauthAccount));
+
+      // Show success toast
+      toast({
+        title: "Google Analytics Connected",
+        description:
+          "Your account is being configured with personalized strategies. This typically takes 15-20 minutes.",
+      });
+
+      // Clear OAuth params from URL
+      const newSearchParams = new URLSearchParams(location.search);
+      newSearchParams.delete("oauth_success");
+      newSearchParams.delete("account");
+      const newSearch = newSearchParams.toString();
+      navigate(
+        {
+          pathname: location.pathname,
+          search: newSearch ? `?${newSearch}` : "",
+        },
+        { replace: true },
+      );
+    }
+  }, [oauthSuccess, oauthAccount, navigate, location, toast]);
   const {
     user,
     updateUser,
@@ -679,6 +721,8 @@ const AccountSettings = () => {
                 currentOrgId={currentOrgId!}
                 openCreateModal={shouldOpenCreateAccount}
                 hasAdminAccess={hasAdminAccess}
+                accountsInSetup={accountsInSetup}
+                setAccountsInSetup={setAccountsInSetup}
               />
               <BillingSection orgData={orgData} />
               {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||
@@ -694,6 +738,8 @@ const AccountSettings = () => {
                 currentOrgId={currentOrgId!}
                 openCreateModal={shouldOpenCreateAccount}
                 hasAdminAccess={hasAdminAccess}
+                accountsInSetup={accountsInSetup}
+                setAccountsInSetup={setAccountsInSetup}
               />
             </>
           )}
