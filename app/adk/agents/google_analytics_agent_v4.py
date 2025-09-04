@@ -13,8 +13,28 @@ from google.adk.agents import Agent
 
 logger = logging.getLogger(__name__)
 
+# Initialize Weave for tracing
+try:
+    import weave
+    weave.init(project_name="ken-e-ga-agent")
+    logger.info("W&B Weave initialized for GA agent")
+    WEAVE_ENABLED = True
+except ImportError:
+    logger.warning("W&B Weave not available for GA agent - tracing disabled")
+    WEAVE_ENABLED = False
+    
+    # Create dummy decorator if Weave is not available
+    def weave_op(func):
+        return func
+    
+    class weave:
+        @staticmethod
+        def op():
+            return weave_op
+
 # Configuration
 GA_MCP_SERVER_URL = os.getenv("GA_MCP_SERVER_URL", "https://google-analytics-mcp-395770269870.us-central1.run.app")
+MCP_API_KEY = os.getenv("MCP_API_KEY", "")  # API key for MCP server authentication
 
 
 class GAMCPClient:
@@ -35,11 +55,15 @@ class GAMCPClient:
             "id": self._request_id
         }
         
+        headers = {"Content-Type": "application/json"}
+        if MCP_API_KEY:
+            headers["X-API-Key"] = MCP_API_KEY
+        
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
                 self.server_url,
                 json=request_data,
-                headers={"Content-Type": "application/json"}
+                headers=headers
             )
             
             if response.status_code != 200:
@@ -57,6 +81,7 @@ ga_client = GAMCPClient()
 
 
 # Tool functions
+@weave.op()
 def list_ga_accounts(tenant_id: str, tenant_credentials: str) -> str:
     """
     List Google Analytics accounts for a tenant.

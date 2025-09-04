@@ -23,7 +23,27 @@ from .strategy_agent.orchestrator import strategy_agent, execute_strategy_genera
 
 logger = logging.getLogger(__name__)
 
+# Initialize Weave for tracing
+try:
+    import weave
+    weave.init(project_name="ken-e-chat-supervisor")
+    logger.info("W&B Weave initialized for supervisor agent")
+    WEAVE_ENABLED = True
+except ImportError:
+    logger.warning("W&B Weave not available - tracing disabled")
+    WEAVE_ENABLED = False
+    
+    # Create dummy decorator if Weave is not available
+    def weave_op(func):
+        return func
+    
+    class weave:
+        @staticmethod
+        def op():
+            return weave_op
 
+
+@weave.op()
 def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[str], str]:
     """
     Extract tenant context from various input formats.
@@ -54,6 +74,7 @@ def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[str
     return tenant_id, tenant_credentials, message
 
 
+@weave.op()
 def invoke_agent_sync(
     agent: Agent, 
     query: str, 
@@ -122,15 +143,18 @@ def invoke_agent_sync(
 
 
 # Dispatcher functions with tenant context support
+@weave.op()
 def dispatch_to_company_news(query: str, tenant_context: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Dispatch company news queries to the specialized news agent.
     News agent doesn't need tenant context as it uses public data.
     """
     try:
-        logger.info(f"🔄 Routing company news query to specialized agent...")
+        logger.info(f"🔄 [WEAVE] Routing company news query to specialized agent...")
+        logger.info(f"📝 [WEAVE] Query: {query[:100]}...")
         result = invoke_agent_sync(news_agent, query)
         
+        logger.info(f"✅ [WEAVE] News agent returned response of length: {len(str(result))}")
         return {
             'status': 'success',
             'query': query,
@@ -139,7 +163,7 @@ def dispatch_to_company_news(query: str, tenant_context: Dict[str, Any] = None) 
             'agent': 'news'
         }
     except Exception as e:
-        logger.error(f"Error in news agent dispatch: {e}")
+        logger.error(f"❌ [WEAVE] Error in news agent dispatch: {e}")
         return {
             'status': 'error',
             'query': query,
@@ -149,6 +173,7 @@ def dispatch_to_company_news(query: str, tenant_context: Dict[str, Any] = None) 
         }
 
 
+@weave.op()
 def dispatch_to_google_analytics(
     query: str, 
     tenant_context: Dict[str, Any] = None
@@ -158,11 +183,13 @@ def dispatch_to_google_analytics(
     OAuth credentials must be provided via tenant context from the authenticated user's session.
     """
     try:
-        logger.info(f"🔄 Routing Google Analytics query to specialized agent...")
+        logger.info(f"🔄 [WEAVE] Routing Google Analytics query to specialized agent...")
+        logger.info(f"📝 [WEAVE] Query: {query[:100]}...")
+        logger.info(f"🔑 [WEAVE] Tenant context available: {bool(tenant_context)}, has credentials: {bool(tenant_context and tenant_context.get('tenant_credentials'))}")
         
         # Check if OAuth credentials are available
         if not tenant_context or not tenant_context.get('tenant_credentials'):
-            logger.warning("No OAuth credentials provided for Google Analytics query")
+            logger.warning("⚠️ [WEAVE] No OAuth credentials provided for Google Analytics query")
             return {
                 'status': 'error',
                 'query': query,
@@ -175,12 +202,14 @@ def dispatch_to_google_analytics(
         if tenant_context.get('tenant_id') and tenant_context.get('tenant_credentials'):
             # Inject OAuth context into the query for the GA agent
             enhanced_query = f"TENANT_ID:{tenant_context['tenant_id']} TENANT_CREDS:{tenant_context['tenant_credentials']} {query}"
+            logger.info(f"🔐 [WEAVE] Enhanced query with OAuth credentials for tenant: {tenant_context['tenant_id']}")
         else:
-            logger.error("Invalid tenant context structure")
+            logger.error("❌ [WEAVE] Invalid tenant context structure")
             enhanced_query = query
         
         result = invoke_agent_sync(google_analytics_agent_v4, enhanced_query)
         
+        logger.info(f"✅ [WEAVE] GA agent returned response of length: {len(str(result))}")
         return {
             'status': 'success',
             'query': query,
@@ -190,7 +219,7 @@ def dispatch_to_google_analytics(
             'tenant_id': tenant_context.get('tenant_id') if tenant_context else None
         }
     except Exception as e:
-        logger.error(f"Error in analytics agent dispatch: {e}")
+        logger.error(f"❌ [WEAVE] Error in analytics agent dispatch: {e}")
         return {
             'status': 'error',
             'query': query,
@@ -200,6 +229,7 @@ def dispatch_to_google_analytics(
         }
 
 
+@weave.op()
 def dispatch_to_strategy(
     query: str,
     tenant_context: Dict[str, Any] = None
@@ -209,7 +239,10 @@ def dispatch_to_strategy(
     Strategy agent needs account context for document persistence.
     """
     try:
-        logger.info(f"🔄 Routing strategy query to specialized agent...")
+        logger.info(f"🔄 [WEAVE] Routing strategy query to specialized agent...")
+        logger.info(f"📝 [WEAVE] STRATEGY AGENT CALLED WITH QUERY: {query}")
+        logger.warning(f"⚠️ [WEAVE] FULL QUERY BEING SENT TO STRATEGY: {query[:500]}...")
+        logger.info(f"🔑 [WEAVE] Tenant context: {tenant_context}")
         
         # Parse the query to extract strategy generation parameters
         # The query format from API is:
@@ -326,21 +359,30 @@ def create_supervisor_agent():
     # Create a wrapper function that handles tenant context
     def dispatch_with_context(dispatch_func):
         """Wrapper to extract tenant context from the full input"""
+        @weave.op()
         def wrapper(full_input: str) -> str:  # Return string, not dict!
+            func_name = dispatch_func.__name__
+            logger.info(f"🎯 [WEAVE-WRAPPER] {func_name} called with input type: {type(full_input)}")
+            logger.info(f"📦 [WEAVE-WRAPPER] {func_name} input preview: {str(full_input)[:200]}...")
+            
             # Try to parse as JSON first (for structured input from web service)
             try:
                 input_data = json.loads(full_input)
+                logger.info(f"✅ [WEAVE-WRAPPER] {func_name} parsed JSON input successfully")
                 tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
+                logger.info(f"📨 [WEAVE-WRAPPER] {func_name} extracted message: {message[:100]}...")
                 tenant_context = {
                     'tenant_id': tenant_id,
                     'tenant_credentials': tenant_credentials
                 } if tenant_id and tenant_credentials else None
+                logger.info(f"🔑 [WEAVE-WRAPPER] {func_name} tenant context prepared: {bool(tenant_context)}")
                 result = dispatch_func(message, tenant_context)
                 # Return just the result string, not the full dict
                 if isinstance(result, dict) and 'result' in result:
                     return result['result']
                 return str(result)
             except json.JSONDecodeError:
+                logger.info(f"📝 [WEAVE-WRAPPER] {func_name} treating as plain string input")
                 # Fall back to string input
                 result = dispatch_func(full_input, None)
                 # Return just the result string, not the full dict
@@ -421,14 +463,23 @@ Use `create_strategy` for queries about:
 
 **IMPORTANT NOTES:**
 - You are integrated with the KEN-E app where users are already authenticated
-- NEVER ask users for credentials - they're already logged in with Google
-- The system automatically uses the logged-in user's Google account for GA queries
-- Just route the queries - authentication is handled by the platform
+- For Google Analytics: Users must first connect their GA account in Account Settings
+- If the GA agent says credentials are needed, respond with:
+  "To access your Google Analytics data, please first connect your Google Analytics account:
+   1. Go to Account Settings
+   2. Click on 'Connect Google Analytics'
+   3. Authorize access to your GA properties
+   Then try your query again."
+- The system will automatically use connected GA credentials when available
 
 **EXAMPLES OF ROUTING:**
 - "What's the latest news about Apple?" → search_company_news
 - "Show me website traffic for last week" → query_google_analytics  
+- "Show me my website traffic as per google analytics" → query_google_analytics
 - "How many users visited my site?" → query_google_analytics
+- "Google Analytics traffic data" → query_google_analytics
+- "Website analytics" → query_google_analytics
+- "GA4 metrics" → query_google_analytics
 - "Tesla earnings report" → search_company_news
 - "Bounce rate by country" → query_google_analytics
 - "Microsoft acquisition news" → search_company_news
