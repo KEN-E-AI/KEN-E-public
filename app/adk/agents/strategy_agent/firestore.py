@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
@@ -227,8 +227,8 @@ class FirestoreClient:
                 "content": content,
                 "doc_type": doc_type,
                 "account_id": account_id,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "created_by": user_id or "system",
                 "version": 1
             }
@@ -241,6 +241,10 @@ class FirestoreClient:
             doc_ref.set(doc_data)
             
             logger.info(f"[FIRESTORE_SAVE] Successfully saved {doc_type} document for account {account_id}")
+            
+            # Check if all 5 strategy documents now exist and remove placeholder if so
+            self._check_and_remove_placeholder_sync(account_id, collection_name)
+            
             return True
             
         except Exception as e:
@@ -271,8 +275,8 @@ class FirestoreClient:
                 "content": content,
                 "doc_type": doc_type,
                 "account_id": account_id,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "created_by": user_id or "system",
                 "version": 1
             }
@@ -283,6 +287,10 @@ class FirestoreClient:
             doc_ref.set(doc_data)
             
             logger.info(f"[FIRESTORE_SAVE] Successfully saved {doc_type} document for account {account_id}")
+            
+            # Check if all 5 strategy documents now exist and remove placeholder if so
+            await self._check_and_remove_placeholder_async(account_id, collection_name)
+            
             return True
             
         except Exception as e:
@@ -348,13 +356,13 @@ class FirestoreClient:
                 "content": content,
                 "doc_type": doc_type,
                 "account_id": account_id,
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(timezone.utc),
                 "updated_by": user_id or "system",
                 "version": version
             }
             
             if not existing_doc.exists:
-                doc_data["created_at"] = datetime.utcnow()
+                doc_data["created_at"] = datetime.now(timezone.utc)
                 doc_data["created_by"] = user_id or "system"
             
             doc_ref.set(doc_data, merge=True)
@@ -365,6 +373,59 @@ class FirestoreClient:
         except Exception as e:
             logger.error(f"Failed to update strategy document: {e}")
             return False
+    
+    def _check_and_remove_placeholder_sync(self, account_id: str, collection_name: str) -> None:
+        """
+        Check if all 5 strategy documents exist and remove the placeholder if they do.
+        This is the synchronous version used by save_strategy_document_sync.
+        
+        Args:
+            account_id: Account ID
+            collection_name: Name of the Firestore collection
+        """
+        if not self.db:
+            return
+        
+        try:
+            # Define the 5 required strategy documents
+            required_docs = [
+                'business_strategy',
+                'competitive_analysis', 
+                'customer_journey',
+                'marketing_strategy',
+                'brand_guidelines'
+            ]
+            
+            # Check if all 5 documents exist
+            all_docs_exist = True
+            for doc_type in required_docs:
+                doc_ref = self.db.collection(collection_name).document(doc_type)
+                if not doc_ref.get().exists:
+                    all_docs_exist = False
+                    break
+            
+            # If all documents exist, remove the placeholder
+            if all_docs_exist:
+                placeholder_ref = self.db.collection(collection_name).document('_placeholder')
+                if placeholder_ref.get().exists:
+                    placeholder_ref.delete()
+                    logger.info(f"[FIRESTORE] Removed placeholder document from {collection_name} - all 5 strategy documents complete")
+        
+        except Exception as e:
+            logger.warning(f"[FIRESTORE] Error checking/removing placeholder for {account_id}: {e}")
+            # Don't fail the save operation if placeholder removal fails
+    
+    async def _check_and_remove_placeholder_async(self, account_id: str, collection_name: str) -> None:
+        """
+        Check if all 5 strategy documents exist and remove the placeholder if they do.
+        This is the async version used by save_strategy_document.
+        
+        Args:
+            account_id: Account ID
+            collection_name: Name of the Firestore collection
+        """
+        # Firestore operations are actually synchronous, so we just call the sync version
+        self._check_and_remove_placeholder_sync(account_id, collection_name)
 
 
 # ============================================================================
@@ -460,7 +521,7 @@ class ContextManager:
         
         try:
             context_data = context.model_dump()
-            context_data["last_updated"] = datetime.utcnow()
+            context_data["last_updated"] = datetime.now(timezone.utc)
             
             # Save to Firestore
             doc_ref = self.client.db.collection(f"strategy_processing_state_{context.account_id}").document("current_state")
