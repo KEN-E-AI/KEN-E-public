@@ -28,24 +28,54 @@ from .strategy_agent.token_utils import check_and_log_tokens
 logger = logging.getLogger(__name__)
 supervisor_logger = StrategyAgentLogger("create_strategy_docs_supervisor")
 
-# Initialize Weave for tracing
-try:
-    import weave
-    weave.init(project_name="ken-e-chat-supervisor")
-    logger.info("W&B Weave initialized for supervisor agent")
-    WEAVE_ENABLED = True
-except ImportError:
-    logger.warning("W&B Weave not available - tracing disabled")
-    WEAVE_ENABLED = False
+# Lazy initialization of Weave for tracing
+WEAVE_ENABLED = False
+_weave_initialized = False
+
+def init_weave_if_needed():
+    """Initialize Weave lazily with proper error handling."""
+    global WEAVE_ENABLED, _weave_initialized
     
-    # Create dummy decorator if Weave is not available
-    def weave_op(func):
-        return func
+    if _weave_initialized:
+        return
     
-    class weave:
-        @staticmethod
-        def op():
-            return weave_op
+    _weave_initialized = True
+    
+    try:
+        import weave as weave_module
+        # Only initialize if WANDB_API_KEY is available
+        if os.getenv("WANDB_API_KEY"):
+            weave_module.init(project_name="ken-e-chat-supervisor")
+            logger.info("W&B Weave initialized for supervisor agent")
+            WEAVE_ENABLED = True
+            # Make weave available globally
+            globals()['weave'] = weave_module
+        else:
+            logger.info("WANDB_API_KEY not set, Weave tracing disabled")
+            raise ImportError("WANDB_API_KEY not available")
+    except Exception as e:
+        logger.warning(f"Weave not available or failed to initialize: {e}")
+        WEAVE_ENABLED = False
+        
+        # Create dummy decorator if Weave is not available
+        def weave_op(func):
+            return func
+        
+        class DummyWeave:
+            @staticmethod
+            def op():
+                return weave_op
+        
+        globals()['weave'] = DummyWeave()
+
+# Create a placeholder for weave that will be replaced on first use
+class LazyWeave:
+    @staticmethod
+    def op():
+        init_weave_if_needed()
+        return weave.op()
+
+weave = LazyWeave()
 
 
 @weave.op()
@@ -421,8 +451,11 @@ def create_supervisor_agent():
             try:
                 input_data = json.loads(full_input)
                 logger.info(f"✅ [WEAVE-WRAPPER] {func_name} parsed JSON input successfully")
+                logger.info(f"🔍 [WEAVE-WRAPPER] JSON keys: {list(input_data.keys())}")
                 tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
                 logger.info(f"📨 [WEAVE-WRAPPER] {func_name} extracted message: {message[:100]}...")
+                logger.info(f"🔐 [WEAVE-WRAPPER] Tenant ID: {tenant_id[:30] if tenant_id else 'None'}...")
+                logger.info(f"🔐 [WEAVE-WRAPPER] Has credentials: {bool(tenant_credentials)}, length: {len(tenant_credentials) if tenant_credentials else 0}")
                 tenant_context = {
                     'tenant_id': tenant_id,
                     'tenant_credentials': tenant_credentials

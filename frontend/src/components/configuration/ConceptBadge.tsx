@@ -66,7 +66,7 @@ export function ConceptBadge({ concept, onRemove, onEdit }: ConceptBadgeProps) {
             variant="secondary"
             className={cn(
               "pl-3 pr-1 py-1.5 text-sm inline-flex items-center gap-1.5 transition-colors",
-              getTypeColor(concept.conceptType)
+              getTypeColor(concept.conceptType),
             )}
           >
             <span className="text-base leading-none">

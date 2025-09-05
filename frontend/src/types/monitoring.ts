@@ -8,13 +8,13 @@ export interface CompetitorEntry {
   keywords: string[];
 }
 
-export type ConceptType = 
-  | "company" 
-  | "location" 
-  | "topic" 
-  | "person" 
-  | "product" 
-  | "event" 
+export type ConceptType =
+  | "company"
+  | "location"
+  | "topic"
+  | "person"
+  | "product"
+  | "event"
   | "other";
 
 export interface ConceptReference {

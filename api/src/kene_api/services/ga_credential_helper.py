@@ -84,9 +84,18 @@ class GACredentialHelper:
             expires_at = credentials.get("expires_at", 0)
             current_time = datetime.now().timestamp()
             
+            # Log full credentials structure (without sensitive data) for debugging
+            cred_keys = list(credentials.keys()) if credentials else []
+            logger.info(f"Credentials structure for account {account_id}: keys={cred_keys}")
+            logger.info(f"Token expiry check for account {account_id}: expires_at={expires_at}, current_time={current_time}, diff={(expires_at - current_time) if expires_at else 'N/A'}")
+            
+            # If expires_at is 0 or missing, consider token expired
+            if expires_at == 0:
+                logger.warning(f"No expires_at timestamp for account {account_id}, treating as expired")
+            
             # Add 5-minute buffer before expiry
-            if current_time >= (expires_at - 300):
-                logger.info(f"Access token expired or expiring soon for account {account_id}")
+            if expires_at == 0 or current_time >= (expires_at - 300):
+                logger.info(f"Access token expired or expiring soon for account {account_id} (expires_at: {expires_at}, current: {current_time})")
                 
                 # Check if we have a refresh token
                 refresh_token = credentials.get("refresh_token")
@@ -99,8 +108,10 @@ class GACredentialHelper:
                 client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
                 client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
                 
+                logger.info(f"OAuth client ID found: {bool(client_id)}, Secret found: {bool(client_secret)}")
+                
                 if not client_id or not client_secret:
-                    logger.error("OAuth client configuration not found")
+                    logger.error(f"OAuth client configuration not found. CLIENT_ID present: {bool(client_id)}, SECRET present: {bool(client_secret)}")
                     return None
                 
                 # Refresh the token

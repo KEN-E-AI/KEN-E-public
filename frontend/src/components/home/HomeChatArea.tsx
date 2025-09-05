@@ -25,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MessageContent } from "./MessageContent";
 
 interface Message {
   id: string;
@@ -401,7 +402,10 @@ const HomeChatArea = () => {
                     : "bg-brand-medium-blue text-white"
                 }`}
               >
-                <p className="text-sm leading-relaxed">{message.content}</p>
+                <MessageContent 
+                  content={message.content} 
+                  isAssistant={!message.isUser}
+                />
               </div>
             </div>
           </div>
