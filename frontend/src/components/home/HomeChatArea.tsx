@@ -402,8 +402,8 @@ const HomeChatArea = () => {
                     : "bg-brand-medium-blue text-white"
                 }`}
               >
-                <MessageContent 
-                  content={message.content} 
+                <MessageContent
+                  content={message.content}
                   isAssistant={!message.isUser}
                 />
               </div>
