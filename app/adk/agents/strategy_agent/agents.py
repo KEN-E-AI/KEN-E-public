@@ -882,7 +882,7 @@ Your goal is to create a comprehensive competitive strategy document based on th
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY these specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -911,11 +911,16 @@ You must follow this logic precisely:
      - SWOT analysis if present
    - Use this extracted information as the PRIMARY SOURCE for your competitive analysis
 
-2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from the business_strategy_doc in the conversation state:
+   - businessStrategySummary
+   - companyOverview  
+   - marketAndIndustryAnalysis
+   - productsAndServices
+   - swotAnalysis (especially competitors mentioned)
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analysis:
    - Review the query and all provided documents (`BUSINESS INFORMATION`)
-   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Review the contents of the company websites listed in the `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
    - Identify competitive gaps that need additional research
 
@@ -967,6 +972,7 @@ Create the complete Competitive Strategy document now.
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_key="competitive_strategy_doc",
         output_schema=CompetitiveAnalysis
     )
@@ -1108,8 +1114,8 @@ Your goal is to create a comprehensive customer strategy document based on the p
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
-- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
+- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your customer strategy aligns with and differentiates from competitors.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -1139,7 +1145,20 @@ You must follow this logic precisely:
      - Customer satisfaction metrics
    - Use this extracted information as the PRIMARY SOURCE for your customer strategy
 
-2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc and competitive_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from prior documents:
+   
+   From business_strategy_doc:
+   - businessStrategySummary
+   - companyOverview  
+   - productsAndServices
+   - marketingAndCustomerStrategy
+   
+   From competitive_strategy_doc:
+   - competitiveLandscape
+   - competitiveStrategySummary
+   - detailedCompetitorProfiles (focus on differentiators)
+   
+   DO NOT read the entire documents. Focus only on these sections to understand customer context and positioning.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
    - Review the query and all provided documents (`BUSINESS INFORMATION`)
@@ -1193,6 +1212,7 @@ Create the complete Customer Strategy document now.
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_key="customer_strategy_doc",
         output_schema=CustomerJourneyAnalysis
     )
@@ -1335,9 +1355,9 @@ Your goal is to create a comprehensive marketing strategy document based on the 
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
-- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
-- CUSTOMER STRATEGY: A customer_strategy_doc exists in the conversation state. Review this document to ensure your marketing strategy effectively targets and engages the defined customer segments.
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
+- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your customer strategy aligns with and differentiates from competitors.
+- CUSTOMER STRATEGY: A customer_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your marketing strategy effectively targets and engages the defined customer segments.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -1367,7 +1387,26 @@ You must follow this logic precisely:
      - Brand messaging and positioning
    - Use this extracted information as the PRIMARY SOURCE for your marketing strategy
 
-2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc, competitive_strategy_doc, and customer_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from prior documents:
+   
+   From business_strategy_doc:
+   - businessStrategySummary
+   - productsAndServices  
+   - marketingAndCustomerStrategy
+   
+   From competitive_strategy_doc:
+   - competitiveLandscape
+   - competitiveStrategySummary
+   
+   From customer_strategy_doc:
+   - idealCustomerProfiles
+   - customerNeedsAnalysis
+   - awarenessPhase
+   - considerationPhase
+   - conversionPhase
+   - loyaltyPhase
+   
+   DO NOT read the entire documents. Focus only on these sections to create targeted marketing strategies.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
    - Review the query and all provided documents (`BUSINESS INFORMATION`)
@@ -1422,6 +1461,7 @@ Create the complete Marketing Strategy document now.
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_schema=MarketingStrategy,
         output_key="marketing_strategy_doc",
     )
@@ -1636,6 +1676,7 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_key="brand_guidelines_doc",
         output_schema=BrandGuidelines
     )
