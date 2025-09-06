@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 Strategy Agent Orchestrator - Manages execution and persistence of strategy documents.
+Includes comprehensive analytics tracking for cost, performance, and optimization.
 """
 
 import json
 import logging
+import time
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from google.adk import Runner
 from google.adk.agents import Agent, SequentialAgent
@@ -27,13 +29,18 @@ try:
     from agents.strategy_agent.artifact_utils import (
         load_uploaded_documents_as_artifacts,
     )
-    from agents.strategy_agent.firestore import (
-        FirestoreClient,
-        get_strategy_document,
-        save_strategy_document_sync,
-        update_strategy_document,
-    )
+    from agents.strategy_agent.firestore import FirestoreClient
     from agents.strategy_agent.models import StrategyContext
+    # Import analytics components
+    from agents.strategy_agent.analytics_helpers import (
+        initialize_analytics_services,
+        check_token_limits_before_execution,
+        report_execution_summary
+    )
+    from agents.strategy_agent.analytics_service import AnalyticsService
+    from agents.strategy_agent.performance_profiler import PerformanceProfiler
+    from agents.strategy_agent.alert_manager import AlertManager
+    from agents.strategy_agent.token_utils import TokenEstimator
 except ImportError:
     # Relative imports for local testing
     from .agents import (
@@ -44,10 +51,18 @@ except ImportError:
         create_marketing_strategy_agent,
     )
     from .artifact_utils import load_uploaded_documents_as_artifacts
-    from .firestore import (
-        FirestoreClient,
-    )
+    from .firestore import FirestoreClient
     from .models import StrategyContext
+    # Import analytics components
+    from .analytics_helpers import (
+        initialize_analytics_services,
+        check_token_limits_before_execution,
+        report_execution_summary
+    )
+    from .analytics_service import AnalyticsService
+    from .performance_profiler import PerformanceProfiler
+    from .alert_manager import AlertManager
+    from .token_utils import TokenEstimator
 
 logger = logging.getLogger(__name__)
 
@@ -126,16 +141,20 @@ def execute_strategy_generation(
     project_id: str | None = None,
     uploaded_documents: list[str] | None = None,
     firestore_client: FirestoreClient | None = None,
+    enable_analytics: bool = True,
 ) -> str:
     """
-    Execute the complete strategy generation process.
+    Execute the complete strategy generation process with analytics tracking.
 
     This function:
     1. Creates the strategy context
-    2. Initializes the sequential agent
-    3. Runs the agent pipeline
-    4. Monitors execution and captures documents
-    5. Saves documents to Firestore as they're generated
+    2. Initializes analytics services
+    3. Initializes the sequential agent
+    4. Runs the agent pipeline with performance tracking
+    5. Monitors execution and captures documents
+    6. Saves documents to Firestore as they're generated
+    7. Tracks costs and performance metrics
+    8. Generates optimization recommendations
 
     Args:
         company_name: Name of the company
@@ -146,10 +165,26 @@ def execute_strategy_generation(
         user_id: User ID for attribution
         annual_ad_budget: Annual advertising budget
         project_id: Optional GCP project ID
+        uploaded_documents: List of uploaded document URLs
+        firestore_client: Optional Firestore client
+        enable_analytics: Whether to enable analytics tracking
 
     Returns:
         Status message indicating success or failure
     """
+    # Initialize analytics services
+    analytics_service, performance_profiler, alert_manager, optimization_analyzer = \
+        initialize_analytics_services(account_id, project_id, enable_analytics)
+    
+    # Start performance tracking
+    main_operation = None
+    if performance_profiler:
+        main_operation = performance_profiler.start_operation(
+            agent_name="orchestrator",
+            operation="strategy_generation",
+            metadata={"company_name": company_name, "account_id": account_id}
+        )
+    
     try:
         logger.info(f"[EXECUTION] Starting strategy generation for {company_name}")
 
@@ -378,27 +413,44 @@ def execute_strategy_generation(
         else:
             logger.info("[MESSAGE_PREP] No uploaded documents to add to initial message")
         
+        # Check token usage before execution
+        abort_msg = check_token_limits_before_execution(
+            alert_manager, execution_input, performance_profiler, main_operation
+        )
+        if abort_msg:
+            return abort_msg
+        
         message_content = Content(role="user", parts=[{"text": execution_input}])
 
-        # Run the agent pipeline
+        # Run the agent pipeline with monitoring
         logger.info("[EXECUTION] Starting runner with 5 sequential agents")
+        start_time = time.time()
+        
         events = runner.run(
             user_id=session_user_id, session_id=session_id, new_message=message_content
         )
 
-        # Process events and save documents
+        # Process events and save documents with analytics tracking
         logger.info("[EXECUTION] Processing events from agent execution")
-        generated_documents = process_and_save_documents(
-            events, account_id, user_id, client
+        generated_documents = process_and_save_documents_with_analytics(
+            events, account_id, user_id, client,
+            analytics_service, performance_profiler, alert_manager
         )
-        logger.info(
-            f"[EXECUTION] Document processing complete - found {len(generated_documents)} documents"
+        
+        execution_time = time.time() - start_time
+        
+        # Generate comprehensive execution reports
+        report_execution_summary(
+            analytics_service,
+            performance_profiler,
+            optimization_analyzer,
+            main_operation,
+            execution_time,
+            len(generated_documents)
         )
-
+        
         logger.info(f"[EXECUTION] Completed strategy generation for {company_name}")
-        logger.info(
-            f"[EXECUTION] Generated documents: {list(generated_documents.keys())}"
-        )
+        logger.info(f"[EXECUTION] Generated documents: {list(generated_documents.keys())}")
 
         return f"Successfully generated {len(generated_documents)} strategy documents for {company_name}: {', '.join(generated_documents.keys())}"
 
@@ -406,6 +458,194 @@ def execute_strategy_generation(
         error_msg = f"Failed to generate strategy documents: {e}"
         logger.error(error_msg)
         return error_msg
+
+
+def process_and_save_documents_with_analytics(
+    events,
+    account_id: str,
+    user_id: str,
+    firestore_client: FirestoreClient,
+    analytics_service: Optional[AnalyticsService] = None,
+    performance_profiler: Optional[PerformanceProfiler] = None,
+    alert_manager: Optional[AlertManager] = None,
+) -> dict[str, Any]:
+    """
+    Process execution events and save documents to Firestore with analytics tracking.
+    
+    This enhanced version includes:
+    - Token usage tracking per agent
+    - Performance profiling
+    - Alert monitoring
+    - Cost tracking
+    
+    Args:
+        events: Generator of execution events from Runner
+        account_id: Account ID for document scoping
+        user_id: User ID for attribution
+        firestore_client: Firestore client for saving documents
+        analytics_service: Optional analytics service for tracking
+        performance_profiler: Optional performance profiler
+        alert_manager: Optional alert manager
+        
+    Returns:
+        Dictionary of generated documents
+    """
+    generated_documents = {}
+    event_count = 0
+    agent_start_times = {}  # Track agent execution times
+    
+    for event in events:
+        event_count += 1
+        
+        # Log event details
+        event_info = f"[EVENT #{event_count}]"
+        if hasattr(event, "author"):
+            event_info += f" author='{event.author}'"
+            
+            # Track agent performance
+            if performance_profiler and event.author:
+                if event.author not in agent_start_times:
+                    # Start tracking this agent
+                    agent_start_times[event.author] = performance_profiler.start_operation(
+                        agent_name=event.author,
+                        operation="document_generation"
+                    )
+        
+        # Check for token usage in event metadata
+        if hasattr(event, "usage_metadata") and event.usage_metadata:
+            usage = event.usage_metadata
+            prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            response_tokens = getattr(usage, "candidates_token_count", 0) or 0
+            
+            if (prompt_tokens > 0 or response_tokens > 0) and hasattr(event, "author"):
+                # Track token usage
+                if analytics_service:
+                    # Determine model from agent name (reviewers and editors use Flash)
+                    model = "gemini-2.5-flash"
+                    if "strategist" in event.author.lower():
+                        model = "gemini-2.5-pro"
+                    
+                    analytics_service.track_agent_execution(
+                        agent_name=event.author,
+                        prompt_tokens=prompt_tokens,
+                        response_tokens=response_tokens,
+                        model=model,
+                        execution_time=0,  # Will be updated when agent completes
+                        success=True
+                    )
+                
+                # Check token limits
+                if alert_manager:
+                    total_tokens = prompt_tokens + response_tokens
+                    alerts = alert_manager.check_token_usage(
+                        current_tokens=total_tokens,
+                        max_tokens=TokenEstimator.MAX_OUTPUT_TOKENS,
+                        context="agent_output",
+                        agent_name=event.author
+                    )
+                    if alerts:
+                        logger.warning(f"[ALERTS] {len(alerts)} alerts for {event.author}")
+        
+        # Check for documents in BOTH locations to ensure compatibility
+        # First check state delta (original implementation location)
+        if hasattr(event, "actions") and event.actions:
+            if hasattr(event.actions, "state_delta") and event.actions.state_delta:
+                state_delta = event.actions.state_delta
+                
+                # Log all keys in state_delta for debugging
+                if state_delta:
+                    logger.info(
+                        f"[STATE_DELTA] Keys present: {list(state_delta.keys())[:10]}"
+                    )  # Limit to first 10 keys
+                
+                # Check for each document type's unique key
+                for doc_key, doc_type in DOCUMENT_KEY_MAPPING.items():
+                    if doc_key in state_delta:
+                        doc_content = state_delta[doc_key]
+                        logger.info(
+                            f"[DOCUMENT] Found {doc_key} in state_delta for {doc_type}"
+                        )
+                        
+                        # Parse the document
+                        parsed_doc = parse_document_content(doc_content)
+                        
+                        if parsed_doc and doc_type not in generated_documents:
+                            # Complete performance tracking for this agent
+                            if performance_profiler and hasattr(event, "author") and event.author in agent_start_times:
+                                performance_profiler.end_operation(
+                                    agent_start_times[event.author],
+                                    success=True
+                                )
+                                del agent_start_times[event.author]
+                            
+                            # Save to memory
+                            generated_documents[doc_type] = parsed_doc
+                            logger.info(
+                                f"[DOCUMENT] Captured {doc_type} from key {doc_key} - {len(json.dumps(parsed_doc))} bytes"
+                            )
+                            
+                            # Save to Firestore immediately
+                            try:
+                                result = firestore_client.save_strategy_document_sync(
+                                    account_id=account_id,
+                                    doc_type=doc_type,
+                                    content=parsed_doc,
+                                    user_id=user_id
+                                )
+                                if result:
+                                    logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
+                                else:
+                                    logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
+                            except Exception as e:
+                                logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
+        
+        # Also check event.state as a fallback (some events might use this)
+        if hasattr(event, "state") and event.state:
+            # Check for documents in state with unique keys
+            for doc_key, doc_type in DOCUMENT_KEY_MAPPING.items():
+                if doc_key in event.state and event.state[doc_key] and doc_type not in generated_documents:
+                    doc_content = event.state[doc_key]
+                    logger.info(f"[DOCUMENT] Found {doc_type} in event.state")
+                    
+                    # Parse the document  
+                    parsed_doc = parse_document_content(doc_content)
+                    
+                    if parsed_doc:
+                        # Complete performance tracking for this agent
+                        if performance_profiler and hasattr(event, "author") and event.author in agent_start_times:
+                            performance_profiler.end_operation(
+                                agent_start_times[event.author],
+                                success=True
+                            )
+                            del agent_start_times[event.author]
+                        
+                        # Save to memory
+                        generated_documents[doc_type] = parsed_doc
+                        logger.info(
+                            f"[DOCUMENT] Captured {doc_type} from event.state - {len(json.dumps(parsed_doc))} bytes"
+                        )
+                        
+                        # Save to Firestore immediately
+                        try:
+                            result = firestore_client.save_strategy_document_sync(
+                                account_id=account_id,
+                                doc_type=doc_type,
+                                content=parsed_doc,
+                                user_id=user_id
+                            )
+                            if result:
+                                logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
+                            else:
+                                logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
+                        except Exception as e:
+                            logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
+    
+    # Complete any remaining performance tracking
+    if performance_profiler:
+        for agent_name, operation in agent_start_times.items():
+            performance_profiler.end_operation(operation, success=False, error="Incomplete")
+    
+    return generated_documents
 
 
 def process_and_save_documents(

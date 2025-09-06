@@ -17,6 +17,7 @@ from .models import StrategyContext
 from .token_utils import TokenEstimator, TokenLimitError, check_and_log_tokens
 from .logging_config import StrategyAgentLogger, safe_agent_execution
 from .tracing_config import WeaveTracer, weave_traced, safe_llm_call, trace_document_processing
+from .output_retry_wrapper import create_robust_agent_wrapper, OutputRetryConfig
 
 # Initialize tracing
 WeaveTracer.init_tracing(project_name="strategy-agents")
@@ -728,7 +729,7 @@ BUSINESS INFORMATION:
 Based on the above inputs, create the complete Business Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="business_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
@@ -740,6 +741,14 @@ Based on the above inputs, create the complete Business Strategy document now.
         output_key="business_strategy_doc",
         output_schema=BusinessStrategy   
     )
+    
+    # Wrap with retry logic for robust output validation
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, BusinessStrategy, retry_config)
 
 
 def create_business_reviewer() -> Agent:
@@ -805,7 +814,7 @@ Provide the complete, updated business strategy document in JSON format.
 All feedback points must be addressed.
 """
 
-    return Agent(
+    agent = Agent(
         name="business_editor",
         model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
@@ -817,6 +826,14 @@ All feedback points must be addressed.
         output_key="business_strategy_doc",
         output_schema=BusinessStrategy
     )
+    
+    # Wrap with retry logic for robust output validation
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, BusinessStrategy, retry_config)
 
 
 def create_business_strategy_agent(
@@ -831,7 +848,7 @@ def create_business_strategy_agent(
         name="business_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines business strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -963,7 +980,7 @@ BUSINESS INFORMATION:
 Create the complete Competitive Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="competitive_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
@@ -976,6 +993,15 @@ Create the complete Competitive Strategy document now.
         output_key="competitive_strategy_doc",
         output_schema=CompetitiveAnalysis
     )
+    
+    # Wrap with retry logic for robust output validation
+    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, CompetitiveAnalysis, retry_config)
 
 
 def create_competitive_reviewer() -> Agent:
@@ -1017,6 +1043,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1048,6 +1075,7 @@ Provide the complete, updated competitive strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="competitive_strategy_doc",
+        include_contents="none",
         output_schema=CompetitiveAnalysis
     )
 
@@ -1064,7 +1092,7 @@ def create_competitive_strategy_agent(
         name="competitive_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines competitive strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1203,7 +1231,7 @@ BUSINESS INFORMATION:
 Create the complete Customer Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="customer_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
@@ -1216,6 +1244,15 @@ Create the complete Customer Strategy document now.
         output_key="customer_strategy_doc",
         output_schema=CustomerJourneyAnalysis
     )
+    
+    # Wrap with retry logic for robust output validation
+    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, CustomerJourneyAnalysis, retry_config)
 
 
 def create_customer_reviewer() -> Agent:
@@ -1257,6 +1294,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1288,6 +1326,7 @@ Provide the complete, updated customer strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="customer_strategy_doc",
+        include_contents="none",
         output_schema=CustomerJourneyAnalysis
     )
 
@@ -1304,7 +1343,7 @@ def create_customer_strategy_agent(
         name="customer_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines customer strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1452,7 +1491,7 @@ Create the complete Marketing Strategy document now.
 
 """
 
-    return Agent(
+    agent = Agent(
         name="marketing_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
@@ -1465,6 +1504,15 @@ Create the complete Marketing Strategy document now.
         output_schema=MarketingStrategy,
         output_key="marketing_strategy_doc",
     )
+    
+    # Wrap with retry logic for robust output validation
+    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, MarketingStrategy, retry_config)
 
 
 def create_marketing_reviewer() -> Agent:
@@ -1506,6 +1554,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1537,6 +1586,7 @@ Provide the complete, updated marketing strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="marketing_strategy_doc",
+        include_contents="none",
         output_schema=MarketingStrategy
     )
 
@@ -1553,7 +1603,7 @@ def create_marketing_strategy_agent(
         name="marketing_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines marketing strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1667,7 +1717,7 @@ BUSINESS INFORMATION:
 Based on the above inputs, create the complete Brand Guidelines document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="brand_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
@@ -1680,6 +1730,15 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         output_key="brand_guidelines_doc",
         output_schema=BrandGuidelines
     )
+    
+    # Wrap with retry logic for robust output validation
+    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, BrandGuidelines, retry_config)
 
 
 def create_brand_reviewer() -> Agent:
@@ -1719,6 +1778,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1750,6 +1810,7 @@ Provide the complete, updated brand guidelines document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="brand_guidelines_doc",
+        include_contents="none",
         output_schema=BrandGuidelines
     )
 
@@ -1766,7 +1827,7 @@ def create_brand_guidelines_agent(
         name="brand_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines brand guidelines through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
