@@ -546,39 +546,57 @@ def process_and_save_documents_with_analytics(
                     if alerts:
                         logger.warning(f"[ALERTS] {len(alerts)} alerts for {event.author}")
         
-        # Continue with original document processing logic
-        if hasattr(event, "state") and event.state:
-            # Check for documents in state with unique keys
-            for doc_key, doc_type in DOCUMENT_KEY_MAPPING.items():
-                if doc_key in event.state and event.state[doc_key]:
-                    doc_content = event.state[doc_key]
-                    
-                    # Complete performance tracking for this agent
-                    if performance_profiler and hasattr(event, "author") and event.author in agent_start_times:
-                        performance_profiler.end_operation(
-                            agent_start_times[event.author],
-                            success=True
+        # Check for documents in state delta (matching original implementation)
+        if hasattr(event, "actions") and event.actions:
+            if hasattr(event.actions, "state_delta") and event.actions.state_delta:
+                state_delta = event.actions.state_delta
+                
+                # Log all keys in state_delta for debugging
+                if state_delta:
+                    logger.info(
+                        f"[STATE_DELTA] Keys present: {list(state_delta.keys())[:10]}"
+                    )  # Limit to first 10 keys
+                
+                # Check for each document type's unique key
+                for doc_key, doc_type in DOCUMENT_KEY_MAPPING.items():
+                    if doc_key in state_delta:
+                        doc_content = state_delta[doc_key]
+                        logger.info(
+                            f"[DOCUMENT] Found {doc_key} in state_delta for {doc_type}"
                         )
-                        del agent_start_times[event.author]
-                    
-                    # Save document (existing logic continues below...)
-                    if doc_type not in generated_documents:
-                        logger.info(f"[DOCUMENT] Found {doc_type} document")
-                        try:
-                            # Use the firestore_client's method instead of standalone function
-                            result = firestore_client.save_strategy_document_sync(
-                                account_id=account_id,
-                                doc_type=doc_type,
-                                content=doc_content,
-                                user_id=user_id
+                        
+                        # Parse the document
+                        parsed_doc = parse_document_content(doc_content)
+                        
+                        if parsed_doc:
+                            # Complete performance tracking for this agent
+                            if performance_profiler and hasattr(event, "author") and event.author in agent_start_times:
+                                performance_profiler.end_operation(
+                                    agent_start_times[event.author],
+                                    success=True
+                                )
+                                del agent_start_times[event.author]
+                            
+                            # Save to memory
+                            generated_documents[doc_type] = parsed_doc
+                            logger.info(
+                                f"[DOCUMENT] Captured {doc_type} from key {doc_key} - {len(json.dumps(parsed_doc))} bytes"
                             )
-                            if result:
-                                generated_documents[doc_type] = doc_content
-                                logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
-                            else:
-                                logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
-                        except Exception as e:
-                            logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
+                            
+                            # Save to Firestore immediately
+                            try:
+                                result = firestore_client.save_strategy_document_sync(
+                                    account_id=account_id,
+                                    doc_type=doc_type,
+                                    content=parsed_doc,
+                                    user_id=user_id
+                                )
+                                if result:
+                                    logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
+                                else:
+                                    logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
+                            except Exception as e:
+                                logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
     
     # Complete any remaining performance tracking
     if performance_profiler:
