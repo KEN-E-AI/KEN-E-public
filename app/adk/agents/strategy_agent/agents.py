@@ -1017,6 +1017,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1048,6 +1049,7 @@ Provide the complete, updated competitive strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="competitive_strategy_doc",
+        include_contents="none",
         output_schema=CompetitiveAnalysis
     )
 
@@ -1257,6 +1259,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1288,6 +1291,7 @@ Provide the complete, updated customer strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="customer_strategy_doc",
+        include_contents="none",
         output_schema=CustomerJourneyAnalysis
     )
 
@@ -1506,6 +1510,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1537,6 +1542,7 @@ Provide the complete, updated marketing strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="marketing_strategy_doc",
+        include_contents="none",
         output_schema=MarketingStrategy
     )
 
@@ -1719,6 +1725,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1750,6 +1757,7 @@ Provide the complete, updated brand guidelines document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="brand_guidelines_doc",
+        include_contents="none",
         output_schema=BrandGuidelines
     )
 
