@@ -546,7 +546,8 @@ def process_and_save_documents_with_analytics(
                     if alerts:
                         logger.warning(f"[ALERTS] {len(alerts)} alerts for {event.author}")
         
-        # Check for documents in state delta (matching original implementation)
+        # Check for documents in BOTH locations to ensure compatibility
+        # First check state delta (original implementation location)
         if hasattr(event, "actions") and event.actions:
             if hasattr(event.actions, "state_delta") and event.actions.state_delta:
                 state_delta = event.actions.state_delta
@@ -568,7 +569,7 @@ def process_and_save_documents_with_analytics(
                         # Parse the document
                         parsed_doc = parse_document_content(doc_content)
                         
-                        if parsed_doc:
+                        if parsed_doc and doc_type not in generated_documents:
                             # Complete performance tracking for this agent
                             if performance_profiler and hasattr(event, "author") and event.author in agent_start_times:
                                 performance_profiler.end_operation(
@@ -597,6 +598,47 @@ def process_and_save_documents_with_analytics(
                                     logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
                             except Exception as e:
                                 logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
+        
+        # Also check event.state as a fallback (some events might use this)
+        if hasattr(event, "state") and event.state:
+            # Check for documents in state with unique keys
+            for doc_key, doc_type in DOCUMENT_KEY_MAPPING.items():
+                if doc_key in event.state and event.state[doc_key] and doc_type not in generated_documents:
+                    doc_content = event.state[doc_key]
+                    logger.info(f"[DOCUMENT] Found {doc_type} in event.state")
+                    
+                    # Parse the document  
+                    parsed_doc = parse_document_content(doc_content)
+                    
+                    if parsed_doc:
+                        # Complete performance tracking for this agent
+                        if performance_profiler and hasattr(event, "author") and event.author in agent_start_times:
+                            performance_profiler.end_operation(
+                                agent_start_times[event.author],
+                                success=True
+                            )
+                            del agent_start_times[event.author]
+                        
+                        # Save to memory
+                        generated_documents[doc_type] = parsed_doc
+                        logger.info(
+                            f"[DOCUMENT] Captured {doc_type} from event.state - {len(json.dumps(parsed_doc))} bytes"
+                        )
+                        
+                        # Save to Firestore immediately
+                        try:
+                            result = firestore_client.save_strategy_document_sync(
+                                account_id=account_id,
+                                doc_type=doc_type,
+                                content=parsed_doc,
+                                user_id=user_id
+                            )
+                            if result:
+                                logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
+                            else:
+                                logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
+                        except Exception as e:
+                            logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
     
     # Complete any remaining performance tracking
     if performance_profiler:
