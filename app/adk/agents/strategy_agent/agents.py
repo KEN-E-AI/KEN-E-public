@@ -17,6 +17,7 @@ from .models import StrategyContext
 from .token_utils import TokenEstimator, TokenLimitError, check_and_log_tokens
 from .logging_config import StrategyAgentLogger, safe_agent_execution
 from .tracing_config import WeaveTracer, weave_traced, safe_llm_call, trace_document_processing
+from .output_retry_wrapper import create_robust_agent_wrapper, OutputRetryConfig
 
 # Initialize tracing
 WeaveTracer.init_tracing(project_name="strategy-agents")
@@ -728,7 +729,7 @@ BUSINESS INFORMATION:
 Based on the above inputs, create the complete Business Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="business_strategist",
         model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
@@ -740,6 +741,14 @@ Based on the above inputs, create the complete Business Strategy document now.
         output_key="business_strategy_doc",
         output_schema=BusinessStrategy   
     )
+    
+    # Wrap with retry logic for robust output validation
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, BusinessStrategy, retry_config)
 
 
 def create_business_reviewer() -> Agent:
@@ -805,7 +814,7 @@ Provide the complete, updated business strategy document in JSON format.
 All feedback points must be addressed.
 """
 
-    return Agent(
+    agent = Agent(
         name="business_editor",
         model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
@@ -817,6 +826,14 @@ All feedback points must be addressed.
         output_key="business_strategy_doc",
         output_schema=BusinessStrategy
     )
+    
+    # Wrap with retry logic for robust output validation
+    retry_config = OutputRetryConfig(
+        max_retries=2,
+        include_error_feedback=True,
+        include_schema_reminder=True
+    )
+    return create_robust_agent_wrapper(agent, BusinessStrategy, retry_config)
 
 
 def create_business_strategy_agent(
