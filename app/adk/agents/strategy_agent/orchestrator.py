@@ -29,10 +29,7 @@ try:
     from agents.strategy_agent.artifact_utils import (
         load_uploaded_documents_as_artifacts,
     )
-    from agents.strategy_agent.firestore import (
-        FirestoreClient,
-        save_strategy_document_sync,
-    )
+    from agents.strategy_agent.firestore import FirestoreClient
     from agents.strategy_agent.models import StrategyContext
     # Import analytics components
     from agents.strategy_agent.analytics_helpers import (
@@ -54,10 +51,7 @@ except ImportError:
         create_marketing_strategy_agent,
     )
     from .artifact_utils import load_uploaded_documents_as_artifacts
-    from .firestore import (
-        FirestoreClient,
-        save_strategy_document_sync,
-    )
+    from .firestore import FirestoreClient
     from .models import StrategyContext
     # Import analytics components
     from .analytics_helpers import (
@@ -571,15 +565,18 @@ def process_and_save_documents_with_analytics(
                     if doc_type not in generated_documents:
                         logger.info(f"[DOCUMENT] Found {doc_type} document")
                         try:
-                            save_strategy_document_sync(
-                                firestore_client=firestore_client,
+                            # Use the firestore_client's method instead of standalone function
+                            result = firestore_client.save_strategy_document_sync(
                                 account_id=account_id,
-                                user_id=user_id,
                                 doc_type=doc_type,
                                 content=doc_content,
+                                user_id=user_id
                             )
-                            generated_documents[doc_type] = doc_content
-                            logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
+                            if result:
+                                generated_documents[doc_type] = doc_content
+                                logger.info(f"[SAVE] Successfully saved {doc_type} to Firestore")
+                            else:
+                                logger.error(f"[SAVE] Failed to save {doc_type}: save returned False")
                         except Exception as e:
                             logger.error(f"[SAVE] Failed to save {doc_type}: {e}")
     
