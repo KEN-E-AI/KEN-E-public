@@ -17,7 +17,7 @@ from .models import StrategyContext
 from .token_utils import TokenEstimator, TokenLimitError, check_and_log_tokens
 from .logging_config import StrategyAgentLogger, safe_agent_execution
 from .tracing_config import WeaveTracer, weave_traced, safe_llm_call, trace_document_processing
-from .output_retry_wrapper import create_robust_agent_wrapper, OutputRetryConfig
+# Output retry wrapper not needed - ADK handles output validation via output_schema parameter
 
 # Initialize tracing
 WeaveTracer.init_tracing(project_name="strategy-agents")
@@ -731,7 +731,7 @@ Based on the above inputs, create the complete Business Strategy document now.
 
     agent = Agent(
         name="business_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Strategic business expert that creates comprehensive business strategy documents",
         instruction=instruction,
@@ -742,13 +742,8 @@ Based on the above inputs, create the complete Business Strategy document now.
         output_schema=BusinessStrategy   
     )
     
-    # Wrap with retry logic for robust output validation
-    retry_config = OutputRetryConfig(
-        max_retries=2,
-        include_error_feedback=True,
-        include_schema_reminder=True
-    )
-    return create_robust_agent_wrapper(agent, BusinessStrategy, retry_config)
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_business_reviewer() -> Agent:
@@ -827,13 +822,8 @@ All feedback points must be addressed.
         output_schema=BusinessStrategy
     )
     
-    # Wrap with retry logic for robust output validation
-    retry_config = OutputRetryConfig(
-        max_retries=2,
-        include_error_feedback=True,
-        include_schema_reminder=True
-    )
-    return create_robust_agent_wrapper(agent, BusinessStrategy, retry_config)
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_business_strategy_agent(
@@ -982,7 +972,7 @@ Create the complete Competitive Strategy document now.
 
     agent = Agent(
         name="competitive_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Competitive intelligence expert that creates detailed competitive analysis",
         instruction=instruction,
@@ -994,14 +984,8 @@ Create the complete Competitive Strategy document now.
         output_schema=CompetitiveAnalysis
     )
     
-    # Wrap with retry logic for robust output validation
-    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
-    retry_config = OutputRetryConfig(
-        max_retries=2,
-        include_error_feedback=True,
-        include_schema_reminder=True
-    )
-    return create_robust_agent_wrapper(agent, CompetitiveAnalysis, retry_config)
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_competitive_reviewer() -> Agent:
@@ -1233,7 +1217,7 @@ Create the complete Customer Strategy document now.
 
     agent = Agent(
         name="customer_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Customer insights expert that creates detailed customer strategy documents",
         instruction=instruction,
@@ -1245,14 +1229,8 @@ Create the complete Customer Strategy document now.
         output_schema=CustomerJourneyAnalysis
     )
     
-    # Wrap with retry logic for robust output validation
-    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
-    retry_config = OutputRetryConfig(
-        max_retries=2,
-        include_error_feedback=True,
-        include_schema_reminder=True
-    )
-    return create_robust_agent_wrapper(agent, CustomerJourneyAnalysis, retry_config)
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_customer_reviewer() -> Agent:
@@ -1493,7 +1471,7 @@ Create the complete Marketing Strategy document now.
 
     agent = Agent(
         name="marketing_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Marketing strategy expert that creates comprehensive marketing plans",
         instruction=instruction,
@@ -1505,14 +1483,8 @@ Create the complete Marketing Strategy document now.
         output_key="marketing_strategy_doc",
     )
     
-    # Wrap with retry logic for robust output validation
-    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
-    retry_config = OutputRetryConfig(
-        max_retries=2,
-        include_error_feedback=True,
-        include_schema_reminder=True
-    )
-    return create_robust_agent_wrapper(agent, MarketingStrategy, retry_config)
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_marketing_reviewer() -> Agent:
@@ -1719,7 +1691,7 @@ Based on the above inputs, create the complete Brand Guidelines document now.
 
     agent = Agent(
         name="brand_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Brand strategy expert that creates comprehensive brand guidelines",
         instruction=instruction,
@@ -1731,14 +1703,8 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         output_schema=BrandGuidelines
     )
     
-    # Wrap with retry logic for robust output validation
-    from .output_retry_wrapper import OutputRetryConfig, create_robust_agent_wrapper
-    retry_config = OutputRetryConfig(
-        max_retries=2,
-        include_error_feedback=True,
-        include_schema_reminder=True
-    )
-    return create_robust_agent_wrapper(agent, BrandGuidelines, retry_config)
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_brand_reviewer() -> Agent:
