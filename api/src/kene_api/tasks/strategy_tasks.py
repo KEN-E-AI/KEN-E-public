@@ -63,17 +63,17 @@ async def trigger_strategy_generation(
 
         # Get project ID based on environment
         environment = os.getenv("ENVIRONMENT", "development").lower()
-        
+
         # Map environment to project ID
         project_mapping = {
             "development": "ken-e-dev",
             "staging": "ken-e-staging",
-            "production": "ken-e-production"
+            "production": "ken-e-production",
         }
-        
+
         # Get the appropriate project ID for the environment
         project_id = project_mapping.get(environment, "ken-e-dev")
-        
+
         # Log the project being used
         logger.info(f"Using project ID '{project_id}' for environment '{environment}'")
 
@@ -203,25 +203,33 @@ Please execute strategy generation with these parameters:
 
                 # Get environment variables and map to correct project
                 environment = os.getenv("ENVIRONMENT", "development").lower()
-                
+
                 # Map environment to project ID
                 project_mapping = {
                     "development": "ken-e-dev",
                     "staging": "ken-e-staging",
-                    "production": "ken-e-production"
+                    "production": "ken-e-production",
                 }
-                
+
                 # Use environment-specific project or fall back to env vars
                 default_project = os.getenv(
                     "VERTEX_AI_PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT_ID")
                 )
-                project_id = project_mapping.get(environment, default_project or "ken-e-dev")
-                
+                project_id = project_mapping.get(
+                    environment, default_project or "ken-e-dev"
+                )
+
                 location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
-                agent_engine_id = os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
+
+                # Use STRATEGY_SUPERVISOR_ENGINE_ID for strategy generation, fall back to old env var
+                agent_engine_id = os.getenv(
+                    "STRATEGY_SUPERVISOR_ENGINE_ID"
+                ) or os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
 
                 if not agent_engine_id:
-                    raise ValueError("VERTEX_AI_AGENT_ENGINE_ID not configured")
+                    raise ValueError(
+                        "STRATEGY_SUPERVISOR_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not configured"
+                    )
 
                 # Initialize Vertex AI
                 vertexai.init(project=project_id, location=location)
@@ -354,29 +362,59 @@ Please execute strategy generation with these parameters:
                                                 if isinstance(function_call, dict):
                                                     # Log the function name if available
                                                     if "name" in function_call:
-                                                        logger.info(f"    Function: {function_call['name']}")
+                                                        logger.info(
+                                                            f"    Function: {function_call['name']}"
+                                                        )
                                                     # Extract arguments/response
                                                     if "response" in function_call:
-                                                        response_parts.append(str(function_call["response"]))
-                                                        logger.info(f"    Added function response: {len(str(function_call['response']))} chars")
+                                                        response_parts.append(
+                                                            str(
+                                                                function_call[
+                                                                    "response"
+                                                                ]
+                                                            )
+                                                        )
+                                                        logger.info(
+                                                            f"    Added function response: {len(str(function_call['response']))} chars"
+                                                        )
                                                     elif "output" in function_call:
-                                                        response_parts.append(str(function_call["output"]))
-                                                        logger.info(f"    Added function output: {len(str(function_call['output']))} chars")
+                                                        response_parts.append(
+                                                            str(function_call["output"])
+                                                        )
+                                                        logger.info(
+                                                            f"    Added function output: {len(str(function_call['output']))} chars"
+                                                        )
                                                     elif "args" in function_call:
-                                                        response_parts.append(str(function_call["args"]))
-                                                        logger.info(f"    Added function args: {len(str(function_call['args']))} chars")
+                                                        response_parts.append(
+                                                            str(function_call["args"])
+                                                        )
+                                                        logger.info(
+                                                            f"    Added function args: {len(str(function_call['args']))} chars"
+                                                        )
                                                     else:
                                                         # Just append the whole function_call as string
-                                                        response_parts.append(str(function_call))
-                                                        logger.info(f"    Added entire function_call: {len(str(function_call))} chars")
+                                                        response_parts.append(
+                                                            str(function_call)
+                                                        )
+                                                        logger.info(
+                                                            f"    Added entire function_call: {len(str(function_call))} chars"
+                                                        )
                                                 else:
-                                                    response_parts.append(str(function_call))
-                                                    logger.info(f"    Added function_call as string: {len(str(function_call))} chars")
+                                                    response_parts.append(
+                                                        str(function_call)
+                                                    )
+                                                    logger.info(
+                                                        f"    Added function_call as string: {len(str(function_call))} chars"
+                                                    )
                                             # Log other part types for debugging
                                             elif "thought_signature" in part:
-                                                logger.info(f"  Found thought_signature in chunk {chunk_count} (skipping)")
+                                                logger.info(
+                                                    f"  Found thought_signature in chunk {chunk_count} (skipping)"
+                                                )
                                             else:
-                                                logger.info(f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}")
+                                                logger.info(
+                                                    f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}"
+                                                )
                             else:
                                 response_parts.append(str(chunk))
                                 logger.info(

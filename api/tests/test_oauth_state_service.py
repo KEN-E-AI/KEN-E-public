@@ -55,7 +55,9 @@ async def test_create_state(oauth_state_service, mock_firestore_client):
 
     # Verify Firestore was called
     mock_firestore_client.collection.assert_called_with("oauth_states")
-    mock_firestore_client.collection.return_value.document.assert_called_with(state_token)
+    mock_firestore_client.collection.return_value.document.assert_called_with(
+        state_token
+    )
     mock_doc_ref.set.assert_called_once()
 
     # Check the data that was stored
@@ -101,7 +103,9 @@ async def test_get_state_valid(oauth_state_service, mock_firestore_client):
 
     # Verify Firestore was called
     mock_firestore_client.collection.assert_called_with("oauth_states")
-    mock_firestore_client.collection.return_value.document.assert_called_with(state_token)
+    mock_firestore_client.collection.return_value.document.assert_called_with(
+        state_token
+    )
     mock_doc_ref.get.assert_called_once()
 
 
@@ -175,7 +179,9 @@ async def test_delete_state(oauth_state_service, mock_firestore_client):
     # Assert
     assert result is True
     mock_firestore_client.collection.assert_called_with("oauth_states")
-    mock_firestore_client.collection.return_value.document.assert_called_with(state_token)
+    mock_firestore_client.collection.return_value.document.assert_called_with(
+        state_token
+    )
     mock_doc_ref.delete.assert_called_once()
 
 
@@ -224,7 +230,9 @@ async def test_cleanup_expired_states(oauth_state_service, mock_firestore_client
 
 
 @pytest.mark.asyncio
-async def test_cleanup_expired_states_large_batch(oauth_state_service, mock_firestore_client):
+async def test_cleanup_expired_states_large_batch(
+    oauth_state_service, mock_firestore_client
+):
     """Test cleaning up a large batch of expired OAuth states."""
     # Arrange
     # Create 501 mock expired documents (to test batch size limit)
@@ -250,4 +258,3 @@ async def test_cleanup_expired_states_large_batch(oauth_state_service, mock_fire
     assert mock_batch.commit.call_count == 2
     # New batch should have been created
     assert mock_firestore_client.batch.call_count == 2
-

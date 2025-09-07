@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 class ExecutionMetrics(BaseModel):
     """Model for tracking agent execution metrics."""
-    
+
     execution_id: str
     agent_name: str
     account_id: str
@@ -32,7 +32,7 @@ class ExecutionMetrics(BaseModel):
 
 class DailyCostAggregation(BaseModel):
     """Model for daily cost aggregation data."""
-    
+
     date: str
     account_id: str
     total_cost: float
@@ -45,7 +45,7 @@ class DailyCostAggregation(BaseModel):
 
 class PerformanceProfile(BaseModel):
     """Model for performance profiling data."""
-    
+
     execution_id: str
     account_id: str
     timestamp: datetime
@@ -61,7 +61,7 @@ class PerformanceProfile(BaseModel):
 
 class AlertData(BaseModel):
     """Model for alert notification data."""
-    
+
     alert_id: str
     account_id: str
     timestamp: str
@@ -77,7 +77,7 @@ class AlertData(BaseModel):
 
 class OptimizationRecommendationModel(BaseModel):
     """Model for optimization recommendations."""
-    
+
     recommendation_type: str
     description: str
     estimated_savings_percentage: float
@@ -89,7 +89,7 @@ class OptimizationRecommendationModel(BaseModel):
 
 class UsagePattern(BaseModel):
     """Model for analyzed usage patterns."""
-    
+
     period_days: int
     total_executions: int
     total_tokens: int
@@ -103,7 +103,7 @@ class UsagePattern(BaseModel):
 
 class TokenEstimation(BaseModel):
     """Model for token estimation tracking."""
-    
+
     execution_id: str
     agent_name: str
     account_id: str

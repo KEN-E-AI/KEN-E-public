@@ -15,21 +15,22 @@ from typing import Any, Callable, Dict, List, Optional
 # Set up SSL and network configuration for W&B
 import ssl
 import certifi
-os.environ['SSL_CERT_FILE'] = certifi.where()
-os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+
+os.environ["SSL_CERT_FILE"] = certifi.where()
+os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 # Ensure WANDB environment variables are loaded
-if 'WANDB_API_KEY' not in os.environ:
+if "WANDB_API_KEY" not in os.environ:
     # Try to load from .env file
-    env_path = os.path.join(os.path.dirname(__file__), '../../.env')
+    env_path = os.path.join(os.path.dirname(__file__), "../../.env")
     if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
+        with open(env_path, "r") as f:
             for line in f:
                 line = line.strip()
-                if line.startswith('WANDB_API_KEY='):
-                    os.environ['WANDB_API_KEY'] = line.split('=', 1)[1].strip()
-                elif line.startswith('WANDB_PROJECT='):
-                    os.environ['WANDB_PROJECT'] = line.split('=', 1)[1].strip()
+                if line.startswith("WANDB_API_KEY="):
+                    os.environ["WANDB_API_KEY"] = line.split("=", 1)[1].strip()
+                elif line.startswith("WANDB_PROJECT="):
+                    os.environ["WANDB_PROJECT"] = line.split("=", 1)[1].strip()
 
 try:
     import weave
@@ -88,17 +89,17 @@ class WeaveTracer:
 
         try:
             # Use project from environment if available
-            project_name = os.environ.get('WANDB_PROJECT', project_name)
-            
+            project_name = os.environ.get("WANDB_PROJECT", project_name)
+
             # Ensure API key is set
-            if 'WANDB_API_KEY' not in os.environ:
+            if "WANDB_API_KEY" not in os.environ:
                 logger.warning("WANDB_API_KEY not set, Weave tracing disabled")
                 return
-            
+
             # Initialize Weave with retry logic for network issues
             max_retries = 3
             retry_delay = 1
-            
+
             for attempt in range(max_retries):
                 try:
                     # Initialize Weave
@@ -108,21 +109,30 @@ class WeaveTracer:
                         settings["autopatch_settings"] = {
                             "openai": {"log_input": True, "log_output": True},
                             "anthropic": {"log_input": True, "log_output": True},
-                            "google.generativeai": {"log_input": True, "log_output": True},
+                            "google.generativeai": {
+                                "log_input": True,
+                                "log_output": True,
+                            },
                         }
 
                     weave.init(project_name, **settings)
                     cls.initialized = True
-                    logger.info(f"Initialized Weave tracing for project: {project_name}")
+                    logger.info(
+                        f"Initialized Weave tracing for project: {project_name}"
+                    )
                     break
-                    
+
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        logger.warning(f"Weave init attempt {attempt + 1} failed: {e}, retrying...")
+                        logger.warning(
+                            f"Weave init attempt {attempt + 1} failed: {e}, retrying..."
+                        )
                         time.sleep(retry_delay * (attempt + 1))
                     else:
-                        logger.warning(f"Failed to initialize Weave after {max_retries} attempts: {e}")
-                        
+                        logger.warning(
+                            f"Failed to initialize Weave after {max_retries} attempts: {e}"
+                        )
+
         except Exception as e:
             logger.warning(f"Failed to initialize Weave: {e}")
 
@@ -288,7 +298,7 @@ def safe_llm_call(model: Any, prompt: str, max_retries: int = 3, **kwargs: Any) 
             wait_time = 2**retry_count
             logger.info(f"Retry {retry_count}/{max_retries} after {wait_time}s wait")
             time.sleep(wait_time)
-    
+
     # This should never be reached but mypy needs it
     raise Exception("Failed to execute LLM call")
 

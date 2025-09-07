@@ -13,7 +13,7 @@ from src.kene_api.rate_limiter import recaptcha_rate_limiter
 HTTP_OK = status.HTTP_200_OK
 HTTP_TOO_MANY_REQUESTS = status.HTTP_429_TOO_MANY_REQUESTS
 RATE_LIMIT_MINUTE = 5  # Must match recaptcha_rate_limiter configuration
-RATE_LIMIT_HOUR = 20   # Must match recaptcha_rate_limiter configuration
+RATE_LIMIT_HOUR = 20  # Must match recaptcha_rate_limiter configuration
 
 
 @pytest.fixture(autouse=True)
@@ -29,25 +29,28 @@ def reset_rate_limiter():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("num_requests,should_be_limited", [
-    (RATE_LIMIT_MINUTE - 1, False),  # Just under limit
-    (RATE_LIMIT_MINUTE, False),       # Exactly at limit
-    (RATE_LIMIT_MINUTE + 1, True),    # Just over limit
-    (RATE_LIMIT_MINUTE + 5, True),    # Well over limit
-])
+@pytest.mark.parametrize(
+    "num_requests,should_be_limited",
+    [
+        (RATE_LIMIT_MINUTE - 1, False),  # Just under limit
+        (RATE_LIMIT_MINUTE, False),  # Exactly at limit
+        (RATE_LIMIT_MINUTE + 1, True),  # Just over limit
+        (RATE_LIMIT_MINUTE + 5, True),  # Well over limit
+    ],
+)
 async def test_recaptcha_rate_limit_boundaries(num_requests, should_be_limited):
     """Test rate limiting at various boundary conditions."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         blocked = False
         successful = 0
-        
+
         for i in range(num_requests):
             response = await client.post(
                 "/api/v1/auth/verify-recaptcha",
                 json={"token": f"test_token_{i}", "action": "signin"},
             )
-            
+
             if response.status_code == HTTP_TOO_MANY_REQUESTS:
                 blocked = True
                 # Verify rate limit response structure
@@ -58,13 +61,15 @@ async def test_recaptcha_rate_limit_boundaries(num_requests, should_be_limited):
             else:
                 successful += 1
                 assert response.status_code == HTTP_OK
-        
+
         # Verify expectations
         if should_be_limited:
             assert blocked, f"Expected to be rate limited after {num_requests} requests"
             assert successful == RATE_LIMIT_MINUTE
         else:
-            assert not blocked, f"Should not be rate limited after {num_requests} requests"
+            assert not blocked, (
+                f"Should not be rate limited after {num_requests} requests"
+            )
             assert successful == num_requests
 
 
@@ -79,13 +84,13 @@ async def test_rate_limit_headers():
                 "/api/v1/auth/verify-recaptcha",
                 json={"token": f"test_token_{i}", "action": "signin"},
             )
-        
+
         # Next request should be rate limited
         response = await client.post(
             "/api/v1/auth/verify-recaptcha",
             json={"token": "test_token_exceeded", "action": "signin"},
         )
-        
+
         assert response.status_code == HTTP_TOO_MANY_REQUESTS
         assert "Retry-After" in response.headers
         # Verify it's a valid number
@@ -107,7 +112,7 @@ async def test_different_endpoints_independent_limits():
             )
             if response.status_code == HTTP_TOO_MANY_REQUESTS:
                 break
-        
+
         # Other endpoints should still work
         response = await client.get("/api/v1/auth/recaptcha-site-key")
         # Should not be rate limited (though it might fail for other reasons)
@@ -117,7 +122,7 @@ async def test_different_endpoints_independent_limits():
 @pytest.mark.asyncio
 @given(
     action=st.sampled_from(["signin", "signup", "submit", "verify"]),
-    num_requests=st.integers(min_value=1, max_value=10)
+    num_requests=st.integers(min_value=1, max_value=10),
 )
 @settings(deadline=1000)  # Allow 1 second for async tests
 async def test_rate_limit_with_different_actions(action, num_requests):
@@ -125,21 +130,23 @@ async def test_rate_limit_with_different_actions(action, num_requests):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         responses = []
-        
+
         for i in range(num_requests):
             response = await client.post(
                 "/api/v1/auth/verify-recaptcha",
                 json={"token": f"test_token_{i}", "action": action},
             )
             responses.append(response.status_code)
-        
+
         # Count successful vs rate limited
         successful = sum(1 for status in responses if status == HTTP_OK)
-        rate_limited = sum(1 for status in responses if status == HTTP_TOO_MANY_REQUESTS)
-        
+        rate_limited = sum(
+            1 for status in responses if status == HTTP_TOO_MANY_REQUESTS
+        )
+
         # All responses should be either OK or rate limited
         assert successful + rate_limited == num_requests
-        
+
         # Successful requests should not exceed the limit
         assert successful <= RATE_LIMIT_MINUTE
 
@@ -156,7 +163,7 @@ async def test_rate_limit_different_ips():
             response = await client.post(
                 "/api/v1/auth/verify-recaptcha",
                 json={"token": f"test_token_ip_{ip_suffix}", "action": "signin"},
-                headers={"X-Forwarded-For": f"192.168.1.{ip_suffix}"}
+                headers={"X-Forwarded-For": f"192.168.1.{ip_suffix}"},
             )
             # Each "different IP" should get its own rate limit
             # (though in test environment this might not work without proper mocking)

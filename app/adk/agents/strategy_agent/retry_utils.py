@@ -44,7 +44,7 @@ NON_RETRIABLE_EXCEPTIONS = (
 
 class RetryConfig:
     """Configuration for retry behavior."""
-    
+
     def __init__(
         self,
         max_attempts: int = 3,
@@ -53,10 +53,10 @@ class RetryConfig:
         exponential_base: float = 2.0,
         jitter: bool = True,
         retriable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
-        on_retry: Optional[Callable[[Exception, int], None]] = None
+        on_retry: Optional[Callable[[Exception, int], None]] = None,
     ):
         """Initialize retry configuration.
-        
+
         Args:
             max_attempts: Maximum number of retry attempts
             initial_delay: Initial delay between retries in seconds
@@ -73,26 +73,26 @@ class RetryConfig:
         self.jitter = jitter
         self.retriable_exceptions = retriable_exceptions or RETRIABLE_EXCEPTIONS
         self.on_retry = on_retry
-    
+
     def calculate_delay(self, attempt: int) -> float:
         """Calculate delay for given attempt number.
-        
+
         Args:
             attempt: Attempt number (1-based)
-            
+
         Returns:
             Delay in seconds
         """
         # Exponential backoff
         delay = min(
             self.initial_delay * (self.exponential_base ** (attempt - 1)),
-            self.max_delay
+            self.max_delay,
         )
-        
+
         # Add jitter to prevent thundering herd
         if self.jitter:
-            delay *= (0.5 + random.random())
-        
+            delay *= 0.5 + random.random()
+
         return delay
 
 
@@ -104,18 +104,17 @@ BATCH_CONFIG = RetryConfig(max_attempts=3, initial_delay=2.0, max_delay=120.0)
 
 
 def with_firestore_retry(
-    config: Optional[RetryConfig] = None,
-    operation_name: Optional[str] = None
+    config: Optional[RetryConfig] = None, operation_name: Optional[str] = None
 ) -> Callable:
     """Decorator to add retry logic to Firestore operations.
-    
+
     Args:
         config: Retry configuration (uses DEFAULT_CONFIG if None)
         operation_name: Optional name for logging
-        
+
     Returns:
         Decorated function with retry logic
-        
+
     Example:
         ```python
         @with_firestore_retry(config=WRITE_CONFIG, operation_name="save_metrics")
@@ -125,80 +124,81 @@ def with_firestore_retry(
     """
     if config is None:
         config = DEFAULT_CONFIG
-    
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             last_exception = None
             op_name = operation_name or func.__name__
-            
+
             for attempt in range(1, config.max_attempts + 1):
                 try:
                     # Attempt the operation
                     result = func(*args, **kwargs)
-                    
+
                     # Success - log if this was a retry
                     if attempt > 1:
                         logger.info(
                             f"[RETRY] {op_name} succeeded on attempt {attempt}/{config.max_attempts}"
                         )
-                    
+
                     return result
-                    
+
                 except config.retriable_exceptions as e:
                     last_exception = e
-                    
+
                     # Check if we should retry
                     if attempt >= config.max_attempts:
                         logger.error(
                             f"[RETRY] {op_name} failed after {config.max_attempts} attempts: {e}"
                         )
                         raise
-                    
+
                     # Calculate delay
                     delay = config.calculate_delay(attempt)
-                    
+
                     # Log retry attempt
                     logger.warning(
                         f"[RETRY] {op_name} failed on attempt {attempt}/{config.max_attempts} "
                         f"with {type(e).__name__}: {e}. Retrying in {delay:.1f}s..."
                     )
-                    
+
                     # Call retry callback if provided
                     if config.on_retry:
                         config.on_retry(e, attempt)
-                    
+
                     # Wait before retrying
                     time.sleep(delay)
-                    
+
                 except NON_RETRIABLE_EXCEPTIONS as e:
                     # Don't retry client errors
                     logger.error(
                         f"[RETRY] {op_name} failed with non-retriable error: {type(e).__name__}: {e}"
                     )
                     raise
-                    
+
                 except Exception as e:
                     # Unexpected error - log and raise
                     logger.error(
                         f"[RETRY] {op_name} failed with unexpected error: {type(e).__name__}: {e}"
                     )
                     raise
-            
+
             # Should never reach here, but just in case
             if last_exception:
                 raise last_exception
-        
+
         return wrapper
+
     return decorator
 
 
 def with_read_retry(operation_name: Optional[str] = None) -> Callable:
     """Decorator specifically for read operations with optimized retry config.
-    
+
     Args:
         operation_name: Optional name for logging
-        
+
     Returns:
         Decorated function with read-optimized retry logic
     """
@@ -207,10 +207,10 @@ def with_read_retry(operation_name: Optional[str] = None) -> Callable:
 
 def with_write_retry(operation_name: Optional[str] = None) -> Callable:
     """Decorator specifically for write operations with optimized retry config.
-    
+
     Args:
         operation_name: Optional name for logging
-        
+
     Returns:
         Decorated function with write-optimized retry logic
     """
@@ -219,10 +219,10 @@ def with_write_retry(operation_name: Optional[str] = None) -> Callable:
 
 def with_batch_retry(operation_name: Optional[str] = None) -> Callable:
     """Decorator specifically for batch operations with optimized retry config.
-    
+
     Args:
         operation_name: Optional name for logging
-        
+
     Returns:
         Decorated function with batch-optimized retry logic
     """
@@ -231,7 +231,7 @@ def with_batch_retry(operation_name: Optional[str] = None) -> Callable:
 
 class RetryableTransaction:
     """Context manager for retryable Firestore transactions.
-    
+
     Example:
         ```python
         with RetryableTransaction(db, config=WRITE_CONFIG) as transaction:
@@ -241,15 +241,15 @@ class RetryableTransaction:
             transaction.update(doc_ref, user_data)
         ```
     """
-    
+
     def __init__(
         self,
         db: firestore.Client,
         config: Optional[RetryConfig] = None,
-        operation_name: str = "transaction"
+        operation_name: str = "transaction",
     ):
         """Initialize retryable transaction.
-        
+
         Args:
             db: Firestore client
             config: Retry configuration
@@ -259,12 +259,12 @@ class RetryableTransaction:
         self.config = config or DEFAULT_CONFIG
         self.operation_name = operation_name
         self.transaction = None
-    
+
     def __enter__(self) -> firestore.Transaction:
         """Enter transaction context."""
         self.transaction = self.db.transaction()
         return self.transaction
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit transaction context with retry logic."""
         if exc_type is None:
@@ -284,65 +284,63 @@ class RetryableTransaction:
                     f"[RETRY] Transaction {self.operation_name} failed with non-retriable error: {exc_val}"
                 )
                 return False
-    
+
     def _commit_with_retry(self):
         """Commit transaction with retry logic."""
         last_exception = None
-        
+
         for attempt in range(1, self.config.max_attempts + 1):
             try:
                 self.transaction.commit()
-                
+
                 if attempt > 1:
                     logger.info(
                         f"[RETRY] Transaction {self.operation_name} committed on attempt {attempt}"
                     )
                 return
-                
+
             except self.config.retriable_exceptions as e:
                 last_exception = e
-                
+
                 if attempt >= self.config.max_attempts:
                     logger.error(
                         f"[RETRY] Transaction {self.operation_name} commit failed after "
                         f"{self.config.max_attempts} attempts: {e}"
                     )
                     raise
-                
+
                 delay = self.config.calculate_delay(attempt)
                 logger.warning(
                     f"[RETRY] Transaction {self.operation_name} commit failed on attempt "
                     f"{attempt}/{self.config.max_attempts}. Retrying in {delay:.1f}s..."
                 )
                 time.sleep(delay)
-        
+
         if last_exception:
             raise last_exception
 
 
 def retry_on_conflict(
-    func: Callable,
-    max_attempts: int = 3,
-    operation_name: Optional[str] = None
+    func: Callable, max_attempts: int = 3, operation_name: Optional[str] = None
 ) -> Any:
     """Execute a function with retry on Firestore conflict errors.
-    
+
     Useful for operations that may conflict due to concurrent updates.
-    
+
     Args:
         func: Function to execute
         max_attempts: Maximum retry attempts
         operation_name: Optional name for logging
-        
+
     Returns:
         Function result
-        
+
     Example:
         ```python
         def increment_counter(doc_ref):
             doc = doc_ref.get()
             doc_ref.update({"count": doc.get("count") + 1})
-        
+
         retry_on_conflict(lambda: increment_counter(doc_ref))
         ```
     """
@@ -350,8 +348,11 @@ def retry_on_conflict(
     config = RetryConfig(
         max_attempts=max_attempts,
         initial_delay=0.1,  # Quick retry for conflicts
-        retriable_exceptions=(google_exceptions.Aborted, google_exceptions.FailedPrecondition)
+        retriable_exceptions=(
+            google_exceptions.Aborted,
+            google_exceptions.FailedPrecondition,
+        ),
     )
-    
+
     wrapped = with_firestore_retry(config=config, operation_name=op_name)(func)
     return wrapped()

@@ -19,7 +19,7 @@ from src.kene_api.models.kene_models import (
 @pytest.mark.asyncio
 async def test_organization_creation_invalidates_user_cache():
     """Test that creating an organization invalidates the user's cached context."""
-    
+
     # Create mock user context
     mock_user = UserContext(
         user_id="test_user_123",
@@ -29,7 +29,7 @@ async def test_organization_creation_invalidates_user_cache():
         organization_permissions={},
         account_permissions={},
     )
-    
+
     # Create mock request
     request = OrganizationRequest(
         organization_name="Test Organization",
@@ -60,57 +60,74 @@ async def test_organization_creation_invalidates_user_cache():
             pending_invitations=0,
         ),
     )
-    
+
     # Create mocks
     mock_db = MagicMock()
     mock_db.health_check = AsyncMock(return_value=True)
     mock_db.execute_write_query = AsyncMock(return_value=[])
-    mock_db.execute_query = AsyncMock(return_value=[{
-        "org": {
-            "organization_id": "org_test123",
-            "organization_name": "Test Organization",
-            "plan": "Professional",
-            "agency": False,
-            "subscription": json.dumps(request.subscription.model_dump()),
-            "billing": json.dumps(request.billing.model_dump()),
-            "team": json.dumps(request.team.model_dump()),
-        }
-    }])
-    
+    mock_db.execute_query = AsyncMock(
+        return_value=[
+            {
+                "org": {
+                    "organization_id": "org_test123",
+                    "organization_name": "Test Organization",
+                    "plan": "Professional",
+                    "agency": False,
+                    "subscription": json.dumps(request.subscription.model_dump()),
+                    "billing": json.dumps(request.billing.model_dump()),
+                    "team": json.dumps(request.team.model_dump()),
+                }
+            }
+        ]
+    )
+
     # Track if cache invalidation was called
     cache_invalidation_called = False
     invalidated_user_id = None
-    
+
     def mock_invalidate_user_context(user_id):
         nonlocal cache_invalidation_called, invalidated_user_id
         cache_invalidation_called = True
         invalidated_user_id = user_id
-    
-    with patch('src.kene_api.routers.organizations.get_firestore_service') as mock_firestore_service:
-        with patch('src.kene_api.auth.cached_user_context.get_cached_user_context_service') as mock_cache_service:
-            with patch('src.kene_api.routers.organizations._check_organization_exists', new_callable=AsyncMock) as mock_check_exists:
-                with patch('src.kene_api.routers.organizations.generate_unique_organization_id') as mock_generate_id:
-                    with patch('src.kene_api.routers.organizations.settings') as mock_settings:
+
+    with patch(
+        "src.kene_api.routers.organizations.get_firestore_service"
+    ) as mock_firestore_service:
+        with patch(
+            "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+        ) as mock_cache_service:
+            with patch(
+                "src.kene_api.routers.organizations._check_organization_exists",
+                new_callable=AsyncMock,
+            ) as mock_check_exists:
+                with patch(
+                    "src.kene_api.routers.organizations.generate_unique_organization_id"
+                ) as mock_generate_id:
+                    with patch(
+                        "src.kene_api.routers.organizations.settings"
+                    ) as mock_settings:
                         # Setup mocks
                         mock_settings.organization_creation_permission = "all"
                         mock_generate_id.return_value = "org_test123"
                         mock_check_exists.return_value = False
-                        
+
                         mock_fs = MagicMock()
                         mock_fs.set_nested_field = MagicMock(return_value=True)
                         mock_firestore_service.return_value = mock_fs
-                        
+
                         mock_cached_service = MagicMock()
-                        mock_cached_service.invalidate_user_context = mock_invalidate_user_context
+                        mock_cached_service.invalidate_user_context = (
+                            mock_invalidate_user_context
+                        )
                         mock_cache_service.return_value = mock_cached_service
-                        
+
                         # Call the function
                         result = await create_organization(request, mock_user, mock_db)
-                        
+
                         # Verify organization was created
                         assert result.organization_id == "org_test123"
                         assert result.organization_name == "Test Organization"
-                        
+
                         # Verify permissions were granted
                         mock_fs.set_nested_field.assert_called_once_with(
                             collection="users",
@@ -118,16 +135,20 @@ async def test_organization_creation_invalidates_user_cache():
                             field_path="permissions.organizations.org_test123",
                             value="admin",
                         )
-                        
+
                         # Verify cache was invalidated
-                        assert cache_invalidation_called, "Cache invalidation was not called"
-                        assert invalidated_user_id == "test_user_123", f"Cache was invalidated for wrong user: {invalidated_user_id}"
+                        assert cache_invalidation_called, (
+                            "Cache invalidation was not called"
+                        )
+                        assert invalidated_user_id == "test_user_123", (
+                            f"Cache was invalidated for wrong user: {invalidated_user_id}"
+                        )
 
 
 @pytest.mark.asyncio
 async def test_organization_creation_rollback_on_permission_failure():
     """Test that organization creation is rolled back if permission grant fails."""
-    
+
     # Create mock user context
     mock_user = UserContext(
         user_id="test_user_123",
@@ -137,7 +158,7 @@ async def test_organization_creation_rollback_on_permission_failure():
         organization_permissions={},
         account_permissions={},
     )
-    
+
     # Create mock request
     request = OrganizationRequest(
         organization_name="Test Organization",
@@ -168,33 +189,44 @@ async def test_organization_creation_rollback_on_permission_failure():
             pending_invitations=0,
         ),
     )
-    
+
     # Create mocks
     mock_db = MagicMock()
     mock_db.health_check = AsyncMock(return_value=True)
     mock_db.execute_write_query = AsyncMock(return_value=[])
     mock_db.execute_write_operation = AsyncMock(return_value={})
-    
-    with patch('src.kene_api.routers.organizations.get_firestore_service') as mock_firestore_service:
-        with patch('src.kene_api.routers.organizations._check_organization_exists', new_callable=AsyncMock) as mock_check_exists:
-            with patch('src.kene_api.routers.organizations.generate_unique_organization_id') as mock_generate_id:
-                with patch('src.kene_api.routers.organizations.settings') as mock_settings:
+
+    with patch(
+        "src.kene_api.routers.organizations.get_firestore_service"
+    ) as mock_firestore_service:
+        with patch(
+            "src.kene_api.routers.organizations._check_organization_exists",
+            new_callable=AsyncMock,
+        ) as mock_check_exists:
+            with patch(
+                "src.kene_api.routers.organizations.generate_unique_organization_id"
+            ) as mock_generate_id:
+                with patch(
+                    "src.kene_api.routers.organizations.settings"
+                ) as mock_settings:
                     # Setup mocks
                     mock_settings.organization_creation_permission = "all"
                     mock_generate_id.return_value = "org_test123"
                     mock_check_exists.return_value = False
-                    
+
                     mock_fs = MagicMock()
                     # Simulate permission grant failure
                     mock_fs.set_nested_field = MagicMock(return_value=False)
                     mock_firestore_service.return_value = mock_fs
-                    
+
                     # Call the function and expect it to raise an exception
                     with pytest.raises(Exception) as exc_info:
                         await create_organization(request, mock_user, mock_db)
-                    
+
                     # Verify rollback was attempted
                     mock_db.execute_write_operation.assert_called_once()
                     call_args = mock_db.execute_write_operation.call_args
-                    assert "DELETE org" in call_args[0][0]  # Check that DELETE query was executed
+                    assert (
+                        "DELETE org" in call_args[0][0]
+                    )  # Check that DELETE query was executed
                     assert call_args[0][1]["organization_id"] == "org_test123"

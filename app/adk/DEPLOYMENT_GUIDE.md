@@ -1,304 +1,399 @@
 # Agent Engine Deployment Guide
 
 ## Overview
-This guide documents the correct process for deploying the multi-agent supervisor to Google Cloud Agent Engine (Vertex AI Reasoning Engines).
 
-## ⚠️ CRITICAL: Pre-Deployment Checklist
-Before deploying, you MUST verify:
+This guide documents the deployment process for the separated KEN-E agents to Google Cloud Agent Engine (Vertex AI Reasoning Engines).
 
-1. **Check agent.py imports the supervisor, NOT the strategy orchestrator**
-   ```python
-   # CORRECT - agent.py should contain:
-   from agents.create_strategy_docs_supervisor import create_strategy_docs_supervisor
-   root_agent = create_strategy_docs_supervisor
-   
-   # WRONG - agent.py should NOT contain:
-   from agents.strategy_agent.orchestrator import app, strategy_agent
-   root_agent = strategy_agent
-   ```
+## Agent Architecture
 
-2. **Remove or rename conflicting files**
-   - Any `agents_broken.py` files should be renamed to `.old`
-   - Check for duplicate agent files with different configurations
+### Two Separate Agents
 
-3. **Verify token limits are correct**
-   - Check `agents/strategy_agent/agents.py` has `max_output_tokens=32768` (NOT 65535)
-   - Verify `max_iterations=2` for LoopAgents (NOT 3)
+After the separation, we have two distinct agents:
 
-## Current Working Deployment Script
-**Use: `deploy_supervisor_fixed.py`**
+1. **KEN-E Agent** (`ken_e_agent`)
+   - Frontend-facing chat agent
+   - Handles company news and Google Analytics queries
+   - Deployed for `/api/v1/chat/completions` endpoint
 
-This is the ONLY deployment script that correctly:
-- Handles imports without requiring `google.adk` in runtime
-- Includes all agent subdirectories (especially `strategy_agent/`)
-- Creates proper wrapper files for Agent Engine compatibility
-- Saves deployment information for tracking
+2. **Strategy Documents Supervisor** (`create_strategy_docs_supervisor`)
+   - Backend-only agent for account creation
+   - Generates all 5 strategy documents
+   - Called programmatically during account creation
 
-## Understanding the Architecture
+### Architecture Flow
 
-### The Multi-Agent System Flow
 ```
-API Request → Supervisor → Routes to Appropriate Agent → Returns Response
-                 ↓
-         Routes based on message:
-         • "Generate all 5 strategy documents" → Strategy Agent
-         • "Get company news" → News Agent
-         • "Analytics data" → GA Agent
+Frontend Chat → API → KEN-E Agent → Returns Response
+                         ↓
+                Routes to either:
+                • Company News Agent
+                • Google Analytics Agent
+
+Account Creation → API → Strategy Supervisor → Strategy Agent → 5 Documents
 ```
 
-### Why the Supervisor is Essential
-The supervisor (`create_strategy_docs_supervisor`) is the entry point that:
-1. Receives all messages from the API
-2. Analyzes the message content
-3. Routes to the appropriate specialized agent
-4. Returns the consolidated response
+## Deployment Scripts
 
-**Without the supervisor, strategy generation will fail** because the strategy orchestrator doesn't understand routing messages.
+### Deploy KEN-E Agent (Frontend Chat)
+
+```bash
+cd /Users/kenwilliams/Documents/github/ken-e/app/adk
+uv run python deploy_ken_e.py
+```
+
+This deploys the chat agent that handles:
+
+- Company news queries
+- Google Analytics data requests
+- Frontend chat interactions
+
+### Deploy Strategy Supervisor (Account Creation)
+
+```bash
+cd /Users/kenwilliams/Documents/github/ken-e/app/adk
+uv run python deploy_strategy_supervisor.py
+```
+
+This deploys the strategy generation agent for:
+
+- Account creation workflow
+- Generating 5 strategy documents
+- Backend-only operations
+
+## Pre-Deployment Checklist
+
+### 1. Verify Agent Configurations
+
+```bash
+# Check KEN-E agent has correct tools
+grep "search_company_news\|query_google_analytics" agents/ken_e_agent.py
+
+# Check Strategy Supervisor has strategy tool
+grep "create_strategy" agents/create_strategy_docs_supervisor.py
+
+# Verify imports are correct
+grep "from .ken_e_agent import ken_e_agent" agents/__init__.py
+```
+
+### 2. Clean Environment
+
+```bash
+# Remove any old deployment artifacts
+rm -f agent.py agent_engine_app.py
+
+# Check for deprecated files
+ls agents/*_broken.py agents/*.old
+```
+
+### 3. Verify Dependencies
+
+```bash
+# Ensure requirements.txt is up to date
+cat requirements.txt | grep -E "google-cloud|vertexai"
+```
 
 ## Deployment Process
 
-### 1. Pre-Deployment Verification
+### Step 1: Deploy KEN-E Agent
+
 ```bash
-# Verify agent.py is correct
-cat agent.py | grep "create_strategy_docs_supervisor"  # Should find this
-cat agent.py | grep "strategy_agent"                   # Should NOT find this
-
-# Check for problematic files
-ls agents/strategy_agent/agents*.py  # Should only show agents.py
-
-# Verify token limits
-grep "max_output_tokens" agents/strategy_agent/agents.py | head -5
-```
-
-### 2. Run Deployment
-```bash
+# Deploy the frontend chat agent
 cd /Users/kenwilliams/Documents/github/ken-e/app/adk
-uv run python deploy_supervisor_fixed.py
+uv run python deploy_ken_e.py
+
+# Optional: specify project and location
+uv run python deploy_ken_e.py --project ken-e-dev --location us-central1
 ```
 
-### 3. Monitor Deployment
 The script will:
-1. Create a temporary directory with all necessary files
-2. Copy agents, requirements, and environment files
-3. Create wrapper files (`agent.py`, `agent_engine_app.py`)
-4. Deploy using ADK CLI
-5. Output the new Engine ID (save this immediately!)
 
-Deployment typically takes 3-5 minutes. Watch for:
-- "Deployment successful!" message
-- Engine ID in format: `projects/525657242938/locations/us-central1/reasoningEngines/[ID]`
+1. Create temporary deployment directory
+2. Copy all necessary agent files
+3. Create deployment wrappers
+4. Deploy to Agent Engine
+5. Output the Engine ID
 
-### 4. Update Environment Variables
-After successful deployment, update these files with the new Engine ID:
+**Save the Engine ID immediately!**
+Example: `projects/525657242938/locations/us-central1/reasoningEngines/1234567890`
 
-**API Environment Files:**
+### Step 2: Deploy Strategy Supervisor
+
+```bash
+# Deploy the strategy generation agent
+cd /Users/kenwilliams/Documents/github/ken-e/app/adk
+uv run python deploy_strategy_supervisor.py
+
+# Optional: specify project and location
+uv run python deploy_strategy_supervisor.py --project ken-e-dev --location us-central1
+```
+
+Similar process, but deploys the strategy generation agent.
+
+**Save this Engine ID separately!**
+
+### Step 3: Update Environment Variables
+
+After successful deployments, update the API environment files with the new Engine IDs:
+
+**Files to update:**
+
 - `/api/.env`
 - `/api/.env.development`
-- `/api/.env.staging` (if applicable)
-- `/api/.env.production` (if applicable)
+- `/api/.env.staging`
+- `/api/.env.production`
 
-Update ALL these variables to the SAME Engine ID:
+**Environment variables:**
+
 ```bash
-SUPERVISOR_ENHANCED_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[NEW_ID]
-VERTEX_AI_AGENT_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[NEW_ID]
-CREATE_STRATEGY_DOCS_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[NEW_ID]
+# KEN-E Agent for chat interactions
+KEN_E_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[KEN-E-ID]
+
+# Strategy Supervisor for account creation
+STRATEGY_SUPERVISOR_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[STRATEGY-ID]
+
+# Keep for backward compatibility (point to KEN-E)
+VERTEX_AI_AGENT_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[KEN-E-ID]
 ```
 
-### 5. Restart API Server
-The API server must be restarted to use the new Engine ID:
+### Step 4: API Routing (Automatic)
+
+The API automatically routes to the correct agent based on the use case:
+
+**Chat Endpoint** (`/api/v1/chat/completions`):
+
+- Uses `KEN_E_ENGINE_ID` if set
+- Falls back to `VERTEX_AI_AGENT_ENGINE_ID` for backward compatibility
+- Implementation in `src/kene_api/routers/chat.py`
+
+**Strategy Generation** (Account Creation):
+
+- Uses `STRATEGY_SUPERVISOR_ENGINE_ID` if set
+- Falls back to `VERTEX_AI_AGENT_ENGINE_ID` for backward compatibility
+- Implementation in `src/kene_api/tasks/strategy_tasks.py`
+
+No code changes needed - just set the environment variables!
+
+### Step 5: Restart API Server
+
 ```bash
-# Kill existing server (find process with ps aux | grep uvicorn)
-# Then restart:
+# Kill existing server
+ps aux | grep uvicorn
+kill [PID]
+
+# Restart with new configuration
 cd /Users/kenwilliams/Documents/github/ken-e/api
 uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 6. Verify Deployment
-1. Check deployment log: `supervisor_deployment.txt`
-2. Test from frontend by creating a new account
-3. Monitor Weights & Biases traces for agent execution
-4. Verify all 5 strategy documents complete
+### Step 6: Verify Deployments
+
+#### Test KEN-E Agent (Chat)
+
+1. Open frontend application
+2. Try a chat query: "What's the latest news about Apple?"
+3. Verify response is received
+4. Check W&B traces show KEN-E agent activity
+
+#### Test Strategy Supervisor (Account Creation)
+
+1. Create a new account through the frontend
+2. Monitor strategy document generation
+3. Verify all 5 documents complete
+4. Check W&B traces show strategy agent activity
+
+## Deployment Outputs
+
+Each deployment creates:
+
+- **Deployment log file**: `ken_e_deployment.txt` or `strategy_supervisor_deployment.txt`
+- **Engine ID**: Unique identifier for the deployed agent
+- **Timestamp**: When the deployment occurred
 
 ## Common Issues and Solutions
 
 ### Import Errors
+
 **Problem:** `ModuleNotFoundError: No module named 'google.adk'`
-**Solution:** Use `deploy_supervisor_fixed.py` which creates proper import wrappers
+**Solution:** The deployment scripts handle this by creating proper wrappers
 
-### Strategy Documents Not Generating
-**Problem:** 0/5 documents complete, W&B shows no agent activity
-**Causes & Solutions:**
-1. **Wrong agent deployed** - Check `agent.py` imports supervisor, not strategy orchestrator
-2. **Supervisor not routing** - Verify message starts with "Generate all 5 strategy documents"
-3. **Engine ID mismatch** - Ensure all env vars use the same Engine ID
+### Wrong Agent Responding
 
-### agents_broken.py Contamination
-**Problem:** W&B shows old token limits (65535) even after updating agents.py
-**Solution:** 
-1. Rename any `agents_broken.py` to `agents_broken.py.old`
-2. Redeploy to ensure only correct file is included
+**Problem:** Chat queries getting strategy responses or vice versa
+**Solution:** Verify environment variables point to correct Engine IDs
 
-### Timeout Issues
-**Problem:** Brand guidelines document times out
-**Solution:** Verify in `agents/strategy_agent/agents.py`:
-- `max_output_tokens=32768` (not 65535)
-- `max_iterations=2` (not 3)
+### Deployment Fails
 
-### Project ID Mismatch
-**Problem:** Documents saved to wrong project
-**Solution:** Force project ID in Firestore initialization (already implemented)
+**Problem:** ADK deployment command fails
+**Causes:**
 
-## Key Files and Their Purpose
+1. Missing GCP credentials - Run `gcloud auth application-default login`
+2. Wrong project - Set `VERTEX_AI_PROJECT_ID` environment variable
+3. Staging bucket doesn't exist - Create with `gsutil mb gs://[project]-adk-staging`
 
-### Required Files (DO NOT DELETE)
-- `agents/create_strategy_docs_supervisor.py` - Main supervisor orchestrator
-- `agents/strategy_agent/*.py` - Strategy document generation agents
-- `agents/company_news_agent.py` - News fetching and analysis
-- `agents/google_analytics_agent.py` - Analytics insights
-- `requirements.txt` - Python dependencies
-- `.env` - Environment variables (project ID, locations)
-- `deploy_supervisor_fixed.py` - Current working deployment script
+### Rate Limiting
 
-### Generated During Deployment
-- `agent.py` - Wrapper that imports and exports the supervisor (created in temp dir)
-- `agent_engine_app.py` - ADK app configuration (created in temp dir)
-- `supervisor_deployment.txt` - Deployment record with Engine ID
+**Problem:** Too many deployment attempts
+**Solution:** Wait a few minutes between deployments
 
-### Deprecated Files (Safe to Delete)
-All files with `.old` suffix are deprecated deployment scripts that should not be used.
+## Managing Multiple Deployments
 
-## Import Architecture Explained
+### List All Reasoning Engines
 
-### The Import Challenge
-- **Local development** uses: `from google.adk.agents import Agent`
-- **Agent Engine runtime** doesn't have `google.adk` available
-- **Solution**: Wrapper pattern in deployment
+```bash
+uv run python manage_reasoning_engines.py --list
+```
 
-### How deploy_supervisor_fixed.py Solves This
-1. **Preserves original imports** - Agent files keep their `google.adk` imports
-2. **Creates wrapper layer** - Temporary `agent.py` imports from local agents
-3. **ADK CLI handles transformation** - Converts for Agent Engine runtime
+### Clean Up Old Deployments
 
-The deployment script NEVER modifies the original agent files, ensuring consistency between development and deployment.
+```bash
+# Keep only the latest KEN-E and Strategy engines
+uv run python manage_reasoning_engines.py --delete \
+  --keep-id [KEN-E-ENGINE-ID] \
+  --keep-id [STRATEGY-ENGINE-ID]
+```
 
-## Deployment History Tracking
-- **Latest deployment info**: Check `supervisor_deployment.txt`
-- **Previous deployments**: Remain active until explicitly deleted in GCP Console
-- **Naming convention**: `multi-agent-supervisor-v2-YYYYMMDD-HHMMSS`
+## Quick Reference
+
+### Deployment Commands
+
+```bash
+# Deploy KEN-E (chat)
+uv run python deploy_ken_e.py
+
+# Deploy Strategy Supervisor (account creation)
+uv run python deploy_strategy_supervisor.py
+
+# Deploy with specific project
+uv run python deploy_ken_e.py --project ken-e-staging --location us-central1
+```
+
+### Verification Commands
+
+```bash
+# Check deployment logs
+cat ken_e_deployment.txt
+cat strategy_supervisor_deployment.txt
+
+# Verify agent configurations
+grep "tools=" agents/ken_e_agent.py
+grep "tools=" agents/create_strategy_docs_supervisor.py
+
+# Check current Engine IDs in use
+grep "ENGINE_ID" /Users/kenwilliams/Documents/github/ken-e/api/.env
+```
+
+### Testing Commands
+
+```bash
+# Test KEN-E agent locally
+cd app/adk
+uv run python -c "from agents.ken_e_agent import ken_e_agent; print(ken_e_agent.name)"
+
+# Test Strategy Supervisor locally
+cd app/adk
+uv run python -c "from agents.create_strategy_docs_supervisor import create_strategy_docs_supervisor; print(create_strategy_docs_supervisor.name)"
+```
+
+## Implementation Details
+
+### Phase 3 Changes (API Routing)
+
+The API routing was updated to support the separated agents:
+
+1. **Chat Router** (`api/src/kene_api/routers/chat.py`):
+
+   ```python
+   # Automatically uses KEN_E_ENGINE_ID or falls back
+   self.agent_engine_id = os.getenv("KEN_E_ENGINE_ID") or os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
+   ```
+
+2. **Strategy Tasks** (`api/src/kene_api/tasks/strategy_tasks.py`):
+
+   ```python
+   # Automatically uses STRATEGY_SUPERVISOR_ENGINE_ID or falls back
+   agent_engine_id = os.getenv("STRATEGY_SUPERVISOR_ENGINE_ID") or os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
+   ```
+
+3. **Environment Variables** (`.env.example`):
+   - Added `KEN_E_ENGINE_ID` for chat agent
+   - Added `STRATEGY_SUPERVISOR_ENGINE_ID` for strategy generation
+   - Kept `VERTEX_AI_AGENT_ENGINE_ID` for backward compatibility
+
+### Testing the Routing
+
+Run the routing tests to verify the implementation:
+
+```bash
+cd /Users/kenwilliams/Documents/github/ken-e/api
+uv run pytest tests/unit/test_agent_routing.py -v
+```
+
+Expected: 6+ tests should pass, verifying:
+
+- KEN-E engine ID is used for chat
+- Strategy supervisor engine ID is used for account creation
+- Fallback to VERTEX_AI_AGENT_ENGINE_ID works
+- New env vars take priority over old ones
+
+## Architecture Benefits
+
+### Separation Advantages
+
+1. **Independent scaling** - Scale chat and strategy generation separately
+2. **Isolated failures** - Issues in one agent don't affect the other
+3. **Cleaner code** - Each agent has a specific, focused purpose
+4. **Easier testing** - Test each agent independently
+5. **Better monitoring** - Track usage and performance separately
+
+### Migration Path
+
+1. Deploy both new agents
+2. Update API to route to appropriate agent
+3. Test thoroughly
+4. Deprecate old unified supervisor
+5. Clean up old deployments
 
 ## Best Practices
 
 ### Before Deployment
-1. **Always verify agent.py** - Most critical file to check
-2. **Clean up old files** - Remove or rename deprecated/broken versions
-3. **Test locally first** - Ensure agents work in development
-4. **Document changes** - Update this guide with new learnings
+
+1. Test agents locally first
+2. Verify all tools are correctly assigned
+3. Check environment variables are set
+4. Review recent code changes
 
 ### During Deployment
-1. **Save Engine ID immediately** - Copy as soon as it appears
-2. **Don't interrupt deployment** - Let it complete fully
-3. **Monitor output** - Watch for errors or warnings
+
+1. Deploy one agent at a time
+2. Save Engine IDs immediately
+3. Monitor deployment output for errors
+4. Don't interrupt deployment process
 
 ### After Deployment
-1. **Update ALL env files** - Consistency is crucial
-2. **Restart API server** - Required for new Engine ID
-3. **Test immediately** - Verify with a simple request
-4. **Keep deployment logs** - For troubleshooting
+
+1. Update all environment files
+2. Test both agents thoroughly
+3. Monitor W&B traces
+4. Document any issues
 
 ## Rollback Process
 
-If a deployment fails or causes issues:
+If issues occur after deployment:
 
-1. Revert environment variables to previous Engine ID (check git history)
-2. Restart API server
-3. Previous engine remains available (not overwritten)
-4. Investigate logs in Google Cloud Console
-5. Fix issues and redeploy using `deploy_supervisor_fixed.py`
-
-## Testing Checklist
-
-After deployment, verify:
-- [ ] API server running with new Engine ID
-- [ ] Frontend can create accounts
-- [ ] Strategy generation starts (check W&B)
-- [ ] All 5 documents complete
-- [ ] No timeout errors
-- [ ] Documents saved to correct project
-
-## Critical Lessons Learned
-
-1. **The supervisor is not optional** - It's the router for all agent communications
-2. **agent.py determines what gets deployed** - Always verify this file
-3. **File conflicts cause subtle bugs** - Remove duplicates with different configs
-4. **Import patterns matter** - Use wrappers, don't modify originals
-5. **Test the full flow** - From API to agents to Firestore
-
-## Quick Commands Reference
-
-```bash
-# Check current deployment
-cat supervisor_deployment.txt
-
-# Verify agent.py
-grep "create_strategy_docs_supervisor\|strategy_agent" agent.py
-
-# Deploy
-uv run python deploy_supervisor_fixed.py
-
-# Check token limits
-grep "max_output_tokens" agents/strategy_agent/agents.py
-
-# Find deprecated files
-ls deploy*.py.old
-```
-
-## Managing Reasoning Engines
-
-After deployments, you may accumulate multiple reasoning engines that are no longer in use. Use the `manage_reasoning_engines.py` script to list and clean up unused engines.
-
-### List All Engines
-```bash
-# List all reasoning engines in the project
-uv run python manage_reasoning_engines.py --list
-
-# List engines in a specific project
-uv run python manage_reasoning_engines.py --project my-project --list
-```
-
-### Delete Unused Engines
-```bash
-# Delete all engines except a specific one (interactive confirmation)
-uv run python manage_reasoning_engines.py --delete --keep-id 1824877040805871616
-
-# Delete without confirmation prompt
-uv run python manage_reasoning_engines.py --delete --keep-id 1824877040805871616 --yes
-
-# Dry run - see what would be deleted without actually deleting
-uv run python manage_reasoning_engines.py --delete --keep-id 1824877040805871616 --dry-run
-```
-
-### Important Notes About Engine Management
-- **Rate Limits**: The script handles rate limiting automatically (8 requests/minute)
-- **Force Deletion**: The script uses force=true to delete engines with active sessions
-- **Retries**: Failed deletions due to rate limits are automatically retried
-- **Verification**: After deletion, the script verifies the final state
-- **Safety**: Always specify --keep-id to avoid deleting all engines accidentally
-
-### Finding the Current Engine ID
-The current engine ID in use can be found in:
-- `supervisor_deployment.txt` (latest deployment record)
-- API environment files (`/api/.env*`)
-- Look for variables like `VERTEX_AI_AGENT_ENGINE_ID`
+1. **Revert environment variables** to previous Engine IDs
+2. **Restart API server** to apply changes
+3. **Previous engines remain active** (not deleted)
+4. **Investigate logs** in GCP Console
+5. **Fix issues** and redeploy
 
 ## Notes
 
-- Deployment typically takes 3-5 minutes
-- Each deployment creates a new Engine ID (old ones remain active)
+- Deployments take 3-5 minutes each
+- Each deployment creates a new Engine ID
+- Old engines remain active until manually deleted
 - Use timestamps in deployment names for tracking
-- The deployment script outputs progress to console
-- Deployment info is saved to `supervisor_deployment.txt`
-- Clean up old engines regularly using `manage_reasoning_engines.py`
+- Clean up old engines regularly to avoid clutter
 
 ---
 
-**Remember:** When in doubt, verify `agent.py` imports the supervisor, not the strategy orchestrator!
+**Remember:** The separation ensures cleaner, more maintainable code with better isolation between chat and strategy generation functions.

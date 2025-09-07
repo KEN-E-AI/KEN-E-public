@@ -657,12 +657,158 @@ gcloud firestore documents read alert_configurations/[ACCOUNT_ID]/alerts
 gcloud firestore documents list analytics/cost_aggregations_[ACCOUNT_ID]
 ```
 
+## Pydantic Validation and Error Handling
+
+### Overview
+
+The ADK agents use Pydantic for structured output validation. Following an incident where the customer_strategist agent failed validation after 6 minutes of execution, the system was updated to use ADK's built-in validation and retry mechanisms to prevent future failures.
+
+### Current Implementation
+
+All strategy agents now use ADK's built-in `output_schema` parameter for automatic validation and retry:
+
+```python
+def create_business_strategist(context: StrategyContext | None = None) -> Agent:
+    """Create the business strategy strategist agent."""
+    # ...
+    agent = Agent(
+        model="gemini-2.5-pro",
+        instructions=instructions,
+        tools=[google_search_agent],
+        output_key="business_strategy_doc",
+        output_schema=BusinessStrategy  # ADK handles validation automatically
+    )
+    # ADK handles output validation internally via output_schema parameter
+    return agent
+```
+
+### How ADK Handles Validation
+
+When an `output_schema` is provided, ADK automatically:
+1. **Validates** agent responses against the Pydantic schema
+2. **Retries** on validation errors with clearer instructions
+3. **Extracts** JSON from markdown code blocks or mixed text
+4. **Provides** error feedback to the agent on retry attempts
+
+### Common Agent Response Issues
+
+Agents may return invalid responses in these scenarios:
+- **Plain text responses**: Agent returns narrative text instead of JSON
+- **Markdown-wrapped JSON**: JSON embedded in markdown code blocks  
+- **Schema mismatches**: Missing required fields or incorrect data types
+- **Token limit issues**: Truncated responses due to max_output_tokens
+
+ADK's built-in validation handles these cases automatically.
+
+### Validation Best Practices
+
+#### 1. Schema Design
+
+Create robust Pydantic schemas with clear field descriptions:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
+class BusinessStrategy(BaseModel):
+    """Structured output for business strategy document."""
+    businessStrategySummary: str = Field(
+        ...,
+        description="A high-level summary of the company's situation..."
+    )
+    companyOverview: str = Field(
+        ...,
+        description="A comprehensive narrative that introduces..."
+    )
+    # Additional fields with detailed descriptions
+```
+
+#### 2. Instruction Engineering
+
+While ADK handles validation, strengthen agent instructions for better first-attempt success:
+- Include "Output must be valid JSON" in instructions
+- Provide example of expected structure
+- Reference field descriptions from the schema
+
+#### 3. Token Management
+
+Prevent truncation issues:
+- Monitor token usage in agent responses  
+- Set appropriate max_output_tokens
+- Keep context utilization between 20-80%
+- Consider chunking large outputs if needed
+
+### Testing Validation
+
+#### Unit Tests
+
+```python
+def test_agent_output_validation(agent, test_input):
+    """Test that agent produces valid schema output."""
+    result = agent.invoke(test_input)
+    try:
+        # ADK should have already validated, but we can double-check
+        validated = BusinessStrategy.model_validate(result['business_strategy_doc'])
+        return True
+    except ValidationError as e:
+        logger.error(f"Unexpected validation failure: {e}")
+        return False
+```
+
+#### Integration Tests
+
+Test complete agent flow with:
+- Various input types and edge cases
+- Empty data and special characters
+- Token limit scenarios
+- Long-running operations
+
+### Monitoring and Debugging
+
+#### Validation Metrics to Track
+
+- Validation error rates per agent
+- Retry success rates (when ADK retries)
+- Token usage patterns
+- Response truncation incidents
+
+#### Common Issues and Solutions
+
+**"Pydantic ValidationError" in logs**
+- **Cause**: Agent output doesn't match schema despite ADK retry
+- **Solutions**:
+  - Review agent instructions for clarity
+  - Check if schema requirements are too complex
+  - Verify token limits aren't causing truncation
+  - Monitor for patterns in failed validations
+
+**Truncated JSON responses**
+- **Cause**: Output exceeds max_output_tokens
+- **Solutions**:
+  - Increase max_output_tokens if possible
+  - Simplify output requirements
+  - Split complex outputs into multiple agents
+
+### Historical Context
+
+The PYDANTIC_VALIDATION_RECOMMENDATIONS.md file references a custom retry wrapper approach that was initially considered but ultimately replaced by ADK's built-in functionality. The current implementation relies entirely on ADK's native `output_schema` parameter for validation and retry logic.
+
+### Key Takeaways
+
+1. **ADK handles validation**: No custom retry wrappers needed with `output_schema`
+2. **Consistency is critical**: All agents with structured output use `output_schema`
+3. **Defense in depth**: ADK provides automatic retry and JSON extraction
+4. **Monitor patterns**: Track validation failures to improve instructions
+5. **Test thoroughly**: Validate edge cases and token limit scenarios
+
 ## Future Enhancements
 
 Potential improvements identified in the codebase:
 1. Progress tracking granularity (currently simplified)
-2. Retry mechanism for failed document generation
+2. Enhanced validation error reporting and analytics
 3. Document versioning and update tracking
 4. Real-time progress updates to frontend
 5. Automated cost optimization implementation
 6. Machine learning-based usage prediction
+7. A/B testing for instruction optimization to reduce validation errors
+8. Automated schema evolution based on validation patterns

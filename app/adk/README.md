@@ -7,33 +7,37 @@ A minimal ADK agent with Vertex AI Search integration - following official ADK p
 ✅ **Proper ADK Usage**: Uses official ADK patterns from sample agents  
 ✅ **Minimal Code**: ~50 lines vs 400+ in the overengineered version  
 ✅ **Native Interactive Mode**: Built-in CLI and web interfaces  
-✅ **First-Class Vertex AI Search**: No manual session management  
+✅ **First-Class Vertex AI Search**: No manual session management
 
 ## Setup
 
 1. **Copy environment variables**:
+
    ```bash
    cp .env.example .env
    # Update .env with your actual Vertex AI Search IDs
    ```
 
 2. **Install dependencies**:
+
    ```bash
    uv sync
    ```
 
 3. **Run the agent**:
+
    ```bash
    # CLI interactive mode
    adk run .
-   
-   # Web interface  
+
+   # Web interface
    adk web
    ```
 
 ## Usage
 
 Ask questions like:
+
 - "What's the latest Apple news?"
 - "Tell me about recent Apple developments"
 - "Apple stock updates"
@@ -41,6 +45,7 @@ Ask questions like:
 - "Update our marketing strategy with new insights"
 
 The agent will automatically:
+
 1. Search your Vertex AI Search datastore
 2. Analyze and synthesize results
 3. Provide sourced responses with business insights
@@ -82,6 +87,7 @@ uv run -- python deploy_agent.py deploy --project ken-e-production --location us
 ### Authentication Requirements
 
 **For local development:**
+
 ```bash
 gcloud auth application-default login
 ```
@@ -91,14 +97,14 @@ Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to your s
 
 ## Key Differences from Overengineered Version
 
-| Overengineered | Proper ADK |
-|----------------|------------|
-| 400+ lines | ~50 lines |
-| Manual session management | ADK handles it |
-| Custom event processing | ADK abstracts it |
-| Complex Runner setup | `adk run .` |
-| Dispatcher pattern | Direct tool integration |
-| Custom invoke functions | ADK built-in execution |
+| Overengineered            | Proper ADK              |
+| ------------------------- | ----------------------- |
+| 400+ lines                | ~50 lines               |
+| Manual session management | ADK handles it          |
+| Custom event processing   | ADK abstracts it        |
+| Complex Runner setup      | `adk run .`             |
+| Dispatcher pattern        | Direct tool integration |
+| Custom invoke functions   | ADK built-in execution  |
 
 ## Architecture
 
@@ -110,6 +116,7 @@ Agent (agent.py)
 ```
 
 ADK provides:
+
 - ✅ Interactive CLI mode
 - ✅ Web interface
 - ✅ Session management

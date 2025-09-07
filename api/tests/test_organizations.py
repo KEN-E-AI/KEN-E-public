@@ -16,18 +16,20 @@ client = TestClient(app)
 def mock_neo4j_service():
     """Create a mock Neo4j service for testing."""
     mock_service = MagicMock()
-    
+
     # Use AsyncMock for async methods
     mock_service.health_check = AsyncMock(return_value=True)
     mock_service.execute_query = AsyncMock(return_value=[])
-    mock_service.execute_write_query = AsyncMock(return_value={
-        "nodes_created": 1,
-        "nodes_deleted": 0,
-        "relationships_created": 0,
-        "relationships_deleted": 0,
-        "properties_set": 0,
-    })
-    
+    mock_service.execute_write_query = AsyncMock(
+        return_value={
+            "nodes_created": 1,
+            "nodes_deleted": 0,
+            "relationships_created": 0,
+            "relationships_deleted": 0,
+            "properties_set": 0,
+        }
+    )
+
     return mock_service
 
 
@@ -231,63 +233,79 @@ def test_create_organization(mock_neo4j_service):
 
     # Set up side_effect for execute_query to handle different queries
     call_count = 0
+
     async def mock_execute_query(query, params=None):
         nonlocal call_count
         call_count += 1
-        
+
         # First two calls: check if organization exists (should return False)
         if "count(org) > 0 as exists" in query:
             return [{"exists": False}]
-        
+
         # Final call: return created organization
         if "MATCH (org:Organization {organization_id:" in query:
             return [
-            {
-                "org": {
-                    "organization_id": "test-org-id-123",
-                    "organization_name": "New Company",
-                    "plan": "Professional",
-                    "website": "https://newcompany.com",
-                    "company_size": "medium",
-                    "agency": False,
-                    "child_organizations": [],
-                    "subscription": json.dumps({
-                        "plan_name": "Professional Plan",
-                        "plan_description": "Advanced analytics and team features",
-                        "price": 99.0,
-                        "currency": "USD",
-                        "billing_cycle": "monthly",
-                        "next_billing_date": "2024-03-01",
-                        "features": ["Advanced Analytics", "Team Collaboration", "API Access"],
-                        "usage": {"reports_generated": 0, "reports_limit": 1000},
-                    }),
-                    "billing": json.dumps({
-                        "payment_method": {
-                            "last_four": "1234",
-                            "brand": "Visa",
-                            "expires": "12/26",
-                        },
-                        "address": "456 New St, Suite 100, New York, NY 10001",
-                        "tax_id": "987654321",
-                    }),
-                    "team": json.dumps({
-                        "members_used": 1,
-                        "members_limit": 10,
-                        "pending_invitations": 0,
-                    }),
+                {
+                    "org": {
+                        "organization_id": "test-org-id-123",
+                        "organization_name": "New Company",
+                        "plan": "Professional",
+                        "website": "https://newcompany.com",
+                        "company_size": "medium",
+                        "agency": False,
+                        "child_organizations": [],
+                        "subscription": json.dumps(
+                            {
+                                "plan_name": "Professional Plan",
+                                "plan_description": "Advanced analytics and team features",
+                                "price": 99.0,
+                                "currency": "USD",
+                                "billing_cycle": "monthly",
+                                "next_billing_date": "2024-03-01",
+                                "features": [
+                                    "Advanced Analytics",
+                                    "Team Collaboration",
+                                    "API Access",
+                                ],
+                                "usage": {
+                                    "reports_generated": 0,
+                                    "reports_limit": 1000,
+                                },
+                            }
+                        ),
+                        "billing": json.dumps(
+                            {
+                                "payment_method": {
+                                    "last_four": "1234",
+                                    "brand": "Visa",
+                                    "expires": "12/26",
+                                },
+                                "address": "456 New St, Suite 100, New York, NY 10001",
+                                "tax_id": "987654321",
+                            }
+                        ),
+                        "team": json.dumps(
+                            {
+                                "members_used": 1,
+                                "members_limit": 10,
+                                "pending_invitations": 0,
+                            }
+                        ),
+                    }
                 }
-            }
             ]
-        
+
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
 
     # Override dependency
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
     # Mock UUID generation
-    with patch("src.kene_api.routers.organizations.generate_unique_organization_id") as mock_uuid:
+    with patch(
+        "src.kene_api.routers.organizations.generate_unique_organization_id"
+    ) as mock_uuid:
         mock_uuid.return_value = "test-org-id-123"
 
         response = client.post("/api/v1/organizations/", json=org_data)
@@ -314,51 +332,58 @@ def test_update_organization(mock_neo4j_service):
         # Check if organization exists
         if "count(org) > 0 as exists" in query:
             return [{"exists": True}]
-        
+
         # Return updated organization
         if "MATCH (org:Organization {organization_id:" in query:
             return [
-            {
-                "org": {
-                    "organization_id": "test-org",
-                    "organization_name": "Updated Company Name",
-                    "plan": "Professional",
-                    "website": "https://updated.com",
-                    "company_size": "medium",
-                    "agency": False,
-                    "child_organizations": [],
-                    "subscription": json.dumps(
-                        {
-                            "plan_name": "Pro",
-                            "plan_description": "Professional features",
-                            "price": 99.0,
-                            "currency": "USD",
-                            "billing_cycle": "monthly",
-                            "next_billing_date": "2024-03-01",
-                            "features": ["Feature 1"],
-                            "usage": {"reports_generated": 50, "reports_limit": 100},
-                        }
-                    ),
-                    "billing": json.dumps(
-                        {
-                            "payment_method": {
-                                "last_four": "1234", 
-                                "brand": "Visa",
-                                "expires": "12/25"
-                            },
-                            "address": "123 Main St",
-                            "tax_id": "123456789",
-                        }
-                    ),
-                    "team": json.dumps(
-                        {"members_used": 5, "members_limit": 10, "pending_invitations": 2}
-                    ),
+                {
+                    "org": {
+                        "organization_id": "test-org",
+                        "organization_name": "Updated Company Name",
+                        "plan": "Professional",
+                        "website": "https://updated.com",
+                        "company_size": "medium",
+                        "agency": False,
+                        "child_organizations": [],
+                        "subscription": json.dumps(
+                            {
+                                "plan_name": "Pro",
+                                "plan_description": "Professional features",
+                                "price": 99.0,
+                                "currency": "USD",
+                                "billing_cycle": "monthly",
+                                "next_billing_date": "2024-03-01",
+                                "features": ["Feature 1"],
+                                "usage": {
+                                    "reports_generated": 50,
+                                    "reports_limit": 100,
+                                },
+                            }
+                        ),
+                        "billing": json.dumps(
+                            {
+                                "payment_method": {
+                                    "last_four": "1234",
+                                    "brand": "Visa",
+                                    "expires": "12/25",
+                                },
+                                "address": "123 Main St",
+                                "tax_id": "123456789",
+                            }
+                        ),
+                        "team": json.dumps(
+                            {
+                                "members_used": 5,
+                                "members_limit": 10,
+                                "pending_invitations": 2,
+                            }
+                        ),
+                    }
                 }
-            }
             ]
-        
+
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
 
     # Override dependency
@@ -377,6 +402,7 @@ def test_update_organization(mock_neo4j_service):
 
 def test_delete_organization(mock_neo4j_service):
     """Test deleting an organization."""
+
     # Mock the checks and deletion
     async def mock_execute_query(query, params=None):
         if "count(org) > 0 as exists" in query:
@@ -384,9 +410,9 @@ def test_delete_organization(mock_neo4j_service):
         if "count(acc) as account_count" in query:
             return [{"account_count": 0}]
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
-    
+
     # Mock the write query to return proper summary
     mock_neo4j_service.execute_write_query.return_value = {
         "nodes_deleted": 1,
@@ -400,33 +426,24 @@ def test_delete_organization(mock_neo4j_service):
     mock_firestore_service = MagicMock()
     mock_firestore_client = MagicMock()
     mock_firestore_service.get_client.return_value = mock_firestore_client
-    
+
     # Mock user documents with organization permissions
     mock_user1 = MagicMock()
     mock_user1.id = "user1"
     mock_user1.to_dict.return_value = {
-        "permissions": {
-            "organizations": {
-                "test-org": "admin",
-                "other-org": "member"
-            }
-        }
+        "permissions": {"organizations": {"test-org": "admin", "other-org": "member"}}
     }
     mock_user1_ref = MagicMock()
     mock_user1.reference = mock_user1_ref
-    
+
     mock_user2 = MagicMock()
     mock_user2.id = "user2"
     mock_user2.to_dict.return_value = {
-        "permissions": {
-            "organizations": {
-                "test-org": "member"
-            }
-        }
+        "permissions": {"organizations": {"test-org": "member"}}
     }
     mock_user2_ref = MagicMock()
     mock_user2.reference = mock_user2_ref
-    
+
     # Mock collection stream
     mock_users_collection = MagicMock()
     mock_users_collection.stream.return_value = [mock_user1, mock_user2]
@@ -435,6 +452,7 @@ def test_delete_organization(mock_neo4j_service):
     # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
     from src.kene_api.firestore import get_firestore_service
+
     app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
     response = client.delete("/api/v1/organizations/test-org")
@@ -445,18 +463,22 @@ def test_delete_organization(mock_neo4j_service):
     assert "deleted successfully" in data["message"]
     assert data["data"]["organization_id"] == "test-org"
     assert data["data"]["nodes_deleted"] == 1
-    
+
     # Verify Firestore cleanup was called
     assert mock_user1_ref.update.called
     assert mock_user2_ref.update.called
-    
+
     # Verify the correct updates were made
-    mock_user1_ref.update.assert_called_with({
-        "permissions.organizations": {"other-org": "member"}  # test-org removed
-    })
-    mock_user2_ref.update.assert_called_with({
-        "permissions.organizations": {}  # test-org was the only org
-    })
+    mock_user1_ref.update.assert_called_with(
+        {
+            "permissions.organizations": {"other-org": "member"}  # test-org removed
+        }
+    )
+    mock_user2_ref.update.assert_called_with(
+        {
+            "permissions.organizations": {}  # test-org was the only org
+        }
+    )
 
     # Clean up
     app.dependency_overrides.clear()
@@ -723,7 +745,9 @@ def test_organization_with_agency_and_children(mock_neo4j_service):
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
     # Mock UUID generation
-    with patch("src.kene_api.routers.organizations.generate_unique_organization_id") as mock_uuid:
+    with patch(
+        "src.kene_api.routers.organizations.generate_unique_organization_id"
+    ) as mock_uuid:
         mock_uuid.return_value = "agency-org-id"
 
         response = client.post("/api/v1/organizations/", json=org_data)
@@ -790,13 +814,15 @@ def test_organization_special_characters_in_name(mock_neo4j_service):
                 }
             ]
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
 
     # Override dependency
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
-    with patch("src.kene_api.routers.organizations.generate_unique_organization_id") as mock_uuid:
+    with patch(
+        "src.kene_api.routers.organizations.generate_unique_organization_id"
+    ) as mock_uuid:
         mock_uuid.return_value = "special-org-id"
 
         response = client.post("/api/v1/organizations/", json=org_data)
@@ -858,13 +884,15 @@ def test_organization_empty_strings_and_nulls(mock_neo4j_service):
                 }
             ]
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
 
     # Override dependency
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
-    with patch("src.kene_api.routers.organizations.generate_unique_organization_id") as mock_uuid:
+    with patch(
+        "src.kene_api.routers.organizations.generate_unique_organization_id"
+    ) as mock_uuid:
         mock_uuid.return_value = "minimal-org-id"
 
         response = client.post("/api/v1/organizations/", json=org_data)
@@ -936,13 +964,15 @@ def test_organization_circular_parent_child_relationship(mock_neo4j_service):
                 }
             ]
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
 
     # Override dependency
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
-    with patch("src.kene_api.routers.organizations.generate_unique_organization_id") as mock_uuid:
+    with patch(
+        "src.kene_api.routers.organizations.generate_unique_organization_id"
+    ) as mock_uuid:
         mock_uuid.return_value = "self-org-id"
 
         response = client.post("/api/v1/organizations/", json=org_data)
@@ -1046,7 +1076,7 @@ def test_create_organization_without_company_size(mock_neo4j_service):
             "pending_invitations": 0,
         },
     }
-    
+
     # Mock query handling
     async def mock_execute_query(query, params=None):
         if "count(org) > 0 as exists" in query:
@@ -1069,27 +1099,29 @@ def test_create_organization_without_company_size(mock_neo4j_service):
                 }
             ]
         return []
-    
+
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
-    
+
     # Override dependency
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
-    
-    with patch("src.kene_api.routers.organizations.generate_unique_organization_id") as mock_uuid:
+
+    with patch(
+        "src.kene_api.routers.organizations.generate_unique_organization_id"
+    ) as mock_uuid:
         mock_uuid.return_value = "test-org-id"
-        
+
         response = client.post("/api/v1/organizations/", json=org_data)
-    
+
     # Debug: print response if it fails
     if response.status_code != 200:
         print(f"Response status: {response.status_code}")
         print(f"Response body: {response.json()}")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["organization_name"] == "Company Without Size"
     # When empty string is stored in Neo4j, it's returned as empty string
     assert data["company_size"] == ""
-    
+
     # Clean up
     app.dependency_overrides.clear()
