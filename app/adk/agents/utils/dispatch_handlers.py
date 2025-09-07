@@ -4,11 +4,13 @@ Dispatch handlers for routing to specialized agents.
 
 import logging
 import os
-import re
 import time
 import uuid
 from typing import Any, Dict, Optional
 
+from pydantic import ValidationError
+
+from ..models.strategy_models import StrategyParameters, parse_strategy_query
 from .supervisor_utils import invoke_agent_sync
 
 logger = logging.getLogger(__name__)
@@ -139,109 +141,68 @@ def dispatch_to_strategy(
             query, "supervisor_strategy_dispatch", raise_on_exceed=False
         )
 
-        # Parse the query to extract strategy generation parameters
-        # Extract parameters from the formatted message
-        params = {}
-
-        # Try to extract parameters from the structured format
-        param_patterns = {
-            "company_name": r"[-•]\s*company_name:\s*(.+?)(?:\n|$)",
-            "industry": r"[-•]\s*industry:\s*(.+?)(?:\n|$)",
-            "websites": r"[-•]\s*websites:\s*(.+?)(?:\n|$)",
-            "customer_regions": r"[-•]\s*customer_regions:\s*(.+?)(?:\n|$)",
-            "account_id": r"[-•]\s*account_id:\s*(.+?)(?:\n|$)",
-            "user_id": r"[-•]\s*user_id:\s*(.+?)(?:\n|$)",
-            "annual_ad_budget": r"[-•]\s*annual_ad_budget:\s*(.+?)(?:\n|$)",
-            "project_id": r"[-•]\s*project_id:\s*(.+?)(?:\n|$)",
-            "uploaded_documents": r"[-•]\s*uploaded_documents:\s*(.+?)(?:\n|$)",
-        }
-
-        for param_name, pattern in param_patterns.items():
-            match = re.search(pattern, query, re.IGNORECASE)
-            if match:
-                value = match.group(1).strip()
-                # Convert annual_ad_budget to float
-                if param_name == "annual_ad_budget":
-                    try:
-                        params[param_name] = float(value)
-                    except (ValueError, TypeError):
-                        params[param_name] = 0.0
-                # Convert uploaded_documents to list
-                elif param_name == "uploaded_documents":
-                    # Split comma-separated URLs
-                    params[param_name] = [
-                        url.strip() for url in value.split(",") if url.strip()
-                    ]
-                else:
-                    params[param_name] = value
+        # Parse the query string to extract parameters
+        raw_params = parse_strategy_query(query)
 
         # Use tenant_context to fill in missing values
         if tenant_context:
-            if "account_id" not in params:
-                params["account_id"] = tenant_context.get(
+            if "account_id" not in raw_params:
+                raw_params["account_id"] = tenant_context.get(
                     "account_id"
-                ) or tenant_context.get("tenant_id")
-            if "user_id" not in params:
-                params["user_id"] = tenant_context.get("user_id")
-            if "project_id" not in params:
-                params["project_id"] = tenant_context.get("project_id")
+                ) or tenant_context.get("tenant_id", "")
+            if "user_id" not in raw_params:
+                raw_params["user_id"] = tenant_context.get("user_id", "")
+            if "project_id" not in raw_params:
+                raw_params["project_id"] = tenant_context.get("project_id")
 
-        # Check if we have the required parameters
-        required_params = [
-            "company_name",
-            "industry",
-            "websites",
-            "customer_regions",
-            "account_id",
-            "user_id",
-        ]
-        missing_params = [
-            p for p in required_params if p not in params or not params[p]
-        ]
-
-        if missing_params:
-            logger.warning(
-                f"[SUPERVISOR] Missing required parameters for strategy generation: {missing_params}"
-            )
-            logger.info(f"[SUPERVISOR] Extracted parameters: {params}")
-            logger.info(f"[SUPERVISOR] Query preview: {query[:500]}")
+        # Validate and parse parameters using Pydantic
+        try:
+            params = StrategyParameters(**raw_params)
+            logger.info(f"[SUPERVISOR] Successfully validated strategy parameters")
             supervisor_logger.log_token_usage(
-                phase="parameter_extraction",
-                tokens={
-                    "params_missing": len(missing_params),
-                    "params_found": len(params),
-                },
-                percentage_of_limit=0.01,  # Very small
+                phase="parameter_validation",
+                tokens={"params_validated": 1},
+                percentage_of_limit=0.01,
             )
-            # Try to proceed with what we have
+        except ValidationError as e:
+            logger.warning(f"[SUPERVISOR] Parameter validation errors: {e.errors()}")
+            # Try to create with defaults for missing required fields
+            for error in e.errors():
+                field = error["loc"][0]
+                if error["type"] == "missing":
+                    if field == "company_name":
+                        raw_params[field] = "Unknown Company"
+                    elif field == "industry":
+                        raw_params[field] = "Unknown Industry"
+                    elif field in ["account_id", "user_id"]:
+                        raw_params[field] = "unknown"
 
-        # Set defaults for optional parameters
-        params.setdefault("annual_ad_budget", 0.0)
-        params.setdefault("project_id", os.getenv("VERTEX_AI_PROJECT_ID", "ken-e-dev"))
+            # Retry validation with defaults
+            params = StrategyParameters(**raw_params)
 
         logger.info(
-            f"[SUPERVISOR] Calling execute_strategy_generation with params: {params}"
+            f"[SUPERVISOR] Calling execute_strategy_generation with validated params"
         )
         supervisor_logger.log_token_usage(
             phase="pre_strategy_invocation",
-            tokens={"param_count": len(params)},
+            tokens={"param_count": len(params.model_dump())},
             percentage_of_limit=0.01,
         )
 
-        # Invoke the strategy agent with the correct parameters
+        # Invoke the strategy agent with the validated parameters
         logger.info("[SUPERVISOR] Invoking strategy agent with timeout monitoring...")
         start_time = time.time()
 
         result = invoke_strategy_agent_sync(
-            company_name=params.get("company_name", "Unknown Company"),
-            industry=params.get("industry", "Unknown Industry"),
-            websites=params.get("websites", ""),
-            customer_regions=params.get("customer_regions", ""),
-            account_id=params.get("account_id", ""),
-            user_id=params.get("user_id", ""),
-            annual_ad_budget=params.get("annual_ad_budget", 0.0),
-            project_id=params.get("project_id"),
-            uploaded_documents=params.get("uploaded_documents", []),
+            company_name=params.company_name,
+            industry=params.industry,
+            websites=params.websites,
+            customer_regions=params.customer_regions,
+            account_id=params.account_id,
+            user_id=params.user_id,
+            annual_ad_budget=params.annual_ad_budget,
+            project_id=params.project_id,
+            uploaded_documents=params.uploaded_documents,
         )
 
         elapsed_time = time.time() - start_time
@@ -253,7 +214,7 @@ def dispatch_to_strategy(
             success=True,
             output_tokens=len(str(result)) // 4,
             metadata={
-                "account_id": params.get("account_id", ""),
+                "account_id": params.account_id,
                 "execution_time_seconds": elapsed_time,
             },
         )
@@ -264,7 +225,7 @@ def dispatch_to_strategy(
             "result": result,
             "source": "strategy_specialist",
             "agent": "strategy",
-            "account_id": params.get("account_id", ""),
+            "account_id": params.account_id,
         }
     except Exception as e:
         logger.error(f"[SUPERVISOR] Error in strategy agent dispatch: {e}")
