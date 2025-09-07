@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List
 from unittest.mock import MagicMock, patch
 
-from async_analytics_queue import AsyncAnalyticsQueue, AsyncAnalyticsAdapter
-from analytics_service import AnalyticsService
+from .async_analytics_queue import AsyncAnalyticsQueue, AsyncAnalyticsAdapter
+from .analytics_service import AnalyticsService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
