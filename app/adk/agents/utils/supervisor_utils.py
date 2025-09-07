@@ -8,7 +8,7 @@ import concurrent.futures
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from google.adk import Runner
 from google.adk.agents import Agent
@@ -19,7 +19,7 @@ from google.genai.types import Content, Part
 logger = logging.getLogger(__name__)
 
 
-def extract_tenant_context(input_data: Any) -> tuple[str | None, str | None, str]:
+def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[str], str]:
     """
     Extract tenant context from various input formats.
 
@@ -52,8 +52,8 @@ def extract_tenant_context(input_data: Any) -> tuple[str | None, str | None, str
 def invoke_agent_sync(
     agent: Agent,
     query: str,
-    user_id: str | None = None,
-    session_id: str | None = None,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> str:
     """
     Synchronous wrapper for agent invocation with proper async handling.
@@ -113,7 +113,7 @@ def invoke_agent_sync(
         return f"Error: Failed to complete the request - {e!s}"
 
 
-def dispatch_with_context(dispatch_func):
+def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
     """Wrapper to extract tenant context from the full input"""
 
     def wrapper(full_input: str) -> str:

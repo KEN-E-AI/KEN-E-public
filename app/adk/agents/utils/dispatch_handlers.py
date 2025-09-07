@@ -7,7 +7,7 @@ import os
 import re
 import time
 import uuid
-from typing import Any
+from typing import Any, Dict, Optional
 
 from .supervisor_utils import invoke_agent_sync
 
@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 def dispatch_to_company_news(
-    query: str, tenant_context: dict[str, Any] | None = None
-) -> dict[str, Any]:
+    query: str, tenant_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Dispatch company news queries to the specialized news agent.
     News agent doesn't need tenant context as it uses public data.
@@ -47,8 +47,8 @@ def dispatch_to_company_news(
 
 
 def dispatch_to_google_analytics(
-    query: str, tenant_context: dict[str, Any] | None = None
-) -> dict[str, Any]:
+    query: str, tenant_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Dispatch Google Analytics queries with tenant context.
     In production, tenant context comes from the authenticated user's session.
@@ -106,8 +106,8 @@ def dispatch_to_google_analytics(
 
 
 def dispatch_to_strategy(
-    query: str, tenant_context: dict[str, Any] | None = None
-) -> dict[str, Any]:
+    query: str, tenant_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Dispatch strategy queries to the iterative strategy agent.
     Strategy agent needs account context for document persistence.

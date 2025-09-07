@@ -13,13 +13,14 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def deploy_ken_e():
+def deploy_ken_e() -> Optional[str]:
     """Deploy the KEN-E chat agent to Agent Engine."""
 
     # Save current directory

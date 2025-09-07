@@ -13,13 +13,14 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def deploy_strategy_supervisor():
+def deploy_strategy_supervisor() -> Optional[str]:
     """Deploy the Strategy Documents Supervisor to Agent Engine."""
 
     # Save current directory
