@@ -29,18 +29,20 @@ client = TestClient(app)
 def mock_neo4j_service():
     """Create a mock Neo4j service for testing."""
     mock_service = MagicMock()
-    
+
     # Use AsyncMock for async methods
     mock_service.health_check = AsyncMock(return_value=True)
     mock_service.execute_query = AsyncMock(return_value=[])
-    mock_service.execute_write_query = AsyncMock(return_value={
-        "nodes_created": 1,
-        "nodes_deleted": 0,
-        "relationships_created": 0,
-        "relationships_deleted": 0,
-        "properties_set": 0,
-    })
-    
+    mock_service.execute_write_query = AsyncMock(
+        return_value={
+            "nodes_created": 1,
+            "nodes_deleted": 0,
+            "relationships_created": 0,
+            "relationships_deleted": 0,
+            "properties_set": 0,
+        }
+    )
+
     return mock_service
 
 
@@ -62,7 +64,7 @@ def mock_user_context():
         accessible_accounts=[],
         permissions={},
         organization_permissions={"existing-org": "admin"},
-        account_permissions={}
+        account_permissions={},
     )
 
 
@@ -75,7 +77,7 @@ def mock_super_admin_context():
         accessible_accounts=[],
         permissions={},
         organization_permissions={},
-        account_permissions={}
+        account_permissions={},
     )
 
 
@@ -97,22 +99,16 @@ def sample_organization_request():
             billing_cycle="monthly",
             next_billing_date=datetime.now(timezone.utc).isoformat(),
             features=["Feature 1", "Feature 2"],
-            usage={"reports_generated": 0, "reports_limit": 100}
+            usage={"reports_generated": 0, "reports_limit": 100},
         ),
         billing=Billing(
             payment_method=PaymentMethod(
-                last_four="1234",
-                brand="Visa",
-                expires="12/25"
+                last_four="1234", brand="Visa", expires="12/25"
             ),
             address="123 Main St",
-            tax_id="TAX123"
+            tax_id="TAX123",
         ),
-        team=Team(
-            members_used=1,
-            members_limit=10,
-            pending_invitations=0
-        )
+        team=Team(members_used=1, members_limit=10, pending_invitations=0),
     )
 
 
@@ -125,13 +121,15 @@ class TestCreateOrganizationAuth:
         mock_neo4j_service,
         mock_firestore_service,
         mock_user_context,
-        sample_organization_request
+        sample_organization_request,
     ):
         """Test successful organization creation."""
         from src.kene_api.routers.organizations import create_organization
-        
+
         # Mock the internal helper to return an organization
-        with patch('src.kene_api.routers.organizations._get_organization_by_id') as mock_get_org:
+        with patch(
+            "src.kene_api.routers.organizations._get_organization_by_id"
+        ) as mock_get_org:
             mock_org = Organization(
                 organization_id="org_test123",
                 organization_name=sample_organization_request.organization_name,
@@ -142,26 +140,32 @@ class TestCreateOrganizationAuth:
                 child_organizations=sample_organization_request.child_organizations,
                 subscription=sample_organization_request.subscription,
                 billing=sample_organization_request.billing,
-                team=sample_organization_request.team
+                team=sample_organization_request.team,
             )
             mock_get_org.return_value = mock_org
-            
+
             # Test with default permission level ("all")
-            with patch.object(settings, 'organization_creation_permission', 'all'):
-                with patch('src.kene_api.routers.organizations.get_firestore_service', return_value=mock_firestore_service):
+            with patch.object(settings, "organization_creation_permission", "all"):
+                with patch(
+                    "src.kene_api.routers.organizations.get_firestore_service",
+                    return_value=mock_firestore_service,
+                ):
                     result = await create_organization(
                         request=sample_organization_request,
                         user=mock_user_context,
-                        db=mock_neo4j_service
+                        db=mock_neo4j_service,
                     )
-                    
+
                     # Verify organization was created
-                    assert result.organization_name == sample_organization_request.organization_name
+                    assert (
+                        result.organization_name
+                        == sample_organization_request.organization_name
+                    )
                     assert result.plan == sample_organization_request.plan
-                    
+
                     # Verify Neo4j was called
                     mock_neo4j_service.execute_write_query.assert_called_once()
-                    
+
                     # Verify Firestore permission was set
                     mock_firestore_service.set_nested_field.assert_called_once()
 
@@ -172,24 +176,26 @@ class TestCreateOrganizationAuth:
         mock_firestore_service,
         mock_user_context,
         mock_super_admin_context,
-        sample_organization_request
+        sample_organization_request,
     ):
         """Test organization creation when restricted to super admins."""
         from src.kene_api.routers.organizations import create_organization
-        
-        with patch.object(settings, 'organization_creation_permission', 'super_admin'):
+
+        with patch.object(settings, "organization_creation_permission", "super_admin"):
             # Test with regular user - should fail
             with pytest.raises(HTTPException) as exc_info:
                 await create_organization(
                     request=sample_organization_request,
                     user=mock_user_context,
-                    db=mock_neo4j_service
+                    db=mock_neo4j_service,
                 )
             assert exc_info.value.status_code == 403
             assert "Only super administrators" in str(exc_info.value.detail)
-            
+
             # Test with super admin - should succeed
-            with patch('src.kene_api.routers.organizations._get_organization_by_id') as mock_get_org:
+            with patch(
+                "src.kene_api.routers.organizations._get_organization_by_id"
+            ) as mock_get_org:
                 mock_org = Organization(
                     organization_id="org_test123",
                     organization_name=sample_organization_request.organization_name,
@@ -200,16 +206,19 @@ class TestCreateOrganizationAuth:
                     child_organizations=sample_organization_request.child_organizations,
                     subscription=sample_organization_request.subscription,
                     billing=sample_organization_request.billing,
-                    team=sample_organization_request.team
+                    team=sample_organization_request.team,
                 )
                 mock_get_org.return_value = mock_org
-                
+
                 result = await create_organization(
                     request=sample_organization_request,
                     user=mock_super_admin_context,
-                    db=mock_neo4j_service
+                    db=mock_neo4j_service,
                 )
-                assert result.organization_name == sample_organization_request.organization_name
+                assert (
+                    result.organization_name
+                    == sample_organization_request.organization_name
+                )
 
     @pytest.mark.asyncio
     async def test_create_organization_disabled(
@@ -217,20 +226,22 @@ class TestCreateOrganizationAuth:
         mock_neo4j_service,
         mock_firestore_service,
         mock_user_context,
-        sample_organization_request
+        sample_organization_request,
     ):
         """Test organization creation when disabled."""
         from src.kene_api.routers.organizations import create_organization
-        
-        with patch.object(settings, 'organization_creation_permission', 'none'):
+
+        with patch.object(settings, "organization_creation_permission", "none"):
             with pytest.raises(HTTPException) as exc_info:
                 await create_organization(
                     request=sample_organization_request,
                     user=mock_user_context,
-                    db=mock_neo4j_service
+                    db=mock_neo4j_service,
                 )
             assert exc_info.value.status_code == 403
-            assert "Organization creation is currently disabled" in str(exc_info.value.detail)
+            assert "Organization creation is currently disabled" in str(
+                exc_info.value.detail
+            )
 
     @pytest.mark.asyncio
     async def test_create_organization_firestore_failure_rollback(
@@ -238,27 +249,32 @@ class TestCreateOrganizationAuth:
         mock_neo4j_service,
         mock_firestore_service,
         mock_user_context,
-        sample_organization_request
+        sample_organization_request,
     ):
         """Test rollback when Firestore permission grant fails."""
         from src.kene_api.routers.organizations import create_organization
-        
+
         # Mock Firestore to fail
         mock_firestore_service.set_nested_field.return_value = False
-        
-        with patch('src.kene_api.routers.organizations.get_firestore_service', return_value=mock_firestore_service):
+
+        with patch(
+            "src.kene_api.routers.organizations.get_firestore_service",
+            return_value=mock_firestore_service,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await create_organization(
                     request=sample_organization_request,
                     user=mock_user_context,
-                    db=mock_neo4j_service
+                    db=mock_neo4j_service,
                 )
-            
+
             assert exc_info.value.status_code == 500
             assert "Failed to complete organization setup" in str(exc_info.value.detail)
-            
+
             # Verify rollback was attempted (DELETE query executed)
-            assert mock_neo4j_service.execute_write_query.call_count == 2  # CREATE + DELETE
+            assert (
+                mock_neo4j_service.execute_write_query.call_count == 2
+            )  # CREATE + DELETE
 
     @pytest.mark.asyncio
     async def test_create_organization_firestore_exception_rollback(
@@ -266,27 +282,34 @@ class TestCreateOrganizationAuth:
         mock_neo4j_service,
         mock_firestore_service,
         mock_user_context,
-        sample_organization_request
+        sample_organization_request,
     ):
         """Test rollback when Firestore throws an exception."""
         from src.kene_api.routers.organizations import create_organization
-        
+
         # Mock Firestore to raise an exception
-        mock_firestore_service.set_nested_field.side_effect = Exception("Firestore connection error")
-        
-        with patch('src.kene_api.routers.organizations.get_firestore_service', return_value=mock_firestore_service):
+        mock_firestore_service.set_nested_field.side_effect = Exception(
+            "Firestore connection error"
+        )
+
+        with patch(
+            "src.kene_api.routers.organizations.get_firestore_service",
+            return_value=mock_firestore_service,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await create_organization(
                     request=sample_organization_request,
                     user=mock_user_context,
-                    db=mock_neo4j_service
+                    db=mock_neo4j_service,
                 )
-            
+
             assert exc_info.value.status_code == 500
             assert "permission system error" in str(exc_info.value.detail)
-            
+
             # Verify rollback was attempted
-            assert mock_neo4j_service.execute_write_query.call_count == 2  # CREATE + DELETE
+            assert (
+                mock_neo4j_service.execute_write_query.call_count == 2
+            )  # CREATE + DELETE
 
 
 class TestGetOrganizationRefactored:
@@ -294,15 +317,15 @@ class TestGetOrganizationRefactored:
 
     @pytest.mark.asyncio
     async def test_get_organization_with_access(
-        self,
-        mock_neo4j_service,
-        mock_user_context
+        self, mock_neo4j_service, mock_user_context
     ):
         """Test getting an organization with proper access."""
         from src.kene_api.routers.organizations import get_organization
-        
+
         # Mock the internal helper
-        with patch('src.kene_api.routers.organizations._get_organization_by_id') as mock_get_org:
+        with patch(
+            "src.kene_api.routers.organizations._get_organization_by_id"
+        ) as mock_get_org:
             mock_org = Organization(
                 organization_id="existing-org",
                 organization_name="Existing Org",
@@ -319,50 +342,42 @@ class TestGetOrganizationRefactored:
                     billing_cycle="monthly",
                     next_billing_date="2024-01-01T00:00:00Z",
                     features=["Feature 1"],
-                    usage={"reports_generated": 0, "reports_limit": 100}
+                    usage={"reports_generated": 0, "reports_limit": 100},
                 ),
                 billing=Billing(
                     payment_method=PaymentMethod(
-                        last_four="1234",
-                        brand="Visa",
-                        expires="12/25"
+                        last_four="1234", brand="Visa", expires="12/25"
                     ),
                     address="123 Main St",
-                    tax_id="TAX123"
+                    tax_id="TAX123",
                 ),
-                team=Team(
-                    members_used=1,
-                    members_limit=10,
-                    pending_invitations=0
-                )
+                team=Team(members_used=1, members_limit=10, pending_invitations=0),
             )
             mock_get_org.return_value = mock_org
-            
+
             result = await get_organization(
                 organization_id="existing-org",
                 user=mock_user_context,
-                db=mock_neo4j_service
+                db=mock_neo4j_service,
             )
-            
+
             assert result.organization_id == "existing-org"
             mock_get_org.assert_called_once_with("existing-org", mock_neo4j_service)
 
     @pytest.mark.asyncio
     async def test_get_organization_without_access(
-        self,
-        mock_neo4j_service,
-        mock_user_context
+        self, mock_neo4j_service, mock_user_context
     ):
         """Test getting an organization without access."""
         from src.kene_api.routers.organizations import get_organization
-        
+
         with pytest.raises(HTTPException) as exc_info:
             await get_organization(
                 organization_id="unauthorized-org",
                 user=mock_user_context,
-                db=mock_neo4j_service
+                db=mock_neo4j_service,
             )
-        
+
         assert exc_info.value.status_code == 403
         assert "Access denied" in str(exc_info.value.detail)
 
@@ -371,86 +386,85 @@ class TestInternalHelperFunction:
     """Test the _get_organization_by_id internal helper."""
 
     @pytest.mark.asyncio
-    async def test_get_organization_by_id_success(
-        self,
-        mock_neo4j_service
-    ):
+    async def test_get_organization_by_id_success(self, mock_neo4j_service):
         """Test successful organization retrieval."""
         from src.kene_api.routers.organizations import _get_organization_by_id
-        
+
         # Mock Neo4j response
-        mock_neo4j_service.execute_query.return_value = [{
-            "org": {
-                "organization_id": "test-org",
-                "organization_name": "Test Org",
-                "plan": "Professional",
-                "website": "https://test.com",
-                "company_size": "medium",
-                "agency": False,
-                "child_organizations": [],
-                "subscription": json.dumps({
-                    "plan_name": "Professional",
-                    "plan_description": "Pro features",
-                    "price": 99.0,
-                    "currency": "USD",
-                    "billing_cycle": "monthly",
-                    "next_billing_date": "2024-01-01T00:00:00Z",
-                    "features": ["Feature 1"],
-                    "usage": {"reports_generated": 0, "reports_limit": 100}
-                }),
-                "billing": json.dumps({
-                    "payment_method": {
-                        "last_four": "1234",
-                        "brand": "Visa",
-                        "expires": "12/25"
-                    },
-                    "address": "123 Main St",
-                    "tax_id": "TAX123"
-                }),
-                "team": json.dumps({
-                    "members_used": 1,
-                    "members_limit": 10,
-                    "pending_invitations": 0
-                })
+        mock_neo4j_service.execute_query.return_value = [
+            {
+                "org": {
+                    "organization_id": "test-org",
+                    "organization_name": "Test Org",
+                    "plan": "Professional",
+                    "website": "https://test.com",
+                    "company_size": "medium",
+                    "agency": False,
+                    "child_organizations": [],
+                    "subscription": json.dumps(
+                        {
+                            "plan_name": "Professional",
+                            "plan_description": "Pro features",
+                            "price": 99.0,
+                            "currency": "USD",
+                            "billing_cycle": "monthly",
+                            "next_billing_date": "2024-01-01T00:00:00Z",
+                            "features": ["Feature 1"],
+                            "usage": {"reports_generated": 0, "reports_limit": 100},
+                        }
+                    ),
+                    "billing": json.dumps(
+                        {
+                            "payment_method": {
+                                "last_four": "1234",
+                                "brand": "Visa",
+                                "expires": "12/25",
+                            },
+                            "address": "123 Main St",
+                            "tax_id": "TAX123",
+                        }
+                    ),
+                    "team": json.dumps(
+                        {
+                            "members_used": 1,
+                            "members_limit": 10,
+                            "pending_invitations": 0,
+                        }
+                    ),
+                }
             }
-        }]
-        
+        ]
+
         result = await _get_organization_by_id("test-org", mock_neo4j_service)
-        
+
         assert result.organization_id == "test-org"
         assert result.organization_name == "Test Org"
         assert result.plan == "Professional"
 
     @pytest.mark.asyncio
-    async def test_get_organization_by_id_not_found(
-        self,
-        mock_neo4j_service
-    ):
+    async def test_get_organization_by_id_not_found(self, mock_neo4j_service):
         """Test organization not found."""
         from src.kene_api.routers.organizations import _get_organization_by_id
-        
+
         # Mock empty response
         mock_neo4j_service.execute_query.return_value = []
-        
+
         with pytest.raises(HTTPException) as exc_info:
             await _get_organization_by_id("nonexistent-org", mock_neo4j_service)
-        
+
         assert exc_info.value.status_code == 404
         assert "Organization not found" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    async def test_get_organization_by_id_db_error(
-        self,
-        mock_neo4j_service
-    ):
+    async def test_get_organization_by_id_db_error(self, mock_neo4j_service):
         """Test database connectivity error."""
         from src.kene_api.routers.organizations import _get_organization_by_id
-        
+
         # Mock health check failure
         mock_neo4j_service.health_check.return_value = False
-        
+
         with pytest.raises(HTTPException) as exc_info:
             await _get_organization_by_id("test-org", mock_neo4j_service)
-        
+
         assert exc_info.value.status_code == 503
         assert "Database service unavailable" in str(exc_info.value.detail)

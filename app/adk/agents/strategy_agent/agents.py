@@ -16,7 +16,12 @@ from .models import StrategyContext
 # Import logging, tracing, and token utilities
 from .token_utils import TokenEstimator, TokenLimitError, check_and_log_tokens
 from .logging_config import StrategyAgentLogger, safe_agent_execution
-from .tracing_config import WeaveTracer, weave_traced, safe_llm_call, trace_document_processing
+from .tracing_config import (
+    WeaveTracer,
+    weave_traced,
+    safe_llm_call,
+    trace_document_processing,
+)
 # Output retry wrapper not needed - ADK handles output validation via output_schema parameter
 
 # Initialize tracing
@@ -40,10 +45,10 @@ except ImportError as e:
         return json.dumps(kwargs)
 
 
-
 # ============================================================================
 # PYDANTIC OUTPUT SCHEMAS
 # ============================================================================
+
 
 class BusinessStrategy(BaseModel):
     """
@@ -51,13 +56,14 @@ class BusinessStrategy(BaseModel):
     Each field represents a key component of the strategy and should be a
     synthesized narrative string based on research.
     """
+
     businessStrategySummary: str = Field(
         ...,
         description=(
             "A high-level summary of the company's situation, strategic direction, "
             "and key findings or recommendations. This should be written last but "
             "placed first."
-        )
+        ),
     )
     companyOverview: str = Field(
         ...,
@@ -68,7 +74,7 @@ class BusinessStrategy(BaseModel):
             "and values, an overview of its leadership and organizational structure, "
             "and its brand identity and customer base. Explain your reasoning and "
             "include references to public website URL's when available."
-        )
+        ),
     )
     productsAndServices: str = Field(
         ...,
@@ -78,7 +84,7 @@ class BusinessStrategy(BaseModel):
             "proposition for customers, the competitive positioning of the "
             "offerings, and the company's pricing model. Explain your reasoning and "
             "include references to public website URL's when available."
-        )
+        ),
     )
     marketAndIndustryAnalysis: str = Field(
         ...,
@@ -89,7 +95,7 @@ class BusinessStrategy(BaseModel):
             "including its current state, size, growth rate, and key trends. "
             "Explain your reasoning and include references to public website "
             "URL's when available."
-        )
+        ),
     )
     swotAnalysis: str = Field(
         ...,
@@ -99,7 +105,7 @@ class BusinessStrategy(BaseModel):
             "(external chances for growth), and Threats (external factors that "
             "could cause harm). Explain your reasoning and include references to "
             "public website URL's when available."
-        )
+        ),
     )
     externalEnvironmentAnalysisPESTEL: str = Field(
         ...,
@@ -111,7 +117,7 @@ class BusinessStrategy(BaseModel):
             "regulations), and Legal (labor laws, industry regulations). Explain "
             "your reasoning and include references to public website URL's when "
             "available."
-        )
+        ),
     )
     marketingAndCustomerStrategy: str = Field(
         ...,
@@ -122,7 +128,7 @@ class BusinessStrategy(BaseModel):
             "digital and social media presence, and overall brand positioning. "
             "Explain your reasoning and include references to public website "
             "URL's when available."
-        )
+        ),
     )
     internalOperationsAndBusinessModel: str = Field(
         ...,
@@ -132,7 +138,7 @@ class BusinessStrategy(BaseModel):
             "model (revenue streams, cost structure), its value and supply chain, "
             "and its sales and distribution channels. Explain your reasoning and "
             "include references to public website URL's when available."
-        )
+        ),
     )
     financialPerformanceAndAnalysis: str = Field(
         ...,
@@ -143,7 +149,7 @@ class BusinessStrategy(BaseModel):
             "ratios (ROI, LTV/CAC), and the company's financial outlook. Explain "
             "your reasoning and include references to public website URL's when "
             "available."
-        )
+        ),
     )
     strategicRecommendationsAndFutureOutlook: str = Field(
         ...,
@@ -154,7 +160,7 @@ class BusinessStrategy(BaseModel):
             "recommendations to address them, and a concluding perspective on the "
             "company's future outlook. Explain your reasoning and include "
             "references to public website URL's when available."
-        )
+        ),
     )
 
 
@@ -164,6 +170,7 @@ class CompetitiveAnalysis(BaseModel):
     Each field represents a key component of the analysis and should be a
     synthesized narrative string.
     """
+
     competitiveStrategySummary: str = Field(
         ...,
         description=(
@@ -172,7 +179,7 @@ class CompetitiveAnalysis(BaseModel):
             "strategic recommendations that summarize the primary actions and "
             "strategic changes suggested by the analysis. Explain your reasoning "
             "and add references when appropriate."
-        )
+        ),
     )
     competitiveLandscape: str = Field(
         ...,
@@ -184,7 +191,7 @@ class CompetitiveAnalysis(BaseModel):
             "identified opportunities such as unmet customer needs or market gaps "
             "not addressed by competitors. Explain your reasoning and add "
             "references when appropriate."
-        )
+        ),
     )
     detailedCompetitorProfiles: str = Field(
         ...,
@@ -200,7 +207,7 @@ class CompetitiveAnalysis(BaseModel):
             "details]... Competitor B: [Profile details]...'). Explain your "
             "reasoning and include references to public website URL's when "
             "available."
-        )
+        ),
     )
     portersFiveForces: str = Field(
         ...,
@@ -210,7 +217,7 @@ class CompetitiveAnalysis(BaseModel):
             "substitute products or services, and the bargaining power of buyers. "
             "For each force, explain your reasoning and add references when "
             "appropriate."
-        )
+        ),
     )
     strategicRecommendations: str = Field(
         ...,
@@ -223,7 +230,7 @@ class CompetitiveAnalysis(BaseModel):
             "specific actions to exploit competitor weaknesses or close gaps, and "
             "a final list of prioritized opportunities. Explain your reasoning "
             "and add references when appropriate."
-        )
+        ),
     )
 
 
@@ -233,6 +240,7 @@ class CustomerJourneyAnalysis(BaseModel):
     Each field represents a key component of the journey and should be a
     synthesized narrative.
     """
+
     customerJourneySummary: str = Field(
         ...,
         description=(
@@ -243,7 +251,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "(research and evaluation), to Conversion (purchase), and finally to "
             "Loyalty (retention and advocacy). Write this section last. Explain "
             "your reasoning and add references when appropriate."
-        )
+        ),
     )
     idealCustomerProfiles: str = Field(
         ...,
@@ -257,7 +265,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "Marketing Mary: [Full profile details]... Persona 2 - Startup Steve: "
             "[Full profile details]...'). Explain your reasoning and add "
             "references when appropriate."
-        )
+        ),
     )
     customerNeedsAnalysis: str = Field(
         ...,
@@ -268,7 +276,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "the core customer needs they solve, and an explanation of how current "
             "industry trends influence customer expectations and behaviors. "
             "Explain your reasoning and add references when appropriate."
-        )
+        ),
     )
     awarenessPhase: str = Field(
         ...,
@@ -279,7 +287,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "marketing channels and touchpoints during this initial phase (e.g., "
             "'Blog posts,' 'PPC ads'). Explain your reasoning and add references "
             "when appropriate."
-        )
+        ),
     )
     considerationPhase: str = Field(
         ...,
@@ -291,7 +299,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "touchpoints that help them decide (e.g., 'Website feature pages,' "
             "'Case studies,' 'Free trial'). Explain your reasoning and add "
             "references when appropriate."
-        )
+        ),
     )
     conversionPhase: str = Field(
         ...,
@@ -302,7 +310,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "critical factors and influential touchpoints that lead to the final "
             "decision (e.g., 'Sales representative,' 'Onboarding flow'). Explain "
             "your reasoning and add references when appropriate."
-        )
+        ),
     )
     loyaltyPhase: str = Field(
         ...,
@@ -313,7 +321,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "influential factors and touchpoints that foster retention and advocacy "
             "(e.g., 'Customer support,' 'Loyalty program'). Explain your reasoning "
             "and add references when appropriate."
-        )
+        ),
     )
 
 
@@ -323,6 +331,7 @@ class MarketingStrategy(BaseModel):
     Each field represents a key component of the strategy and should be a
     synthesized narrative string.
     """
+
     marketingStrategySummary: str = Field(
         ...,
         description=(
@@ -331,7 +340,7 @@ class MarketingStrategy(BaseModel):
             "conversion, loyalty). Do not create a specific timeline, but suggest "
             "how the strategy might unfold over the next 12 months. Explain your "
             "reasoning and add references where appropriate."
-        )
+        ),
     )
     awarenessStrategy: str = Field(
         ...,
@@ -342,7 +351,7 @@ class MarketingStrategy(BaseModel):
             "strategies that are most effective at reaching customers in this stage. "
             "Consider how the marketing budget might be used most effectively and "
             "efficiently. Explain your reasoning and add references where appropriate."
-        )
+        ),
     )
     considerationStrategy: str = Field(
         ...,
@@ -355,7 +364,7 @@ class MarketingStrategy(BaseModel):
             "in this stage. Consider how the marketing budget might be used most "
             "effectively and efficiently. Explain your reasoning and add references "
             "where appropriate."
-        )
+        ),
     )
     conversionStrategy: str = Field(
         ...,
@@ -368,7 +377,7 @@ class MarketingStrategy(BaseModel):
             "in this stage. Consider how the marketing budget might be used most "
             "effectively and efficiently. Explain your reasoning and add references "
             "where appropriate."
-        )
+        ),
     )
     loyaltyStrategy: str = Field(
         ...,
@@ -380,7 +389,7 @@ class MarketingStrategy(BaseModel):
             "reaching customers in this stage. Consider how the marketing budget "
             "might be used most effectively and efficiently. Explain your reasoning "
             "and add references where appropriate."
-        )
+        ),
     )
 
 
@@ -390,13 +399,14 @@ class BrandGuidelines(BaseModel):
     Each field represents a key component of the brand's identity and should be a
     synthesized narrative string.
     """
+
     brand_name: str = Field(
         ...,
         description=(
             "The official name of the company or brand. Provide the exact name as it "
             "is used in branding and communications (including correct spelling, "
             "capitalization, and any trademark symbols if applicable)."
-        )
+        ),
     )
     tagline: str = Field(
         ...,
@@ -407,7 +417,7 @@ class BrandGuidelines(BaseModel):
             "punctuation) and describe the context in which it is used (e.g., in "
             "logos, advertisements, etc.). If the brand does not have an official "
             "tagline, this section can be noted as not applicable."
-        )
+        ),
     )
     brand_overview: str = Field(
         ...,
@@ -415,7 +425,7 @@ class BrandGuidelines(BaseModel):
             "A brief introduction to the brand, summarizing what the company does, "
             "its industry, and its overall purpose or offering. This gives context "
             "about the business and what makes it unique."
-        )
+        ),
     )
     brand_story: str = Field(
         ...,
@@ -424,7 +434,7 @@ class BrandGuidelines(BaseModel):
             "company was founded, key milestones in its development, and any "
             "significant moments or anecdotes that shape the brand's identity. "
             "This helps readers understand the brand's heritage and evolution."
-        )
+        ),
     )
     value_proposition: str = Field(
         ...,
@@ -434,7 +444,7 @@ class BrandGuidelines(BaseModel):
             "what differentiates it from competitors. This can include the brand's "
             "positioning statement or a brief overview of how the brand solves "
             "customers’ problems or meets their needs better than alternatives."
-        )
+        ),
     )
     brand_personality: str = Field(
         ...,
@@ -444,7 +454,7 @@ class BrandGuidelines(BaseModel):
             "professional, adventurous, innovative) that describe the brand's "
             "character. These traits should be reflected in how the brand looks, "
             "speaks, and acts, ensuring consistency in brand experience."
-        )
+        ),
     )
     brand_voice_and_tone: str = Field(
         ...,
@@ -457,7 +467,7 @@ class BrandGuidelines(BaseModel):
             "phrases the brand likes to use or avoid. Provide examples of the "
             "tone in practice to illustrate how messaging should come across in "
             "writing or speech."
-        )
+        ),
     )
     logo_guidelines: str = Field(
         ...,
@@ -471,7 +481,7 @@ class BrandGuidelines(BaseModel):
             "Also outline improper uses of the logo (such as distorting its "
             "proportions, altering colors, or adding effects) to ensure the logo "
             "always appears consistent and recognizable."
-        )
+        ),
     )
     color_palette: str = Field(
         ...,
@@ -484,7 +494,7 @@ class BrandGuidelines(BaseModel):
             "secondary colors for accents or highlights) and any guidelines for "
             "maintaining sufficient contrast. This ensures consistency and "
             "accessibility in all uses of the brand’s colors."
-        )
+        ),
     )
     typography: str = Field(
         ...,
@@ -498,7 +508,7 @@ class BrandGuidelines(BaseModel):
             "font licensing or any specific kerning, spacing, or alignment rules. "
             "The goal is to maintain a consistent typographic style across all "
             "materials."
-        )
+        ),
     )
     iconography: str = Field(
         ...,
@@ -512,7 +522,7 @@ class BrandGuidelines(BaseModel):
             "thickness, color usage for icons, and spacing. If the brand does not "
             "have a custom icon style or this is not relevant, this section can "
             "be marked as not applicable."
-        )
+        ),
     )
     imagery_style: str = Field(
         ...,
@@ -528,7 +538,7 @@ class BrandGuidelines(BaseModel):
             "topics or environments – and provide examples of approved imagery "
             "styles. If there are any prohibitions (e.g., no use of certain "
             "colors or themes in imagery), list those as well."
-        )
+        ),
     )
     digital_presence: str = Field(
         ...,
@@ -543,7 +553,7 @@ class BrandGuidelines(BaseModel):
             "other digital touchpoints like mobile apps or online advertisements. "
             "The goal is to ensure the brand looks and feels consistent across all "
             "online platforms."
-        )
+        ),
     )
     application_examples: str = Field(
         ...,
@@ -557,7 +567,7 @@ class BrandGuidelines(BaseModel):
             "elements consistently. Include both good examples (correct usage) "
             "and, if helpful, examples of incorrect usage to illustrate mistakes "
             "to avoid."
-        )
+        ),
     )
     legal_considerations: str = Field(
         ...,
@@ -572,7 +582,7 @@ class BrandGuidelines(BaseModel):
             "attribution for any licensed elements (like fonts or images) and "
             "note any prohibited uses of the brand that could violate "
             "intellectual property rights."
-        )
+        ),
     )
     accessibility_standards: str = Field(
         ...,
@@ -589,7 +599,7 @@ class BrandGuidelines(BaseModel):
             "inclusivity, and ensure that all brand materials (digital or print) "
             "consider the needs of people with visual, auditory, motor, or "
             "cognitive disabilities."
-        )
+        ),
     )
 
 
@@ -739,9 +749,9 @@ Based on the above inputs, create the complete Business Strategy document now.
             temperature=0.2, max_output_tokens=16384
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy   
+        output_schema=BusinessStrategy,
     )
-    
+
     # ADK handles output validation internally via output_schema parameter
     return agent
 
@@ -819,9 +829,9 @@ All feedback points must be addressed.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy
+        output_schema=BusinessStrategy,
     )
-    
+
     # ADK handles output validation internally via output_schema parameter
     return agent
 
@@ -981,9 +991,9 @@ Create the complete Competitive Strategy document now.
         ),
         include_contents="none",
         output_key="competitive_strategy_doc",
-        output_schema=CompetitiveAnalysis
+        output_schema=CompetitiveAnalysis,
     )
-    
+
     # ADK handles output validation internally via output_schema parameter
     return agent
 
@@ -1060,7 +1070,7 @@ Provide the complete, updated competitive strategy document in JSON format.
         ),
         output_key="competitive_strategy_doc",
         include_contents="none",
-        output_schema=CompetitiveAnalysis
+        output_schema=CompetitiveAnalysis,
     )
 
 
@@ -1226,9 +1236,9 @@ Create the complete Customer Strategy document now.
         ),
         include_contents="none",
         output_key="customer_strategy_doc",
-        output_schema=CustomerJourneyAnalysis
+        output_schema=CustomerJourneyAnalysis,
     )
-    
+
     # ADK handles output validation internally via output_schema parameter
     return agent
 
@@ -1305,7 +1315,7 @@ Provide the complete, updated customer strategy document in JSON format.
         ),
         output_key="customer_strategy_doc",
         include_contents="none",
-        output_schema=CustomerJourneyAnalysis
+        output_schema=CustomerJourneyAnalysis,
     )
 
 
@@ -1482,7 +1492,7 @@ Create the complete Marketing Strategy document now.
         output_schema=MarketingStrategy,
         output_key="marketing_strategy_doc",
     )
-    
+
     # ADK handles output validation internally via output_schema parameter
     return agent
 
@@ -1559,7 +1569,7 @@ Provide the complete, updated marketing strategy document in JSON format.
         ),
         output_key="marketing_strategy_doc",
         include_contents="none",
-        output_schema=MarketingStrategy
+        output_schema=MarketingStrategy,
     )
 
 
@@ -1700,9 +1710,9 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         ),
         include_contents="none",
         output_key="brand_guidelines_doc",
-        output_schema=BrandGuidelines
+        output_schema=BrandGuidelines,
     )
-    
+
     # ADK handles output validation internally via output_schema parameter
     return agent
 
@@ -1777,7 +1787,7 @@ Provide the complete, updated brand guidelines document in JSON format.
         ),
         output_key="brand_guidelines_doc",
         include_contents="none",
-        output_schema=BrandGuidelines
+        output_schema=BrandGuidelines,
     )
 
 

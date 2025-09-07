@@ -139,9 +139,9 @@ def save_artifact_to_service(
     """
     try:
         artifact_filename = f"{UPLOADED_STRATEGY_PREFIX}{filename}"
-        
+
         # Check if we have a GcsArtifactService with sync methods
-        if hasattr(artifact_service, '_save_artifact'):
+        if hasattr(artifact_service, "_save_artifact"):
             # Use the synchronous private method directly
             version = artifact_service._save_artifact(
                 app_name,
@@ -154,7 +154,7 @@ def save_artifact_to_service(
             # For InMemoryArtifactService or other async-only services
             # We need to handle the async method
             import asyncio
-            
+
             async def save_async():
                 return await artifact_service.save_artifact(
                     app_name=app_name,
@@ -163,19 +163,20 @@ def save_artifact_to_service(
                     filename=artifact_filename,
                     artifact=artifact,
                 )
-            
+
             # Try to get the running loop
             try:
                 loop = asyncio.get_running_loop()
                 # If there's a running loop, we can't use asyncio.run
                 # Instead, we'll use nest_asyncio to allow nested loops
                 import nest_asyncio
+
                 nest_asyncio.apply()
                 version = asyncio.run(save_async())
             except RuntimeError:
                 # No running loop, safe to use asyncio.run
                 version = asyncio.run(save_async())
-        
+
         logger.info(f"Saved artifact: {artifact_filename} (version {version})")
         return True
 
@@ -286,8 +287,12 @@ def load_uploaded_documents_as_artifacts(
                 )
 
             if save_artifact_to_service(
-                artifact_service, artifact, filename, session_user_id, session_id,
-                app_name=f"strategy_gen_{account_id}"
+                artifact_service,
+                artifact,
+                filename,
+                session_user_id,
+                session_id,
+                app_name=f"strategy_gen_{account_id}",
             ):
                 success_count += 1
                 metrics["successful_artifacts"] += 1

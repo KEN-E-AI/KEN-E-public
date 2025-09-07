@@ -23,7 +23,7 @@ def admin_user():
         accessible_accounts=[],
         permissions={},
         organization_permissions={"org456": "admin"},
-        account_permissions={}
+        account_permissions={},
     )
 
 
@@ -36,7 +36,7 @@ def view_user():
         accessible_accounts=[],
         permissions={},
         organization_permissions={"org456": "view"},
-        account_permissions={}
+        account_permissions={},
     )
 
 
@@ -49,7 +49,7 @@ def super_admin_user():
         accessible_accounts=[],
         permissions={},
         organization_permissions={},
-        account_permissions={}
+        account_permissions={},
     )
 
 
@@ -73,7 +73,7 @@ def mock_firestore():
 
 class TestGrantAccountAccess:
     """Test grant_account_access endpoint."""
-    
+
     @pytest.mark.asyncio
     async def test_grant_access_as_admin(self, admin_user, mock_db, mock_firestore):
         """Test admin can grant account access."""
@@ -81,84 +81,92 @@ class TestGrantAccountAccess:
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "target@example.com"},
-            "permissions": {"organizations": {"org456": "view"}}
+            "permissions": {"organizations": {"org456": "view"}},
         }
-        
+
         request = GrantAccountAccessRequest(user_id="target123", access_level="edit")
-        
+
         # Execute
         with patch("src.kene_api.routers.accounts.get_cached_user_context_service"):
             result = await grant_account_access(
                 "acc123", request, admin_user, mock_db, mock_firestore
             )
-        
+
         # Verify
         assert result.success is True
         mock_firestore.set_nested_field.assert_called_once_with(
             collection="users",
             document_id="target123",
             field_path="permissions.account_permissions.acc123",
-            value="edit"
+            value="edit",
         )
-    
+
     @pytest.mark.asyncio
     async def test_grant_access_as_view_user(self, view_user, mock_db, mock_firestore):
         """Test view-role user cannot grant account access."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         request = GrantAccountAccessRequest(user_id="target123", access_level="edit")
-        
+
         # Execute & Verify
         with pytest.raises(HTTPException) as exc_info:
             await grant_account_access(
                 "acc123", request, view_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 403
-        assert "Only organization admins can grant account access" in str(exc_info.value.detail)
-    
+        assert "Only organization admins can grant account access" in str(
+            exc_info.value.detail
+        )
+
     @pytest.mark.asyncio
-    async def test_grant_access_to_non_member(self, admin_user, mock_db, mock_firestore):
+    async def test_grant_access_to_non_member(
+        self, admin_user, mock_db, mock_firestore
+    ):
         """Test cannot grant access to non-organization member."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "target@example.com"},
-            "permissions": {"organizations": {"org789": "view"}}  # Different org
+            "permissions": {"organizations": {"org789": "view"}},  # Different org
         }
-        
+
         request = GrantAccountAccessRequest(user_id="target123", access_level="edit")
-        
+
         # Execute & Verify
         with pytest.raises(HTTPException) as exc_info:
             await grant_account_access(
                 "acc123", request, admin_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 400
         assert "does not have access to the organization" in str(exc_info.value.detail)
-    
+
     @pytest.mark.asyncio
-    async def test_grant_access_to_super_admin(self, admin_user, mock_db, mock_firestore):
+    async def test_grant_access_to_super_admin(
+        self, admin_user, mock_db, mock_firestore
+    ):
         """Test cannot grant access to super admin."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "support@ken-e.ai"},
-            "permissions": {"organizations": {"org456": "view"}}
+            "permissions": {"organizations": {"org456": "view"}},
         }
-        
+
         request = GrantAccountAccessRequest(user_id="super123", access_level="edit")
-        
+
         # Execute & Verify
         with pytest.raises(HTTPException) as exc_info:
             await grant_account_access(
                 "acc123", request, admin_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 403
-        assert "Cannot modify permissions for KEN-E support team members" in str(exc_info.value.detail)
-    
+        assert "Cannot modify permissions for KEN-E support team members" in str(
+            exc_info.value.detail
+        )
+
     @pytest.mark.asyncio
     async def test_grant_access_to_org_admin(self, admin_user, mock_db, mock_firestore):
         """Test cannot grant explicit access to org admin."""
@@ -166,37 +174,41 @@ class TestGrantAccountAccess:
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "otheradmin@example.com"},
-            "permissions": {"organizations": {"org456": "admin"}}
+            "permissions": {"organizations": {"org456": "admin"}},
         }
-        
+
         request = GrantAccountAccessRequest(user_id="admin456", access_level="edit")
-        
+
         # Execute & Verify
         with pytest.raises(HTTPException) as exc_info:
             await grant_account_access(
                 "acc123", request, admin_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 400
-        assert "Organization admins already have access to all accounts" in str(exc_info.value.detail)
-    
+        assert "Organization admins already have access to all accounts" in str(
+            exc_info.value.detail
+        )
+
     @pytest.mark.asyncio
-    async def test_grant_access_invalid_level(self, admin_user, mock_db, mock_firestore):
+    async def test_grant_access_invalid_level(
+        self, admin_user, mock_db, mock_firestore
+    ):
         """Test invalid access level."""
         request = GrantAccountAccessRequest(user_id="target123", access_level="invalid")
-        
+
         with pytest.raises(HTTPException) as exc_info:
             await grant_account_access(
                 "acc123", request, admin_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 400
         assert "Invalid access_level" in str(exc_info.value.detail)
 
 
 class TestRevokeAccountAccess:
     """Test revoke_account_access endpoint."""
-    
+
     @pytest.mark.asyncio
     async def test_revoke_access_as_admin(self, admin_user, mock_db, mock_firestore):
         """Test admin can revoke account access."""
@@ -204,94 +216,111 @@ class TestRevokeAccountAccess:
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "target@example.com"},
-            "permissions": {"organizations": {"org456": "view"}}
+            "permissions": {"organizations": {"org456": "view"}},
         }
-        
+
         firestore_client = MagicMock()
         user_ref = MagicMock()
         firestore_client.collection.return_value.document.return_value = user_ref
         mock_firestore.get_client.return_value = firestore_client
-        
+
         # Execute
         with patch("src.kene_api.routers.accounts.get_cached_user_context_service"):
             result = await revoke_account_access(
                 "acc123", "target123", admin_user, mock_db, mock_firestore
             )
-        
+
         # Verify
         assert result.success is True
         user_ref.update.assert_called_once()
-    
+
     @pytest.mark.asyncio
-    async def test_revoke_access_from_super_admin(self, admin_user, mock_db, mock_firestore):
+    async def test_revoke_access_from_super_admin(
+        self, admin_user, mock_db, mock_firestore
+    ):
         """Test cannot revoke access from super admin."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "support@ken-e.ai"},
-            "permissions": {"organizations": {"org456": "view"}}
+            "permissions": {"organizations": {"org456": "view"}},
         }
-        
+
         # Execute & Verify
         with pytest.raises(HTTPException) as exc_info:
             await revoke_account_access(
                 "acc123", "super123", admin_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 403
-        assert "Cannot modify permissions for KEN-E support team members" in str(exc_info.value.detail)
-    
+        assert "Cannot modify permissions for KEN-E support team members" in str(
+            exc_info.value.detail
+        )
+
     @pytest.mark.asyncio
-    async def test_revoke_access_from_org_admin(self, admin_user, mock_db, mock_firestore):
+    async def test_revoke_access_from_org_admin(
+        self, admin_user, mock_db, mock_firestore
+    ):
         """Test cannot revoke access from org admin."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
         mock_firestore.get_document.return_value = {
             "profile": {"email": "otheradmin@example.com"},
-            "permissions": {"organizations": {"org456": "admin"}}
+            "permissions": {"organizations": {"org456": "admin"}},
         }
-        
+
         # Execute & Verify
         with pytest.raises(HTTPException) as exc_info:
             await revoke_account_access(
                 "acc123", "admin456", admin_user, mock_db, mock_firestore
             )
-        
+
         assert exc_info.value.status_code == 400
-        assert "Cannot revoke access from organization admins" in str(exc_info.value.detail)
+        assert "Cannot revoke access from organization admins" in str(
+            exc_info.value.detail
+        )
 
 
 class TestGetAccountPermissions:
     """Test get_account_permissions endpoint."""
-    
+
     @pytest.mark.asyncio
     async def test_get_permissions_as_admin(self, admin_user, mock_db, mock_firestore):
         """Test admin can view account permissions."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
-        
+
         firestore_client = MagicMock()
         user_doc1 = MagicMock()
         user_doc1.id = "user1"
         user_doc1.to_dict.return_value = {
-            "profile": {"email": "user1@example.com", "firstName": "User", "lastName": "One"},
-            "permissions": {"account_permissions": {"acc123": "edit"}}
+            "profile": {
+                "email": "user1@example.com",
+                "firstName": "User",
+                "lastName": "One",
+            },
+            "permissions": {"account_permissions": {"acc123": "edit"}},
         }
         user_doc2 = MagicMock()
         user_doc2.id = "user2"
         user_doc2.to_dict.return_value = {
             "profile": {"email": "user2@example.com"},
-            "permissions": {"account_permissions": {"acc123": "view", "acc456": "edit"}}
+            "permissions": {
+                "account_permissions": {"acc123": "view", "acc456": "edit"}
+            },
         }
-        
-        firestore_client.collection.return_value.stream.return_value = [user_doc1, user_doc2]
+
+        firestore_client.collection.return_value.stream.return_value = [
+            user_doc1,
+            user_doc2,
+        ]
         mock_firestore.get_client.return_value = firestore_client
-        
+
         # Execute
         result = await get_account_permissions(
             "acc123", admin_user, mock_db, mock_firestore
         )
-        
+
         # Verify
         assert result.account_id == "acc123"
         assert result.total == 2
@@ -300,22 +329,24 @@ class TestGetAccountPermissions:
         assert result.permissions[0]["access_level"] == "edit"
         assert result.permissions[1]["user_id"] == "user2"
         assert result.permissions[1]["access_level"] == "view"
-    
+
     @pytest.mark.asyncio
-    async def test_get_permissions_as_super_admin(self, super_admin_user, mock_db, mock_firestore):
+    async def test_get_permissions_as_super_admin(
+        self, super_admin_user, mock_db, mock_firestore
+    ):
         """Test super admin can view any account permissions."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org999"}])
-        
+
         firestore_client = MagicMock()
         firestore_client.collection.return_value.stream.return_value = []
         mock_firestore.get_client.return_value = firestore_client
-        
+
         # Execute
         result = await get_account_permissions(
             "acc123", super_admin_user, mock_db, mock_firestore
         )
-        
+
         # Verify - should succeed even though super admin has no org access
         assert result.account_id == "acc123"
         assert result.total == 0

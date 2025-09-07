@@ -136,7 +136,9 @@ def extract_text_from_pdf(
     except Exception as e:
         error_ctx = create_error_context(e, f"extract_pdf:{filename}")
         logger.error(f"PDF extraction failed: {error_ctx}")
-        raise DocumentProcessingError(f"Failed to extract text from {filename}: {e}") from e
+        raise DocumentProcessingError(
+            f"Failed to extract text from {filename}: {e}"
+        ) from e
 
 
 def load_document_from_gcs(
@@ -312,4 +314,3 @@ def create_document_loading_summary(
             f"Unable to load any of the {requested_count} requested document(s). "
             f"Proceeding with web research only."
         )
-

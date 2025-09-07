@@ -66,7 +66,7 @@ class TestRateLimiter:
     def test_different_clients_have_separate_limits(self):
         """Test that different clients have independent rate limits."""
         limiter = RateLimiter(requests_per_minute=2, requests_per_hour=20)
-        
+
         request1 = self.create_mock_request("192.168.1.1")
         request2 = self.create_mock_request("192.168.1.2")
 
@@ -85,7 +85,7 @@ class TestRateLimiter:
     def test_respects_x_forwarded_for_header(self):
         """Test that X-Forwarded-For header is used when present."""
         limiter = RateLimiter(requests_per_minute=2, requests_per_hour=20)
-        
+
         request = self.create_mock_request("127.0.0.1")
         request.headers = {"X-Forwarded-For": "10.0.0.1, 192.168.1.1"}
 
@@ -131,11 +131,11 @@ class TestRateLimiter:
         # The next request should immediately fail
         with pytest.raises(HTTPException) as exc_info:
             limiter.check_rate_limit(request)
-        
+
         assert exc_info.value.status_code == 429
-        
+
         # Try one more request to ensure it's consistently blocked
         with pytest.raises(HTTPException) as exc_info2:
             limiter.check_rate_limit(request)
-        
+
         assert exc_info2.value.status_code == 429

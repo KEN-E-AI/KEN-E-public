@@ -232,6 +232,7 @@ def test_create_account_organization_not_found(mock_neo4j_service):
 
 def test_create_account_agency_organization_forbidden(mock_neo4j_service):
     """Test that agency organizations cannot create accounts."""
+
     # Mock organization exists and is an agency
     def mock_execute_query(query, parameters=None):
         if "Organization" in query and "exists" in query:
@@ -257,7 +258,10 @@ def test_create_account_agency_organization_forbidden(mock_neo4j_service):
 
     response = client.post("/api/v1/accounts/", json=new_account_data)
     assert response.status_code == 403
-    assert response.json()["detail"] == "Account creation is not permitted for agency organizations"
+    assert (
+        response.json()["detail"]
+        == "Account creation is not permitted for agency organizations"
+    )
 
     # Clean up
     app.dependency_overrides.clear()
@@ -265,6 +269,7 @@ def test_create_account_agency_organization_forbidden(mock_neo4j_service):
 
 def test_create_account_non_agency_organization_allowed(mock_neo4j_service):
     """Test that non-agency organizations can create accounts."""
+
     # Mock organization exists and is NOT an agency
     def mock_execute_query(query, parameters=None):
         if "Organization" in query and "exists" in query:
@@ -363,22 +368,26 @@ def test_update_account(mock_neo4j_service):
     app.dependency_overrides.clear()
 
 
-def test_update_account_regions_triggers_sync(mock_neo4j_service, mock_firestore_service):
+def test_update_account_regions_triggers_sync(
+    mock_neo4j_service, mock_firestore_service
+):
     """Test updating account regions triggers holiday activity logs sync."""
     import os
     from unittest.mock import patch
-    
+
     # Mock BigQuery service
     mock_bigquery_service = MagicMock()
     mock_bigquery_service.health_check = Mock(return_value=True)
-    mock_bigquery_service.query_holiday_activities = Mock(return_value=[
-        {
-            "description": "New Year",
-            "start_date": "2024-01-01",
-            "end_date": "2024-01-01",
-        }
-    ])
-    
+    mock_bigquery_service.query_holiday_activities = Mock(
+        return_value=[
+            {
+                "description": "New Year",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-01",
+            }
+        ]
+    )
+
     # Mock the checks and queries
     mock_neo4j_service.execute_query.side_effect = [
         [{"exists": True}],  # Account exists
@@ -415,7 +424,7 @@ def test_update_account_regions_triggers_sync(mock_neo4j_service, mock_firestore
             }
         ],
     ]
-    
+
     # Mock successful creation of holiday logs
     mock_neo4j_service.execute_write_query.return_value = {"nodes_created": 1}
 
@@ -426,15 +435,20 @@ def test_update_account_regions_triggers_sync(mock_neo4j_service, mock_firestore
     update_data = {"region": ["AU", "US"]}
 
     with patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT_ID": "test-project"}):
-        with patch('src.kene_api.bigquery.get_bigquery_service', return_value=mock_bigquery_service):
+        with patch(
+            "src.kene_api.bigquery.get_bigquery_service",
+            return_value=mock_bigquery_service,
+        ):
             response = client.put("/api/v1/accounts/test-account", json=update_data)
 
     assert response.status_code == 200
     data = response.json()
     assert data["region"] == ["AU", "US"]
-    
+
     # Verify BigQuery was called to fetch holidays
-    mock_bigquery_service.query_holiday_activities.assert_called_once_with("test-project", ["AU", "US"])
+    mock_bigquery_service.query_holiday_activities.assert_called_once_with(
+        "test-project", ["AU", "US"]
+    )
 
     # Clean up
     app.dependency_overrides.clear()
@@ -444,12 +458,12 @@ def test_update_account_no_region_change_no_sync(mock_neo4j_service):
     """Test updating account without changing regions doesn't trigger sync."""
     import os
     from unittest.mock import patch
-    
+
     # Mock BigQuery service
     mock_bigquery_service = MagicMock()
     mock_bigquery_service.health_check = Mock(return_value=True)
     mock_bigquery_service.query_holiday_activities = Mock()
-    
+
     # Mock the checks and queries
     mock_neo4j_service.execute_query.side_effect = [
         [{"exists": True}],  # Account exists
@@ -489,13 +503,16 @@ def test_update_account_no_region_change_no_sync(mock_neo4j_service):
     update_data = {"account_name": "Updated Account"}
 
     with patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT_ID": "test-project"}):
-        with patch('src.kene_api.bigquery.get_bigquery_service', return_value=mock_bigquery_service):
+        with patch(
+            "src.kene_api.bigquery.get_bigquery_service",
+            return_value=mock_bigquery_service,
+        ):
             response = client.put("/api/v1/accounts/test-account", json=update_data)
 
     assert response.status_code == 200
     data = response.json()
     assert data["account_name"] == "Updated Account"
-    
+
     # Verify BigQuery was NOT called since regions didn't change
     mock_bigquery_service.query_holiday_activities.assert_not_called()
 
@@ -761,7 +778,9 @@ def test_get_accounts_with_special_characters_in_org_id(mock_neo4j_service):
     app.dependency_overrides.clear()
 
 
-def test_create_account_uuid_collision_detection(mock_neo4j_service, mock_firestore_service):
+def test_create_account_uuid_collision_detection(
+    mock_neo4j_service, mock_firestore_service
+):
     """Test account creation UUID collision detection (extremely rare scenario)."""
     account_data = {
         "account_name": "Test Account",

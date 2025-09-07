@@ -20,10 +20,10 @@ root_agent = ken_e_agent
 multi_agent_root = create_strategy_docs_supervisor  # Alias for compatibility
 
 __all__ = [
-    'root_agent',
-    'multi_agent_root',
-    'create_strategy_docs_supervisor',
-    'ken_e_agent',
-    'news_only_agent',
-    'google_analytics_agent_v4'
+    "root_agent",
+    "multi_agent_root",
+    "create_strategy_docs_supervisor",
+    "ken_e_agent",
+    "news_only_agent",
+    "google_analytics_agent_v4",
 ]

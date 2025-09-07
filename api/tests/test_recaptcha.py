@@ -29,12 +29,12 @@ async def test_verify_token_success(recaptcha_service):
         # Create a mock instance that will be returned by the context manager
         mock_instance = MagicMock()
         mock_client.return_value.__aenter__.return_value = mock_instance
-        
+
         # Create a mock response
         mock_response_obj = MagicMock()
         mock_response_obj.json.return_value = mock_response
         mock_response_obj.raise_for_status = MagicMock()
-        
+
         # Configure the post method to return our mock response
         mock_instance.post = AsyncMock(return_value=mock_response_obj)
 
@@ -51,8 +51,8 @@ async def test_verify_token_success(recaptcha_service):
             data={
                 "secret": "test_secret_key",
                 "response": "valid_token",
-                "remoteip": "127.0.0.1"
-            }
+                "remoteip": "127.0.0.1",
+            },
         )
 
 
@@ -67,11 +67,11 @@ async def test_verify_token_failure(recaptcha_service):
     with patch("httpx.AsyncClient") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value.__aenter__.return_value = mock_instance
-        
+
         mock_response_obj = MagicMock()
         mock_response_obj.json.return_value = mock_response
         mock_response_obj.raise_for_status = MagicMock()
-        
+
         mock_instance.post = AsyncMock(return_value=mock_response_obj)
 
         result = await recaptcha_service.verify_token("invalid_token")
@@ -108,9 +108,11 @@ async def test_verify_token_timeout(recaptcha_service):
     with patch("httpx.AsyncClient") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value.__aenter__.return_value = mock_instance
-        
+
         # Configure post to raise TimeoutException
-        mock_instance.post = AsyncMock(side_effect=httpx.TimeoutException("Request timed out"))
+        mock_instance.post = AsyncMock(
+            side_effect=httpx.TimeoutException("Request timed out")
+        )
 
         result = await recaptcha_service.verify_token("token")
 
@@ -124,7 +126,7 @@ async def test_verify_token_http_error(recaptcha_service):
     with patch("httpx.AsyncClient") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value.__aenter__.return_value = mock_instance
-        
+
         # Configure post to raise HTTPError
         mock_instance.post = AsyncMock(side_effect=httpx.HTTPError("HTTP Error"))
 
@@ -140,7 +142,7 @@ async def test_verify_token_unexpected_error(recaptcha_service):
     with patch("httpx.AsyncClient") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value.__aenter__.return_value = mock_instance
-        
+
         # Configure post to raise generic Exception
         mock_instance.post = AsyncMock(side_effect=Exception("Unexpected error"))
 

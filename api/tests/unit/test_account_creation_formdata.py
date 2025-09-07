@@ -7,7 +7,10 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from io import BytesIO
 
-from src.kene_api.services.form_parsing_service import parse_account_form_data, parse_json_field
+from src.kene_api.services.form_parsing_service import (
+    parse_account_form_data,
+    parse_json_field,
+)
 from src.kene_api.models.kene_models import AccountRequest
 
 
@@ -47,9 +50,9 @@ class TestFormDataParsing:
             industry="Technology",
             status="Active",
             websites='["https://example.com"]',
-            timezone="America/New_York"
+            timezone="America/New_York",
         )
-        
+
         assert isinstance(result, AccountRequest)
         assert result.account_name == "Test Account"
         assert result.organization_id == "org123"
@@ -78,9 +81,9 @@ class TestFormDataParsing:
             region='["US", "Canada"]',
             marketing_channels='["Google Ads", "Facebook"]',
             product_integrations='["Salesforce", "HubSpot"]',
-            estimated_annual_ad_budget=100000
+            estimated_annual_ad_budget=100000,
         )
-        
+
         assert isinstance(result, AccountRequest)
         assert result.account_name == "Test Account"
         assert result.organization_id == "org123"
@@ -102,12 +105,12 @@ class TestFormDataParsing:
             organization_id="org123",
             industry="Technology",
             status="Active",
-            websites='[]',
+            websites="[]",
             timezone="America/New_York",
-            marketing_channels='[]',
-            product_integrations='[]'
+            marketing_channels="[]",
+            product_integrations="[]",
         )
-        
+
         assert result.websites == []
         assert result.marketing_channels == []
         assert result.product_integrations == []
@@ -120,8 +123,8 @@ class TestFormDataParsing:
                 organization_id="org123",
                 industry="Technology",
                 status="Active",
-                websites='invalid json',
-                timezone="America/New_York"
+                websites="invalid json",
+                timezone="America/New_York",
             )
 
 
@@ -134,21 +137,21 @@ class TestAccountCreationEndpoint:
         """Test creating an account with FormData."""
         # This test is skipped because create_account_internal doesn't exist
         pass
-        
+
     async def _test_create_account_with_formdata_impl(self):
         """Implementation kept for reference."""
         from fastapi import UploadFile
-        
+
         # Mock dependencies
         mock_user_context = Mock(
             user_id="user123",
             email="test@example.com",
-            has_organization_access=Mock(return_value=True)
+            has_organization_access=Mock(return_value=True),
         )
-        
+
         mock_db = AsyncMock()
         mock_db.execute_query = AsyncMock(return_value=[])
-        
+
         mock_firestore = AsyncMock()
         mock_firestore_client = Mock()
         mock_doc = Mock()
@@ -156,20 +159,20 @@ class TestAccountCreationEndpoint:
         mock_doc.to_dict = Mock(return_value={"agency": False})
         mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_doc
         mock_firestore.get_client = Mock(return_value=mock_firestore_client)
-        
+
         mock_storage = AsyncMock()
         mock_storage.upload_file = AsyncMock(return_value="gs://bucket/file.pdf")
-        
+
         mock_bigquery = AsyncMock()
-        
+
         # Create test file
-        test_file = UploadFile(
-            filename="strategy.pdf",
-            file=BytesIO(b"test content")
-        )
-        
+        test_file = UploadFile(filename="strategy.pdf", file=BytesIO(b"test content"))
+
         # Test account creation
-        with patch("src.kene_api.services.account_service.generate_unique_account_id", return_value="acc123"):
+        with patch(
+            "src.kene_api.services.account_service.generate_unique_account_id",
+            return_value="acc123",
+        ):
             account = await create_account_internal(
                 account_request=AccountRequest(
                     account_name="Test Account",
@@ -179,20 +182,20 @@ class TestAccountCreationEndpoint:
                     websites=["https://example.com"],
                     timezone="America/New_York",
                     marketing_channels=["Google Ads"],
-                    product_integrations=["Salesforce"]
+                    product_integrations=["Salesforce"],
                 ),
                 files=[test_file],
                 user=mock_user_context,
                 db=mock_db,
                 firestore=mock_firestore,
                 storage=mock_storage,
-                bigquery=mock_bigquery
+                bigquery=mock_bigquery,
             )
-            
+
             assert account.account_id == "acc123"
             assert account.account_name == "Test Account"
             assert account.organization_id == "org123"
-            
+
             # Verify storage was called for file upload
             mock_storage.upload_file.assert_called_once()
 
@@ -202,20 +205,20 @@ class TestAccountCreationEndpoint:
         """Test that agency organizations cannot create accounts."""
         # This test is skipped because create_account_internal doesn't exist
         pass
-        
+
     async def _test_create_account_agency_forbidden_impl(self):
         """Implementation kept for reference."""
         from fastapi import HTTPException
-        
+
         # Mock dependencies
         mock_user_context = Mock(
             user_id="user123",
             email="test@example.com",
-            has_organization_access=Mock(return_value=True)
+            has_organization_access=Mock(return_value=True),
         )
-        
+
         mock_db = AsyncMock()
-        
+
         mock_firestore = AsyncMock()
         mock_firestore_client = Mock()
         mock_doc = Mock()
@@ -223,10 +226,10 @@ class TestAccountCreationEndpoint:
         mock_doc.to_dict = Mock(return_value={"agency": True})  # Agency org
         mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_doc
         mock_firestore.get_client = Mock(return_value=mock_firestore_client)
-        
+
         mock_storage = AsyncMock()
         mock_bigquery = AsyncMock()
-        
+
         # Test that agency orgs are blocked
         with pytest.raises(HTTPException) as exc_info:
             await create_account_internal(
@@ -236,18 +239,20 @@ class TestAccountCreationEndpoint:
                     industry="Technology",
                     status="Active",
                     websites=["https://example.com"],
-                    timezone="America/New_York"
+                    timezone="America/New_York",
                 ),
                 files=[],
                 user=mock_user_context,
                 db=mock_db,
                 firestore=mock_firestore,
                 storage=mock_storage,
-                bigquery=mock_bigquery
+                bigquery=mock_bigquery,
             )
-        
+
         assert exc_info.value.status_code == 403
-        assert "Agency organizations cannot create accounts" in str(exc_info.value.detail)
+        assert "Agency organizations cannot create accounts" in str(
+            exc_info.value.detail
+        )
 
 
 class TestRateLimiting:
@@ -258,12 +263,13 @@ class TestRateLimiting:
         """Test that polling endpoints use the progress_rate_limiter."""
         from src.kene_api.auth.dependencies import get_user_context_for_polling
         from src.kene_api.rate_limiter import progress_rate_limiter
-        
+
         assert progress_rate_limiter.requests_per_minute == 120
         assert progress_rate_limiter.requests_per_hour == 2000
-        
+
         # The regular rate limiter should have lower limits
         from src.kene_api.auth.rate_limiting import token_rate_limiter
+
         assert token_rate_limiter.requests_per_minute == 60
         assert token_rate_limiter.requests_per_hour == 1000  # Updated rate limit
 

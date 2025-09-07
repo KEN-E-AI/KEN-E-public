@@ -5,7 +5,7 @@ Pydantic models for strategy generation parameters and responses.
 import os
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrategyParameters(BaseModel):
@@ -65,11 +65,10 @@ class StrategyParameters(BaseModel):
             return []
         return []
 
-    class Config:
-        """Pydantic config."""
-
-        str_strip_whitespace = True
-        use_enum_values = True
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        use_enum_values=True,
+    )
 
 
 class StrategyResponse(BaseModel):
@@ -83,10 +82,9 @@ class StrategyResponse(BaseModel):
     account_id: str = Field(..., description="Account ID for the strategy")
     error: Optional[str] = Field(default=None, description="Error message if any")
 
-    class Config:
-        """Pydantic config."""
-
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True,
+    )
 
 
 def parse_strategy_query(query: str) -> Dict[str, Any]:

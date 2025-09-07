@@ -81,7 +81,10 @@ class TestAccountsCascadeDelete:
         mock_neo4j_service.execute_write.side_effect = [
             {"nodes_deleted": 25, "relationships_deleted": 30},  # Many ActivityLogs
             {"nodes_deleted": 50, "relationships_deleted": 75},  # Many related entities
-            {"nodes_deleted": 1, "relationships_deleted": 5},  # Account with relationships
+            {
+                "nodes_deleted": 1,
+                "relationships_deleted": 5,
+            },  # Account with relationships
         ]
 
         # Act
