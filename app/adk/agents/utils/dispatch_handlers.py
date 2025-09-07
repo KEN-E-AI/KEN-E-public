@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from pydantic import ValidationError
 
 from ..models.strategy_models import StrategyParameters, parse_strategy_query
+from .agent_retry import invoke_agent_with_retry
 from .supervisor_utils import invoke_agent_sync
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ def dispatch_to_company_news(
 
     try:
         logger.info("🔄 Routing company news query to specialized agent...")
-        result = invoke_agent_sync(news_agent, query)
+        # Use retry logic for robust agent invocation
+        result = invoke_agent_with_retry(news_agent, query, max_attempts=3)
 
         return {
             "status": "success",
@@ -86,7 +88,10 @@ def dispatch_to_google_analytics(
             # No credentials available
             enhanced_query = query
 
-        result = invoke_agent_sync(google_analytics_agent_v4, enhanced_query)
+        # Use retry logic for robust agent invocation
+        result = invoke_agent_with_retry(
+            google_analytics_agent_v4, enhanced_query, max_attempts=3
+        )
 
         return {
             "status": "success",
