@@ -107,10 +107,9 @@ Validate under stress:
 
 Before deploying strategy agents:
 
-- [ ] All strategist agents have retry wrapper applied
-- [ ] Retry wrapper tests pass (test_output_retry_wrapper.py)
-- [ ] Agent instructions emphasize JSON output
-- [ ] Max retries configured appropriately (2-3)
+- [x] All strategist agents use ADK's built-in output_schema validation
+- [x] Agent instructions emphasize JSON output
+- [x] ADK handles validation and retries internally
 - [ ] Error feedback and schema reminder enabled
 - [ ] Monitoring configured for validation errors
 - [ ] Fallback behavior documented
