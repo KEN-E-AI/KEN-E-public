@@ -282,7 +282,11 @@ class CustomerJourneyAnalysis(BaseModel):
         ...,
         description=(
             "Provide a comprehensive description of the 'Awareness' phase of the "
-            "customer journey. Synthesize your research on the following topics: how prospective customers typically behave when first "
+            "customer journey. Synthesize your research on the following topics: "
+            "How do prospective customers become aware of the problem? "
+            "How do prospective customers become aware of the solution to this problem? "
+            "How do prospective customers become aware of the brand, its offerings or its competitor's offerings? "
+            "Describe how prospective customers typically behave when first "
             "discovering the brand or its competitors, and the most influential "
             "marketing channels and touchpoints during this initial phase (e.g., "
             "'Blog posts,' 'PPC ads'). Explain your reasoning and add references "
@@ -729,6 +733,20 @@ You must follow this logic precisely:
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    "businessStrategySummary": "Your text here...",
+    "companyOverview": "Your text here...",
+    "productsAndServices": "Your text here...",
+    "marketAndIndustryAnalysis": "Your text here...",
+    "swotAnalysis": "Your text here...",
+    "externalEnvironmentAnalysisPESTEL": "Your text here...",
+    "marketingAndCustomerStrategy": "Your text here...",
+    "internalOperationsAndBusinessModel": "Your text here...",
+    "financialPerformanceAndAnalysis": "Your text here...",
+    "strategicRecommendationsAndFutureOutlook": "Your text here...",
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -817,6 +835,20 @@ You are a Strategy Document Editor. Based on the review feedback, improve the bu
 # OUTPUT FORMAT
 Provide the complete, updated business strategy document in JSON format.
 All feedback points must be addressed.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    "businessStrategySummary": "Your text here...",
+    "companyOverview": "Your text here...",
+    "productsAndServices": "Your text here...",
+    "marketAndIndustryAnalysis": "Your text here...",
+    "swotAnalysis": "Your text here...",
+    "externalEnvironmentAnalysisPESTEL": "Your text here...",
+    "marketingAndCustomerStrategy": "Your text here...",
+    "internalOperationsAndBusinessModel": "Your text here...",
+    "financialPerformanceAndAnalysis": "Your text here...",
+    "strategicRecommendationsAndFutureOutlook": "Your text here...",
+}}
 """
 
     agent = Agent(
@@ -848,7 +880,7 @@ def create_business_strategy_agent(
         name="business_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines business strategy through review cycles",
-        max_iterations=1,
+        max_iterations=3,
     )
 
     return SequentialAgent(
@@ -970,6 +1002,15 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    competitiveStrategySummary: "Your text here...",
+    competitiveLandscape: "Your text here...",
+    detailedCompetitorProfiles: "Your text here...",
+    portersFiveForces: "Your text here...",
+    strategicRecommendations: "Your text here...",
+}}
+    
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1057,6 +1098,15 @@ You are a Competitive Strategy Editor. Improve the document based on review feed
 
 # OUTPUT FORMAT
 Provide the complete, updated competitive strategy document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    competitiveStrategySummary: "Your text here...",
+    competitiveLandscape: "Your text here...",
+    detailedCompetitorProfiles: "Your text here...",
+    portersFiveForces: "Your text here...",
+    strategicRecommendations: "Your text here...",
+}}
 """
 
     return Agent(
@@ -1086,7 +1136,7 @@ def create_competitive_strategy_agent(
         name="competitive_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines competitive strategy through review cycles",
-        max_iterations=1,
+        max_iterations=3,
     )
 
     return SequentialAgent(
@@ -1215,6 +1265,17 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    customerJourneySummary: "Your text here...",
+    idealCustomerProfiles: "Your text here...",
+    customerNeedsAnalysis: "Your text here...",
+    awarenessPhase: "Your text here...",
+    considerationPhase: "Your text here...",
+    conversionPhase: "Your text here...",
+    loyaltyPhase: "Your text here..."
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1302,6 +1363,17 @@ You are a Customer Strategy Editor. Improve the document based on review feedbac
 
 # OUTPUT FORMAT
 Provide the complete, updated customer strategy document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    customerJourneySummary: "Your text here...",
+    idealCustomerProfiles: "Your text here...",
+    customerNeedsAnalysis: "Your text here...",
+    awarenessPhase: "Your text here...",
+    considerationPhase: "Your text here...",
+    conversionPhase: "Your text here...",
+    loyaltyPhase: "Your text here..."
+}}
 """
 
     return Agent(
@@ -1331,7 +1403,7 @@ def create_customer_strategy_agent(
         name="customer_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines customer strategy through review cycles",
-        max_iterations=1,
+        max_iterations=3,
     )
 
     return SequentialAgent(
@@ -1468,6 +1540,15 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    marketingStrategySummary: "Your text here...",
+    awarenessStrategy:  "Your text here...",
+    considerationStrategy:  "Your text here...",
+    conversionStrategy:  "Your text here...",
+    loyaltyStrategy:  "Your text here..."
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1556,6 +1637,15 @@ You are a Marketing Strategy Editor. Improve the document based on review feedba
 
 # OUTPUT FORMAT
 Provide the complete, updated marketing strategy document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    marketingStrategySummary: "Your text here...",
+    awarenessStrategy:  "Your text here...",
+    considerationStrategy:  "Your text here...",
+    conversionStrategy:  "Your text here...",
+    loyaltyStrategy:  "Your text here..."
+}}
 """
 
     return Agent(
@@ -1585,7 +1675,7 @@ def create_marketing_strategy_agent(
         name="marketing_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines marketing strategy through review cycles",
-        max_iterations=1,
+        max_iterations=3,
     )
 
     return SequentialAgent(
@@ -1689,6 +1779,26 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    brand_name: "Your text here...",
+    tagline: "Your text here...",
+    brand_overview: "Your text here...",
+    brand_story: "Your text here...",
+    value_proposition: "Your text here...",
+    brand_personality: "Your text here...",
+    brand_voice_and_tone: "Your text here...",
+    logo_guidelines: "Your text here...",
+    color_palette: "Your text here...",
+    typography: "Your text here...",
+    iconography: "Your text here...",
+    imagery_style: "Your text here...",
+    digital_presence: "Your text here...",
+    application_examples: "Your text here...",
+    legal_considerations: "Your text here...",
+    accessibility_standards: "Your text here..."
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1774,6 +1884,26 @@ You are a Brand Guidelines Editor. Improve the document based on review feedback
 
 # OUTPUT FORMAT
 Provide the complete, updated brand guidelines document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    brand_name: "Your text here...",
+    tagline: "Your text here...",
+    brand_overview: "Your text here...",
+    brand_story: "Your text here...",
+    value_proposition: "Your text here...",
+    brand_personality: "Your text here...",
+    brand_voice_and_tone: "Your text here...",
+    logo_guidelines: "Your text here...",
+    color_palette: "Your text here...",
+    typography: "Your text here...",
+    iconography: "Your text here...",
+    imagery_style: "Your text here...",
+    digital_presence: "Your text here...",
+    application_examples: "Your text here...",
+    legal_considerations: "Your text here...",
+    accessibility_standards: "Your text here..."
+}}
 """
 
     return Agent(
@@ -1803,7 +1933,7 @@ def create_brand_guidelines_agent(
         name="brand_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines brand guidelines through review cycles",
-        max_iterations=1,
+        max_iterations=3,
     )
 
     return SequentialAgent(
