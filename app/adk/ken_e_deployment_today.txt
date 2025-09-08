@@ -1,0 +1,3 @@
+Timestamp: 20250908-064227
+Engine ID: projects/391472102753/locations/us-central1/reasoningEngines/6952647429032247296
+Deployment Name: ken-e-chat-agent-20250908-064227
