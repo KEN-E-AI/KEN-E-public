@@ -133,7 +133,9 @@ Similar process, but deploys the strategy generation agent.
 
 ### Step 3: Update Environment Variables
 
-After successful deployments, update the API environment files with the new Engine IDs:
+After successful deployments, update BOTH the local environment files AND Cloud Run services with the new Engine IDs.
+
+#### 3A. Update Local Environment Files
 
 **Files to update:**
 
@@ -154,6 +156,80 @@ STRATEGY_SUPERVISOR_ENGINE_ID=projects/525657242938/locations/us-central1/reason
 # Keep for backward compatibility (point to KEN-E)
 VERTEX_AI_AGENT_ENGINE_ID=projects/525657242938/locations/us-central1/reasoningEngines/[KEN-E-ID]
 ```
+
+#### 3B. Update Cloud Run Services (CRITICAL!)
+
+**⚠️ IMPORTANT:** Local environment file changes are NOT automatically reflected in deployed Cloud Run services. You MUST update the Cloud Run environment variables separately.
+
+**For Staging:**
+
+```bash
+# Update KEN-E Engine ID (if changed)
+gcloud run services update kene-api-staging \
+  --region us-central1 \
+  --project ken-e-staging \
+  --update-env-vars KEN_E_ENGINE_ID=projects/391472102753/locations/us-central1/reasoningEngines/[NEW-KEN-E-ID]
+
+# Update Strategy Supervisor Engine ID (if changed)
+gcloud run services update kene-api-staging \
+  --region us-central1 \
+  --project ken-e-staging \
+  --update-env-vars STRATEGY_SUPERVISOR_ENGINE_ID=projects/391472102753/locations/us-central1/reasoningEngines/[NEW-STRATEGY-ID]
+```
+
+**For Production:**
+
+```bash
+# Update KEN-E Engine ID (if changed)
+gcloud run services update kene-api-production \
+  --region us-central1 \
+  --project ken-e-production \
+  --update-env-vars KEN_E_ENGINE_ID=projects/395770269870/locations/us-central1/reasoningEngines/[NEW-KEN-E-ID]
+
+# Update Strategy Supervisor Engine ID (if changed)
+gcloud run services update kene-api-production \
+  --region us-central1 \
+  --project ken-e-production \
+  --update-env-vars STRATEGY_SUPERVISOR_ENGINE_ID=projects/395770269870/locations/us-central1/reasoningEngines/[NEW-STRATEGY-ID]
+```
+
+**Verify the update:**
+
+```bash
+# Check current Engine IDs in Cloud Run
+gcloud run services describe kene-api-[staging|production] \
+  --region us-central1 \
+  --project ken-e-[staging|production] \
+  --format="yaml(spec.template.spec.containers[0].env)" | grep ENGINE_ID
+```
+
+#### 3C. Troubleshooting Cloud Run Updates
+
+If the Cloud Run update fails:
+
+1. **Check if the service name is correct:**
+   ```bash
+   gcloud run services list --project ken-e-[staging|production]
+   ```
+
+2. **Update multiple environment variables at once:**
+   ```bash
+   gcloud run services update kene-api-staging \
+     --region us-central1 \
+     --project ken-e-staging \
+     --update-env-vars \
+       KEN_E_ENGINE_ID=projects/391472102753/locations/us-central1/reasoningEngines/[KEN-E-ID],\
+       STRATEGY_SUPERVISOR_ENGINE_ID=projects/391472102753/locations/us-central1/reasoningEngines/[STRATEGY-ID]
+   ```
+
+3. **Force a new revision with all changes:**
+   ```bash
+   gcloud run deploy kene-api-staging \
+     --region us-central1 \
+     --project ken-e-staging \
+     --image [current-image] \
+     --update-env-vars STRATEGY_SUPERVISOR_ENGINE_ID=projects/391472102753/locations/us-central1/reasoningEngines/[NEW-ID]
+   ```
 
 ### Step 4: API Routing (Automatic)
 
@@ -240,17 +316,85 @@ Each deployment creates:
 ### List All Reasoning Engines
 
 ```bash
-uv run python manage_reasoning_engines.py --list
+# Using gcloud CLI (may have limitations)
+gcloud ai reasoning-engines list --project=ken-e-staging --location=us-central1
+
+# Using REST API directly for complete list
+curl -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/391472102753/locations/us-central1/reasoningEngines" 2>/dev/null | jq '.reasoningEngines[] | {id: .name | split("/")[-1], displayName: .displayName, createTime: .createTime}'
 ```
 
 ### Clean Up Old Deployments
 
+**⚠️ WARNING:** Always verify which engines to keep before deleting. Deleted engines cannot be recovered.
+
+#### Method 1: Using Python Script
+
 ```bash
 # Keep only the latest KEN-E and Strategy engines
-uv run python manage_reasoning_engines.py --delete \
-  --keep-id [KEN-E-ENGINE-ID] \
-  --keep-id [STRATEGY-ENGINE-ID]
+uv run python cleanup_reasoning_engines.py
 ```
+
+Edit the script to specify which engines to keep:
+```python
+ENGINES_TO_KEEP = {
+    "projects/391472102753/locations/us-central1/reasoningEngines/[KEN-E-ENGINE-ID]",
+    "projects/391472102753/locations/us-central1/reasoningEngines/[STRATEGY-ENGINE-ID]"
+}
+```
+
+#### Method 2: Using REST API Directly
+
+Delete individual engines:
+```bash
+# Delete a single engine
+curl -X DELETE \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/391472102753/locations/us-central1/reasoningEngines/[ENGINE-ID]"
+
+# Force delete an engine with active sessions
+curl -X DELETE \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/391472102753/locations/us-central1/reasoningEngines/[ENGINE-ID]?force=true"
+```
+
+Batch delete multiple engines:
+```bash
+# List of engines to delete (replace with actual IDs)
+for engine_id in ENGINE_ID_1 ENGINE_ID_2 ENGINE_ID_3; do
+  echo "Deleting engine: $engine_id"
+  curl -X DELETE \
+    -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+    "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/391472102753/locations/us-central1/reasoningEngines/$engine_id?force=true"
+  echo ""
+done
+```
+
+### Verify Cleanup
+
+After cleanup, verify only the desired engines remain:
+```bash
+# Count remaining engines
+curl -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/391472102753/locations/us-central1/reasoningEngines" 2>/dev/null | jq '.reasoningEngines | length'
+
+# List remaining engines with details
+curl -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/391472102753/locations/us-central1/reasoningEngines" 2>/dev/null | jq '.reasoningEngines[] | {id: .name | split("/")[-1], displayName: .displayName}'
+```
+
+### Important Notes on Cleanup
+
+1. **Active Sessions**: Engines with active sessions require the `force=true` parameter to delete
+2. **No Recovery**: Deleted engines cannot be recovered - always verify before deleting
+3. **Project IDs**: Replace `391472102753` with your actual project number:
+   - Staging: 391472102753
+   - Production: 395770269870
+   - Development: 525657242938
+4. **Regular Cleanup**: Clean up old engines regularly to:
+   - Reduce clutter in the console
+   - Avoid hitting quota limits
+   - Improve listing performance
 
 ## Quick Reference
 
