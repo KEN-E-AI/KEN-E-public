@@ -149,10 +149,10 @@ def query(**kwargs):
                 logger.info(f"✅ Deployment successful!")
                 logger.info(f"Engine ID: {engine_id}")
 
-                # Save deployment info
-                deployment_info_file = (
-                    Path(original_dir) / "strategy_supervisor_deployment_today.txt"
-                )
+                # Save deployment info in logs directory
+                logs_dir = Path(original_dir) / "agents" / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                deployment_info_file = logs_dir / "strategy_supervisor_deployment_today.txt"
                 with open(deployment_info_file, "w") as f:
                     f.write(f"Timestamp: {timestamp}\n")
                     f.write(f"Engine ID: {engine_id}\n")
