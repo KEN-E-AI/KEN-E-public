@@ -190,8 +190,10 @@ Project: {project_id}
 Location: {location}
 """
 
-                # Write to deployment log
-                log_file = Path(original_dir) / "ken_e_deployment.txt"
+                # Write to deployment log in logs directory
+                logs_dir = Path(original_dir) / "agents" / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                log_file = logs_dir / "ken_e_deployment.txt"
                 with open(log_file, "w") as f:
                     f.write(deployment_info)
 

@@ -74,30 +74,39 @@ docs/
 
 3. **Configure environment**
 
-   The API requires environment configuration for database connections and services.
+   The API environment is now managed through the unified environment switching system at the root level:
 
-   **For environments with Google Secret Manager (staging/production):**
-
-   If you have service account credentials files (`ken-e-dev.json`, `ken-e-staging.json`, `ken-e-production.json`), use the service account script:
+   **Option A: Use the unified environment switcher (recommended)**
 
    ```bash
-   # Test your service account permissions first
-   python scripts/test_service_account.py ken-e-staging.json
+   # From the project root, switch ALL components including API
+   cd ..  # Go to project root
+   ./set-environment.sh development
+   # OR
+   make env-dev
 
-   # If the test passes, use the service account script for staging
-   ./scripts/use_staging_with_sa_fixed.sh
+   # Switch to staging (requires service account)
+   ./set-environment.sh staging
+   # OR
+   make env-staging
 
-   # Or use the general script for any environment
-   ./scripts/set_environment_with_sa.sh development
-   ./scripts/set_environment_with_sa.sh staging
-   ./scripts/set_environment_with_sa.sh production
+   # Switch to production (requires service account, use with caution!)
+   ./set-environment.sh production
+   # OR
+   make env-prod
    ```
 
-   **For environments without service accounts or Secret Manager access:**
+   This unified script will automatically:
+   - Configure the API with the correct environment
+   - Set up service account authentication if available
+   - Resolve secrets from Google Secret Manager when needed
+
+   **Option B: Configure API only (if needed)**
 
    ```bash
-   # Option 1: Create a local environment file (recommended for staging/production)
-   python scripts/create_local_staging_env.py
+   # If you need to configure just the API
+   ./scripts/set_environment_with_sa.sh development
+   # or staging, production
    # Edit .env.staging.local with actual credentials
    nano .env.staging.local
    # Use it

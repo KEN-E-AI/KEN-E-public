@@ -9,6 +9,8 @@ import logging
 import time
 from typing import Any
 
+import backoff
+from google.api_core import exceptions as google_exceptions
 from google.cloud import firestore
 
 # Removed progress tracking imports - simplified progress tracking
@@ -249,10 +251,24 @@ Please execute strategy generation with these parameters:
                 logger.info(f"Agent engine type: {type(agent_engine)}")
 
                 try:
-                    logger.info("About to call agent_engine.stream_query...")
-                    response = agent_engine.stream_query(
-                        message=message, user_id=user_id
+                    logger.info("About to call agent_engine.stream_query with retry logic...")
+                    
+                    # Define retry decorator for ServiceUnavailable errors
+                    @backoff.on_exception(
+                        backoff.expo,
+                        google_exceptions.ServiceUnavailable,
+                        max_tries=3,
+                        max_time=60,  # Max 60 seconds of retry attempts
+                        on_backoff=lambda details: logger.warning(
+                            f"ServiceUnavailable error, retrying... (attempt {details['tries']}/{3})"
+                        )
                     )
+                    def stream_query_with_retry():
+                        return agent_engine.stream_query(
+                            message=message, user_id=user_id
+                        )
+                    
+                    response = stream_query_with_retry()
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
 
@@ -279,23 +295,28 @@ Please execute strategy generation with these parameters:
                 agent_timeout = 1500  # 25 minutes
                 start_time = time.time()
 
-                try:
-                    logger.info(f"Agent response object type: {type(response)}")
-                    # Add a flag to track if we got any response
-                    got_response = False
+                # Retry logic for chunk iteration
+                max_chunk_retries = 3
+                chunk_retry_count = 0
+                
+                while chunk_retry_count < max_chunk_retries:
+                    try:
+                        logger.info(f"Agent response object type: {type(response)}")
+                        # Add a flag to track if we got any response
+                        got_response = False
 
-                    for chunk in response:
-                        got_response = True
-                        # Check if we've exceeded the timeout
-                        elapsed = time.time() - start_time
-                        if elapsed > agent_timeout:
-                            logger.error(
-                                f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received"
-                            )
-                            break
+                        for chunk in response:
+                            got_response = True
+                            # Check if we've exceeded the timeout
+                            elapsed = time.time() - start_time
+                            if elapsed > agent_timeout:
+                                logger.error(
+                                    f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received"
+                                )
+                                break
 
-                        chunk_count += 1
-                        logger.info(f"Processing chunk {chunk_count}...")
+                            chunk_count += 1
+                            logger.info(f"Processing chunk {chunk_count}...")
 
                         # Log progress for debugging (progress tracking simplified)
                         # TODO: Progress logs are failing
@@ -425,13 +446,43 @@ Please execute strategy generation with these parameters:
                             logger.info(
                                 f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                             )
-
-                except Exception as e:
-                    logger.error(
-                        f"Error iterating over agent response chunks: {e}",
-                        exc_info=True,
-                    )
-                    logger.error(f"Only received {chunk_count} chunks before error")
+                        
+                        # Successfully processed all chunks, break retry loop
+                        break
+                        
+                    except google_exceptions.ServiceUnavailable as e:
+                        chunk_retry_count += 1
+                        if chunk_retry_count >= max_chunk_retries:
+                            logger.error(
+                                f"ServiceUnavailable error after {max_chunk_retries} retries during chunk iteration: {e}"
+                            )
+                            # Mark account as failed with retry message
+                            await update_account_setup_status(
+                                account_id,
+                                "failed",
+                                completed=False,
+                                error_message="Service temporarily unavailable. Please try again in a few minutes.",
+                            )
+                            return  # Exit early
+                        else:
+                            wait_time = 2 ** chunk_retry_count  # Exponential backoff: 2, 4, 8 seconds
+                            logger.warning(
+                                f"ServiceUnavailable during chunk iteration, retrying in {wait_time}s... (attempt {chunk_retry_count}/{max_chunk_retries})"
+                            )
+                            await asyncio.sleep(wait_time)
+                            # Recreate the response stream
+                            response = stream_query_with_retry()
+                            chunk_count = 0  # Reset chunk count for new stream
+                            response_parts = []  # Reset response parts
+                            
+                    except Exception as e:
+                        # Non-retryable error
+                        logger.error(
+                            f"Error iterating over agent response chunks: {e}",
+                            exc_info=True,
+                        )
+                        logger.error(f"Only received {chunk_count} chunks before error")
+                        break  # Exit retry loop for non-retryable errors
 
                 # Check if we actually got a response
                 if not got_response:

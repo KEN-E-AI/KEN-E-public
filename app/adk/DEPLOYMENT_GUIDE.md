@@ -131,11 +131,133 @@ Similar process, but deploys the strategy generation agent.
 
 **Save this Engine ID separately!**
 
-### Step 3: Update Environment Variables
+### Step 3: Update Engine IDs Using Secret Manager
 
-After successful deployments, update BOTH the local environment files AND Cloud Run services with the new Engine IDs.
+After successful deployments, we now use Google Secret Manager to store Engine IDs. This eliminates the need to manually update environment files or Cloud Run configurations.
 
-#### 3A. Update Local Environment Files
+#### Why Use Secret Manager?
+
+- ✅ **Automatic Updates**: All developers get the latest engine IDs without manual updates
+- ✅ **Version Control**: Easy rollback to previous engine versions
+- ✅ **Audit Trail**: Track all engine ID changes
+- ✅ **No Code Changes**: Applications automatically fetch the latest values
+- ✅ **Simplified Deployment**: Update once in Secret Manager, all services use it
+
+#### 3A. Update Secret Manager with New Engine IDs
+
+When you deploy a new agent engine, update the corresponding secret:
+
+```bash
+# For Development Environment (ken-e-dev)
+PROJECT_ID=525657242938
+
+# For Staging Environment (ken-e-staging)  
+PROJECT_ID=391472102753
+
+# For Production Environment (ken-e-production)
+PROJECT_ID=395770269870
+
+# Update KEN-E Agent Engine ID
+echo "projects/$PROJECT_ID/locations/us-central1/reasoningEngines/NEW_KEN_E_ENGINE_ID" | \
+  gcloud secrets versions add ken-e-engine-id \
+    --data-file=- \
+    --project=$PROJECT_ID
+
+# Update Strategy Supervisor Engine ID
+echo "projects/$PROJECT_ID/locations/us-central1/reasoningEngines/NEW_STRATEGY_ENGINE_ID" | \
+  gcloud secrets versions add strategy-supervisor-engine-id \
+    --data-file=- \
+    --project=$PROJECT_ID
+```
+
+#### 3B. First-Time Secret Creation
+
+If the secrets don't exist yet (first deployment), create them:
+
+```bash
+# Choose your environment
+PROJECT_ID=525657242938  # development
+# PROJECT_ID=391472102753  # staging
+# PROJECT_ID=395770269870  # production
+
+# Create the secrets
+gcloud secrets create ken-e-engine-id \
+  --replication-policy="automatic" \
+  --project=$PROJECT_ID
+
+gcloud secrets create strategy-supervisor-engine-id \
+  --replication-policy="automatic" \
+  --project=$PROJECT_ID
+
+# Add initial values
+echo "projects/$PROJECT_ID/locations/us-central1/reasoningEngines/INITIAL_KEN_E_ID" | \
+  gcloud secrets versions add ken-e-engine-id --data-file=- --project=$PROJECT_ID
+
+echo "projects/$PROJECT_ID/locations/us-central1/reasoningEngines/INITIAL_STRATEGY_ID" | \
+  gcloud secrets versions add strategy-supervisor-engine-id --data-file=- --project=$PROJECT_ID
+```
+
+#### 3C. Environment File Configuration
+
+The environment files now use Secret Manager references instead of hardcoded IDs:
+
+```bash
+# .env.development
+KEN_E_ENGINE_ID=projects/525657242938/secrets/ken-e-engine-id
+STRATEGY_SUPERVISOR_ENGINE_ID=projects/525657242938/secrets/strategy-supervisor-engine-id
+
+# .env.staging
+KEN_E_ENGINE_ID=projects/391472102753/secrets/ken-e-engine-id
+STRATEGY_SUPERVISOR_ENGINE_ID=projects/391472102753/secrets/strategy-supervisor-engine-id
+
+# .env.production
+KEN_E_ENGINE_ID=projects/395770269870/secrets/ken-e-engine-id
+STRATEGY_SUPERVISOR_ENGINE_ID=projects/395770269870/secrets/strategy-supervisor-engine-id
+```
+
+#### 3D. How Applications Use the Secrets
+
+The application code automatically:
+1. Detects the secret path format (`projects/*/secrets/*`)
+2. Fetches the latest value from Secret Manager
+3. Uses the actual engine ID for API calls
+
+No code changes needed when deploying new engines!
+
+#### 3E. Verify Secret Values
+
+To check current secret values:
+
+```bash
+# View the latest version
+gcloud secrets versions access latest \
+  --secret=ken-e-engine-id \
+  --project=$PROJECT_ID
+
+# List all versions (for rollback if needed)
+gcloud secrets versions list \
+  --secret=ken-e-engine-id \
+  --project=$PROJECT_ID
+```
+
+#### 3F. Rollback to Previous Engine
+
+If needed, you can quickly rollback:
+
+```bash
+# Disable the current version
+gcloud secrets versions disable VERSION_NUMBER \
+  --secret=ken-e-engine-id \
+  --project=$PROJECT_ID
+
+# Or promote an older version to latest
+gcloud secrets versions add ken-e-engine-id \
+  --data-file=<(gcloud secrets versions access VERSION_NUMBER \
+    --secret=ken-e-engine-id --project=$PROJECT_ID) \
+  --project=$PROJECT_ID
+```
+
+#### 3G. Update Local Environment Files (Legacy Method)
 
 **Files to update:**
 

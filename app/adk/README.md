@@ -11,11 +11,34 @@ A minimal ADK agent with Vertex AI Search integration - following official ADK p
 
 ## Setup
 
-1. **Copy environment variables**:
+1. **Configure environment**:
+
+   **Option A: Use the unified environment switcher (recommended)**
 
    ```bash
-   cp .env.example .env
-   # Update .env with your actual Vertex AI Search IDs
+   # From the project root, switch ALL components including agents
+   cd ../..  # Go to project root
+   ./set-environment.sh development
+   # OR
+   make env-dev
+
+   # Switch to staging
+   ./set-environment.sh staging
+   # OR
+   make env-staging
+
+   # Switch to production (use with caution!)
+   ./set-environment.sh production
+   # OR
+   make env-prod
+   ```
+
+   **Option B: Configure agents only**
+
+   ```bash
+   # If you need to configure just the agents
+   cp .env.development .env  # or .env.staging, .env.production
+   # Update .env with your actual Vertex AI Search IDs if needed
    ```
 
 2. **Install dependencies**:

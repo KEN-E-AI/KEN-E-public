@@ -880,7 +880,7 @@ def create_business_strategy_agent(
         name="business_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines business strategy through review cycles",
-        max_iterations=3,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1136,7 +1136,7 @@ def create_competitive_strategy_agent(
         name="competitive_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines competitive strategy through review cycles",
-        max_iterations=3,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1403,7 +1403,7 @@ def create_customer_strategy_agent(
         name="customer_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines customer strategy through review cycles",
-        max_iterations=3,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1675,7 +1675,7 @@ def create_marketing_strategy_agent(
         name="marketing_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines marketing strategy through review cycles",
-        max_iterations=3,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1933,7 +1933,7 @@ def create_brand_guidelines_agent(
         name="brand_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines brand guidelines through review cycles",
-        max_iterations=3,
+        max_iterations=1,
     )
 
     return SequentialAgent(

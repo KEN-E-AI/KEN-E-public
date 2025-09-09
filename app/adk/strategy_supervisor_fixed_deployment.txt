@@ -1,4 +1,0 @@
-Timestamp: 20250908-110545
-Engine ID: projects/395770269870/locations/us-central1/reasoningEngines/8040266739042222080
-Deployment Name: strategy-supervisor-fixed-20250908-110545
-Fixed: Proper supervisor invocation
