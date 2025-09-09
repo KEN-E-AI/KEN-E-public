@@ -67,44 +67,61 @@ cd ..
 
 ### 2. Configure Environment
 
-#### Configure API Environment
+#### Unified Environment Switching (Recommended)
+
+KEN-E now includes a unified environment switching system that configures all components with a single command:
 
 ```bash
-# Copy environment files
+# Switch ALL components to development environment
+./set-environment.sh development
+# OR
+make env-dev
+
+# Switch ALL components to staging environment
+./set-environment.sh staging
+# OR
+make env-staging
+
+# Switch ALL components to production environment (use with caution!)
+./set-environment.sh production
+# OR
+make env-prod
+```
+
+This single command will:
+- ✅ Configure Agents environment (app/adk/.env)
+- ✅ Configure API with service accounts
+- ✅ Prepare Frontend environment
+- ✅ Show which services to start and how
+
+#### Manual Environment Setup (If Needed)
+
+If you need to configure components individually:
+
+```bash
+# API: Copy and edit environment files
 cd api
 cp .env.example .env.development
 cp .env.example .env.staging  
 cp .env.example .env.production
+# Edit files with your configuration...
 
-# Edit each file with:
-# - Neo4j credentials for each environment
-# - Google Cloud project IDs
-# - reCAPTCHA site and secret keys (different for each environment)
-# - Firebase service account paths
-
-# Set environment (copies .env.development to .env)
-./scripts/set_environment.sh development
-cd ..
-```
-
-#### Configure Frontend Environment
-
-```bash
-# Copy environment files
+# Frontend: Copy and edit environment files
 cd frontend
 cp .env.example .env.development
 cp .env.example .env.staging
 cp .env.example .env.production
+# Edit files with your configuration...
 
-# Edit each file with:
-# - Firebase configuration for each environment
-# - reCAPTCHA site keys (must match API environment)
-# - API base URLs
-
-# Set environment (copies .env.development to .env.local)
-./scripts/set_environment.sh development
-cd ..
+# Agents: Copy and edit environment files
+cd app/adk
+cp .env.example .env.development
+cp .env.example .env.staging
+cp .env.example .env.production
+# Edit files with your configuration...
 ```
+
+For detailed environment setup instructions, see [ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md)
 
 
 ### 3. Start Development Servers
@@ -150,6 +167,9 @@ uv run python scripts/migrate_organizations_to_neo4j.py
 | `make install`       | Install all Python dependencies using uv                       |
 | `make test`          | Run unit and integration tests                                 |
 | `make lint`          | Run code quality checks (codespell, ruff, mypy)              |
+| `make env-dev`       | Switch ALL components to development environment               |
+| `make env-staging`   | Switch ALL components to staging environment                   |
+| `make env-prod`      | Switch ALL components to production environment                |
 | `uv run jupyter lab` | Launch Jupyter notebooks for prototyping                       |
 
 ### API Development
