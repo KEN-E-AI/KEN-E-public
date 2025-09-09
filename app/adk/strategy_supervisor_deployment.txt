@@ -1,5 +1,5 @@
-Deployment: strategy-docs-supervisor-20250909-065323
-Timestamp: 20250909-065323
-Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/8426731882065952768
-Project: ken-e-dev
+Deployment: strategy-docs-supervisor-20250909-084943
+Timestamp: 20250909-084943
+Engine ID: projects/391472102753/locations/us-central1/reasoningEngines/1659229017011650560
+Project: ken-e-staging
 Location: us-central1
