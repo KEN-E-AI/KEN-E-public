@@ -1,3 +1,0 @@
-Timestamp: 20250908-064339
-Engine ID: projects/391472102753/locations/us-central1/reasoningEngines/4745883611620704256
-Deployment Name: strategy-docs-supervisor-20250908-064339
