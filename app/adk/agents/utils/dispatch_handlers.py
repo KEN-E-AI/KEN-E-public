@@ -121,9 +121,7 @@ def dispatch_to_strategy(
     """
     # Import here to avoid circular dependencies
     from ..strategy_agent.logging_config import StrategyAgentLogger
-    from ..strategy_agent.orchestrator import (
-        execute_strategy_generation as invoke_strategy_agent_sync,
-    )
+    from ..strategy_agent.orchestrator import execute_strategy_generation
     from ..strategy_agent.token_utils import check_and_log_tokens
 
     execution_id = str(uuid.uuid4())
@@ -194,11 +192,12 @@ def dispatch_to_strategy(
             percentage_of_limit=0.01,
         )
 
-        # Invoke the strategy agent with the validated parameters
-        logger.info("[SUPERVISOR] Invoking strategy agent with timeout monitoring...")
+        # Invoke the strategy generation function directly
+        # Note: Using direct function call to avoid nested agent invocation issues
+        logger.info("[SUPERVISOR] Invoking strategy generation with timeout monitoring...")
         start_time = time.time()
 
-        result = invoke_strategy_agent_sync(
+        result = execute_strategy_generation(
             company_name=params.company_name,
             industry=params.industry,
             websites=params.websites,
