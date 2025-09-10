@@ -627,7 +627,7 @@ class AgentEngineClient:
                 for msg in messages[:-1]:  # All messages except the latest
                     role_label = "User" if msg.role == "user" else "Assistant"
                     conversation_context.append(f"{role_label}: {msg.content}")
-                
+
                 # Add conversation history as context to the current message
                 context_str = "\n".join(conversation_context)
                 formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
@@ -1000,7 +1000,7 @@ class AgentEngineClient:
                 for msg in messages[:-1]:  # All messages except the latest
                     role_label = "User" if msg.role == "user" else "Assistant"
                     conversation_context.append(f"{role_label}: {msg.content}")
-                
+
                 # Add conversation history as context to the current message
                 context_str = "\n".join(conversation_context)
                 formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
@@ -1129,7 +1129,7 @@ class AgentEngineClient:
                     def stream_worker():
                         try:
                             for chunk in self.agent_engine.stream_query(
-                                message=user_input,
+                                message=formatted_input,
                                 user_id=user_id,
                                 session_id=actual_session_id,
                             ):
