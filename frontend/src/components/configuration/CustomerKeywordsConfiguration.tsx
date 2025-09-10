@@ -7,11 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/use-toast";
 import { Loader2, Plus, AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import type { 
-  MonitoringTopics, 
-  ConceptOption, 
+import type {
+  MonitoringTopics,
+  ConceptOption,
   CustomerKeywordConcept,
-  AddCustomerConceptRequest 
+  AddCustomerConceptRequest,
 } from "@/types/monitoring";
 import api from "@/lib/api";
 import { ConceptSearchDialog } from "./ConceptSearchDialog";
@@ -25,8 +25,11 @@ export default function CustomerKeywordsConfiguration() {
   const [concepts, setConcepts] = useState<CustomerKeywordConcept[]>([]);
   const [showConceptDialog, setShowConceptDialog] = useState(false);
   const [pendingKeyword, setPendingKeyword] = useState("");
-  const [disambiguatingKeyword, setDisambiguatingKeyword] = useState<string | null>(null);
-  const [editingConcept, setEditingConcept] = useState<CustomerKeywordConcept | null>(null);
+  const [disambiguatingKeyword, setDisambiguatingKeyword] = useState<
+    string | null
+  >(null);
+  const [editingConcept, setEditingConcept] =
+    useState<CustomerKeywordConcept | null>(null);
 
   // Fetch monitoring topics
   const { data: monitoringTopics, isLoading } =
@@ -47,7 +50,9 @@ export default function CustomerKeywordsConfiguration() {
   useEffect(() => {
     if (monitoringTopics) {
       // Convert snake_case concepts from API to camelCase for frontend
-      const convertedConcepts: CustomerKeywordConcept[] = (monitoringTopics.customer_concepts || []).map((c: any) => ({
+      const convertedConcepts: CustomerKeywordConcept[] = (
+        monitoringTopics.customer_concepts || []
+      ).map((c: any) => ({
         keyword: c.keyword,
         conceptId: c.concept_id,
         conceptType: c.concept_type,
@@ -60,14 +65,14 @@ export default function CustomerKeywordsConfiguration() {
         addedBy: c.added_by,
         addedAt: c.added_at,
       }));
-      
+
       // Set legacy keywords that don't have concepts
-      const conceptKeywords = convertedConcepts.map(c => c.keyword);
+      const conceptKeywords = convertedConcepts.map((c) => c.keyword);
       const plainKeywords = monitoringTopics.customer_keywords.filter(
-        k => !conceptKeywords.includes(k)
+        (k) => !conceptKeywords.includes(k),
       );
       setKeywords(plainKeywords);
-      
+
       // Set concepts with converted data
       setConcepts(convertedConcepts);
     }
@@ -78,7 +83,7 @@ export default function CustomerKeywordsConfiguration() {
     mutationFn: async (updatedKeywords: string[]) => {
       if (!selectedOrgAccount?.accountId)
         throw new Error("No account selected");
-      
+
       // Only send plain keywords to the update endpoint
       // Concept keywords are managed separately through add-concept/remove-concept endpoints
       // The backend will combine them when storing
@@ -103,23 +108,25 @@ export default function CustomerKeywordsConfiguration() {
     onError: (error: any) => {
       console.error("Failed to update customer keywords:", error);
       let errorMessage = "Failed to update customer keywords";
-      
+
       if (error.response?.data?.detail) {
         const detail = error.response.data.detail;
-        if (typeof detail === 'string') {
+        if (typeof detail === "string") {
           errorMessage = detail;
         } else if (Array.isArray(detail)) {
           // Handle validation error array
-          errorMessage = detail.map((e: any) => {
-            if (typeof e === 'string') return e;
-            return e.msg || e.message || JSON.stringify(e);
-          }).join(', ');
-        } else if (typeof detail === 'object') {
+          errorMessage = detail
+            .map((e: any) => {
+              if (typeof e === "string") return e;
+              return e.msg || e.message || JSON.stringify(e);
+            })
+            .join(", ");
+        } else if (typeof detail === "object") {
           // Handle single validation error object
           errorMessage = detail.msg || detail.message || JSON.stringify(detail);
         }
       }
-      
+
       toast({
         title: "Error",
         description: errorMessage,
@@ -130,10 +137,11 @@ export default function CustomerKeywordsConfiguration() {
 
   // Add concept mutation
   const addConceptMutation = useMutation({
-    mutationFn: async (request: any) => {  // Using any since we need snake_case conversion
+    mutationFn: async (request: any) => {
+      // Using any since we need snake_case conversion
       const response = await api.post(
         `/api/v1/monitoring-topics/${selectedOrgAccount?.accountId}/customers/add-concept`,
-        request
+        request,
       );
       return response.data;
     },
@@ -152,15 +160,15 @@ export default function CustomerKeywordsConfiguration() {
         addedBy: response.added_by,
         addedAt: response.added_at,
       };
-      
+
       // Add to local state
-      setConcepts(prev => [...prev, data]);
-      
+      setConcepts((prev) => [...prev, data]);
+
       // Invalidate queries
       queryClient.invalidateQueries({
         queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
       });
-      
+
       toast({
         title: "Success",
         description: `Added "${data.keyword}" with concept disambiguation`,
@@ -169,21 +177,23 @@ export default function CustomerKeywordsConfiguration() {
     onError: (error: any) => {
       console.error("Failed to add concept:", error);
       let errorMessage = "Failed to add concept";
-      
+
       if (error.response?.data?.detail) {
         // Handle both string and object error details
         const detail = error.response.data.detail;
-        if (typeof detail === 'string') {
+        if (typeof detail === "string") {
           errorMessage = detail;
         } else if (Array.isArray(detail)) {
           // Handle validation error array
-          errorMessage = detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ');
-        } else if (typeof detail === 'object') {
+          errorMessage = detail
+            .map((e: any) => e.msg || e.message || JSON.stringify(e))
+            .join(", ");
+        } else if (typeof detail === "object") {
           // Handle single validation error object
           errorMessage = detail.msg || detail.message || JSON.stringify(detail);
         }
       }
-      
+
       toast({
         title: "Error",
         description: errorMessage,
@@ -198,21 +208,21 @@ export default function CustomerKeywordsConfiguration() {
       if (!selectedOrgAccount?.accountId) {
         throw new Error("No account selected");
       }
-      
+
       const response = await api.delete(
-        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/customers/concepts/${conceptId}`
+        `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/customers/concepts/${conceptId}`,
       );
       return response.data;
     },
     onSuccess: (_, conceptId) => {
       // Update local state immediately
-      setConcepts(prev => prev.filter(c => c.conceptId !== conceptId));
-      
+      setConcepts((prev) => prev.filter((c) => c.conceptId !== conceptId));
+
       // Then invalidate to sync with server
       queryClient.invalidateQueries({
         queryKey: ["monitoring-topics", selectedOrgAccount?.accountId],
       });
-      
+
       toast({
         title: "Success",
         description: "Concept removed successfully",
@@ -221,14 +231,14 @@ export default function CustomerKeywordsConfiguration() {
     onError: (error: any) => {
       console.error("Failed to remove concept:", error);
       let errorMessage = "Failed to remove concept";
-      
+
       if (error.response?.data?.detail) {
         const detail = error.response.data.detail;
-        if (typeof detail === 'string') {
+        if (typeof detail === "string") {
           errorMessage = detail;
         }
       }
-      
+
       toast({
         title: "Error",
         description: errorMessage,
@@ -240,12 +250,16 @@ export default function CustomerKeywordsConfiguration() {
   const handleAddKeyword = () => {
     const trimmedKeyword = newKeyword.trim();
     if (!trimmedKeyword) return;
-    
+
     // Check if keyword already exists
     const keywordLower = trimmedKeyword.toLowerCase();
-    const existsAsPlain = keywords.some(k => k.toLowerCase() === keywordLower);
-    const existsAsConcept = concepts.some(c => c.keyword.toLowerCase() === keywordLower);
-    
+    const existsAsPlain = keywords.some(
+      (k) => k.toLowerCase() === keywordLower,
+    );
+    const existsAsConcept = concepts.some(
+      (c) => c.keyword.toLowerCase() === keywordLower,
+    );
+
     if (existsAsPlain || existsAsConcept) {
       toast({
         title: "Keyword already exists",
@@ -254,7 +268,7 @@ export default function CustomerKeywordsConfiguration() {
       });
       return;
     }
-    
+
     // Set pending keyword and show concept search dialog
     setPendingKeyword(trimmedKeyword);
     setShowConceptDialog(true);
@@ -263,13 +277,13 @@ export default function CustomerKeywordsConfiguration() {
 
   const handleConceptSelected = async (concept: ConceptOption) => {
     if (!selectedOrgAccount?.accountId) return;
-    
+
     // If we're editing an existing concept, we need to remove the old one first
     if (editingConcept) {
       try {
         // Remove the old concept
         await removeConceptMutation.mutateAsync(editingConcept.conceptId);
-        
+
         // Add the new concept with the same keyword
         const request = {
           account_id: selectedOrgAccount.accountId,
@@ -283,7 +297,7 @@ export default function CustomerKeywordsConfiguration() {
             source_type: concept.reference.sourceType,
           },
         };
-        
+
         await addConceptMutation.mutateAsync(request);
         setEditingConcept(null);
       } catch (error) {
@@ -303,13 +317,15 @@ export default function CustomerKeywordsConfiguration() {
           source_type: concept.reference.sourceType,
         },
       };
-      
+
       try {
         await addConceptMutation.mutateAsync(request);
-        
+
         // If we're disambiguating an existing keyword, remove it from plain keywords
         if (disambiguatingKeyword) {
-          const updatedKeywords = keywords.filter(k => k !== disambiguatingKeyword);
+          const updatedKeywords = keywords.filter(
+            (k) => k !== disambiguatingKeyword,
+          );
           setKeywords(updatedKeywords);
           setDisambiguatingKeyword(null);
         }
@@ -317,7 +333,7 @@ export default function CustomerKeywordsConfiguration() {
         console.error("Failed to add concept:", error);
       }
     }
-    
+
     setShowConceptDialog(false);
     setPendingKeyword("");
   };
@@ -330,7 +346,7 @@ export default function CustomerKeywordsConfiguration() {
       setEditingConcept(null);
       return;
     }
-    
+
     // If we're disambiguating an existing keyword, just close the dialog
     if (disambiguatingKeyword) {
       setShowConceptDialog(false);
@@ -338,19 +354,19 @@ export default function CustomerKeywordsConfiguration() {
       setDisambiguatingKeyword(null);
       return;
     }
-    
+
     // Otherwise, add as plain keyword without concept
     // Don't convert to lowercase - let the validator handle normalization
     const keywordToAdd = pendingKeyword.trim();
     const updatedKeywords = [...keywords, keywordToAdd];
-    
+
     // Save immediately to backend
     try {
       await updateMutation.mutateAsync(updatedKeywords);
       setKeywords(updatedKeywords);
       setShowConceptDialog(false);
       setPendingKeyword("");
-      
+
       toast({
         title: "Keyword added",
         description: `"${keywordToAdd}" added without concept disambiguation`,
@@ -369,12 +385,12 @@ export default function CustomerKeywordsConfiguration() {
 
   const handleRemoveKeyword = async (keyword: string) => {
     const updatedKeywords = keywords.filter((k) => k !== keyword);
-    
+
     // Save immediately to backend
     try {
       await updateMutation.mutateAsync(updatedKeywords);
       setKeywords(updatedKeywords);
-      
+
       toast({
         title: "Keyword removed",
         description: `"${keyword}" has been removed`,
@@ -403,8 +419,8 @@ export default function CustomerKeywordsConfiguration() {
     JSON.stringify(keywords) !==
     JSON.stringify(
       monitoringTopics?.customer_keywords.filter(
-        k => !concepts.some(c => c.keyword === k)
-      ) || []
+        (k) => !concepts.some((c) => c.keyword === k),
+      ) || [],
     );
 
   const totalItems = keywords.length + concepts.length;
@@ -492,7 +508,8 @@ export default function CustomerKeywordsConfiguration() {
 
           {totalItems === 0 && (
             <p className="text-sm text-muted-foreground">
-              No keywords added yet. Add keywords to monitor customer-related content.
+              No keywords added yet. Add keywords to monitor customer-related
+              content.
             </p>
           )}
 
