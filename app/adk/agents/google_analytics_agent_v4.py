@@ -1,6 +1,6 @@
 """
-Google Analytics Agent V4 - Custom JSON-RPC Integration
-Uses custom tools to interact with the GA MCP server via JSON-RPC
+Google Analytics Agent V4 - OAuth Integration
+Uses OAuth credentials to interact with the GA MCP server via JSON-RPC
 """
 
 import os
@@ -13,10 +13,60 @@ from google.adk.agents import Agent
 
 logger = logging.getLogger(__name__)
 
+# Lazy initialization of Weave for tracing
+WEAVE_ENABLED = False
+_weave_initialized = False
+
+def init_weave_if_needed():
+    """Initialize Weave lazily with proper error handling."""
+    global WEAVE_ENABLED, _weave_initialized
+    
+    if _weave_initialized:
+        return
+    
+    _weave_initialized = True
+    
+    try:
+        import weave as weave_module
+        # Only initialize if WANDB_API_KEY is available
+        if os.getenv("WANDB_API_KEY"):
+            weave_module.init(project_name="ken-e-ga-agent")
+            logger.info("W&B Weave initialized for GA agent")
+            WEAVE_ENABLED = True
+            # Make weave available globally
+            globals()['weave'] = weave_module
+        else:
+            logger.info("WANDB_API_KEY not set, Weave tracing disabled for GA agent")
+            raise ImportError("WANDB_API_KEY not available")
+    except Exception as e:
+        logger.warning(f"Weave not available or failed to initialize for GA agent: {e}")
+        WEAVE_ENABLED = False
+        
+        # Create dummy decorator if Weave is not available
+        def weave_op(func):
+            return func
+        
+        class DummyWeave:
+            @staticmethod
+            def op():
+                return weave_op
+        
+        globals()['weave'] = DummyWeave()
+
+# Create a placeholder for weave that will be replaced on first use
+class LazyWeave:
+    @staticmethod
+    def op():
+        init_weave_if_needed()
+        return weave.op()
+
+weave = LazyWeave()
+
 # Configuration
 GA_MCP_SERVER_URL = os.getenv(
     "GA_MCP_SERVER_URL", "https://google-analytics-mcp-395770269870.us-central1.run.app"
 )
+MCP_API_KEY = os.getenv("MCP_API_KEY", "")  # API key for MCP server authentication
 
 
 class GAMCPClient:
@@ -37,11 +87,15 @@ class GAMCPClient:
             "id": self._request_id,
         }
 
+        headers = {"Content-Type": "application/json"}
+        if MCP_API_KEY:
+            headers["X-API-Key"] = MCP_API_KEY
+
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
                 self.server_url,
                 json=request_data,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
 
             if response.status_code != 200:
@@ -59,13 +113,14 @@ ga_client = GAMCPClient()
 
 
 # Tool functions
+@weave.op()
 def list_ga_accounts(tenant_id: str, tenant_credentials: str) -> str:
     """
     List Google Analytics accounts for a tenant.
 
     Args:
         tenant_id: Organization/tenant identifier
-        tenant_credentials: Base64 encoded service account JSON
+        tenant_credentials: Base64 encoded JSON containing OAuth tokens (access_token, refresh_token)
 
     Returns:
         Formatted list of GA accounts and properties
@@ -109,7 +164,7 @@ def get_ga_property_details(
 
     Args:
         tenant_id: Organization/tenant identifier
-        tenant_credentials: Base64 encoded service account JSON
+        tenant_credentials: Base64 encoded JSON containing OAuth tokens (access_token, refresh_token)
         property_id: GA4 property ID (e.g., properties/123456789)
 
     Returns:
@@ -291,12 +346,12 @@ def run_ga_realtime_report(
 
 
 def create_google_analytics_agent():
-    """Create a Google Analytics agent using custom JSON-RPC tools"""
+    """Create a Google Analytics agent using OAuth authentication"""
 
     agent = Agent(
         name="google_analytics_agent_v4",
         model="gemini-2.0-flash",
-        instruction="""You are a Google Analytics assistant that helps users analyze their website and app data.
+        instruction="""You are a Google Analytics assistant that helps users analyze their website and app data using OAuth authentication.
 
 **Your Capabilities:**
 1. List Google Analytics accounts and properties
@@ -304,10 +359,10 @@ def create_google_analytics_agent():
 3. Run custom analytics reports
 4. Access real-time user data
 
-**Important: Tenant Context**
-You will receive queries with tenant context embedded:
+**Important: OAuth Authentication**
+You will receive queries with OAuth credentials embedded:
 - Look for TENANT_ID:<value> in the message
-- Look for TENANT_CREDS:<value> in the message
+- Look for TENANT_CREDS:<value> in the message (contains OAuth tokens)
 - Extract these values and use them in all tool calls
 
 **Tool Usage:**
