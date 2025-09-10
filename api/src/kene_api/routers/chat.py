@@ -5,21 +5,23 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List, AsyncGenerator, Optional
-from uuid import uuid4
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
+from typing import Any
+from uuid import uuid4
 
 import vertexai
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from vertexai.preview import reasoning_engines
-from vertexai import agent_engines
 from google.adk.sessions import VertexAiSessionService
-from typing import Any, Dict, List, AsyncGenerator, Union
+from pydantic import BaseModel, Field
+from vertexai import agent_engines
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
+from ..auth.user_context import get_current_user_context
+from ..firestore import get_firestore_service
+from ..services.ga_credential_helper import GACredentialHelper
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +39,12 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     """Request for chat completion."""
 
-    messages: List[ChatMessage] = Field(..., description="List of chat messages")
+    messages: list[ChatMessage] = Field(..., description="List of chat messages")
     stream: bool = Field(default=False, description="Whether to stream the response")
-    session_id: Optional[str] = Field(
+    session_id: str | None = Field(
         None, description="Session ID for conversation tracking"
     )
-    conversation_name: Optional[str] = Field(
+    conversation_name: str | None = Field(
         None, description="Optional name for the conversation"
     )
 
@@ -53,7 +55,7 @@ class ChatResponse(BaseModel):
     role: str = Field(default="assistant", description="Response role")
     content: str = Field(..., description="Response content")
     session_id: str = Field(..., description="Session ID")
-    conversation_name: Optional[str] = Field(
+    conversation_name: str | None = Field(
         None, description="Conversation name if provided"
     )
 
@@ -62,7 +64,7 @@ class ConversationInfo(BaseModel):
     """Information about a conversation/session."""
 
     session_id: str = Field(..., description="Session ID")
-    conversation_name: Optional[str] = Field(
+    conversation_name: str | None = Field(
         None, description="User-assigned conversation name"
     )
     created_at: datetime = Field(..., description="When the conversation was created")
@@ -77,7 +79,7 @@ class ConversationInfo(BaseModel):
 class ConversationListResponse(BaseModel):
     """Response for listing conversations."""
 
-    conversations: List[ConversationInfo] = Field(
+    conversations: list[ConversationInfo] = Field(
         ..., description="List of user conversations"
     )
     total_count: int = Field(..., description="Total number of conversations")
@@ -86,7 +88,7 @@ class ConversationListResponse(BaseModel):
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
 
-    conversation_name: Optional[str] = Field(
+    conversation_name: str | None = Field(
         None, description="Optional name for the conversation"
     )
 
@@ -94,7 +96,7 @@ class CreateConversationRequest(BaseModel):
 class UpdateConversationRequest(BaseModel):
     """Request to update conversation metadata."""
 
-    conversation_name: Optional[str] = Field(
+    conversation_name: str | None = Field(
         None, description="New name for the conversation"
     )
 
@@ -120,7 +122,7 @@ class AgentEngineClient:
         vertexai.init(project=self.project_id, location=self.location)
 
         self._agent_engine: Any = None
-        self._session_service: Optional[VertexAiSessionService] = None
+        self._session_service: VertexAiSessionService | None = None
         self._user_sessions = {}  # Cache for user session metadata
 
     @property
@@ -154,7 +156,7 @@ class AgentEngineClient:
                 logger.error(f"Error type: {type(e).__name__}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Agent Engine is currently unavailable: {str(e)}",
+                    detail=f"Agent Engine is currently unavailable: {e!s}",
                 )
         return self._agent_engine
 
@@ -176,12 +178,12 @@ class AgentEngineClient:
                 logger.error(f"Failed to initialize VertexAiSessionService: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Session service is currently unavailable: {str(e)}",
+                    detail=f"Session service is currently unavailable: {e!s}",
                 )
         return self._session_service
 
     async def create_conversation(
-        self, user_id: str, conversation_name: Optional[str] = None
+        self, user_id: str, conversation_name: str | None = None
     ) -> str:
         """Create a new conversation using ADK session service."""
         try:
@@ -255,8 +257,8 @@ class AgentEngineClient:
     async def get_or_create_session(
         self,
         user_id: str,
-        session_id: Optional[str] = None,
-        conversation_name: Optional[str] = None,
+        session_id: str | None = None,
+        conversation_name: str | None = None,
     ) -> str:
         """Get an existing session or create a new one."""
         if session_id:
@@ -332,7 +334,7 @@ class AgentEngineClient:
         return await self.create_conversation(user_id, conversation_name)
 
     def update_conversation_metadata(
-        self, user_id: str, session_id: str, conversation_name: Optional[str] = None
+        self, user_id: str, session_id: str, conversation_name: str | None = None
     ) -> bool:
         """Update conversation metadata."""
         session_key = f"{user_id}:{session_id}"
@@ -347,7 +349,7 @@ class AgentEngineClient:
             return True
         return False
 
-    async def get_user_conversations(self, user_id: str) -> List[ConversationInfo]:
+    async def get_user_conversations(self, user_id: str) -> list[ConversationInfo]:
         """Get all conversations for a user from ADK session service."""
         conversations = []
 
@@ -537,7 +539,7 @@ class AgentEngineClient:
 
     async def get_conversation_history(
         self, user_id: str, session_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get conversation history from ADK session service and format it for frontend consumption."""
         try:
             logger.info(
@@ -597,10 +599,10 @@ class AgentEngineClient:
 
     async def chat_completion(
         self,
-        messages: List[ChatMessage],
+        messages: list[ChatMessage],
         user_context: UserContext,
-        session_id: Optional[str] = None,
-        conversation_name: Optional[str] = None,
+        session_id: str | None = None,
+        conversation_name: str | None = None,
     ) -> tuple[str, str]:
         """Get a chat completion from the Agent Engine using agent_engines API with session management."""
         if not self.agent_engine:
@@ -618,13 +620,79 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
+            logger.info(f"[CHAT] Processing message for user {user_id}: {user_input[:100]}...")
+            logger.info(f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}")
+
+            # Check if this might be a Google Analytics query and inject OAuth credentials
+            ga_keywords = ['analytics', 'traffic', 'users', 'sessions', 'pageviews',
+                          'bounce rate', 'ga4', 'google analytics', 'website visitors',
+                          'conversion', 'acquisition', 'real-time', 'realtime', 'property']
+
+            is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
+
+            # Also check if this is a follow-up in a GA conversation
+            session_key = f"{user_id}:{session_id}" if session_id else None
+            is_ga_followup = False
+            if session_key and session_key in self._user_sessions:
+                is_ga_followup = self._user_sessions[session_key].get("is_ga_conversation", False)
+
+            logger.info(f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
+            print(f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
+
+            if is_ga_query or is_ga_followup:
+                # Try to get GA OAuth credentials from any accessible account that has them
+                logger.info(f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}")
+                print(f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}")
+                if user_context.accessible_accounts:
+                    try:
+                        firestore_service = get_firestore_service()
+                        db = firestore_service.get_client()
+                        ga_helper = GACredentialHelper(db)
+
+                        # Try each accessible account until we find one with GA credentials
+                        ga_creds = None
+                        for account_id in user_context.accessible_accounts:
+                            # Get and format GA credentials
+                            ga_creds = await ga_helper.get_and_format_credentials(account_id)
+                            if ga_creds:
+                                logger.info(f"Found GA OAuth credentials in account {account_id}")
+                                print(f"[DEBUG] Found GA OAuth credentials in account {account_id}")
+                                break
+                            else:
+                                logger.debug(f"No GA credentials in account {account_id}, trying next...")
+                                print(f"[DEBUG] No GA credentials in account {account_id}, trying next...")
+
+                        if ga_creds:
+                            # Create a structured message with credentials embedded
+                            enhanced_message = {
+                                "message": user_input,
+                                "tenant_id": ga_creds["tenant_id"],
+                                "tenant_credentials": ga_creds["tenant_credentials"]
+                            }
+                            # Convert to JSON string for the agent
+                            import json
+                            user_input = json.dumps(enhanced_message)
+                            logger.info(f"Injected GA OAuth credentials (tenant_id: {ga_creds['tenant_id'][:20]}...)")
+                            print("[DEBUG] Successfully injected GA credentials into message")
+                        else:
+                            logger.warning(f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts")
+                            print("[DEBUG] Failed to find GA credentials in any accessible account")
+                    except Exception as e:
+                        logger.error(f"Failed to inject GA credentials: {e}")
+                        # Continue with original message if credential injection fails
+
             # Get or create session for this user
             actual_session_id = await self.get_or_create_session(
                 user_id, session_id, conversation_name
             )
 
-            # Check if this is the first message and we need to generate a conversation name
+            # Mark session as GA conversation if needed
             session_key = f"{user_id}:{actual_session_id}"
+            if is_ga_query and session_key in self._user_sessions:
+                self._user_sessions[session_key]["is_ga_conversation"] = True
+                logger.info(f"Marked session {actual_session_id} as GA conversation")
+
+            # Check if this is the first message and we need to generate a conversation name
             if (
                 session_key in self._user_sessions
                 and self._user_sessions[session_key]["message_count"] == 0
@@ -737,7 +805,11 @@ class AgentEngineClient:
                                 elif "content" in chunk:
                                     response_parts.append(str(chunk["content"]))
                                 else:
-                                    response_parts.append(str(chunk))
+                                    # Don't append function_call or function_response data
+                                    if not ("function_call" in chunk or "function_response" in chunk):
+                                        response_parts.append(str(chunk))
+                                    else:
+                                        logger.info("Skipping function debug data in non-streaming response")
                             elif isinstance(chunk, str):
                                 # Handle string representation of dictionary
                                 logger.info(f"Processing string chunk: {chunk[:50]}...")
@@ -773,16 +845,50 @@ class AgentEngineClient:
                                         )
                                         response_parts.append(chunk)
                                 else:
-                                    logger.info(
-                                        "Chunk doesn't match dictionary pattern, adding as-is"
-                                    )
-                                    response_parts.append(chunk)
+                                    # Check if the chunk contains function_call or function_response
+                                    if "{'function_call'" in chunk or "{'function_response'" in chunk:
+                                        # Try to extract just the text after the function data
+                                        logger.info("Found function data in string chunk, attempting to extract text")
+
+                                        # Look for text after the last }}
+                                        if "}}" in chunk:
+                                            parts = chunk.rsplit("}}", 1)
+                                            if len(parts) == 2 and parts[1].strip():
+                                                remaining = parts[1].strip()
+                                                if not remaining.startswith("{"):
+                                                    logger.info(f"Extracted text after function data: {remaining[:50]}...")
+                                                    response_parts.append(remaining)
+                                                else:
+                                                    logger.info("Remaining part is another JSON object, skipping")
+                                            else:
+                                                logger.info("No text found after function data, skipping entire chunk")
+                                        else:
+                                            logger.info("No }} found in chunk with function data, skipping")
+                                    else:
+                                        logger.info(
+                                            "Chunk doesn't match dictionary pattern, adding as-is"
+                                        )
+                                        response_parts.append(chunk)
                             elif hasattr(chunk, "content"):
                                 response_parts.append(str(chunk.content))
                             else:
                                 response_parts.append(str(chunk))
 
                         full_response = "".join(response_parts).strip()
+
+                        # Clean up function_call/function_response data from the final response
+                        if full_response and ("{'function_call'" in full_response or "{'function_response'" in full_response):
+                            logger.info(f"Cleaning function data from response (length: {len(full_response)})")
+                            # Try to extract only the text after function blocks
+                            if "}}" in full_response:
+                                # Split by the last occurrence of }} and take what comes after
+                                parts = full_response.rsplit("}}", 1)
+                                if len(parts) == 2 and parts[1].strip():
+                                    cleaned = parts[1].strip()
+                                    if not cleaned.startswith("{"):
+                                        logger.info(f"Extracted clean text (length: {len(cleaned)})")
+                                        full_response = cleaned
+
                         if full_response:
                             return full_response, actual_session_id
                         else:
@@ -793,7 +899,7 @@ class AgentEngineClient:
                     except Exception as stream_error:
                         logger.error(f"stream_query failed: {stream_error}")
                         return (
-                            f"Agent Engine stream_query error: {str(stream_error)}",
+                            f"Agent Engine stream_query error: {stream_error!s}",
                             actual_session_id,
                         )
 
@@ -836,7 +942,7 @@ class AgentEngineClient:
             except Exception as call_error:
                 logger.error(f"Error calling Agent Engine: {call_error}")
                 return (
-                    f"Error processing your request: {str(call_error)}",
+                    f"Error processing your request: {call_error!s}",
                     actual_session_id or "",
                 )
 
@@ -846,15 +952,15 @@ class AgentEngineClient:
             logger.error(f"Unexpected error in chat completion: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"An unexpected error occurred: {str(e)}",
+                detail=f"An unexpected error occurred: {e!s}",
             )
 
     async def stream_chat_completion(
         self,
-        messages: List[ChatMessage],
+        messages: list[ChatMessage],
         user_context: UserContext,
-        session_id: Optional[str] = None,
-        conversation_name: Optional[str] = None,
+        session_id: str | None = None,
+        conversation_name: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream a chat completion from the Agent Engine using agent_engines API."""
         if not self.agent_engine:
@@ -871,13 +977,79 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
+            logger.info(f"[CHAT] Processing message for user {user_id}: {user_input[:100]}...")
+            logger.info(f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}")
+
+            # Check if this might be a Google Analytics query and inject OAuth credentials
+            ga_keywords = ['analytics', 'traffic', 'users', 'sessions', 'pageviews',
+                          'bounce rate', 'ga4', 'google analytics', 'website visitors',
+                          'conversion', 'acquisition', 'real-time', 'realtime', 'property']
+
+            is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
+
+            # Also check if this is a follow-up in a GA conversation
+            session_key = f"{user_id}:{session_id}" if session_id else None
+            is_ga_followup = False
+            if session_key and session_key in self._user_sessions:
+                is_ga_followup = self._user_sessions[session_key].get("is_ga_conversation", False)
+
+            logger.info(f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
+            print(f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
+
+            if is_ga_query or is_ga_followup:
+                # Try to get GA OAuth credentials from any accessible account that has them
+                logger.info(f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}")
+                print(f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}")
+                if user_context.accessible_accounts:
+                    try:
+                        firestore_service = get_firestore_service()
+                        db = firestore_service.get_client()
+                        ga_helper = GACredentialHelper(db)
+
+                        # Try each accessible account until we find one with GA credentials
+                        ga_creds = None
+                        for account_id in user_context.accessible_accounts:
+                            # Get and format GA credentials
+                            ga_creds = await ga_helper.get_and_format_credentials(account_id)
+                            if ga_creds:
+                                logger.info(f"Found GA OAuth credentials in account {account_id}")
+                                print(f"[DEBUG] Found GA OAuth credentials in account {account_id}")
+                                break
+                            else:
+                                logger.debug(f"No GA credentials in account {account_id}, trying next...")
+                                print(f"[DEBUG] No GA credentials in account {account_id}, trying next...")
+
+                        if ga_creds:
+                            # Create a structured message with credentials embedded
+                            enhanced_message = {
+                                "message": user_input,
+                                "tenant_id": ga_creds["tenant_id"],
+                                "tenant_credentials": ga_creds["tenant_credentials"]
+                            }
+                            # Convert to JSON string for the agent
+                            import json
+                            user_input = json.dumps(enhanced_message)
+                            logger.info(f"Injected GA OAuth credentials (tenant_id: {ga_creds['tenant_id'][:20]}...)")
+                            print("[DEBUG] Successfully injected GA credentials into message")
+                        else:
+                            logger.warning(f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts")
+                            print("[DEBUG] Failed to find GA credentials in any accessible account")
+                    except Exception as e:
+                        logger.error(f"Failed to inject GA credentials: {e}")
+                        # Continue with original message if credential injection fails
+
             # Get or create session for this user
             actual_session_id = await self.get_or_create_session(
                 user_id, session_id, conversation_name
             )
 
-            # Check if this is the first message and we need to generate a conversation name
+            # Mark session as GA conversation if needed
             session_key = f"{user_id}:{actual_session_id}"
+            if is_ga_query and session_key in self._user_sessions:
+                self._user_sessions[session_key]["is_ga_conversation"] = True
+                logger.info(f"Marked session {actual_session_id} as GA conversation")
+
+            # Check if this is the first message and we need to generate a conversation name
             if (
                 session_key in self._user_sessions
                 and self._user_sessions[session_key]["message_count"] == 0
@@ -916,7 +1088,6 @@ class AgentEngineClient:
                     logger.info("Using stream_query method for streaming")
 
                     # Create an async generator that runs the blocking stream_query in a thread
-                    import concurrent.futures
                     import queue
                     import threading
 
@@ -984,10 +1155,23 @@ class AgentEngineClient:
                             elif "content" in chunk:
                                 yield str(chunk["content"])
                             else:
-                                yield str(chunk)
+                                # Don't yield raw function_call or function_response data
+                                # These are debug/internal data, not user-facing content
+                                if not ("function_call" in chunk or "function_response" in chunk):
+                                    yield str(chunk)
                         elif isinstance(chunk, str):
-                            # Handle string representation of dictionary
-                            if chunk.startswith("{'parts'") and "'text':" in chunk:
+                            # Log the raw chunk for debugging
+                            logger.debug(f"Raw chunk received (first 200 chars): {chunk[:200]}...")
+
+                            # Parse and clean string chunks that might contain function data
+                            # Check if this is a string representation of function_call/function_response
+                            if chunk.startswith("{'function_call'") or chunk.startswith("{'function_response'"):
+                                # This is debug data, skip it
+                                logger.debug(f"Skipping function debug data in chunk: {chunk[:100]}...")
+                                continue
+
+                            # Handle string representation of dictionary with text content
+                            elif chunk.startswith("{'parts'") and "'text':" in chunk:
                                 try:
                                     import ast
 
@@ -1006,6 +1190,41 @@ class AgentEngineClient:
                                         yield chunk
                                 except (ValueError, SyntaxError):
                                     yield chunk
+
+                            # Check if the chunk contains both function data and text
+                            elif "{'function_call'" in chunk or "{'function_response'" in chunk:
+                                # Try to extract just the text after the function data
+                                # The pattern is: {'function_call': ...}{'function_response': ...}actual text
+                                import re
+
+                                # More robust pattern to match multiple consecutive function blocks
+                                # This matches one or more consecutive {function_call/response} blocks
+                                pattern = r"^(\{['\"]function_(?:call|response)['\"].*?\}\}(?:\{['\"]function_(?:call|response)['\"].*?\}\})*)(.*)"
+                                match = re.match(pattern, chunk, re.DOTALL)
+
+                                if match:
+                                    function_blocks = match.group(1)
+                                    text_part = match.group(2).strip()
+
+                                    logger.debug(f"Found function blocks: {function_blocks[:100]}...")
+                                    logger.debug(f"Extracted text part: {text_part[:100]}...")
+
+                                    # Only yield the text part if it exists and isn't empty
+                                    if text_part:
+                                        yield text_part
+                                else:
+                                    # Try simpler approach: split by the last }} and take what comes after
+                                    # This handles cases where the regex might fail
+                                    if "}}" in chunk:
+                                        parts = chunk.rsplit("}}", 1)
+                                        if len(parts) == 2 and parts[1].strip():
+                                            # Check if the remaining part isn't another JSON object
+                                            remaining = parts[1].strip()
+                                            if not remaining.startswith("{"):
+                                                yield remaining
+                                    elif not chunk.strip().startswith('{'):
+                                        # If it doesn't start with {, it's probably just text
+                                        yield chunk
                             else:
                                 yield chunk
                         elif hasattr(chunk, "content"):
@@ -1032,7 +1251,7 @@ class AgentEngineClient:
                         response = self.agent_engine.query(user_input)
 
                 # Pattern 4: Direct callable
-                elif hasattr(self.agent_engine, "__call__"):
+                elif callable(self.agent_engine):
                     logger.info("Trying direct call pattern for streaming fallback")
                     try:
                         # Try with session parameters first
@@ -1072,11 +1291,11 @@ class AgentEngineClient:
 
             except Exception as call_error:
                 logger.error(f"Error calling Agent Engine for streaming: {call_error}")
-                yield f"Error processing your request: {str(call_error)}"
+                yield f"Error processing your request: {call_error!s}"
 
         except Exception as e:
             logger.error(f"Error in streaming chat completion: {e}")
-            yield f"Error: Failed to process chat request - {str(e)}"
+            yield f"Error: Failed to process chat request - {e!s}"
 
 
 # Global client instance
@@ -1085,7 +1304,7 @@ agent_client = AgentEngineClient()
 
 @router.post("/completions", response_model=ChatResponse)
 async def chat_completion(
-    request: ChatRequest, user_context: UserContext = Depends(get_current_user)
+    request: ChatRequest, user_context: UserContext = Depends(get_current_user_context)
 ):
     """
     Get a chat completion from the Vertex AI Agent Engine.
@@ -1274,7 +1493,7 @@ async def get_conversation_history(
         return history
 
     except Exception as e:
-        logger.error(f"Error getting conversation history {session_id}: {str(e)}")
+        logger.error(f"Error getting conversation history {session_id}: {e!s}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get conversation history",
