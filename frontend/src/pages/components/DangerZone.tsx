@@ -189,9 +189,9 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
                     📋 Required: You must delete all accounts first
                   </div>
                   <div className="text-sm text-amber-700 mt-1">
-                    Before deleting this organization, please remove all accounts
-                    from the Accounts section above. This ensures you understand
-                    exactly what data will be lost.
+                    Before deleting this organization, please remove all
+                    accounts from the Accounts section above. This ensures you
+                    understand exactly what data will be lost.
                   </div>
                 </div>
                 <div className="p-3 bg-red-50 border border-red-200 rounded-md">

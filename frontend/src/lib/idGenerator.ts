@@ -30,7 +30,7 @@ export function generateOrganizationId(): string {
  */
 export function generateAccountId(): string {
   // Generate a UUID v4 equivalent using crypto API
-  const uuid = crypto.randomUUID().replace(/-/g, '');
+  const uuid = crypto.randomUUID().replace(/-/g, "");
   return `acc_${uuid}`;
 }
 
@@ -65,7 +65,6 @@ export function generateIntuitionId(): string {
 export function generateLogId(): string {
   return generateId("l");
 }
-
 
 /**
  * Validate that an ID follows the expected format

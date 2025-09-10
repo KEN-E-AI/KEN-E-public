@@ -34,7 +34,9 @@ export function ConceptSearchDialog({
   const [concepts, setConcepts] = useState<ConceptOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedConcept, setSelectedConcept] = useState<ConceptOption | null>(null);
+  const [selectedConcept, setSelectedConcept] = useState<ConceptOption | null>(
+    null,
+  );
   const [isConfirming, setIsConfirming] = useState(false);
 
   useEffect(() => {
@@ -55,15 +57,15 @@ export function ConceptSearchDialog({
 
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await api.get(
         `/api/v1/monitoring-topics/${selectedOrgAccount.accountId}/customers/search-concepts`,
-        { params: { term: searchTerm } }
+        { params: { term: searchTerm } },
       );
-      
+
       console.log("API Response:", response.data);
-      
+
       // Check if response.data is an array
       if (!Array.isArray(response.data)) {
         console.error("Unexpected response format:", response.data);
@@ -71,7 +73,7 @@ export function ConceptSearchDialog({
         setConcepts([]);
         return;
       }
-      
+
       // Convert snake_case to camelCase for frontend
       const convertedConcepts = response.data.map((concept: any) => ({
         id: concept.id,
@@ -86,7 +88,7 @@ export function ConceptSearchDialog({
         },
         confidenceScore: concept.confidence_score,
       }));
-      
+
       setConcepts(convertedConcepts);
     } catch (err: any) {
       console.error("Failed to search concepts:", err);
@@ -145,7 +147,7 @@ export function ConceptSearchDialog({
 
   const handleConfirm = async () => {
     if (!selectedConcept) return;
-    
+
     setIsConfirming(true);
     try {
       await onSelect(selectedConcept);
@@ -160,8 +162,8 @@ export function ConceptSearchDialog({
         <DialogHeader>
           <DialogTitle>What does "{term}" refer to?</DialogTitle>
           <DialogDescription>
-            Select the most relevant interpretation to ensure accurate monitoring.
-            This helps avoid fetching irrelevant content.
+            Select the most relevant interpretation to ensure accurate
+            monitoring. This helps avoid fetching irrelevant content.
           </DialogDescription>
         </DialogHeader>
 
@@ -203,7 +205,7 @@ export function ConceptSearchDialog({
                     selectedConcept?.id === concept.id
                       ? "border-primary bg-primary/5 ring-2 ring-primary/20"
                       : "hover:bg-accent",
-                    isConfirming && "opacity-50 cursor-not-allowed"
+                    isConfirming && "opacity-50 cursor-not-allowed",
                   )}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -222,9 +224,7 @@ export function ConceptSearchDialog({
                           </span>
                         )}
                         {selectedConcept?.id === concept.id && (
-                          <Badge className="text-xs bg-primary">
-                            Selected
-                          </Badge>
+                          <Badge className="text-xs bg-primary">Selected</Badge>
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -237,11 +237,13 @@ export function ConceptSearchDialog({
                         className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <span>{getSourceIcon(concept.reference.sourceType)}</span>
+                        <span>
+                          {getSourceIcon(concept.reference.sourceType)}
+                        </span>
                         <span>
                           {getSourceLabel(
                             concept.reference.sourceType,
-                            concept.reference.url
+                            concept.reference.url,
                           )}
                         </span>
                         <ExternalLink className="h-3 w-3" />
@@ -281,7 +283,11 @@ export function ConceptSearchDialog({
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={onSkip} disabled={isConfirming}>
+              <Button
+                variant="outline"
+                onClick={onSkip}
+                disabled={isConfirming}
+              >
                 Add without context
               </Button>
               <Button variant="ghost" onClick={onClose} disabled={isConfirming}>

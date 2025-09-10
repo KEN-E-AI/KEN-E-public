@@ -27,7 +27,8 @@ describe("useAccountCreationProgress", () => {
   test("fetches status when accountId is provided", async () => {
     const mockStatus = {
       status: "processing",
-      message: "Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+      message:
+        "Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
     };
 
     (api.get as any).mockResolvedValue({ data: mockStatus });
@@ -100,7 +101,7 @@ describe("useAccountCreationProgress", () => {
     vi.advanceTimersByTime(30000);
 
     // Wait a bit to ensure no additional calls
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(api.get).toHaveBeenCalledTimes(1); // Still only 1 call
   });
@@ -123,7 +124,7 @@ describe("useAccountCreationProgress", () => {
     vi.advanceTimersByTime(30000);
 
     // Wait a bit to ensure no additional calls
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(api.get).toHaveBeenCalledTimes(1); // Still only 1 call
   });
@@ -273,7 +274,11 @@ describe("useAccountCreationProgress", () => {
       expect(result.current.message).toBe("Creating second account...");
     });
 
-    expect(api.get).toHaveBeenCalledWith("/api/v1/accounts/acc_first/creation-status");
-    expect(api.get).toHaveBeenCalledWith("/api/v1/accounts/acc_second/creation-status");
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/accounts/acc_first/creation-status",
+    );
+    expect(api.get).toHaveBeenCalledWith(
+      "/api/v1/accounts/acc_second/creation-status",
+    );
   });
 });

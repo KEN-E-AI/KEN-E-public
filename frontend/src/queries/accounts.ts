@@ -20,13 +20,17 @@ export const accountKeys = {
 export const useAccounts = (organizationId: string | null) => {
   console.log(`[useAccounts] Hook called for organization: ${organizationId}`);
   console.log(`[useAccounts] Time: ${new Date().toISOString()}`);
-  
+
   return useQuery({
     queryKey: accountKeys.list(organizationId || ""),
     queryFn: async () => {
-      console.log(`[useAccounts] queryFn executing for organization: ${organizationId}`);
-      console.log(`[useAccounts] queryFn called at: ${new Date().toISOString()}`);
-      
+      console.log(
+        `[useAccounts] queryFn executing for organization: ${organizationId}`,
+      );
+      console.log(
+        `[useAccounts] queryFn called at: ${new Date().toISOString()}`,
+      );
+
       if (!organizationId) return [];
       const accounts = await getAccountsByOrganizationId(organizationId);
       return accounts;
@@ -36,9 +40,12 @@ export const useAccounts = (organizationId: string | null) => {
     refetchOnWindowFocus: false, // Disable automatic refetch on window focus
     refetchOnMount: false, // Disable automatic refetch on mount
     retry: (failureCount, error: any) => {
-      console.log(`[useAccounts] Query retry attempt ${failureCount} after error:`, error.message);
+      console.log(
+        `[useAccounts] Query retry attempt ${failureCount} after error:`,
+        error.message,
+      );
       // Don't retry on timeout errors
-      if (error.message?.includes('timeout')) {
+      if (error.message?.includes("timeout")) {
         console.log(`[useAccounts] Not retrying due to timeout error`);
         return false;
       }
@@ -76,7 +83,7 @@ export const useDeleteAccount = () => {
 // Manual cache invalidation helper
 export const useInvalidateAccounts = () => {
   const queryClient = useQueryClient();
-  
+
   return (organizationId: string) => {
     // Invalidate the specific organization's account list
     queryClient.invalidateQueries({
@@ -84,7 +91,7 @@ export const useInvalidateAccounts = () => {
     });
     // Also invalidate all lists for broader cache consistency
     queryClient.invalidateQueries({ queryKey: accountKeys.lists() });
-    
+
     console.log(
       "[useInvalidateAccounts] Cache invalidated for organization:",
       organizationId,
@@ -95,7 +102,7 @@ export const useInvalidateAccounts = () => {
 export const useCreateAccount = () => {
   return useMutation({
     mutationFn: async (accountData: {
-      accountId?: string;  // Optional pre-generated account ID for progress tracking
+      accountId?: string; // Optional pre-generated account ID for progress tracking
       accountName: string;
       organizationId: string;
       industry: string;
@@ -203,7 +210,7 @@ export const useCreateAccount = () => {
       console.log(
         "[useCreateAccount] Account created for organization:",
         variables.organizationId,
-        "- cache invalidation should be handled by the component"
+        "- cache invalidation should be handled by the component",
       );
     },
 
