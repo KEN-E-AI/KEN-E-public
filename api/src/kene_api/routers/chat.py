@@ -592,6 +592,21 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
+            # Format conversation history if there are previous messages
+            if len(messages) > 1:
+                # Build conversation context from all messages
+                conversation_context = []
+                for msg in messages[:-1]:  # All messages except the latest
+                    role_label = "User" if msg.role == "user" else "Assistant"
+                    conversation_context.append(f"{role_label}: {msg.content}")
+                
+                # Add conversation history as context to the current message
+                context_str = "\n".join(conversation_context)
+                formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
+                logger.info(f"[CHAT] Including {len(messages)-1} previous messages in context")
+            else:
+                formatted_input = user_input
+
             logger.info(f"[CHAT] Processing message for user {user_id}: {user_input[:100]}...")
             logger.info(f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}")
 
@@ -636,14 +651,15 @@ class AgentEngineClient:
 
                         if ga_creds:
                             # Create a structured message with credentials embedded
+                            # Use formatted_input which includes conversation context
                             enhanced_message = {
-                                "message": user_input,
+                                "message": formatted_input,
                                 "tenant_id": ga_creds["tenant_id"],
                                 "tenant_credentials": ga_creds["tenant_credentials"]
                             }
                             # Convert to JSON string for the agent
                             import json
-                            user_input = json.dumps(enhanced_message)
+                            formatted_input = json.dumps(enhanced_message)
                             logger.info(f"Injected GA OAuth credentials (tenant_id: {ga_creds['tenant_id'][:20]}...)")
                             print("[DEBUG] Successfully injected GA credentials into message")
                         else:
@@ -683,7 +699,7 @@ class AgentEngineClient:
             logger.info(
                 f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}"
             )
-            logger.info(f"Query: {user_input[:100]}...")
+            logger.info(f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}...")
             logger.info(f"Session ID being passed to Agent Engine: {actual_session_id}")
 
             # Use the agent_engines API with proper Queryable interface
@@ -712,7 +728,7 @@ class AgentEngineClient:
                                 loop.run_in_executor(
                                     None,
                                     lambda: list(self.agent_engine.stream_query(
-                                        message=user_input,
+                                        message=formatted_input,
                                         user_id=user_id,
                                         session_id=actual_session_id
                                     ))
@@ -942,6 +958,21 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
+            # Format conversation history if there are previous messages
+            if len(messages) > 1:
+                # Build conversation context from all messages
+                conversation_context = []
+                for msg in messages[:-1]:  # All messages except the latest
+                    role_label = "User" if msg.role == "user" else "Assistant"
+                    conversation_context.append(f"{role_label}: {msg.content}")
+                
+                # Add conversation history as context to the current message
+                context_str = "\n".join(conversation_context)
+                formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
+                logger.info(f"[CHAT STREAM] Including {len(messages)-1} previous messages in context")
+            else:
+                formatted_input = user_input
+
             logger.info(f"[CHAT] Processing message for user {user_id}: {user_input[:100]}...")
             logger.info(f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}")
 
@@ -986,14 +1017,15 @@ class AgentEngineClient:
 
                         if ga_creds:
                             # Create a structured message with credentials embedded
+                            # Use formatted_input which includes conversation context
                             enhanced_message = {
-                                "message": user_input,
+                                "message": formatted_input,
                                 "tenant_id": ga_creds["tenant_id"],
                                 "tenant_credentials": ga_creds["tenant_credentials"]
                             }
                             # Convert to JSON string for the agent
                             import json
-                            user_input = json.dumps(enhanced_message)
+                            formatted_input = json.dumps(enhanced_message)
                             logger.info(f"Injected GA OAuth credentials (tenant_id: {ga_creds['tenant_id'][:20]}...)")
                             print("[DEBUG] Successfully injected GA credentials into message")
                         else:
@@ -1033,7 +1065,7 @@ class AgentEngineClient:
             logger.info(
                 f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}"
             )
-            logger.info(f"Query: {user_input[:100]}...")
+            logger.info(f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}...")
             logger.info(
                 f"Session ID being passed to Agent Engine for streaming: {actual_session_id}"
             )
