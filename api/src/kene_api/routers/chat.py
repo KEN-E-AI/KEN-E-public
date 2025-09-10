@@ -1274,13 +1274,13 @@ class AgentEngineClient:
                     try:
                         # Try with session parameters first
                         response = self.agent_engine.query(
-                            message=user_input,
+                            message=formatted_input,
                             user_id=user_id,
                             session_id=actual_session_id,
                         )
                     except TypeError:
                         # Fallback to simple query if parameters not supported
-                        response = self.agent_engine.query(user_input)
+                        response = self.agent_engine.query(formatted_input)
 
                 # Pattern 4: Direct callable
                 elif callable(self.agent_engine):
@@ -1288,13 +1288,13 @@ class AgentEngineClient:
                     try:
                         # Try with session parameters first
                         response = self.agent_engine(
-                            message=user_input,
+                            message=formatted_input,
                             user_id=user_id,
                             session_id=actual_session_id,
                         )
                     except TypeError:
                         # Fallback to simple call if parameters not supported
-                        response = self.agent_engine(user_input)
+                        response = self.agent_engine(formatted_input)
 
                 else:
                     yield f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
