@@ -16,6 +16,8 @@ from google.cloud import firestore
 # from google.cloud import kms  # TODO: Install when implementing KMS
 # from google.cloud.kms import KeyManagementServiceClient
 
+from ..metrics.oauth_metrics import measure_encryption_operation
+
 logger = logging.getLogger(__name__)
 
 # For development, we'll use Fernet encryption
@@ -49,6 +51,7 @@ class EncryptionService:
             self.key_id = os.getenv("KMS_KEY_ID", "integration-encryption-key")
             self.cipher = None
 
+    @measure_encryption_operation("encrypt")
     def encrypt(self, plaintext: str) -> str:
         """
         Encrypt a plaintext string.
@@ -88,6 +91,7 @@ class EncryptionService:
             logger.error(f"Encryption failed: {e}")
             raise
 
+    @measure_encryption_operation("decrypt")
     def decrypt(self, ciphertext: str) -> str:
         """
         Decrypt an encrypted string.

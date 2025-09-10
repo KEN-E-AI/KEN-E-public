@@ -24,6 +24,7 @@ from .routers import (
     intuitions,
     items,
     metrics,
+    monitoring,
     monitoring_topics,
     notifications_v2 as notifications,
     oauth_integrations,
@@ -105,6 +106,7 @@ app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"]
 app.include_router(integrations.router)  # Integrations router already has its prefix
 app.include_router(oauth_integrations.router)  # OAuth router already has its prefix
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
+app.include_router(monitoring.router)  # Monitoring router for Prometheus metrics
 app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["datasets"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
 app.include_router(activities.router, prefix="/api/v1/activities", tags=["activities"])

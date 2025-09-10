@@ -28,6 +28,7 @@ dependencies = [
     "weave>=0.51.59",
     "wandb>=0.21.1",
     "importlib-metadata<8.0",
+    "prometheus-client>=0.19.0",
 ]
 
 [dependency-groups]
