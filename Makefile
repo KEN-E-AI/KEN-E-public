@@ -2,6 +2,16 @@ install:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/install.sh | sh; source ~/.bashrc; }
 	uv sync --dev --extra streamlit --extra jupyter --frozen
 
+# Environment switching targets
+env-dev:
+	@./set-environment.sh development
+
+env-staging:
+	@./set-environment.sh staging
+
+env-prod:
+	@./set-environment.sh production
+
 test:
 	uv run pytest tests/unit && uv run pytest tests/integration
 

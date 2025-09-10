@@ -16,29 +16,27 @@ VERTEX_LOCATION = "us-central1"  # Vertex AI location
 # Initialize Vertex AI
 vertexai.init(project=PROJECT_ID, location=VERTEX_LOCATION)
 
+
 # Create Vertex AI Search tools for each company
 def create_company_agents():
     """Create simple agents for each company following ADK patterns."""
-    
+
     # Company data store mapping
     companies = {
-        'apple': 'company-apple-news-search',
-        'microsoft': 'company-microsoft-news-search', 
-        'google': 'company-google-news-search'
+        "apple": "company-apple-news-search",
+        "microsoft": "company-microsoft-news-search",
+        "google": "company-google-news-search",
     }
-    
+
     agents = {}
-    
+
     for company, datastore_id in companies.items():
         # Build full data store path
         datastore_path = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/{datastore_id}"
-        
+
         # Create Vertex AI Search tool
-        search_tool = VertexAiSearchTool(
-            data_store_id=datastore_path,
-            max_results=5
-        )
-        
+        search_tool = VertexAiSearchTool(data_store_id=datastore_path, max_results=5)
+
         # Create company-specific agent - ADK handles everything else!
         agent = Agent(
             name=f"{company}_news_agent",
@@ -51,29 +49,28 @@ Use your Vertex AI Search tool to find relevant news about {company.title()} and
 - Sentiment analysis when relevant
 
 Always search for the most current and relevant information about {company.title()}.""",
-            tools=[search_tool]  # ADK handles tool execution automatically
+            tools=[search_tool],  # ADK handles tool execution automatically
         )
-        
+
         agents[company] = agent
-    
+
     return agents
+
 
 # Create all company agents
 company_agents = create_company_agents()
 
+
 # Main router agent that can access all companies
 def create_main_agent():
     """Create the main router agent that can handle any company."""
-    
+
     # Use the actual datastore that contains our news data
     # This is the general multi-company datastore we've been populating
     datastore_path = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/ken-e-staging-test-news-search-connecto_1753269093831_gcs_store"
-    
-    search_tool = VertexAiSearchTool(
-        data_store_id=datastore_path,
-        max_results=10
-    )
-    
+
+    search_tool = VertexAiSearchTool(data_store_id=datastore_path, max_results=10)
+
     agent = Agent(
         name="company_news_chatbot",
         model="gemini-2.0-flash",
@@ -121,10 +118,11 @@ def create_main_agent():
 6. If no validated results: "I don't have any news about [Company] in my curated database"
 
 **KEY VALIDATION:** Before sharing any information, verify that the search results are discussing the company's own business activities, not the company providing analysis about other entities.""",
-        tools=[search_tool]
+        tools=[search_tool],
     )
-    
+
     return agent
+
 
 # Export the main agent - this is what ADK will use
 # Use 'root_agent' as that's what ADK expects

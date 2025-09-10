@@ -16,7 +16,13 @@ from .models import StrategyContext
 # Import logging, tracing, and token utilities
 from .token_utils import TokenEstimator, TokenLimitError, check_and_log_tokens
 from .logging_config import StrategyAgentLogger, safe_agent_execution
-from .tracing_config import WeaveTracer, weave_traced, safe_llm_call, trace_document_processing
+from .tracing_config import (
+    WeaveTracer,
+    weave_traced,
+    safe_llm_call,
+    trace_document_processing,
+)
+# Output retry wrapper not needed - ADK handles output validation via output_schema parameter
 
 # Initialize tracing
 WeaveTracer.init_tracing(project_name="strategy-agents")
@@ -39,10 +45,10 @@ except ImportError as e:
         return json.dumps(kwargs)
 
 
-
 # ============================================================================
 # PYDANTIC OUTPUT SCHEMAS
 # ============================================================================
+
 
 class BusinessStrategy(BaseModel):
     """
@@ -50,13 +56,14 @@ class BusinessStrategy(BaseModel):
     Each field represents a key component of the strategy and should be a
     synthesized narrative string based on research.
     """
+
     businessStrategySummary: str = Field(
         ...,
         description=(
             "A high-level summary of the company's situation, strategic direction, "
             "and key findings or recommendations. This should be written last but "
             "placed first."
-        )
+        ),
     )
     companyOverview: str = Field(
         ...,
@@ -67,7 +74,7 @@ class BusinessStrategy(BaseModel):
             "and values, an overview of its leadership and organizational structure, "
             "and its brand identity and customer base. Explain your reasoning and "
             "include references to public website URL's when available."
-        )
+        ),
     )
     productsAndServices: str = Field(
         ...,
@@ -77,7 +84,7 @@ class BusinessStrategy(BaseModel):
             "proposition for customers, the competitive positioning of the "
             "offerings, and the company's pricing model. Explain your reasoning and "
             "include references to public website URL's when available."
-        )
+        ),
     )
     marketAndIndustryAnalysis: str = Field(
         ...,
@@ -88,7 +95,7 @@ class BusinessStrategy(BaseModel):
             "including its current state, size, growth rate, and key trends. "
             "Explain your reasoning and include references to public website "
             "URL's when available."
-        )
+        ),
     )
     swotAnalysis: str = Field(
         ...,
@@ -98,7 +105,7 @@ class BusinessStrategy(BaseModel):
             "(external chances for growth), and Threats (external factors that "
             "could cause harm). Explain your reasoning and include references to "
             "public website URL's when available."
-        )
+        ),
     )
     externalEnvironmentAnalysisPESTEL: str = Field(
         ...,
@@ -110,7 +117,7 @@ class BusinessStrategy(BaseModel):
             "regulations), and Legal (labor laws, industry regulations). Explain "
             "your reasoning and include references to public website URL's when "
             "available."
-        )
+        ),
     )
     marketingAndCustomerStrategy: str = Field(
         ...,
@@ -121,7 +128,7 @@ class BusinessStrategy(BaseModel):
             "digital and social media presence, and overall brand positioning. "
             "Explain your reasoning and include references to public website "
             "URL's when available."
-        )
+        ),
     )
     internalOperationsAndBusinessModel: str = Field(
         ...,
@@ -131,7 +138,7 @@ class BusinessStrategy(BaseModel):
             "model (revenue streams, cost structure), its value and supply chain, "
             "and its sales and distribution channels. Explain your reasoning and "
             "include references to public website URL's when available."
-        )
+        ),
     )
     financialPerformanceAndAnalysis: str = Field(
         ...,
@@ -142,7 +149,7 @@ class BusinessStrategy(BaseModel):
             "ratios (ROI, LTV/CAC), and the company's financial outlook. Explain "
             "your reasoning and include references to public website URL's when "
             "available."
-        )
+        ),
     )
     strategicRecommendationsAndFutureOutlook: str = Field(
         ...,
@@ -153,7 +160,7 @@ class BusinessStrategy(BaseModel):
             "recommendations to address them, and a concluding perspective on the "
             "company's future outlook. Explain your reasoning and include "
             "references to public website URL's when available."
-        )
+        ),
     )
 
 
@@ -163,6 +170,7 @@ class CompetitiveAnalysis(BaseModel):
     Each field represents a key component of the analysis and should be a
     synthesized narrative string.
     """
+
     competitiveStrategySummary: str = Field(
         ...,
         description=(
@@ -171,7 +179,7 @@ class CompetitiveAnalysis(BaseModel):
             "strategic recommendations that summarize the primary actions and "
             "strategic changes suggested by the analysis. Explain your reasoning "
             "and add references when appropriate."
-        )
+        ),
     )
     competitiveLandscape: str = Field(
         ...,
@@ -183,7 +191,7 @@ class CompetitiveAnalysis(BaseModel):
             "identified opportunities such as unmet customer needs or market gaps "
             "not addressed by competitors. Explain your reasoning and add "
             "references when appropriate."
-        )
+        ),
     )
     detailedCompetitorProfiles: str = Field(
         ...,
@@ -199,7 +207,7 @@ class CompetitiveAnalysis(BaseModel):
             "details]... Competitor B: [Profile details]...'). Explain your "
             "reasoning and include references to public website URL's when "
             "available."
-        )
+        ),
     )
     portersFiveForces: str = Field(
         ...,
@@ -209,7 +217,7 @@ class CompetitiveAnalysis(BaseModel):
             "substitute products or services, and the bargaining power of buyers. "
             "For each force, explain your reasoning and add references when "
             "appropriate."
-        )
+        ),
     )
     strategicRecommendations: str = Field(
         ...,
@@ -222,7 +230,7 @@ class CompetitiveAnalysis(BaseModel):
             "specific actions to exploit competitor weaknesses or close gaps, and "
             "a final list of prioritized opportunities. Explain your reasoning "
             "and add references when appropriate."
-        )
+        ),
     )
 
 
@@ -232,6 +240,7 @@ class CustomerJourneyAnalysis(BaseModel):
     Each field represents a key component of the journey and should be a
     synthesized narrative.
     """
+
     customerJourneySummary: str = Field(
         ...,
         description=(
@@ -242,7 +251,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "(research and evaluation), to Conversion (purchase), and finally to "
             "Loyalty (retention and advocacy). Write this section last. Explain "
             "your reasoning and add references when appropriate."
-        )
+        ),
     )
     idealCustomerProfiles: str = Field(
         ...,
@@ -256,7 +265,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "Marketing Mary: [Full profile details]... Persona 2 - Startup Steve: "
             "[Full profile details]...'). Explain your reasoning and add "
             "references when appropriate."
-        )
+        ),
     )
     customerNeedsAnalysis: str = Field(
         ...,
@@ -267,18 +276,22 @@ class CustomerJourneyAnalysis(BaseModel):
             "the core customer needs they solve, and an explanation of how current "
             "industry trends influence customer expectations and behaviors. "
             "Explain your reasoning and add references when appropriate."
-        )
+        ),
     )
     awarenessPhase: str = Field(
         ...,
         description=(
             "Provide a comprehensive description of the 'Awareness' phase of the "
-            "customer journey. Synthesize your research on the following topics: how prospective customers typically behave when first "
+            "customer journey. Synthesize your research on the following topics: "
+            "How do prospective customers become aware of the problem? "
+            "How do prospective customers become aware of the solution to this problem? "
+            "How do prospective customers become aware of the brand, its offerings or its competitor's offerings? "
+            "Describe how prospective customers typically behave when first "
             "discovering the brand or its competitors, and the most influential "
             "marketing channels and touchpoints during this initial phase (e.g., "
             "'Blog posts,' 'PPC ads'). Explain your reasoning and add references "
             "when appropriate."
-        )
+        ),
     )
     considerationPhase: str = Field(
         ...,
@@ -290,7 +303,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "touchpoints that help them decide (e.g., 'Website feature pages,' "
             "'Case studies,' 'Free trial'). Explain your reasoning and add "
             "references when appropriate."
-        )
+        ),
     )
     conversionPhase: str = Field(
         ...,
@@ -301,7 +314,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "critical factors and influential touchpoints that lead to the final "
             "decision (e.g., 'Sales representative,' 'Onboarding flow'). Explain "
             "your reasoning and add references when appropriate."
-        )
+        ),
     )
     loyaltyPhase: str = Field(
         ...,
@@ -312,7 +325,7 @@ class CustomerJourneyAnalysis(BaseModel):
             "influential factors and touchpoints that foster retention and advocacy "
             "(e.g., 'Customer support,' 'Loyalty program'). Explain your reasoning "
             "and add references when appropriate."
-        )
+        ),
     )
 
 
@@ -322,6 +335,7 @@ class MarketingStrategy(BaseModel):
     Each field represents a key component of the strategy and should be a
     synthesized narrative string.
     """
+
     marketingStrategySummary: str = Field(
         ...,
         description=(
@@ -330,7 +344,7 @@ class MarketingStrategy(BaseModel):
             "conversion, loyalty). Do not create a specific timeline, but suggest "
             "how the strategy might unfold over the next 12 months. Explain your "
             "reasoning and add references where appropriate."
-        )
+        ),
     )
     awarenessStrategy: str = Field(
         ...,
@@ -341,7 +355,7 @@ class MarketingStrategy(BaseModel):
             "strategies that are most effective at reaching customers in this stage. "
             "Consider how the marketing budget might be used most effectively and "
             "efficiently. Explain your reasoning and add references where appropriate."
-        )
+        ),
     )
     considerationStrategy: str = Field(
         ...,
@@ -354,7 +368,7 @@ class MarketingStrategy(BaseModel):
             "in this stage. Consider how the marketing budget might be used most "
             "effectively and efficiently. Explain your reasoning and add references "
             "where appropriate."
-        )
+        ),
     )
     conversionStrategy: str = Field(
         ...,
@@ -367,7 +381,7 @@ class MarketingStrategy(BaseModel):
             "in this stage. Consider how the marketing budget might be used most "
             "effectively and efficiently. Explain your reasoning and add references "
             "where appropriate."
-        )
+        ),
     )
     loyaltyStrategy: str = Field(
         ...,
@@ -379,7 +393,7 @@ class MarketingStrategy(BaseModel):
             "reaching customers in this stage. Consider how the marketing budget "
             "might be used most effectively and efficiently. Explain your reasoning "
             "and add references where appropriate."
-        )
+        ),
     )
 
 
@@ -389,13 +403,14 @@ class BrandGuidelines(BaseModel):
     Each field represents a key component of the brand's identity and should be a
     synthesized narrative string.
     """
+
     brand_name: str = Field(
         ...,
         description=(
             "The official name of the company or brand. Provide the exact name as it "
             "is used in branding and communications (including correct spelling, "
             "capitalization, and any trademark symbols if applicable)."
-        )
+        ),
     )
     tagline: str = Field(
         ...,
@@ -406,7 +421,7 @@ class BrandGuidelines(BaseModel):
             "punctuation) and describe the context in which it is used (e.g., in "
             "logos, advertisements, etc.). If the brand does not have an official "
             "tagline, this section can be noted as not applicable."
-        )
+        ),
     )
     brand_overview: str = Field(
         ...,
@@ -414,7 +429,7 @@ class BrandGuidelines(BaseModel):
             "A brief introduction to the brand, summarizing what the company does, "
             "its industry, and its overall purpose or offering. This gives context "
             "about the business and what makes it unique."
-        )
+        ),
     )
     brand_story: str = Field(
         ...,
@@ -423,7 +438,7 @@ class BrandGuidelines(BaseModel):
             "company was founded, key milestones in its development, and any "
             "significant moments or anecdotes that shape the brand's identity. "
             "This helps readers understand the brand's heritage and evolution."
-        )
+        ),
     )
     value_proposition: str = Field(
         ...,
@@ -433,7 +448,7 @@ class BrandGuidelines(BaseModel):
             "what differentiates it from competitors. This can include the brand's "
             "positioning statement or a brief overview of how the brand solves "
             "customers’ problems or meets their needs better than alternatives."
-        )
+        ),
     )
     brand_personality: str = Field(
         ...,
@@ -443,7 +458,7 @@ class BrandGuidelines(BaseModel):
             "professional, adventurous, innovative) that describe the brand's "
             "character. These traits should be reflected in how the brand looks, "
             "speaks, and acts, ensuring consistency in brand experience."
-        )
+        ),
     )
     brand_voice_and_tone: str = Field(
         ...,
@@ -456,7 +471,7 @@ class BrandGuidelines(BaseModel):
             "phrases the brand likes to use or avoid. Provide examples of the "
             "tone in practice to illustrate how messaging should come across in "
             "writing or speech."
-        )
+        ),
     )
     logo_guidelines: str = Field(
         ...,
@@ -470,7 +485,7 @@ class BrandGuidelines(BaseModel):
             "Also outline improper uses of the logo (such as distorting its "
             "proportions, altering colors, or adding effects) to ensure the logo "
             "always appears consistent and recognizable."
-        )
+        ),
     )
     color_palette: str = Field(
         ...,
@@ -483,7 +498,7 @@ class BrandGuidelines(BaseModel):
             "secondary colors for accents or highlights) and any guidelines for "
             "maintaining sufficient contrast. This ensures consistency and "
             "accessibility in all uses of the brand’s colors."
-        )
+        ),
     )
     typography: str = Field(
         ...,
@@ -497,7 +512,7 @@ class BrandGuidelines(BaseModel):
             "font licensing or any specific kerning, spacing, or alignment rules. "
             "The goal is to maintain a consistent typographic style across all "
             "materials."
-        )
+        ),
     )
     iconography: str = Field(
         ...,
@@ -511,7 +526,7 @@ class BrandGuidelines(BaseModel):
             "thickness, color usage for icons, and spacing. If the brand does not "
             "have a custom icon style or this is not relevant, this section can "
             "be marked as not applicable."
-        )
+        ),
     )
     imagery_style: str = Field(
         ...,
@@ -527,7 +542,7 @@ class BrandGuidelines(BaseModel):
             "topics or environments – and provide examples of approved imagery "
             "styles. If there are any prohibitions (e.g., no use of certain "
             "colors or themes in imagery), list those as well."
-        )
+        ),
     )
     digital_presence: str = Field(
         ...,
@@ -542,7 +557,7 @@ class BrandGuidelines(BaseModel):
             "other digital touchpoints like mobile apps or online advertisements. "
             "The goal is to ensure the brand looks and feels consistent across all "
             "online platforms."
-        )
+        ),
     )
     application_examples: str = Field(
         ...,
@@ -556,7 +571,7 @@ class BrandGuidelines(BaseModel):
             "elements consistently. Include both good examples (correct usage) "
             "and, if helpful, examples of incorrect usage to illustrate mistakes "
             "to avoid."
-        )
+        ),
     )
     legal_considerations: str = Field(
         ...,
@@ -571,7 +586,7 @@ class BrandGuidelines(BaseModel):
             "attribution for any licensed elements (like fonts or images) and "
             "note any prohibited uses of the brand that could violate "
             "intellectual property rights."
-        )
+        ),
     )
     accessibility_standards: str = Field(
         ...,
@@ -588,7 +603,7 @@ class BrandGuidelines(BaseModel):
             "inclusivity, and ensure that all brand materials (digital or print) "
             "consider the needs of people with visual, auditory, motor, or "
             "cognitive disabilities."
-        )
+        ),
     )
 
 
@@ -718,6 +733,20 @@ You must follow this logic precisely:
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    "businessStrategySummary": "Your text here...",
+    "companyOverview": "Your text here...",
+    "productsAndServices": "Your text here...",
+    "marketAndIndustryAnalysis": "Your text here...",
+    "swotAnalysis": "Your text here...",
+    "externalEnvironmentAnalysisPESTEL": "Your text here...",
+    "marketingAndCustomerStrategy": "Your text here...",
+    "internalOperationsAndBusinessModel": "Your text here...",
+    "financialPerformanceAndAnalysis": "Your text here...",
+    "strategicRecommendationsAndFutureOutlook": "Your text here...",
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -728,9 +757,9 @@ BUSINESS INFORMATION:
 Based on the above inputs, create the complete Business Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="business_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Strategic business expert that creates comprehensive business strategy documents",
         instruction=instruction,
@@ -738,8 +767,11 @@ Based on the above inputs, create the complete Business Strategy document now.
             temperature=0.2, max_output_tokens=16384
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy   
+        output_schema=BusinessStrategy,
     )
+
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_business_reviewer() -> Agent:
@@ -803,9 +835,23 @@ You are a Strategy Document Editor. Based on the review feedback, improve the bu
 # OUTPUT FORMAT
 Provide the complete, updated business strategy document in JSON format.
 All feedback points must be addressed.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    "businessStrategySummary": "Your text here...",
+    "companyOverview": "Your text here...",
+    "productsAndServices": "Your text here...",
+    "marketAndIndustryAnalysis": "Your text here...",
+    "swotAnalysis": "Your text here...",
+    "externalEnvironmentAnalysisPESTEL": "Your text here...",
+    "marketingAndCustomerStrategy": "Your text here...",
+    "internalOperationsAndBusinessModel": "Your text here...",
+    "financialPerformanceAndAnalysis": "Your text here...",
+    "strategicRecommendationsAndFutureOutlook": "Your text here...",
+}}
 """
 
-    return Agent(
+    agent = Agent(
         name="business_editor",
         model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent), exit_loop],
@@ -815,8 +861,11 @@ All feedback points must be addressed.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy
+        output_schema=BusinessStrategy,
     )
+
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_business_strategy_agent(
@@ -831,7 +880,7 @@ def create_business_strategy_agent(
         name="business_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines business strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -882,7 +931,7 @@ Your goal is to create a comprehensive competitive strategy document based on th
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY these specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -911,11 +960,16 @@ You must follow this logic precisely:
      - SWOT analysis if present
    - Use this extracted information as the PRIMARY SOURCE for your competitive analysis
 
-2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc document in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities as this will inform your competitive analysis.
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from the business_strategy_doc in the conversation state:
+   - businessStrategySummary
+   - companyOverview  
+   - marketAndIndustryAnalysis
+   - productsAndServices
+   - swotAnalysis (especially competitors mentioned)
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analysis:
    - Review the query and all provided documents (`BUSINESS INFORMATION`)
-   - Review the contents of the company websites `BUSINESS INFORMATION` section
+   - Review the contents of the company websites listed in the `BUSINESS INFORMATION` section
    - Prioritize information from uploaded strategy documents over general web searches
    - Identify competitive gaps that need additional research
 
@@ -948,6 +1002,15 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    competitiveStrategySummary: "Your text here...",
+    competitiveLandscape: "Your text here...",
+    detailedCompetitorProfiles: "Your text here...",
+    portersFiveForces: "Your text here...",
+    strategicRecommendations: "Your text here...",
+}}
+    
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -958,18 +1021,22 @@ BUSINESS INFORMATION:
 Create the complete Competitive Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="competitive_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Competitive intelligence expert that creates detailed competitive analysis",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_key="competitive_strategy_doc",
-        output_schema=CompetitiveAnalysis
+        output_schema=CompetitiveAnalysis,
     )
+
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_competitive_reviewer() -> Agent:
@@ -1011,6 +1078,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1030,6 +1098,15 @@ You are a Competitive Strategy Editor. Improve the document based on review feed
 
 # OUTPUT FORMAT
 Provide the complete, updated competitive strategy document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    competitiveStrategySummary: "Your text here...",
+    competitiveLandscape: "Your text here...",
+    detailedCompetitorProfiles: "Your text here...",
+    portersFiveForces: "Your text here...",
+    strategicRecommendations: "Your text here...",
+}}
 """
 
     return Agent(
@@ -1042,7 +1119,8 @@ Provide the complete, updated competitive strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="competitive_strategy_doc",
-        output_schema=CompetitiveAnalysis
+        include_contents="none",
+        output_schema=CompetitiveAnalysis,
     )
 
 
@@ -1058,7 +1136,7 @@ def create_competitive_strategy_agent(
         name="competitive_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines competitive strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1108,8 +1186,8 @@ Your goal is to create a comprehensive customer strategy document based on the p
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
-- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
+- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your customer strategy aligns with and differentiates from competitors.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -1139,7 +1217,20 @@ You must follow this logic precisely:
      - Customer satisfaction metrics
    - Use this extracted information as the PRIMARY SOURCE for your customer strategy
 
-2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc and competitive_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from prior documents:
+   
+   From business_strategy_doc:
+   - businessStrategySummary
+   - companyOverview  
+   - productsAndServices
+   - marketingAndCustomerStrategy
+   
+   From competitive_strategy_doc:
+   - competitiveLandscape
+   - competitiveStrategySummary
+   - detailedCompetitorProfiles (focus on differentiators)
+   
+   DO NOT read the entire documents. Focus only on these sections to understand customer context and positioning.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
    - Review the query and all provided documents (`BUSINESS INFORMATION`)
@@ -1174,6 +1265,17 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    customerJourneySummary: "Your text here...",
+    idealCustomerProfiles: "Your text here...",
+    customerNeedsAnalysis: "Your text here...",
+    awarenessPhase: "Your text here...",
+    considerationPhase: "Your text here...",
+    conversionPhase: "Your text here...",
+    loyaltyPhase: "Your text here..."
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1184,18 +1286,22 @@ BUSINESS INFORMATION:
 Create the complete Customer Strategy document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="customer_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Customer insights expert that creates detailed customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_key="customer_strategy_doc",
-        output_schema=CustomerJourneyAnalysis
+        output_schema=CustomerJourneyAnalysis,
     )
+
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_customer_reviewer() -> Agent:
@@ -1237,6 +1343,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1256,6 +1363,17 @@ You are a Customer Strategy Editor. Improve the document based on review feedbac
 
 # OUTPUT FORMAT
 Provide the complete, updated customer strategy document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    customerJourneySummary: "Your text here...",
+    idealCustomerProfiles: "Your text here...",
+    customerNeedsAnalysis: "Your text here...",
+    awarenessPhase: "Your text here...",
+    considerationPhase: "Your text here...",
+    conversionPhase: "Your text here...",
+    loyaltyPhase: "Your text here..."
+}}
 """
 
     return Agent(
@@ -1268,7 +1386,8 @@ Provide the complete, updated customer strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="customer_strategy_doc",
-        output_schema=CustomerJourneyAnalysis
+        include_contents="none",
+        output_schema=CustomerJourneyAnalysis,
     )
 
 
@@ -1284,7 +1403,7 @@ def create_customer_strategy_agent(
         name="customer_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines customer strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1335,9 +1454,9 @@ Your goal is to create a comprehensive marketing strategy document based on the 
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review this document to ensure you competitive analysis aligns with and supports the overall business strategy.
-- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review this document to ensure your customer strategy aligns with and differentiates from competitors.
-- CUSTOMER STRATEGY: A customer_strategy_doc exists in the conversation state. Review this document to ensure your marketing strategy effectively targets and engages the defined customer segments.
+- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
+- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your customer strategy aligns with and differentiates from competitors.
+- CUSTOMER STRATEGY: A customer_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your marketing strategy effectively targets and engages the defined customer segments.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -1367,7 +1486,26 @@ You must follow this logic precisely:
      - Brand messaging and positioning
    - Use this extracted information as the PRIMARY SOURCE for your marketing strategy
 
-2. **Review Prior Analysis:** After checking uploaded documents, review the existing business_strategy_doc, competitive_strategy_doc, and customer_strategy_doc documents in the conversation state. Ensure you fully understand the company's overall strategy, goals, and priorities.
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from prior documents:
+   
+   From business_strategy_doc:
+   - businessStrategySummary
+   - productsAndServices  
+   - marketingAndCustomerStrategy
+   
+   From competitive_strategy_doc:
+   - competitiveLandscape
+   - competitiveStrategySummary
+   
+   From customer_strategy_doc:
+   - idealCustomerProfiles
+   - customerNeedsAnalysis
+   - awarenessPhase
+   - considerationPhase
+   - conversionPhase
+   - loyaltyPhase
+   
+   DO NOT read the entire documents. Focus only on these sections to create targeted marketing strategies.
 
 3. **Analyze All Inputs:** After reviewing uploaded documents and prior analyses:
    - Review the query and all provided documents (`BUSINESS INFORMATION`)
@@ -1402,6 +1540,15 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    marketingStrategySummary: "Your text here...",
+    awarenessStrategy:  "Your text here...",
+    considerationStrategy:  "Your text here...",
+    conversionStrategy:  "Your text here...",
+    loyaltyStrategy:  "Your text here..."
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1413,18 +1560,22 @@ Create the complete Marketing Strategy document now.
 
 """
 
-    return Agent(
+    agent = Agent(
         name="marketing_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Marketing strategy expert that creates comprehensive marketing plans",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_schema=MarketingStrategy,
         output_key="marketing_strategy_doc",
     )
+
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_marketing_reviewer() -> Agent:
@@ -1466,6 +1617,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1485,6 +1637,15 @@ You are a Marketing Strategy Editor. Improve the document based on review feedba
 
 # OUTPUT FORMAT
 Provide the complete, updated marketing strategy document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    marketingStrategySummary: "Your text here...",
+    awarenessStrategy:  "Your text here...",
+    considerationStrategy:  "Your text here...",
+    conversionStrategy:  "Your text here...",
+    loyaltyStrategy:  "Your text here..."
+}}
 """
 
     return Agent(
@@ -1497,7 +1658,8 @@ Provide the complete, updated marketing strategy document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="marketing_strategy_doc",
-        output_schema=MarketingStrategy
+        include_contents="none",
+        output_schema=MarketingStrategy,
     )
 
 
@@ -1513,7 +1675,7 @@ def create_marketing_strategy_agent(
         name="marketing_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines marketing strategy through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(
@@ -1617,6 +1779,26 @@ You must follow this logic precisely:
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    brand_name: "Your text here...",
+    tagline: "Your text here...",
+    brand_overview: "Your text here...",
+    brand_story: "Your text here...",
+    value_proposition: "Your text here...",
+    brand_personality: "Your text here...",
+    brand_voice_and_tone: "Your text here...",
+    logo_guidelines: "Your text here...",
+    color_palette: "Your text here...",
+    typography: "Your text here...",
+    iconography: "Your text here...",
+    imagery_style: "Your text here...",
+    digital_presence: "Your text here...",
+    application_examples: "Your text here...",
+    legal_considerations: "Your text here...",
+    accessibility_standards: "Your text here..."
+}}
+
 === BEGIN INPUT DATA ===
 
 BUSINESS INFORMATION:
@@ -1627,18 +1809,22 @@ BUSINESS INFORMATION:
 Based on the above inputs, create the complete Brand Guidelines document now.
 """
 
-    return Agent(
+    agent = Agent(
         name="brand_strategist",
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         tools=[AgentTool(agent=google_search_agent)],
         description="Brand strategy expert that creates comprehensive brand guidelines",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=16384
         ),
+        include_contents="none",
         output_key="brand_guidelines_doc",
-        output_schema=BrandGuidelines
+        output_schema=BrandGuidelines,
     )
+
+    # ADK handles output validation internally via output_schema parameter
+    return agent
 
 
 def create_brand_reviewer() -> Agent:
@@ -1678,6 +1864,7 @@ Provide structured feedback with:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2, max_output_tokens=8192
         ),
+        include_contents="none",
         output_key="review_feedback",
     )
 
@@ -1697,6 +1884,26 @@ You are a Brand Guidelines Editor. Improve the document based on review feedback
 
 # OUTPUT FORMAT
 Provide the complete, updated brand guidelines document in JSON format.
+
+# EXAMPLE OUTPUT STRUCTURE
+{{
+    brand_name: "Your text here...",
+    tagline: "Your text here...",
+    brand_overview: "Your text here...",
+    brand_story: "Your text here...",
+    value_proposition: "Your text here...",
+    brand_personality: "Your text here...",
+    brand_voice_and_tone: "Your text here...",
+    logo_guidelines: "Your text here...",
+    color_palette: "Your text here...",
+    typography: "Your text here...",
+    iconography: "Your text here...",
+    imagery_style: "Your text here...",
+    digital_presence: "Your text here...",
+    application_examples: "Your text here...",
+    legal_considerations: "Your text here...",
+    accessibility_standards: "Your text here..."
+}}
 """
 
     return Agent(
@@ -1709,7 +1916,8 @@ Provide the complete, updated brand guidelines document in JSON format.
             temperature=0.2, max_output_tokens=8192
         ),
         output_key="brand_guidelines_doc",
-        output_schema=BrandGuidelines
+        include_contents="none",
+        output_schema=BrandGuidelines,
     )
 
 
@@ -1725,7 +1933,7 @@ def create_brand_guidelines_agent(
         name="brand_refinement_loop",
         sub_agents=[reviewer, editor],
         description="Refines brand guidelines through review cycles",
-        max_iterations=2,
+        max_iterations=1,
     )
 
     return SequentialAgent(

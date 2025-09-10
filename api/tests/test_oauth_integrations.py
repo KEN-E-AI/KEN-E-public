@@ -46,17 +46,30 @@ def mock_firestore_service():
 class TestOAuthAuthorization:
     """Test OAuth authorization endpoints."""
 
-    def test_authorize_google_analytics_success(self, client, mock_user_context, mock_firestore_service):
+    def test_authorize_google_analytics_success(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test successful Google Analytics OAuth authorization initiation."""
         # Override dependencies
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_client_id"):
-                with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", "test_secret"):
-                    with patch("src.kene_api.routers.oauth_integrations.get_google_redirect_uri", return_value="http://localhost:8000/api/oauth/callback/google"):
-                        with patch("src.kene_api.routers.oauth_integrations.OAuthStateService") as MockOAuthStateService:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID",
+                "test_client_id",
+            ):
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET",
+                    "test_secret",
+                ):
+                    with patch(
+                        "src.kene_api.routers.oauth_integrations.get_google_redirect_uri",
+                        return_value="http://localhost:8000/api/oauth/callback/google",
+                    ):
+                        with patch(
+                            "src.kene_api.routers.oauth_integrations.OAuthStateService"
+                        ) as MockOAuthStateService:
                             mock_oauth_service = Mock()
                             mock_oauth_service.create_state = AsyncMock()
                             MockOAuthStateService.return_value = mock_oauth_service
@@ -74,14 +87,18 @@ class TestOAuthAuthorization:
         finally:
             app.dependency_overrides.clear()
 
-    def test_authorize_google_analytics_no_credentials(self, client, mock_user_context, mock_firestore_service):
+    def test_authorize_google_analytics_no_credentials(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test Google Analytics OAuth when credentials are not configured."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
             with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", ""):
-                with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", ""):
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", ""
+                ):
                     response = client.get(
                         "/api/oauth/authorize/google-analytics",
                         params={"account_id": "test_account_id"},
@@ -92,7 +109,9 @@ class TestOAuthAuthorization:
         finally:
             app.dependency_overrides.clear()
 
-    def test_authorize_google_analytics_permission_denied(self, client, mock_firestore_service):
+    def test_authorize_google_analytics_permission_denied(
+        self, client, mock_firestore_service
+    ):
         """Test Google Analytics OAuth with insufficient permissions."""
         # Create user without proper permissions
         user = Mock()
@@ -108,8 +127,14 @@ class TestOAuthAuthorization:
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_client_id"):
-                with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", "test_secret"):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID",
+                "test_client_id",
+            ):
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET",
+                    "test_secret",
+                ):
                     response = client.get(
                         "/api/oauth/authorize/google-analytics",
                         params={"account_id": "test_account_id"},
@@ -145,7 +170,9 @@ class TestOAuthCallback:
 
         try:
             # Mock the OAuth state service
-            with patch("src.kene_api.routers.oauth_integrations.OAuthStateService") as MockOAuthStateService:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.OAuthStateService"
+            ) as MockOAuthStateService:
                 mock_oauth_service = Mock()
                 mock_oauth_service.get_state = AsyncMock(return_value=mock_oauth_state)
                 mock_oauth_service.delete_state = AsyncMock(return_value=True)
@@ -175,14 +202,24 @@ class TestOAuthCallback:
                     }
                     mock_client.get = AsyncMock(return_value=mock_user_response)
 
-                    with patch("src.kene_api.routers.oauth_integrations.get_firestore_service"):
-                        with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService") as mock_service:
+                    with patch(
+                        "src.kene_api.routers.oauth_integrations.get_firestore_service"
+                    ):
+                        with patch(
+                            "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+                        ) as mock_service:
                             mock_service_instance = Mock()
                             mock_service_instance.store_credentials = AsyncMock()
                             mock_service.return_value = mock_service_instance
 
-                            with patch("src.kene_api.routers.oauth_integrations.get_frontend_url", return_value="http://frontend.example.com"):
-                                with patch("src.kene_api.routers.oauth_integrations.get_google_redirect_uri", return_value="http://localhost:8000/api/oauth/callback/google"):
+                            with patch(
+                                "src.kene_api.routers.oauth_integrations.get_frontend_url",
+                                return_value="http://frontend.example.com",
+                            ):
+                                with patch(
+                                    "src.kene_api.routers.oauth_integrations.get_google_redirect_uri",
+                                    return_value="http://localhost:8000/api/oauth/callback/google",
+                                ):
                                     response = client.get(
                                         "/api/oauth/callback/google",
                                         params={
@@ -194,7 +231,9 @@ class TestOAuthCallback:
             # Debug output
             if response.status_code != status.HTTP_307_TEMPORARY_REDIRECT:
                 print(f"Response status: {response.status_code}")
-                print(f"Response body: {response.text if hasattr(response, 'text') else 'No body'}")
+                print(
+                    f"Response body: {response.text if hasattr(response, 'text') else 'No body'}"
+                )
                 print(f"Response headers: {response.headers}")
 
             assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
@@ -207,12 +246,17 @@ class TestOAuthCallback:
         # Create client with follow_redirects=False to handle redirect response
         client = TestClient(app, follow_redirects=False)
 
-        with patch("src.kene_api.routers.oauth_integrations.OAuthStateService") as MockOAuthStateService:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.OAuthStateService"
+        ) as MockOAuthStateService:
             mock_oauth_service = Mock()
             mock_oauth_service.get_state = AsyncMock(return_value=None)
             MockOAuthStateService.return_value = mock_oauth_service
 
-            with patch("src.kene_api.routers.oauth_integrations.get_frontend_url", return_value="http://frontend.example.com"):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.get_frontend_url",
+                return_value="http://frontend.example.com",
+            ):
                 response = client.get(
                     "/api/oauth/callback/google",
                     params={
@@ -228,18 +272,24 @@ class TestOAuthCallback:
 class TestTokenRefresh:
     """Test token refresh functionality."""
 
-    def test_refresh_google_analytics_token_success(self, client, mock_user_context, mock_firestore_service):
+    def test_refresh_google_analytics_token_success(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test successful token refresh."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService") as mock_service:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+            ) as mock_service:
                 mock_service_instance = Mock()
-                mock_service_instance.get_credentials = AsyncMock(return_value={
-                    "refresh_token": "test_refresh_token",
-                    "access_token": "old_access_token",
-                })
+                mock_service_instance.get_credentials = AsyncMock(
+                    return_value={
+                        "refresh_token": "test_refresh_token",
+                        "access_token": "old_access_token",
+                    }
+                )
                 mock_service_instance.update_credentials = AsyncMock()
                 mock_service.return_value = mock_service_instance
 
@@ -268,13 +318,17 @@ class TestTokenRefresh:
 class TestDisconnect:
     """Test disconnection functionality."""
 
-    def test_disconnect_google_analytics_success(self, client, mock_user_context, mock_firestore_service):
+    def test_disconnect_google_analytics_success(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test successful Google Analytics disconnection."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService") as mock_service:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+            ) as mock_service:
                 mock_service_instance = Mock()
                 mock_service_instance.delete_credentials = AsyncMock()
                 mock_service.return_value = mock_service_instance
@@ -292,19 +346,25 @@ class TestDisconnect:
 class TestStatus:
     """Test status checking functionality."""
 
-    def test_get_google_analytics_status_configured(self, client, mock_user_context, mock_firestore_service):
+    def test_get_google_analytics_status_configured(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test checking status of configured Google Analytics integration."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService") as mock_service:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+            ) as mock_service:
                 mock_service_instance = Mock()
-                mock_service_instance.get_credentials = AsyncMock(return_value={
-                    "access_token": "test_token",
-                    "expires_at": (datetime.now() + timedelta(hours=1)).timestamp(),
-                    "user_email": "test@example.com",
-                })
+                mock_service_instance.get_credentials = AsyncMock(
+                    return_value={
+                        "access_token": "test_token",
+                        "expires_at": (datetime.now() + timedelta(hours=1)).timestamp(),
+                        "user_email": "test@example.com",
+                    }
+                )
                 mock_service.return_value = mock_service_instance
 
                 response = client.get(
@@ -318,13 +378,17 @@ class TestStatus:
         finally:
             app.dependency_overrides.clear()
 
-    def test_get_google_analytics_status_not_configured(self, client, mock_user_context, mock_firestore_service):
+    def test_get_google_analytics_status_not_configured(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test checking status of non-configured Google Analytics integration."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService") as mock_service:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+            ) as mock_service:
                 mock_service_instance = Mock()
                 mock_service_instance.get_credentials = AsyncMock(return_value=None)
                 mock_service.return_value = mock_service_instance
@@ -339,19 +403,27 @@ class TestStatus:
         finally:
             app.dependency_overrides.clear()
 
-    def test_get_google_analytics_status_expired(self, client, mock_user_context, mock_firestore_service):
+    def test_get_google_analytics_status_expired(
+        self, client, mock_user_context, mock_firestore_service
+    ):
         """Test checking status of expired Google Analytics integration."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
         try:
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService") as mock_service:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+            ) as mock_service:
                 mock_service_instance = Mock()
-                mock_service_instance.get_credentials = AsyncMock(return_value={
-                    "access_token": "test_token",
-                    "expires_at": (datetime.now() - timedelta(hours=1)).timestamp(),  # Expired
-                    "user_email": "test@example.com",
-                })
+                mock_service_instance.get_credentials = AsyncMock(
+                    return_value={
+                        "access_token": "test_token",
+                        "expires_at": (
+                            datetime.now() - timedelta(hours=1)
+                        ).timestamp(),  # Expired
+                        "user_email": "test@example.com",
+                    }
+                )
                 mock_service.return_value = mock_service_instance
 
                 response = client.get(

@@ -46,28 +46,33 @@ npm --version
 
 3. **Configure environment**
 
-   The frontend requires environment configuration to connect to the correct backend API and Firebase project. You have two options:
+   The frontend environment is now managed through the unified environment switching system at the root level:
 
-   **Option A: Use the environment switching script (recommended)**
+   **Option A: Use the unified environment switcher (recommended)**
 
    ```bash
-   # Switch to development environment
-   ./scripts/set_environment.sh development
+   # From the project root, switch ALL components to development
+   cd ..  # Go to project root
+   ./set-environment.sh development
+   # OR
+   make env-dev
 
-   # Or switch to staging environment
-   ./scripts/set_environment.sh staging
+   # Switch ALL components to staging
+   ./set-environment.sh staging
+   # OR
+   make env-staging
 
-   # Or switch to production environment (use with caution!)
-   ./scripts/set_environment.sh production
+   # Switch ALL components to production (use with caution!)
+   ./set-environment.sh production
+   # OR
+   make env-prod
    ```
 
-   **Option B: Manually create .env.local**
+   **Option B: Configure frontend only**
 
    ```bash
-   # Copy from example file
-   cp .env.example .env.local
-
-   # Then edit .env.local with your configuration
+   # If you need to configure just the frontend
+   cp .env.development .env  # or .env.staging, .env.production
    ```
 
 4. **Start the development server**

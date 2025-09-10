@@ -9,6 +9,8 @@ import logging
 import time
 from typing import Any
 
+import backoff
+from google.api_core import exceptions as google_exceptions
 from google.cloud import firestore
 
 # Removed progress tracking imports - simplified progress tracking
@@ -63,17 +65,17 @@ async def trigger_strategy_generation(
 
         # Get project ID based on environment
         environment = os.getenv("ENVIRONMENT", "development").lower()
-        
+
         # Map environment to project ID
         project_mapping = {
             "development": "ken-e-dev",
             "staging": "ken-e-staging",
-            "production": "ken-e-production"
+            "production": "ken-e-production",
         }
-        
+
         # Get the appropriate project ID for the environment
         project_id = project_mapping.get(environment, "ken-e-dev")
-        
+
         # Log the project being used
         logger.info(f"Using project ID '{project_id}' for environment '{environment}'")
 
@@ -203,25 +205,33 @@ Please execute strategy generation with these parameters:
 
                 # Get environment variables and map to correct project
                 environment = os.getenv("ENVIRONMENT", "development").lower()
-                
+
                 # Map environment to project ID
                 project_mapping = {
                     "development": "ken-e-dev",
                     "staging": "ken-e-staging",
-                    "production": "ken-e-production"
+                    "production": "ken-e-production",
                 }
-                
+
                 # Use environment-specific project or fall back to env vars
                 default_project = os.getenv(
                     "VERTEX_AI_PROJECT_ID", os.getenv("GOOGLE_CLOUD_PROJECT_ID")
                 )
-                project_id = project_mapping.get(environment, default_project or "ken-e-dev")
-                
+                project_id = project_mapping.get(
+                    environment, default_project or "ken-e-dev"
+                )
+
                 location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
-                agent_engine_id = os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
+
+                # Use STRATEGY_SUPERVISOR_ENGINE_ID for strategy generation, fall back to old env var
+                agent_engine_id = os.getenv(
+                    "STRATEGY_SUPERVISOR_ENGINE_ID"
+                ) or os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
 
                 if not agent_engine_id:
-                    raise ValueError("VERTEX_AI_AGENT_ENGINE_ID not configured")
+                    raise ValueError(
+                        "STRATEGY_SUPERVISOR_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not configured"
+                    )
 
                 # Initialize Vertex AI
                 vertexai.init(project=project_id, location=location)
@@ -241,10 +251,24 @@ Please execute strategy generation with these parameters:
                 logger.info(f"Agent engine type: {type(agent_engine)}")
 
                 try:
-                    logger.info("About to call agent_engine.stream_query...")
-                    response = agent_engine.stream_query(
-                        message=message, user_id=user_id
+                    logger.info("About to call agent_engine.stream_query with retry logic...")
+                    
+                    # Define retry decorator for ServiceUnavailable errors
+                    @backoff.on_exception(
+                        backoff.expo,
+                        google_exceptions.ServiceUnavailable,
+                        max_tries=3,
+                        max_time=60,  # Max 60 seconds of retry attempts
+                        on_backoff=lambda details: logger.warning(
+                            f"ServiceUnavailable error, retrying... (attempt {details['tries']}/{3})"
+                        )
                     )
+                    def stream_query_with_retry():
+                        return agent_engine.stream_query(
+                            message=message, user_id=user_id
+                        )
+                    
+                    response = stream_query_with_retry()
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
 
@@ -271,23 +295,28 @@ Please execute strategy generation with these parameters:
                 agent_timeout = 1500  # 25 minutes
                 start_time = time.time()
 
-                try:
-                    logger.info(f"Agent response object type: {type(response)}")
-                    # Add a flag to track if we got any response
-                    got_response = False
+                # Retry logic for chunk iteration
+                max_chunk_retries = 3
+                chunk_retry_count = 0
+                
+                while chunk_retry_count < max_chunk_retries:
+                    try:
+                        logger.info(f"Agent response object type: {type(response)}")
+                        # Add a flag to track if we got any response
+                        got_response = False
 
-                    for chunk in response:
-                        got_response = True
-                        # Check if we've exceeded the timeout
-                        elapsed = time.time() - start_time
-                        if elapsed > agent_timeout:
-                            logger.error(
-                                f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received"
-                            )
-                            break
+                        for chunk in response:
+                            got_response = True
+                            # Check if we've exceeded the timeout
+                            elapsed = time.time() - start_time
+                            if elapsed > agent_timeout:
+                                logger.error(
+                                    f"Agent engine timeout after {elapsed:.1f} seconds, {chunk_count} chunks received"
+                                )
+                                break
 
-                        chunk_count += 1
-                        logger.info(f"Processing chunk {chunk_count}...")
+                            chunk_count += 1
+                            logger.info(f"Processing chunk {chunk_count}...")
 
                         # Log progress for debugging (progress tracking simplified)
                         # TODO: Progress logs are failing
@@ -354,29 +383,59 @@ Please execute strategy generation with these parameters:
                                                 if isinstance(function_call, dict):
                                                     # Log the function name if available
                                                     if "name" in function_call:
-                                                        logger.info(f"    Function: {function_call['name']}")
+                                                        logger.info(
+                                                            f"    Function: {function_call['name']}"
+                                                        )
                                                     # Extract arguments/response
                                                     if "response" in function_call:
-                                                        response_parts.append(str(function_call["response"]))
-                                                        logger.info(f"    Added function response: {len(str(function_call['response']))} chars")
+                                                        response_parts.append(
+                                                            str(
+                                                                function_call[
+                                                                    "response"
+                                                                ]
+                                                            )
+                                                        )
+                                                        logger.info(
+                                                            f"    Added function response: {len(str(function_call['response']))} chars"
+                                                        )
                                                     elif "output" in function_call:
-                                                        response_parts.append(str(function_call["output"]))
-                                                        logger.info(f"    Added function output: {len(str(function_call['output']))} chars")
+                                                        response_parts.append(
+                                                            str(function_call["output"])
+                                                        )
+                                                        logger.info(
+                                                            f"    Added function output: {len(str(function_call['output']))} chars"
+                                                        )
                                                     elif "args" in function_call:
-                                                        response_parts.append(str(function_call["args"]))
-                                                        logger.info(f"    Added function args: {len(str(function_call['args']))} chars")
+                                                        response_parts.append(
+                                                            str(function_call["args"])
+                                                        )
+                                                        logger.info(
+                                                            f"    Added function args: {len(str(function_call['args']))} chars"
+                                                        )
                                                     else:
                                                         # Just append the whole function_call as string
-                                                        response_parts.append(str(function_call))
-                                                        logger.info(f"    Added entire function_call: {len(str(function_call))} chars")
+                                                        response_parts.append(
+                                                            str(function_call)
+                                                        )
+                                                        logger.info(
+                                                            f"    Added entire function_call: {len(str(function_call))} chars"
+                                                        )
                                                 else:
-                                                    response_parts.append(str(function_call))
-                                                    logger.info(f"    Added function_call as string: {len(str(function_call))} chars")
+                                                    response_parts.append(
+                                                        str(function_call)
+                                                    )
+                                                    logger.info(
+                                                        f"    Added function_call as string: {len(str(function_call))} chars"
+                                                    )
                                             # Log other part types for debugging
                                             elif "thought_signature" in part:
-                                                logger.info(f"  Found thought_signature in chunk {chunk_count} (skipping)")
+                                                logger.info(
+                                                    f"  Found thought_signature in chunk {chunk_count} (skipping)"
+                                                )
                                             else:
-                                                logger.info(f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}")
+                                                logger.info(
+                                                    f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}"
+                                                )
                             else:
                                 response_parts.append(str(chunk))
                                 logger.info(
@@ -387,13 +446,43 @@ Please execute strategy generation with these parameters:
                             logger.info(
                                 f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                             )
-
-                except Exception as e:
-                    logger.error(
-                        f"Error iterating over agent response chunks: {e}",
-                        exc_info=True,
-                    )
-                    logger.error(f"Only received {chunk_count} chunks before error")
+                        
+                        # Successfully processed all chunks, break retry loop
+                        break
+                        
+                    except google_exceptions.ServiceUnavailable as e:
+                        chunk_retry_count += 1
+                        if chunk_retry_count >= max_chunk_retries:
+                            logger.error(
+                                f"ServiceUnavailable error after {max_chunk_retries} retries during chunk iteration: {e}"
+                            )
+                            # Mark account as failed with retry message
+                            await update_account_setup_status(
+                                account_id,
+                                "failed",
+                                completed=False,
+                                error_message="Service temporarily unavailable. Please try again in a few minutes.",
+                            )
+                            return  # Exit early
+                        else:
+                            wait_time = 2 ** chunk_retry_count  # Exponential backoff: 2, 4, 8 seconds
+                            logger.warning(
+                                f"ServiceUnavailable during chunk iteration, retrying in {wait_time}s... (attempt {chunk_retry_count}/{max_chunk_retries})"
+                            )
+                            await asyncio.sleep(wait_time)
+                            # Recreate the response stream
+                            response = stream_query_with_retry()
+                            chunk_count = 0  # Reset chunk count for new stream
+                            response_parts = []  # Reset response parts
+                            
+                    except Exception as e:
+                        # Non-retryable error
+                        logger.error(
+                            f"Error iterating over agent response chunks: {e}",
+                            exc_info=True,
+                        )
+                        logger.error(f"Only received {chunk_count} chunks before error")
+                        break  # Exit retry loop for non-retryable errors
 
                 # Check if we actually got a response
                 if not got_response:

@@ -25,7 +25,7 @@ async def test_get_or_create_monitoring_topics_existing():
     account_id = "acc_123"
     organization_id = "org_456"
     industry = "Manufacturing"
-    
+
     existing_data = {
         "account_id": account_id,
         "organization_id": organization_id,
@@ -36,23 +36,23 @@ async def test_get_or_create_monitoring_topics_existing():
         "created_at": "2025-01-01T00:00:00",
         "updated_at": "2025-01-01T00:00:00",
     }
-    
+
     # Mock Firestore service
     firestore_mock = AsyncMock()
     firestore_mock.get_document.return_value = existing_data
-    
+
     # Call function
     result = await get_or_create_monitoring_topics(
         account_id, organization_id, industry, firestore_mock
     )
-    
+
     # Assertions
     assert isinstance(result, MonitoringTopics)
     assert result.account_id == account_id
     assert result.organization_id == organization_id
     assert result.company_keywords == ["acme", "widgets"]
     assert result.customer_keywords == ["b2b", "enterprise"]
-    
+
     # Verify Firestore was called correctly
     firestore_mock.get_document.assert_called_once_with(
         collection="monitoring_topics",
@@ -67,19 +67,19 @@ async def test_get_or_create_monitoring_topics_new():
     account_id = "acc_123"
     organization_id = "org_456"
     industry = "Technology"
-    
+
     # Mock Firestore service
     firestore_mock = AsyncMock()
     firestore_mock.get_document.return_value = None
-    
+
     # Mock get_industry_keywords_for_industry to return keywords
     # Since we can't easily mock the function, we'll test the logic separately
-    
+
     with pytest.raises(HTTPException) as exc_info:
         await get_or_create_monitoring_topics(
             account_id, organization_id, industry, firestore_mock
         )
-    
+
     assert exc_info.value.status_code == 500
 
 
@@ -88,7 +88,7 @@ async def test_get_industry_keywords_for_industry():
     """Test getting keywords for a specific industry."""
     industry = "Healthcare"
     expected_keywords = ["healthcare", "medical", "hospital"]
-    
+
     # Mock Firestore service
     firestore_mock = AsyncMock()
     firestore_mock.get_document.return_value = {
@@ -97,13 +97,13 @@ async def test_get_industry_keywords_for_industry():
         "updated_by": "admin_123",
         "updated_at": "2025-01-01T00:00:00",
     }
-    
+
     # Call function
     result = await get_industry_keywords_for_industry(industry, firestore_mock)
-    
+
     # Assertions
     assert result == expected_keywords
-    
+
     # Verify Firestore was called correctly
     firestore_mock.get_document.assert_called_once_with(
         collection="industry_keywords",
@@ -115,14 +115,14 @@ async def test_get_industry_keywords_for_industry():
 async def test_get_industry_keywords_for_industry_not_found():
     """Test getting keywords when industry has no defined keywords."""
     industry = "Unknown Industry"
-    
+
     # Mock Firestore service
     firestore_mock = AsyncMock()
     firestore_mock.get_document.return_value = None
-    
+
     # Call function
     result = await get_industry_keywords_for_industry(industry, firestore_mock)
-    
+
     # Assertions
     assert result == []
 
@@ -132,24 +132,24 @@ async def test_update_accounts_with_industry():
     """Test updating all accounts with new industry keywords."""
     industry = "Finance"
     keywords = ["finance", "banking", "investment"]
-    
+
     # Mock documents
     mock_docs = [
         {"account_id": "acc_1"},
         {"account_id": "acc_2"},
         {"account_id": "acc_3"},
     ]
-    
+
     # Mock Firestore service
     firestore_mock = AsyncMock()
     firestore_mock.query_documents.return_value = mock_docs
-    
+
     # Call function
     await update_accounts_with_industry(industry, keywords, firestore_mock)
-    
+
     # Verify each account was updated
     assert firestore_mock.update_document.call_count == 3
-    
+
     # Check each call
     for i, doc in enumerate(mock_docs):
         call_args = firestore_mock.update_document.call_args_list[i]
@@ -165,17 +165,14 @@ def test_competitor_entry_model():
     competitor = CompetitorEntry(
         name="Acme Corp",
         website="https://acmecorp.com",
-        keywords=["acme", "competitor"]
+        keywords=["acme", "competitor"],
     )
     assert competitor.name == "Acme Corp"
     assert competitor.website == "https://acmecorp.com"
     assert competitor.keywords == ["acme", "competitor"]
-    
+
     # Competitor without website
-    competitor2 = CompetitorEntry(
-        name="Beta Inc",
-        keywords=["beta"]
-    )
+    competitor2 = CompetitorEntry(name="Beta Inc", keywords=["beta"])
     assert competitor2.name == "Beta Inc"
     assert competitor2.website is None
     assert competitor2.keywords == ["beta"]
@@ -184,7 +181,7 @@ def test_competitor_entry_model():
 def test_monitoring_topics_model():
     """Test MonitoringTopics model validation."""
     now = datetime.utcnow().isoformat()
-    
+
     topics = MonitoringTopics(
         account_id="acc_123",
         organization_id="org_456",
@@ -195,13 +192,13 @@ def test_monitoring_topics_model():
             {
                 "name": "Competitor A",
                 "website": "https://competitor-a.com",
-                "keywords": ["comp-a"]
+                "keywords": ["comp-a"],
             }
         ],
         created_at=now,
         updated_at=now,
     )
-    
+
     assert topics.account_id == "acc_123"
     assert topics.organization_id == "org_456"
     assert len(topics.industry_keywords) == 2
@@ -217,7 +214,7 @@ def test_industry_keywords_model():
         updated_by="admin_user",
         updated_at=datetime.utcnow().isoformat(),
     )
-    
+
     assert keywords.industry == "Retail"
     assert len(keywords.keywords) == 3
     assert keywords.updated_by == "admin_user"

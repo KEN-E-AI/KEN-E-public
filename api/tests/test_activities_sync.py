@@ -324,7 +324,7 @@ def test_sync_holiday_activity_logs_with_deletion(
             "end_date": "2024-12-25",
         },
     ]
-    
+
     # Mock successful deletion
     mock_neo4j_service.execute_write_query.return_value = {"nodes_deleted": 1}
 
@@ -391,7 +391,7 @@ def test_sync_holiday_activity_logs_protect_metric_relationships(
             "end_date": "2024-01-01",
         },
     ]
-    
+
     # Mock successful deletion (only Old Holiday deleted, Christmas protected)
     mock_neo4j_service.execute_write_query.return_value = {"nodes_deleted": 1}
 
@@ -468,7 +468,7 @@ def test_sync_holiday_activity_logs_create_and_delete(
             "end_date": "2024-03-31",
         },  # New
     ]
-    
+
     # Mock successful operations
     mock_neo4j_service.execute_write_query.side_effect = [
         {"nodes_created": 2},  # Create new logs

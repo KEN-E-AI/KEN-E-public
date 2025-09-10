@@ -24,7 +24,9 @@ class TestEmailService:
         with patch.dict(os.environ, {}, clear=True):
             service = EmailService()
             service._ensure_initialized()  # Trigger lazy initialization
-            assert service.api_key == ""  # get_env_var_or_secret returns empty string by default
+            assert (
+                service.api_key == ""
+            )  # get_env_var_or_secret returns empty string by default
             assert service.client is None
 
     def test_init_with_custom_values(self):
@@ -87,7 +89,9 @@ class TestEmailService:
         mock_response.status_code = 202
         mock_client.send.return_value = mock_response
         mock_sendgrid.return_value = mock_client
-        mock_template_loader.get_invitation_email_html.return_value = "<html>test</html>"
+        mock_template_loader.get_invitation_email_html.return_value = (
+            "<html>test</html>"
+        )
 
         with patch.dict(
             os.environ,
@@ -107,7 +111,7 @@ class TestEmailService:
             )
 
             assert result is True
-            
+
             # Verify the template loader was called with the correct URL format
             mock_template_loader.get_invitation_email_html.assert_called_once_with(
                 inviter_name="John Doe",
@@ -115,11 +119,14 @@ class TestEmailService:
                 access_level="admin",
                 invitation_url="https://app.example.com/auth/signin?invitation=test-token-123",
             )
-            
+
             # Also verify the plain text content contains the new URL
             call_args = mock_client.send.call_args[0][0]
             plain_text = str(call_args.contents[0].content)
-            assert "https://app.example.com/auth/signin?invitation=test-token-123" in plain_text
+            assert (
+                "https://app.example.com/auth/signin?invitation=test-token-123"
+                in plain_text
+            )
 
     @patch("src.kene_api.email_service.SendGridAPIClient")
     def test_send_invitation_email_no_client(self, mock_sendgrid):
