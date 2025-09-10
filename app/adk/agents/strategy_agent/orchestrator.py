@@ -68,14 +68,23 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Initialize W&B observability if available
-try:
-    import weave
+# W&B observability will be initialized lazily when needed
+# This prevents initialization failures during Engine startup
+WEAVE_INITIALIZED = False
 
-    weave.init(project_name="ken-e-strategy-agent")
-    logger.info("W&B observability initialized")
-except Exception as e:
-    logger.warning(f"W&B initialization skipped: {e}")
+def init_weave_if_needed():
+    """Initialize W&B Weave if not already initialized and API key is available."""
+    global WEAVE_INITIALIZED
+    if not WEAVE_INITIALIZED:
+        try:
+            if os.getenv("WANDB_API_KEY"):
+                import weave
+                weave.init(project_name="ken-e-strategy-agent")
+                logger.info("W&B observability initialized")
+                WEAVE_INITIALIZED = True
+        except Exception as e:
+            logger.warning(f"W&B initialization skipped: {e}")
+            WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
 
 
 # Define the mapping of output keys to document types
@@ -190,6 +199,9 @@ def execute_strategy_generation(
 
     try:
         logger.info(f"[EXECUTION] Starting strategy generation for {company_name}")
+        
+        # Initialize Weave if needed (lazy initialization)
+        init_weave_if_needed()
 
         # Use provided client or create new one
         client = firestore_client or FirestoreClient(project_id=project_id)
