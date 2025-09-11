@@ -683,13 +683,26 @@ class AgentEngineClient:
                             enhanced_message = {
                                 "message": formatted_input,
                                 "tenant_id": ga_creds["tenant_id"],
-                                "tenant_credentials": ga_creds["tenant_credentials"]
+                                "tenant_credentials": ga_creds["tenant_credentials"],
+                                "selected_property_ids": ga_creds.get("selected_property_ids", []),
+                                "selected_properties": ga_creds.get("selected_properties", [])
                             }
+                            
+                            # Add context about available properties to help the agent
+                            if ga_creds.get("selected_properties"):
+                                properties_info = "\n\nAvailable GA Properties:"
+                                for prop in ga_creds["selected_properties"]:
+                                    properties_info += f"\n- {prop.get('display_name', 'Unknown')} (ID: {prop.get('property_id', 'Unknown')})"
+                                
+                                # Add property context to the formatted input if only one property
+                                if len(ga_creds["selected_property_ids"]) == 1:
+                                    enhanced_message["default_property_id"] = ga_creds["selected_property_ids"][0]
+                                    logger.info(f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}")
                             # Convert to JSON string for the agent
                             import json
                             formatted_input = json.dumps(enhanced_message)
-                            logger.info(f"Injected GA OAuth credentials (tenant_id: {ga_creds['tenant_id'][:20]}...)")
-                            print("[DEBUG] Successfully injected GA credentials into message")
+                            logger.info(f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
+                            print(f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
                         else:
                             logger.warning(f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts")
                             print("[DEBUG] Failed to find GA credentials in any accessible account")
@@ -1056,13 +1069,26 @@ class AgentEngineClient:
                             enhanced_message = {
                                 "message": formatted_input,
                                 "tenant_id": ga_creds["tenant_id"],
-                                "tenant_credentials": ga_creds["tenant_credentials"]
+                                "tenant_credentials": ga_creds["tenant_credentials"],
+                                "selected_property_ids": ga_creds.get("selected_property_ids", []),
+                                "selected_properties": ga_creds.get("selected_properties", [])
                             }
+                            
+                            # Add context about available properties to help the agent
+                            if ga_creds.get("selected_properties"):
+                                properties_info = "\n\nAvailable GA Properties:"
+                                for prop in ga_creds["selected_properties"]:
+                                    properties_info += f"\n- {prop.get('display_name', 'Unknown')} (ID: {prop.get('property_id', 'Unknown')})"
+                                
+                                # Add property context to the formatted input if only one property
+                                if len(ga_creds["selected_property_ids"]) == 1:
+                                    enhanced_message["default_property_id"] = ga_creds["selected_property_ids"][0]
+                                    logger.info(f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}")
                             # Convert to JSON string for the agent
                             import json
                             formatted_input = json.dumps(enhanced_message)
-                            logger.info(f"Injected GA OAuth credentials (tenant_id: {ga_creds['tenant_id'][:20]}...)")
-                            print("[DEBUG] Successfully injected GA credentials into message")
+                            logger.info(f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
+                            print(f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
                         else:
                             logger.warning(f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts")
                             print("[DEBUG] Failed to find GA credentials in any accessible account")

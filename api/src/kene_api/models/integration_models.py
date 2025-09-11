@@ -91,6 +91,7 @@ class IntegrationStatusResponse(BaseModel):
     )
     error_message: str | None = Field(None, description="Error message if any")
     user_email: str | None = Field(None, description="Email of connected user")
+    property_count: int | None = Field(None, description="Number of Google Analytics properties selected")
 
 
 class IntegrationConfig(BaseModel):

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { GoogleAnalyticsPropertySelector } from "./GoogleAnalyticsPropertySelector";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import {
   Unlink,
   RefreshCw,
   ExternalLink,
+  Settings,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import api from "@/lib/api";
@@ -51,10 +53,12 @@ export const GoogleAnalyticsOAuth = ({
     configured: boolean;
     expired?: boolean;
     userEmail?: string;
+    propertyCount?: number;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+  const [showPropertySelector, setShowPropertySelector] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -66,7 +70,19 @@ export const GoogleAnalyticsOAuth = ({
       setStatus({ configured: false });
       setIsLoading(false);
     }
-  }, [isOpen, isAccountCreation]);
+    
+    // Check if we just returned from OAuth and should show property selector
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('oauth_success') === 'google_analytics' && 
+        urlParams.get('account') === accountId && 
+        urlParams.get('select_properties') === 'true') {
+      console.log('[GoogleAnalyticsOAuth] Detected OAuth callback, showing property selector');
+      setShowPropertySelector(true);
+      // Clear URL params
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [isOpen, isAccountCreation, accountId]);
 
   const checkStatus = async () => {
     setIsLoading(true);
@@ -78,6 +94,7 @@ export const GoogleAnalyticsOAuth = ({
         configured: response.data.status === "configured",
         expired: response.data.status === "expired",
         userEmail: response.data.user_email,
+        propertyCount: response.data.property_count,
       });
     } catch (error) {
       console.error("Failed to check status:", error);
@@ -163,6 +180,33 @@ export const GoogleAnalyticsOAuth = ({
     }
   };
 
+  // If property selector should be shown, show it instead of the main dialog
+  if (showPropertySelector) {
+    return (
+      <GoogleAnalyticsPropertySelector
+        accountId={accountId}
+        onComplete={(selectedProperties) => {
+          console.log('[GoogleAnalyticsOAuth] Properties selected:', selectedProperties);
+          setShowPropertySelector(false);
+          toast({
+            title: "Properties Selected",
+            description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? 'property' : 'properties'} for Google Analytics integration.`,
+          });
+          // Refresh status to show connected state
+          checkStatus();
+          onSuccess?.();
+        }}
+        onSkip={() => {
+          console.log('[GoogleAnalyticsOAuth] Property selection skipped');
+          setShowPropertySelector(false);
+          checkStatus();
+          onSuccess?.();
+        }}
+        isAccountCreation={isAccountCreation}
+      />
+    );
+  }
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -190,6 +234,14 @@ export const GoogleAnalyticsOAuth = ({
                     <AlertDescription>
                       Your Google Analytics account is connected
                       {status.userEmail && ` (${status.userEmail})`}
+                      {status.propertyCount !== undefined && status.propertyCount > 0 && (
+                        <>
+                          <br />
+                          <span className="text-sm">
+                            {status.propertyCount} {status.propertyCount === 1 ? 'property' : 'properties'} selected
+                          </span>
+                        </>
+                      )}
                     </AlertDescription>
                   </Alert>
 
@@ -215,6 +267,19 @@ export const GoogleAnalyticsOAuth = ({
                         Refresh Token
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowPropertySelector(true)}
+                      className="flex-1"
+                    >
+                      <Settings className="mr-2 h-4 w-4" />
+                      Manage Properties
+                      {status.propertyCount !== undefined && status.propertyCount > 0 && (
+                        <Badge variant="secondary" className="ml-2">
+                          {status.propertyCount}
+                        </Badge>
+                      )}
+                    </Button>
                     <Button
                       variant="destructive"
                       onClick={() => setShowDisconnectDialog(true)}
