@@ -631,17 +631,36 @@ class AgentEngineClient:
                 # Add conversation history as context to the current message
                 context_str = "\n".join(conversation_context)
                 formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
-                logger.info(f"[CHAT] Including {len(messages)-1} previous messages in context")
+                logger.info(
+                    f"[CHAT] Including {len(messages) - 1} previous messages in context"
+                )
             else:
                 formatted_input = user_input
 
-            logger.info(f"[CHAT] Processing message for user {user_id}: {user_input[:100]}...")
-            logger.info(f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}")
+            logger.info(
+                f"[CHAT] Processing message for user {user_id}: {user_input[:100]}..."
+            )
+            logger.info(
+                f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
+            )
 
             # Check if this might be a Google Analytics query and inject OAuth credentials
-            ga_keywords = ['analytics', 'traffic', 'users', 'sessions', 'pageviews',
-                          'bounce rate', 'ga4', 'google analytics', 'website visitors',
-                          'conversion', 'acquisition', 'real-time', 'realtime', 'property']
+            ga_keywords = [
+                "analytics",
+                "traffic",
+                "users",
+                "sessions",
+                "pageviews",
+                "bounce rate",
+                "ga4",
+                "google analytics",
+                "website visitors",
+                "conversion",
+                "acquisition",
+                "real-time",
+                "realtime",
+                "property",
+            ]
 
             is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
 
@@ -649,15 +668,25 @@ class AgentEngineClient:
             session_key = f"{user_id}:{session_id}" if session_id else None
             is_ga_followup = False
             if session_key and session_key in self._user_sessions:
-                is_ga_followup = self._user_sessions[session_key].get("is_ga_conversation", False)
+                is_ga_followup = self._user_sessions[session_key].get(
+                    "is_ga_conversation", False
+                )
 
-            logger.info(f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
-            print(f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
+            logger.info(
+                f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
+            )
+            print(
+                f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
+            )
 
             if is_ga_query or is_ga_followup:
                 # Try to get GA OAuth credentials from any accessible account that has them
-                logger.info(f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}")
-                print(f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}")
+                logger.info(
+                    f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}"
+                )
+                print(
+                    f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}"
+                )
                 if user_context.accessible_accounts:
                     try:
                         firestore_service = get_firestore_service()
@@ -668,14 +697,24 @@ class AgentEngineClient:
                         ga_creds = None
                         for account_id in user_context.accessible_accounts:
                             # Get and format GA credentials
-                            ga_creds = await ga_helper.get_and_format_credentials(account_id)
+                            ga_creds = await ga_helper.get_and_format_credentials(
+                                account_id
+                            )
                             if ga_creds:
-                                logger.info(f"Found GA OAuth credentials in account {account_id}")
-                                print(f"[DEBUG] Found GA OAuth credentials in account {account_id}")
+                                logger.info(
+                                    f"Found GA OAuth credentials in account {account_id}"
+                                )
+                                print(
+                                    f"[DEBUG] Found GA OAuth credentials in account {account_id}"
+                                )
                                 break
                             else:
-                                logger.debug(f"No GA credentials in account {account_id}, trying next...")
-                                print(f"[DEBUG] No GA credentials in account {account_id}, trying next...")
+                                logger.debug(
+                                    f"No GA credentials in account {account_id}, trying next..."
+                                )
+                                print(
+                                    f"[DEBUG] No GA credentials in account {account_id}, trying next..."
+                                )
 
                         if ga_creds:
                             # Create a structured message with credentials embedded
@@ -684,28 +723,45 @@ class AgentEngineClient:
                                 "message": formatted_input,
                                 "tenant_id": ga_creds["tenant_id"],
                                 "tenant_credentials": ga_creds["tenant_credentials"],
-                                "selected_property_ids": ga_creds.get("selected_property_ids", []),
-                                "selected_properties": ga_creds.get("selected_properties", [])
+                                "selected_property_ids": ga_creds.get(
+                                    "selected_property_ids", []
+                                ),
+                                "selected_properties": ga_creds.get(
+                                    "selected_properties", []
+                                ),
                             }
-                            
+
                             # Add context about available properties to help the agent
                             if ga_creds.get("selected_properties"):
                                 properties_info = "\n\nAvailable GA Properties:"
                                 for prop in ga_creds["selected_properties"]:
                                     properties_info += f"\n- {prop.get('display_name', 'Unknown')} (ID: {prop.get('property_id', 'Unknown')})"
-                                
+
                                 # Add property context to the formatted input if only one property
                                 if len(ga_creds["selected_property_ids"]) == 1:
-                                    enhanced_message["default_property_id"] = ga_creds["selected_property_ids"][0]
-                                    logger.info(f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}")
+                                    enhanced_message["default_property_id"] = ga_creds[
+                                        "selected_property_ids"
+                                    ][0]
+                                    logger.info(
+                                        f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}"
+                                    )
                             # Convert to JSON string for the agent
                             import json
+
                             formatted_input = json.dumps(enhanced_message)
-                            logger.info(f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
-                            print(f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
+                            logger.info(
+                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
+                            print(
+                                f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
                         else:
-                            logger.warning(f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts")
-                            print("[DEBUG] Failed to find GA credentials in any accessible account")
+                            logger.warning(
+                                f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
+                            )
+                            print(
+                                "[DEBUG] Failed to find GA credentials in any accessible account"
+                            )
                     except Exception as e:
                         logger.error(f"Failed to inject GA credentials: {e}")
                         # Continue with original message if credential injection fails
@@ -740,7 +796,9 @@ class AgentEngineClient:
             logger.info(
                 f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}"
             )
-            logger.info(f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}...")
+            logger.info(
+                f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}..."
+            )
             logger.info(f"Session ID being passed to Agent Engine: {actual_session_id}")
 
             # Use the agent_engines API with proper Queryable interface
@@ -835,10 +893,15 @@ class AgentEngineClient:
                                     response_parts.append(str(chunk["content"]))
                                 else:
                                     # Don't append function_call or function_response data
-                                    if not ("function_call" in chunk or "function_response" in chunk):
+                                    if not (
+                                        "function_call" in chunk
+                                        or "function_response" in chunk
+                                    ):
                                         response_parts.append(str(chunk))
                                     else:
-                                        logger.info("Skipping function debug data in non-streaming response")
+                                        logger.info(
+                                            "Skipping function debug data in non-streaming response"
+                                        )
                             elif isinstance(chunk, str):
                                 # Handle string representation of dictionary
                                 logger.info(f"Processing string chunk: {chunk[:50]}...")
@@ -875,9 +938,14 @@ class AgentEngineClient:
                                         response_parts.append(chunk)
                                 else:
                                     # Check if the chunk contains function_call or function_response
-                                    if "{'function_call'" in chunk or "{'function_response'" in chunk:
+                                    if (
+                                        "{'function_call'" in chunk
+                                        or "{'function_response'" in chunk
+                                    ):
                                         # Try to extract just the text after the function data
-                                        logger.info("Found function data in string chunk, attempting to extract text")
+                                        logger.info(
+                                            "Found function data in string chunk, attempting to extract text"
+                                        )
 
                                         # Look for text after the last }}
                                         if "}}" in chunk:
@@ -885,14 +953,22 @@ class AgentEngineClient:
                                             if len(parts) == 2 and parts[1].strip():
                                                 remaining = parts[1].strip()
                                                 if not remaining.startswith("{"):
-                                                    logger.info(f"Extracted text after function data: {remaining[:50]}...")
+                                                    logger.info(
+                                                        f"Extracted text after function data: {remaining[:50]}..."
+                                                    )
                                                     response_parts.append(remaining)
                                                 else:
-                                                    logger.info("Remaining part is another JSON object, skipping")
+                                                    logger.info(
+                                                        "Remaining part is another JSON object, skipping"
+                                                    )
                                             else:
-                                                logger.info("No text found after function data, skipping entire chunk")
+                                                logger.info(
+                                                    "No text found after function data, skipping entire chunk"
+                                                )
                                         else:
-                                            logger.info("No }} found in chunk with function data, skipping")
+                                            logger.info(
+                                                "No }} found in chunk with function data, skipping"
+                                            )
                                     else:
                                         logger.info(
                                             "Chunk doesn't match dictionary pattern, adding as-is"
@@ -906,8 +982,13 @@ class AgentEngineClient:
                         full_response = "".join(response_parts).strip()
 
                         # Clean up function_call/function_response data from the final response
-                        if full_response and ("{'function_call'" in full_response or "{'function_response'" in full_response):
-                            logger.info(f"Cleaning function data from response (length: {len(full_response)})")
+                        if full_response and (
+                            "{'function_call'" in full_response
+                            or "{'function_response'" in full_response
+                        ):
+                            logger.info(
+                                f"Cleaning function data from response (length: {len(full_response)})"
+                            )
                             # Try to extract only the text after function blocks
                             if "}}" in full_response:
                                 # Split by the last occurrence of }} and take what comes after
@@ -915,7 +996,9 @@ class AgentEngineClient:
                                 if len(parts) == 2 and parts[1].strip():
                                     cleaned = parts[1].strip()
                                     if not cleaned.startswith("{"):
-                                        logger.info(f"Extracted clean text (length: {len(cleaned)})")
+                                        logger.info(
+                                            f"Extracted clean text (length: {len(cleaned)})"
+                                        )
                                         full_response = cleaned
 
                         if full_response:
@@ -1017,17 +1100,36 @@ class AgentEngineClient:
                 # Add conversation history as context to the current message
                 context_str = "\n".join(conversation_context)
                 formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
-                logger.info(f"[CHAT STREAM] Including {len(messages)-1} previous messages in context")
+                logger.info(
+                    f"[CHAT STREAM] Including {len(messages) - 1} previous messages in context"
+                )
             else:
                 formatted_input = user_input
 
-            logger.info(f"[CHAT] Processing message for user {user_id}: {user_input[:100]}...")
-            logger.info(f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}")
+            logger.info(
+                f"[CHAT] Processing message for user {user_id}: {user_input[:100]}..."
+            )
+            logger.info(
+                f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
+            )
 
             # Check if this might be a Google Analytics query and inject OAuth credentials
-            ga_keywords = ['analytics', 'traffic', 'users', 'sessions', 'pageviews',
-                          'bounce rate', 'ga4', 'google analytics', 'website visitors',
-                          'conversion', 'acquisition', 'real-time', 'realtime', 'property']
+            ga_keywords = [
+                "analytics",
+                "traffic",
+                "users",
+                "sessions",
+                "pageviews",
+                "bounce rate",
+                "ga4",
+                "google analytics",
+                "website visitors",
+                "conversion",
+                "acquisition",
+                "real-time",
+                "realtime",
+                "property",
+            ]
 
             is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
 
@@ -1035,15 +1137,25 @@ class AgentEngineClient:
             session_key = f"{user_id}:{session_id}" if session_id else None
             is_ga_followup = False
             if session_key and session_key in self._user_sessions:
-                is_ga_followup = self._user_sessions[session_key].get("is_ga_conversation", False)
+                is_ga_followup = self._user_sessions[session_key].get(
+                    "is_ga_conversation", False
+                )
 
-            logger.info(f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
-            print(f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}")
+            logger.info(
+                f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
+            )
+            print(
+                f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
+            )
 
             if is_ga_query or is_ga_followup:
                 # Try to get GA OAuth credentials from any accessible account that has them
-                logger.info(f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}")
-                print(f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}")
+                logger.info(
+                    f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}"
+                )
+                print(
+                    f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}"
+                )
                 if user_context.accessible_accounts:
                     try:
                         firestore_service = get_firestore_service()
@@ -1054,14 +1166,24 @@ class AgentEngineClient:
                         ga_creds = None
                         for account_id in user_context.accessible_accounts:
                             # Get and format GA credentials
-                            ga_creds = await ga_helper.get_and_format_credentials(account_id)
+                            ga_creds = await ga_helper.get_and_format_credentials(
+                                account_id
+                            )
                             if ga_creds:
-                                logger.info(f"Found GA OAuth credentials in account {account_id}")
-                                print(f"[DEBUG] Found GA OAuth credentials in account {account_id}")
+                                logger.info(
+                                    f"Found GA OAuth credentials in account {account_id}"
+                                )
+                                print(
+                                    f"[DEBUG] Found GA OAuth credentials in account {account_id}"
+                                )
                                 break
                             else:
-                                logger.debug(f"No GA credentials in account {account_id}, trying next...")
-                                print(f"[DEBUG] No GA credentials in account {account_id}, trying next...")
+                                logger.debug(
+                                    f"No GA credentials in account {account_id}, trying next..."
+                                )
+                                print(
+                                    f"[DEBUG] No GA credentials in account {account_id}, trying next..."
+                                )
 
                         if ga_creds:
                             # Create a structured message with credentials embedded
@@ -1070,28 +1192,45 @@ class AgentEngineClient:
                                 "message": formatted_input,
                                 "tenant_id": ga_creds["tenant_id"],
                                 "tenant_credentials": ga_creds["tenant_credentials"],
-                                "selected_property_ids": ga_creds.get("selected_property_ids", []),
-                                "selected_properties": ga_creds.get("selected_properties", [])
+                                "selected_property_ids": ga_creds.get(
+                                    "selected_property_ids", []
+                                ),
+                                "selected_properties": ga_creds.get(
+                                    "selected_properties", []
+                                ),
                             }
-                            
+
                             # Add context about available properties to help the agent
                             if ga_creds.get("selected_properties"):
                                 properties_info = "\n\nAvailable GA Properties:"
                                 for prop in ga_creds["selected_properties"]:
                                     properties_info += f"\n- {prop.get('display_name', 'Unknown')} (ID: {prop.get('property_id', 'Unknown')})"
-                                
+
                                 # Add property context to the formatted input if only one property
                                 if len(ga_creds["selected_property_ids"]) == 1:
-                                    enhanced_message["default_property_id"] = ga_creds["selected_property_ids"][0]
-                                    logger.info(f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}")
+                                    enhanced_message["default_property_id"] = ga_creds[
+                                        "selected_property_ids"
+                                    ][0]
+                                    logger.info(
+                                        f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}"
+                                    )
                             # Convert to JSON string for the agent
                             import json
+
                             formatted_input = json.dumps(enhanced_message)
-                            logger.info(f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
-                            print(f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties")
+                            logger.info(
+                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
+                            print(
+                                f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
                         else:
-                            logger.warning(f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts")
-                            print("[DEBUG] Failed to find GA credentials in any accessible account")
+                            logger.warning(
+                                f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
+                            )
+                            print(
+                                "[DEBUG] Failed to find GA credentials in any accessible account"
+                            )
                     except Exception as e:
                         logger.error(f"Failed to inject GA credentials: {e}")
                         # Continue with original message if credential injection fails
@@ -1126,7 +1265,9 @@ class AgentEngineClient:
             logger.info(
                 f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}"
             )
-            logger.info(f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}...")
+            logger.info(
+                f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}..."
+            )
             logger.info(
                 f"Session ID being passed to Agent Engine for streaming: {actual_session_id}"
             )
@@ -1215,17 +1356,26 @@ class AgentEngineClient:
                             else:
                                 # Don't yield raw function_call or function_response data
                                 # These are debug/internal data, not user-facing content
-                                if not ("function_call" in chunk or "function_response" in chunk):
+                                if not (
+                                    "function_call" in chunk
+                                    or "function_response" in chunk
+                                ):
                                     yield str(chunk)
                         elif isinstance(chunk, str):
                             # Log the raw chunk for debugging
-                            logger.debug(f"Raw chunk received (first 200 chars): {chunk[:200]}...")
+                            logger.debug(
+                                f"Raw chunk received (first 200 chars): {chunk[:200]}..."
+                            )
 
                             # Parse and clean string chunks that might contain function data
                             # Check if this is a string representation of function_call/function_response
-                            if chunk.startswith("{'function_call'") or chunk.startswith("{'function_response'"):
+                            if chunk.startswith("{'function_call'") or chunk.startswith(
+                                "{'function_response'"
+                            ):
                                 # This is debug data, skip it
-                                logger.debug(f"Skipping function debug data in chunk: {chunk[:100]}...")
+                                logger.debug(
+                                    f"Skipping function debug data in chunk: {chunk[:100]}..."
+                                )
                                 continue
 
                             # Handle string representation of dictionary with text content
@@ -1250,7 +1400,10 @@ class AgentEngineClient:
                                     yield chunk
 
                             # Check if the chunk contains both function data and text
-                            elif "{'function_call'" in chunk or "{'function_response'" in chunk:
+                            elif (
+                                "{'function_call'" in chunk
+                                or "{'function_response'" in chunk
+                            ):
                                 # Try to extract just the text after the function data
                                 # The pattern is: {'function_call': ...}{'function_response': ...}actual text
                                 import re
@@ -1264,8 +1417,12 @@ class AgentEngineClient:
                                     function_blocks = match.group(1)
                                     text_part = match.group(2).strip()
 
-                                    logger.debug(f"Found function blocks: {function_blocks[:100]}...")
-                                    logger.debug(f"Extracted text part: {text_part[:100]}...")
+                                    logger.debug(
+                                        f"Found function blocks: {function_blocks[:100]}..."
+                                    )
+                                    logger.debug(
+                                        f"Extracted text part: {text_part[:100]}..."
+                                    )
 
                                     # Only yield the text part if it exists and isn't empty
                                     if text_part:
@@ -1280,7 +1437,7 @@ class AgentEngineClient:
                                             remaining = parts[1].strip()
                                             if not remaining.startswith("{"):
                                                 yield remaining
-                                    elif not chunk.strip().startswith('{'):
+                                    elif not chunk.strip().startswith("{"):
                                         # If it doesn't start with {, it's probably just text
                                         yield chunk
                             else:
