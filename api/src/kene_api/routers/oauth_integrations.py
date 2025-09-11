@@ -98,8 +98,9 @@ async def authorize_google_analytics(
     # Check permissions
     if not current_user.is_super_admin:
         account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id, {})
-        if account_perm.get("role") not in ["admin", "editor"]:
+        account_perm = account_permissions.get(account_id)
+        # account_perm is a string like "edit" or "view", not a dict
+        if account_perm not in ["edit", "admin", "editor"]:
             track_oauth_callback_error("google_analytics", "permission_denied")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -330,8 +331,9 @@ async def refresh_google_analytics_token(
     # Check permissions
     if not current_user.is_super_admin:
         account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id, {})
-        if account_perm.get("role") not in ["admin", "editor"]:
+        account_perm = account_permissions.get(account_id)
+        # account_perm is a string like "edit" or "view", not a dict
+        if account_perm not in ["edit", "admin", "editor"]:
             track_token_refresh_failure("google_analytics", "permission_denied")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -417,8 +419,9 @@ async def disconnect_google_analytics(
     # Check permissions
     if not current_user.is_super_admin:
         account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id, {})
-        if account_perm.get("role") not in ["admin", "editor"]:
+        account_perm = account_permissions.get(account_id)
+        # account_perm is a string like "edit" or "view", not a dict
+        if account_perm not in ["edit", "admin", "editor"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to manage this account's integrations",
@@ -456,8 +459,9 @@ async def get_google_analytics_properties(
     # Check permissions
     if not current_user.is_super_admin:
         account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id, {})
-        if account_perm.get("role") not in ["admin", "editor", "viewer"]:
+        account_perm = account_permissions.get(account_id)
+        # account_perm is a string like "edit" or "view", not a dict
+        if account_perm not in ["edit", "view", "admin", "editor", "viewer"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this account's integrations",
@@ -685,8 +689,9 @@ async def update_selected_properties(
     # Check permissions - only admin or editor can update
     if not current_user.is_super_admin:
         account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id, {})
-        if account_perm.get("role") not in ["admin", "editor"]:
+        account_perm = account_permissions.get(account_id)
+        # account_perm is a string like "edit" or "view", not a dict
+        if account_perm not in ["edit", "admin", "editor"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to manage this account's integrations",
