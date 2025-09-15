@@ -744,7 +744,7 @@ You must follow this logic precisely:
     "marketingAndCustomerStrategy": "Your text here...",
     "internalOperationsAndBusinessModel": "Your text here...",
     "financialPerformanceAndAnalysis": "Your text here...",
-    "strategicRecommendationsAndFutureOutlook": "Your text here...",
+    "strategicRecommendationsAndFutureOutlook": "Your text here..."
 }}
 
 === BEGIN INPUT DATA ===
@@ -847,7 +847,7 @@ All feedback points must be addressed.
     "marketingAndCustomerStrategy": "Your text here...",
     "internalOperationsAndBusinessModel": "Your text here...",
     "financialPerformanceAndAnalysis": "Your text here...",
-    "strategicRecommendationsAndFutureOutlook": "Your text here...",
+    "strategicRecommendationsAndFutureOutlook": "Your text here..."
 }}
 """
 
@@ -1004,11 +1004,11 @@ You must follow this logic precisely:
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    competitiveStrategySummary: "Your text here...",
-    competitiveLandscape: "Your text here...",
-    detailedCompetitorProfiles: "Your text here...",
-    portersFiveForces: "Your text here...",
-    strategicRecommendations: "Your text here...",
+    "competitiveStrategySummary": "Your text here...",
+    "competitiveLandscape": "Your text here...",
+    "detailedCompetitorProfiles": "Your text here...",
+    "portersFiveForces": "Your text here...",
+    "strategicRecommendations": "Your text here..."
 }}
     
 === BEGIN INPUT DATA ===
@@ -1101,11 +1101,11 @@ Provide the complete, updated competitive strategy document in JSON format.
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    competitiveStrategySummary: "Your text here...",
-    competitiveLandscape: "Your text here...",
-    detailedCompetitorProfiles: "Your text here...",
-    portersFiveForces: "Your text here...",
-    strategicRecommendations: "Your text here...",
+    "competitiveStrategySummary": "Your text here...",
+    "competitiveLandscape": "Your text here...",
+    "detailedCompetitorProfiles": "Your text here...",
+    "portersFiveForces": "Your text here...",
+    "strategicRecommendations": "Your text here..."
 }}
 """
 
@@ -1267,13 +1267,13 @@ You must follow this logic precisely:
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    customerJourneySummary: "Your text here...",
-    idealCustomerProfiles: "Your text here...",
-    customerNeedsAnalysis: "Your text here...",
-    awarenessPhase: "Your text here...",
-    considerationPhase: "Your text here...",
-    conversionPhase: "Your text here...",
-    loyaltyPhase: "Your text here..."
+    "customerJourneySummary": "Your text here...",
+    "idealCustomerProfiles": "Your text here...",
+    "customerNeedsAnalysis": "Your text here...",
+    "awarenessPhase": "Your text here...",
+    "considerationPhase": "Your text here...",
+    "conversionPhase": "Your text here...",
+    "loyaltyPhase": "Your text here..."
 }}
 
 === BEGIN INPUT DATA ===
@@ -1366,13 +1366,13 @@ Provide the complete, updated customer strategy document in JSON format.
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    customerJourneySummary: "Your text here...",
-    idealCustomerProfiles: "Your text here...",
-    customerNeedsAnalysis: "Your text here...",
-    awarenessPhase: "Your text here...",
-    considerationPhase: "Your text here...",
-    conversionPhase: "Your text here...",
-    loyaltyPhase: "Your text here..."
+    "customerJourneySummary": "Your text here...",
+    "idealCustomerProfiles": "Your text here...",
+    "customerNeedsAnalysis": "Your text here...",
+    "awarenessPhase": "Your text here...",
+    "considerationPhase": "Your text here...",
+    "conversionPhase": "Your text here...",
+    "loyaltyPhase": "Your text here..."
 }}
 """
 
@@ -1542,11 +1542,11 @@ You must follow this logic precisely:
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    marketingStrategySummary: "Your text here...",
-    awarenessStrategy:  "Your text here...",
-    considerationStrategy:  "Your text here...",
-    conversionStrategy:  "Your text here...",
-    loyaltyStrategy:  "Your text here..."
+    "marketingStrategySummary": "Your text here...",
+    "awarenessStrategy": "Your text here...",
+    "considerationStrategy": "Your text here...",
+    "conversionStrategy": "Your text here...",
+    "loyaltyStrategy": "Your text here..."
 }}
 
 === BEGIN INPUT DATA ===
@@ -1640,11 +1640,11 @@ Provide the complete, updated marketing strategy document in JSON format.
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    marketingStrategySummary: "Your text here...",
-    awarenessStrategy:  "Your text here...",
-    considerationStrategy:  "Your text here...",
-    conversionStrategy:  "Your text here...",
-    loyaltyStrategy:  "Your text here..."
+    "marketingStrategySummary": "Your text here...",
+    "awarenessStrategy": "Your text here...",
+    "considerationStrategy": "Your text here...",
+    "conversionStrategy": "Your text here...",
+    "loyaltyStrategy": "Your text here..."
 }}
 """
 
@@ -1781,22 +1781,22 @@ You must follow this logic precisely:
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    brand_name: "Your text here...",
-    tagline: "Your text here...",
-    brand_overview: "Your text here...",
-    brand_story: "Your text here...",
-    value_proposition: "Your text here...",
-    brand_personality: "Your text here...",
-    brand_voice_and_tone: "Your text here...",
-    logo_guidelines: "Your text here...",
-    color_palette: "Your text here...",
-    typography: "Your text here...",
-    iconography: "Your text here...",
-    imagery_style: "Your text here...",
-    digital_presence: "Your text here...",
-    application_examples: "Your text here...",
-    legal_considerations: "Your text here...",
-    accessibility_standards: "Your text here..."
+    "brand_name": "Your text here...",
+    "tagline": "Your text here...",
+    "brand_overview": "Your text here...",
+    "brand_story": "Your text here...",
+    "value_proposition": "Your text here...",
+    "brand_personality": "Your text here...",
+    "brand_voice_and_tone": "Your text here...",
+    "logo_guidelines": "Your text here...",
+    "color_palette": "Your text here...",
+    "typography": "Your text here...",
+    "iconography": "Your text here...",
+    "imagery_style": "Your text here...",
+    "digital_presence": "Your text here...",
+    "application_examples": "Your text here...",
+    "legal_considerations": "Your text here...",
+    "accessibility_standards": "Your text here..."
 }}
 
 === BEGIN INPUT DATA ===
@@ -1887,22 +1887,22 @@ Provide the complete, updated brand guidelines document in JSON format.
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
-    brand_name: "Your text here...",
-    tagline: "Your text here...",
-    brand_overview: "Your text here...",
-    brand_story: "Your text here...",
-    value_proposition: "Your text here...",
-    brand_personality: "Your text here...",
-    brand_voice_and_tone: "Your text here...",
-    logo_guidelines: "Your text here...",
-    color_palette: "Your text here...",
-    typography: "Your text here...",
-    iconography: "Your text here...",
-    imagery_style: "Your text here...",
-    digital_presence: "Your text here...",
-    application_examples: "Your text here...",
-    legal_considerations: "Your text here...",
-    accessibility_standards: "Your text here..."
+    "brand_name": "Your text here...",
+    "tagline": "Your text here...",
+    "brand_overview": "Your text here...",
+    "brand_story": "Your text here...",
+    "value_proposition": "Your text here...",
+    "brand_personality": "Your text here...",
+    "brand_voice_and_tone": "Your text here...",
+    "logo_guidelines": "Your text here...",
+    "color_palette": "Your text here...",
+    "typography": "Your text here...",
+    "iconography": "Your text here...",
+    "imagery_style": "Your text here...",
+    "digital_presence": "Your text here...",
+    "application_examples": "Your text here...",
+    "legal_considerations": "Your text here...",
+    "accessibility_standards": "Your text here..."
 }}
 """
 
