@@ -22,6 +22,7 @@ from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
 from ..firestore import get_firestore_service
 from ..services.ga_credential_helper import GACredentialHelper
+from ..utils.secrets import get_env_or_secret
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +110,9 @@ class AgentEngineClient:
         self.location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
         # Use KEN_E_ENGINE_ID if available, fall back to VERTEX_AI_AGENT_ENGINE_ID for backward compatibility
-        self.agent_engine_id = os.getenv("KEN_E_ENGINE_ID") or os.getenv(
-            "VERTEX_AI_AGENT_ENGINE_ID"
-        )
+        self.agent_engine_id = get_env_or_secret(
+            "KEN_E_ENGINE_ID"
+        ) or get_env_or_secret("VERTEX_AI_AGENT_ENGINE_ID")
 
         if not self.agent_engine_id:
             logger.warning(

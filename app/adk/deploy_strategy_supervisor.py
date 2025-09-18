@@ -19,6 +19,112 @@ from typing import Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add API source to path to access the secrets utility
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "api" / "src"))
+
+try:
+    from kene_api.utils.secrets import get_env_or_secret
+except ImportError:
+    logger.warning("Could not import secrets utility, will copy .env as-is")
+    get_env_or_secret = None
+
+
+def update_secret_manager(secret_name: str, secret_value: str, project_id: str) -> bool:
+    """Update a secret in Google Secret Manager with a new value.
+    
+    Args:
+        secret_name: Name of the secret (without project path)
+        secret_value: New value for the secret
+        project_id: GCP project ID
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        from google.cloud import secretmanager
+        
+        client = secretmanager.SecretManagerServiceClient()
+        
+        # Build the secret name
+        secret_path = f"projects/{project_id}/secrets/{secret_name}"
+        
+        # Add a new version with the updated value
+        parent = secret_path
+        payload = secret_value.encode("UTF-8")
+        
+        response = client.add_secret_version(
+            request={
+                "parent": parent,
+                "payload": {"data": payload},
+            }
+        )
+        
+        logger.info(f"✅ Updated secret {secret_name} in Secret Manager")
+        logger.info(f"   New version: {response.name}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to update secret {secret_name}: {e}")
+        return False
+
+
+def process_env_file(source_path: Path, dest_path: Path) -> None:
+    """Process .env file to resolve Secret Manager references.
+    
+    Args:
+        source_path: Path to source .env file
+        dest_path: Path to write processed .env file
+    """
+    if not get_env_or_secret:
+        # If we can't import the secrets utility, just copy as-is
+        shutil.copy2(source_path, dest_path)
+        logger.warning("Copying .env file without processing Secret Manager references")
+        return
+    
+    logger.info("Processing .env file to resolve Secret Manager references")
+    processed_lines = []
+    
+    with open(source_path, 'r') as f:
+        for line in f:
+            # Skip comments and empty lines
+            if line.strip().startswith('#') or not line.strip():
+                processed_lines.append(line)
+                continue
+            
+            # Parse key=value pairs
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Check if this value needs Secret Manager resolution
+                if value.startswith('sm://'):
+                    try:
+                        # Set the environment variable temporarily to use get_env_or_secret
+                        os.environ[key] = value
+                        resolved_value = get_env_or_secret(key)
+                        if resolved_value:
+                            processed_lines.append(f"{key}={resolved_value}\n")
+                            logger.info(f"Resolved Secret Manager reference for {key}")
+                        else:
+                            # Keep original if resolution failed
+                            processed_lines.append(line)
+                            logger.warning(f"Failed to resolve Secret Manager reference for {key}")
+                    except Exception as e:
+                        logger.error(f"Error resolving {key}: {e}")
+                        processed_lines.append(line)
+                else:
+                    # Keep non-secret values as-is
+                    processed_lines.append(line)
+            else:
+                processed_lines.append(line)
+    
+    # Write processed .env file
+    with open(dest_path, 'w') as f:
+        f.writelines(processed_lines)
+    
+    logger.info(f"Processed .env file written to {dest_path}")
+
 
 def deploy_strategy_supervisor() -> Optional[str]:
     """Deploy the Strategy Documents Supervisor to Agent Engine."""
@@ -43,41 +149,91 @@ def deploy_strategy_supervisor() -> Optional[str]:
         # Create a proper agent.py that imports and exports the supervisor
         agent_content = """
 # This file makes the strategy supervisor agent available for deployment
-from agents.create_strategy_docs_supervisor import create_strategy_docs_supervisor
+import logging
+import sys
+import os
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+logger.info("Loading agent.py for deployment")
+
+# Add current directory to Python path to help with imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from agents.create_strategy_docs_supervisor import create_strategy_docs_supervisor
+    logger.info("Successfully imported create_strategy_docs_supervisor")
+except ImportError as e:
+    logger.error(f"Failed to import create_strategy_docs_supervisor: {e}")
+    logger.error(f"Current directory: {os.getcwd()}")
+    logger.error(f"Directory contents: {os.listdir('.')}")
+    logger.error(f"Python path: {sys.path}")
+    if os.path.exists('agents'):
+        logger.error(f"agents/ directory contents: {os.listdir('agents')}")
+    raise
 
 # ADK looks for 'root_agent' or the agent name directly
 root_agent = create_strategy_docs_supervisor
+logger.info(f"root_agent type: {type(root_agent)}")
 
 # Also export with the original name
 __all__ = ['create_strategy_docs_supervisor', 'root_agent']
 """
         with open(temp_path / "agent.py", "w") as f:
             f.write(agent_content)
-        logger.info("Created agent.py wrapper")
+        logger.info("Created agent.py wrapper with debug logging")
 
         # Create agent_engine_app.py that imports from agent.py
-        app_content = """from vertexai.preview import reasoning_engines
-from agent import root_agent
+        app_content = """import logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-app = reasoning_engines.AdkApp(
-    agent=root_agent,
-    enable_tracing=True
-)
+logger.info("Loading agent_engine_app.py")
+
+try:
+    from vertexai.preview import reasoning_engines
+    logger.info("Successfully imported reasoning_engines")
+except Exception as e:
+    logger.error(f"Failed to import reasoning_engines: {e}")
+    raise
+
+try:
+    from agent import root_agent
+    logger.info(f"Successfully imported root_agent, type: {type(root_agent)}")
+except Exception as e:
+    logger.error(f"Failed to import root_agent: {e}")
+    raise
+
+logger.info("Creating AdkApp...")
+try:
+    app = reasoning_engines.AdkApp(
+        agent=root_agent,
+        enable_tracing=True
+    )
+    logger.info(f"Successfully created AdkApp: {type(app)}")
+except Exception as e:
+    logger.error(f"Failed to create AdkApp: {e}")
+    logger.error(f"Error type: {type(e).__name__}")
+    logger.error(f"Error args: {e.args}")
+    raise
+
+logger.info("agent_engine_app.py loaded successfully")
 """
         with open(temp_path / "agent_engine_app.py", "w") as f:
             f.write(app_content)
-        logger.info("Created agent_engine_app.py")
+        logger.info("Created agent_engine_app.py with debug logging")
 
         # Copy requirements.txt
         if Path("requirements.txt").exists():
             shutil.copy2("requirements.txt", temp_path / "requirements.txt")
             logger.info("Copied requirements.txt")
 
-        # Copy .env file if exists
+        # Process .env file if exists (resolve Secret Manager references)
         env_file = Path(".env")
         if env_file.exists():
-            shutil.copy2(env_file, temp_path / ".env")
-            logger.info("Copied .env file")
+            process_env_file(env_file, temp_path / ".env")
+            logger.info("Processed .env file with Secret Manager resolution")
 
         # Generate deployment name with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -124,14 +280,19 @@ app = reasoning_engines.AdkApp(
         ]
 
         logger.info(f"Running command: {' '.join(cmd)}")
+        logger.info(f"Command working directory: {os.getcwd()}")
+        logger.info(f"Environment PROJECT_ID: {os.getenv('VERTEX_AI_PROJECT_ID')}")
+        logger.info(f"Environment LOCATION: {os.getenv('VERTEX_AI_LOCATION')}")
 
         try:
+            logger.info("Starting subprocess.run()...")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 check=False,  # Don't raise on non-zero exit
             )
+            logger.info(f"subprocess.run() completed with return code: {result.returncode}")
 
             logger.info("Deployment stdout:")
             logger.info(result.stdout)
@@ -139,6 +300,12 @@ app = reasoning_engines.AdkApp(
             if result.stderr:
                 logger.info("Deployment stderr:")
                 logger.info(result.stderr)
+
+            # Check if the error is in stdout (some errors go there)
+            if "ModuleAgent.__init__() got an unexpected keyword argument" in result.stdout:
+                logger.error("ERROR: ModuleAgent initialization failed - found in stdout")
+            if result.stderr and "ModuleAgent.__init__() got an unexpected keyword argument" in result.stderr:
+                logger.error("ERROR: ModuleAgent initialization failed - found in stderr")
 
             # Try to extract engine ID or operation name
             # Look for operation pattern first
@@ -205,8 +372,23 @@ Location: {location}
                 print("=" * 60)
                 print(f"\nDeployment Name: {deployment_name}")
                 print(f"Engine ID: {engine_id}")
-                print("\n⚠️  Update your .env files with:")
-                print(f"STRATEGY_SUPERVISOR_ENGINE_ID={engine_id}")
+                
+                # Update Secret Manager with the new engine ID
+                print("\n📝 Updating Secret Manager...")
+                secret_updated = update_secret_manager(
+                    secret_name="strategy-supervisor-engine-id",
+                    secret_value=engine_id,
+                    project_id="525657242938"  # Using the project ID from the secrets
+                )
+                
+                if secret_updated:
+                    print("✅ Secret Manager updated with new engine ID")
+                    print("\n📌 Your .env files should use the Secret Manager reference:")
+                    print("   STRATEGY_SUPERVISOR_ENGINE_ID=sm://strategy-supervisor-engine-id")
+                    print("\n   The actual engine ID is now stored in Secret Manager.")
+                else:
+                    print("⚠️  Failed to update Secret Manager - please update manually")
+                
                 print("=" * 60)
 
                 return engine_id

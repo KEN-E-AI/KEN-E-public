@@ -62,6 +62,7 @@ async def trigger_strategy_generation(
         import os
 
         from ..routers.chat import AgentEngineClient
+        from ..utils.secrets import get_env_or_secret
 
         # Get project ID based on environment
         environment = os.getenv("ENVIRONMENT", "development").lower()
@@ -224,9 +225,9 @@ Please execute strategy generation with these parameters:
                 location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
                 # Use STRATEGY_SUPERVISOR_ENGINE_ID for strategy generation, fall back to old env var
-                agent_engine_id = os.getenv(
+                agent_engine_id = get_env_or_secret(
                     "STRATEGY_SUPERVISOR_ENGINE_ID"
-                ) or os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
+                ) or get_env_or_secret("VERTEX_AI_AGENT_ENGINE_ID")
 
                 if not agent_engine_id:
                     raise ValueError(

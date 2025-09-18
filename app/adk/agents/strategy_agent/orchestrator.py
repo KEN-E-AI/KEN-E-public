@@ -98,48 +98,301 @@ DOCUMENT_KEY_MAPPING = {
 }
 
 
-def create_strategy_sequential_agent(context: StrategyContext) -> SequentialAgent:
+def extract_document_sections(doc: dict | None, required_fields: list[str]) -> dict[str, Any]:
     """
-    Create the sequential agent with all 5 strategy sub-agents.
+    Extract specific fields from a strategy document.
+
+    Args:
+        doc: The strategy document dictionary
+        required_fields: List of field names to extract
+
+    Returns:
+        Dictionary with only the required fields
+    """
+    if not doc:
+        return {}
+
+    extracted = {}
+    for field in required_fields:
+        if field in doc:
+            extracted[field] = doc[field]
+
+    return extracted
+
+
+def execute_strategy_generation_direct(
+    context: StrategyContext,
+    firestore_client: FirestoreClient,
+    analytics_service: Optional[AnalyticsService] = None,
+    performance_profiler: Optional[PerformanceProfiler] = None,
+    alert_manager: Optional[AlertManager] = None,
+) -> dict[str, Any]:
+    """
+    Execute strategy generation using direct sequential execution without workflow.
+
+    This function:
+    1. Runs each agent directly with LoopAgent
+    2. Passes required sections from previous documents to dependent agents
+    3. Saves each document to Firestore immediately
+    4. Implements fail-fast behavior - stops if any agent fails
 
     Args:
         context: StrategyContext with company information
+        firestore_client: Firestore client for saving documents
+        analytics_service: Optional analytics service for tracking
+        performance_profiler: Optional performance profiler
+        alert_manager: Optional alert manager
 
     Returns:
-        SequentialAgent that runs all 5 strategy agents in sequence
+        Dictionary of generated documents
     """
-    logger.info(f"Creating Sequential Agent for {context.company_name}")
+    generated_documents = {}
 
-    # Create all 5 strategy agents in order
-    logger.info("[AGENT CREATION] Creating business_strategy_agent")
-    business_agent = create_business_strategy_agent(context)
-    logger.info("[AGENT CREATION] Creating competitive_strategy_agent")
-    competitive_agent = create_competitive_strategy_agent(context)
-    logger.info("[AGENT CREATION] Creating customer_strategy_agent")
-    customer_agent = create_customer_strategy_agent(context)
-    logger.info("[AGENT CREATION] Creating marketing_strategy_agent")
-    marketing_agent = create_marketing_strategy_agent(context)
-    logger.info("[AGENT CREATION] Creating brand_guidelines_agent")
-    brand_agent = create_brand_guidelines_agent(context)
-    logger.info("[AGENT CREATION] All 5 agents created successfully")
+    # Define the dependency requirements for each agent
+    agent_dependencies = {
+        "business_strategy": {
+            "agents": ["create_business_strategy_agent"],
+            "requires": {},
+        },
+        "competitive_strategy": {
+            "agents": ["create_competitive_strategy_agent"],
+            "requires": {
+                "business_strategy": [
+                    "businessStrategySummary",
+                    "companyOverview",
+                    "productsAndServices",
+                    "marketingAndCustomerStrategy"
+                ]
+            },
+        },
+        "customer_strategy": {
+            "agents": ["create_customer_strategy_agent"],
+            "requires": {
+                "business_strategy": [
+                    "businessStrategySummary",
+                    "companyOverview",
+                    "productsAndServices",
+                    "marketingAndCustomerStrategy"
+                ],
+                "competitive_strategy": [
+                    "competitiveLandscape",
+                    "competitiveStrategySummary",
+                    "detailedCompetitorProfiles"
+                ]
+            },
+        },
+        "marketing_strategy": {
+            "agents": ["create_marketing_strategy_agent"],
+            "requires": {
+                "business_strategy": [
+                    "businessStrategySummary",
+                    "companyOverview",
+                    "productsAndServices",
+                    "marketingAndCustomerStrategy"
+                ],
+                "competitive_strategy": [
+                    "competitiveLandscape",
+                    "competitiveStrategySummary",
+                    "detailedCompetitorProfiles"
+                ],
+                "customer_strategy": [
+                    "customerStrategySummary",
+                    "targetAudiences",
+                    "customerJourneyMaps",
+                    "customerEngagementStrategies"
+                ]
+            },
+        },
+        "brand_guidelines": {
+            "agents": ["create_brand_guidelines_agent"],
+            "requires": {
+                "business_strategy": ["companyOverview", "businessStrategySummary"],
+                "competitive_strategy": ["competitiveLandscape"],
+                "customer_strategy": ["targetAudiences"],
+                "marketing_strategy": ["marketingStrategySummary"]
+            },
+        },
+    }
 
-    # Chain them together in a SequentialAgent
-    strategy_sequential_agent = SequentialAgent(
-        name="strategy_generator",
-        sub_agents=[
-            business_agent,
-            competitive_agent,
-            customer_agent,
-            marketing_agent,
-            brand_agent,
-        ],
-        description="Generates all 5 strategy documents in sequence",
+    # Import agent creation functions
+    from .agents import (
+        create_business_strategy_agent,
+        create_competitive_strategy_agent,
+        create_customer_strategy_agent,
+        create_marketing_strategy_agent,
+        create_brand_guidelines_agent,
     )
 
-    logger.info(
-        f"✅ Sequential Agent created with 5 strategy agents for {context.company_name}"
-    )
-    return strategy_sequential_agent
+    agent_creators = {
+        "create_business_strategy_agent": create_business_strategy_agent,
+        "create_competitive_strategy_agent": create_competitive_strategy_agent,
+        "create_customer_strategy_agent": create_customer_strategy_agent,
+        "create_marketing_strategy_agent": create_marketing_strategy_agent,
+        "create_brand_guidelines_agent": create_brand_guidelines_agent,
+    }
+
+    # Process each document type in order
+    for doc_type, config in agent_dependencies.items():
+        logger.info(f"\n[DIRECT EXECUTION] Starting generation of {doc_type}")
+
+        # Track operation if profiler available
+        operation = None
+        if performance_profiler:
+            operation = performance_profiler.start_operation(
+                agent_name=f"{doc_type}_agent",
+                operation="document_generation",
+                metadata={"doc_type": doc_type}
+            )
+
+        try:
+            # Extract required sections from previous documents
+            previous_sections = {}
+            for required_doc, required_fields in config["requires"].items():
+                # Read document from Firestore
+                doc_content = firestore_client.get_strategy_document_sync(
+                    account_id=context.account_id,
+                    doc_type=required_doc
+                )
+
+                if not doc_content:
+                    error_msg = f"Required document {required_doc} not found in Firestore"
+                    logger.error(f"[DIRECT EXECUTION] {error_msg}")
+                    if performance_profiler and operation:
+                        performance_profiler.end_operation(operation, success=False, error=error_msg)
+                    return generated_documents  # Fail-fast behavior
+
+                # Extract only required fields
+                extracted = extract_document_sections(doc_content, required_fields)
+                if extracted:
+                    previous_sections[required_doc] = extracted
+                    logger.info(f"[DIRECT EXECUTION] Extracted {len(extracted)} fields from {required_doc}")
+
+            # Create the agent with previous sections
+            agent_creator_name = config["agents"][0]
+            agent_creator = agent_creators[agent_creator_name]
+
+            # Call the agent creator with context and previous sections
+            if previous_sections:
+                # For now, pass previous_sections as part of context
+                # We'll update agents.py next to properly handle this
+                context_with_sections = context.model_copy()
+                # Store previous sections in context for agent to access
+                setattr(context_with_sections, "previous_sections", previous_sections)
+                agent = agent_creator(context_with_sections)
+            else:
+                agent = agent_creator(context)
+
+            logger.info(f"[DIRECT EXECUTION] Created agent for {doc_type}")
+
+            # Run the agent directly
+            from google.adk import Runner
+            from google.adk.sessions import InMemorySessionService
+            from google.genai.types import Content
+
+            # Create session for this agent
+            session_service = InMemorySessionService()
+            app_name = f"{doc_type}_gen_{context.account_id}"
+            session_id = f"session_{doc_type}_{uuid.uuid4().hex[:8]}"
+
+            session = session_service.create_session_sync(
+                app_name=app_name,
+                user_id=context.user_id or "system",
+                session_id=session_id,
+                state={}
+            )
+
+            # Create runner
+            runner = Runner(
+                agent=agent,
+                app_name=app_name,
+                session_service=session_service
+            )
+
+            # Prepare message
+            message_text = f"Generate the {doc_type.replace('_', ' ')} document for {context.company_name}."
+            if previous_sections:
+                message_text += "\n\nUse the following information from previous documents:\n"
+                for doc_name, sections in previous_sections.items():
+                    message_text += f"\n=== From {doc_name} ===\n"
+                    message_text += json.dumps(sections, indent=2)
+
+            message_content = Content(role="user", parts=[{"text": message_text}])
+
+            # Run the agent
+            logger.info(f"[DIRECT EXECUTION] Running agent for {doc_type}")
+            events = runner.run(
+                user_id=context.user_id or "system",
+                session_id=session_id,
+                new_message=message_content
+            )
+
+            # Process events to extract the document
+            doc_content = None
+            for event in events:
+                # Check for document in state delta
+                if hasattr(event, "actions") and event.actions:
+                    if hasattr(event.actions, "state_delta") and event.actions.state_delta:
+                        state_delta = event.actions.state_delta
+
+                        # Look for the document key
+                        for doc_key, mapped_type in DOCUMENT_KEY_MAPPING.items():
+                            if mapped_type == doc_type and doc_key in state_delta:
+                                raw_content = state_delta[doc_key]
+                                doc_content = parse_document_content(raw_content)
+                                if doc_content:
+                                    logger.info(f"[DIRECT EXECUTION] Extracted {doc_type} document")
+                                    break
+
+            if not doc_content:
+                error_msg = f"Failed to generate {doc_type} document"
+                logger.error(f"[DIRECT EXECUTION] {error_msg}")
+                if performance_profiler and operation:
+                    performance_profiler.end_operation(operation, success=False, error=error_msg)
+                return generated_documents  # Fail-fast behavior
+
+            # Save to Firestore immediately
+            save_result = firestore_client.save_strategy_document_sync(
+                account_id=context.account_id,
+                doc_type=doc_type,
+                content=doc_content,
+                user_id=context.user_id
+            )
+
+            if not save_result:
+                error_msg = f"Failed to save {doc_type} to Firestore"
+                logger.error(f"[DIRECT EXECUTION] {error_msg}")
+                if performance_profiler and operation:
+                    performance_profiler.end_operation(operation, success=False, error=error_msg)
+                return generated_documents  # Fail-fast behavior
+
+            # Add to generated documents
+            generated_documents[doc_type] = doc_content
+            logger.info(f"[DIRECT EXECUTION] ✅ Successfully generated and saved {doc_type}")
+
+            # End performance tracking
+            if performance_profiler and operation:
+                performance_profiler.end_operation(operation, success=True)
+
+            # Track analytics if available
+            if analytics_service:
+                analytics_service.track_agent_execution(
+                    agent_name=f"{doc_type}_agent",
+                    prompt_tokens=0,  # Would need to extract from events
+                    response_tokens=0,  # Would need to extract from events
+                    model="gemini-2.0-flash",
+                    execution_time=0,  # Would need to track
+                    success=True
+                )
+
+        except Exception as e:
+            error_msg = f"Error generating {doc_type}: {e}"
+            logger.error(f"[DIRECT EXECUTION] {error_msg}")
+            if performance_profiler and operation:
+                performance_profiler.end_operation(operation, success=False, error=str(e))
+            return generated_documents  # Fail-fast behavior
+
+    logger.info(f"\n[DIRECT EXECUTION] ✅ Successfully generated all {len(generated_documents)} documents")
+    return generated_documents
 
 
 def execute_strategy_generation(
@@ -218,8 +471,8 @@ def execute_strategy_generation(
             annual_ad_budget=annual_ad_budget,
         )
 
-        # Create the sequential agent with all 5 strategy agents
-        strategy_sequential_agent = create_strategy_sequential_agent(context)
+        # Use direct execution instead of sequential workflow
+        logger.info("[EXECUTION] Using direct sequential execution (workflow disabled)")
 
         # Set up session management
         session_service = InMemorySessionService()
@@ -438,13 +691,8 @@ def execute_strategy_generation(
                     f"[STATE_LOADING] Failed to load documents into state: {e}"
                 )
 
-        # Create runner with artifact service
-        runner = Runner(
-            agent=strategy_sequential_agent,
-            app_name=app_name,
-            session_service=session_service,
-            artifact_service=artifact_service,
-        )
+        # Direct execution doesn't need a runner here - we'll handle it in the direct function
+        # Just prepare the execution context
 
         # Prepare execution message with uploaded documents
         execution_input = f"Generate all 5 strategy documents for {company_name} in the {industry} industry."
@@ -478,24 +726,17 @@ def execute_strategy_generation(
 
         message_content = Content(role="user", parts=[{"text": execution_input}])
 
-        # Run the agent pipeline with monitoring
-        logger.info("[EXECUTION] Starting runner with 5 sequential agents")
+        # Run direct sequential execution
+        logger.info("[EXECUTION] Starting direct sequential execution")
         start_time = time.time()
 
-        events = runner.run(
-            user_id=session_user_id, session_id=session_id, new_message=message_content
-        )
-
-        # Process events and save documents with analytics tracking
-        logger.info("[EXECUTION] Processing events from agent execution")
-        generated_documents = process_and_save_documents_with_analytics(
-            events,
-            account_id,
-            user_id,
-            client,
-            analytics_service,
-            performance_profiler,
-            alert_manager,
+        # Execute strategy generation directly
+        generated_documents = execute_strategy_generation_direct(
+            context=context,
+            firestore_client=client,
+            analytics_service=analytics_service,
+            performance_profiler=performance_profiler,
+            alert_manager=alert_manager,
         )
 
         execution_time = time.time() - start_time
@@ -1079,7 +1320,8 @@ except Exception as e:
 
 __all__ = [
     "app",
-    "create_strategy_sequential_agent",
     "execute_strategy_generation",
+    "execute_strategy_generation_direct",
+    "extract_document_sections",
     "strategy_agent",
 ]

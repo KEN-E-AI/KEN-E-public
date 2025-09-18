@@ -3,7 +3,9 @@ name = "company-news-chatbot"
 version = "0.1.0"
 description = "Simple company news chatbot using ADK and Vertex AI Search"
 dependencies = [
-    "google-adk",
+    "baml-py>=0.207.1",
+    "google-adk==1.14.1",
+    "google-cloud-aiplatform>=1.114.0",
     "google-cloud-firestore>=2.20.0",
     "newsapi-python>=0.2.7",
     "pypdf2>=3.0.1",

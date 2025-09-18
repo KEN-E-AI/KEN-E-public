@@ -346,11 +346,11 @@ class FirestoreClient:
             logger.error(f"[FIRESTORE_SAVE] Failed to save strategy document: {e}")
             return False
 
-    async def get_strategy_document(
+    def get_strategy_document_sync(
         self, account_id: str, doc_type: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Retrieve a strategy document from Firestore.
+        Synchronous version to retrieve a strategy document from Firestore.
         """
         if not self.db:
             logger.warning("No Firestore client available, cannot retrieve document")
@@ -375,6 +375,15 @@ class FirestoreClient:
         except Exception as e:
             logger.error(f"Failed to retrieve strategy document: {e}")
             return None
+
+    async def get_strategy_document(
+        self, account_id: str, doc_type: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a strategy document from Firestore.
+        """
+        # Just call the sync version since Firestore operations are actually synchronous
+        return self.get_strategy_document_sync(account_id, doc_type)
 
     async def update_strategy_document(
         self,
@@ -553,6 +562,13 @@ async def save_strategy_document(
     return await get_default_client().save_strategy_document(
         account_id, doc_type, content, user_id
     )
+
+
+def get_strategy_document_sync(
+    account_id: str, doc_type: str
+) -> Optional[Dict[str, Any]]:
+    """Legacy wrapper for get_strategy_document_sync."""
+    return get_default_client().get_strategy_document_sync(account_id, doc_type)
 
 
 async def get_strategy_document(
