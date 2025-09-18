@@ -621,7 +621,9 @@ def create_google_search_agent() -> Agent:
         description="Expert web researcher that searches Google for public information",
         instruction="Search for relevant public information about the topic. Focus on official sources and recent data.",
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
     )
 
@@ -732,6 +734,7 @@ You must follow this logic precisely:
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT wrap your JSON output in markdown code blocks (```json...```). Return pure JSON only.
 
 # EXAMPLE OUTPUT STRUCTURE
 {{
@@ -764,10 +767,13 @@ Based on the above inputs, create the complete Business Strategy document now.
         description="Strategic business expert that creates comprehensive business strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=16384
+            temperature=0.2,
+            max_output_tokens=16384,
+            response_mime_type="application/json"
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=BusinessStrategy,
     )
 
     # ADK handles output validation internally via output_schema parameter
@@ -787,6 +793,10 @@ def create_business_reviewer() -> Agent:
 
     instruction = f"""
 You are a Senior Strategy Reviewer. Review the business strategy document and provide specific feedback.
+
+# DOCUMENT TO REVIEW
+The business strategy document to review:
+{{{{business_strategy_doc}}}}
 
 # REVIEW GUIDELINES
 {guidelines}
@@ -813,8 +823,11 @@ Be constructive and specific in your feedback.
         description="Reviews business strategy documents for quality and completeness",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
+        
         output_key="review_feedback",
     )
 
@@ -825,6 +838,14 @@ def create_business_editor() -> Agent:
 
     instruction = """
 You are a Strategy Document Editor. Based on the review feedback, improve the business strategy document.
+
+# DOCUMENT TO EDIT
+The business strategy document to improve:
+{{{{business_strategy_doc}}}}
+
+# REVIEW FEEDBACK
+The feedback from the reviewer:
+{{{{review_feedback}}}}
 
 # YOUR TASK
 1. Address each point of feedback from the reviewer
@@ -858,10 +879,13 @@ All feedback points must be addressed.
         description="Edits and improves business strategy documents based on feedback",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
         output_key="business_strategy_doc",
-        output_schema=BusinessStrategy,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=BusinessStrategy,
     )
 
     # ADK handles output validation internally via output_schema parameter
@@ -931,7 +955,12 @@ Your goal is to create a comprehensive competitive strategy document based on th
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY these specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
+
+# PRIOR ANALYSIS
+Business Strategy Document (for reference):
+{{{{business_strategy_doc}}}}
+
+Review ONLY the relevant sections from the business strategy to ensure your competitive analysis aligns with and supports the overall business strategy.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -960,9 +989,9 @@ You must follow this logic precisely:
      - SWOT analysis if present
    - Use this extracted information as the PRIMARY SOURCE for your competitive analysis
 
-2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from the business_strategy_doc in the conversation state:
+2. **Review Prior Analysis:** After checking uploaded documents, review ONLY these specific sections from the business strategy document provided above:
    - businessStrategySummary
-   - companyOverview  
+   - companyOverview
    - marketAndIndustryAnalysis
    - productsAndServices
    - swotAnalysis (especially competitors mentioned)
@@ -1000,6 +1029,7 @@ You must follow this logic precisely:
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT wrap your JSON output in markdown code blocks (```json...```). Return pure JSON only.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 # EXAMPLE OUTPUT STRUCTURE
@@ -1028,11 +1058,14 @@ Create the complete Competitive Strategy document now.
         description="Competitive intelligence expert that creates detailed competitive analysis",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=16384
+            temperature=0.2,
+            max_output_tokens=16384,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="competitive_strategy_doc",
-        output_schema=CompetitiveAnalysis,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=CompetitiveAnalysis,
     )
 
     # ADK handles output validation internally via output_schema parameter
@@ -1052,6 +1085,10 @@ def create_competitive_reviewer() -> Agent:
 
     instruction = f"""
 You are a Senior Competitive Intelligence Reviewer. Review the competitive strategy document.
+
+# DOCUMENT TO REVIEW
+The competitive strategy document to review:
+{{{{competitive_strategy_doc}}}}
 
 # REVIEW GUIDELINES
 {guidelines}
@@ -1076,9 +1113,11 @@ Provide structured feedback with:
         description="Reviews competitive strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="review_feedback",
     )
 
@@ -1089,6 +1128,12 @@ def create_competitive_editor() -> Agent:
 
     instruction = """
 You are a Competitive Strategy Editor. Improve the document based on review feedback.
+
+# CURRENT DOCUMENT
+{{competitive_strategy_doc}}
+
+# REVIEW FEEDBACK
+{{review_feedback}}
 
 # YOUR TASK
 1. Address all reviewer feedback points
@@ -1116,11 +1161,14 @@ Provide the complete, updated competitive strategy document in JSON format.
         description="Edits competitive strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
+        
         output_key="competitive_strategy_doc",
-        include_contents="none",
-        output_schema=CompetitiveAnalysis,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=CompetitiveAnalysis,
     )
 
 
@@ -1186,8 +1234,15 @@ Your goal is to create a comprehensive customer strategy document based on the p
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
-- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your customer strategy aligns with and differentiates from competitors.
+
+# PRIOR ANALYSIS
+Business Strategy Document (for reference):
+{{{{business_strategy_doc}}}}
+
+Competitive Strategy Document (for reference):
+{{{{competitive_strategy_doc}}}}
+
+Review ONLY the relevant sections from prior strategies to ensure your customer strategy aligns with and differentiates from competitors.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -1263,6 +1318,7 @@ You must follow this logic precisely:
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT wrap your JSON output in markdown code blocks (```json...```). Return pure JSON only.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 # EXAMPLE OUTPUT STRUCTURE
@@ -1293,11 +1349,14 @@ Create the complete Customer Strategy document now.
         description="Customer insights expert that creates detailed customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=16384
+            temperature=0.2,
+            max_output_tokens=16384,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="customer_strategy_doc",
-        output_schema=CustomerJourneyAnalysis,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=CustomerJourneyAnalysis,
     )
 
     # ADK handles output validation internally via output_schema parameter
@@ -1317,6 +1376,10 @@ def create_customer_reviewer() -> Agent:
 
     instruction = f"""
 You are a Senior Customer Experience Reviewer. Review the customer strategy document.
+
+# DOCUMENT TO REVIEW
+The customer strategy document to review:
+{{{{customer_strategy_doc}}}}
 
 # REVIEW GUIDELINES
 {guidelines}
@@ -1341,9 +1404,11 @@ Provide structured feedback with:
         description="Reviews customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="review_feedback",
     )
 
@@ -1354,6 +1419,12 @@ def create_customer_editor() -> Agent:
 
     instruction = """
 You are a Customer Strategy Editor. Improve the document based on review feedback.
+
+# CURRENT DOCUMENT
+{{customer_strategy_doc}}
+
+# REVIEW FEEDBACK
+{{review_feedback}}
 
 # YOUR TASK
 1. Address all feedback points
@@ -1383,11 +1454,14 @@ Provide the complete, updated customer strategy document in JSON format.
         description="Edits customer strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
+        
         output_key="customer_strategy_doc",
-        include_contents="none",
-        output_schema=CustomerJourneyAnalysis,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=CustomerJourneyAnalysis,
     )
 
 
@@ -1454,9 +1528,18 @@ Your goal is to create a comprehensive marketing strategy document based on the 
 # YOUR TASK
 You will receive several inputs in your conversation:
 - BUSINESS INFORMATION: Details about the company to research and analyze
-- BUSINESS STRATEGY: A business_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your competitive analysis aligns with and supports the overall business strategy.
-- COMPETITIVE STRATEGY: A competitive_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your customer strategy aligns with and differentiates from competitors.
-- CUSTOMER STRATEGY: A customer_strategy_doc exists in the conversation state. Review ONLY the specific sections listed in step 2 below to ensure your marketing strategy effectively targets and engages the defined customer segments.
+
+# PRIOR ANALYSIS
+Business Strategy Document (for reference):
+{{{{business_strategy_doc}}}}
+
+Competitive Strategy Document (for reference):
+{{{{competitive_strategy_doc}}}}
+
+Customer Strategy Document (for reference):
+{{customer_strategy_doc}}
+
+Review ONLY the relevant sections from prior strategies to ensure your marketing strategy effectively targets and engages the defined customer segments.
 
 # PERSONA
 You are an expert business consultant, meticulous in your analysis and precise in your writing. 
@@ -1538,6 +1621,7 @@ You must follow this logic precisely:
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT wrap your JSON output in markdown code blocks (```json...```). Return pure JSON only.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 # EXAMPLE OUTPUT STRUCTURE
@@ -1567,10 +1651,12 @@ Create the complete Marketing Strategy document now.
         description="Marketing strategy expert that creates comprehensive marketing plans",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=16384
+            temperature=0.2,
+            max_output_tokens=16384,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
-        output_schema=MarketingStrategy,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=MarketingStrategy,
         output_key="marketing_strategy_doc",
     )
 
@@ -1591,6 +1677,11 @@ def create_marketing_reviewer() -> Agent:
 
     instruction = f"""
 You are a Senior Marketing Reviewer. Review the marketing strategy document.
+
+# DOCUMENT TO REVIEW
+The marketing strategy document to review:
+{{marketing_strategy_doc}}
+
 
 # REVIEW GUIDELINES
 {guidelines}
@@ -1615,9 +1706,11 @@ Provide structured feedback with:
         description="Reviews marketing strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="review_feedback",
     )
 
@@ -1628,6 +1721,13 @@ def create_marketing_editor() -> Agent:
 
     instruction = """
 You are a Marketing Strategy Editor. Improve the document based on review feedback.
+
+# CURRENT DOCUMENT
+{{marketing_strategy_doc}}
+
+# REVIEW FEEDBACK
+{{review_feedback}}
+
 
 # YOUR TASK
 1. Address all feedback points
@@ -1655,11 +1755,14 @@ Provide the complete, updated marketing strategy document in JSON format.
         description="Edits marketing strategy documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
+        
         output_key="marketing_strategy_doc",
-        include_contents="none",
-        output_schema=MarketingStrategy,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=MarketingStrategy,
     )
 
 
@@ -1777,6 +1880,7 @@ You must follow this logic precisely:
 - The structure, sections, and formatting of your response MUST EXACTLY MATCH the defined output schema.
 - For each top-level key in the final JSON, the value MUST be a single string. Synthesize the analysis of all required sub-topics for a given section into one cohesive narrative string. DO NOT use nested JSON objects.
 - DO NOT include any conversational text, preambles, or explanations in your output. Your response should only be the document itself.
+- DO NOT wrap your JSON output in markdown code blocks (```json...```). Return pure JSON only.
 - Only include accurate information that was found through your research or uploaded documents. If you cannot find information needed for a section, insert the text: "requires further research".
 
 # EXAMPLE OUTPUT STRUCTURE
@@ -1816,11 +1920,14 @@ Based on the above inputs, create the complete Brand Guidelines document now.
         description="Brand strategy expert that creates comprehensive brand guidelines",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=16384
+            temperature=0.2,
+            max_output_tokens=16384,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="brand_guidelines_doc",
-        output_schema=BrandGuidelines,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=BrandGuidelines,
     )
 
     # ADK handles output validation internally via output_schema parameter
@@ -1838,6 +1945,11 @@ def create_brand_reviewer() -> Agent:
 
     instruction = f"""
 You are a Senior Brand Reviewer. Review the brand guidelines document.
+
+# DOCUMENT TO REVIEW
+The brand guidelines document to review:
+{{brand_guidelines_doc}}
+
 
 # REVIEW GUIDELINES
 {guidelines}
@@ -1862,9 +1974,11 @@ Provide structured feedback with:
         description="Reviews brand guidelines documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
-        include_contents="none",
+        
         output_key="review_feedback",
     )
 
@@ -1875,6 +1989,13 @@ def create_brand_editor() -> Agent:
 
     instruction = """
 You are a Brand Guidelines Editor. Improve the document based on review feedback.
+
+# CURRENT DOCUMENT
+{{brand_guidelines_doc}}
+
+# REVIEW FEEDBACK
+{{review_feedback}}
+
 
 # YOUR TASK
 1. Address all feedback points
@@ -1913,11 +2034,14 @@ Provide the complete, updated brand guidelines document in JSON format.
         description="Edits brand guidelines documents",
         instruction=instruction,
         generate_content_config=types.GenerateContentConfig(
-            temperature=0.2, max_output_tokens=8192
+            temperature=0.2,
+            max_output_tokens=8192,
+            response_mime_type="application/json"
         ),
+        
         output_key="brand_guidelines_doc",
-        include_contents="none",
-        output_schema=BrandGuidelines,
+        # Temporarily removed output_schema due to ADK issue with tools + output_schema
+        # output_schema=BrandGuidelines,
     )
 
 

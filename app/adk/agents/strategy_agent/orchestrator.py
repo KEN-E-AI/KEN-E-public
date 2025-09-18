@@ -6,6 +6,7 @@ Includes comprehensive analytics tracking for cost, performance, and optimizatio
 
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any, Optional
@@ -564,6 +565,27 @@ def process_and_save_documents_with_analytics(
         if hasattr(event, "author"):
             event_info += f" author='{event.author}'"
 
+        # Debug: Check all event attributes to find where the LLM response is
+        if hasattr(event, "content"):
+            logger.info(f"[DEBUG] event.content exists: {type(event.content)}")
+            if hasattr(event.content, "parts"):
+                logger.info(f"[DEBUG] event.content.parts: {event.content.parts[:500] if isinstance(event.content.parts, (str, list)) else 'complex type'}")
+                # Try to extract JSON from parts if it exists
+                if isinstance(event.content.parts, list):
+                    for part in event.content.parts:
+                        if isinstance(part, dict) and 'text' in part and part['text']:
+                            text_preview = str(part['text'])[:500] if part['text'] else "None"
+                            logger.info(f"[DEBUG] Found text in part: {text_preview}")
+                        elif hasattr(part, 'text') and part.text:
+                            text_preview = str(part.text)[:500] if part.text else "None"
+                            logger.info(f"[DEBUG] Found text attr in part: {text_preview}")
+        if hasattr(event, "parts"):
+            logger.info(f"[DEBUG] event.parts exists: {event.parts[:500] if isinstance(event.parts, (str, list)) else 'complex type'}")
+        if hasattr(event, "message"):
+            logger.info(f"[DEBUG] event.message exists: {type(event.message)}")
+        if hasattr(event, "response"):
+            logger.info(f"[DEBUG] event.response exists: {type(event.response)}")
+
             # Track agent performance
             if performance_profiler and event.author:
                 if event.author not in agent_start_times:
@@ -630,6 +652,38 @@ def process_and_save_documents_with_analytics(
                         logger.info(
                             f"[DOCUMENT] Found {doc_key} in state_delta for {doc_type}"
                         )
+
+                        # Debug logging to see what we're actually getting
+                        logger.info(f"[DEBUG] Raw doc_content type: {type(doc_content)}")
+                        logger.info(f"[DEBUG] Raw doc_content value: {repr(doc_content)[:500]}")
+                        if isinstance(doc_content, str):
+                            logger.info(f"[DEBUG] Doc content length: {len(doc_content)}")
+                            logger.info(f"[DEBUG] Doc content is empty: {not doc_content.strip()}")
+
+                            # If we got empty markdown blocks, try to find JSON in event.content.parts
+                            if doc_content.strip() in ["```\n```", "```json\n```", ""]:
+                                logger.info(f"[DEBUG] Got empty content, checking event.content.parts for {doc_type}")
+                                if hasattr(event, "content") and hasattr(event.content, "parts"):
+                                    for part in event.content.parts:
+                                        json_text = None
+                                        if isinstance(part, dict) and 'text' in part and part['text']:
+                                            json_text = part['text']
+                                        elif hasattr(part, 'text') and part.text:
+                                            json_text = part.text
+
+                                        if json_text:
+                                            text_preview = str(json_text)[:200] if json_text else "None"
+                                            logger.info(f"[DEBUG] Found potential JSON in event.content.parts: {text_preview}")
+                                            # Try to parse this as JSON
+                                            try:
+                                                test_parse = json.loads(json_text)
+                                                # If it parses, use this instead
+                                                doc_content = json_text
+                                                logger.info(f"[DEBUG] Successfully extracted JSON from event.content.parts for {doc_type}")
+                                                break
+                                            except:
+                                                # Not valid JSON, continue searching
+                                                pass
 
                         # Parse the document
                         parsed_doc = parse_document_content(doc_content)
@@ -804,6 +858,38 @@ def process_and_save_documents(
                             f"[DOCUMENT] Found {doc_key} in state_delta for {doc_type}"
                         )
 
+                        # Debug logging to see what we're actually getting
+                        logger.info(f"[DEBUG] Raw doc_content type: {type(doc_content)}")
+                        logger.info(f"[DEBUG] Raw doc_content value: {repr(doc_content)[:500]}")
+                        if isinstance(doc_content, str):
+                            logger.info(f"[DEBUG] Doc content length: {len(doc_content)}")
+                            logger.info(f"[DEBUG] Doc content is empty: {not doc_content.strip()}")
+
+                            # If we got empty markdown blocks, try to find JSON in event.content.parts
+                            if doc_content.strip() in ["```\n```", "```json\n```", ""]:
+                                logger.info(f"[DEBUG] Got empty content, checking event.content.parts for {doc_type}")
+                                if hasattr(event, "content") and hasattr(event.content, "parts"):
+                                    for part in event.content.parts:
+                                        json_text = None
+                                        if isinstance(part, dict) and 'text' in part and part['text']:
+                                            json_text = part['text']
+                                        elif hasattr(part, 'text') and part.text:
+                                            json_text = part.text
+
+                                        if json_text:
+                                            text_preview = str(json_text)[:200] if json_text else "None"
+                                            logger.info(f"[DEBUG] Found potential JSON in event.content.parts: {text_preview}")
+                                            # Try to parse this as JSON
+                                            try:
+                                                test_parse = json.loads(json_text)
+                                                # If it parses, use this instead
+                                                doc_content = json_text
+                                                logger.info(f"[DEBUG] Successfully extracted JSON from event.content.parts for {doc_type}")
+                                                break
+                                            except:
+                                                # Not valid JSON, continue searching
+                                                pass
+
                         # Parse the document
                         parsed_doc = parse_document_content(doc_content)
 
@@ -873,8 +959,20 @@ def parse_document_content(doc_content: Any) -> dict | None:
     if isinstance(doc_content, dict):
         return doc_content
 
-    # If string, try to parse as JSON
+    # If string, try to parse as JSON using BAML parser
     if isinstance(doc_content, str):
+        # Try enhanced parser first - it handles markdown wrapping and other issues
+        try:
+            from .enhanced_json_parser import EnhancedJsonParser
+            parser = EnhancedJsonParser()
+            result = parser.parse_json(doc_content, schema=None)
+            if result:
+                logger.info("[DOCUMENT] Successfully parsed JSON using enhanced parser")
+                return result
+        except Exception as e:
+            logger.warning(f"[DOCUMENT] Enhanced parsing failed, falling back to standard parsing: {e}")
+        
+        # Fallback to original cleaning method
         doc_content = clean_json_string(doc_content)
 
         try:
