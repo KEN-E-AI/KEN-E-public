@@ -275,6 +275,12 @@ logger.info("agent_engine_app.py loaded successfully")
             deployment_name,
             "--description",
             "Strategy documents supervisor for account creation",
+            "--memory",
+            "4Gi",  # 4GB for Neo4j operations and embedding generation
+            "--timeout",
+            "1800s",  # 30 minutes for complete strategy generation
+            "--machine-type",
+            "n1-standard-4",  # More CPU for graph operations
             "--trace_to_cloud",
             ".",  # Deploy from current directory
         ]
