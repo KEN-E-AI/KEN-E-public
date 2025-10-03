@@ -59,15 +59,20 @@ class AnalyticsService:
     def _init_firestore_clients(self):
         """Initialize Firestore clients for both databases."""
         try:
-            # Analytics database for high-volume metrics
-            self.analytics_db = firestore.Client(
-                project=self.project_id, database="analytics"
-            )
+            # TEMPORARY: Commenting out analytics database to avoid permission issues
+            # TODO: Revert this after fixing IAM permissions for Agent Engine service account
+            # # Analytics database for high-volume metrics
+            # self.analytics_db = firestore.Client(
+            #     project=self.project_id, database="analytics"
+            # )
+
+            # For now, set analytics_db to None to skip analytics tracking
+            self.analytics_db = None
 
             # Default database for configuration
             self.default_db = firestore.Client(project=self.project_id)
 
-            logger.info(f"Initialized analytics service for account {self.account_id}")
+            logger.info(f"Initialized analytics service for account {self.account_id} (analytics temporarily disabled)")
 
         except Exception as e:
             logger.error(f"Failed to initialize Firestore clients: {e}")

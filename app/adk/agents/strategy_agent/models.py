@@ -47,6 +47,9 @@ class StrategyContext(BaseModel):
     marketing_strategy: Optional[Dict[str, Any]] = None
     brand_guidelines: Optional[Dict[str, Any]] = None
 
+    # Previous sections for passing to agents
+    previous_sections: Optional[Dict[str, Any]] = None
+
     # Tracking fields
     stages_completed: List[str] = Field(default_factory=list)
     stages_remaining: List[str] = Field(

@@ -20,13 +20,6 @@ from vertexai.preview import reasoning_engines
 # Import strategy components
 try:
     # Absolute imports for deployment
-    from agents.strategy_agent.agents import (
-        create_brand_guidelines_agent,
-        create_business_strategy_agent,
-        create_competitive_strategy_agent,
-        create_customer_strategy_agent,
-        create_marketing_strategy_agent,
-    )
     from agents.strategy_agent.artifact_utils import (
         load_uploaded_documents_as_artifacts,
     )
@@ -45,13 +38,6 @@ try:
     from agents.strategy_agent.token_utils import TokenEstimator
 except ImportError:
     # Relative imports for local testing
-    from .agents import (
-        create_brand_guidelines_agent,
-        create_business_strategy_agent,
-        create_competitive_strategy_agent,
-        create_customer_strategy_agent,
-        create_marketing_strategy_agent,
-    )
     from .artifact_utils import load_uploaded_documents_as_artifacts
     from .firestore import FirestoreClient
     from .models import StrategyContext
@@ -128,13 +114,15 @@ def execute_strategy_generation_direct(
     alert_manager: Optional[AlertManager] = None,
 ) -> dict[str, Any]:
     """
-    Execute strategy generation using direct sequential execution without workflow.
+    Execute strategy generation using split agent architecture + Neo4j.
 
-    This function:
-    1. Runs each agent directly with LoopAgent
-    2. Passes required sections from previous documents to dependent agents
-    3. Saves each document to Firestore immediately
-    4. Implements fail-fast behavior - stops if any agent fails
+    New architecture:
+    1. Runs researcher agent (with tools, no output_schema)
+    2. Runs formatter agent (no tools, with output_schema)
+    3. Falls back to OpenAI if Gemini formatter fails
+    4. Saves to Firestore
+    5. Builds Neo4j knowledge graph
+    6. Generates embeddings for semantic search
 
     Args:
         context: StrategyContext with company information
@@ -148,151 +136,113 @@ def execute_strategy_generation_direct(
     """
     generated_documents = {}
 
-    # Define the dependency requirements for each agent
-    agent_dependencies = {
-        "business_strategy": {
-            "agents": ["create_business_strategy_agent"],
-            "requires": {},
-        },
-        "competitive_strategy": {
-            "agents": ["create_competitive_strategy_agent"],
-            "requires": {
-                "business_strategy": [
-                    "businessStrategySummary",
-                    "companyOverview",
-                    "productsAndServices",
-                    "marketingAndCustomerStrategy"
-                ]
-            },
-        },
-        "customer_strategy": {
-            "agents": ["create_customer_strategy_agent"],
-            "requires": {
-                "business_strategy": [
-                    "businessStrategySummary",
-                    "companyOverview",
-                    "productsAndServices",
-                    "marketingAndCustomerStrategy"
-                ],
-                "competitive_strategy": [
-                    "competitiveLandscape",
-                    "competitiveStrategySummary",
-                    "detailedCompetitorProfiles"
-                ]
-            },
-        },
-        "marketing_strategy": {
-            "agents": ["create_marketing_strategy_agent"],
-            "requires": {
-                "business_strategy": [
-                    "businessStrategySummary",
-                    "companyOverview",
-                    "productsAndServices",
-                    "marketingAndCustomerStrategy"
-                ],
-                "competitive_strategy": [
-                    "competitiveLandscape",
-                    "competitiveStrategySummary",
-                    "detailedCompetitorProfiles"
-                ],
-                "customer_strategy": [
-                    "customerStrategySummary",
-                    "targetAudiences",
-                    "customerJourneyMaps",
-                    "customerEngagementStrategies"
-                ]
-            },
-        },
-        "brand_guidelines": {
-            "agents": ["create_brand_guidelines_agent"],
-            "requires": {
-                "business_strategy": ["companyOverview", "businessStrategySummary"],
-                "competitive_strategy": ["competitiveLandscape"],
-                "customer_strategy": ["targetAudiences"],
-                "marketing_strategy": ["marketingStrategySummary"]
-            },
-        },
-    }
+    # Import split agent creators and graph builders
+    try:
+        from .business_agents import create_business_researcher, create_business_formatter, format_with_openai as business_openai
+        from .competitive_agents import create_competitive_researcher, create_competitive_formatter, format_with_openai as competitive_openai
+        from .marketing_agents import create_marketing_researcher, create_marketing_formatter, format_with_openai as marketing_openai
+        from .brand_agents import create_brand_researcher, create_brand_formatter, format_with_openai as brand_openai
+        from .agents import create_google_search_agent
 
-    # Import agent creation functions
-    from .agents import (
-        create_business_strategy_agent,
-        create_competitive_strategy_agent,
-        create_customer_strategy_agent,
-        create_marketing_strategy_agent,
-        create_brand_guidelines_agent,
-    )
+        # Import Neo4j components
+        from .neo4j_tools import get_neo4j_operations
+        from .business_graph_builder import GraphBuilder
+        from .competitive_graph_builder import CompetitiveGraphBuilder
+        from .marketing_graph_builder import MarketingGraphBuilder
+        from .brand_graph_builder import BrandGraphBuilder
+        from .embeddings import EmbeddingGenerator
 
-    agent_creators = {
-        "create_business_strategy_agent": create_business_strategy_agent,
-        "create_competitive_strategy_agent": create_competitive_strategy_agent,
-        "create_customer_strategy_agent": create_customer_strategy_agent,
-        "create_marketing_strategy_agent": create_marketing_strategy_agent,
-        "create_brand_guidelines_agent": create_brand_guidelines_agent,
-    }
+        # Import Pydantic models
+        from .structured_models import StructuredBusinessStrategy
+        from .competitive_models import CompetitiveAnalysis
+        from .marketing_models import MarketingResearchReport
+        from .brand_models import BrandGuidelines
+    except ImportError as e:
+        logger.error(f"Failed to import split agent modules: {e}")
+        raise
 
-    # Process each document type in order
-    for doc_type, config in agent_dependencies.items():
-        logger.info(f"\n[DIRECT EXECUTION] Starting generation of {doc_type}")
+    # Initialize Neo4j components
+    try:
+        neo4j_ops = get_neo4j_operations()
+        neo4j_ops.create_indexes()  # Ensure indexes exist
+        embedding_generator = EmbeddingGenerator(neo4j_ops)
+        logger.info("✅ Neo4j components initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Neo4j: {e}")
+        # Continue without Neo4j - save to Firestore only
+        neo4j_ops = None
+        embedding_generator = None
 
-        # Track operation if profiler available
+    # Create google search agent (shared across all researchers)
+    google_search_agent = create_google_search_agent()
+
+    # Define strategy types to generate (removed customer_strategy)
+    strategy_types = [
+        {
+            "name": "business_strategy",
+            "create_researcher": lambda: create_business_researcher(google_search_agent),
+            "create_formatter": create_business_formatter,
+            "openai_fallback": business_openai,
+            "model_class": StructuredBusinessStrategy,
+            "graph_builder_class": GraphBuilder,
+            "graph_method": "build_strategy_graph",
+        },
+        {
+            "name": "competitive_strategy",
+            "create_researcher": lambda: create_competitive_researcher(google_search_agent),
+            "create_formatter": create_competitive_formatter,
+            "openai_fallback": competitive_openai,
+            "model_class": CompetitiveAnalysis,
+            "graph_builder_class": CompetitiveGraphBuilder,
+            "graph_method": "build_competitive_graph",
+        },
+        {
+            "name": "marketing_strategy",
+            "create_researcher": lambda: create_marketing_researcher(google_search_agent),
+            "create_formatter": create_marketing_formatter,
+            "openai_fallback": marketing_openai,
+            "model_class": MarketingResearchReport,
+            "graph_builder_class": MarketingGraphBuilder,
+            "graph_method": "build_marketing_graph",
+        },
+        {
+            "name": "brand_guidelines",
+            "create_researcher": lambda: create_brand_researcher(google_search_agent),
+            "create_formatter": create_brand_formatter,
+            "openai_fallback": brand_openai,
+            "model_class": BrandGuidelines,
+            "graph_builder_class": BrandGraphBuilder,
+            "graph_method": "build_brand_graph",
+        },
+    ]
+
+    # Process each strategy type sequentially
+    for strategy_config in strategy_types:
+        strategy_name = strategy_config["name"]
+        logger.info(f"\n[SPLIT AGENT] ========== Starting {strategy_name} ==========")
+
+        # Track operation
         operation = None
         if performance_profiler:
             operation = performance_profiler.start_operation(
-                agent_name=f"{doc_type}_agent",
-                operation="document_generation",
-                metadata={"doc_type": doc_type}
+                agent_name=f"{strategy_name}_split",
+                operation="strategy_generation",
+                metadata={"strategy_type": strategy_name}
             )
 
         try:
-            # Extract required sections from previous documents
-            previous_sections = {}
-            for required_doc, required_fields in config["requires"].items():
-                # Read document from Firestore
-                doc_content = firestore_client.get_strategy_document_sync(
-                    account_id=context.account_id,
-                    doc_type=required_doc
-                )
+            # ===== STEP 1: RESEARCH (with tools, no schema) =====
+            logger.info(f"[SPLIT AGENT] Step 1: Research phase for {strategy_name}")
+            researcher = strategy_config["create_researcher"]()
 
-                if not doc_content:
-                    error_msg = f"Required document {required_doc} not found in Firestore"
-                    logger.error(f"[DIRECT EXECUTION] {error_msg}")
-                    if performance_profiler and operation:
-                        performance_profiler.end_operation(operation, success=False, error=error_msg)
-                    return generated_documents  # Fail-fast behavior
-
-                # Extract only required fields
-                extracted = extract_document_sections(doc_content, required_fields)
-                if extracted:
-                    previous_sections[required_doc] = extracted
-                    logger.info(f"[DIRECT EXECUTION] Extracted {len(extracted)} fields from {required_doc}")
-
-            # Create the agent with previous sections
-            agent_creator_name = config["agents"][0]
-            agent_creator = agent_creators[agent_creator_name]
-
-            # Call the agent creator with context and previous sections
-            if previous_sections:
-                # For now, pass previous_sections as part of context
-                # We'll update agents.py next to properly handle this
-                context_with_sections = context.model_copy()
-                # Store previous sections in context for agent to access
-                setattr(context_with_sections, "previous_sections", previous_sections)
-                agent = agent_creator(context_with_sections)
-            else:
-                agent = agent_creator(context)
-
-            logger.info(f"[DIRECT EXECUTION] Created agent for {doc_type}")
-
-            # Run the agent directly
+            # Run researcher agent
             from google.adk import Runner
             from google.adk.sessions import InMemorySessionService
             from google.genai.types import Content
 
-            # Create session for this agent
             session_service = InMemorySessionService()
-            app_name = f"{doc_type}_gen_{context.account_id}"
-            session_id = f"session_{doc_type}_{uuid.uuid4().hex[:8]}"
+            app_name = f"{strategy_name}_research"
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
 
             session = session_service.create_session_sync(
                 app_name=app_name,
@@ -301,97 +251,152 @@ def execute_strategy_generation_direct(
                 state={}
             )
 
-            # Create runner
-            runner = Runner(
-                agent=agent,
-                app_name=app_name,
-                session_service=session_service
-            )
+            runner = Runner(agent=researcher, app_name=app_name, session_service=session_service)
 
-            # Prepare message
-            message_text = f"Generate the {doc_type.replace('_', ' ')} document for {context.company_name}."
-            if previous_sections:
-                message_text += "\n\nUse the following information from previous documents:\n"
-                for doc_name, sections in previous_sections.items():
-                    message_text += f"\n=== From {doc_name} ===\n"
-                    message_text += json.dumps(sections, indent=2)
+            research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}"
+            message_content = Content(role="user", parts=[{"text": research_query}])
 
-            message_content = Content(role="user", parts=[{"text": message_text}])
+            events = runner.run(user_id=context.user_id or "system", session_id=session_id, new_message=message_content)
 
-            # Run the agent
-            logger.info(f"[DIRECT EXECUTION] Running agent for {doc_type}")
-            events = runner.run(
-                user_id=context.user_id or "system",
-                session_id=session_id,
-                new_message=message_content
-            )
-
-            # Process events to extract the document
-            doc_content = None
+            # Extract research text
+            research_text = ""
             for event in events:
-                # Check for document in state delta
-                if hasattr(event, "actions") and event.actions:
-                    if hasattr(event.actions, "state_delta") and event.actions.state_delta:
-                        state_delta = event.actions.state_delta
+                if hasattr(event, "content") and hasattr(event.content, "parts"):
+                    for part in event.content.parts:
+                        if hasattr(part, "text"):
+                            research_text += part.text
 
-                        # Look for the document key
-                        for doc_key, mapped_type in DOCUMENT_KEY_MAPPING.items():
-                            if mapped_type == doc_type and doc_key in state_delta:
-                                raw_content = state_delta[doc_key]
-                                doc_content = parse_document_content(raw_content)
-                                if doc_content:
-                                    logger.info(f"[DIRECT EXECUTION] Extracted {doc_type} document")
-                                    break
+            if not research_text:
+                raise ValueError(f"Research phase returned no data for {strategy_name}")
 
-            if not doc_content:
-                error_msg = f"Failed to generate {doc_type} document"
-                logger.error(f"[DIRECT EXECUTION] {error_msg}")
-                if performance_profiler and operation:
-                    performance_profiler.end_operation(operation, success=False, error=error_msg)
-                return generated_documents  # Fail-fast behavior
+            logger.info(f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars")
 
-            # Save to Firestore immediately
+            # ===== STEP 2: FORMAT (no tools, with schema) =====
+            logger.info(f"[SPLIT AGENT] Step 2: Format phase for {strategy_name}")
+            formatter = strategy_config["create_formatter"]()
+
+            # Try Gemini formatter first
+            formatted_data = None
+            used_openai = False
+
+            try:
+                session_service2 = InMemorySessionService()
+                app_name2 = f"{strategy_name}_format"
+                session_id2 = f"session_{uuid.uuid4().hex[:8]}"
+
+                session2 = session_service2.create_session_sync(
+                    app_name=app_name2,
+                    user_id=context.user_id or "system",
+                    session_id=session_id2,
+                    state={}
+                )
+
+                runner2 = Runner(agent=formatter, app_name=app_name2, session_service=session_service2)
+
+                format_message = Content(role="user", parts=[{"text": f"Format this research:\n\n{research_text}"}])
+                events2 = runner2.run(user_id=context.user_id or "system", session_id=session_id2, new_message=format_message)
+
+                # Extract formatted JSON
+                formatted_json = ""
+                for event in events2:
+                    if hasattr(event, "content") and hasattr(event.content, "parts"):
+                        for part in event.content.parts:
+                            if hasattr(part, "text"):
+                                formatted_json += part.text
+
+                # Parse and validate with Pydantic
+                formatted_data = strategy_config["model_class"](**json.loads(formatted_json))
+                logger.info(f"[SPLIT AGENT] ✅ Gemini formatting successful")
+
+            except Exception as e:
+                logger.warning(f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI")
+                # Fallback to OpenAI
+                try:
+                    openai_dict = strategy_config["openai_fallback"](research_text)
+                    formatted_data = strategy_config["model_class"](**openai_dict)
+                    used_openai = True
+                    logger.info(f"[SPLIT AGENT] ✅ OpenAI fallback successful")
+                except Exception as openai_error:
+                    raise ValueError(f"Both Gemini and OpenAI formatting failed: {openai_error}")
+
+            # Convert to dict for storage
+            doc_content = formatted_data.model_dump()
+
+            # ===== STEP 3: SAVE TO FIRESTORE =====
+            logger.info(f"[SPLIT AGENT] Step 3: Saving to Firestore")
             save_result = firestore_client.save_strategy_document_sync(
                 account_id=context.account_id,
-                doc_type=doc_type,
+                doc_type=strategy_name,
                 content=doc_content,
                 user_id=context.user_id
             )
 
             if not save_result:
-                error_msg = f"Failed to save {doc_type} to Firestore"
-                logger.error(f"[DIRECT EXECUTION] {error_msg}")
-                if performance_profiler and operation:
-                    performance_profiler.end_operation(operation, success=False, error=error_msg)
-                return generated_documents  # Fail-fast behavior
+                raise ValueError(f"Failed to save {strategy_name} to Firestore")
 
-            # Add to generated documents
-            generated_documents[doc_type] = doc_content
-            logger.info(f"[DIRECT EXECUTION] ✅ Successfully generated and saved {doc_type}")
+            logger.info(f"[SPLIT AGENT] ✅ Saved to Firestore")
 
-            # End performance tracking
+            # ===== STEP 4: BUILD NEO4J GRAPH =====
+            if neo4j_ops:
+                logger.info(f"[SPLIT AGENT] Step 4: Building Neo4j knowledge graph")
+                try:
+                    graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
+                    build_method = getattr(graph_builder, strategy_config["graph_method"])
+                    graph_nodes = build_method(
+                        formatted_data,
+                        context.account_id,
+                        context.user_id or "system"
+                    )
+                    logger.info(f"[SPLIT AGENT] ✅ Neo4j graph built successfully")
+                except Exception as graph_error:
+                    logger.error(f"[SPLIT AGENT] ❌ Graph building failed: {graph_error}")
+                    # Continue - Firestore save succeeded
+
+            # ===== STEP 5: GENERATE EMBEDDINGS =====
+            if neo4j_ops and embedding_generator:
+                logger.info(f"[SPLIT AGENT] Step 5: Generating embeddings")
+                try:
+                    embedding_result = embedding_generator.generate_embeddings_for_account(context.account_id)
+                    logger.info(f"[SPLIT AGENT] ✅ Embeddings generated: {embedding_result.get('embeddings_created', 0)} nodes")
+                except Exception as embed_error:
+                    logger.error(f"[SPLIT AGENT] ❌ Embedding generation failed: {embed_error}")
+
+            # Success!
+            generated_documents[strategy_name] = doc_content
+            logger.info(f"[SPLIT AGENT] ✅✅✅ Successfully completed {strategy_name}")
+
+            # Track analytics
             if performance_profiler and operation:
                 performance_profiler.end_operation(operation, success=True)
 
-            # Track analytics if available
             if analytics_service:
                 analytics_service.track_agent_execution(
-                    agent_name=f"{doc_type}_agent",
-                    prompt_tokens=0,  # Would need to extract from events
-                    response_tokens=0,  # Would need to extract from events
-                    model="gemini-2.0-flash",
-                    execution_time=0,  # Would need to track
+                    agent_name=f"{strategy_name}_{'openai' if used_openai else 'gemini'}",
+                    prompt_tokens=0,
+                    response_tokens=0,
+                    model="gpt-4o" if used_openai else "gemini-2.5-pro",
+                    execution_time=0,
                     success=True
                 )
 
         except Exception as e:
-            error_msg = f"Error generating {doc_type}: {e}"
-            logger.error(f"[DIRECT EXECUTION] {error_msg}")
+            error_msg = f"Error generating {strategy_name}: {e}"
+            logger.error(f"[SPLIT AGENT] ❌ {error_msg}")
+
             if performance_profiler and operation:
                 performance_profiler.end_operation(operation, success=False, error=str(e))
-            return generated_documents  # Fail-fast behavior
 
-    logger.info(f"\n[DIRECT EXECUTION] ✅ Successfully generated all {len(generated_documents)} documents")
+            # Fail-fast: stop if any strategy fails
+            return generated_documents
+
+    # Close Neo4j connection
+    if neo4j_ops:
+        try:
+            neo4j_ops.close()
+        except:
+            pass
+
+    logger.info(f"\n[SPLIT AGENT] 🎉🎉🎉 Successfully generated all {len(generated_documents)} strategies!")
     return generated_documents
 
 
