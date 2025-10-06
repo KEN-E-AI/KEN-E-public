@@ -2,10 +2,11 @@
 name = "company-news-chatbot"
 version = "0.1.0"
 description = "Simple company news chatbot using ADK and Vertex AI Search"
+requires-python = ">=3.10"
 dependencies = [
     "baml-py>=0.207.1",
-    "google-adk==1.14.1",
-    "google-cloud-aiplatform>=1.114.0",
+    "google-adk>=1.15.1",
+    "google-cloud-aiplatform>=1.118.0",
     "google-cloud-firestore>=2.20.0",
     "neo4j>=5.14.0",
     "newsapi-python>=0.2.7",
@@ -13,8 +14,8 @@ dependencies = [
     "pypdf2>=3.0.1",
     "python-dotenv",
     "requests>=2.32.4",
-    "wandb>=0.21.1",
-    "weave>=0.52.1",
+    "wandb>=0.22.1",
+    "weave>=0.52.8",
 ]
 
 # Remove the tool.adk section - let's try without it first

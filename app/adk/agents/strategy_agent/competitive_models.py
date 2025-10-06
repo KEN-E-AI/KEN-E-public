@@ -19,7 +19,6 @@ class NamedDetail(BaseModel):
     name: str = Field(
         ...,
         description="A short, concise name or title for the item.",
-        examples=["Brand Recognition", "Ease of Use"]
     )
     description: str = Field(
         ...,
@@ -35,7 +34,6 @@ class SubstituteProduct(BaseModel):
     name: str = Field(
         ...,
         description="The name of the substitute product or service.",
-        examples=["Cloud Storage Pro", "Enterprise CRM Suite"]
     )
     description: str = Field(
         ...,
@@ -59,7 +57,6 @@ class StrengthWithRisks(BaseModel):
     name: str = Field(
         ...,
         description="A short, concise name for the competitor's strength.",
-        examples=["Strong Distribution Network"]
     )
     description: str = Field(
         ...,
@@ -79,7 +76,6 @@ class WeaknessWithOpportunities(BaseModel):
     name: str = Field(
         ...,
         description="A short, concise name for the competitor's weakness.",
-        examples=["Poor Customer Support"]
     )
     description: str = Field(
         ...,
@@ -102,7 +98,6 @@ class Competitor(BaseModel):
     name: str = Field(
         ...,
         description="The name of the competitor.",
-        examples=["InnovateCorp", "Global Solutions Inc."]
     )
     description: str = Field(
         ...,
@@ -117,11 +112,7 @@ class Competitor(BaseModel):
     )
     marketing_tactics: conlist(NamedDetail, min_length=1, max_length=5) = Field(
         ...,
-        description="A list of 1-5 specific tactics the competitor uses to bring products to market, such as social media campaigns, cold emails, events, or ads.",
-        examples=[
-            {"name": "Social Media Campaigns", "description": "Runs targeted ad campaigns on Instagram and LinkedIn to reach young professionals."},
-            {"name": "Content Marketing", "description": "Publishes weekly blog posts and a monthly newsletter on industry trends."}
-        ]
+        description="A list of 1-5 specific tactics the competitor uses to bring products to market, such as social media campaigns, cold emails, events, or ads."
     )
     substitute_products: conlist(SubstituteProduct, min_length=1, max_length=5) = Field(
         ...,
@@ -148,7 +139,6 @@ class CompetitiveAnalysis(BaseModel):
     company_products: conlist(str, min_length=1, max_length=10) = Field(
         ...,
         description="A list of 1 to 10 of the company's top products or services being analyzed.",
-        examples=["Cloud Storage Basic", "Cloud Analytics Dashboard"]
     )
     competitive_environment_description: str = Field(
         ...,

@@ -37,7 +37,7 @@ def create_business_researcher(google_search_agent):
         tools=[AgentTool(agent=google_search_agent)],
         generate_content_config=GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=4000  # Limit to prevent rate limit issues
+            max_output_tokens=2500  # Limit to prevent rate limit issues
         ),
         instruction="""You are a business strategy researcher.
 
@@ -74,7 +74,7 @@ def create_business_formatter():
         tools=[],  # NO tools - required for output_schema
         generate_content_config=GenerateContentConfig(
             temperature=0.1,
-            max_output_tokens=4000,
+            max_output_tokens=2500,
             response_mime_type="application/json"
         ),
         output_schema=StructuredBusinessStrategy,

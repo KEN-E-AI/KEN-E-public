@@ -19,6 +19,19 @@ load_dotenv(env_path)
 logger = logging.getLogger(__name__)
 
 
+def _get_secret(secret_name: str, project_id: str = "ken-e-dev") -> str:
+    """Load secret from GCP Secret Manager."""
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        logger.warning(f"Could not load secret {secret_name}: {e}")
+        return None
+
+
 class Neo4jConnection:
     """Manages Neo4j database connections with retry logic and connection pooling."""
 
@@ -31,12 +44,12 @@ class Neo4jConnection:
             username: Neo4j username (defaults to env variable)
             password: Neo4j password (defaults to env variable)
         """
-        self.uri = uri or os.getenv('NEO4J_URI')
-        self.username = username or os.getenv('NEO4J_USERNAME') or os.getenv('NEO4J_USER')  # Support both naming conventions
-        self.password = password or os.getenv('NEO4J_PASSWORD')
+        self.uri = uri or os.getenv('NEO4J_URI') or _get_secret('NEO4J_URI')
+        self.username = username or os.getenv('NEO4J_USERNAME') or os.getenv('NEO4J_USER') or _get_secret('NEO4J_USERNAME')
+        self.password = password or os.getenv('NEO4J_PASSWORD') or _get_secret('NEO4J_PASSWORD')
 
         if not all([self.uri, self.username, self.password]):
-            raise ValueError("Neo4j credentials not provided. Set NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD")
+            raise ValueError("Neo4j credentials not provided. Set NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD environment variables or add to Secret Manager")
 
         self.driver = None
         self._connect()

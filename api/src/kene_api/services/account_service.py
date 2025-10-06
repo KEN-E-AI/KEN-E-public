@@ -104,12 +104,12 @@ async def create_account_internal(
     if uploaded_document_urls:
         logger.info(f"[ACCOUNT_CREATION] {len(uploaded_document_urls)} documents uploaded for strategy generation")
     
-    logger.info(f"[ACCOUNT_CREATION] Triggering strategy generation for organization: {organization_name}")
-    
+    logger.info(f"[ACCOUNT_CREATION] Triggering strategy generation for company: {request.account_name}")
+
     background_tasks.add_task(
         trigger_strategy_generation,
         account_id=account_id,
-        company_name=organization_name,  # Use organization_name instead of account_name
+        company_name=request.account_name,  # Use the actual company name from account form
         websites=request.websites,
         industry=request.industry,
         customer_regions=request.region or [],

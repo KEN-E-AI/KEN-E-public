@@ -275,15 +275,12 @@ logger.info("agent_engine_app.py loaded successfully")
             deployment_name,
             "--description",
             "Strategy documents supervisor for account creation",
-            "--memory",
-            "4Gi",  # 4GB for Neo4j operations and embedding generation
-            "--timeout",
-            "1800s",  # 30 minutes for complete strategy generation
-            "--machine-type",
-            "n1-standard-4",  # More CPU for graph operations
+            "--agent_engine_config_file",
+            ".agent_engine_config.json",  # THIS ACTUALLY USES THE CONFIG FILE
             "--trace_to_cloud",
             ".",  # Deploy from current directory
         ]
+        # Note: Resource configuration and sys_version specified in .agent_engine_config.json
 
         logger.info(f"Running command: {' '.join(cmd)}")
         logger.info(f"Command working directory: {os.getcwd()}")

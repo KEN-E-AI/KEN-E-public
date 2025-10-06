@@ -8,64 +8,27 @@ Architecture:
 - Firestore: Backup document storage
 """
 
-from .orchestrator import (
-    strategy_agent,
-    app,
-    execute_strategy_generation,
-    execute_strategy_generation_direct,
-    extract_document_sections,
-)
-
+# Import models (safe, no circular deps)
 from .models import (
     StrategyContext,
     StrategyGenerationRequest,
     StrategyGenerationResponse,
 )
 
+# Import shared components (safe)
 from .agents import (
     create_google_search_agent,
 )
 
-# Import split agent modules
-from . import business_agents
-from . import competitive_agents
-from . import marketing_agents
-from . import brand_agents
-
-# Import graph builders
-from . import business_graph_builder
-from . import competitive_graph_builder
-from . import marketing_graph_builder
-from . import brand_graph_builder
-
-# Import Neo4j and embeddings
-from . import neo4j_tools
-from . import embeddings
+# NOTE: orchestrator imports removed to avoid circular dependency
+# Import orchestrator functions directly from orchestrator module when needed:
+# from agents.strategy_agent.orchestrator import execute_strategy_generation_direct, app
 
 __all__ = [
-    # Main orchestrator
-    "strategy_agent",
-    "app",
-    "execute_strategy_generation",
-    "execute_strategy_generation_direct",
-    "extract_document_sections",
     # Models
     "StrategyContext",
     "StrategyGenerationRequest",
     "StrategyGenerationResponse",
     # Shared components
     "create_google_search_agent",
-    # Split agent modules
-    "business_agents",
-    "competitive_agents",
-    "marketing_agents",
-    "brand_agents",
-    # Graph builders
-    "business_graph_builder",
-    "competitive_graph_builder",
-    "marketing_graph_builder",
-    "brand_graph_builder",
-    # Infrastructure
-    "neo4j_tools",
-    "embeddings",
 ]

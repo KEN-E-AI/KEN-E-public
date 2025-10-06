@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Strategy Agent Orchestrator - Manages execution and persistence of strategy documents.
 Includes comprehensive analytics tracking for cost, performance, and optimization.
@@ -138,11 +140,12 @@ def execute_strategy_generation_direct(
 
     # Import split agent creators and graph builders
     try:
-        from .business_agents import create_business_researcher, create_business_formatter, format_with_openai as business_openai
-        from .competitive_agents import create_competitive_researcher, create_competitive_formatter, format_with_openai as competitive_openai
-        from .marketing_agents import create_marketing_researcher, create_marketing_formatter, format_with_openai as marketing_openai
-        from .brand_agents import create_brand_researcher, create_brand_formatter, format_with_openai as brand_openai
+        from .business_agents import create_business_researcher, create_business_formatter
+        from .competitive_agents import create_competitive_researcher, create_competitive_formatter
+        from .marketing_agents import create_marketing_researcher, create_marketing_formatter
+        from .brand_agents import create_brand_researcher, create_brand_formatter
         from .agents import create_google_search_agent
+        from .openai_formatter import format_with_openai  # Shared OpenAI formatter
 
         # Import Neo4j components
         from .neo4j_tools import get_neo4j_operations
@@ -182,7 +185,6 @@ def execute_strategy_generation_direct(
             "name": "business_strategy",
             "create_researcher": lambda: create_business_researcher(google_search_agent),
             "create_formatter": create_business_formatter,
-            "openai_fallback": business_openai,
             "model_class": StructuredBusinessStrategy,
             "graph_builder_class": GraphBuilder,
             "graph_method": "build_strategy_graph",
@@ -191,7 +193,6 @@ def execute_strategy_generation_direct(
             "name": "competitive_strategy",
             "create_researcher": lambda: create_competitive_researcher(google_search_agent),
             "create_formatter": create_competitive_formatter,
-            "openai_fallback": competitive_openai,
             "model_class": CompetitiveAnalysis,
             "graph_builder_class": CompetitiveGraphBuilder,
             "graph_method": "build_competitive_graph",
@@ -200,7 +201,6 @@ def execute_strategy_generation_direct(
             "name": "marketing_strategy",
             "create_researcher": lambda: create_marketing_researcher(google_search_agent),
             "create_formatter": create_marketing_formatter,
-            "openai_fallback": marketing_openai,
             "model_class": MarketingResearchReport,
             "graph_builder_class": MarketingGraphBuilder,
             "graph_method": "build_marketing_graph",
@@ -209,7 +209,6 @@ def execute_strategy_generation_direct(
             "name": "brand_guidelines",
             "create_researcher": lambda: create_brand_researcher(google_search_agent),
             "create_formatter": create_brand_formatter,
-            "openai_fallback": brand_openai,
             "model_class": BrandGuidelines,
             "graph_builder_class": BrandGraphBuilder,
             "graph_method": "build_brand_graph",
@@ -263,7 +262,7 @@ def execute_strategy_generation_direct(
             for event in events:
                 if hasattr(event, "content") and hasattr(event.content, "parts"):
                     for part in event.content.parts:
-                        if hasattr(part, "text"):
+                        if hasattr(part, "text") and part.text is not None:
                             research_text += part.text
 
             if not research_text:
@@ -301,7 +300,7 @@ def execute_strategy_generation_direct(
                 for event in events2:
                     if hasattr(event, "content") and hasattr(event.content, "parts"):
                         for part in event.content.parts:
-                            if hasattr(part, "text"):
+                            if hasattr(part, "text") and part.text is not None:
                                 formatted_json += part.text
 
                 # Parse and validate with Pydantic
@@ -310,9 +309,13 @@ def execute_strategy_generation_direct(
 
             except Exception as e:
                 logger.warning(f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI")
-                # Fallback to OpenAI
+                # Fallback to OpenAI using shared formatter
                 try:
-                    openai_dict = strategy_config["openai_fallback"](research_text)
+                    openai_dict = format_with_openai(
+                        research_text,
+                        strategy_config["model_class"],
+                        strategy_name
+                    )
                     formatted_data = strategy_config["model_class"](**openai_dict)
                     used_openai = True
                     logger.info(f"[SPLIT AGENT] ✅ OpenAI fallback successful")
@@ -389,12 +392,8 @@ def execute_strategy_generation_direct(
             # Fail-fast: stop if any strategy fails
             return generated_documents
 
-    # Close Neo4j connection
-    if neo4j_ops:
-        try:
-            neo4j_ops.close()
-        except:
-            pass
+    # Don't close Neo4j connection - let driver manage its own lifecycle and handle reconnections
+    # Closing causes "Driver closed" errors when strategies take a long time to generate
 
     logger.info(f"\n[SPLIT AGENT] 🎉🎉🎉 Successfully generated all {len(generated_documents)} strategies!")
     return generated_documents
@@ -408,9 +407,8 @@ def execute_strategy_generation(
     account_id: str,
     user_id: str,
     annual_ad_budget: float = 0.0,
-    project_id: str | None = None,
-    uploaded_documents: list[str] | None = None,
-    firestore_client: FirestoreClient | None = None,
+    project_id: Optional[str] = None,
+    uploaded_documents: Optional[list[str]] = None,
     enable_analytics: bool = True,
 ) -> str:
     """
@@ -462,8 +460,8 @@ def execute_strategy_generation(
         # Initialize Weave if needed (lazy initialization)
         init_weave_if_needed()
 
-        # Use provided client or create new one
-        client = firestore_client or FirestoreClient(project_id=project_id)
+        # Create Firestore client
+        client = FirestoreClient(project_id=project_id)
 
         # Create context from inputs
         context = StrategyContext(

@@ -1,5 +1,5 @@
-Deployment: strategy-docs-supervisor-20250919-143030
-Timestamp: 20250919-143030
-Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/8004132388906991616
+Deployment: strategy-supervisor-py312
+Python Version: 3.12
+Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/7162786091332796416
 Project: ken-e-dev
 Location: us-central1

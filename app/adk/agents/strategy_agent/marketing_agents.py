@@ -35,7 +35,7 @@ def create_marketing_researcher(google_search_agent):
         # NO output_schema - this allows tool usage
         generate_content_config=GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=4000  # Limit to prevent rate limit issues
+            max_output_tokens=2500  # Limit to prevent rate limit issues
         ),
         instruction="""You are a marketing intelligence researcher. Your role is to:
 
