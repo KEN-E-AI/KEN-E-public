@@ -678,7 +678,7 @@ async def verify_strategy_documents_created(
 
     Args:
         account_id: Account ID to check
-        require_all: If True, all 5 documents must exist and be complete. If False, partial success is allowed.
+        require_all: If True, all 4 documents must exist and be complete. If False, partial success is allowed.
 
     Returns:
         True if documents meet the requirement, False otherwise
@@ -689,11 +689,10 @@ async def verify_strategy_documents_created(
 
         logger.info(f"Verifying strategy documents in collection: {collection_name}")
 
-        # Check for expected strategy documents
+        # Check for expected strategy documents (removed customer_strategy)
         expected_docs = [
             "business_strategy",
             "competitive_strategy",
-            "customer_strategy",
             "marketing_strategy",
             "brand_guidelines",
         ]

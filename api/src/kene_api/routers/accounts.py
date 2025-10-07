@@ -1832,7 +1832,7 @@ async def get_account_creation_status(
         logger.info(f"Account {account_id} not found yet, likely being created")
         return AccountCreationStatus(
             status="processing",
-            message="Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+            message="Creating account...\n\nConducting research on your business to configure your account. This may take 10-15 minutes.",
         )
 
     account_data = result[0]
@@ -1870,5 +1870,5 @@ async def get_account_creation_status(
     else:
         return AccountCreationStatus(
             status="processing",
-            message="Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+            message="Creating account...\n\nConducting research on your business to configure your account. This may take 10-15 minutes.",
         )
