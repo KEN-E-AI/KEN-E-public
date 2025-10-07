@@ -86,6 +86,144 @@ DOCUMENT_KEY_MAPPING = {
 }
 
 
+def _create_placeholder_strategy(model_class, strategy_name: str, company_name: str):
+    """
+    Create minimal placeholder data when strategy generation fails.
+
+    Creates top-level entities with "Requires further research" descriptions.
+    DOES NOT create child nodes (Opportunities/Risks for SWOT, ValuePropositions for products).
+
+    Args:
+        model_class: Pydantic model class for the strategy
+        strategy_name: Type of strategy (business_strategy, competitive_strategy, etc.)
+        company_name: Company name for context
+
+    Returns:
+        Minimal placeholder data matching the model schema
+    """
+    from .structured_models import StructuredBusinessStrategy, SWOTItem, StrengthOpportunityLink, WeaknessRiskLink, ProductCategory, ProductService, StrategicGoal
+    from .competitive_models import CompetitiveAnalysis, Competitor, NamedDetail, SubstituteProduct, StrengthWithRisks, WeaknessWithOpportunities
+    from .marketing_models import MarketingResearchReport, ProductCategory as MarketingProductCategory, IdealCustomerProfile
+    from .brand_models import BrandGuidelines
+
+    if model_class == StructuredBusinessStrategy:
+        # Business: Create minimal products/goals/SWOT WITHOUT child nodes
+        return StructuredBusinessStrategy(
+            company_name=company_name,
+            company_overview_summary=f"Automated research for {company_name} requires further investigation.",
+            business_value_propositions=[],  # No placeholder ValueProps
+            product_portfolio=[
+                ProductCategory(
+                    category_name="Primary Products",
+                    value_propositions=[],  # No placeholder ValueProps
+                    products=[
+                        ProductService(
+                            id="placeholder-product",
+                            display_name="Product Analysis Pending",
+                            description="Requires further research",
+                            value_propositions=[]  # No placeholder ValueProps
+                        )
+                    ]
+                )
+            ],
+            swot_analysis={
+                "strengths_and_opportunities": [
+                    StrengthOpportunityLink(
+                        strength=SWOTItem(id="placeholder-strength", description="Requires further research"),
+                        linked_opportunities=[]  # No placeholder Opportunities
+                    )
+                ],
+                "weaknesses_and_risks": [
+                    WeaknessRiskLink(
+                        weakness=SWOTItem(id="placeholder-weakness", description="Requires further research"),
+                        linked_risks=[]  # No placeholder Risks
+                    )
+                ]
+            },
+            strategic_goals=[
+                StrategicGoal(
+                    id="placeholder-goal",
+                    display_name="Strategic Planning Pending",
+                    description="Requires further research"
+                )
+            ],
+            final_summary=f"Strategy analysis for {company_name} requires further research."
+        )
+
+    elif model_class == CompetitiveAnalysis:
+        # Competitive: Create competitor WITHOUT child nodes
+        return CompetitiveAnalysis(
+            company_products=["Analysis Pending"],
+            competitive_environment_description=f"Competitive analysis for {company_name} requires further research.",
+            competitors=[
+                Competitor(
+                    name="Competitive Analysis Pending",
+                    description="Requires further research",
+                    value_propositions=[],  # No placeholder ValueProps
+                    marketing_tactics=[
+                        NamedDetail(name="Analysis Pending", description="Requires further research")
+                    ],
+                    substitute_products=[
+                        SubstituteProduct(
+                            name="Analysis Pending",
+                            description="Requires further research",
+                            value_proposition=NamedDetail(name="Pending", description="Requires further research")
+                        )
+                    ],
+                    strengths=[
+                        StrengthWithRisks(
+                            name="Analysis Pending",
+                            description="Requires further research",
+                            risks=[]  # No placeholder Risks
+                        )
+                    ],
+                    weaknesses=[
+                        WeaknessWithOpportunities(
+                            name="Analysis Pending",
+                            description="Requires further research",
+                            opportunities=[]  # No placeholder Opportunities
+                        )
+                    ]
+                )
+            ]
+        )
+
+    elif model_class == MarketingResearchReport:
+        # Marketing: Create customer profile
+        return MarketingResearchReport(
+            product_categories=[
+                MarketingProductCategory(
+                    category_name="Primary Products",
+                    ideal_customer_profiles=[
+                        IdealCustomerProfile(
+                            narrative=f"Customer analysis for {company_name} requires further research.",
+                            problem_awareness_strategy="Requires further research",
+                            brand_awareness_strategy="Requires further research",
+                            consideration_strategy="Requires further research",
+                            conversion_strategy="Requires further research",
+                            loyalty_strategy="Requires further research"
+                        )
+                    ]
+                )
+            ]
+        )
+
+    elif model_class == BrandGuidelines:
+        # Brand: Create minimal brand identity
+        return BrandGuidelines(
+            brand_identity=f"Brand analysis for {company_name} requires further research.",
+            brand_personality="Requires further research",
+            voice_and_tone="Requires further research",
+            color_palette="Requires further research",
+            typography="Requires further research",
+            image_style="Requires further research",
+            mission_and_values="Requires further research"
+        )
+
+    else:
+        raise ValueError(f"Unknown model class: {model_class}")
+
+
 def extract_document_sections(doc: dict | None, required_fields: list[str]) -> dict[str, Any]:
     """
     Extract specific fields from a strategy document.
@@ -389,8 +527,25 @@ def execute_strategy_generation_direct(
             if performance_profiler and operation:
                 performance_profiler.end_operation(operation, success=False, error=str(e))
 
-            # Fail-fast: stop if any strategy fails
-            return generated_documents
+            # Create placeholder nodes so graph isn't completely empty
+            if neo4j_ops:
+                try:
+                    logger.info(f"[SPLIT AGENT] Creating placeholder nodes for failed {strategy_name}")
+                    placeholder_data = _create_placeholder_strategy(
+                        strategy_config["model_class"],
+                        strategy_name,
+                        context.company_name
+                    )
+                    graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
+                    build_method = getattr(graph_builder, strategy_config["graph_method"])
+                    build_method(placeholder_data, context.account_id, context.user_id or "system")
+                    logger.info(f"[SPLIT AGENT] ✅ Created placeholder nodes for {strategy_name}")
+                except Exception as placeholder_error:
+                    logger.warning(f"[SPLIT AGENT] Failed to create placeholders: {placeholder_error}")
+
+            # Continue to next strategy instead of fail-fast
+            # This ensures we try all strategies even if one fails
+            continue
 
     # Don't close Neo4j connection - let driver manage its own lifecycle and handle reconnections
     # Closing causes "Driver closed" errors when strategies take a long time to generate
