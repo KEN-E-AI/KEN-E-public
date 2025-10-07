@@ -749,7 +749,8 @@ async def verify_strategy_documents_created(
 
                     # Consider document complete based primarily on content size and structure
                     # Status field is optional - many docs don't have it
-                    is_complete = content_size > 1000 and has_keys > 3
+                    # Note: Different models have different field counts (competitive=3, marketing=1)
+                    is_complete = content_size > 1000 and has_keys >= 1
 
                     # If status field exists and indicates not ready, override
                     if status and status.lower() in [
