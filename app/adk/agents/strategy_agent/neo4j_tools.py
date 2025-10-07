@@ -196,7 +196,12 @@ class Neo4jOperations:
 
     def merge_account(self, account_data: Dict) -> Dict:
         """
-        Create or update an Account node with all fields.
+        Create or update an Account node.
+
+        IMPORTANT: Protects user-provided data from being overwritten.
+        - ON CREATE: Sets all fields (new account)
+        - ON MATCH: Only updates company_overview (strategy-derived field)
+        - NEVER overwrites: account_name, websites, industry, regions, budget
 
         Args:
             account_data: Dictionary with account information
@@ -206,18 +211,21 @@ class Neo4jOperations:
         """
         query = """
         MERGE (acc:Account {account_id: $account_id})
-        SET acc.account_name = $account_name,
-            acc.industry = $industry,
-            acc.websites = $websites,
-            acc.customer_regions = $customer_regions,
+        ON CREATE SET
+            acc.account_name = $account_name,
+            acc.industry = COALESCE($industry, ''),
+            acc.websites = COALESCE($websites, []),
+            acc.customer_regions = COALESCE($customer_regions, []),
             acc.company_overview = $company_overview,
-            acc.data_region = COALESCE($data_region, acc.data_region, 'United States'),
-            acc.organization_id = COALESCE($organization_id, acc.organization_id, ''),
-            acc.status = COALESCE($status, acc.status, 'Active'),
-            acc.timezone = COALESCE($timezone, acc.timezone, 'America/New_York'),
-            acc.created_time = COALESCE(acc.created_time, datetime()),
+            acc.data_region = COALESCE($data_region, 'United States'),
+            acc.organization_id = COALESCE($organization_id, ''),
+            acc.status = COALESCE($status, 'Active'),
+            acc.timezone = COALESCE($timezone, 'America/New_York'),
+            acc.created_time = datetime(),
+            acc.created_by = 'System'
+        ON MATCH SET
+            acc.company_overview = $company_overview,
             acc.last_modified = datetime(),
-            acc.created_by = COALESCE(acc.created_by, 'System'),
             acc.last_modified_by = 'System'
         RETURN acc
         """
