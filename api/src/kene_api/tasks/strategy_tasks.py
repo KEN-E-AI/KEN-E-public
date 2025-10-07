@@ -593,6 +593,37 @@ Please execute strategy generation with these parameters:
         # Update account status to completed
         await update_account_setup_status(account_id, "completed", completed=True)
 
+        # Send email notification
+        try:
+            from ..email_service import get_email_service
+            from google.cloud import firestore
+
+            # Get user email from Firestore
+            db = firestore.Client()
+            user_doc = db.collection('users').document(user_id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                user_email = user_data.get('profile', {}).get('email')
+
+                if user_email:
+                    email_service = get_email_service()
+                    email_sent = email_service.send_account_ready_email(
+                        to_email=user_email,
+                        company_name=company_name,
+                        account_id=account_id
+                    )
+                    if email_sent:
+                        logger.info(f"✅ Sent account ready email to {user_email}")
+                    else:
+                        logger.warning(f"Failed to send email to {user_email}")
+                else:
+                    logger.warning(f"No email found for user {user_id}")
+            else:
+                logger.warning(f"User {user_id} not found in Firestore")
+        except Exception as email_error:
+            # Don't fail the whole process if email fails
+            logger.warning(f"Failed to send completion email: {email_error}")
+
     except Exception as e:
         logger.error(
             f"Failed to generate strategy documents for account {account_id}: {e}"

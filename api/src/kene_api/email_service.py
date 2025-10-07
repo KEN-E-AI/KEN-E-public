@@ -304,6 +304,104 @@ The KEN-E Team
             logger.error(f"Error sending acceptance notification: {e!s}")
             return False
 
+    def send_account_ready_email(
+        self,
+        to_email: str,
+        company_name: str,
+        account_id: str,
+    ) -> bool:
+        """
+        Send email notification when account strategy generation is complete.
+
+        Args:
+            to_email: User's email address
+            company_name: Name of the company/account
+            account_id: Account ID
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        self._ensure_initialized()
+
+        if not self.client:
+            logger.warning(
+                f"SendGrid client not available. Cannot send account ready email to {to_email}",
+                extra={"service": "email", "error_type": "client_unavailable"}
+            )
+            return False
+
+        logger.info(f"Sending account ready email to {to_email} for {company_name}")
+
+        try:
+            subject = f"Your KEN-E account for {company_name} is ready!"
+
+            plain_text_content = f"""
+Your KEN-E Account is Ready!
+
+Hi there,
+
+Great news! We've finished building your knowledge base for {company_name}.
+
+Your account is now fully configured with:
+✓ Business strategy analysis
+✓ Competitive intelligence
+✓ Marketing strategy insights
+✓ Brand guidelines
+
+You can now access your personalized dashboard and AI-powered recommendations.
+
+Get started: {self.app_base_url}
+
+Best regards,
+The KEN-E Team
+            """
+
+            html_content = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <h2 style="color: #4F46E5;">Your KEN-E Account is Ready!</h2>
+    <p>Hi there,</p>
+    <p>Great news! We've finished building your knowledge base for <strong>{company_name}</strong>.</p>
+
+    <p>Your account is now fully configured with:</p>
+    <ul>
+        <li>✓ Business strategy analysis</li>
+        <li>✓ Competitive intelligence</li>
+        <li>✓ Marketing strategy insights</li>
+        <li>✓ Brand guidelines</li>
+    </ul>
+
+    <p>You can now access your personalized dashboard and AI-powered recommendations.</p>
+
+    <p><a href="{self.app_base_url}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Get Started</a></p>
+
+    <p>Best regards,<br>The KEN-E Team</p>
+</body>
+</html>
+            """
+
+            message = Mail(
+                from_email=Email(self.from_email, self.from_name),
+                to_emails=To(to_email),
+                subject=subject,
+                plain_text_content=Content("text/plain", plain_text_content),
+                html_content=Content("text/html", html_content),
+            )
+
+            response = self.client.send(message)
+            success = response.status_code >= 200 and response.status_code < 300
+
+            if success:
+                logger.info(f"✅ Account ready email sent to {to_email}")
+            else:
+                logger.warning(f"Failed to send email, status: {response.status_code}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error sending account ready email: {e}")
+            return False
+
 
 # Global instance
 email_service = EmailService()
