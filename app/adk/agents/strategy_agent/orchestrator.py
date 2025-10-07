@@ -390,7 +390,17 @@ def execute_strategy_generation_direct(
 
             runner = Runner(agent=researcher, app_name=app_name, session_service=session_service)
 
-            research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}"
+            # Build comprehensive research query with all context
+            research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}\n\n"
+            research_query += f"Company: {context.company_name}\n"
+            if context.websites:
+                research_query += f"Website(s): {', '.join(context.websites)}\n"
+            research_query += f"Industry: {context.industry}\n"
+            if context.customer_regions:
+                research_query += f"Customer Regions: {', '.join(context.customer_regions)}\n"
+            if context.annual_ad_budget:
+                research_query += f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
+
             message_content = Content(role="user", parts=[{"text": research_query}])
 
             events = runner.run(user_id=context.user_id or "system", session_id=session_id, new_message=message_content)

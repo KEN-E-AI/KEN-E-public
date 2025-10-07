@@ -182,10 +182,31 @@ async def create_account_internal(
     try:
         result = await neo4j_service.execute_write_query(create_query, params)
         logger.info(f"[ACCOUNT_CREATION] Account created successfully in Neo4j: {account_id}")
+
+        # Verify account data was saved correctly
+        verify_query = """
+        MATCH (acc:Account {account_id: $account_id})
+        RETURN acc.websites as websites, acc.industry as industry, acc.estimated_annual_ad_budget as budget
+        """
+        verify_result = await neo4j_service.execute_query(verify_query, {"account_id": account_id})
+        if verify_result and len(verify_result) > 0:
+            saved_data = verify_result[0]
+            logger.info(f"[ACCOUNT_CREATION] Verification - Websites: {saved_data.get('websites', [])}")
+            logger.info(f"[ACCOUNT_CREATION] Verification - Industry: {saved_data.get('industry')}")
+            logger.info(f"[ACCOUNT_CREATION] Verification - Budget: {saved_data.get('budget')}")
+
+            # Warn if user provided websites but they weren't saved
+            if request.websites and not saved_data.get('websites'):
+                logger.warning(f"[ACCOUNT_CREATION] ⚠️ User provided websites but none were saved to Neo4j!")
+            elif request.websites and saved_data.get('websites'):
+                logger.info(f"[ACCOUNT_CREATION] ✅ {len(saved_data.get('websites'))} website(s) saved correctly")
+        else:
+            logger.warning(f"[ACCOUNT_CREATION] Could not verify account data")
+
     except Exception as e:
         logger.error(f"[ACCOUNT_CREATION] Failed to create account in Neo4j: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create account: {str(e)}")
-    
+
     # Log database setup continuing (progress tracking simplified)
     logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
     
