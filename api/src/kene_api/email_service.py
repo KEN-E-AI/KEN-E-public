@@ -8,7 +8,7 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Content, Email, Mail, To
 
 from .exceptions import EmailServiceInitializationError, SecretManagerError
-from .secret_manager import get_env_var_or_secret
+from .utils.secrets import get_env_or_secret  # Supports sm:// format
 from .templates.template_loader import template_loader
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class EmailService:
             try:
                 # Attempt to get SendGrid API key - allow failure for graceful degradation
                 try:
-                    self.api_key = get_env_var_or_secret("SENDGRID_API_KEY", allow_failure=False)
+                    self.api_key = get_env_or_secret("SENDGRID_API_KEY")
                 except SecretManagerError as e:
                     # Log detailed error for monitoring
                     logger.error(
