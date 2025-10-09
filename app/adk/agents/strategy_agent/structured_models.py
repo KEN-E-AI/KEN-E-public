@@ -16,6 +16,7 @@ class SWOTItem(BaseModel):
     """Represents a single Strength, Weakness, Opportunity, or Risk."""
     id: str = Field(..., description="A unique identifier for the item (e.g., 'strength-brand-reputation', 'risk-new-competitor')")
     description: str = Field(..., description="A clear and concise description of the SWOT item")
+    references: List[str] = Field(default=[], description="Source URLs where this information was found during research")
 
 
 class StrengthOpportunityLink(BaseModel):
@@ -52,6 +53,7 @@ class ValueProposition(BaseModel):
     id: str = Field(..., description="A unique identifier (e.g., 'valueprop-ease-of-use')")
     display_name: str = Field(..., description="A short, human-readable name (e.g., 'Superior Ease of Use')")
     description: str = Field(..., description="A detailed explanation of the value proposition")
+    references: List[str] = Field(default=[], description="Source URLs where this information was found during research")
 
 
 class ProductService(BaseModel):
@@ -60,6 +62,7 @@ class ProductService(BaseModel):
     display_name: str = Field(..., description="The name of the product or service")
     description: str = Field(..., description="A summary of the product's features and purpose")
     value_propositions: List[ValueProposition] = Field(..., description="The core value propositions this product delivers")
+    references: List[str] = Field(default=[], description="Source URLs where this information was found during research")
 
 
 class ProductCategory(BaseModel):
@@ -106,6 +109,7 @@ class StrategicGoal(BaseModel):
     id: str = Field(..., description="A unique identifier for the goal (e.g., 'goal-increase-smb-market-share')")
     display_name: str = Field(..., description="A clear, concise statement of the goal")
     description: str = Field(..., description="More detailed context about the goal")
+    references: List[str] = Field(default=[], description="Source URLs where this information was found during research")
 
 
 # ============================================================================
@@ -116,15 +120,15 @@ class SWOTAnalysis(BaseModel):
     """A strategic planning tool to identify internal strengths/weaknesses and external opportunities/risks."""
     strengths_and_opportunities: List[StrengthOpportunityLink] = Field(
         ...,
-        min_length=1,
-        max_length=5,
-        description="Identify 1-5 core internal strengths (e.g., strong brand, unique tech) and link each to the external opportunities it unlocks (e.g., new markets, favorable trends)"
+        min_length=3,
+        max_length=10,
+        description="Identify at least 3 (preferably 5-10) core internal strengths (e.g., strong brand, unique tech, operational efficiency, market position) and link each to the external opportunities it unlocks (e.g., new markets, favorable trends, partnerships)"
     )
     weaknesses_and_risks: List[WeaknessRiskLink] = Field(
         ...,
-        min_length=1,
-        max_length=5,
-        description="Identify 1-5 key internal weaknesses (e.g., high debt, outdated tech) and link each to the external risks it exposes the business to (e.g., new competitors, changing regulations)"
+        min_length=3,
+        max_length=10,
+        description="Identify at least 3 (preferably 5-10) key internal weaknesses (e.g., high debt, outdated tech, limited resources, skill gaps) and link each to the external risks it exposes the business to (e.g., new competitors, changing regulations, market disruption)"
     )
 
 

@@ -477,13 +477,22 @@ Please execute strategy generation with these parameters:
                             response_parts = []  # Reset response parts
                             
                     except Exception as e:
-                        # Non-retryable error
+                        # Non-retryable error - fail immediately
                         logger.error(
                             f"Error iterating over agent response chunks: {e}",
                             exc_info=True,
                         )
                         logger.error(f"Only received {chunk_count} chunks before error")
-                        break  # Exit retry loop for non-retryable errors
+
+                        # Mark account as failed
+                        await update_account_setup_status(
+                            account_id,
+                            "failed",
+                            completed=False,
+                            error_message=f"Strategy generation failed: {str(e)[:200]}",
+                        )
+                        logger.error(f"Account {account_id} marked as failed due to agent error during streaming")
+                        return  # Exit early
 
                 # Check if we actually got a response
                 if not got_response:

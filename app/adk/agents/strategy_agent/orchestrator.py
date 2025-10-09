@@ -405,18 +405,33 @@ def execute_strategy_generation_direct(
 
             events = runner.run(user_id=context.user_id or "system", session_id=session_id, new_message=message_content)
 
-            # Extract research text
+            # Extract research text and grounding metadata (source URLs)
             research_text = ""
+            source_urls = []
             for event in events:
                 if hasattr(event, "content") and hasattr(event.content, "parts"):
                     for part in event.content.parts:
                         if hasattr(part, "text") and part.text is not None:
                             research_text += part.text
 
+                # Extract source URLs from grounding metadata
+                if hasattr(event, "grounding_metadata") and event.grounding_metadata:
+                    if hasattr(event.grounding_metadata, "grounding_attributions"):
+                        for attribution in event.grounding_metadata.grounding_attributions:
+                            if hasattr(attribution, "source_id"):
+                                if hasattr(attribution.source_id, "grounding_passage"):
+                                    # Web grounding passages have URI
+                                    if hasattr(attribution.source_id.grounding_passage, "uri"):
+                                        url = attribution.source_id.grounding_passage.uri
+                                        if url and url not in source_urls:
+                                            source_urls.append(url)
+
             if not research_text:
                 raise ValueError(f"Research phase returned no data for {strategy_name}")
 
-            logger.info(f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars")
+            logger.info(f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars, {len(source_urls)} source URLs")
+            if source_urls:
+                logger.info(f"[SPLIT AGENT] Source URLs: {source_urls[:3]}...")  # Log first 3
 
             # ===== STEP 2: FORMAT (no tools, with schema) =====
             logger.info(f"[SPLIT AGENT] Step 2: Format phase for {strategy_name}")
@@ -440,7 +455,19 @@ def execute_strategy_generation_direct(
 
                 runner2 = Runner(agent=formatter, app_name=app_name2, session_service=session_service2)
 
-                format_message = Content(role="user", parts=[{"text": f"Format this research:\n\n{research_text}"}])
+                # Build format instructions with source URLs
+                format_instructions = f"""Format this research into the required structured format.
+
+IMPORTANT: For each node with descriptive information from web research, populate the 'references' field with relevant source URLs from the list below.
+
+Source URLs from research:
+{chr(10).join(f'- {url}' for url in source_urls) if source_urls else '(No URLs found in grounding metadata)'}
+
+Research text:
+
+{research_text}"""
+
+                format_message = Content(role="user", parts=[{"text": format_instructions}])
                 events2 = runner2.run(user_id=context.user_id or "system", session_id=session_id2, new_message=format_message)
 
                 # Extract formatted JSON
@@ -462,7 +489,8 @@ def execute_strategy_generation_direct(
                     openai_dict = format_with_openai(
                         research_text,
                         strategy_config["model_class"],
-                        strategy_name
+                        strategy_name,
+                        source_urls
                     )
                     formatted_data = strategy_config["model_class"](**openai_dict)
                     used_openai = True
@@ -490,18 +518,14 @@ def execute_strategy_generation_direct(
             # ===== STEP 4: BUILD NEO4J GRAPH =====
             if neo4j_ops:
                 logger.info(f"[SPLIT AGENT] Step 4: Building Neo4j knowledge graph")
-                try:
-                    graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
-                    build_method = getattr(graph_builder, strategy_config["graph_method"])
-                    graph_nodes = build_method(
-                        formatted_data,
-                        context.account_id,
-                        context.user_id or "system"
-                    )
-                    logger.info(f"[SPLIT AGENT] ✅ Neo4j graph built successfully")
-                except Exception as graph_error:
-                    logger.error(f"[SPLIT AGENT] ❌ Graph building failed: {graph_error}")
-                    # Continue - Firestore save succeeded
+                graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
+                build_method = getattr(graph_builder, strategy_config["graph_method"])
+                graph_nodes = build_method(
+                    formatted_data,
+                    context.account_id,
+                    context.user_id or "system"
+                )
+                logger.info(f"[SPLIT AGENT] ✅ Neo4j graph built successfully")
 
             # ===== STEP 5: GENERATE EMBEDDINGS =====
             if neo4j_ops and embedding_generator:

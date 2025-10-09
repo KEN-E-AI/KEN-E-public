@@ -26,7 +26,7 @@ def _get_openai_key() -> str:
         raise ValueError(f"OPENAI_API_KEY not found in environment or Secret Manager: {e}")
 
 
-def format_with_openai(research_data: str, model_class: Type[BaseModel], strategy_type: str) -> Dict[str, Any]:
+def format_with_openai(research_data: str, model_class: Type[BaseModel], strategy_type: str, source_urls: list = None) -> Dict[str, Any]:
     """
     Use OpenAI to format research data into structured strategy.
 
@@ -37,6 +37,7 @@ def format_with_openai(research_data: str, model_class: Type[BaseModel], strateg
         research_data: Unstructured research text from researcher agent
         model_class: Pydantic model class to format into
         strategy_type: Type of strategy (for logging/prompting)
+        source_urls: List of source URLs from grounding metadata
 
     Returns:
         Dictionary matching the Pydantic model schema
@@ -46,25 +47,34 @@ def format_with_openai(research_data: str, model_class: Type[BaseModel], strateg
     api_key = _get_openai_key()
     client = OpenAIClient(api_key=api_key)
 
-    # Use OpenAI's structured output parsing
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
-        messages=[
-            {
-                "role": "system",
-                "content": f"You are a {strategy_type} formatter. Format the research into a structured {strategy_type} document matching the provided schema exactly."
-            },
-            {
-                "role": "user",
-                "content": f"Format this research into structured {strategy_type}:\n\n{research_data}"
-            }
-        ],
-        response_format=model_class
-    )
+    try:
+        # Build user prompt with source URLs
+        urls_section = ""
+        if source_urls:
+            urls_section = "\n\nSource URLs from research:\n" + "\n".join(f"- {url}" for url in source_urls)
 
-    # Return parsed response
-    if completion.choices[0].message.parsed:
-        return completion.choices[0].message.parsed.model_dump()
-    else:
-        # Fallback to JSON parsing
-        return json.loads(completion.choices[0].message.content)
+        # Use OpenAI's structured output parsing
+        completion = client.beta.chat.completions.parse(
+            model="gpt-4o-2024-08-06",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"You are a {strategy_type} formatter. Format the research into a structured {strategy_type} document matching the provided schema exactly. IMPORTANT: For each node with descriptive information from web research, populate the 'references' field with relevant URLs from the provided source list."
+                },
+                {
+                    "role": "user",
+                    "content": f"Format this research into structured {strategy_type}. Populate 'references' fields with relevant URLs:{urls_section}\n\n{research_data}"
+                }
+            ],
+            response_format=model_class
+        )
+
+        # Return parsed response
+        if completion.choices[0].message.parsed:
+            return completion.choices[0].message.parsed.model_dump()
+        else:
+            # Fallback to JSON parsing
+            return json.loads(completion.choices[0].message.content)
+    finally:
+        # Always close the client to prevent resource leaks
+        client.close()

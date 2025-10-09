@@ -133,6 +133,7 @@ class MarketingGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': icp.narrative,
+            'references': icp.references,
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -156,6 +157,7 @@ class MarketingGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -190,6 +192,7 @@ class MarketingGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -224,6 +227,7 @@ class MarketingGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -258,6 +262,7 @@ class MarketingGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -292,6 +297,7 @@ class MarketingGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -326,7 +332,7 @@ class MarketingGraphBuilder:
         """
         query = """
         MATCH (pc:ProductCategory)-[:BELONGS_TO]->(:Account {account_id: $account_id})
-        WHERE pc.category_name = $category_name
+        WHERE toLower(pc.category_name) = toLower($category_name)
         MATCH (cp:CustomerProfile {node_id: $profile_id})
         MERGE (cp)-[:IS_MARKETED_TO]->(pc)
         RETURN pc.category_name as category, cp.node_id as profile

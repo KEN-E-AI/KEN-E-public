@@ -115,6 +115,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': guidelines.brand_identity,
+            'references': guidelines.references,
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -145,6 +146,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -173,6 +175,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -201,6 +204,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -229,6 +233,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -257,6 +262,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',
@@ -285,6 +291,7 @@ class BrandGraphBuilder:
         node_data = {
             'node_id': node_id,
             'description': description,
+            'references': [],
             'created_time': datetime.now(),
             'last_modified': datetime.now(),
             'created_by': 'System',

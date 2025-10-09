@@ -122,7 +122,6 @@ class EmbeddingGenerator:
         MATCH (n:Strategy)
         WHERE n.embedding IS NULL
         AND n.description IS NOT NULL
-        AND (n.deleted IS NULL OR n.deleted = false)
         """
 
         if account_id:
@@ -131,7 +130,7 @@ class EmbeddingGenerator:
             """
 
         query += """
-        RETURN id(n) AS node_id,
+        RETURN elementId(n) AS node_id,
                n.description AS text,
                COALESCE(n.display_name, n.product_name, '') AS name,
                labels(n) AS types
@@ -160,7 +159,6 @@ class EmbeddingGenerator:
         query = """
         MATCH (n:Strategy)
         WHERE n.description IS NOT NULL
-        AND (n.deleted IS NULL OR n.deleted = false)
         AND (n.embedding_generated_at IS NULL
              OR n.last_modified > n.embedding_generated_at)
         """
@@ -176,7 +174,7 @@ class EmbeddingGenerator:
             """
 
         query += """
-        RETURN id(n) AS node_id,
+        RETURN elementId(n) AS node_id,
                n.description AS text,
                COALESCE(n.display_name, n.product_name, '') AS name,
                labels(n) AS types,
@@ -201,7 +199,7 @@ class EmbeddingGenerator:
         """
         query = """
         MATCH (n)
-        WHERE id(n) = $node_id
+        WHERE elementId(n) = $node_id
         SET n.embedding = $embedding,
             n.embedding_generated_at = datetime(),
             n.embedding_model = $model
@@ -223,7 +221,7 @@ class EmbeddingGenerator:
         query = """
         UNWIND $updates AS update
         MATCH (n)
-        WHERE id(n) = update.node_id
+        WHERE elementId(n) = update.node_id
         SET n.embedding = update.embedding,
             n.embedding_generated_at = datetime(),
             n.embedding_model = $model
@@ -384,7 +382,6 @@ class EmbeddingGenerator:
         """
         query = """
         MATCH (n:Strategy)-[:BELONGS_TO]->(:Account {account_id: $account_id})
-        WHERE n.deleted IS NULL OR n.deleted = false
         RETURN
             COUNT(n) AS total_nodes,
             COUNT(n.embedding) AS nodes_with_embeddings,

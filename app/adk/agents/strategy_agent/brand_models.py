@@ -3,6 +3,7 @@ Pydantic models for brand guidelines.
 Based on the knowledge graph design document for brand guidelines.
 """
 
+from typing import List
 from pydantic import BaseModel, Field
 
 
@@ -43,3 +44,5 @@ class BrandGuidelines(BaseModel):
         ...,
         description="Defines the underlying principles and purpose of the company that guide its actions and messaging."
     )
+
+    references: List[str] = Field(default=[], description="Source URLs where brand guideline information was found during research")

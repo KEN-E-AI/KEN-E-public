@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -86,6 +86,33 @@ export const AccountCreationWizard = ({
 
   const totalSteps = 4; // Removed objectives/KPIs step
   const progress = (currentStep / totalSteps) * 100;
+
+  // Reset wizard state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentStep(1);
+      setFormData({
+        account_name: "",
+        industry: "",
+        websites: [""],
+        estimated_annual_ad_budget: null,
+        business_strategy_documents: [],
+        template_id: "",
+        marketing_channels: [],
+        product_integrations: [],
+        objectives: [],
+        kpis: [],
+        timezone: "America/New_York",
+        data_region: "US",
+        region: ["US"],
+      });
+      setValidationErrors([]);
+      setSubmitError(null);
+      setIsSubmitting(false);
+      setLoadedTemplate(null);
+      setSelectedCategory("All");
+    }
+  }, [isOpen]);
 
   const handleNext = () => {
     if (currentStep < totalSteps) {

@@ -200,7 +200,7 @@ class Neo4jOperations:
 
         IMPORTANT: Protects user-provided data from being overwritten.
         - ON CREATE: Sets all fields (new account)
-        - ON MATCH: Only updates company_overview (strategy-derived field)
+        - ON MATCH: Only updates company_name and company_overview (agent-derived fields)
         - NEVER overwrites: account_name, websites, industry, regions, budget
 
         Args:
@@ -209,24 +209,52 @@ class Neo4jOperations:
         Returns:
             Created/updated account data
         """
-        query = """
-        MERGE (acc:Account {account_id: $account_id})
+        # Build dynamic SET clauses based on what parameters are provided
+        # This allows both full account creation AND partial updates from graph builders
+
+        # ON CREATE: Only set fields that are provided in account_data
+        create_fields = []
+        if 'account_name' in account_data:
+            create_fields.append('acc.account_name = $account_name')
+        if 'company_name' in account_data:
+            create_fields.append('acc.company_name = $company_name')
+        elif 'account_name' in account_data:
+            create_fields.append('acc.company_name = $account_name')  # Fallback
+        if 'company_overview' in account_data:
+            create_fields.append('acc.company_overview = $company_overview')
+        if 'industry' in account_data:
+            create_fields.append('acc.industry = $industry')
+        if 'websites' in account_data:
+            create_fields.append('acc.websites = $websites')
+        if 'customer_regions' in account_data:
+            create_fields.append('acc.customer_regions = $customer_regions')
+        if 'data_region' in account_data:
+            create_fields.append('acc.data_region = $data_region')
+        if 'organization_id' in account_data:
+            create_fields.append('acc.organization_id = $organization_id')
+        if 'status' in account_data:
+            create_fields.append('acc.status = $status')
+        if 'timezone' in account_data:
+            create_fields.append('acc.timezone = $timezone')
+
+        create_fields.append('acc.created_time = datetime()')
+        create_fields.append('acc.created_by = \'System\'')
+
+        # ON MATCH: Only update agent-derived fields if provided
+        match_fields = []
+        if 'company_name' in account_data:
+            match_fields.append('acc.company_name = $company_name')
+        if 'company_overview' in account_data:
+            match_fields.append('acc.company_overview = $company_overview')
+        match_fields.append('acc.last_modified = datetime()')
+        match_fields.append('acc.last_modified_by = \'System\'')
+
+        query = f"""
+        MERGE (acc:Account {{account_id: $account_id}})
         ON CREATE SET
-            acc.account_name = $account_name,
-            acc.industry = COALESCE($industry, ''),
-            acc.websites = COALESCE($websites, []),
-            acc.customer_regions = COALESCE($customer_regions, []),
-            acc.company_overview = $company_overview,
-            acc.data_region = COALESCE($data_region, 'United States'),
-            acc.organization_id = COALESCE($organization_id, ''),
-            acc.status = COALESCE($status, 'Active'),
-            acc.timezone = COALESCE($timezone, 'America/New_York'),
-            acc.created_time = datetime(),
-            acc.created_by = 'System'
+            {', '.join(create_fields)}
         ON MATCH SET
-            acc.company_overview = $company_overview,
-            acc.last_modified = datetime(),
-            acc.last_modified_by = 'System'
+            {', '.join(match_fields)}
         RETURN acc
         """
 
@@ -347,7 +375,7 @@ class Neo4jOperations:
         # First, create a version snapshot
         version_query = """
         MATCH (n:Strategy)
-        WHERE id(n) = $node_id
+        WHERE elementId(n) = $node_id
         CREATE (v:Version:Strategy)
         SET v = properties(n),
             v.version_created = datetime(),
@@ -358,7 +386,7 @@ class Neo4jOperations:
         # Then update the node
         update_query = """
         MATCH (n:Strategy)
-        WHERE id(n) = $node_id
+        WHERE elementId(n) = $node_id
         SET n += $updates,
             n.last_modified = datetime(),
             n.last_modified_by = $user,

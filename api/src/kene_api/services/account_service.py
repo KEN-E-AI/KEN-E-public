@@ -149,6 +149,7 @@ async def create_account_internal(
     CREATE (acc:Account {
         account_id: $account_id,
         account_name: $account_name,
+        company_name: $company_name,
         organization_id: $organization_id,
         industry: $industry,
         status: $status,
@@ -163,10 +164,11 @@ async def create_account_internal(
     CREATE (acc)-[:BELONGS_TO]->(org)
     RETURN acc
     """
-    
+
     params = {
         "account_id": account_id,
         "account_name": request.account_name,
+        "company_name": request.account_name,  # Initially same as account_name, agents can refine
         "organization_id": request.organization_id,
         "industry": request.industry,
         "status": request.status,

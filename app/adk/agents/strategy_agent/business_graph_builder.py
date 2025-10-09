@@ -88,18 +88,20 @@ class GraphBuilder:
             raise
 
     def _create_account_node(self, strategy: StructuredBusinessStrategy, account_id: str) -> Dict:
-        """Create or update the Account node with all required fields."""
+        """
+        Update the Account node with agent-derived fields only.
+
+        User-provided fields (account_name, websites, industry, budget, etc.) are
+        already set during account creation and should NEVER be overwritten.
+
+        Agent-derived fields that can be updated:
+        - company_name: Refined company name (e.g., "HDFC Bank" -> "HDFC Bank Limited")
+        - company_overview: Generated company description
+        """
         account_data = {
             'account_id': account_id,
-            'account_name': strategy.company_name,
-            'company_overview': strategy.company_overview_summary,
-            'industry': '',  # Would be passed from context
-            'websites': [],  # Would be passed from context
-            'customer_regions': [],  # Would be passed from context
-            'data_region': 'United States',  # Default, would be passed from context
-            'organization_id': '',  # Would be passed from context
-            'status': 'Active',
-            'timezone': 'America/New_York'  # Default, would be passed from context
+            'company_name': strategy.company_name,  # Agents can refine company name
+            'company_overview': strategy.company_overview_summary,  # Agents generate overview
         }
         return self.neo4j_ops.merge_account(account_data)
 
@@ -112,6 +114,7 @@ class GraphBuilder:
                     'valueprop_id': vp.id,
                     'display_name': vp.display_name,
                     'description': vp.description,
+                    'references': vp.references,
                     'created_time': datetime.now(),
                     'last_modified': datetime.now(),
                     'created_by': 'System',
@@ -171,6 +174,7 @@ class GraphBuilder:
                         'product_name': product.display_name,
                         'display_name': product.display_name,
                         'description': product.description,
+                        'references': product.references,
                         'product_detail_page': '',  # Not in current model, would need to be added
                         'created_time': datetime.now(),
                         'last_modified': datetime.now(),
@@ -206,6 +210,7 @@ class GraphBuilder:
                 'valueprop_id': vp.id,
                 'display_name': vp.display_name,
                 'description': vp.description,
+                'references': vp.references,
                 'created_time': datetime.now(),
                 'last_modified': datetime.now(),
                 'created_by': 'System',
@@ -259,6 +264,7 @@ class GraphBuilder:
                     'strength_id': link.strength.id,
                     'display_name': link.strength.id.replace('-', ' ').title(),
                     'description': link.strength.description,
+                    'references': link.strength.references,
                     'created_time': datetime.now(),
                     'last_modified': datetime.now(),
                     'created_by': 'System',
@@ -281,6 +287,7 @@ class GraphBuilder:
                         'opportunity_id': opp_item.id,
                         'display_name': opp_item.id.replace('-', ' ').title(),
                         'description': opp_item.description,
+                        'references': opp_item.references,
                         'created_time': datetime.now(),
                         'last_modified': datetime.now(),
                         'created_by': 'System',
@@ -312,6 +319,7 @@ class GraphBuilder:
                     'weakness_id': link.weakness.id,
                     'display_name': link.weakness.id.replace('-', ' ').title(),
                     'description': link.weakness.description,
+                    'references': link.weakness.references,
                     'created_time': datetime.now(),
                     'last_modified': datetime.now(),
                     'created_by': 'System',
@@ -334,6 +342,7 @@ class GraphBuilder:
                         'risk_id': risk_item.id,
                         'display_name': risk_item.id.replace('-', ' ').title(),
                         'description': risk_item.description,
+                        'references': risk_item.references,
                         'created_time': datetime.now(),
                         'last_modified': datetime.now(),
                         'created_by': 'System',
@@ -433,12 +442,12 @@ class GraphBuilder:
                 link_query = f"""
                 MATCH (p:PESTELAnalysis {{display_name: $display_name}})
                 MATCH (f:{factor_type})
-                WHERE id(f) = $node_id
+                WHERE elementId(f) = $node_id
                 MERGE (p)-[:INCLUDES_FACTOR]->(f)
                 """
                 self.neo4j_ops.connection.execute_query(link_query, {
                     'display_name': f'PESTEL Analysis for {account_id}',
-                    'node_id': node.get('id', node.get('elementId'))  # Handle both id formats
+                    'node_id': node.get('elementId', node.get('id'))
                 })
 
     def _create_goal_nodes(self, goals: List, account_id: str, created_nodes: Dict):
@@ -450,6 +459,7 @@ class GraphBuilder:
                     'goal_id': goal.id,
                     'display_name': goal.display_name,
                     'description': goal.description,
+                    'references': goal.references,
                     'created_time': datetime.now(),
                     'last_modified': datetime.now(),
                     'created_by': 'System',
@@ -488,6 +498,7 @@ class GraphBuilder:
                 {
                     'revenuestream_id': revenue_stream.id,
                     'display_name': revenue_stream.display_name,
+                    'references': [],
                     'created_time': datetime.now(),
                     'last_modified': datetime.now(),
                     'created_by': 'System',
@@ -515,6 +526,7 @@ class GraphBuilder:
                 {
                     'coststructure_id': cost_item.id,
                     'display_name': cost_item.display_name,
+                    'references': [],
                     'created_time': datetime.now(),
                     'last_modified': datetime.now(),
                     'created_by': 'System',
@@ -560,12 +572,12 @@ class GraphBuilder:
         query = f"""
         MATCH (acc:Account {{account_id: $account_id}})
         MATCH (n)
-        WHERE id(n) = $node_id
+        WHERE elementId(n) = $node_id
         MERGE (acc)-[:{relationship_type}]->(n)
         """
         self.neo4j_ops.connection.execute_query(query, {
             'account_id': account_id,
-            'node_id': node.get('id', node.get('elementId'))
+            'node_id': node.get('elementId', node.get('id'))
         })
 
     def update_strategy_graph(
@@ -612,7 +624,7 @@ class GraphBuilder:
                 # Mark node as deleted (soft delete)
                 delete_query = """
                 MATCH (n)
-                WHERE id(n) = $node_id
+                WHERE elementId(n) = $node_id
                 SET n.deleted = true,
                     n.deleted_at = datetime(),
                     n.deleted_by = $user

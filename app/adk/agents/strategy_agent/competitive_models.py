@@ -24,6 +24,7 @@ class NamedDetail(BaseModel):
         ...,
         description="A longer, more detailed description of the item."
     )
+    references: List[str] = Field(default=[], description="Source URLs where this information was found during research")
 
 
 class SubstituteProduct(BaseModel):
@@ -43,6 +44,7 @@ class SubstituteProduct(BaseModel):
         ...,
         description="The key value proposition that explains why a customer might choose this substitute product."
     )
+    references: List[str] = Field(default=[], description="Source URLs where this information was found during research")
 
 
 # ============================================================================
@@ -66,6 +68,7 @@ class StrengthWithRisks(BaseModel):
         ...,
         description="A list of risks created for your company as a result of the competitor's strength."
     )
+    references: List[str] = Field(default=[], description="Source URLs where information about this strength was found during research")
 
 
 class WeaknessWithOpportunities(BaseModel):
@@ -85,6 +88,7 @@ class WeaknessWithOpportunities(BaseModel):
         ...,
         description="A list of opportunities created for your company as a result of the competitor's weakness."
     )
+    references: List[str] = Field(default=[], description="Source URLs where information about this weakness was found during research")
 
 
 # ============================================================================
@@ -126,6 +130,7 @@ class Competitor(BaseModel):
         ...,
         description="A SWOT analysis of the competitor's weaknesses and the opportunities they create."
     )
+    references: List[str] = Field(default=[], description="Source URLs where information about this competitor was found during research")
 
 
 # ============================================================================

@@ -58,6 +58,7 @@ class IdealCustomerProfile(BaseModel):
             "outlining influential factors and touchpoints for retention."
         )
     )
+    references: List[str] = Field(default=[], description="Source URLs where information about this customer profile was found during research")
 
 
 class ProductCategory(BaseModel):
