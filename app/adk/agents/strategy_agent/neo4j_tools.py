@@ -274,52 +274,10 @@ class Neo4jOperations:
         Returns:
             Created/merged node data
         """
-        # Determine unique identifier field based on node type
-        id_field_map = {
-            # Business strategy node types
-            'Product': 'product_id',
-            'ProductCategory': 'category_name',
-            'Goal': 'goal_id',
-            'Strength': 'strength_id',
-            'Weakness': 'weakness_id',
-            'Opportunity': 'opportunity_id',
-            'Risk': 'risk_id',  # Renamed from Threat
-            'SWOTAnalysis': 'swot_id',
-            'ValueProposition': 'valueprop_id',
-            'RevenueStream': 'revenuestream_id',
-            'CostStructure': 'coststructure_id',
-            # PESTEL factors (deprecated at account level, will be used at industry level)
-            'PoliticalFactor': 'politicalfactor_id',
-            'EconomicFactor': 'economicfactor_id',
-            'SocialFactor': 'socialfactor_id',
-            'TechnologicalFactor': 'technologicalfactor_id',
-            'EnvironmentalFactor': 'environmentalfactor_id',
-            'LegalFactor': 'legalfactor_id',
-            # Competitive analysis node types
-            'Competitor': 'node_id',
-            'CompetitorStrength': 'node_id',
-            'CompetitorWeakness': 'node_id',
-            'CompetitorTactic': 'node_id',
-            'SubstituteProduct': 'node_id',
-            # Marketing strategy node types
-            'CustomerProfile': 'node_id',
-            'ProblemAwarenessStrategy': 'node_id',
-            'BrandAwarenessStrategy': 'node_id',
-            'ConsiderationStrategy': 'node_id',
-            'ConversionStrategy': 'node_id',
-            'LoyaltyStrategy': 'node_id',
-            # Brand guidelines node types
-            'BrandIdentity': 'node_id',
-            'BrandPersonality': 'node_id',
-            'VoiceAndTone': 'node_id',
-            'ColorPalette': 'node_id',
-            'Typography': 'node_id',
-            'ImageStyle': 'node_id',
-            'MissionAndValues': 'node_id'
-        }
+        # All nodes now use 'node_id' as the unique identifier (no backward compatibility with old type-specific IDs)
+        id_field = 'node_id'
 
-        id_field = id_field_map.get(node_type)
-        if id_field and id_field in node_data:
+        if id_field in node_data:
             # Use MERGE with unique identifier
             query = f"""
             MATCH (acc:Account {{account_id: $account_id}})

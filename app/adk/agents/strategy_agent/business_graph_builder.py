@@ -108,10 +108,11 @@ class GraphBuilder:
     def _create_business_value_propositions(self, value_props: List, account_id: str, created_nodes: Dict):
         """Create business-level ValueProposition nodes linked to Account."""
         for vp in value_props:
+            node_id = f"value_{account_id}_{uuid.uuid4().hex[:8]}"
             vp_node = self.neo4j_ops.create_strategy_node(
                 'ValueProposition',
                 {
-                    'valueprop_id': vp.id,
+                    'node_id': node_id,
                     'display_name': vp.display_name,
                     'description': vp.description,
                     'references': vp.references,
@@ -128,51 +129,86 @@ class GraphBuilder:
             # Link to Account
             query = """
             MATCH (acc:Account {account_id: $account_id})
-            MATCH (vp:ValueProposition {valueprop_id: $vp_id})
+            MATCH (vp:ValueProposition {node_id: $node_id})
             MERGE (acc)-[:HAS_VALUE_PROPOSITION]->(vp)
             """
             self.neo4j_ops.connection.execute_query(query, {
                 'account_id': account_id,
-                'vp_id': vp.id
+                'node_id': node_id
             })
 
     def _create_product_nodes(self, strategy: StructuredBusinessStrategy, account_id: str, created_nodes: Dict):
         """Create Product and ValueProposition nodes."""
-        query = """
-        MATCH (acc:Account {account_id: $account_id})
-        MERGE (cat:ProductCategory:Strategy {category_name: $category_name})
-        SET cat.product_name = $category_name,
-            cat.created_time = COALESCE(cat.created_time, datetime()),
-            cat.last_modified = datetime(),
-            cat.created_by = COALESCE(cat.created_by, 'System'),
-            cat.last_modified_by = 'System',
-            cat.description = $description,
-            cat.embedding = null
-        MERGE (cat)-[:BELONGS_TO]->(acc)
-        MERGE (acc)-[:OFFERS_PRODUCTS]->(cat)
-        """
-
         for category in strategy.product_portfolio:
+            # Generate unique node_id for ProductCategory
+            category_node_id = f"productcat_{account_id}_{uuid.uuid4().hex[:8]}"
+
             # Generate description for category from its value propositions
             category_desc = f"Product category containing {len(category.products)} products. "
             if category.value_propositions:
                 category_desc += "Key value propositions: " + ", ".join([vp.display_name for vp in category.value_propositions[:3]])
 
             # Create category
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MERGE (cat:ProductCategory:Strategy {node_id: $node_id})
+            SET cat.product_name = $category_name,
+                cat.created_time = COALESCE(cat.created_time, datetime()),
+                cat.last_modified = datetime(),
+                cat.created_by = COALESCE(cat.created_by, 'System'),
+                cat.last_modified_by = 'System',
+                cat.description = $description,
+                cat.embedding = null
+            MERGE (cat)-[:BELONGS_TO]->(acc)
+            MERGE (acc)-[:OFFERS_PRODUCTS]->(cat)
+            """
             self.neo4j_ops.connection.execute_query(query, {
                 'account_id': account_id,
+                'node_id': category_node_id,
                 'category_name': category.category_name,
                 'description': category_desc
             })
 
+            # Create category-level value propositions
+            for vp in category.value_propositions:
+                vp_node_id = f"value_{account_id}_{uuid.uuid4().hex[:8]}"
+                vp_node = self.neo4j_ops.create_strategy_node(
+                    'ValueProposition',
+                    {
+                        'node_id': vp_node_id,
+                        'display_name': vp.display_name,
+                        'description': vp.description,
+                        'references': vp.references,
+                        'created_time': datetime.now(),
+                        'last_modified': datetime.now(),
+                        'created_by': 'System',
+                        'last_modified_by': 'System',
+                        'embedding': None
+                    },
+                    account_id
+                )
+
+                # Link to ProductCategory
+                vp_link_query = """
+                MATCH (cat:ProductCategory {node_id: $category_node_id})
+                MATCH (vp:ValueProposition {node_id: $vp_node_id})
+                MERGE (cat)-[:HAS_VALUE_PROPOSITION]->(vp)
+                """
+                self.neo4j_ops.connection.execute_query(vp_link_query, {
+                    'category_node_id': category_node_id,
+                    'vp_node_id': vp_node_id
+                })
+
+                created_nodes['value_propositions'].append(vp_node)
+
             # Create products in category with ALL fields
             for product in category.products:
+                product_node_id = f"prod_{account_id}_{uuid.uuid4().hex[:8]}"
                 prod_node = self.neo4j_ops.create_strategy_node(
                     'Product',
                     {
-                        'product_id': product.id,
+                        'node_id': product_node_id,
                         'product_name': product.display_name,
-                        'display_name': product.display_name,
                         'description': product.description,
                         'references': product.references,
                         'product_detail_page': '',  # Not in current model, would need to be added
@@ -188,26 +224,27 @@ class GraphBuilder:
 
                 # Link product to category
                 link_query = """
-                MATCH (cat:ProductCategory {category_name: $category_name})
-                MATCH (prod:Product {product_id: $product_id})
+                MATCH (cat:ProductCategory {node_id: $category_node_id})
+                MATCH (prod:Product {node_id: $product_node_id})
                 MERGE (cat)-[:INCLUDES_PRODUCT]->(prod)
                 """
                 self.neo4j_ops.connection.execute_query(link_query, {
-                    'category_name': category.category_name,
-                    'product_id': product.id
+                    'category_node_id': category_node_id,
+                    'product_node_id': product_node_id
                 })
 
                 # Create value propositions for product
                 for vp in product.value_propositions:
-                    vp_node = self._create_value_proposition(vp, product.id, account_id)
+                    vp_node = self._create_value_proposition(vp, product_node_id, account_id)
                     created_nodes['value_propositions'].append(vp_node)
 
-    def _create_value_proposition(self, vp, product_id: str, account_id: str) -> Dict:
+    def _create_value_proposition(self, vp, product_node_id: str, account_id: str) -> Dict:
         """Create a ValueProposition node and link to product."""
+        vp_node_id = f"value_{account_id}_{uuid.uuid4().hex[:8]}"
         vp_node = self.neo4j_ops.create_strategy_node(
             'ValueProposition',
             {
-                'valueprop_id': vp.id,
+                'node_id': vp_node_id,
                 'display_name': vp.display_name,
                 'description': vp.description,
                 'references': vp.references,
@@ -222,13 +259,13 @@ class GraphBuilder:
 
         # Link to product
         link_query = """
-        MATCH (prod:Product {product_id: $product_id})
-        MATCH (vp:ValueProposition {valueprop_id: $valueprop_id})
+        MATCH (prod:Product {node_id: $product_node_id})
+        MATCH (vp:ValueProposition {node_id: $vp_node_id})
         MERGE (prod)-[:HAS_VALUE_PROPOSITION]->(vp)
         """
         self.neo4j_ops.connection.execute_query(link_query, {
-            'product_id': product_id,
-            'valueprop_id': vp.id
+            'product_node_id': product_node_id,
+            'vp_node_id': vp_node_id
         })
 
         return vp_node
@@ -236,9 +273,10 @@ class GraphBuilder:
     def _create_swot_nodes(self, swot: SWOTAnalysis, account_id: str, created_nodes: Dict):
         """Create SWOT analysis nodes with hub node and CREATES relationships."""
         # Step 1: Create SWOTAnalysis hub node
+        swot_node_id = f"swot_{account_id}_{uuid.uuid4().hex[:8]}"
         swot_hub_query = """
         MATCH (acc:Account {account_id: $account_id})
-        MERGE (swot:SWOTAnalysis {swot_id: $swot_id})
+        MERGE (swot:SWOTAnalysis {node_id: $node_id})
         SET swot.display_name = $display_name,
             swot.created_time = COALESCE(swot.created_time, datetime()),
             swot.last_modified = datetime(),
@@ -248,20 +286,20 @@ class GraphBuilder:
         MERGE (swot)-[:BELONGS_TO]->(acc)
         RETURN swot
         """
-        swot_id = f"swot_{account_id}"
         swot_hub = self.neo4j_ops.connection.execute_query(swot_hub_query, {
             'account_id': account_id,
-            'swot_id': swot_id,
+            'node_id': swot_node_id,
             'display_name': f'SWOT Analysis for {account_id}'
         })
 
         # Step 2: Process strengths_and_opportunities
         for link in swot.strengths_and_opportunities:
             # Create strength node
+            strength_node_id = f"strength_{account_id}_{uuid.uuid4().hex[:8]}"
             strength_node = self.neo4j_ops.create_strategy_node(
                 'Strength',
                 {
-                    'strength_id': link.strength.id,
+                    'node_id': strength_node_id,
                     'display_name': link.strength.id.replace('-', ' ').title(),
                     'description': link.strength.description,
                     'references': link.strength.references,
@@ -277,14 +315,15 @@ class GraphBuilder:
             created_nodes['swot']['strengths'].append(strength_node)
 
             # Link strength to SWOT hub
-            self._link_to_swot_hub(strength_node, swot_id, 'HAS_STRENGTH')
+            self._link_to_swot_hub(strength_node, swot_node_id, 'HAS_STRENGTH')
 
             # Create linked opportunities and CREATES relationships
             for opp_item in link.linked_opportunities:
+                opp_node_id = f"opportunity_{account_id}_{uuid.uuid4().hex[:8]}"
                 opp_node = self.neo4j_ops.create_strategy_node(
                     'Opportunity',
                     {
-                        'opportunity_id': opp_item.id,
+                        'node_id': opp_node_id,
                         'display_name': opp_item.id.replace('-', ' ').title(),
                         'description': opp_item.description,
                         'references': opp_item.references,
@@ -301,22 +340,23 @@ class GraphBuilder:
 
                 # Create CREATES relationship: Strength -> Opportunity
                 creates_query = """
-                MATCH (s:Strength {strength_id: $strength_id})
-                MATCH (o:Opportunity {opportunity_id: $opportunity_id})
+                MATCH (s:Strength {node_id: $strength_node_id})
+                MATCH (o:Opportunity {node_id: $opp_node_id})
                 MERGE (s)-[:CREATES]->(o)
                 """
                 self.neo4j_ops.connection.execute_query(creates_query, {
-                    'strength_id': link.strength.id,
-                    'opportunity_id': opp_item.id
+                    'strength_node_id': strength_node_id,
+                    'opp_node_id': opp_node_id
                 })
 
         # Step 3: Process weaknesses_and_risks
         for link in swot.weaknesses_and_risks:
             # Create weakness node
+            weakness_node_id = f"weakness_{account_id}_{uuid.uuid4().hex[:8]}"
             weakness_node = self.neo4j_ops.create_strategy_node(
                 'Weakness',
                 {
-                    'weakness_id': link.weakness.id,
+                    'node_id': weakness_node_id,
                     'display_name': link.weakness.id.replace('-', ' ').title(),
                     'description': link.weakness.description,
                     'references': link.weakness.references,
@@ -332,14 +372,15 @@ class GraphBuilder:
             created_nodes['swot']['weaknesses'].append(weakness_node)
 
             # Link weakness to SWOT hub
-            self._link_to_swot_hub(weakness_node, swot_id, 'HAS_WEAKNESS')
+            self._link_to_swot_hub(weakness_node, swot_node_id, 'HAS_WEAKNESS')
 
             # Create linked risks and CREATES relationships
             for risk_item in link.linked_risks:
+                risk_node_id = f"risk_{account_id}_{uuid.uuid4().hex[:8]}"
                 risk_node = self.neo4j_ops.create_strategy_node(
                     'Risk',
                     {
-                        'risk_id': risk_item.id,
+                        'node_id': risk_node_id,
                         'display_name': risk_item.id.replace('-', ' ').title(),
                         'description': risk_item.description,
                         'references': risk_item.references,
@@ -356,35 +397,34 @@ class GraphBuilder:
 
                 # Create CREATES relationship: Weakness -> Risk
                 creates_query = """
-                MATCH (w:Weakness {weakness_id: $weakness_id})
-                MATCH (r:Risk {risk_id: $risk_id})
+                MATCH (w:Weakness {node_id: $weakness_node_id})
+                MATCH (r:Risk {node_id: $risk_node_id})
                 MERGE (w)-[:CREATES]->(r)
                 """
                 self.neo4j_ops.connection.execute_query(creates_query, {
-                    'weakness_id': link.weakness.id,
-                    'risk_id': risk_item.id
+                    'weakness_node_id': weakness_node_id,
+                    'risk_node_id': risk_node_id
                 })
 
-    def _link_to_swot_hub(self, node: Dict, swot_id: str, relationship_type: str):
+    def _link_to_swot_hub(self, node: Dict, swot_node_id: str, relationship_type: str):
         """Link a SWOT item to the SWOTAnalysis hub node."""
-        # Determine which ID field to use based on node type
-        node_id_field = None
-        if 'strength_id' in node:
-            node_id_field = 'strength_id'
+        # Determine node label based on relationship type
+        if relationship_type == 'HAS_STRENGTH':
             node_label = 'Strength'
-        elif 'weakness_id' in node:
-            node_id_field = 'weakness_id'
+        elif relationship_type == 'HAS_WEAKNESS':
             node_label = 'Weakness'
+        else:
+            return
 
-        if node_id_field:
+        if 'node_id' in node:
             query = f"""
-            MATCH (swot:SWOTAnalysis {{swot_id: $swot_id}})
-            MATCH (n:{node_label} {{{node_id_field}: $node_id}})
+            MATCH (swot:SWOTAnalysis {{node_id: $swot_node_id}})
+            MATCH (n:{node_label} {{node_id: $node_id}})
             MERGE (swot)-[:{relationship_type}]->(n)
             """
             self.neo4j_ops.connection.execute_query(query, {
-                'swot_id': swot_id,
-                'node_id': node[node_id_field]
+                'swot_node_id': swot_node_id,
+                'node_id': node['node_id']
             })
 
     def _create_pestel_nodes(self, pestel: PESTELAnalysis, account_id: str, created_nodes: Dict):
@@ -453,10 +493,11 @@ class GraphBuilder:
     def _create_goal_nodes(self, goals: List, account_id: str, created_nodes: Dict):
         """Create strategic goal nodes."""
         for goal in goals:
+            goal_node_id = f"goal_{account_id}_{uuid.uuid4().hex[:8]}"
             node = self.neo4j_ops.create_strategy_node(
                 'Goal',
                 {
-                    'goal_id': goal.id,
+                    'node_id': goal_node_id,
                     'display_name': goal.display_name,
                     'description': goal.description,
                     'references': goal.references,

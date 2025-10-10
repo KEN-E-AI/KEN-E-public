@@ -45,9 +45,9 @@ def format_with_openai(research_data: str, model_class: Type[BaseModel], strateg
     from openai import OpenAI as OpenAIClient
 
     api_key = _get_openai_key()
-    client = OpenAIClient(api_key=api_key)
 
-    try:
+    # Use context manager to ensure proper cleanup of httpx connections
+    with OpenAIClient(api_key=api_key) as client:
         # Build user prompt with source URLs
         urls_section = ""
         if source_urls:
@@ -75,6 +75,3 @@ def format_with_openai(research_data: str, model_class: Type[BaseModel], strateg
         else:
             # Fallback to JSON parsing
             return json.loads(completion.choices[0].message.content)
-    finally:
-        # Always close the client to prevent resource leaks
-        client.close()

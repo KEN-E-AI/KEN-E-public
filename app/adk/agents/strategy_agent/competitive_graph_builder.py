@@ -147,13 +147,16 @@ class CompetitiveGraphBuilder:
 
     def _create_competitive_environment(self, analysis: CompetitiveAnalysis, account_id: str) -> Dict:
         """Create CompetitiveEnvironment node."""
+        node_id = f"competitiveenv_{account_id}_{uuid.uuid4().hex[:8]}"
+
         query = """
         MERGE (acc:Account {account_id: $account_id})
         ON CREATE SET acc.account_name = $account_id,
                       acc.created_time = datetime(),
                       acc.last_modified = datetime()
-        MERGE (ce:CompetitiveEnvironment:Strategy {account_id: $account_id})
-        SET ce.description = $description,
+        MERGE (ce:CompetitiveEnvironment:Strategy {node_id: $node_id})
+        SET ce.account_id = $account_id,
+            ce.description = $description,
             ce.created_time = COALESCE(ce.created_time, datetime()),
             ce.last_modified = datetime(),
             ce.created_by = COALESCE(ce.created_by, 'System'),
@@ -161,10 +164,11 @@ class CompetitiveGraphBuilder:
             ce.embedding = null
         MERGE (acc)-[:OPERATES_WITHIN]->(ce)
         MERGE (ce)-[:BELONGS_TO]->(acc)
-        RETURN ce.account_id as node_id, ce
+        RETURN ce.node_id as node_id, ce
         """
 
         result = self.neo4j_ops.connection.execute_query(query, {
+            'node_id': node_id,
             'account_id': account_id,
             'description': analysis.competitive_environment_description
         })
@@ -174,7 +178,7 @@ class CompetitiveGraphBuilder:
     def _create_competitor_node(self, competitor: Competitor, comp_env_id: str, account_id: str) -> Dict:
         """Create Competitor node with all fields."""
         node_data = {
-            'node_id': f"competitor_{competitor.name.lower().replace(' ', '_')}_{account_id[:8]}",
+            'node_id': f"competitor_{account_id}_{uuid.uuid4().hex[:8]}",
             'display_name': competitor.name,
             'description': competitor.description,
             'references': competitor.references,
@@ -191,12 +195,12 @@ class CompetitiveGraphBuilder:
         # Link to CompetitiveEnvironment with IS_KEY_PLAYER relationship
         query = """
         MATCH (c:Competitor {node_id: $competitor_id})
-        MATCH (ce:CompetitiveEnvironment {account_id: $account_id})
+        MATCH (ce:CompetitiveEnvironment {node_id: $comp_env_id})
         MERGE (ce)-[:IS_KEY_PLAYER]->(c)
         """
         self.neo4j_ops.connection.execute_query(query, {
             'competitor_id': node_data['node_id'],
-            'account_id': account_id
+            'comp_env_id': comp_env_id
         })
 
         return node_data
@@ -233,7 +237,7 @@ class CompetitiveGraphBuilder:
     def _create_competitor_value_proposition(self, vp: NamedDetail, competitor_id: str, account_id: str) -> Dict:
         """Create ValueProposition node for competitor."""
         node_data = {
-            'valueprop_id': f"vp_comp_{vp.name.lower().replace(' ', '_')}_{competitor_id[:16]}",
+            'node_id': f"value_{account_id}_{uuid.uuid4().hex[:8]}",
             'display_name': vp.name,
             'description': vp.description,
             'references': vp.references,
@@ -248,12 +252,12 @@ class CompetitiveGraphBuilder:
 
         # Link to Competitor
         query = """
-        MATCH (vp:ValueProposition {valueprop_id: $vp_id})
+        MATCH (vp:ValueProposition {node_id: $vp_id})
         MATCH (c:Competitor {node_id: $competitor_id})
         MERGE (c)-[:HAS_VALUE_PROPOSITION]->(vp)
         """
         self.neo4j_ops.connection.execute_query(query, {
-            'vp_id': node_data['valueprop_id'],
+            'vp_id': node_data['node_id'],
             'competitor_id': competitor_id
         })
 
@@ -400,7 +404,6 @@ class CompetitiveGraphBuilder:
         node_data = {
             'node_id': f"substitute_{product.name.lower().replace(' ', '_')}_{competitor_id[:16]}",
             'product_name': product.name,
-            'display_name': product.name,
             'description': product.description,
             'references': product.references,
             'product_detail_page': '',  # Optional field, would be populated if available
@@ -429,7 +432,7 @@ class CompetitiveGraphBuilder:
         vp_node = self.neo4j_ops.create_strategy_node(
             'ValueProposition',
             {
-                'valueprop_id': f"vp_sub_{vp.name.lower().replace(' ', '_')}_{node_data['node_id'][:16]}",
+                'node_id': f"value_{account_id}_{uuid.uuid4().hex[:8]}",
                 'display_name': vp.name,
                 'description': vp.description,
                 'references': vp.references,
@@ -445,12 +448,12 @@ class CompetitiveGraphBuilder:
 
         # Link VP to SubstituteProduct
         vp_query = """
-        MATCH (vp:ValueProposition {valueprop_id: $vp_id})
+        MATCH (vp:ValueProposition {node_id: $vp_id})
         MATCH (sp:SubstituteProduct {node_id: $product_id})
         MERGE (sp)-[:HAS_VALUE_PROPOSITION]->(vp)
         """
         self.neo4j_ops.connection.execute_query(vp_query, {
-            'vp_id': vp_node['valueprop_id'],
+            'vp_id': vp_node['node_id'],
             'product_id': node_data['node_id']
         })
 

@@ -353,6 +353,9 @@ def execute_strategy_generation_direct(
         },
     ]
 
+    # Track ProductCategory names for marketing strategy coordination
+    product_category_names = []
+
     # Process each strategy type sequentially
     for strategy_config in strategy_types:
         strategy_name = strategy_config["name"]
@@ -400,6 +403,13 @@ def execute_strategy_generation_direct(
                 research_query += f"Customer Regions: {', '.join(context.customer_regions)}\n"
             if context.annual_ad_budget:
                 research_query += f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
+
+            # For marketing strategy, include ProductCategory names from business strategy
+            if strategy_name == "marketing_strategy" and product_category_names:
+                research_query += f"\nIMPORTANT: Generate customer profiles for these specific product categories:\n"
+                for cat_name in product_category_names:
+                    research_query += f"- {cat_name}\n"
+                logger.info(f"[COORDINATION] Passing {len(product_category_names)} ProductCategory names to marketing research")
 
             message_content = Content(role="user", parts=[{"text": research_query}])
 
@@ -539,6 +549,16 @@ Research text:
             # Success!
             generated_documents[strategy_name] = doc_content
             logger.info(f"[SPLIT AGENT] ✅✅✅ Successfully completed {strategy_name}")
+
+            # Extract ProductCategory names from business strategy for marketing coordination
+            if strategy_name == "business_strategy" and 'product_portfolio' in doc_content:
+                try:
+                    for category in doc_content['product_portfolio']:
+                        if 'category_name' in category:
+                            product_category_names.append(category['category_name'])
+                    logger.info(f"[COORDINATION] Extracted {len(product_category_names)} ProductCategory names from business strategy: {product_category_names}")
+                except Exception as e:
+                    logger.warning(f"[COORDINATION] Failed to extract ProductCategory names: {e}")
 
             # Track analytics
             if performance_profiler and operation:

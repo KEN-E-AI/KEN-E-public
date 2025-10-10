@@ -332,10 +332,10 @@ class MarketingGraphBuilder:
         """
         query = """
         MATCH (pc:ProductCategory)-[:BELONGS_TO]->(:Account {account_id: $account_id})
-        WHERE toLower(pc.category_name) = toLower($category_name)
+        WHERE toLower(pc.product_name) = toLower($category_name)
         MATCH (cp:CustomerProfile {node_id: $profile_id})
-        MERGE (cp)-[:IS_MARKETED_TO]->(pc)
-        RETURN pc.category_name as category, cp.node_id as profile
+        MERGE (pc)-[:IS_MARKETED_TO]->(cp)
+        RETURN pc.product_name as category, cp.node_id as profile
         """
         result = self.neo4j_ops.connection.execute_query(query, {
             'account_id': account_id,
