@@ -74,10 +74,13 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
             else:
                 processed_lines.append(line)
 
+    # Write with restrictive permissions (owner read/write only)
+    # This minimizes the exposure window for plaintext secrets
+    dest_path.touch(mode=0o600)
     with open(dest_path, "w") as f:
         f.writelines(processed_lines)
 
-    logger.info(f"Processed .env written to {dest_path}")
+    logger.info(f"Processed .env written to {dest_path} with mode 0o600")
 
 
 # Save current directory
