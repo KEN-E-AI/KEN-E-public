@@ -159,7 +159,9 @@ with tempfile.TemporaryDirectory() as temp_dir:
         log_file = Path(original_dir) / "agents/logs/strategy_supervisor_deployment.txt"
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with open(log_file, "w") as f:
-            f.write(f"Deployment: strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}\n")
+            f.write(
+                f"Deployment: strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}\n"
+            )
             f.write(f"Python Version: {PYTHON_VERSION}\n")
             f.write(f"Engine ID: {deployed_engine.resource_name}\n")
             f.write(f"Project: {PROJECT_ID}\n")
