@@ -58,21 +58,16 @@ except ImportError:
     from .token_utils import TokenEstimator
 
 # Load environment variables from .env file if it exists
-# This ensures WANDB_API_KEY and other env vars are available when deployed to Agent Engine
+# The .env file is deployed with the agent and loaded at runtime
 try:
     from dotenv import load_dotenv
 
-    # Look for .env file in the adk root directory (2 levels up from strategy_agent/)
     env_path = Path(__file__).parent.parent.parent / ".env"
     if env_path.exists():
-        load_dotenv(env_path, override=False)  # Don't override existing env vars
+        load_dotenv(env_path, override=False)
         logging.info(f"Loaded environment variables from {env_path}")
-    else:
-        logging.info(
-            f".env file not found at {env_path}, using existing environment variables"
-        )
 except ImportError:
-    logging.warning("python-dotenv not available, skipping .env file loading")
+    logging.warning("python-dotenv not available")
 except Exception as e:
     logging.warning(f"Failed to load .env file: {e}")
 
