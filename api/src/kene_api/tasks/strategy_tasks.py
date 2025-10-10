@@ -252,8 +252,10 @@ Please execute strategy generation with these parameters:
                 logger.info(f"Agent engine type: {type(agent_engine)}")
 
                 try:
-                    logger.info("About to call agent_engine.stream_query with retry logic...")
-                    
+                    logger.info(
+                        "About to call agent_engine.stream_query with retry logic..."
+                    )
+
                     # Define retry decorator for ServiceUnavailable errors
                     @backoff.on_exception(
                         backoff.expo,
@@ -262,13 +264,13 @@ Please execute strategy generation with these parameters:
                         max_time=60,  # Max 60 seconds of retry attempts
                         on_backoff=lambda details: logger.warning(
                             f"ServiceUnavailable error, retrying... (attempt {details['tries']}/{3})"
-                        )
+                        ),
                     )
                     def stream_query_with_retry():
                         return agent_engine.stream_query(
                             message=message, user_id=user_id
                         )
-                    
+
                     response = stream_query_with_retry()
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
@@ -299,7 +301,7 @@ Please execute strategy generation with these parameters:
                 # Retry logic for chunk iteration
                 max_chunk_retries = 3
                 chunk_retry_count = 0
-                
+
                 while chunk_retry_count < max_chunk_retries:
                     try:
                         logger.info(f"Agent response object type: {type(response)}")
@@ -447,10 +449,10 @@ Please execute strategy generation with these parameters:
                             logger.info(
                                 f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                             )
-                        
+
                         # Successfully processed all chunks, break retry loop
                         break
-                        
+
                     except google_exceptions.ServiceUnavailable as e:
                         chunk_retry_count += 1
                         if chunk_retry_count >= max_chunk_retries:
@@ -466,7 +468,9 @@ Please execute strategy generation with these parameters:
                             )
                             return  # Exit early
                         else:
-                            wait_time = 2 ** chunk_retry_count  # Exponential backoff: 2, 4, 8 seconds
+                            wait_time = (
+                                2**chunk_retry_count
+                            )  # Exponential backoff: 2, 4, 8 seconds
                             logger.warning(
                                 f"ServiceUnavailable during chunk iteration, retrying in {wait_time}s... (attempt {chunk_retry_count}/{max_chunk_retries})"
                             )
@@ -475,7 +479,7 @@ Please execute strategy generation with these parameters:
                             response = stream_query_with_retry()
                             chunk_count = 0  # Reset chunk count for new stream
                             response_parts = []  # Reset response parts
-                            
+
                     except Exception as e:
                         # Non-retryable error - fail immediately
                         logger.error(
@@ -491,7 +495,9 @@ Please execute strategy generation with these parameters:
                             completed=False,
                             error_message=f"Strategy generation failed: {str(e)[:200]}",
                         )
-                        logger.error(f"Account {account_id} marked as failed due to agent error during streaming")
+                        logger.error(
+                            f"Account {account_id} marked as failed due to agent error during streaming"
+                        )
                         return  # Exit early
 
                 # Check if we actually got a response
@@ -604,22 +610,23 @@ Please execute strategy generation with these parameters:
 
         # Send email notification
         try:
-            from ..email_service import get_email_service
             from google.cloud import firestore
+
+            from ..email_service import get_email_service
 
             # Get user email from Firestore
             db = firestore.Client()
-            user_doc = db.collection('users').document(user_id).get()
+            user_doc = db.collection("users").document(user_id).get()
             if user_doc.exists:
                 user_data = user_doc.to_dict()
-                user_email = user_data.get('profile', {}).get('email')
+                user_email = user_data.get("profile", {}).get("email")
 
                 if user_email:
                     email_service = get_email_service()
                     email_sent = email_service.send_account_ready_email(
                         to_email=user_email,
                         company_name=company_name,
-                        account_id=account_id
+                        account_id=account_id,
                     )
                     if email_sent:
                         logger.info(f"✅ Sent account ready email to {user_email}")
@@ -802,7 +809,7 @@ async def verify_strategy_documents_created(
         )
 
         if doc_quality:
-            logger.info(f"Document quality details:")
+            logger.info("Document quality details:")
             for doc_type, quality in doc_quality.items():
                 logger.info(
                     f"  - {doc_type}: {quality['size']} bytes, {quality['keys']} keys, status: '{quality['status']}', complete: {quality['complete']}"

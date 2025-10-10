@@ -7,8 +7,9 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 """
 
 import google.adk as adk
-from google.genai.types import GenerateContentConfig
 from google.adk.tools import AgentTool
+from google.genai.types import GenerateContentConfig
+
 from .marketing_models import MarketingResearchReport
 
 
@@ -35,7 +36,7 @@ def create_marketing_researcher(google_search_agent):
         # NO output_schema - this allows tool usage
         generate_content_config=GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=2500  # Limit to prevent rate limit issues
+            max_output_tokens=2500,  # Limit to prevent rate limit issues
         ),
         instruction="""You are a marketing intelligence researcher. Your role is to:
 
@@ -64,7 +65,7 @@ Focus on actionable marketing intelligence that helps understand:
 - How do they discover and evaluate solutions?
 - What motivates them to buy and stay loyal?
 
-Provide detailed findings with specific examples and data where possible."""
+Provide detailed findings with specific examples and data where possible.""",
     )
 
 
@@ -88,7 +89,7 @@ def create_marketing_formatter():
         generate_content_config=GenerateContentConfig(
             temperature=0.1,
             max_output_tokens=8000,
-            response_mime_type="application/json"
+            response_mime_type="application/json",
         ),
         output_schema=MarketingResearchReport,  # Enforces JSON structure
         instruction="""You are a marketing research formatter. Your role is to:
@@ -114,5 +115,5 @@ Guidelines:
 - Ensure each strategy is comprehensive (close to max length when appropriate)
 
 Output valid JSON matching the MarketingResearchReport schema EXACTLY.
-Ensure all required fields are populated with rich, detailed content."""
+Ensure all required fields are populated with rich, detailed content.""",
     )

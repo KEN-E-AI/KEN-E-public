@@ -11,10 +11,12 @@ import logging
 import os
 import time
 import uuid
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
 
-from google.adk import Runner
-from google.adk.agents import Agent, SequentialAgent
+# Import weave for tracing
+import weave  # noqa: E402
+from google.adk.agents import Agent
 from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content
 from vertexai.preview import reasoning_engines
@@ -22,47 +24,43 @@ from vertexai.preview import reasoning_engines
 # Import strategy components
 try:
     # Absolute imports for deployment
+    from agents.strategy_agent.alert_manager import AlertManager
+
+    # Import analytics components
+    from agents.strategy_agent.analytics_helpers import (
+        check_token_limits_before_execution,
+        initialize_analytics_services,
+        report_execution_summary,
+    )
+    from agents.strategy_agent.analytics_service import AnalyticsService
     from agents.strategy_agent.artifact_utils import (
         load_uploaded_documents_as_artifacts,
     )
     from agents.strategy_agent.firestore import FirestoreClient
     from agents.strategy_agent.models import StrategyContext
-
-    # Import analytics components
-    from agents.strategy_agent.analytics_helpers import (
-        initialize_analytics_services,
-        check_token_limits_before_execution,
-        report_execution_summary,
-    )
-    from agents.strategy_agent.analytics_service import AnalyticsService
     from agents.strategy_agent.performance_profiler import PerformanceProfiler
-    from agents.strategy_agent.alert_manager import AlertManager
     from agents.strategy_agent.token_utils import TokenEstimator
 except ImportError:
     # Relative imports for local testing
-    from .artifact_utils import load_uploaded_documents_as_artifacts
-    from .firestore import FirestoreClient
-    from .models import StrategyContext
+    from .alert_manager import AlertManager
 
     # Import analytics components
     from .analytics_helpers import (
-        initialize_analytics_services,
         check_token_limits_before_execution,
+        initialize_analytics_services,
         report_execution_summary,
     )
     from .analytics_service import AnalyticsService
+    from .artifact_utils import load_uploaded_documents_as_artifacts
+    from .firestore import FirestoreClient
+    from .models import StrategyContext
     from .performance_profiler import PerformanceProfiler
-    from .alert_manager import AlertManager
     from .token_utils import TokenEstimator
-
-# Import weave for tracing
-import weave
 
 # Load environment variables from .env file if it exists
 # This ensures WANDB_API_KEY and other env vars are available when deployed to Agent Engine
 try:
     from dotenv import load_dotenv
-    from pathlib import Path
 
     # Look for .env file in the adk root directory (2 levels up from strategy_agent/)
     env_path = Path(__file__).parent.parent.parent / ".env"
@@ -70,7 +68,9 @@ try:
         load_dotenv(env_path, override=False)  # Don't override existing env vars
         logging.info(f"Loaded environment variables from {env_path}")
     else:
-        logging.info(f".env file not found at {env_path}, using existing environment variables")
+        logging.info(
+            f".env file not found at {env_path}, using existing environment variables"
+        )
 except ImportError:
     logging.warning("python-dotenv not available, skipping .env file loading")
 except Exception as e:
@@ -81,6 +81,7 @@ logger = logging.getLogger(__name__)
 # W&B observability will be initialized lazily when needed
 # This prevents initialization failures during Engine startup
 WEAVE_INITIALIZED = False
+
 
 def init_weave_if_needed():
     """Initialize W&B Weave if not already initialized and API key is available."""
@@ -120,10 +121,31 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
     Returns:
         Minimal placeholder data matching the model schema
     """
-    from .structured_models import StructuredBusinessStrategy, SWOTItem, StrengthOpportunityLink, WeaknessRiskLink, ProductCategory, ProductService, StrategicGoal
-    from .competitive_models import CompetitiveAnalysis, Competitor, NamedDetail, SubstituteProduct, StrengthWithRisks, WeaknessWithOpportunities
-    from .marketing_models import MarketingResearchReport, ProductCategory as MarketingProductCategory, IdealCustomerProfile
     from .brand_models import BrandGuidelines
+    from .competitive_models import (
+        CompetitiveAnalysis,
+        Competitor,
+        NamedDetail,
+        StrengthWithRisks,
+        SubstituteProduct,
+        WeaknessWithOpportunities,
+    )
+    from .marketing_models import (
+        IdealCustomerProfile,
+        MarketingResearchReport,
+    )
+    from .marketing_models import (
+        ProductCategory as MarketingProductCategory,
+    )
+    from .structured_models import (
+        ProductCategory,
+        ProductService,
+        StrategicGoal,
+        StrengthOpportunityLink,
+        StructuredBusinessStrategy,
+        SWOTItem,
+        WeaknessRiskLink,
+    )
 
     if model_class == StructuredBusinessStrategy:
         # Business: Create minimal products/goals/SWOT WITHOUT child nodes
@@ -140,33 +162,39 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
                             id="placeholder-product",
                             display_name="Product Analysis Pending",
                             description="Requires further research",
-                            value_propositions=[]  # No placeholder ValueProps
+                            value_propositions=[],  # No placeholder ValueProps
                         )
-                    ]
+                    ],
                 )
             ],
             swot_analysis={
                 "strengths_and_opportunities": [
                     StrengthOpportunityLink(
-                        strength=SWOTItem(id="placeholder-strength", description="Requires further research"),
-                        linked_opportunities=[]  # No placeholder Opportunities
+                        strength=SWOTItem(
+                            id="placeholder-strength",
+                            description="Requires further research",
+                        ),
+                        linked_opportunities=[],  # No placeholder Opportunities
                     )
                 ],
                 "weaknesses_and_risks": [
                     WeaknessRiskLink(
-                        weakness=SWOTItem(id="placeholder-weakness", description="Requires further research"),
-                        linked_risks=[]  # No placeholder Risks
+                        weakness=SWOTItem(
+                            id="placeholder-weakness",
+                            description="Requires further research",
+                        ),
+                        linked_risks=[],  # No placeholder Risks
                     )
-                ]
+                ],
             },
             strategic_goals=[
                 StrategicGoal(
                     id="placeholder-goal",
                     display_name="Strategic Planning Pending",
-                    description="Requires further research"
+                    description="Requires further research",
                 )
             ],
-            final_summary=f"Strategy analysis for {company_name} requires further research."
+            final_summary=f"Strategy analysis for {company_name} requires further research.",
         )
 
     elif model_class == CompetitiveAnalysis:
@@ -180,31 +208,36 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
                     description="Requires further research",
                     value_propositions=[],  # No placeholder ValueProps
                     marketing_tactics=[
-                        NamedDetail(name="Analysis Pending", description="Requires further research")
+                        NamedDetail(
+                            name="Analysis Pending",
+                            description="Requires further research",
+                        )
                     ],
                     substitute_products=[
                         SubstituteProduct(
                             name="Analysis Pending",
                             description="Requires further research",
-                            value_proposition=NamedDetail(name="Pending", description="Requires further research")
+                            value_proposition=NamedDetail(
+                                name="Pending", description="Requires further research"
+                            ),
                         )
                     ],
                     strengths=[
                         StrengthWithRisks(
                             name="Analysis Pending",
                             description="Requires further research",
-                            risks=[]  # No placeholder Risks
+                            risks=[],  # No placeholder Risks
                         )
                     ],
                     weaknesses=[
                         WeaknessWithOpportunities(
                             name="Analysis Pending",
                             description="Requires further research",
-                            opportunities=[]  # No placeholder Opportunities
+                            opportunities=[],  # No placeholder Opportunities
                         )
-                    ]
+                    ],
                 )
-            ]
+            ],
         )
 
     elif model_class == MarketingResearchReport:
@@ -220,9 +253,9 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
                             brand_awareness_strategy="Requires further research",
                             consideration_strategy="Requires further research",
                             conversion_strategy="Requires further research",
-                            loyalty_strategy="Requires further research"
+                            loyalty_strategy="Requires further research",
                         )
-                    ]
+                    ],
                 )
             ]
         )
@@ -236,14 +269,16 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
             color_palette="Requires further research",
             typography="Requires further research",
             image_style="Requires further research",
-            mission_and_values="Requires further research"
+            mission_and_values="Requires further research",
         )
 
     else:
         raise ValueError(f"Unknown model class: {model_class}")
 
 
-def extract_document_sections(doc: dict | None, required_fields: list[str]) -> dict[str, Any]:
+def extract_document_sections(
+    doc: dict | None, required_fields: list[str]
+) -> dict[str, Any]:
     """
     Extract specific fields from a strategy document.
 
@@ -269,9 +304,9 @@ def extract_document_sections(doc: dict | None, required_fields: list[str]) -> d
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
-    analytics_service: Optional[AnalyticsService] = None,
-    performance_profiler: Optional[PerformanceProfiler] = None,
-    alert_manager: Optional[AlertManager] = None,
+    analytics_service: AnalyticsService | None = None,
+    performance_profiler: PerformanceProfiler | None = None,
+    alert_manager: AlertManager | None = None,
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
@@ -298,26 +333,35 @@ def execute_strategy_generation_direct(
 
     # Import split agent creators and graph builders
     try:
-        from .business_agents import create_business_researcher, create_business_formatter
-        from .competitive_agents import create_competitive_researcher, create_competitive_formatter
-        from .marketing_agents import create_marketing_researcher, create_marketing_formatter
-        from .brand_agents import create_brand_researcher, create_brand_formatter
         from .agents import create_google_search_agent
-        from .openai_formatter import format_with_openai  # Shared OpenAI formatter
+        from .brand_agents import create_brand_formatter, create_brand_researcher
+        from .brand_graph_builder import BrandGraphBuilder
+        from .brand_models import BrandGuidelines
+        from .business_agents import (
+            create_business_formatter,
+            create_business_researcher,
+        )
+        from .business_graph_builder import GraphBuilder
+        from .competitive_agents import (
+            create_competitive_formatter,
+            create_competitive_researcher,
+        )
+        from .competitive_graph_builder import CompetitiveGraphBuilder
+        from .competitive_models import CompetitiveAnalysis
+        from .embeddings import EmbeddingGenerator
+        from .marketing_agents import (
+            create_marketing_formatter,
+            create_marketing_researcher,
+        )
+        from .marketing_graph_builder import MarketingGraphBuilder
+        from .marketing_models import MarketingResearchReport
 
         # Import Neo4j components
         from .neo4j_tools import get_neo4j_operations
-        from .business_graph_builder import GraphBuilder
-        from .competitive_graph_builder import CompetitiveGraphBuilder
-        from .marketing_graph_builder import MarketingGraphBuilder
-        from .brand_graph_builder import BrandGraphBuilder
-        from .embeddings import EmbeddingGenerator
+        from .openai_formatter import format_with_openai  # Shared OpenAI formatter
 
         # Import Pydantic models
         from .structured_models import StructuredBusinessStrategy
-        from .competitive_models import CompetitiveAnalysis
-        from .marketing_models import MarketingResearchReport
-        from .brand_models import BrandGuidelines
     except ImportError as e:
         logger.error(f"Failed to import split agent modules: {e}")
         raise
@@ -341,7 +385,9 @@ def execute_strategy_generation_direct(
     strategy_types = [
         {
             "name": "business_strategy",
-            "create_researcher": lambda: create_business_researcher(google_search_agent),
+            "create_researcher": lambda: create_business_researcher(
+                google_search_agent
+            ),
             "create_formatter": create_business_formatter,
             "model_class": StructuredBusinessStrategy,
             "graph_builder_class": GraphBuilder,
@@ -349,7 +395,9 @@ def execute_strategy_generation_direct(
         },
         {
             "name": "competitive_strategy",
-            "create_researcher": lambda: create_competitive_researcher(google_search_agent),
+            "create_researcher": lambda: create_competitive_researcher(
+                google_search_agent
+            ),
             "create_formatter": create_competitive_formatter,
             "model_class": CompetitiveAnalysis,
             "graph_builder_class": CompetitiveGraphBuilder,
@@ -357,7 +405,9 @@ def execute_strategy_generation_direct(
         },
         {
             "name": "marketing_strategy",
-            "create_researcher": lambda: create_marketing_researcher(google_search_agent),
+            "create_researcher": lambda: create_marketing_researcher(
+                google_search_agent
+            ),
             "create_formatter": create_marketing_formatter,
             "model_class": MarketingResearchReport,
             "graph_builder_class": MarketingGraphBuilder,
@@ -387,7 +437,7 @@ def execute_strategy_generation_direct(
             operation = performance_profiler.start_operation(
                 agent_name=f"{strategy_name}_split",
                 operation="strategy_generation",
-                metadata={"strategy_type": strategy_name}
+                metadata={"strategy_type": strategy_name},
             )
 
         try:
@@ -408,10 +458,12 @@ def execute_strategy_generation_direct(
                 app_name=app_name,
                 user_id=context.user_id or "system",
                 session_id=session_id,
-                state={}
+                state={},
             )
 
-            runner = Runner(agent=researcher, app_name=app_name, session_service=session_service)
+            runner = Runner(
+                agent=researcher, app_name=app_name, session_service=session_service
+            )
 
             # Build comprehensive research query with all context
             research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}\n\n"
@@ -420,20 +472,30 @@ def execute_strategy_generation_direct(
                 research_query += f"Website(s): {', '.join(context.websites)}\n"
             research_query += f"Industry: {context.industry}\n"
             if context.customer_regions:
-                research_query += f"Customer Regions: {', '.join(context.customer_regions)}\n"
+                research_query += (
+                    f"Customer Regions: {', '.join(context.customer_regions)}\n"
+                )
             if context.annual_ad_budget:
-                research_query += f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
+                research_query += (
+                    f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
+                )
 
             # For marketing strategy, include ProductCategory names from business strategy
             if strategy_name == "marketing_strategy" and product_category_names:
-                research_query += f"\nIMPORTANT: Generate customer profiles for these specific product categories:\n"
+                research_query += "\nIMPORTANT: Generate customer profiles for these specific product categories:\n"
                 for cat_name in product_category_names:
                     research_query += f"- {cat_name}\n"
-                logger.info(f"[COORDINATION] Passing {len(product_category_names)} ProductCategory names to marketing research")
+                logger.info(
+                    f"[COORDINATION] Passing {len(product_category_names)} ProductCategory names to marketing research"
+                )
 
             message_content = Content(role="user", parts=[{"text": research_query}])
 
-            events = runner.run(user_id=context.user_id or "system", session_id=session_id, new_message=message_content)
+            events = runner.run(
+                user_id=context.user_id or "system",
+                session_id=session_id,
+                new_message=message_content,
+            )
 
             # Extract research text and grounding metadata (source URLs)
             research_text = ""
@@ -447,21 +509,31 @@ def execute_strategy_generation_direct(
                 # Extract source URLs from grounding metadata
                 if hasattr(event, "grounding_metadata") and event.grounding_metadata:
                     if hasattr(event.grounding_metadata, "grounding_attributions"):
-                        for attribution in event.grounding_metadata.grounding_attributions:
+                        for (
+                            attribution
+                        ) in event.grounding_metadata.grounding_attributions:
                             if hasattr(attribution, "source_id"):
                                 if hasattr(attribution.source_id, "grounding_passage"):
                                     # Web grounding passages have URI
-                                    if hasattr(attribution.source_id.grounding_passage, "uri"):
-                                        url = attribution.source_id.grounding_passage.uri
+                                    if hasattr(
+                                        attribution.source_id.grounding_passage, "uri"
+                                    ):
+                                        url = (
+                                            attribution.source_id.grounding_passage.uri
+                                        )
                                         if url and url not in source_urls:
                                             source_urls.append(url)
 
             if not research_text:
                 raise ValueError(f"Research phase returned no data for {strategy_name}")
 
-            logger.info(f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars, {len(source_urls)} source URLs")
+            logger.info(
+                f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars, {len(source_urls)} source URLs"
+            )
             if source_urls:
-                logger.info(f"[SPLIT AGENT] Source URLs: {source_urls[:3]}...")  # Log first 3
+                logger.info(
+                    f"[SPLIT AGENT] Source URLs: {source_urls[:3]}..."
+                )  # Log first 3
 
             # ===== STEP 2: FORMAT (no tools, with schema) =====
             logger.info(f"[SPLIT AGENT] Step 2: Format phase for {strategy_name}")
@@ -480,10 +552,14 @@ def execute_strategy_generation_direct(
                     app_name=app_name2,
                     user_id=context.user_id or "system",
                     session_id=session_id2,
-                    state={}
+                    state={},
                 )
 
-                runner2 = Runner(agent=formatter, app_name=app_name2, session_service=session_service2)
+                runner2 = Runner(
+                    agent=formatter,
+                    app_name=app_name2,
+                    session_service=session_service2,
+                )
 
                 # Build format instructions with source URLs
                 format_instructions = f"""Format this research into the required structured format.
@@ -491,14 +567,20 @@ def execute_strategy_generation_direct(
 IMPORTANT: For each node with descriptive information from web research, populate the 'references' field with relevant source URLs from the list below.
 
 Source URLs from research:
-{chr(10).join(f'- {url}' for url in source_urls) if source_urls else '(No URLs found in grounding metadata)'}
+{chr(10).join(f"- {url}" for url in source_urls) if source_urls else "(No URLs found in grounding metadata)"}
 
 Research text:
 
 {research_text}"""
 
-                format_message = Content(role="user", parts=[{"text": format_instructions}])
-                events2 = runner2.run(user_id=context.user_id or "system", session_id=session_id2, new_message=format_message)
+                format_message = Content(
+                    role="user", parts=[{"text": format_instructions}]
+                )
+                events2 = runner2.run(
+                    user_id=context.user_id or "system",
+                    session_id=session_id2,
+                    new_message=format_message,
+                )
 
                 # Extract formatted JSON
                 formatted_json = ""
@@ -509,76 +591,95 @@ Research text:
                                 formatted_json += part.text
 
                 # Parse and validate with Pydantic
-                formatted_data = strategy_config["model_class"](**json.loads(formatted_json))
-                logger.info(f"[SPLIT AGENT] ✅ Gemini formatting successful")
+                formatted_data = strategy_config["model_class"](
+                    **json.loads(formatted_json)
+                )
+                logger.info("[SPLIT AGENT] ✅ Gemini formatting successful")
 
             except Exception as e:
-                logger.warning(f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI")
+                logger.warning(
+                    f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI"
+                )
                 # Fallback to OpenAI using shared formatter
                 try:
                     openai_dict = format_with_openai(
                         research_text,
                         strategy_config["model_class"],
                         strategy_name,
-                        source_urls
+                        source_urls,
                     )
                     formatted_data = strategy_config["model_class"](**openai_dict)
                     used_openai = True
-                    logger.info(f"[SPLIT AGENT] ✅ OpenAI fallback successful")
+                    logger.info("[SPLIT AGENT] ✅ OpenAI fallback successful")
                 except Exception as openai_error:
-                    raise ValueError(f"Both Gemini and OpenAI formatting failed: {openai_error}")
+                    raise ValueError(
+                        f"Both Gemini and OpenAI formatting failed: {openai_error}"
+                    )
 
             # Convert to dict for storage
             doc_content = formatted_data.model_dump()
 
             # ===== STEP 3: SAVE TO FIRESTORE =====
-            logger.info(f"[SPLIT AGENT] Step 3: Saving to Firestore")
+            logger.info("[SPLIT AGENT] Step 3: Saving to Firestore")
             save_result = firestore_client.save_strategy_document_sync(
                 account_id=context.account_id,
                 doc_type=strategy_name,
                 content=doc_content,
-                user_id=context.user_id
+                user_id=context.user_id,
             )
 
             if not save_result:
                 raise ValueError(f"Failed to save {strategy_name} to Firestore")
 
-            logger.info(f"[SPLIT AGENT] ✅ Saved to Firestore")
+            logger.info("[SPLIT AGENT] ✅ Saved to Firestore")
 
             # ===== STEP 4: BUILD NEO4J GRAPH =====
             if neo4j_ops:
-                logger.info(f"[SPLIT AGENT] Step 4: Building Neo4j knowledge graph")
+                logger.info("[SPLIT AGENT] Step 4: Building Neo4j knowledge graph")
                 graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
                 build_method = getattr(graph_builder, strategy_config["graph_method"])
                 graph_nodes = build_method(
-                    formatted_data,
-                    context.account_id,
-                    context.user_id or "system"
+                    formatted_data, context.account_id, context.user_id or "system"
                 )
-                logger.info(f"[SPLIT AGENT] ✅ Neo4j graph built successfully")
+                logger.info("[SPLIT AGENT] ✅ Neo4j graph built successfully")
 
             # ===== STEP 5: GENERATE EMBEDDINGS =====
             if neo4j_ops and embedding_generator:
-                logger.info(f"[SPLIT AGENT] Step 5: Generating embeddings")
+                logger.info("[SPLIT AGENT] Step 5: Generating embeddings")
                 try:
-                    embedding_result = embedding_generator.generate_embeddings_for_account(context.account_id)
-                    logger.info(f"[SPLIT AGENT] ✅ Embeddings generated: {embedding_result.get('embeddings_created', 0)} nodes")
+                    embedding_result = (
+                        embedding_generator.generate_embeddings_for_account(
+                            context.account_id
+                        )
+                    )
+                    logger.info(
+                        f"[SPLIT AGENT] ✅ Embeddings generated: {embedding_result.get('embeddings_created', 0)} nodes"
+                    )
                 except Exception as embed_error:
-                    logger.error(f"[SPLIT AGENT] ❌ Embedding generation failed: {embed_error}")
+                    logger.error(
+                        f"[SPLIT AGENT] ❌ Embedding generation failed: {embed_error}"
+                    )
 
             # Success!
             generated_documents[strategy_name] = doc_content
             logger.info(f"[SPLIT AGENT] ✅✅✅ Successfully completed {strategy_name}")
 
             # Extract ProductCategory names from business strategy for marketing coordination
-            if strategy_name == "business_strategy" and 'product_portfolio' in doc_content:
+            if (
+                strategy_name == "business_strategy"
+                and "product_portfolio" in doc_content
+            ):
                 try:
-                    for category in doc_content['product_portfolio']:
-                        if 'category_name' in category:
-                            product_category_names.append(category['category_name'])
-                    logger.info(f"[COORDINATION] Extracted {len(product_category_names)} ProductCategory names from business strategy: {product_category_names}")
+                    for category in doc_content["product_portfolio"]:
+                        if "category_name" in category:
+                            product_category_names.append(category["category_name"])
+                    logger.info(
+                        f"[COORDINATION] Extracted {len(product_category_names)} ProductCategory names from business strategy: {product_category_names}"
+                    )
                 except Exception as e:
-                    logger.warning(f"[COORDINATION] Failed to extract ProductCategory names: {e}")
+                    logger.warning(
+                        f"[COORDINATION] Failed to extract ProductCategory names: {e}"
+                    )
 
             # Track analytics
             if performance_profiler and operation:
@@ -591,7 +692,7 @@ Research text:
                     response_tokens=0,
                     model="gpt-4o" if used_openai else "gemini-2.5-pro",
                     execution_time=0,
-                    success=True
+                    success=True,
                 )
 
         except Exception as e:
@@ -599,23 +700,37 @@ Research text:
             logger.error(f"[SPLIT AGENT] ❌ {error_msg}")
 
             if performance_profiler and operation:
-                performance_profiler.end_operation(operation, success=False, error=str(e))
+                performance_profiler.end_operation(
+                    operation, success=False, error=str(e)
+                )
 
             # Create placeholder nodes so graph isn't completely empty
             if neo4j_ops:
                 try:
-                    logger.info(f"[SPLIT AGENT] Creating placeholder nodes for failed {strategy_name}")
+                    logger.info(
+                        f"[SPLIT AGENT] Creating placeholder nodes for failed {strategy_name}"
+                    )
                     placeholder_data = _create_placeholder_strategy(
                         strategy_config["model_class"],
                         strategy_name,
-                        context.company_name
+                        context.company_name,
                     )
                     graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
-                    build_method = getattr(graph_builder, strategy_config["graph_method"])
-                    build_method(placeholder_data, context.account_id, context.user_id or "system")
-                    logger.info(f"[SPLIT AGENT] ✅ Created placeholder nodes for {strategy_name}")
+                    build_method = getattr(
+                        graph_builder, strategy_config["graph_method"]
+                    )
+                    build_method(
+                        placeholder_data,
+                        context.account_id,
+                        context.user_id or "system",
+                    )
+                    logger.info(
+                        f"[SPLIT AGENT] ✅ Created placeholder nodes for {strategy_name}"
+                    )
                 except Exception as placeholder_error:
-                    logger.warning(f"[SPLIT AGENT] Failed to create placeholders: {placeholder_error}")
+                    logger.warning(
+                        f"[SPLIT AGENT] Failed to create placeholders: {placeholder_error}"
+                    )
 
             # Continue to next strategy instead of fail-fast
             # This ensures we try all strategies even if one fails
@@ -624,7 +739,9 @@ Research text:
     # Don't close Neo4j connection - let driver manage its own lifecycle and handle reconnections
     # Closing causes "Driver closed" errors when strategies take a long time to generate
 
-    logger.info(f"\n[SPLIT AGENT] 🎉🎉🎉 Successfully generated all {len(generated_documents)} strategies!")
+    logger.info(
+        f"\n[SPLIT AGENT] 🎉🎉🎉 Successfully generated all {len(generated_documents)} strategies!"
+    )
     return generated_documents
 
 
@@ -637,8 +754,8 @@ def execute_strategy_generation(
     account_id: str,
     user_id: str,
     annual_ad_budget: float = 0.0,
-    project_id: Optional[str] = None,
-    uploaded_documents: Optional[list[str]] = None,
+    project_id: str | None = None,
+    uploaded_documents: list[str] | None = None,
     enable_analytics: bool = True,
 ) -> str:
     """
@@ -686,7 +803,7 @@ def execute_strategy_generation(
 
     try:
         logger.info(f"[EXECUTION] Starting strategy generation for {company_name}")
-        
+
         # Initialize Weave if needed (lazy initialization)
         init_weave_if_needed()
 
@@ -796,9 +913,9 @@ def execute_strategy_generation(
 
         # Load uploaded documents from GCS if URLs provided
         from .document_utils import (
-            load_documents_from_gcs_urls,
-            create_document_loading_summary,
             DocumentProcessingError,
+            create_document_loading_summary,
+            load_documents_from_gcs_urls,
         )
 
         loaded_docs = {}
@@ -1002,9 +1119,9 @@ def process_and_save_documents_with_analytics(
     account_id: str,
     user_id: str,
     firestore_client: FirestoreClient,
-    analytics_service: Optional[AnalyticsService] = None,
-    performance_profiler: Optional[PerformanceProfiler] = None,
-    alert_manager: Optional[AlertManager] = None,
+    analytics_service: AnalyticsService | None = None,
+    performance_profiler: PerformanceProfiler | None = None,
+    alert_manager: AlertManager | None = None,
 ) -> dict[str, Any]:
     """
     Process execution events and save documents to Firestore with analytics tracking.
@@ -1043,18 +1160,26 @@ def process_and_save_documents_with_analytics(
         if hasattr(event, "content"):
             logger.info(f"[DEBUG] event.content exists: {type(event.content)}")
             if hasattr(event.content, "parts"):
-                logger.info(f"[DEBUG] event.content.parts: {event.content.parts[:500] if isinstance(event.content.parts, (str, list)) else 'complex type'}")
+                logger.info(
+                    f"[DEBUG] event.content.parts: {event.content.parts[:500] if isinstance(event.content.parts, (str, list)) else 'complex type'}"
+                )
                 # Try to extract JSON from parts if it exists
                 if isinstance(event.content.parts, list):
                     for part in event.content.parts:
-                        if isinstance(part, dict) and 'text' in part and part['text']:
-                            text_preview = str(part['text'])[:500] if part['text'] else "None"
+                        if isinstance(part, dict) and "text" in part and part["text"]:
+                            text_preview = (
+                                str(part["text"])[:500] if part["text"] else "None"
+                            )
                             logger.info(f"[DEBUG] Found text in part: {text_preview}")
-                        elif hasattr(part, 'text') and part.text:
+                        elif hasattr(part, "text") and part.text:
                             text_preview = str(part.text)[:500] if part.text else "None"
-                            logger.info(f"[DEBUG] Found text attr in part: {text_preview}")
+                            logger.info(
+                                f"[DEBUG] Found text attr in part: {text_preview}"
+                            )
         if hasattr(event, "parts"):
-            logger.info(f"[DEBUG] event.parts exists: {event.parts[:500] if isinstance(event.parts, (str, list)) else 'complex type'}")
+            logger.info(
+                f"[DEBUG] event.parts exists: {event.parts[:500] if isinstance(event.parts, (str, list)) else 'complex type'}"
+            )
         if hasattr(event, "message"):
             logger.info(f"[DEBUG] event.message exists: {type(event.message)}")
         if hasattr(event, "response"):
@@ -1128,32 +1253,56 @@ def process_and_save_documents_with_analytics(
                         )
 
                         # Debug logging to see what we're actually getting
-                        logger.info(f"[DEBUG] Raw doc_content type: {type(doc_content)}")
-                        logger.info(f"[DEBUG] Raw doc_content value: {repr(doc_content)[:500]}")
+                        logger.info(
+                            f"[DEBUG] Raw doc_content type: {type(doc_content)}"
+                        )
+                        logger.info(
+                            f"[DEBUG] Raw doc_content value: {repr(doc_content)[:500]}"
+                        )
                         if isinstance(doc_content, str):
-                            logger.info(f"[DEBUG] Doc content length: {len(doc_content)}")
-                            logger.info(f"[DEBUG] Doc content is empty: {not doc_content.strip()}")
+                            logger.info(
+                                f"[DEBUG] Doc content length: {len(doc_content)}"
+                            )
+                            logger.info(
+                                f"[DEBUG] Doc content is empty: {not doc_content.strip()}"
+                            )
 
                             # If we got empty markdown blocks, try to find JSON in event.content.parts
                             if doc_content.strip() in ["```\n```", "```json\n```", ""]:
-                                logger.info(f"[DEBUG] Got empty content, checking event.content.parts for {doc_type}")
-                                if hasattr(event, "content") and hasattr(event.content, "parts"):
+                                logger.info(
+                                    f"[DEBUG] Got empty content, checking event.content.parts for {doc_type}"
+                                )
+                                if hasattr(event, "content") and hasattr(
+                                    event.content, "parts"
+                                ):
                                     for part in event.content.parts:
                                         json_text = None
-                                        if isinstance(part, dict) and 'text' in part and part['text']:
-                                            json_text = part['text']
-                                        elif hasattr(part, 'text') and part.text:
+                                        if (
+                                            isinstance(part, dict)
+                                            and "text" in part
+                                            and part["text"]
+                                        ):
+                                            json_text = part["text"]
+                                        elif hasattr(part, "text") and part.text:
                                             json_text = part.text
 
                                         if json_text:
-                                            text_preview = str(json_text)[:200] if json_text else "None"
-                                            logger.info(f"[DEBUG] Found potential JSON in event.content.parts: {text_preview}")
+                                            text_preview = (
+                                                str(json_text)[:200]
+                                                if json_text
+                                                else "None"
+                                            )
+                                            logger.info(
+                                                f"[DEBUG] Found potential JSON in event.content.parts: {text_preview}"
+                                            )
                                             # Try to parse this as JSON
                                             try:
                                                 test_parse = json.loads(json_text)
                                                 # If it parses, use this instead
                                                 doc_content = json_text
-                                                logger.info(f"[DEBUG] Successfully extracted JSON from event.content.parts for {doc_type}")
+                                                logger.info(
+                                                    f"[DEBUG] Successfully extracted JSON from event.content.parts for {doc_type}"
+                                                )
                                                 break
                                             except:
                                                 # Not valid JSON, continue searching
@@ -1333,32 +1482,56 @@ def process_and_save_documents(
                         )
 
                         # Debug logging to see what we're actually getting
-                        logger.info(f"[DEBUG] Raw doc_content type: {type(doc_content)}")
-                        logger.info(f"[DEBUG] Raw doc_content value: {repr(doc_content)[:500]}")
+                        logger.info(
+                            f"[DEBUG] Raw doc_content type: {type(doc_content)}"
+                        )
+                        logger.info(
+                            f"[DEBUG] Raw doc_content value: {repr(doc_content)[:500]}"
+                        )
                         if isinstance(doc_content, str):
-                            logger.info(f"[DEBUG] Doc content length: {len(doc_content)}")
-                            logger.info(f"[DEBUG] Doc content is empty: {not doc_content.strip()}")
+                            logger.info(
+                                f"[DEBUG] Doc content length: {len(doc_content)}"
+                            )
+                            logger.info(
+                                f"[DEBUG] Doc content is empty: {not doc_content.strip()}"
+                            )
 
                             # If we got empty markdown blocks, try to find JSON in event.content.parts
                             if doc_content.strip() in ["```\n```", "```json\n```", ""]:
-                                logger.info(f"[DEBUG] Got empty content, checking event.content.parts for {doc_type}")
-                                if hasattr(event, "content") and hasattr(event.content, "parts"):
+                                logger.info(
+                                    f"[DEBUG] Got empty content, checking event.content.parts for {doc_type}"
+                                )
+                                if hasattr(event, "content") and hasattr(
+                                    event.content, "parts"
+                                ):
                                     for part in event.content.parts:
                                         json_text = None
-                                        if isinstance(part, dict) and 'text' in part and part['text']:
-                                            json_text = part['text']
-                                        elif hasattr(part, 'text') and part.text:
+                                        if (
+                                            isinstance(part, dict)
+                                            and "text" in part
+                                            and part["text"]
+                                        ):
+                                            json_text = part["text"]
+                                        elif hasattr(part, "text") and part.text:
                                             json_text = part.text
 
                                         if json_text:
-                                            text_preview = str(json_text)[:200] if json_text else "None"
-                                            logger.info(f"[DEBUG] Found potential JSON in event.content.parts: {text_preview}")
+                                            text_preview = (
+                                                str(json_text)[:200]
+                                                if json_text
+                                                else "None"
+                                            )
+                                            logger.info(
+                                                f"[DEBUG] Found potential JSON in event.content.parts: {text_preview}"
+                                            )
                                             # Try to parse this as JSON
                                             try:
                                                 test_parse = json.loads(json_text)
                                                 # If it parses, use this instead
                                                 doc_content = json_text
-                                                logger.info(f"[DEBUG] Successfully extracted JSON from event.content.parts for {doc_type}")
+                                                logger.info(
+                                                    f"[DEBUG] Successfully extracted JSON from event.content.parts for {doc_type}"
+                                                )
                                                 break
                                             except:
                                                 # Not valid JSON, continue searching
@@ -1438,14 +1611,17 @@ def parse_document_content(doc_content: Any) -> dict | None:
         # Try enhanced parser first - it handles markdown wrapping and other issues
         try:
             from .enhanced_json_parser import EnhancedJsonParser
+
             parser = EnhancedJsonParser()
             result = parser.parse_json(doc_content, schema=None)
             if result:
                 logger.info("[DOCUMENT] Successfully parsed JSON using enhanced parser")
                 return result
         except Exception as e:
-            logger.warning(f"[DOCUMENT] Enhanced parsing failed, falling back to standard parsing: {e}")
-        
+            logger.warning(
+                f"[DOCUMENT] Enhanced parsing failed, falling back to standard parsing: {e}"
+            )
+
         # Fallback to original cleaning method
         doc_content = clean_json_string(doc_content)
 

@@ -9,15 +9,14 @@ Architecture:
 """
 
 # Import models (safe, no circular deps)
+# Import shared components (safe)
+from .agents import (
+    create_google_search_agent,
+)
 from .models import (
     StrategyContext,
     StrategyGenerationRequest,
     StrategyGenerationResponse,
-)
-
-# Import shared components (safe)
-from .agents import (
-    create_google_search_agent,
 )
 
 # NOTE: orchestrator imports removed to avoid circular dependency

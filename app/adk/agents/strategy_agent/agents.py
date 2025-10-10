@@ -8,6 +8,7 @@ This module has been refactored to use split agent architecture:
 """
 
 import logging
+
 from google.adk.agents import Agent
 from google.adk.tools import google_search
 from google.genai import types
@@ -32,7 +33,7 @@ def create_google_search_agent() -> Agent:
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=8192,
-            response_mime_type="application/json"
+            response_mime_type="application/json",
         ),
     )
 

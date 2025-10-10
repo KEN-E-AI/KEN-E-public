@@ -30,7 +30,6 @@ from .routers import (
     metrics,
     monitoring,
     monitoring_topics,
-    notifications_v2 as notifications,
     oauth_integrations,
     organizations,
     products,
@@ -39,6 +38,9 @@ from .routers import (
     superset_saved_queries,
     usage,
     users,
+)
+from .routers import (
+    notifications_v2 as notifications,
 )
 
 logger = logging.getLogger(__name__)

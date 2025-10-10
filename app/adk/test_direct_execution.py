@@ -13,12 +13,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 # Import the orchestrator
 from agents.strategy_agent.orchestrator import execute_strategy_generation
+
 
 def test_strategy_generation():
     """Test the strategy generation with direct execution."""
@@ -32,27 +32,28 @@ def test_strategy_generation():
         "account_id": "test_account_123",
         "user_id": "test_user_456",
         "annual_ad_budget": 100000.0,
-        "project_id": "ken-e-dev"
+        "project_id": "ken-e-dev",
     }
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("TESTING DIRECT SEQUENTIAL EXECUTION")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     print(f"Company: {test_params['company_name']}")
     print(f"Industry: {test_params['industry']}")
     print(f"Account ID: {test_params['account_id']}")
-    print(f"\n{'='*60}\n")
+    print(f"\n{'=' * 60}\n")
 
     # Run the strategy generation
     result = execute_strategy_generation(**test_params)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("RESULT:")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(result)
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     return result
+
 
 if __name__ == "__main__":
     # Set environment variables if needed
@@ -70,5 +71,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Test FAILED with exception: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

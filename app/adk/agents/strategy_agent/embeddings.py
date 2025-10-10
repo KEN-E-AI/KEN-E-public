@@ -3,18 +3,19 @@ Embedding generation and management for Neo4j strategy nodes.
 Uses Vertex AI embeddings for semantic search capabilities.
 """
 
-import os
 import logging
-from typing import List, Dict, Optional, Any
-from dotenv import load_dotenv
+import os
 import time
+from typing import Any
+
 import vertexai
-from vertexai.language_models import TextEmbeddingModel, TextEmbeddingInput
+from dotenv import load_dotenv
+from vertexai.language_models import TextEmbeddingInput, TextEmbeddingModel
 
 from .neo4j_tools import Neo4jOperations, get_neo4j_operations
 
 # Load environment variables
-env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(env_path)
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ class EmbeddingGenerator:
         self.neo4j_ops = neo4j_ops or get_neo4j_operations()
 
         # Initialize Vertex AI
-        project = os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev')
-        location = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+        project = os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev")
+        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
         vertexai.init(project=project, location=location)
 
@@ -42,12 +43,18 @@ class EmbeddingGenerator:
         # text-embedding-004 is the latest and most performant
         # Alternative: textembedding-gecko@003 for backward compatibility
         self.embedding_model_name = "text-embedding-004"
-        self.embedding_model = TextEmbeddingModel.from_pretrained(self.embedding_model_name)
+        self.embedding_model = TextEmbeddingModel.from_pretrained(
+            self.embedding_model_name
+        )
         self.embedding_dimension = 768  # Dimension for text-embedding-004
 
-        logger.info(f"Initialized Vertex AI embeddings with model: {self.embedding_model_name}")
+        logger.info(
+            f"Initialized Vertex AI embeddings with model: {self.embedding_model_name}"
+        )
 
-    def generate_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> List[float]:
+    def generate_embedding(
+        self, text: str, task_type: str = "RETRIEVAL_DOCUMENT"
+    ) -> list[float]:
         """
         Generate embedding for a given text using Vertex AI.
 
@@ -60,10 +67,7 @@ class EmbeddingGenerator:
         """
         try:
             # Create embedding input
-            embedding_input = TextEmbeddingInput(
-                text=text,
-                task_type=task_type
-            )
+            embedding_input = TextEmbeddingInput(text=text, task_type=task_type)
 
             # Generate embedding
             embeddings = self.embedding_model.get_embeddings([embedding_input])
@@ -78,10 +82,8 @@ class EmbeddingGenerator:
             raise
 
     def generate_batch_embeddings(
-        self,
-        texts: List[str],
-        task_type: str = "RETRIEVAL_DOCUMENT"
-    ) -> List[List[float]]:
+        self, texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT"
+    ) -> list[list[float]]:
         """
         Generate embeddings for multiple texts in batch.
 
@@ -95,8 +97,7 @@ class EmbeddingGenerator:
         try:
             # Create embedding inputs
             embedding_inputs = [
-                TextEmbeddingInput(text=text, task_type=task_type)
-                for text in texts
+                TextEmbeddingInput(text=text, task_type=task_type) for text in texts
             ]
 
             # Generate embeddings in batch (Vertex AI handles batching efficiently)
@@ -108,7 +109,7 @@ class EmbeddingGenerator:
             logger.error(f"Failed to generate batch embeddings: {e}")
             raise
 
-    def get_nodes_needing_embeddings(self, account_id: str = None) -> List[Dict]:
+    def get_nodes_needing_embeddings(self, account_id: str = None) -> list[dict]:
         """
         Get all Strategy nodes that need embeddings.
 
@@ -137,15 +138,12 @@ class EmbeddingGenerator:
         """
 
         return self.neo4j_ops.connection.execute_query(
-            query,
-            {'account_id': account_id} if account_id else {}
+            query, {"account_id": account_id} if account_id else {}
         )
 
     def get_modified_nodes_needing_embeddings(
-        self,
-        account_id: str = None,
-        since_timestamp: str = None
-    ) -> List[Dict]:
+        self, account_id: str = None, since_timestamp: str = None
+    ) -> list[dict]:
         """
         Get nodes that have been modified and need embedding updates.
 
@@ -183,13 +181,13 @@ class EmbeddingGenerator:
 
         params = {}
         if account_id:
-            params['account_id'] = account_id
+            params["account_id"] = account_id
         if since_timestamp:
-            params['since_timestamp'] = since_timestamp
+            params["since_timestamp"] = since_timestamp
 
         return self.neo4j_ops.connection.execute_query(query, params)
 
-    def update_node_embedding(self, node_id: int, embedding: List[float]):
+    def update_node_embedding(self, node_id: int, embedding: list[float]):
         """
         Update a node's embedding in Neo4j.
 
@@ -205,13 +203,16 @@ class EmbeddingGenerator:
             n.embedding_model = $model
         """
 
-        self.neo4j_ops.connection.execute_query(query, {
-            'node_id': node_id,
-            'embedding': embedding,
-            'model': self.embedding_model_name
-        })
+        self.neo4j_ops.connection.execute_query(
+            query,
+            {
+                "node_id": node_id,
+                "embedding": embedding,
+                "model": self.embedding_model_name,
+            },
+        )
 
-    def update_batch_node_embeddings(self, node_embeddings: List[Dict]):
+    def update_batch_node_embeddings(self, node_embeddings: list[dict]):
         """
         Update multiple nodes' embeddings in a single transaction.
 
@@ -227,17 +228,13 @@ class EmbeddingGenerator:
             n.embedding_model = $model
         """
 
-        self.neo4j_ops.connection.execute_query(query, {
-            'updates': node_embeddings,
-            'model': self.embedding_model_name
-        })
+        self.neo4j_ops.connection.execute_query(
+            query, {"updates": node_embeddings, "model": self.embedding_model_name}
+        )
 
     def generate_embeddings_for_account(
-        self,
-        account_id: str,
-        batch_size: int = 20,
-        delay_seconds: float = 0.05
-    ) -> Dict[str, Any]:
+        self, account_id: str, batch_size: int = 20, delay_seconds: float = 0.05
+    ) -> dict[str, Any]:
         """
         Generate embeddings for all nodes in an account using batch processing.
 
@@ -261,7 +258,7 @@ class EmbeddingGenerator:
 
         # Process in batches for efficiency
         for i in range(0, total_nodes, batch_size):
-            batch = nodes[i:i + batch_size]
+            batch = nodes[i : i + batch_size]
             batch_texts = [self._create_embedding_text(node) for node in batch]
 
             try:
@@ -270,15 +267,17 @@ class EmbeddingGenerator:
 
                 # Prepare updates
                 updates = [
-                    {'node_id': node['node_id'], 'embedding': embedding}
-                    for node, embedding in zip(batch, embeddings)
+                    {"node_id": node["node_id"], "embedding": embedding}
+                    for node, embedding in zip(batch, embeddings, strict=False)
                 ]
 
                 # Update all nodes in batch
                 self.update_batch_node_embeddings(updates)
 
                 success_count += len(batch)
-                logger.debug(f"Batch {i//batch_size + 1}: Generated {len(batch)} embeddings")
+                logger.debug(
+                    f"Batch {i // batch_size + 1}: Generated {len(batch)} embeddings"
+                )
 
                 # Small delay between batches (Vertex AI has generous quotas)
                 if i + batch_size < total_nodes:
@@ -286,26 +285,25 @@ class EmbeddingGenerator:
 
             except Exception as e:
                 error_count += len(batch)
-                error_msg = f"Failed batch {i//batch_size + 1}: {e}"
+                error_msg = f"Failed batch {i // batch_size + 1}: {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
 
         result = {
-            'total_nodes': total_nodes,
-            'success_count': success_count,
-            'error_count': error_count,
-            'errors': errors
+            "total_nodes": total_nodes,
+            "success_count": success_count,
+            "error_count": error_count,
+            "errors": errors,
         }
 
-        logger.info(f"Embedding generation complete: {success_count}/{total_nodes} successful")
+        logger.info(
+            f"Embedding generation complete: {success_count}/{total_nodes} successful"
+        )
         return result
 
     def update_embeddings_incremental(
-        self,
-        account_id: str = None,
-        since_timestamp: str = None,
-        batch_size: int = 20
-    ) -> Dict[str, Any]:
+        self, account_id: str = None, since_timestamp: str = None, batch_size: int = 20
+    ) -> dict[str, Any]:
         """
         Update embeddings for modified nodes only using batch processing.
 
@@ -325,14 +323,14 @@ class EmbeddingGenerator:
 
         # Process in batches
         for i in range(0, total_nodes, batch_size):
-            batch = nodes[i:i + batch_size]
+            batch = nodes[i : i + batch_size]
             batch_texts = [self._create_embedding_text(node) for node in batch]
 
             try:
                 embeddings = self.generate_batch_embeddings(batch_texts)
                 updates = [
-                    {'node_id': node['node_id'], 'embedding': embedding}
-                    for node, embedding in zip(batch, embeddings)
+                    {"node_id": node["node_id"], "embedding": embedding}
+                    for node, embedding in zip(batch, embeddings, strict=False)
                 ]
                 self.update_batch_node_embeddings(updates)
                 success_count += len(batch)
@@ -342,12 +340,9 @@ class EmbeddingGenerator:
 
         logger.info(f"Updated {success_count}/{total_nodes} embeddings")
 
-        return {
-            'updated_count': success_count,
-            'total_modified': total_nodes
-        }
+        return {"updated_count": success_count, "total_modified": total_nodes}
 
-    def _create_embedding_text(self, node: Dict) -> str:
+    def _create_embedding_text(self, node: dict) -> str:
         """
         Create text for embedding from node properties.
 
@@ -358,19 +353,19 @@ class EmbeddingGenerator:
             Text string for embedding
         """
         # Combine name and description for richer embeddings
-        name = node.get('name', '')
-        description = node.get('text', '')
-        types = [t for t in node.get('types', []) if t != 'Strategy']
+        name = node.get("name", "")
+        description = node.get("text", "")
+        types = [t for t in node.get("types", []) if t != "Strategy"]
 
         # Format: "Type: Name. Description"
-        type_str = types[0] if types else 'Strategy'
+        type_str = types[0] if types else "Strategy"
 
         if name:
             return f"{type_str}: {name}. {description}"
         else:
             return f"{type_str}: {description}"
 
-    def verify_embeddings(self, account_id: str) -> Dict[str, Any]:
+    def verify_embeddings(self, account_id: str) -> dict[str, Any]:
         """
         Verify that all strategy nodes have embeddings.
 
@@ -388,30 +383,37 @@ class EmbeddingGenerator:
             COUNT(CASE WHEN n.embedding IS NULL THEN 1 END) AS nodes_without_embeddings
         """
 
-        result = self.neo4j_ops.connection.execute_query(query, {'account_id': account_id})
+        result = self.neo4j_ops.connection.execute_query(
+            query, {"account_id": account_id}
+        )
 
         if result:
             data = result[0]
-            data['complete'] = data['nodes_without_embeddings'] == 0
-            data['completion_percentage'] = (
-                (data['nodes_with_embeddings'] / data['total_nodes'] * 100)
-                if data['total_nodes'] > 0 else 0
+            data["complete"] = data["nodes_without_embeddings"] == 0
+            data["completion_percentage"] = (
+                (data["nodes_with_embeddings"] / data["total_nodes"] * 100)
+                if data["total_nodes"] > 0
+                else 0
             )
             return data
 
         return {
-            'total_nodes': 0,
-            'nodes_with_embeddings': 0,
-            'nodes_without_embeddings': 0,
-            'complete': True,
-            'completion_percentage': 100
+            "total_nodes": 0,
+            "nodes_with_embeddings": 0,
+            "nodes_without_embeddings": 0,
+            "complete": True,
+            "completion_percentage": 100,
         }
 
 
 class EmbeddingSearch:
     """Performs semantic search using embeddings."""
 
-    def __init__(self, neo4j_ops: Neo4jOperations = None, embedding_generator: EmbeddingGenerator = None):
+    def __init__(
+        self,
+        neo4j_ops: Neo4jOperations = None,
+        embedding_generator: EmbeddingGenerator = None,
+    ):
         """
         Initialize the search module.
 
@@ -420,15 +422,13 @@ class EmbeddingSearch:
             embedding_generator: Embedding generator instance
         """
         self.neo4j_ops = neo4j_ops or get_neo4j_operations()
-        self.embedding_generator = embedding_generator or EmbeddingGenerator(neo4j_ops=self.neo4j_ops)
+        self.embedding_generator = embedding_generator or EmbeddingGenerator(
+            neo4j_ops=self.neo4j_ops
+        )
 
     def search(
-        self,
-        query_text: str,
-        account_id: str,
-        top_k: int = 5,
-        min_score: float = 0.7
-    ) -> List[Dict]:
+        self, query_text: str, account_id: str, top_k: int = 5, min_score: float = 0.7
+    ) -> list[dict]:
         """
         Perform semantic search for strategies.
 
@@ -443,8 +443,7 @@ class EmbeddingSearch:
         """
         # Generate query embedding (use RETRIEVAL_QUERY task type for search)
         query_embedding = self.embedding_generator.generate_embedding(
-            query_text,
-            task_type="RETRIEVAL_QUERY"
+            query_text, task_type="RETRIEVAL_QUERY"
         )
 
         # Search in Neo4j
@@ -453,13 +452,17 @@ class EmbeddingSearch:
         # Filter by minimum score and format results
         formatted_results = []
         for result in results:
-            if result['score'] >= min_score:
-                formatted_results.append({
-                    'name': result['node'].get('display_name', result['node'].get('product_name', 'N/A')),
-                    'description': result['node'].get('description', ''),
-                    'type': result['type'],
-                    'score': round(result['score'], 3),
-                    'node_id': result['node'].get('id')
-                })
+            if result["score"] >= min_score:
+                formatted_results.append(
+                    {
+                        "name": result["node"].get(
+                            "display_name", result["node"].get("product_name", "N/A")
+                        ),
+                        "description": result["node"].get("description", ""),
+                        "type": result["type"],
+                        "score": round(result["score"], 3),
+                        "node_id": result["node"].get("id"),
+                    }
+                )
 
         return formatted_results

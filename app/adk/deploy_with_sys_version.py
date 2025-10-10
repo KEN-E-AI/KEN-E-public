@@ -6,14 +6,14 @@ This bypasses the ADK CLI which doesn't support sys_version parameter.
 Uses ReasoningEngine.create() Python API directly.
 """
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 import vertexai
-from vertexai.preview import reasoning_engines
 from google.cloud import secretmanager
+from vertexai.preview import reasoning_engines
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,20 +29,21 @@ PYTHON_VERSION = "3.12"
 os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
 os.environ["VERTEX_AI_PROJECT_ID"] = PROJECT_ID
 
-logger.info(f"=" * 70)
+logger.info("=" * 70)
 logger.info(f"Deploying Strategy Agent with Python {PYTHON_VERSION}")
 logger.info(f"Project: {PROJECT_ID} ({PROJECT_NUMBER}), Location: {LOCATION}")
-logger.info(f"=" * 70)
+logger.info("=" * 70)
 
 # Initialize Vertex AI with explicit project
 vertexai.init(
     project=PROJECT_ID,  # MUST be ken-e-dev
     location=LOCATION,
-    staging_bucket=STAGING_BUCKET
+    staging_bucket=STAGING_BUCKET,
 )
 
 # Verify project
 import google.auth
+
 credentials, project = google.auth.default()
 logger.info(f"Using credentials for project: {project}")
 if project != PROJECT_ID and project != PROJECT_NUMBER:
@@ -71,14 +72,16 @@ try:
         extra_packages=["agents"],  # Include agents directory
     )
 
-    logger.info(f"✅ Deployment successful!")
+    logger.info("✅ Deployment successful!")
     logger.info(f"Engine ID: {deployed_engine.resource_name}")
 
     # Save to log file
     log_file = Path("agents/logs/strategy_supervisor_deployment.txt")
     log_file.parent.mkdir(parents=True, exist_ok=True)
     with open(log_file, "w") as f:
-        f.write(f"Deployment: strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}\n")
+        f.write(
+            f"Deployment: strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}\n"
+        )
         f.write(f"Python Version: {PYTHON_VERSION}\n")
         f.write(f"Engine ID: {deployed_engine.resource_name}\n")
         f.write(f"Project: {PROJECT_ID}\n")
@@ -91,22 +94,23 @@ try:
         response = client.add_secret_version(
             request={
                 "parent": parent,
-                "payload": {"data": deployed_engine.resource_name.encode("UTF-8")}
+                "payload": {"data": deployed_engine.resource_name.encode("UTF-8")},
             }
         )
         logger.info(f"✅ Updated Secret Manager: {response.name}")
     except Exception as e:
         logger.warning(f"⚠️  Could not update Secret Manager: {e}")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print(f"🎉 DEPLOYMENT SUCCESSFUL WITH PYTHON {PYTHON_VERSION}!")
-    print("="*70)
+    print("=" * 70)
     print(f"Engine ID: {deployed_engine.resource_name}")
     print(f"Python Version: {PYTHON_VERSION}")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
 except Exception as e:
     logger.error(f"❌ Deployment failed: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)

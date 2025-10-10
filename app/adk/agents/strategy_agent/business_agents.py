@@ -6,12 +6,14 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 - Formatter agent: NO tools, has output_schema with StructuredBusinessStrategy model
 """
 
-import os
 import json
-from typing import Dict, Any
+import os
+from typing import Any
+
 import google.adk as adk
-from google.genai.types import GenerateContentConfig
 from google.adk.tools import AgentTool
+from google.genai.types import GenerateContentConfig
+
 from .structured_models import StructuredBusinessStrategy
 
 
@@ -37,7 +39,7 @@ def create_business_researcher(google_search_agent):
         tools=[AgentTool(agent=google_search_agent)],
         generate_content_config=GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=2500  # Limit to prevent rate limit issues
+            max_output_tokens=2500,  # Limit to prevent rate limit issues
         ),
         instruction="""You are a business strategy researcher.
 
@@ -51,7 +53,7 @@ For the company mentioned by the user, research and provide a comprehensive repo
 
 Use the google_search agent to find current information about the company.
 Provide detailed, factual research findings.
-Be specific and include examples of how strengths create opportunities and weaknesses create risks."""
+Be specific and include examples of how strengths create opportunities and weaknesses create risks.""",
     )
 
 
@@ -75,7 +77,7 @@ def create_business_formatter():
         generate_content_config=GenerateContentConfig(
             temperature=0.1,
             max_output_tokens=2500,
-            response_mime_type="application/json"
+            response_mime_type="application/json",
         ),
         output_schema=StructuredBusinessStrategy,
         instruction="""You are a business strategy formatter.
@@ -93,11 +95,11 @@ For the structured output:
 
 Create IDs using lowercase-hyphenated format (e.g., 'strength-brand-recognition').
 Be specific and actionable in all descriptions.
-Ensure all required fields are populated."""
+Ensure all required fields are populated.""",
     )
 
 
-def format_with_openai(research_data: str) -> Dict[str, Any]:
+def format_with_openai(research_data: str) -> dict[str, Any]:
     """
     Use OpenAI to format research data into structured strategy.
     OpenAI handles complex schemas better than Gemini.
@@ -110,13 +112,15 @@ def format_with_openai(research_data: str) -> Dict[str, Any]:
     """
     from openai import OpenAI as OpenAIClient
 
-    client = OpenAIClient(api_key=os.getenv('OPENAI_API_KEY'))
+    client = OpenAIClient(api_key=os.getenv("OPENAI_API_KEY"))
 
     # Use the chat.completions.parse method (beta is needed for parse)
     completion = client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",  # Use the specific model that supports structured outputs
         messages=[
-            {"role": "system", "content": """You are a business strategy formatter.
+            {
+                "role": "system",
+                "content": """You are a business strategy formatter.
 
 Take the research report provided and format it into a structured business strategy.
 
@@ -130,11 +134,15 @@ For the structured output:
 
 Create IDs using lowercase-hyphenated format (e.g., 'strength-brand-recognition').
 Be specific and actionable in all descriptions.
-Ensure all required fields are populated."""},
-            {"role": "user", "content": f"Format this research into structured business strategy:\n\n{research_data}"}
+Ensure all required fields are populated.""",
+            },
+            {
+                "role": "user",
+                "content": f"Format this research into structured business strategy:\n\n{research_data}",
+            },
         ],
         # Pass the Pydantic class directly - OpenAI will handle the conversion
-        response_format=StructuredBusinessStrategy
+        response_format=StructuredBusinessStrategy,
     )
 
     # The parsed response is in the parsed attribute

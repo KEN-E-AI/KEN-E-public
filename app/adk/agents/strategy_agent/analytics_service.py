@@ -4,18 +4,15 @@ This module provides comprehensive analytics capabilities using a dedicated
 'analytics' Firestore database for high-volume time-series data.
 """
 
-import json
 import logging
-import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
-from .retry_utils import with_write_retry, with_read_retry, with_batch_retry
-from .token_utils import TokenEstimator
+from .retry_utils import with_batch_retry, with_read_retry, with_write_retry
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +31,7 @@ class AnalyticsService:
         "gemini-2.5-pro": {"prompt": 3.50, "response": 10.50},
     }
 
-    def __init__(self, account_id: str, project_id: Optional[str] = None):
+    def __init__(self, account_id: str, project_id: str | None = None):
         """Initialize Analytics Service with database connections.
 
         Args:
@@ -72,7 +69,9 @@ class AnalyticsService:
             # Default database for configuration
             self.default_db = firestore.Client(project=self.project_id)
 
-            logger.info(f"Initialized analytics service for account {self.account_id} (analytics temporarily disabled)")
+            logger.info(
+                f"Initialized analytics service for account {self.account_id} (analytics temporarily disabled)"
+            )
 
         except Exception as e:
             logger.error(f"Failed to initialize Firestore clients: {e}")
@@ -89,9 +88,9 @@ class AnalyticsService:
         model: str,
         execution_time: float,
         success: bool = True,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Track execution metrics for a single agent.
 
         Args:
@@ -153,7 +152,7 @@ class AnalyticsService:
 
         return metrics
 
-    def _update_cumulative_metrics(self, agent_name: str, metrics: Dict[str, Any]):
+    def _update_cumulative_metrics(self, agent_name: str, metrics: dict[str, Any]):
         """Update cumulative execution metrics."""
         self.execution_metrics["total_tokens"] += metrics["total_tokens"]
         self.execution_metrics["total_cost"] += metrics["total_cost"]
@@ -180,7 +179,7 @@ class AnalyticsService:
         self,
         agent_name: str,
         estimated_tokens: int,
-        actual_tokens: Optional[int] = None,
+        actual_tokens: int | None = None,
         context: str = "input",
     ):
         """Track token estimation accuracy.
@@ -216,7 +215,7 @@ class AnalyticsService:
                 logger.error(f"Failed to track token estimation: {e}")
 
     @with_read_retry(operation_name="aggregate_daily_costs")
-    def aggregate_daily_costs(self, date: Optional[datetime] = None) -> Dict[str, Any]:
+    def aggregate_daily_costs(self, date: datetime | None = None) -> dict[str, Any]:
         """Aggregate costs for a specific day.
 
         Args:
@@ -292,7 +291,7 @@ class AnalyticsService:
             logger.error(f"Failed to aggregate daily costs: {e}")
             return {}
 
-    def get_execution_summary(self) -> Dict[str, Any]:
+    def get_execution_summary(self) -> dict[str, Any]:
         """Get summary of current execution.
 
         Returns:
@@ -323,7 +322,7 @@ class AnalyticsService:
 
         return summary
 
-    def get_cost_trends(self, days: int = 30) -> List[Dict[str, Any]]:
+    def get_cost_trends(self, days: int = 30) -> list[dict[str, Any]]:
         """Get cost trends over specified days.
 
         Args:

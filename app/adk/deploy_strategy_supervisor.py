@@ -13,7 +13,6 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,38 +30,38 @@ except ImportError:
 
 def update_secret_manager(secret_name: str, secret_value: str, project_id: str) -> bool:
     """Update a secret in Google Secret Manager with a new value.
-    
+
     Args:
         secret_name: Name of the secret (without project path)
         secret_value: New value for the secret
         project_id: GCP project ID
-    
+
     Returns:
         True if successful, False otherwise
     """
     try:
         from google.cloud import secretmanager
-        
+
         client = secretmanager.SecretManagerServiceClient()
-        
+
         # Build the secret name
         secret_path = f"projects/{project_id}/secrets/{secret_name}"
-        
+
         # Add a new version with the updated value
         parent = secret_path
         payload = secret_value.encode("UTF-8")
-        
+
         response = client.add_secret_version(
             request={
                 "parent": parent,
                 "payload": {"data": payload},
             }
         )
-        
+
         logger.info(f"✅ Updated secret {secret_name} in Secret Manager")
         logger.info(f"   New version: {response.name}")
         return True
-        
+
     except Exception as e:
         logger.error(f"❌ Failed to update secret {secret_name}: {e}")
         return False
@@ -70,7 +69,7 @@ def update_secret_manager(secret_name: str, secret_value: str, project_id: str) 
 
 def process_env_file(source_path: Path, dest_path: Path) -> None:
     """Process .env file to resolve Secret Manager references.
-    
+
     Args:
         source_path: Path to source .env file
         dest_path: Path to write processed .env file
@@ -80,25 +79,25 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
         shutil.copy2(source_path, dest_path)
         logger.warning("Copying .env file without processing Secret Manager references")
         return
-    
+
     logger.info("Processing .env file to resolve Secret Manager references")
     processed_lines = []
-    
-    with open(source_path, 'r') as f:
+
+    with open(source_path) as f:
         for line in f:
             # Skip comments and empty lines
-            if line.strip().startswith('#') or not line.strip():
+            if line.strip().startswith("#") or not line.strip():
                 processed_lines.append(line)
                 continue
-            
+
             # Parse key=value pairs
-            if '=' in line:
-                key, value = line.split('=', 1)
+            if "=" in line:
+                key, value = line.split("=", 1)
                 key = key.strip()
                 value = value.strip()
-                
+
                 # Check if this value needs Secret Manager resolution
-                if value.startswith('sm://'):
+                if value.startswith("sm://"):
                     try:
                         # Set the environment variable temporarily to use get_env_or_secret
                         os.environ[key] = value
@@ -109,7 +108,9 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
                         else:
                             # Keep original if resolution failed
                             processed_lines.append(line)
-                            logger.warning(f"Failed to resolve Secret Manager reference for {key}")
+                            logger.warning(
+                                f"Failed to resolve Secret Manager reference for {key}"
+                            )
                     except Exception as e:
                         logger.error(f"Error resolving {key}: {e}")
                         processed_lines.append(line)
@@ -118,15 +119,15 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
                     processed_lines.append(line)
             else:
                 processed_lines.append(line)
-    
+
     # Write processed .env file
-    with open(dest_path, 'w') as f:
+    with open(dest_path, "w") as f:
         f.writelines(processed_lines)
-    
+
     logger.info(f"Processed .env file written to {dest_path}")
 
 
-def deploy_strategy_supervisor() -> Optional[str]:
+def deploy_strategy_supervisor() -> str | None:
     """Deploy the Strategy Documents Supervisor to Agent Engine."""
 
     # Save current directory
@@ -295,7 +296,9 @@ logger.info("agent_engine_app.py loaded successfully")
                 text=True,
                 check=False,  # Don't raise on non-zero exit
             )
-            logger.info(f"subprocess.run() completed with return code: {result.returncode}")
+            logger.info(
+                f"subprocess.run() completed with return code: {result.returncode}"
+            )
 
             logger.info("Deployment stdout:")
             logger.info(result.stdout)
@@ -305,10 +308,21 @@ logger.info("agent_engine_app.py loaded successfully")
                 logger.info(result.stderr)
 
             # Check if the error is in stdout (some errors go there)
-            if "ModuleAgent.__init__() got an unexpected keyword argument" in result.stdout:
-                logger.error("ERROR: ModuleAgent initialization failed - found in stdout")
-            if result.stderr and "ModuleAgent.__init__() got an unexpected keyword argument" in result.stderr:
-                logger.error("ERROR: ModuleAgent initialization failed - found in stderr")
+            if (
+                "ModuleAgent.__init__() got an unexpected keyword argument"
+                in result.stdout
+            ):
+                logger.error(
+                    "ERROR: ModuleAgent initialization failed - found in stdout"
+                )
+            if (
+                result.stderr
+                and "ModuleAgent.__init__() got an unexpected keyword argument"
+                in result.stderr
+            ):
+                logger.error(
+                    "ERROR: ModuleAgent initialization failed - found in stderr"
+                )
 
             # Try to extract engine ID or operation name
             # Look for operation pattern first
@@ -375,23 +389,27 @@ Location: {location}
                 print("=" * 60)
                 print(f"\nDeployment Name: {deployment_name}")
                 print(f"Engine ID: {engine_id}")
-                
+
                 # Update Secret Manager with the new engine ID
                 print("\n📝 Updating Secret Manager...")
                 secret_updated = update_secret_manager(
                     secret_name="strategy-supervisor-engine-id",
                     secret_value=engine_id,
-                    project_id="525657242938"  # Using the project ID from the secrets
+                    project_id="525657242938",  # Using the project ID from the secrets
                 )
-                
+
                 if secret_updated:
                     print("✅ Secret Manager updated with new engine ID")
-                    print("\n📌 Your .env files should use the Secret Manager reference:")
-                    print("   STRATEGY_SUPERVISOR_ENGINE_ID=sm://strategy-supervisor-engine-id")
+                    print(
+                        "\n📌 Your .env files should use the Secret Manager reference:"
+                    )
+                    print(
+                        "   STRATEGY_SUPERVISOR_ENGINE_ID=sm://strategy-supervisor-engine-id"
+                    )
                     print("\n   The actual engine ID is now stored in Secret Manager.")
                 else:
                     print("⚠️  Failed to update Secret Manager - please update manually")
-                
+
                 print("=" * 60)
 
                 return engine_id

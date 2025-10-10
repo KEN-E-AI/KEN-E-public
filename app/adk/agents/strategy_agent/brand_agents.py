@@ -7,8 +7,9 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 """
 
 import google.adk as adk
-from google.genai.types import GenerateContentConfig
 from google.adk.tools import AgentTool
+from google.genai.types import GenerateContentConfig
+
 from .brand_models import BrandGuidelines
 
 
@@ -35,7 +36,7 @@ def create_brand_researcher(google_search_agent):
         # NO output_schema - this allows tool usage
         generate_content_config=GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=2500  # Limit to prevent rate limit issues
+            max_output_tokens=2500,  # Limit to prevent rate limit issues
         ),
         instruction="""You are a brand intelligence researcher. Your role is to:
 
@@ -59,7 +60,7 @@ def create_brand_researcher(google_search_agent):
 4. Provide comprehensive, detailed research findings
 
 Focus on actionable brand guidelines that help ensure consistent brand communication.
-Provide detailed findings with specific examples from official sources when possible."""
+Provide detailed findings with specific examples from official sources when possible.""",
     )
 
 
@@ -83,7 +84,7 @@ def create_brand_formatter():
         generate_content_config=GenerateContentConfig(
             temperature=0.1,
             max_output_tokens=8000,
-            response_mime_type="application/json"
+            response_mime_type="application/json",
         ),
         output_schema=BrandGuidelines,  # Enforces JSON structure
         instruction="""You are a brand guidelines formatter. Your role is to:
@@ -107,5 +108,5 @@ Guidelines for each field:
 - Ensure guidelines are actionable for content creation
 
 Output valid JSON matching the BrandGuidelines schema EXACTLY.
-Ensure all required fields are populated with rich content."""
+Ensure all required fields are populated with rich content.""",
     )

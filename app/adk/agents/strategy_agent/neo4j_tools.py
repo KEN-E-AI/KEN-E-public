@@ -3,17 +3,17 @@ Neo4j connection utilities for strategy knowledge graph.
 Handles connection management, transactions, and error handling.
 """
 
-import os
-from typing import Any, Dict, List, Optional
-from contextlib import contextmanager
 import logging
-from neo4j import GraphDatabase, Transaction
-from neo4j.exceptions import ServiceUnavailable, SessionExpired
-from dotenv import load_dotenv
+import os
 import time
+from contextlib import contextmanager
+
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 # Load environment variables
-env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(env_path)
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ def _get_secret(secret_name: str, project_id: str = "ken-e-dev") -> str:
     """Load secret from GCP Secret Manager."""
     try:
         from google.cloud import secretmanager
+
         client = secretmanager.SecretManagerServiceClient()
         name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
         response = client.access_secret_version(request={"name": name})
@@ -44,12 +45,21 @@ class Neo4jConnection:
             username: Neo4j username (defaults to env variable)
             password: Neo4j password (defaults to env variable)
         """
-        self.uri = uri or os.getenv('NEO4J_URI') or _get_secret('NEO4J_URI')
-        self.username = username or os.getenv('NEO4J_USERNAME') or os.getenv('NEO4J_USER') or _get_secret('NEO4J_USERNAME')
-        self.password = password or os.getenv('NEO4J_PASSWORD') or _get_secret('NEO4J_PASSWORD')
+        self.uri = uri or os.getenv("NEO4J_URI") or _get_secret("NEO4J_URI")
+        self.username = (
+            username
+            or os.getenv("NEO4J_USERNAME")
+            or os.getenv("NEO4J_USER")
+            or _get_secret("NEO4J_USERNAME")
+        )
+        self.password = (
+            password or os.getenv("NEO4J_PASSWORD") or _get_secret("NEO4J_PASSWORD")
+        )
 
         if not all([self.uri, self.username, self.password]):
-            raise ValueError("Neo4j credentials not provided. Set NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD environment variables or add to Secret Manager")
+            raise ValueError(
+                "Neo4j credentials not provided. Set NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD environment variables or add to Secret Manager"
+            )
 
         self.driver = None
         self._connect()
@@ -62,7 +72,7 @@ class Neo4jConnection:
                 auth=(self.username, self.password),
                 max_connection_lifetime=3600,  # 1 hour
                 max_connection_pool_size=50,
-                connection_acquisition_timeout=60
+                connection_acquisition_timeout=60,
             )
             # Verify connectivity
             self.driver.verify_connectivity()
@@ -96,7 +106,9 @@ class Neo4jConnection:
             if session:
                 session.close()
 
-    def execute_query(self, query: str, parameters: Dict = None, database: str = None) -> List[Dict]:
+    def execute_query(
+        self, query: str, parameters: dict = None, database: str = None
+    ) -> list[dict]:
         """
         Execute a Cypher query with retry logic.
 
@@ -118,7 +130,9 @@ class Neo4jConnection:
                     return [record.data() for record in result]
             except (ServiceUnavailable, SessionExpired) as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"Query failed (attempt {attempt + 1}), retrying: {e}")
+                    logger.warning(
+                        f"Query failed (attempt {attempt + 1}), retrying: {e}"
+                    )
                     time.sleep(retry_delay)
                     retry_delay *= 2
                 else:
@@ -194,7 +208,7 @@ class Neo4jOperations:
             except Exception as e:
                 logger.warning(f"Index creation warning (may already exist): {e}")
 
-    def merge_account(self, account_data: Dict) -> Dict:
+    def merge_account(self, account_data: dict) -> dict:
         """
         Create or update an Account node.
 
@@ -214,54 +228,56 @@ class Neo4jOperations:
 
         # ON CREATE: Only set fields that are provided in account_data
         create_fields = []
-        if 'account_name' in account_data:
-            create_fields.append('acc.account_name = $account_name')
-        if 'company_name' in account_data:
-            create_fields.append('acc.company_name = $company_name')
-        elif 'account_name' in account_data:
-            create_fields.append('acc.company_name = $account_name')  # Fallback
-        if 'company_overview' in account_data:
-            create_fields.append('acc.company_overview = $company_overview')
-        if 'industry' in account_data:
-            create_fields.append('acc.industry = $industry')
-        if 'websites' in account_data:
-            create_fields.append('acc.websites = $websites')
-        if 'customer_regions' in account_data:
-            create_fields.append('acc.customer_regions = $customer_regions')
-        if 'data_region' in account_data:
-            create_fields.append('acc.data_region = $data_region')
-        if 'organization_id' in account_data:
-            create_fields.append('acc.organization_id = $organization_id')
-        if 'status' in account_data:
-            create_fields.append('acc.status = $status')
-        if 'timezone' in account_data:
-            create_fields.append('acc.timezone = $timezone')
+        if "account_name" in account_data:
+            create_fields.append("acc.account_name = $account_name")
+        if "company_name" in account_data:
+            create_fields.append("acc.company_name = $company_name")
+        elif "account_name" in account_data:
+            create_fields.append("acc.company_name = $account_name")  # Fallback
+        if "company_overview" in account_data:
+            create_fields.append("acc.company_overview = $company_overview")
+        if "industry" in account_data:
+            create_fields.append("acc.industry = $industry")
+        if "websites" in account_data:
+            create_fields.append("acc.websites = $websites")
+        if "customer_regions" in account_data:
+            create_fields.append("acc.customer_regions = $customer_regions")
+        if "data_region" in account_data:
+            create_fields.append("acc.data_region = $data_region")
+        if "organization_id" in account_data:
+            create_fields.append("acc.organization_id = $organization_id")
+        if "status" in account_data:
+            create_fields.append("acc.status = $status")
+        if "timezone" in account_data:
+            create_fields.append("acc.timezone = $timezone")
 
-        create_fields.append('acc.created_time = datetime()')
-        create_fields.append('acc.created_by = \'System\'')
+        create_fields.append("acc.created_time = datetime()")
+        create_fields.append("acc.created_by = 'System'")
 
         # ON MATCH: Only update agent-derived fields if provided
         match_fields = []
-        if 'company_name' in account_data:
-            match_fields.append('acc.company_name = $company_name')
-        if 'company_overview' in account_data:
-            match_fields.append('acc.company_overview = $company_overview')
-        match_fields.append('acc.last_modified = datetime()')
-        match_fields.append('acc.last_modified_by = \'System\'')
+        if "company_name" in account_data:
+            match_fields.append("acc.company_name = $company_name")
+        if "company_overview" in account_data:
+            match_fields.append("acc.company_overview = $company_overview")
+        match_fields.append("acc.last_modified = datetime()")
+        match_fields.append("acc.last_modified_by = 'System'")
 
         query = f"""
         MERGE (acc:Account {{account_id: $account_id}})
         ON CREATE SET
-            {', '.join(create_fields)}
+            {", ".join(create_fields)}
         ON MATCH SET
-            {', '.join(match_fields)}
+            {", ".join(match_fields)}
         RETURN acc
         """
 
         result = self.connection.execute_query(query, account_data)
-        return result[0]['acc'] if result else None
+        return result[0]["acc"] if result else None
 
-    def create_strategy_node(self, node_type: str, node_data: Dict, account_id: str) -> Dict:
+    def create_strategy_node(
+        self, node_type: str, node_data: dict, account_id: str
+    ) -> dict:
         """
         Create or merge a strategy node with proper labels and relationships.
         Uses MERGE to prevent duplicates based on unique identifiers.
@@ -275,7 +291,7 @@ class Neo4jOperations:
             Created/merged node data
         """
         # All nodes now use 'node_id' as the unique identifier (no backward compatibility with old type-specific IDs)
-        id_field = 'node_id'
+        id_field = "node_id"
 
         if id_field in node_data:
             # Use MERGE with unique identifier
@@ -293,9 +309,9 @@ class Neo4jOperations:
             RETURN n
             """
             params = {
-                'account_id': account_id,
-                'unique_id': node_data[id_field],
-                'node_data': node_data
+                "account_id": account_id,
+                "unique_id": node_data[id_field],
+                "node_data": node_data,
             }
         else:
             # Fallback to CREATE if no unique identifier (shouldn't happen)
@@ -310,15 +326,14 @@ class Neo4jOperations:
             CREATE (n)-[:BELONGS_TO]->(acc)
             RETURN n
             """
-            params = {
-                'account_id': account_id,
-                'node_data': node_data
-            }
+            params = {"account_id": account_id, "node_data": node_data}
 
         result = self.connection.execute_query(query, params)
-        return result[0]['n'] if result else None
+        return result[0]["n"] if result else None
 
-    def update_strategy_node(self, node_id: str, updates: Dict, user: str = "System") -> Dict:
+    def update_strategy_node(
+        self, node_id: str, updates: dict, user: str = "System"
+    ) -> dict:
         """
         Update an existing strategy node with versioning.
 
@@ -359,9 +374,11 @@ class Neo4jOperations:
             return [record.data() for record in result]
 
         result = self.connection.execute_write_transaction(update_with_version)
-        return result[0]['n'] if result else None
+        return result[0]["n"] if result else None
 
-    def get_account_strategies(self, account_id: str, include_versions: bool = False) -> Dict:
+    def get_account_strategies(
+        self, account_id: str, include_versions: bool = False
+    ) -> dict:
         """
         Retrieve all strategy nodes for an account.
 
@@ -395,10 +412,12 @@ class Neo4jOperations:
                    }) as strategies
             """
 
-        result = self.connection.execute_query(query, {'account_id': account_id})
+        result = self.connection.execute_query(query, {"account_id": account_id})
         return result[0] if result else None
 
-    def search_strategies(self, query_embedding: List[float], account_id: str, top_k: int = 5) -> List[Dict]:
+    def search_strategies(
+        self, query_embedding: list[float], account_id: str, top_k: int = 5
+    ) -> list[dict]:
         """
         Perform vector similarity search on strategy nodes.
 
@@ -419,11 +438,10 @@ class Neo4jOperations:
         ORDER BY score DESC
         """
 
-        return self.connection.execute_query(query, {
-            'embedding': query_embedding,
-            'account_id': account_id,
-            'top_k': top_k
-        })
+        return self.connection.execute_query(
+            query,
+            {"embedding": query_embedding, "account_id": account_id, "top_k": top_k},
+        )
 
     def close(self):
         """Close the connection."""
@@ -432,6 +450,7 @@ class Neo4jOperations:
 
 # Singleton instance for reuse
 _neo4j_ops = None
+
 
 def get_neo4j_operations() -> Neo4jOperations:
     """Get or create a singleton Neo4jOperations instance."""

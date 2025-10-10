@@ -7,8 +7,9 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 """
 
 import google.adk as adk
-from google.genai.types import GenerateContentConfig
 from google.adk.tools import AgentTool
+from google.genai.types import GenerateContentConfig
+
 from .competitive_models import CompetitiveAnalysis
 
 
@@ -35,7 +36,7 @@ def create_competitive_researcher(google_search_agent):
         # NO output_schema - this allows tool usage
         generate_content_config=GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=2500  # Limit to prevent rate limit issues
+            max_output_tokens=2500,  # Limit to prevent rate limit issues
         ),
         instruction="""You are a competitive intelligence researcher. Your role is to:
 
@@ -61,7 +62,7 @@ Focus on actionable competitive intelligence that helps understand:
 - What strengths do they have (and what risks do those create for us)?
 - What weaknesses can we exploit (and what opportunities do those create)?
 
-Provide detailed findings with specific examples and data where possible."""
+Provide detailed findings with specific examples and data where possible.""",
     )
 
 
@@ -85,7 +86,7 @@ def create_competitive_formatter():
         generate_content_config=GenerateContentConfig(
             temperature=0.1,
             max_output_tokens=8000,
-            response_mime_type="application/json"
+            response_mime_type="application/json",
         ),
         output_schema=CompetitiveAnalysis,  # Enforces JSON structure
         instruction="""You are a competitive analysis formatter. Your role is to:
@@ -112,5 +113,5 @@ Guidelines:
   used to identify competitors (geography, size, brand awareness, etc.)
 
 Output valid JSON matching the CompetitiveAnalysis schema EXACTLY.
-Ensure all required fields are populated."""
+Ensure all required fields are populated.""",
     )

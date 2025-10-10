@@ -8,8 +8,8 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Content, Email, Mail, To
 
 from .exceptions import EmailServiceInitializationError, SecretManagerError
-from .utils.secrets import get_env_or_secret  # Supports sm:// format
 from .templates.template_loader import template_loader
+from .utils.secrets import get_env_or_secret  # Supports sm:// format
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +43,8 @@ class EmailService:
                             "error_type": "secret_manager_failure",
                             "env_var": e.env_var,
                             "secret_path": e.secret_path,
-                            "service": "email"
-                        }
+                            "service": "email",
+                        },
                     )
                     self.api_key = None
                     self.client = None
@@ -59,7 +59,7 @@ class EmailService:
                 if not self.api_key:
                     logger.warning(
                         "SendGrid API key not found. Email sending will be disabled.",
-                        extra={"service": "email", "error_type": "missing_api_key"}
+                        extra={"service": "email", "error_type": "missing_api_key"},
                     )
                     self.client = None
                 else:
@@ -68,7 +68,10 @@ class EmailService:
                         logger.warning(
                             f"SendGrid API key doesn't have expected format (should start with 'SG.'). "
                             f"Key starts with: {self.api_key[:5] if len(self.api_key) >= 5 else self.api_key}",
-                            extra={"service": "email", "error_type": "invalid_api_key_format"}
+                            extra={
+                                "service": "email",
+                                "error_type": "invalid_api_key_format",
+                            },
                         )
 
                     try:
@@ -79,8 +82,8 @@ class EmailService:
                                 "service": "email",
                                 "from_email": self.from_email,
                                 "app_base_url": self.app_base_url,
-                                "status": "initialized"
-                            }
+                                "status": "initialized",
+                            },
                         )
                     except Exception as e:
                         logger.error(
@@ -88,8 +91,8 @@ class EmailService:
                             extra={
                                 "service": "email",
                                 "error_type": "sendgrid_client_init_failure",
-                                "api_key_valid_format": self.api_key.startswith('SG.')
-                            }
+                                "api_key_valid_format": self.api_key.startswith("SG."),
+                            },
                         )
                         self.client = None
                         # Don't raise here - allow graceful degradation
@@ -98,7 +101,7 @@ class EmailService:
                 # This shouldn't happen anymore, but keep for safety
                 logger.error(
                     "EmailServiceInitializationError caught during initialization",
-                    extra={"service": "email", "error_type": "initialization_error"}
+                    extra={"service": "email", "error_type": "initialization_error"},
                 )
                 self.api_key = None
                 self.client = None
@@ -106,10 +109,7 @@ class EmailService:
                 logger.error(
                     f"Unexpected error during EmailService initialization: {e}. "
                     f"Email sending will be disabled.",
-                    extra={
-                        "service": "email",
-                        "error_type": "unexpected_init_error"
-                    }
+                    extra={"service": "email", "error_type": "unexpected_init_error"},
                 )
                 self.api_key = None
                 self.client = None
@@ -147,8 +147,8 @@ class EmailService:
                     "service": "email",
                     "error_type": "client_unavailable",
                     "recipient": to_email,
-                    "organization": organization_name
-                }
+                    "organization": organization_name,
+                },
             )
             return False
 
@@ -234,6 +234,7 @@ The KEN-E Team
                 f"Exception type: {type(e).__name__}"
             )
             import traceback
+
             logger.debug(f"Traceback: {traceback.format_exc()}")
             return False
 
@@ -271,8 +272,8 @@ The KEN-E Team
                     "error_type": "client_unavailable",
                     "recipient": to_email,
                     "accepter": accepter_email,
-                    "organization": organization_name
-                }
+                    "organization": organization_name,
+                },
             )
             return False
 
@@ -326,7 +327,7 @@ The KEN-E Team
         if not self.client:
             logger.warning(
                 f"SendGrid client not available. Cannot send account ready email to {to_email}",
-                extra={"service": "email", "error_type": "client_unavailable"}
+                extra={"service": "email", "error_type": "client_unavailable"},
             )
             return False
 

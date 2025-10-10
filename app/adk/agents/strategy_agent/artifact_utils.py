@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional, Tuple
 
 from google.adk.artifacts import GcsArtifactService, InMemoryArtifactService
 from google.cloud import storage
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 UPLOADED_STRATEGY_PREFIX = "input_strategy_"
 
 
-def parse_gcs_url(url: str) -> Tuple[Optional[str], Optional[str]]:
+def parse_gcs_url(url: str) -> tuple[str | None, str | None]:
     """
     Parse a GCS URL into bucket name and blob path.
 
@@ -83,7 +82,7 @@ def determine_artifact_bucket(
 
 def create_artifact_from_gcs(
     storage_client: storage.Client, bucket_name: str, blob_path: str
-) -> Tuple[Optional[Part], str]:
+) -> tuple[Part | None, str]:
     """
     Download a GCS blob and create an artifact Part.
 

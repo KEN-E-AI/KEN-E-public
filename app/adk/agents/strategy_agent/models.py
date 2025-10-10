@@ -3,10 +3,10 @@ Models for Strategy Agent - Multi-agent sequential architecture.
 Defines context and API models for strategy generation.
 """
 
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
 from datetime import datetime, timezone
+from typing import Any
 
+from pydantic import BaseModel, Field
 
 # ============================================================================
 # Strategy Context Model
@@ -25,34 +25,34 @@ class StrategyContext(BaseModel):
     # Basic company information
     account_id: str = Field(..., description="Unique account identifier")
     company_name: str = Field(..., description="Company name")
-    websites: List[str] = Field(default_factory=list, description="Company websites")
+    websites: list[str] = Field(default_factory=list, description="Company websites")
     industry: str = Field(..., description="Company industry")
-    customer_regions: List[str] = Field(
+    customer_regions: list[str] = Field(
         default_factory=list, description="Customer regions"
     )
-    annual_ad_budget: Optional[float] = Field(
+    annual_ad_budget: float | None = Field(
         None, description="Annual advertising budget"
     )
 
     # Optional supporting documents and context
-    supporting_documents: Optional[List[str]] = Field(
+    supporting_documents: list[str] | None = Field(
         None, description="Paths to supporting documents"
     )
-    user_id: Optional[str] = Field(None, description="User ID making the request")
+    user_id: str | None = Field(None, description="User ID making the request")
 
     # Strategy documents (stored as dicts during generation)
-    business_strategy: Optional[Dict[str, Any]] = None
-    competitive_strategy: Optional[Dict[str, Any]] = None
-    customer_strategy: Optional[Dict[str, Any]] = None
-    marketing_strategy: Optional[Dict[str, Any]] = None
-    brand_guidelines: Optional[Dict[str, Any]] = None
+    business_strategy: dict[str, Any] | None = None
+    competitive_strategy: dict[str, Any] | None = None
+    customer_strategy: dict[str, Any] | None = None
+    marketing_strategy: dict[str, Any] | None = None
+    brand_guidelines: dict[str, Any] | None = None
 
     # Previous sections for passing to agents
-    previous_sections: Optional[Dict[str, Any]] = None
+    previous_sections: dict[str, Any] | None = None
 
     # Tracking fields
-    stages_completed: List[str] = Field(default_factory=list)
-    stages_remaining: List[str] = Field(
+    stages_completed: list[str] = Field(default_factory=list)
+    stages_remaining: list[str] = Field(
         default_factory=lambda: [
             "business_strategy",
             "competitive_strategy",
@@ -65,12 +65,12 @@ class StrategyContext(BaseModel):
 
     # Timestamps
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
     # Error tracking
-    errors: List[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
-    def get_previous_outputs(self, for_agent: str) -> Dict[str, Any]:
+    def get_previous_outputs(self, for_agent: str) -> dict[str, Any]:
         """
         Get the outputs from previous agents formatted for the current agent.
         Each agent needs specific fields from previous agents as defined in the V3 spec.
@@ -283,7 +283,7 @@ class StrategyContext(BaseModel):
 
         return outputs
 
-    def mark_stage_complete(self, stage: str, result: Dict[str, Any]):
+    def mark_stage_complete(self, stage: str, result: dict[str, Any]):
         """Mark a stage as complete and update context."""
         # Store the result
         setattr(self, stage.replace("-", "_"), result)
@@ -321,13 +321,13 @@ class StrategyGenerationRequest(BaseModel):
 
     account_id: str
     company_name: str
-    websites: List[str] = Field(default_factory=list)
+    websites: list[str] = Field(default_factory=list)
     industry: str
-    customer_regions: List[str] = Field(default_factory=list)
-    annual_ad_budget: Optional[float] = None
-    supporting_documents: Optional[List[str]] = None
-    user_id: Optional[str] = None
-    start_from_stage: Optional[str] = None  # For resuming from a specific stage
+    customer_regions: list[str] = Field(default_factory=list)
+    annual_ad_budget: float | None = None
+    supporting_documents: list[str] | None = None
+    user_id: str | None = None
+    start_from_stage: str | None = None  # For resuming from a specific stage
 
 
 class StrategyGenerationResponse(BaseModel):
@@ -335,9 +335,9 @@ class StrategyGenerationResponse(BaseModel):
 
     success: bool
     account_id: str
-    stages_completed: List[str]
-    stages_remaining: List[str]
+    stages_completed: list[str]
+    stages_remaining: list[str]
     current_stage: str
-    errors: List[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
     started_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
