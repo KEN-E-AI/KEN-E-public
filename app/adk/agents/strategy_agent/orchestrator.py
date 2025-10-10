@@ -55,6 +55,27 @@ except ImportError:
     from .alert_manager import AlertManager
     from .token_utils import TokenEstimator
 
+# Import weave for tracing
+import weave
+
+# Load environment variables from .env file if it exists
+# This ensures WANDB_API_KEY and other env vars are available when deployed to Agent Engine
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path
+
+    # Look for .env file in the adk root directory (2 levels up from strategy_agent/)
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)  # Don't override existing env vars
+        logging.info(f"Loaded environment variables from {env_path}")
+    else:
+        logging.info(f".env file not found at {env_path}, using existing environment variables")
+except ImportError:
+    logging.warning("python-dotenv not available, skipping .env file loading")
+except Exception as e:
+    logging.warning(f"Failed to load .env file: {e}")
+
 logger = logging.getLogger(__name__)
 
 # W&B observability will be initialized lazily when needed
@@ -65,14 +86,12 @@ def init_weave_if_needed():
     """Initialize W&B Weave if not already initialized and API key is available."""
     global WEAVE_INITIALIZED
     if not WEAVE_INITIALIZED:
-        try:
-            if os.getenv("WANDB_API_KEY"):
-                import weave
-                weave.init(project_name="ken-e-strategy-agent")
-                logger.info("W&B observability initialized")
-                WEAVE_INITIALIZED = True
-        except Exception as e:
-            logger.warning(f"W&B initialization skipped: {e}")
+        if os.getenv("WANDB_API_KEY"):
+            weave.init(project_name="ken-e-strategy-agent")
+            logger.info("✅ W&B Weave observability initialized successfully")
+            WEAVE_INITIALIZED = True
+        else:
+            logger.warning("⚠️ WANDB_API_KEY not set, W&B tracing will not be enabled")
             WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
 
 
@@ -246,6 +265,7 @@ def extract_document_sections(doc: dict | None, required_fields: list[str]) -> d
     return extracted
 
 
+@weave.op(name="execute_strategy_generation_direct")
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
@@ -608,6 +628,7 @@ Research text:
     return generated_documents
 
 
+@weave.op(name="execute_strategy_generation")
 def execute_strategy_generation(
     company_name: str,
     industry: str,
