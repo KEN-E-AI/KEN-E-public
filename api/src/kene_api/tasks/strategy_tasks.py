@@ -321,134 +321,134 @@ Please execute strategy generation with these parameters:
                             chunk_count += 1
                             logger.info(f"Processing chunk {chunk_count}...")
 
-                        # Log progress for debugging (progress tracking simplified)
-                        # TODO: Progress logs are failing
-                        if chunk_count == 5:
-                            logger.info(
-                                f"Researching competitors for account {account_id}"
-                            )
-                        elif chunk_count == 10:
-                            logger.info(
-                                f"Researching customers for account {account_id}"
-                            )
-                        elif chunk_count == 15:
-                            logger.info(
-                                f"Inferring marketing strategy for account {account_id}"
-                            )
-                        elif chunk_count == 20:
-                            logger.info(
-                                f"Reviewing brand styles for account {account_id}"
-                            )
-
-                        if isinstance(chunk, dict):
-                            logger.info(
-                                f"Chunk {chunk_count} is dict with keys: {list(chunk.keys())[:10]}"
-                            )
-
-                            # Log the full chunk for debugging
-                            import json
-
-                            try:
-                                logger.debug(
-                                    f"Full chunk {chunk_count}: {json.dumps(chunk, default=str)[:500]}"
+                            # Log progress for debugging (progress tracking simplified)
+                            # TODO: Progress logs are failing
+                            if chunk_count == 5:
+                                logger.info(
+                                    f"Researching competitors for account {account_id}"
                                 )
-                            except Exception:
-                                logger.debug(
-                                    f"Chunk {chunk_count} (non-serializable): {str(chunk)[:500]}"
+                            elif chunk_count == 10:
+                                logger.info(
+                                    f"Researching customers for account {account_id}"
+                                )
+                            elif chunk_count == 15:
+                                logger.info(
+                                    f"Inferring marketing strategy for account {account_id}"
+                                )
+                            elif chunk_count == 20:
+                                logger.info(
+                                    f"Reviewing brand styles for account {account_id}"
                                 )
 
-                            # Handle nested response structure
-                            if "content" in chunk and isinstance(
-                                chunk["content"], dict
-                            ):
-                                content = chunk["content"]
-                                if "parts" in content and isinstance(
-                                    content["parts"], list
+                            if isinstance(chunk, dict):
+                                logger.info(
+                                    f"Chunk {chunk_count} is dict with keys: {list(chunk.keys())[:10]}"
+                                )
+
+                                # Log the full chunk for debugging
+                                import json
+
+                                try:
+                                    logger.debug(
+                                        f"Full chunk {chunk_count}: {json.dumps(chunk, default=str)[:500]}"
+                                    )
+                                except Exception:
+                                    logger.debug(
+                                        f"Chunk {chunk_count} (non-serializable): {str(chunk)[:500]}"
+                                    )
+
+                                # Handle nested response structure
+                                if "content" in chunk and isinstance(
+                                    chunk["content"], dict
                                 ):
-                                    for part in content["parts"]:
-                                        if isinstance(part, dict):
-                                            # Handle text parts
-                                            if "text" in part:
-                                                response_parts.append(part["text"])
-                                                logger.info(
-                                                    f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
-                                                )
-                                                logger.debug(
-                                                    f"  Text preview: {part['text'][:200]}..."
-                                                )
-                                            # Handle function_call parts (likely contains strategy documents)
-                                            elif "function_call" in part:
-                                                function_call = part["function_call"]
-                                                logger.info(
-                                                    f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
-                                                )
-                                                # Extract the function call content
-                                                if isinstance(function_call, dict):
-                                                    # Log the function name if available
-                                                    if "name" in function_call:
-                                                        logger.info(
-                                                            f"    Function: {function_call['name']}"
-                                                        )
-                                                    # Extract arguments/response
-                                                    if "response" in function_call:
-                                                        response_parts.append(
-                                                            str(
-                                                                function_call[
-                                                                    "response"
-                                                                ]
+                                    content = chunk["content"]
+                                    if "parts" in content and isinstance(
+                                        content["parts"], list
+                                    ):
+                                        for part in content["parts"]:
+                                            if isinstance(part, dict):
+                                                # Handle text parts
+                                                if "text" in part:
+                                                    response_parts.append(part["text"])
+                                                    logger.info(
+                                                        f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
+                                                    )
+                                                    logger.debug(
+                                                        f"  Text preview: {part['text'][:200]}..."
+                                                    )
+                                                # Handle function_call parts (likely contains strategy documents)
+                                                elif "function_call" in part:
+                                                    function_call = part["function_call"]
+                                                    logger.info(
+                                                        f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
+                                                    )
+                                                    # Extract the function call content
+                                                    if isinstance(function_call, dict):
+                                                        # Log the function name if available
+                                                        if "name" in function_call:
+                                                            logger.info(
+                                                                f"    Function: {function_call['name']}"
                                                             )
-                                                        )
-                                                        logger.info(
-                                                            f"    Added function response: {len(str(function_call['response']))} chars"
-                                                        )
-                                                    elif "output" in function_call:
-                                                        response_parts.append(
-                                                            str(function_call["output"])
-                                                        )
-                                                        logger.info(
-                                                            f"    Added function output: {len(str(function_call['output']))} chars"
-                                                        )
-                                                    elif "args" in function_call:
-                                                        response_parts.append(
-                                                            str(function_call["args"])
-                                                        )
-                                                        logger.info(
-                                                            f"    Added function args: {len(str(function_call['args']))} chars"
-                                                        )
+                                                        # Extract arguments/response
+                                                        if "response" in function_call:
+                                                            response_parts.append(
+                                                                str(
+                                                                    function_call[
+                                                                        "response"
+                                                                    ]
+                                                                )
+                                                            )
+                                                            logger.info(
+                                                                f"    Added function response: {len(str(function_call['response']))} chars"
+                                                            )
+                                                        elif "output" in function_call:
+                                                            response_parts.append(
+                                                                str(function_call["output"])
+                                                            )
+                                                            logger.info(
+                                                                f"    Added function output: {len(str(function_call['output']))} chars"
+                                                            )
+                                                        elif "args" in function_call:
+                                                            response_parts.append(
+                                                                str(function_call["args"])
+                                                            )
+                                                            logger.info(
+                                                                f"    Added function args: {len(str(function_call['args']))} chars"
+                                                            )
+                                                        else:
+                                                            # Just append the whole function_call as string
+                                                            response_parts.append(
+                                                                str(function_call)
+                                                            )
+                                                            logger.info(
+                                                                f"    Added entire function_call: {len(str(function_call))} chars"
+                                                            )
                                                     else:
-                                                        # Just append the whole function_call as string
                                                         response_parts.append(
                                                             str(function_call)
                                                         )
                                                         logger.info(
-                                                            f"    Added entire function_call: {len(str(function_call))} chars"
+                                                            f"    Added function_call as string: {len(str(function_call))} chars"
                                                         )
-                                                else:
-                                                    response_parts.append(
-                                                        str(function_call)
-                                                    )
+                                                # Log other part types for debugging
+                                                elif "thought_signature" in part:
                                                     logger.info(
-                                                        f"    Added function_call as string: {len(str(function_call))} chars"
+                                                        f"  Found thought_signature in chunk {chunk_count} (skipping)"
                                                     )
-                                            # Log other part types for debugging
-                                            elif "thought_signature" in part:
-                                                logger.info(
-                                                    f"  Found thought_signature in chunk {chunk_count} (skipping)"
-                                                )
-                                            else:
-                                                logger.info(
-                                                    f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}"
-                                                )
+                                                else:
+                                                    logger.info(
+                                                        f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}"
+                                                    )
+                                else:
+                                    response_parts.append(str(chunk))
+                                    logger.info(
+                                        f"  Added chunk {chunk_count} as string: {len(str(chunk))} chars"
+                                    )
                             else:
                                 response_parts.append(str(chunk))
                                 logger.info(
-                                    f"  Added chunk {chunk_count} as string: {len(str(chunk))} chars"
+                                    f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                                 )
-                        else:
-                            response_parts.append(str(chunk))
-                            logger.info(
-                                f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
-                            )
 
                         # Successfully processed all chunks, break retry loop
                         break
