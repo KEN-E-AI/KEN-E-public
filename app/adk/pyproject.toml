@@ -2,7 +2,7 @@
 name = "company-news-chatbot"
 version = "0.1.0"
 description = "Simple company news chatbot using ADK and Vertex AI Search"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "baml-py>=0.207.1",
     "google-adk>=1.15.1",
