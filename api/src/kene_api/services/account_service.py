@@ -253,6 +253,20 @@ async def create_account_internal(
     # Log database setup continuing (progress tracking simplified)
     logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
 
+    # Create initial activities from Firestore templates
+    try:
+        from ..routers.accounts import _create_initial_activities
+
+        activities_count = await _create_initial_activities(
+            db=neo4j_service, firestore=firestore, account_id=account_id
+        )
+        logger.info(
+            f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
+        )
+    except Exception as e:
+        logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
+        # Don't fail account creation if initial activities fail
+
     # Create initial activity logs if BigQuery service is available
     if bigquery_service:
         try:

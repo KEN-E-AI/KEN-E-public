@@ -666,7 +666,12 @@ Research text:
             ):
                 try:
                     for category in doc_content["product_portfolio"]:
-                        if "category_name" in category:
+                        # Use product_name (correct field per structured_models.py)
+                        # NOT category_name which was deprecated
+                        if "product_name" in category:
+                            product_category_names.append(category["product_name"])
+                        elif "category_name" in category:
+                            # Fallback for backward compatibility
                             product_category_names.append(category["category_name"])
                     logger.info(
                         f"[COORDINATION] Extracted {len(product_category_names)} ProductCategory names from business strategy: {product_category_names}"
