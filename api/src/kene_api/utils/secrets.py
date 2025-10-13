@@ -3,6 +3,24 @@
 Environment variables can contain either:
 - Actual values (for local development)
 - Secret Manager references: sm://project_id/secret_name or sm://secret_name
+
+MIGRATION NOTE:
+This module replaces the deprecated secret_manager.py module.
+
+Key differences:
+- Old: get_env_var_or_secret(key, allow_failure=True)
+- New: get_env_or_secret(key, default=None)
+
+Error handling changes:
+- Old: allow_failure parameter controlled exception raising
+- New: Returns None (or default) on failure, logs error
+- Callers should check for None return value instead of catching exceptions
+
+Example migration:
+  Old: api_key = get_env_var_or_secret("API_KEY", allow_failure=False)
+  New: api_key = get_env_or_secret("API_KEY")
+       if not api_key:
+           raise ValueError("API_KEY not found")
 """
 
 import logging
