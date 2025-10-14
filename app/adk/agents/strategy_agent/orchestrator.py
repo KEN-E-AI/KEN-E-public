@@ -82,12 +82,31 @@ def init_weave_if_needed():
     """Initialize W&B Weave if not already initialized and API key is available."""
     global WEAVE_INITIALIZED
     if not WEAVE_INITIALIZED:
-        if os.getenv("WANDB_API_KEY"):
-            weave.init(project_name="ken-e-strategy-agent")
-            logger.info("✅ W&B Weave observability initialized successfully")
-            WEAVE_INITIALIZED = True
+        # Fetch W&B API key directly from Secret Manager
+        wandb_api_key = None
+        try:
+            from google.cloud import secretmanager
+            client = secretmanager.SecretManagerServiceClient()
+            # Use project number for consistency with other components
+            secret_name = "projects/525657242938/secrets/wandb_api_key/versions/latest"
+            response = client.access_secret_version(request={"name": secret_name})
+            wandb_api_key = response.payload.data.decode("UTF-8")
+            # Set in environment for weave to use
+            os.environ["WANDB_API_KEY"] = wandb_api_key
+            logger.info("✅ Fetched WANDB_API_KEY from Secret Manager")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to fetch WANDB_API_KEY from Secret Manager: {e}")
+
+        if wandb_api_key:
+            try:
+                weave.init(project_name="ken-e-strategy-agent")
+                logger.info("✅ W&B Weave observability initialized successfully")
+                WEAVE_INITIALIZED = True
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize Weave: {e}")
+                WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
         else:
-            logger.warning("⚠️ WANDB_API_KEY not set, W&B tracing will not be enabled")
+            logger.warning("⚠️ WANDB_API_KEY not available, W&B tracing will not be enabled")
             WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
 
 
@@ -486,11 +505,16 @@ def execute_strategy_generation_direct(
 
             message_content = Content(role="user", parts=[{"text": research_query}])
 
-            events = runner.run(
-                user_id=context.user_id or "system",
-                session_id=session_id,
-                new_message=message_content,
-            )
+            # Wrap researcher execution with weave tracing
+            @weave.op(name=f"{strategy_name}_researcher")
+            def run_researcher():
+                return list(runner.run(
+                    user_id=context.user_id or "system",
+                    session_id=session_id,
+                    new_message=message_content,
+                ))
+
+            events = run_researcher()
 
             # Extract research text and grounding metadata (source URLs)
             research_text = ""
@@ -571,11 +595,17 @@ Research text:
                 format_message = Content(
                     role="user", parts=[{"text": format_instructions}]
                 )
-                events2 = runner2.run(
-                    user_id=context.user_id or "system",
-                    session_id=session_id2,
-                    new_message=format_message,
-                )
+
+                # Wrap formatter execution with weave tracing
+                @weave.op(name=f"{strategy_name}_gemini_formatter")
+                def run_formatter():
+                    return list(runner2.run(
+                        user_id=context.user_id or "system",
+                        session_id=session_id2,
+                        new_message=format_message,
+                    ))
+
+                events2 = run_formatter()
 
                 # Extract formatted JSON
                 formatted_json = ""

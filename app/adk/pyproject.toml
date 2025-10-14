@@ -14,8 +14,8 @@ dependencies = [
     "pypdf2>=3.0.1",
     "python-dotenv",
     "requests>=2.32.4",
-    "wandb>=0.22.1",
-    "weave>=0.52.8",
+    "wandb>=0.22.2",
+    "weave>=0.52.9",
 ]
 
 # Remove the tool.adk section - let's try without it first

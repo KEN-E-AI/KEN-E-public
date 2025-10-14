@@ -7,6 +7,7 @@ import json
 import os
 from typing import Any
 
+import weave
 from pydantic import BaseModel
 
 
@@ -30,6 +31,7 @@ def _get_openai_key() -> str:
         )
 
 
+@weave.op(name="openai_formatter")
 def format_with_openai(
     research_data: str,
     model_class: type[BaseModel],
