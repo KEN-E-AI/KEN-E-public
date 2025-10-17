@@ -183,7 +183,7 @@ steps:
             --memory=1Gi \
             --port=8000 \
             --timeout=300 \
-            --startup-cpu-boost \
+            --cpu-boost \
             --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
             --vpc-connector=ken-e-staging-connector \
             --clear-secrets \
