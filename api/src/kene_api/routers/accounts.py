@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
@@ -24,8 +23,8 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from ..auth import UserContext
-from ..auth.user_context import get_current_user_context
 from ..auth.dependencies import get_user_context_for_polling
+from ..auth.user_context import get_current_user_context
 from ..bigquery import BigQueryService, get_bigquery_service
 
 # Removed progress_cache import - simplified progress tracking
@@ -35,15 +34,11 @@ from ..models.kene_models import (
     Account,
     AccountListResponse,
     AccountRequest,
-    NotificationCategory,
-    NotificationStatus,
     SuccessResponse,
 )
-from ..repositories import FirestoreNotificationRepository
-from ..services.notification_service_v2 import NotificationService
-from ..services.storage_service import StorageService, get_storage_service
-from ..services.form_parsing_service import parse_account_form_data
 from ..services.account_service import create_account_internal
+from ..services.form_parsing_service import parse_account_form_data
+from ..services.storage_service import StorageService, get_storage_service
 
 router = APIRouter(tags=["accounts"])
 
@@ -617,7 +612,7 @@ async def create_account(
     """
     # Debug logging
     content_type = request.headers.get("content-type", "")
-    logger.info(f"[ACCOUNT_CREATION] Request details:")
+    logger.info("[ACCOUNT_CREATION] Request details:")
     logger.info(f"  Content-Type: {content_type}")
     logger.info(f"  account_name: {account_name}")
     logger.info(f"  organization_id: {organization_id}")
@@ -737,7 +732,7 @@ async def create_account(
                 status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
             ) from e
         raise HTTPException(
-            status_code=500, detail=f"Error creating account: {str(e)}"
+            status_code=500, detail=f"Error creating account: {e!s}"
         ) from e
 
 
@@ -1832,7 +1827,7 @@ async def get_account_creation_status(
         logger.info(f"Account {account_id} not found yet, likely being created")
         return AccountCreationStatus(
             status="processing",
-            message="Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+            message="Creating account...\n\nConducting research on your business to configure your account. This may take 10-15 minutes.",
         )
 
     account_data = result[0]
@@ -1870,5 +1865,5 @@ async def get_account_creation_status(
     else:
         return AccountCreationStatus(
             status="processing",
-            message="Creating account...\n\nConducting research on your business to configure your account. This may take 15-20 minutes.",
+            message="Creating account...\n\nConducting research on your business to configure your account. This may take 10-15 minutes.",
         )

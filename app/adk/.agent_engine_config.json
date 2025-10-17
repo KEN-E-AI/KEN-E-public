@@ -1,0 +1,8 @@
+{
+  "execution_spec": {
+    "machine_type": "n1-standard-4",
+    "memory": "4Gi",
+    "timeout": "1800s"
+  },
+  "sys_version": "3.12"
+}
