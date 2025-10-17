@@ -4,6 +4,8 @@ Split agent architecture for business strategy.
 Following ADK constraint workaround: Agents with output_schema cannot use tools.
 - Researcher agent: Has tools (google_search), NO output_schema
 - Formatter agent: NO tools, has output_schema with StructuredBusinessStrategy model
+
+Configurations are now loaded from Firestore for easy iteration without redeployment.
 """
 
 import json
@@ -14,6 +16,7 @@ import google.adk as adk
 from google.adk.tools import AgentTool
 from google.genai.types import GenerateContentConfig
 
+from .config_loader import create_agent_from_firestore_config
 from .structured_models import StructuredBusinessStrategy
 
 
@@ -25,6 +28,7 @@ def create_business_researcher(google_search_agent):
     - HAS tools (google_search)
     - NO output_schema
     - Returns unstructured research data
+    - Configuration loaded from Firestore for easy iteration
 
     Args:
         google_search_agent: Google search tool agent
@@ -32,28 +36,9 @@ def create_business_researcher(google_search_agent):
     Returns:
         ADK Agent for business research
     """
-    return adk.Agent(
-        name="business_researcher",
-        description="Researches business strategy information",
-        model="gemini-2.0-flash",
-        tools=[AgentTool(agent=google_search_agent)],
-        generate_content_config=GenerateContentConfig(
-            temperature=0.3,
-            max_output_tokens=2500,  # Limit to prevent rate limit issues
-        ),
-        instruction="""You are a business strategy researcher.
-
-For the company mentioned by the user, research and provide a comprehensive report covering:
-
-1. Company Overview - History, mission, vision, current status
-2. Business Value Propositions - Core value the company delivers to customers overall
-3. Products and Services - Product categories and specific products with their value propositions
-4. SWOT Analysis - For each strength, identify opportunities it creates. For each weakness, identify risks it exposes.
-5. Strategic Goals - Top strategic objectives the company should focus on
-
-Use the google_search agent to find current information about the company.
-Provide detailed, factual research findings.
-Be specific and include examples of how strengths create opportunities and weaknesses create risks.""",
+    return create_agent_from_firestore_config(
+        doc_id="business_researcher",
+        google_search_agent=google_search_agent,
     )
 
 
@@ -65,37 +50,14 @@ def create_business_formatter():
     - NO tools
     - HAS output_schema (StructuredBusinessStrategy)
     - Converts unstructured research into structured JSON
+    - Configuration loaded from Firestore for easy iteration
 
     Returns:
         ADK Agent for formatting business strategy
     """
-    return adk.Agent(
-        name="business_formatter",
-        description="Formats business research into structured strategy",
-        model="gemini-2.5-pro",  # Using 2.5 Pro for better schema handling
-        tools=[],  # NO tools - required for output_schema
-        generate_content_config=GenerateContentConfig(
-            temperature=0.1,
-            max_output_tokens=2500,
-            response_mime_type="application/json",
-        ),
+    return create_agent_from_firestore_config(
+        doc_id="business_formatter",
         output_schema=StructuredBusinessStrategy,
-        instruction="""You are a business strategy formatter.
-
-Take the research report provided by the user and format it into a structured business strategy.
-
-For the structured output:
-
-1. Extract 1-5 business-level value propositions that describe the overall company value
-2. Extract 1-5 main product categories with 1-5 specific products each
-3. For SWOT Analysis:
-   - Identify 1-5 core strengths, and for EACH strength list 1-5 opportunities it creates
-   - Identify 1-5 key weaknesses, and for EACH weakness list 1-5 risks it exposes
-4. Identify 1-5 strategic goals
-
-Create IDs using lowercase-hyphenated format (e.g., 'strength-brand-recognition').
-Be specific and actionable in all descriptions.
-Ensure all required fields are populated.""",
     )
 
 
@@ -134,7 +96,9 @@ For the structured output:
 
 Create IDs using lowercase-hyphenated format (e.g., 'strength-brand-recognition').
 Be specific and actionable in all descriptions.
-Ensure all required fields are populated.""",
+Ensure all required fields are populated.
+
+CRITICAL: ONLY use information explicitly stated in the research provided. If specific details (like revenue figures, market metrics, or technical specifications) are not provided in the research, use placeholder values like "Not specified in research" or mark fields as unavailable. DO NOT invent, infer, or hallucinate data points, metrics, or technical specifications. When information is incomplete, explicitly indicate what is missing rather than filling in plausible-sounding but fabricated details.""",
             },
             {
                 "role": "user",
