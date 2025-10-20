@@ -4,14 +4,33 @@ Agent configuration management endpoints.
 Provides CRUD operations for strategy agent configurations stored in Firestore.
 """
 
+import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
 from pydantic import BaseModel, Field
 
+from ..auth import UserContext
+from ..auth.user_context import get_current_user_context
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/agent-configs", tags=["agent-configs"])
+
+# Allowed agent config IDs (security: prevent path traversal and unauthorized access)
+ALLOWED_CONFIG_IDS = {
+    "business_researcher",
+    "business_formatter",
+    "competitive_researcher",
+    "competitive_formatter",
+    "marketing_researcher",
+    "marketing_formatter",
+    "brand_researcher",
+    "brand_formatter",
+}
 
 
 class AgentConfigMetadata(BaseModel):
@@ -62,94 +81,171 @@ class AgentConfigUpdate(BaseModel):
 
 
 @router.get("/", response_model=list[str])
-async def list_agent_configs() -> list[str]:
+async def list_agent_configs(
+    user: UserContext = Depends(get_current_user_context),
+) -> list[str]:
     """
     List all available agent configuration IDs.
 
+    Requires super admin authentication.
+
     Returns:
         List of config document IDs
+
+    Raises:
+        401: Not authenticated
+        403: Not a super admin
+        500: Firestore error
     """
+    # Only super admins can access agent configs
+    if not user.is_super_admin:
+        logger.warning(
+            f"Unauthorized agent config access attempt by user {user.user_id} ({user.email})"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Only super administrators can access agent configurations",
+        )
+
     try:
-        db = firestore.Client(project="ken-e-dev")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        db = firestore.Client(project=project_id)
         configs = db.collection("agent_configs").stream()
 
         config_ids = [config.id for config in configs]
 
+        logger.info(f"User {user.email} listed {len(config_ids)} agent configs")
+
         return sorted(config_ids)
 
     except Exception as e:
+        logger.error(f"Failed to list agent configs: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to list agent configs: {str(e)}"
+            status_code=500, detail="Failed to list agent configurations"
         )
 
 
 @router.get("/{config_id}", response_model=AgentConfig)
-async def get_agent_config(config_id: str) -> AgentConfig:
+async def get_agent_config(
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+) -> AgentConfig:
     """
     Get a specific agent configuration.
 
+    Requires super admin authentication.
+
     Args:
         config_id: Agent config document ID (e.g., 'business_researcher')
+        user: Current authenticated user context
 
     Returns:
         Agent configuration with all fields
 
     Raises:
+        400: Invalid config_id
+        401: Not authenticated
+        403: Not a super admin
         404: Config not found
         500: Firestore error
     """
+    # Only super admins can access agent configs
+    if not user.is_super_admin:
+        logger.warning(
+            f"Unauthorized agent config read attempt by user {user.user_id} ({user.email}) for {config_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Only super administrators can access agent configurations",
+        )
+
+    # Validate config_id against allowlist (security: prevent path traversal)
+    if config_id not in ALLOWED_CONFIG_IDS:
+        logger.warning(f"Invalid config_id attempted: {config_id} by user {user.email}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid config_id. Must be one of: {', '.join(sorted(ALLOWED_CONFIG_IDS))}",
+        )
+
     try:
-        db = firestore.Client(project="ken-e-dev")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        db = firestore.Client(project=project_id)
         doc_ref = db.collection("agent_configs").document(config_id)
         doc = doc_ref.get()
 
         if not doc.exists:
-            raise HTTPException(
-                status_code=404, detail=f"Config '{config_id}' not found"
-            )
+            raise HTTPException(status_code=404, detail="Configuration not found")
 
         config_data = doc.to_dict()
 
         # Parse into AgentConfig model
+        logger.info(f"User {user.email} retrieved config: {config_id}")
         return AgentConfig(**config_data)
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to get agent config {config_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to get agent config: {str(e)}"
+            status_code=500, detail="Failed to retrieve agent configuration"
         )
 
 
 @router.put("/{config_id}", response_model=AgentConfig)
 async def update_agent_config(
-    config_id: str, update: AgentConfigUpdate
+    config_id: str,
+    update: AgentConfigUpdate,
+    user: UserContext = Depends(get_current_user_context),
 ) -> AgentConfig:
     """
     Update an agent configuration.
 
     Automatically increments version and updates metadata.
+    Requires super admin authentication.
 
     Args:
         config_id: Agent config document ID
         update: Fields to update
+        user: Current authenticated user context
 
     Returns:
         Updated agent configuration
 
     Raises:
+        400: Invalid config_id or invalid version format
+        401: Not authenticated
+        403: Not a super admin
         404: Config not found
         500: Firestore error
     """
+    # Only super admins can modify agent configs
+    if not user.is_super_admin:
+        logger.warning(
+            f"Unauthorized agent config update attempt by user {user.user_id} ({user.email}) for {config_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Only super administrators can modify agent configurations",
+        )
+
+    # Validate config_id against allowlist (security: prevent path traversal)
+    if config_id not in ALLOWED_CONFIG_IDS:
+        logger.warning(
+            f"Invalid config_id update attempted: {config_id} by user {user.email}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid config_id. Must be one of: {', '.join(sorted(ALLOWED_CONFIG_IDS))}",
+        )
+
     try:
-        db = firestore.Client(project="ken-e-dev")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        db = firestore.Client(project=project_id)
         doc_ref = db.collection("agent_configs").document(config_id)
         doc = doc_ref.get()
 
         if not doc.exists:
-            raise HTTPException(
-                status_code=404, detail=f"Config '{config_id}' not found"
-            )
+            raise HTTPException(status_code=404, detail="Configuration not found")
 
         # Get current config
         current_config = doc.to_dict()
@@ -184,21 +280,41 @@ async def update_agent_config(
         if update.version is not None:
             new_version = update.version
         else:
-            # Parse current version and increment (e.g., v1.0 -> v1.1)
+            # Parse current version and increment with validation (e.g., v1.0 -> v1.1)
             current_version = current_metadata.get("version", "v1.0")
             try:
-                # Parse v1.2 -> major=1, minor=2
-                version_parts = current_version.lstrip("v").split(".")
+                if not current_version.startswith("v"):
+                    raise ValueError("Version must start with 'v'")
+
+                version_parts = current_version[1:].split(".")
+                if len(version_parts) != 2:
+                    raise ValueError("Version must be in format vX.Y")
+
                 major = int(version_parts[0])
-                minor = int(version_parts[1]) if len(version_parts) > 1 else 0
+                minor = int(version_parts[1])
+
+                # Bounds checking (security: prevent integer overflow issues)
+                if major > 999 or minor > 999:
+                    raise ValueError("Version numbers must be <= 999")
+
                 new_version = f"v{major}.{minor + 1}"
-            except (ValueError, IndexError):
+            except (ValueError, IndexError) as e:
+                logger.warning(
+                    f"Invalid version format {current_version}: {e}, using fallback"
+                )
                 new_version = "v1.1"  # Fallback
+
+        # Sanitize updated_by field (security: prevent injection)
+        safe_updated_by = (
+            update.updated_by.replace(".", "_").replace("$", "_")[:100]
+            if update.updated_by
+            else "unknown"
+        )
 
         # Update metadata
         updates["metadata.version"] = new_version
         updates["metadata.updated_at"] = datetime.now(timezone.utc).isoformat()
-        updates["metadata.updated_by"] = update.updated_by
+        updates["metadata.updated_by"] = safe_updated_by
 
         if update.variant_name is not None:
             updates["metadata.variant_name"] = update.variant_name
@@ -216,11 +332,16 @@ async def update_agent_config(
         updated_doc = doc_ref.get()
         updated_data = updated_doc.to_dict()
 
+        logger.info(
+            f"User {user.email} updated config {config_id} to version {new_version}"
+        )
+
         return AgentConfig(**updated_data)
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to update agent config {config_id}: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to update agent config: {str(e)}"
+            status_code=500, detail="Failed to update agent configuration"
         )
