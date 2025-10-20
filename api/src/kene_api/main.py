@@ -15,6 +15,7 @@ from .firestore import get_firestore_service
 from .routers import (
     accounts,
     activities,
+    agent_configs,
     auth,
     chat,
     datasets,
@@ -111,6 +112,7 @@ app.include_router(
     organizations.router, prefix="/api/v1/organizations", tags=["organizations"]
 )
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"])
+app.include_router(agent_configs.router)  # Agent configs router already has its prefix
 app.include_router(integrations.router)  # Integrations router already has its prefix
 app.include_router(oauth_integrations.router)  # OAuth router already has its prefix
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
@@ -158,6 +160,9 @@ app.include_router(
     prefix="/api/v1",
     tags=["industry-templates"],
 )
+
+
+# Health and root endpoints below routers
 
 
 @app.get("/")

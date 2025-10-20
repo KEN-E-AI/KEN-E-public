@@ -10,6 +10,7 @@ import {
   CreditCard,
   ArrowRight,
   Shield,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,14 @@ const AdminSettings = () => {
   }
 
   const adminSections = [
+    {
+      id: "agent-configs",
+      title: "Agent Configurations",
+      description: "Manage strategy agent prompts and settings",
+      icon: Bot,
+      route: "/settings/admin/agent-configs",
+      implemented: true,
+    },
     {
       id: "industry-keywords",
       title: "Industry Keywords",

@@ -35,6 +35,7 @@ import UserSettings from "./pages/UserSettings";
 import Settings from "./pages/Settings";
 import AdminSettings from "./pages/AdminSettings";
 import AdminIndustryKeywords from "./pages/AdminIndustryKeywords";
+import AgentConfigManagement from "./pages/AgentConfigManagement";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
@@ -279,6 +280,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <AdminIndustryKeywords />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings/admin/agent-configs"
+                  element={
+                    <ProtectedRoute>
+                      <AgentConfigManagement />
                     </ProtectedRoute>
                   }
                 />
