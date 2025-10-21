@@ -105,8 +105,9 @@ class GACredentialHelper:
 
                 # Get OAuth client configuration from environment
                 import os
+                from ..utils.secrets import get_env_or_secret
                 client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-                client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+                client_secret = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET")
 
                 logger.info(f"OAuth client ID found: {bool(client_id)}, Secret found: {bool(client_secret)}")
 

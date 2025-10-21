@@ -46,8 +46,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
 # Google OAuth 2.0 configuration
+from ..utils.secrets import get_env_or_secret
+
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+GOOGLE_CLIENT_SECRET = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET", "")
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
