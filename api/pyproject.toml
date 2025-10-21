@@ -3,7 +3,11 @@ name = "kene-api"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+# Python 3.13 not yet supported due to compatibility issues with:
+# - google-cloud-aiplatform and Vertex AI dependencies
+# - Some type hint syntax changes requiring code updates
+# Timeline: Will add 3.13 support once all GCP dependencies are verified compatible
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115.12",
     "neo4j>=5.28.1",

@@ -8,8 +8,8 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Content, Email, Mail, To
 
 from .exceptions import EmailServiceInitializationError, SecretManagerError
-from .secret_manager import get_env_var_or_secret
 from .templates.template_loader import template_loader
+from .utils.secrets import get_env_or_secret  # Supports sm:// format
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class EmailService:
             try:
                 # Attempt to get SendGrid API key - allow failure for graceful degradation
                 try:
-                    self.api_key = get_env_var_or_secret("SENDGRID_API_KEY", allow_failure=False)
+                    self.api_key = get_env_or_secret("SENDGRID_API_KEY")
                 except SecretManagerError as e:
                     # Log detailed error for monitoring
                     logger.error(
@@ -43,8 +43,8 @@ class EmailService:
                             "error_type": "secret_manager_failure",
                             "env_var": e.env_var,
                             "secret_path": e.secret_path,
-                            "service": "email"
-                        }
+                            "service": "email",
+                        },
                     )
                     self.api_key = None
                     self.client = None
@@ -59,7 +59,7 @@ class EmailService:
                 if not self.api_key:
                     logger.warning(
                         "SendGrid API key not found. Email sending will be disabled.",
-                        extra={"service": "email", "error_type": "missing_api_key"}
+                        extra={"service": "email", "error_type": "missing_api_key"},
                     )
                     self.client = None
                 else:
@@ -68,7 +68,10 @@ class EmailService:
                         logger.warning(
                             f"SendGrid API key doesn't have expected format (should start with 'SG.'). "
                             f"Key starts with: {self.api_key[:5] if len(self.api_key) >= 5 else self.api_key}",
-                            extra={"service": "email", "error_type": "invalid_api_key_format"}
+                            extra={
+                                "service": "email",
+                                "error_type": "invalid_api_key_format",
+                            },
                         )
 
                     try:
@@ -79,8 +82,8 @@ class EmailService:
                                 "service": "email",
                                 "from_email": self.from_email,
                                 "app_base_url": self.app_base_url,
-                                "status": "initialized"
-                            }
+                                "status": "initialized",
+                            },
                         )
                     except Exception as e:
                         logger.error(
@@ -88,8 +91,8 @@ class EmailService:
                             extra={
                                 "service": "email",
                                 "error_type": "sendgrid_client_init_failure",
-                                "api_key_valid_format": self.api_key.startswith('SG.')
-                            }
+                                "api_key_valid_format": self.api_key.startswith("SG."),
+                            },
                         )
                         self.client = None
                         # Don't raise here - allow graceful degradation
@@ -98,7 +101,7 @@ class EmailService:
                 # This shouldn't happen anymore, but keep for safety
                 logger.error(
                     "EmailServiceInitializationError caught during initialization",
-                    extra={"service": "email", "error_type": "initialization_error"}
+                    extra={"service": "email", "error_type": "initialization_error"},
                 )
                 self.api_key = None
                 self.client = None
@@ -106,10 +109,7 @@ class EmailService:
                 logger.error(
                     f"Unexpected error during EmailService initialization: {e}. "
                     f"Email sending will be disabled.",
-                    extra={
-                        "service": "email",
-                        "error_type": "unexpected_init_error"
-                    }
+                    extra={"service": "email", "error_type": "unexpected_init_error"},
                 )
                 self.api_key = None
                 self.client = None
@@ -147,8 +147,8 @@ class EmailService:
                     "service": "email",
                     "error_type": "client_unavailable",
                     "recipient": to_email,
-                    "organization": organization_name
-                }
+                    "organization": organization_name,
+                },
             )
             return False
 
@@ -234,6 +234,7 @@ The KEN-E Team
                 f"Exception type: {type(e).__name__}"
             )
             import traceback
+
             logger.debug(f"Traceback: {traceback.format_exc()}")
             return False
 
@@ -271,8 +272,8 @@ The KEN-E Team
                     "error_type": "client_unavailable",
                     "recipient": to_email,
                     "accepter": accepter_email,
-                    "organization": organization_name
-                }
+                    "organization": organization_name,
+                },
             )
             return False
 
@@ -302,6 +303,104 @@ The KEN-E Team
 
         except Exception as e:
             logger.error(f"Error sending acceptance notification: {e!s}")
+            return False
+
+    def send_account_ready_email(
+        self,
+        to_email: str,
+        company_name: str,
+        account_id: str,
+    ) -> bool:
+        """
+        Send email notification when account strategy generation is complete.
+
+        Args:
+            to_email: User's email address
+            company_name: Name of the company/account
+            account_id: Account ID
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        self._ensure_initialized()
+
+        if not self.client:
+            logger.warning(
+                f"SendGrid client not available. Cannot send account ready email to {to_email}",
+                extra={"service": "email", "error_type": "client_unavailable"},
+            )
+            return False
+
+        logger.info(f"Sending account ready email to {to_email} for {company_name}")
+
+        try:
+            subject = f"Your KEN-E account for {company_name} is ready!"
+
+            plain_text_content = f"""
+Your KEN-E Account is Ready!
+
+Hi there,
+
+Great news! We've finished building your knowledge base for {company_name}.
+
+Your account is now fully configured with:
+✓ Business strategy analysis
+✓ Competitive intelligence
+✓ Marketing strategy insights
+✓ Brand guidelines
+
+You can now access your personalized dashboard and AI-powered recommendations.
+
+Get started: {self.app_base_url}
+
+Best regards,
+The KEN-E Team
+            """
+
+            html_content = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <h2 style="color: #4F46E5;">Your KEN-E Account is Ready!</h2>
+    <p>Hi there,</p>
+    <p>Great news! We've finished building your knowledge base for <strong>{company_name}</strong>.</p>
+
+    <p>Your account is now fully configured with:</p>
+    <ul>
+        <li>✓ Business strategy analysis</li>
+        <li>✓ Competitive intelligence</li>
+        <li>✓ Marketing strategy insights</li>
+        <li>✓ Brand guidelines</li>
+    </ul>
+
+    <p>You can now access your personalized dashboard and AI-powered recommendations.</p>
+
+    <p><a href="{self.app_base_url}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Get Started</a></p>
+
+    <p>Best regards,<br>The KEN-E Team</p>
+</body>
+</html>
+            """
+
+            message = Mail(
+                from_email=Email(self.from_email, self.from_name),
+                to_emails=To(to_email),
+                subject=subject,
+                plain_text_content=Content("text/plain", plain_text_content),
+                html_content=Content("text/html", html_content),
+            )
+
+            response = self.client.send(message)
+            success = response.status_code >= 200 and response.status_code < 300
+
+            if success:
+                logger.info(f"✅ Account ready email sent to {to_email}")
+            else:
+                logger.warning(f"Failed to send email, status: {response.status_code}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error sending account ready email: {e}")
             return False
 
 

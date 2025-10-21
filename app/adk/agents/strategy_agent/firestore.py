@@ -6,8 +6,9 @@ Consolidates all Firestore access into a single module with proper dependency in
 import json
 import logging
 import os
-from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+from typing import Any
+
 from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,8 @@ class FirestoreClient:
 
     def __init__(
         self,
-        project_id: Optional[str] = None,
-        client: Optional[firestore.Client] = None,
+        project_id: str | None = None,
+        client: firestore.Client | None = None,
     ):
         """
         Initialize with either a project ID or an existing client.
@@ -79,7 +80,7 @@ class FirestoreClient:
     # Template and Guidelines Operations
     # ============================================================================
 
-    async def get_best_practices(self, doc_type: str) -> Optional[str]:
+    async def get_best_practices(self, doc_type: str) -> str | None:
         """
         Retrieve best practices template from Firestore.
 
@@ -122,7 +123,7 @@ class FirestoreClient:
             logger.error(f"Failed to retrieve best practices for {doc_type}: {e}")
             return None
 
-    def get_best_practices_sync(self, doc_type: str) -> Optional[str]:
+    def get_best_practices_sync(self, doc_type: str) -> str | None:
         """
         Synchronous version to retrieve best practices template from Firestore.
         """
@@ -159,7 +160,7 @@ class FirestoreClient:
             logger.error(f"Failed to retrieve best practices for {doc_type}: {e}")
             return None
 
-    async def get_reviewer_guidelines(self, doc_type: str) -> Optional[str]:
+    async def get_reviewer_guidelines(self, doc_type: str) -> str | None:
         """
         Retrieve reviewer guidelines from Firestore.
         """
@@ -191,7 +192,7 @@ class FirestoreClient:
             logger.error(f"Failed to retrieve reviewer guidelines for {doc_type}: {e}")
             return None
 
-    def get_reviewer_guidelines_sync(self, doc_type: str) -> Optional[str]:
+    def get_reviewer_guidelines_sync(self, doc_type: str) -> str | None:
         """
         Synchronous version to retrieve reviewer guidelines from Firestore.
         """
@@ -231,8 +232,8 @@ class FirestoreClient:
         self,
         account_id: str,
         doc_type: str,
-        content: Dict[str, Any],
-        user_id: Optional[str] = None,
+        content: dict[str, Any],
+        user_id: str | None = None,
     ) -> bool:
         """
         Synchronous version to save a strategy document to Firestore.
@@ -302,8 +303,8 @@ class FirestoreClient:
         self,
         account_id: str,
         doc_type: str,
-        content: Dict[str, Any],
-        user_id: Optional[str] = None,
+        content: dict[str, Any],
+        user_id: str | None = None,
     ) -> bool:
         """
         Save a strategy document to Firestore.
@@ -346,11 +347,11 @@ class FirestoreClient:
             logger.error(f"[FIRESTORE_SAVE] Failed to save strategy document: {e}")
             return False
 
-    async def get_strategy_document(
+    def get_strategy_document_sync(
         self, account_id: str, doc_type: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
-        Retrieve a strategy document from Firestore.
+        Synchronous version to retrieve a strategy document from Firestore.
         """
         if not self.db:
             logger.warning("No Firestore client available, cannot retrieve document")
@@ -376,12 +377,21 @@ class FirestoreClient:
             logger.error(f"Failed to retrieve strategy document: {e}")
             return None
 
+    async def get_strategy_document(
+        self, account_id: str, doc_type: str
+    ) -> dict[str, Any] | None:
+        """
+        Retrieve a strategy document from Firestore.
+        """
+        # Just call the sync version since Firestore operations are actually synchronous
+        return self.get_strategy_document_sync(account_id, doc_type)
+
     async def update_strategy_document(
         self,
         account_id: str,
         doc_type: str,
-        content: Dict[str, Any],
-        user_id: Optional[str] = None,
+        content: dict[str, Any],
+        user_id: str | None = None,
     ) -> bool:
         """
         Update an existing strategy document in Firestore.
@@ -494,7 +504,7 @@ class FirestoreClient:
 # ============================================================================
 
 # Create a default client instance for backward compatibility
-_default_client: Optional[FirestoreClient] = None
+_default_client: FirestoreClient | None = None
 
 
 def get_default_client() -> FirestoreClient:
@@ -513,7 +523,7 @@ def initialize_firestore(project_id: str):
 
 
 # Legacy function wrappers for backward compatibility
-def get_best_practices_sync(doc_type: str) -> Optional[str]:
+def get_best_practices_sync(doc_type: str) -> str | None:
     """Legacy wrapper for get_best_practices_sync."""
     return get_default_client().get_best_practices_sync(doc_type)
 
@@ -522,7 +532,7 @@ def get_best_practices_sync(doc_type: str) -> Optional[str]:
 get_best_practices = get_best_practices_sync
 
 
-def get_reviewer_guidelines_sync(doc_type: str) -> Optional[str]:
+def get_reviewer_guidelines_sync(doc_type: str) -> str | None:
     """Legacy wrapper for get_reviewer_guidelines_sync."""
     return get_default_client().get_reviewer_guidelines_sync(doc_type)
 
@@ -534,8 +544,8 @@ get_reviewer_guidelines = get_reviewer_guidelines_sync
 def save_strategy_document_sync(
     account_id: str,
     doc_type: str,
-    content: Dict[str, Any],
-    user_id: Optional[str] = None,
+    content: dict[str, Any],
+    user_id: str | None = None,
 ) -> bool:
     """Legacy wrapper for save_strategy_document_sync."""
     return get_default_client().save_strategy_document_sync(
@@ -546,8 +556,8 @@ def save_strategy_document_sync(
 async def save_strategy_document(
     account_id: str,
     doc_type: str,
-    content: Dict[str, Any],
-    user_id: Optional[str] = None,
+    content: dict[str, Any],
+    user_id: str | None = None,
 ) -> bool:
     """Legacy wrapper for save_strategy_document."""
     return await get_default_client().save_strategy_document(
@@ -555,9 +565,14 @@ async def save_strategy_document(
     )
 
 
+def get_strategy_document_sync(account_id: str, doc_type: str) -> dict[str, Any] | None:
+    """Legacy wrapper for get_strategy_document_sync."""
+    return get_default_client().get_strategy_document_sync(account_id, doc_type)
+
+
 async def get_strategy_document(
     account_id: str, doc_type: str
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Legacy wrapper for get_strategy_document."""
     return await get_default_client().get_strategy_document(account_id, doc_type)
 
@@ -565,8 +580,8 @@ async def get_strategy_document(
 async def update_strategy_document(
     account_id: str,
     doc_type: str,
-    content: Dict[str, Any],
-    user_id: Optional[str] = None,
+    content: dict[str, Any],
+    user_id: str | None = None,
 ) -> bool:
     """Legacy wrapper for update_strategy_document."""
     return await get_default_client().update_strategy_document(
@@ -584,7 +599,7 @@ from .models import StrategyContext
 class ContextManager:
     """Manages strategy context persistence and retrieval."""
 
-    def __init__(self, firestore_client: Optional[FirestoreClient] = None):
+    def __init__(self, firestore_client: FirestoreClient | None = None):
         """Initialize context manager with optional Firestore client."""
         self.client = firestore_client or get_default_client()
 
@@ -612,7 +627,7 @@ class ContextManager:
             logger.error(f"Failed to save strategy context: {e}")
             return False
 
-    async def get_context(self, account_id: str) -> Optional[StrategyContext]:
+    async def get_context(self, account_id: str) -> StrategyContext | None:
         """
         Retrieve strategy context from Firestore.
         """
@@ -655,7 +670,7 @@ context_manager = ContextManager()
 # ============================================================================
 
 
-def parse_json_response(response_text: str) -> Optional[Dict[str, Any]]:
+def parse_json_response(response_text: str) -> dict[str, Any] | None:
     """
     Parse JSON from agent response text.
     Handles cases where agent might include non-JSON text.
@@ -779,8 +794,8 @@ def format_new_information(
     websites: list,
     industry: str,
     customer_regions: list,
-    annual_ad_budget: Optional[float] = None,
-    supporting_documents: Optional[list] = None,
+    annual_ad_budget: float | None = None,
+    supporting_documents: list | None = None,
 ) -> str:
     """
     Format new information for agent prompt.

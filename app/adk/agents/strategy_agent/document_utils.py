@@ -1,4 +1,6 @@
 """
+from __future__ import annotations
+
 Document processing utilities for strategy agents.
 Following BP-C4: Simple, composable, testable functions.
 """

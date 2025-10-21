@@ -62,6 +62,7 @@ async def trigger_strategy_generation(
         import os
 
         from ..routers.chat import AgentEngineClient
+        from ..utils.secrets import get_env_or_secret
 
         # Get project ID based on environment
         environment = os.getenv("ENVIRONMENT", "development").lower()
@@ -224,9 +225,9 @@ Please execute strategy generation with these parameters:
                 location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
                 # Use STRATEGY_SUPERVISOR_ENGINE_ID for strategy generation, fall back to old env var
-                agent_engine_id = os.getenv(
+                agent_engine_id = get_env_or_secret(
                     "STRATEGY_SUPERVISOR_ENGINE_ID"
-                ) or os.getenv("VERTEX_AI_AGENT_ENGINE_ID")
+                ) or get_env_or_secret("VERTEX_AI_AGENT_ENGINE_ID")
 
                 if not agent_engine_id:
                     raise ValueError(
@@ -251,8 +252,10 @@ Please execute strategy generation with these parameters:
                 logger.info(f"Agent engine type: {type(agent_engine)}")
 
                 try:
-                    logger.info("About to call agent_engine.stream_query with retry logic...")
-                    
+                    logger.info(
+                        "About to call agent_engine.stream_query with retry logic..."
+                    )
+
                     # Define retry decorator for ServiceUnavailable errors
                     @backoff.on_exception(
                         backoff.expo,
@@ -261,13 +264,13 @@ Please execute strategy generation with these parameters:
                         max_time=60,  # Max 60 seconds of retry attempts
                         on_backoff=lambda details: logger.warning(
                             f"ServiceUnavailable error, retrying... (attempt {details['tries']}/{3})"
-                        )
+                        ),
                     )
                     def stream_query_with_retry():
                         return agent_engine.stream_query(
                             message=message, user_id=user_id
                         )
-                    
+
                     response = stream_query_with_retry()
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
@@ -298,7 +301,7 @@ Please execute strategy generation with these parameters:
                 # Retry logic for chunk iteration
                 max_chunk_retries = 3
                 chunk_retry_count = 0
-                
+
                 while chunk_retry_count < max_chunk_retries:
                     try:
                         logger.info(f"Agent response object type: {type(response)}")
@@ -318,138 +321,138 @@ Please execute strategy generation with these parameters:
                             chunk_count += 1
                             logger.info(f"Processing chunk {chunk_count}...")
 
-                        # Log progress for debugging (progress tracking simplified)
-                        # TODO: Progress logs are failing
-                        if chunk_count == 5:
-                            logger.info(
-                                f"Researching competitors for account {account_id}"
-                            )
-                        elif chunk_count == 10:
-                            logger.info(
-                                f"Researching customers for account {account_id}"
-                            )
-                        elif chunk_count == 15:
-                            logger.info(
-                                f"Inferring marketing strategy for account {account_id}"
-                            )
-                        elif chunk_count == 20:
-                            logger.info(
-                                f"Reviewing brand styles for account {account_id}"
-                            )
-
-                        if isinstance(chunk, dict):
-                            logger.info(
-                                f"Chunk {chunk_count} is dict with keys: {list(chunk.keys())[:10]}"
-                            )
-
-                            # Log the full chunk for debugging
-                            import json
-
-                            try:
-                                logger.debug(
-                                    f"Full chunk {chunk_count}: {json.dumps(chunk, default=str)[:500]}"
+                            # Log progress for debugging (progress tracking simplified)
+                            # TODO: Progress logs are failing
+                            if chunk_count == 5:
+                                logger.info(
+                                    f"Researching competitors for account {account_id}"
                                 )
-                            except Exception:
-                                logger.debug(
-                                    f"Chunk {chunk_count} (non-serializable): {str(chunk)[:500]}"
+                            elif chunk_count == 10:
+                                logger.info(
+                                    f"Researching customers for account {account_id}"
+                                )
+                            elif chunk_count == 15:
+                                logger.info(
+                                    f"Inferring marketing strategy for account {account_id}"
+                                )
+                            elif chunk_count == 20:
+                                logger.info(
+                                    f"Reviewing brand styles for account {account_id}"
                                 )
 
-                            # Handle nested response structure
-                            if "content" in chunk and isinstance(
-                                chunk["content"], dict
-                            ):
-                                content = chunk["content"]
-                                if "parts" in content and isinstance(
-                                    content["parts"], list
+                            if isinstance(chunk, dict):
+                                logger.info(
+                                    f"Chunk {chunk_count} is dict with keys: {list(chunk.keys())[:10]}"
+                                )
+
+                                # Log the full chunk for debugging
+                                import json
+
+                                try:
+                                    logger.debug(
+                                        f"Full chunk {chunk_count}: {json.dumps(chunk, default=str)[:500]}"
+                                    )
+                                except Exception:
+                                    logger.debug(
+                                        f"Chunk {chunk_count} (non-serializable): {str(chunk)[:500]}"
+                                    )
+
+                                # Handle nested response structure
+                                if "content" in chunk and isinstance(
+                                    chunk["content"], dict
                                 ):
-                                    for part in content["parts"]:
-                                        if isinstance(part, dict):
-                                            # Handle text parts
-                                            if "text" in part:
-                                                response_parts.append(part["text"])
-                                                logger.info(
-                                                    f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
-                                                )
-                                                logger.debug(
-                                                    f"  Text preview: {part['text'][:200]}..."
-                                                )
-                                            # Handle function_call parts (likely contains strategy documents)
-                                            elif "function_call" in part:
-                                                function_call = part["function_call"]
-                                                logger.info(
-                                                    f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
-                                                )
-                                                # Extract the function call content
-                                                if isinstance(function_call, dict):
-                                                    # Log the function name if available
-                                                    if "name" in function_call:
-                                                        logger.info(
-                                                            f"    Function: {function_call['name']}"
-                                                        )
-                                                    # Extract arguments/response
-                                                    if "response" in function_call:
-                                                        response_parts.append(
-                                                            str(
-                                                                function_call[
-                                                                    "response"
-                                                                ]
+                                    content = chunk["content"]
+                                    if "parts" in content and isinstance(
+                                        content["parts"], list
+                                    ):
+                                        for part in content["parts"]:
+                                            if isinstance(part, dict):
+                                                # Handle text parts
+                                                if "text" in part:
+                                                    response_parts.append(part["text"])
+                                                    logger.info(
+                                                        f"  Added text part from chunk {chunk_count}: {len(part['text'])} chars"
+                                                    )
+                                                    logger.debug(
+                                                        f"  Text preview: {part['text'][:200]}..."
+                                                    )
+                                                # Handle function_call parts (likely contains strategy documents)
+                                                elif "function_call" in part:
+                                                    function_call = part["function_call"]
+                                                    logger.info(
+                                                        f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
+                                                    )
+                                                    # Extract the function call content
+                                                    if isinstance(function_call, dict):
+                                                        # Log the function name if available
+                                                        if "name" in function_call:
+                                                            logger.info(
+                                                                f"    Function: {function_call['name']}"
                                                             )
-                                                        )
-                                                        logger.info(
-                                                            f"    Added function response: {len(str(function_call['response']))} chars"
-                                                        )
-                                                    elif "output" in function_call:
-                                                        response_parts.append(
-                                                            str(function_call["output"])
-                                                        )
-                                                        logger.info(
-                                                            f"    Added function output: {len(str(function_call['output']))} chars"
-                                                        )
-                                                    elif "args" in function_call:
-                                                        response_parts.append(
-                                                            str(function_call["args"])
-                                                        )
-                                                        logger.info(
-                                                            f"    Added function args: {len(str(function_call['args']))} chars"
-                                                        )
+                                                        # Extract arguments/response
+                                                        if "response" in function_call:
+                                                            response_parts.append(
+                                                                str(
+                                                                    function_call[
+                                                                        "response"
+                                                                    ]
+                                                                )
+                                                            )
+                                                            logger.info(
+                                                                f"    Added function response: {len(str(function_call['response']))} chars"
+                                                            )
+                                                        elif "output" in function_call:
+                                                            response_parts.append(
+                                                                str(function_call["output"])
+                                                            )
+                                                            logger.info(
+                                                                f"    Added function output: {len(str(function_call['output']))} chars"
+                                                            )
+                                                        elif "args" in function_call:
+                                                            response_parts.append(
+                                                                str(function_call["args"])
+                                                            )
+                                                            logger.info(
+                                                                f"    Added function args: {len(str(function_call['args']))} chars"
+                                                            )
+                                                        else:
+                                                            # Just append the whole function_call as string
+                                                            response_parts.append(
+                                                                str(function_call)
+                                                            )
+                                                            logger.info(
+                                                                f"    Added entire function_call: {len(str(function_call))} chars"
+                                                            )
                                                     else:
-                                                        # Just append the whole function_call as string
                                                         response_parts.append(
                                                             str(function_call)
                                                         )
                                                         logger.info(
-                                                            f"    Added entire function_call: {len(str(function_call))} chars"
+                                                            f"    Added function_call as string: {len(str(function_call))} chars"
                                                         )
-                                                else:
-                                                    response_parts.append(
-                                                        str(function_call)
-                                                    )
+                                                # Log other part types for debugging
+                                                elif "thought_signature" in part:
                                                     logger.info(
-                                                        f"    Added function_call as string: {len(str(function_call))} chars"
+                                                        f"  Found thought_signature in chunk {chunk_count} (skipping)"
                                                     )
-                                            # Log other part types for debugging
-                                            elif "thought_signature" in part:
-                                                logger.info(
-                                                    f"  Found thought_signature in chunk {chunk_count} (skipping)"
-                                                )
-                                            else:
-                                                logger.info(
-                                                    f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}"
-                                                )
+                                                else:
+                                                    logger.info(
+                                                        f"  Unknown part type in chunk {chunk_count}: {list(part.keys())}"
+                                                    )
+                                else:
+                                    response_parts.append(str(chunk))
+                                    logger.info(
+                                        f"  Added chunk {chunk_count} as string: {len(str(chunk))} chars"
+                                    )
                             else:
                                 response_parts.append(str(chunk))
                                 logger.info(
-                                    f"  Added chunk {chunk_count} as string: {len(str(chunk))} chars"
+                                    f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
                                 )
-                        else:
-                            response_parts.append(str(chunk))
-                            logger.info(
-                                f"Chunk {chunk_count} type: {type(chunk).__name__}, size: {len(str(chunk))}"
-                            )
-                        
+
                         # Successfully processed all chunks, break retry loop
                         break
-                        
+
                     except google_exceptions.ServiceUnavailable as e:
                         chunk_retry_count += 1
                         if chunk_retry_count >= max_chunk_retries:
@@ -465,7 +468,9 @@ Please execute strategy generation with these parameters:
                             )
                             return  # Exit early
                         else:
-                            wait_time = 2 ** chunk_retry_count  # Exponential backoff: 2, 4, 8 seconds
+                            wait_time = (
+                                2**chunk_retry_count
+                            )  # Exponential backoff: 2, 4, 8 seconds
                             logger.warning(
                                 f"ServiceUnavailable during chunk iteration, retrying in {wait_time}s... (attempt {chunk_retry_count}/{max_chunk_retries})"
                             )
@@ -474,15 +479,26 @@ Please execute strategy generation with these parameters:
                             response = stream_query_with_retry()
                             chunk_count = 0  # Reset chunk count for new stream
                             response_parts = []  # Reset response parts
-                            
+
                     except Exception as e:
-                        # Non-retryable error
+                        # Non-retryable error - fail immediately
                         logger.error(
                             f"Error iterating over agent response chunks: {e}",
                             exc_info=True,
                         )
                         logger.error(f"Only received {chunk_count} chunks before error")
-                        break  # Exit retry loop for non-retryable errors
+
+                        # Mark account as failed
+                        await update_account_setup_status(
+                            account_id,
+                            "failed",
+                            completed=False,
+                            error_message=f"Strategy generation failed: {str(e)[:200]}",
+                        )
+                        logger.error(
+                            f"Account {account_id} marked as failed due to agent error during streaming"
+                        )
+                        return  # Exit early
 
                 # Check if we actually got a response
                 if not got_response:
@@ -592,6 +608,38 @@ Please execute strategy generation with these parameters:
         # Update account status to completed
         await update_account_setup_status(account_id, "completed", completed=True)
 
+        # Send email notification
+        try:
+            from google.cloud import firestore
+
+            from ..email_service import get_email_service
+
+            # Get user email from Firestore
+            db = firestore.Client()
+            user_doc = db.collection("users").document(user_id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                user_email = user_data.get("profile", {}).get("email")
+
+                if user_email:
+                    email_service = get_email_service()
+                    email_sent = email_service.send_account_ready_email(
+                        to_email=user_email,
+                        company_name=company_name,
+                        account_id=account_id,
+                    )
+                    if email_sent:
+                        logger.info(f"✅ Sent account ready email to {user_email}")
+                    else:
+                        logger.warning(f"Failed to send email to {user_email}")
+                else:
+                    logger.warning(f"No email found for user {user_id}")
+            else:
+                logger.warning(f"User {user_id} not found in Firestore")
+        except Exception as email_error:
+            # Don't fail the whole process if email fails
+            logger.warning(f"Failed to send completion email: {email_error}")
+
     except Exception as e:
         logger.error(
             f"Failed to generate strategy documents for account {account_id}: {e}"
@@ -677,7 +725,7 @@ async def verify_strategy_documents_created(
 
     Args:
         account_id: Account ID to check
-        require_all: If True, all 5 documents must exist and be complete. If False, partial success is allowed.
+        require_all: If True, all 4 documents must exist and be complete. If False, partial success is allowed.
 
     Returns:
         True if documents meet the requirement, False otherwise
@@ -688,11 +736,10 @@ async def verify_strategy_documents_created(
 
         logger.info(f"Verifying strategy documents in collection: {collection_name}")
 
-        # Check for expected strategy documents
+        # Check for expected strategy documents (removed customer_strategy)
         expected_docs = [
             "business_strategy",
             "competitive_strategy",
-            "customer_strategy",
             "marketing_strategy",
             "brand_guidelines",
         ]
@@ -718,7 +765,8 @@ async def verify_strategy_documents_created(
 
                     # Consider document complete based primarily on content size and structure
                     # Status field is optional - many docs don't have it
-                    is_complete = content_size > 1000 and has_keys > 3
+                    # Note: Different models have different field counts (competitive=3, marketing=1)
+                    is_complete = content_size > 1000 and has_keys >= 1
 
                     # If status field exists and indicates not ready, override
                     if status and status.lower() in [
@@ -761,7 +809,7 @@ async def verify_strategy_documents_created(
         )
 
         if doc_quality:
-            logger.info(f"Document quality details:")
+            logger.info("Document quality details:")
             for doc_type, quality in doc_quality.items():
                 logger.info(
                     f"  - {doc_type}: {quality['size']} bytes, {quality['keys']} keys, status: '{quality['status']}', complete: {quality['complete']}"

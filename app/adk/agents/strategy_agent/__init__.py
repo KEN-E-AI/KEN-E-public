@@ -1,42 +1,33 @@
 """
-Strategy Agent System - Simplified architecture for generating strategy documents.
+Strategy Agent System - Split agent architecture with Neo4j knowledge graph.
+
+Architecture:
+- Researcher agents: Have tools (google_search), NO output_schema
+- Formatter agents: NO tools, have output_schema
+- Neo4j: Knowledge graph storage with embeddings for semantic search
+- Firestore: Backup document storage
 """
 
-from .orchestrator import (
-    strategy_agent,
-    app,
-    create_strategy_sequential_agent,
-    execute_strategy_generation,
+# Import models (safe, no circular deps)
+# Import shared components (safe)
+from .agents import (
+    create_google_search_agent,
 )
-
 from .models import (
     StrategyContext,
     StrategyGenerationRequest,
     StrategyGenerationResponse,
 )
 
-from .agents import (
-    create_business_strategy_agent,
-    create_competitive_strategy_agent,
-    create_customer_strategy_agent,
-    create_marketing_strategy_agent,
-    create_brand_guidelines_agent,
-)
+# NOTE: orchestrator imports removed to avoid circular dependency
+# Import orchestrator functions directly from orchestrator module when needed:
+# from agents.strategy_agent.orchestrator import execute_strategy_generation_direct, app
 
 __all__ = [
-    # Main orchestrator
-    "strategy_agent",
-    "app",
-    "create_strategy_sequential_agent",
-    "execute_strategy_generation",
     # Models
     "StrategyContext",
     "StrategyGenerationRequest",
     "StrategyGenerationResponse",
-    # Individual agents
-    "create_business_strategy_agent",
-    "create_competitive_strategy_agent",
-    "create_customer_strategy_agent",
-    "create_marketing_strategy_agent",
-    "create_brand_guidelines_agent",
+    # Shared components
+    "create_google_search_agent",
 ]

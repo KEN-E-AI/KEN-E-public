@@ -3,8 +3,12 @@
 import logging
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load environment variables from .env file
+load_dotenv()
 
 from .database import neo4j_service
 from .firestore import get_firestore_service
@@ -26,7 +30,6 @@ from .routers import (
     metrics,
     monitoring,
     monitoring_topics,
-    notifications_v2 as notifications,
     oauth_integrations,
     organizations,
     products,
@@ -35,6 +38,11 @@ from .routers import (
     superset_saved_queries,
     usage,
     users,
+)
+# Separated import to avoid circular dependency:
+# notifications_v2 imports from other routers that import from main
+from .routers import (
+    notifications_v2 as notifications,
 )
 
 logger = logging.getLogger(__name__)

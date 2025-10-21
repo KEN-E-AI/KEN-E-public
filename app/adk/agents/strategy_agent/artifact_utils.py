@@ -3,6 +3,8 @@ Utilities for managing strategy document artifacts.
 Following BP-C4: Simple, composable, testable functions.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 
