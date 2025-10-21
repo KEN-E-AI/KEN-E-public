@@ -19,8 +19,8 @@ class Settings:
     reload: bool = os.getenv("RELOAD", "false").lower() == "true"
 
     # Neo4j database settings
-    neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-    neo4j_username: str = os.getenv("NEO4J_USERNAME", "neo4j")
+    neo4j_uri: str = get_env_var_or_secret("NEO4J_URI", "bolt://localhost:7687")
+    neo4j_username: str = get_env_var_or_secret("NEO4J_USERNAME", "neo4j")
     neo4j_password: str = get_env_var_or_secret("NEO4J_PASSWORD", "password")
     neo4j_database: str = os.getenv("NEO4J_DATABASE", "neo4j")
 

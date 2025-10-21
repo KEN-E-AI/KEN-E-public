@@ -86,6 +86,7 @@ def init_weave_if_needed():
         wandb_api_key = None
         try:
             from google.cloud import secretmanager
+
             client = secretmanager.SecretManagerServiceClient()
             # Use project number for consistency with other components
             secret_name = "projects/525657242938/secrets/wandb_api_key/versions/latest"
@@ -106,7 +107,9 @@ def init_weave_if_needed():
                 logger.warning(f"⚠️ Failed to initialize Weave: {e}")
                 WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
         else:
-            logger.warning("⚠️ WANDB_API_KEY not available, W&B tracing will not be enabled")
+            logger.warning(
+                "⚠️ WANDB_API_KEY not available, W&B tracing will not be enabled"
+            )
             WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
 
 
@@ -188,7 +191,12 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
                             id="placeholder-strength",
                             description="Requires further research",
                         ),
-                        linked_opportunities=[],  # No placeholder Opportunities
+                        linked_opportunities=[
+                            SWOTItem(
+                                id="placeholder-opportunity",
+                                description="Requires further research",
+                            )
+                        ],  # Schema requires min_length=1
                     )
                 ],
                 "weaknesses_and_risks": [
@@ -197,7 +205,12 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
                             id="placeholder-weakness",
                             description="Requires further research",
                         ),
-                        linked_risks=[],  # No placeholder Risks
+                        linked_risks=[
+                            SWOTItem(
+                                id="placeholder-risk",
+                                description="Requires further research",
+                            )
+                        ],  # Schema requires min_length=1
                     )
                 ],
             },
@@ -240,14 +253,24 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
                         StrengthWithRisks(
                             name="Analysis Pending",
                             description="Requires further research",
-                            risks=[],  # No placeholder Risks
+                            risks=[
+                                NamedDetail(
+                                    name="Risk Analysis Pending",
+                                    description="Requires further research",
+                                )
+                            ],  # Schema requires min_length=1
                         )
                     ],
                     weaknesses=[
                         WeaknessWithOpportunities(
                             name="Analysis Pending",
                             description="Requires further research",
-                            opportunities=[],  # No placeholder Opportunities
+                            opportunities=[
+                                NamedDetail(
+                                    name="Opportunity Analysis Pending",
+                                    description="Requires further research",
+                                )
+                            ],  # Schema requires min_length=1
                         )
                     ],
                 )
@@ -395,6 +418,53 @@ def execute_strategy_generation_direct(
     # Create google search agent (shared across all researchers)
     google_search_agent = create_google_search_agent()
 
+    # Log config metadata for business strategy agents to Weave
+    try:
+        from .config_loader import get_current_config_metadata
+
+        business_researcher_config = get_current_config_metadata("business_researcher")
+        business_formatter_config = get_current_config_metadata("business_formatter")
+
+        # Log config metadata to Weave using call.summary (correct API)
+        try:
+            call = weave.get_current_call()
+            if call:
+                call.summary["business_researcher_version"] = (
+                    business_researcher_config.get("version", "unknown")
+                )
+                call.summary["business_researcher_variant"] = (
+                    business_researcher_config.get("variant_name", "unknown")
+                )
+                call.summary["business_researcher_model"] = (
+                    business_researcher_config.get("model", "unknown")
+                )
+                call.summary["business_formatter_version"] = (
+                    business_formatter_config.get("version", "unknown")
+                )
+                call.summary["business_formatter_variant"] = (
+                    business_formatter_config.get("variant_name", "unknown")
+                )
+                call.summary["business_formatter_model"] = (
+                    business_formatter_config.get("model", "unknown")
+                )
+        except Exception:
+            pass  # Weave not initialized, continue without logging
+
+        logger.info(
+            f"[CONFIG] Using business_researcher config - "
+            f"version: {business_researcher_config.get('version', 'unknown')}, "
+            f"variant: {business_researcher_config.get('variant_name', 'unknown')}, "
+            f"model: {business_researcher_config.get('model', 'unknown')}"
+        )
+        logger.info(
+            f"[CONFIG] Using business_formatter config - "
+            f"version: {business_formatter_config.get('version', 'unknown')}, "
+            f"variant: {business_formatter_config.get('variant_name', 'unknown')}, "
+            f"model: {business_formatter_config.get('model', 'unknown')}"
+        )
+    except Exception as e:
+        logger.warning(f"[CONFIG] Failed to log config metadata to Weave: {e}")
+
     # Define strategy types to generate (removed customer_strategy)
     strategy_types = [
         {
@@ -508,11 +578,13 @@ def execute_strategy_generation_direct(
             # Wrap researcher execution with weave tracing
             @weave.op(name=f"{strategy_name}_researcher")
             def run_researcher():
-                return list(runner.run(
-                    user_id=context.user_id or "system",
-                    session_id=session_id,
-                    new_message=message_content,
-                ))
+                return list(
+                    runner.run(
+                        user_id=context.user_id or "system",
+                        session_id=session_id,
+                        new_message=message_content,
+                    )
+                )
 
             events = run_researcher()
 
@@ -599,11 +671,13 @@ Research text:
                 # Wrap formatter execution with weave tracing
                 @weave.op(name=f"{strategy_name}_gemini_formatter")
                 def run_formatter():
-                    return list(runner2.run(
-                        user_id=context.user_id or "system",
-                        session_id=session_id2,
-                        new_message=format_message,
-                    ))
+                    return list(
+                        runner2.run(
+                            user_id=context.user_id or "system",
+                            session_id=session_id2,
+                            new_message=format_message,
+                        )
+                    )
 
                 events2 = run_formatter()
 
