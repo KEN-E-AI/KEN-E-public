@@ -5,16 +5,16 @@ Provides CRUD operations for strategy agent configurations stored in Firestore.
 """
 
 import logging
-import os
+import re
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
+from ..dependencies import get_firestore
 
 logger = logging.getLogger(__name__)
 
@@ -66,28 +66,242 @@ class AgentConfig(BaseModel):
 
 
 class AgentConfigUpdate(BaseModel):
-    """Request to update an agent configuration."""
+    """Request to update an agent configuration with validation."""
 
-    instruction: str | None = None
-    model: str | None = None
-    description: str | None = None
-    temperature: float | None = None
-    max_output_tokens: int | None = None
-    version: str | None = None
-    variant_name: str | None = None
-    experiment_id: str | None = None
-    updated_by: str = Field(..., description="Email of person making update")
-    notes: str = Field(default="", description="Notes about this change")
+    instruction: str | None = Field(
+        None,
+        min_length=10,
+        max_length=50000,
+        description="Agent instruction/prompt",
+    )
+
+    model: str | None = Field(
+        None,
+        pattern=r"^gemini-[\d\.]+-\w+$",
+        description="Vertex AI model identifier (must be valid Gemini model)",
+    )
+
+    description: str | None = Field(
+        None, min_length=10, max_length=1000, description="Agent description"
+    )
+
+    temperature: float | None = Field(
+        None, ge=0.0, le=1.0, description="Generation temperature (0.0-1.0)"
+    )
+
+    max_output_tokens: int | None = Field(
+        None,
+        ge=100,
+        le=65535,
+        description="Maximum output tokens (100-65535)",
+    )
+
+    version: str | None = Field(
+        None, pattern=r"^v\d+\.\d+$", description="Version string in format vX.Y"
+    )
+
+    variant_name: str | None = Field(
+        None, min_length=1, max_length=100, description="Descriptive variant name"
+    )
+
+    experiment_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="Experiment grouping identifier",
+    )
+
+    updated_by: str = Field(
+        ...,
+        min_length=3,
+        max_length=255,
+        description="Email of person making update",
+    )
+
+    notes: str = Field(
+        default="", max_length=5000, description="Notes about this change"
+    )
+
+    @field_validator("updated_by")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        """Validate updated_by looks like an email."""
+        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+        if not re.match(email_pattern, v):
+            raise ValueError("updated_by must be a valid email address")
+        return v
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_exists(cls, v: str | None) -> str | None:
+        """Validate model ID is a known Vertex AI model."""
+        if v is None:
+            return v
+
+        # List of supported models (update as new models are released)
+        SUPPORTED_MODELS = {
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+        }
+
+        if v not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"Model '{v}' is not supported. "
+                f"Supported models: {', '.join(sorted(SUPPORTED_MODELS))}"
+            )
+
+        return v
+
+
+def _increment_version(current_version: str) -> str:
+    """
+    Increment version number with validation.
+
+    Args:
+        current_version: Current version string (e.g., "v1.0")
+
+    Returns:
+        Incremented version string (e.g., "v1.1")
+
+    Example:
+        >>> _increment_version("v1.0")
+        "v1.1"
+        >>> _increment_version("v1.999")
+        "v1.1000"
+        >>> _increment_version("v1.1000")
+        "v1.1"  # Fallback due to bounds check (1000 > 999)
+    """
+    try:
+        if not current_version.startswith("v"):
+            raise ValueError("Version must start with 'v'")
+
+        version_parts = current_version[1:].split(".")
+        if len(version_parts) != 2:
+            raise ValueError("Version must be in format vX.Y")
+
+        major = int(version_parts[0])
+        minor = int(version_parts[1])
+
+        if major > 999 or minor > 999:
+            raise ValueError("Version numbers must be <= 999")
+
+        return f"v{major}.{minor + 1}"
+    except (ValueError, IndexError) as e:
+        logger.warning(
+            f"Invalid version format {current_version}: {e}, using fallback"
+        )
+        return "v1.1"
+
+
+def _sanitize_updated_by(email: str) -> str:
+    """
+    Sanitize updated_by field to prevent Firestore injection.
+
+    Firestore doesn't allow dots or dollar signs in field names,
+    so we sanitize the email to prevent potential issues.
+
+    Args:
+        email: Email address to sanitize
+
+    Returns:
+        Sanitized email string (max 100 chars, dots/dollars replaced)
+    """
+    if not email:
+        return "unknown"
+
+    return email.replace(".", "_").replace("$", "_")[:100]
+
+
+def _build_firestore_updates(
+    instruction: str | None = None,
+    model: str | None = None,
+    description: str | None = None,
+    temperature: float | None = None,
+    max_output_tokens: int | None = None,
+    version: str | None = None,
+    updated_at: str | None = None,
+    updated_by: str | None = None,
+    variant_name: str | None = None,
+    experiment_id: str | None = None,
+    notes: str | None = None,
+    current_gen_config: dict[str, int | float] | None = None,
+) -> dict[str, str | int | float | dict[str, int | float]]:
+    """
+    Build type-safe Firestore update dictionary.
+
+    Args:
+        instruction: New instruction text
+        model: New model identifier
+        description: New description
+        temperature: New temperature value
+        max_output_tokens: New max tokens value
+        version: New version string
+        updated_at: Update timestamp
+        updated_by: Email of updater
+        variant_name: New variant name
+        experiment_id: New experiment ID
+        notes: Change notes
+        current_gen_config: Current generation config for merging
+
+    Returns:
+        Dictionary with Firestore update format (dot notation for nested fields)
+    """
+    updates: dict[str, str | int | float | dict[str, int | float]] = {}
+
+    if instruction is not None:
+        updates["instruction"] = instruction
+
+    if model is not None:
+        updates["model"] = model
+
+    if description is not None:
+        updates["description"] = description
+
+    if temperature is not None or max_output_tokens is not None:
+        gen_config: dict[str, int | float] = current_gen_config.copy() if current_gen_config else {}
+        if temperature is not None:
+            gen_config["temperature"] = temperature
+        if max_output_tokens is not None:
+            gen_config["max_output_tokens"] = max_output_tokens
+        updates["generate_content_config"] = gen_config
+
+    if version is not None:
+        updates["metadata.version"] = version
+
+    if updated_at is not None:
+        updates["metadata.updated_at"] = updated_at
+
+    if updated_by is not None:
+        updates["metadata.updated_by"] = updated_by
+
+    if variant_name is not None:
+        updates["metadata.variant_name"] = variant_name
+
+    if experiment_id is not None:
+        updates["metadata.experiment_id"] = experiment_id
+
+    if notes is not None:
+        updates["metadata.notes"] = notes
+
+    return updates
 
 
 @router.get("/", response_model=list[str])
 async def list_agent_configs(
     user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
 ) -> list[str]:
     """
     List all available agent configuration IDs.
 
     Requires super admin authentication.
+
+    Args:
+        user: Current authenticated user context
+        db: Firestore client (injected dependency)
 
     Returns:
         List of config document IDs
@@ -108,10 +322,7 @@ async def list_agent_configs(
         )
 
     try:
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
-        db = firestore.Client(project=project_id)
         configs = db.collection("agent_configs").stream()
-
         config_ids = [config.id for config in configs]
 
         logger.info(f"User {user.email} listed {len(config_ids)} agent configs")
@@ -119,16 +330,17 @@ async def list_agent_configs(
         return sorted(config_ids)
 
     except Exception as e:
-        logger.error(f"Failed to list agent configs: {str(e)}")
+        logger.error(f"Failed to list agent configs: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to list agent configurations"
-        )
+        ) from e
 
 
 @router.get("/{config_id}", response_model=AgentConfig)
 async def get_agent_config(
     config_id: str,
     user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
 ) -> AgentConfig:
     """
     Get a specific agent configuration.
@@ -138,6 +350,7 @@ async def get_agent_config(
     Args:
         config_id: Agent config document ID (e.g., 'business_researcher')
         user: Current authenticated user context
+        db: Firestore client (injected dependency)
 
     Returns:
         Agent configuration with all fields
@@ -168,8 +381,6 @@ async def get_agent_config(
         )
 
     try:
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
-        db = firestore.Client(project=project_id)
         doc_ref = db.collection("agent_configs").document(config_id)
         doc = doc_ref.get()
 
@@ -185,10 +396,10 @@ async def get_agent_config(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get agent config {config_id}: {str(e)}")
+        logger.error(f"Failed to get agent config {config_id}: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve agent configuration"
-        )
+        ) from e
 
 
 @router.put("/{config_id}", response_model=AgentConfig)
@@ -196,6 +407,7 @@ async def update_agent_config(
     config_id: str,
     update: AgentConfigUpdate,
     user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
 ) -> AgentConfig:
     """
     Update an agent configuration.
@@ -207,6 +419,7 @@ async def update_agent_config(
         config_id: Agent config document ID
         update: Fields to update
         user: Current authenticated user context
+        db: Firestore client (injected dependency)
 
     Returns:
         Updated agent configuration
@@ -239,8 +452,6 @@ async def update_agent_config(
         )
 
     try:
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
-        db = firestore.Client(project=project_id)
         doc_ref = db.collection("agent_configs").document(config_id)
         doc = doc_ref.get()
 
@@ -251,79 +462,31 @@ async def update_agent_config(
         current_config = doc.to_dict()
         current_metadata = current_config.get("metadata", {})
 
-        # Build update dict
-        updates: dict[str, Any] = {}
-
-        # Update config fields
-        if update.instruction is not None:
-            updates["instruction"] = update.instruction
-
-        if update.model is not None:
-            updates["model"] = update.model
-
-        if update.description is not None:
-            updates["description"] = update.description
-
-        # Update generate_content_config
-        if update.temperature is not None or update.max_output_tokens is not None:
-            gen_config = current_config.get("generate_content_config", {})
-
-            if update.temperature is not None:
-                gen_config["temperature"] = update.temperature
-
-            if update.max_output_tokens is not None:
-                gen_config["max_output_tokens"] = update.max_output_tokens
-
-            updates["generate_content_config"] = gen_config
-
-        # Auto-increment version if not provided
-        if update.version is not None:
-            new_version = update.version
-        else:
-            # Parse current version and increment with validation (e.g., v1.0 -> v1.1)
-            current_version = current_metadata.get("version", "v1.0")
-            try:
-                if not current_version.startswith("v"):
-                    raise ValueError("Version must start with 'v'")
-
-                version_parts = current_version[1:].split(".")
-                if len(version_parts) != 2:
-                    raise ValueError("Version must be in format vX.Y")
-
-                major = int(version_parts[0])
-                minor = int(version_parts[1])
-
-                # Bounds checking (security: prevent integer overflow issues)
-                if major > 999 or minor > 999:
-                    raise ValueError("Version numbers must be <= 999")
-
-                new_version = f"v{major}.{minor + 1}"
-            except (ValueError, IndexError) as e:
-                logger.warning(
-                    f"Invalid version format {current_version}: {e}, using fallback"
-                )
-                new_version = "v1.1"  # Fallback
-
-        # Sanitize updated_by field (security: prevent injection)
-        safe_updated_by = (
-            update.updated_by.replace(".", "_").replace("$", "_")[:100]
-            if update.updated_by
-            else "unknown"
+        # Determine new version
+        new_version = (
+            update.version
+            if update.version
+            else _increment_version(current_metadata.get("version", "v1.0"))
         )
 
-        # Update metadata
-        updates["metadata.version"] = new_version
-        updates["metadata.updated_at"] = datetime.now(timezone.utc).isoformat()
-        updates["metadata.updated_by"] = safe_updated_by
+        # Sanitize updated_by field
+        safe_updated_by = _sanitize_updated_by(update.updated_by)
 
-        if update.variant_name is not None:
-            updates["metadata.variant_name"] = update.variant_name
-
-        if update.experiment_id is not None:
-            updates["metadata.experiment_id"] = update.experiment_id
-
-        if update.notes:
-            updates["metadata.notes"] = update.notes
+        # Build type-safe updates using helper function
+        updates = _build_firestore_updates(
+            instruction=update.instruction,
+            model=update.model,
+            description=update.description,
+            temperature=update.temperature,
+            max_output_tokens=update.max_output_tokens,
+            version=new_version,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+            updated_by=safe_updated_by,
+            variant_name=update.variant_name,
+            experiment_id=update.experiment_id,
+            notes=update.notes,
+            current_gen_config=current_config.get("generate_content_config", {}),
+        )
 
         # Apply updates
         doc_ref.update(updates)
@@ -341,7 +504,7 @@ async def update_agent_config(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to update agent config {config_id}: {str(e)}")
+        logger.error(f"Failed to update agent config {config_id}: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update agent configuration"
-        )
+        ) from e

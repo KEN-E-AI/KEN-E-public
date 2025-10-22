@@ -2,10 +2,24 @@
  * Agent configuration service for managing strategy agent configs in Firestore.
  */
 
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { auth } from "@/lib/firebase";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+/**
+ * Custom error class for agent config service operations.
+ */
+export class AgentConfigServiceError extends Error {
+  constructor(
+    message: string,
+    public statusCode?: number,
+    public originalError?: unknown,
+  ) {
+    super(message);
+    this.name = "AgentConfigServiceError";
+  }
+}
 
 export interface AgentConfigMetadata {
   version: string;
@@ -50,6 +64,9 @@ class AgentConfigService {
     timeout: 30000,
   });
 
+  private maxRetries = 3;
+  private retryDelay = 1000;
+
   constructor() {
     // Add auth interceptor
     this.apiClient.interceptors.request.use(async (config) => {
@@ -65,63 +82,87 @@ class AgentConfigService {
       return config;
     });
 
-    // Add response interceptor
+    // Add response interceptor with retry logic
     this.apiClient.interceptors.response.use(
       (response) => response,
-      (error) => {
-        console.error("Agent config API error:", error);
-        return Promise.reject(error);
+      async (error: AxiosError) => {
+        const config = error.config;
+        const retryCount = (config as any).__retryCount || 0;
+
+        // Don't retry on client errors (4xx) except 429 (rate limit)
+        if (
+          error.response &&
+          error.response.status >= 400 &&
+          error.response.status < 500 &&
+          error.response.status !== 429
+        ) {
+          console.error("Agent config API error:", error);
+          throw new AgentConfigServiceError(
+            (error.response.data as any)?.detail || "Request failed",
+            error.response.status,
+            error,
+          );
+        }
+
+        // Retry on server errors (5xx), 429 (rate limit), or network errors
+        if (retryCount < this.maxRetries) {
+          (config as any).__retryCount = retryCount + 1;
+
+          // Exponential backoff
+          const delay = this.retryDelay * Math.pow(2, retryCount);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+
+          console.log(
+            `Retrying request (attempt ${retryCount + 1}/${this.maxRetries})`,
+          );
+          return this.apiClient(config!);
+        }
+
+        console.error("Agent config API error after retries:", error);
+        throw new AgentConfigServiceError(
+          "Request failed after retries",
+          error.response?.status,
+          error,
+        );
       },
     );
   }
 
   /**
    * Get list of all agent config IDs.
+   * Automatically retries on network/server errors.
    */
   async listConfigs(): Promise<string[]> {
-    try {
-      const response = await this.apiClient.get<string[]>(
-        "/api/v1/agent-configs/",
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error listing agent configs:", error);
-      throw new Error("Failed to list agent configs");
-    }
+    const response = await this.apiClient.get<string[]>(
+      "/api/v1/agent-configs/",
+    );
+    return response.data;
   }
 
   /**
    * Get a specific agent configuration.
+   * Automatically retries on network/server errors.
    */
   async getConfig(configId: string): Promise<AgentConfig> {
-    try {
-      const response = await this.apiClient.get<AgentConfig>(
-        `/api/v1/agent-configs/${configId}`,
-      );
-      return response.data;
-    } catch (error) {
-      console.error(`Error getting config ${configId}:`, error);
-      throw new Error(`Failed to get config: ${configId}`);
-    }
+    const response = await this.apiClient.get<AgentConfig>(
+      `/api/v1/agent-configs/${configId}`,
+    );
+    return response.data;
   }
 
   /**
    * Update an agent configuration.
+   * Automatically retries on network/server errors.
    */
   async updateConfig(
     configId: string,
     update: AgentConfigUpdate,
   ): Promise<AgentConfig> {
-    try {
-      const response = await this.apiClient.put<AgentConfig>(
-        `/api/v1/agent-configs/${configId}`,
-        update,
-      );
-      return response.data;
-    } catch (error) {
-      console.error(`Error updating config ${configId}:`, error);
-      throw new Error(`Failed to update config: ${configId}`);
-    }
+    const response = await this.apiClient.put<AgentConfig>(
+      `/api/v1/agent-configs/${configId}`,
+      update,
+    );
+    return response.data;
   }
 
   /**
