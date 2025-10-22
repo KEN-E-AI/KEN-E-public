@@ -25,6 +25,7 @@ import AccountsManagement from "./components/AccountsManagement";
 import BillingSection from "./components/BillingSection";
 import TeamManagement from "./components/TeamManagement";
 import DangerZone from "./components/DangerZone";
+import { GoogleAnalyticsPropertySelector } from "@/components/integrations/GoogleAnalyticsPropertySelector";
 
 // Types
 interface NewOrgFormData {
@@ -54,19 +55,96 @@ const AccountSettings = () => {
   const { toast } = useToast();
   const { currentSection } = useSettingsNavigation();
 
-  // Check if we should open create account modal
-  const searchParams = new URLSearchParams(location.search);
-  const shouldOpenCreateAccount =
-    searchParams.get("openCreateAccount") === "true";
-
-  // Check if returning from OAuth with a newly created account
-  const oauthSuccess = searchParams.get("oauth_success");
-  const oauthAccount = searchParams.get("account");
-
   // State to track accounts being set up
   const [accountsInSetup, setAccountsInSetup] = useState<Set<string>>(
     new Set(),
   );
+  const [showPropertySelector, setShowPropertySelector] = useState(false);
+  const [propertySelectionAccountId, setPropertySelectionAccountId] = useState<string | null>(null);
+
+  // Parse URL parameters using useMemo to ensure consistent hook order
+  const { searchParams, shouldOpenCreateAccount, oauthSuccess, oauthAccount, shouldSelectProperties } = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return {
+      searchParams: params,
+      shouldOpenCreateAccount: params.get("openCreateAccount") === "true",
+      oauthSuccess: params.get("oauth_success"),
+      oauthAccount: params.get("account"),
+      shouldSelectProperties: params.get("select_properties") === "true"
+    };
+  }, [location.search]);
+  
+  // Enhanced debug logging - moved inside useMemo to avoid hooks order issues
+  useEffect(() => {
+    console.log("[AccountSettings] URL params debug:", {
+      fullURL: window.location.href,
+      search: location.search,
+      oauthSuccess,
+      oauthAccount,
+      shouldSelectProperties,
+      searchParamsString: searchParams.toString(),
+      allParams: Array.from(searchParams.entries()),
+    });
+  }, [location.search, oauthSuccess, oauthAccount, shouldSelectProperties, searchParams]);
+  
+  // CRITICAL: Set up window.showPropertySelector IMMEDIATELY, before any conditional returns
+  // This must run on every render to ensure the function is available
+  useEffect(() => {
+    // Expose function to manually trigger property selector for debugging
+    (window as any).showPropertySelector = (accountId?: string) => {
+      const testAccountId = accountId || oauthAccount || "acc_ffe6269d30874f27b36a3cb1666a9037";
+      console.log("[DEBUG] Manually triggering property selector with account:", testAccountId);
+      setPropertySelectionAccountId(testAccountId);
+      setShowPropertySelector(true);
+    };
+    
+    return () => {
+      delete (window as any).showPropertySelector;
+    };
+  }, [oauthAccount]);
+  
+  // Initialize property selector state based on URL params
+  // This ensures the state is set immediately on component mount
+  useEffect(() => {
+    console.log("[AccountSettings] Mount effect - checking for property selector trigger", {
+      oauthSuccess,
+      oauthAccount,
+      shouldSelectProperties,
+      condition: oauthSuccess === "google_analytics" && oauthAccount && shouldSelectProperties
+    });
+    
+    if (oauthSuccess === "google_analytics" && oauthAccount && shouldSelectProperties) {
+      console.log("[AccountSettings] CONDITIONS MET! Showing property selector for account:", oauthAccount);
+      setPropertySelectionAccountId(oauthAccount);
+      setShowPropertySelector(true);
+      
+      // Delay clearing the URL params to ensure state is set first
+      setTimeout(() => {
+        const newSearchParams = new URLSearchParams(window.location.search);
+        newSearchParams.delete("oauth_success");
+        newSearchParams.delete("account");
+        newSearchParams.delete("select_properties");
+        const newSearch = newSearchParams.toString();
+        navigate(
+          {
+            pathname: location.pathname,
+            search: newSearch ? `?${newSearch}` : "",
+          },
+          { replace: true },
+        );
+      }, 500); // Small delay to ensure state updates are processed
+    } else {
+      console.log("[AccountSettings] Property selector conditions NOT met");
+    }
+  }, [oauthSuccess, oauthAccount, shouldSelectProperties, navigate, location.pathname]); // Watch for changes in these params
+  
+  // Debug logging for component state
+  useEffect(() => {
+    console.log("[AccountSettings] Component rendering with state:", {
+      showPropertySelector,
+      propertySelectionAccountId,
+    });
+  }, [showPropertySelector, propertySelectionAccountId]);
 
   // Clear the openCreateAccount param after reading it
   useEffect(() => {
@@ -86,6 +164,17 @@ const AccountSettings = () => {
 
   // Handle OAuth return - mark account as in setup
   useEffect(() => {
+    console.log(
+      "[AccountSettings] OAuth handling useEffect triggered - OAuth params:",
+      {
+        oauthSuccess,
+        oauthAccount,
+        shouldSelectProperties,
+        showPropertySelector,
+        propertySelectionAccountId,
+      }
+    );
+
     if (oauthSuccess === "google_analytics" && oauthAccount) {
       console.log(
         "[AccountSettings] OAuth completed for account:",
@@ -95,27 +184,48 @@ const AccountSettings = () => {
       // Add the account to the setup tracking
       setAccountsInSetup((prev) => new Set(prev).add(oauthAccount));
 
-      // Show success toast
-      toast({
-        title: "Google Analytics Connected",
-        description:
-          "Your account is being configured with personalized strategies. This typically takes 15-20 minutes.",
-      });
+      // Check if we should show property selector  
+      // Note: We already set the state in the mount effect, but also handle it here for completeness
+      if (shouldSelectProperties && !showPropertySelector) {
+        console.log("[AccountSettings] Setting up property selector from OAuth effect");
+        setPropertySelectionAccountId(oauthAccount);
+        setShowPropertySelector(true);
+      } else if (!shouldSelectProperties) {
+        // Show success toast if not selecting properties
+        toast({
+          title: "Google Analytics Connected",
+          description:
+            "Your account is being configured with personalized strategies. This typically takes 15-20 minutes.",
+        });
+      }
 
-      // Clear OAuth params from URL
-      const newSearchParams = new URLSearchParams(location.search);
-      newSearchParams.delete("oauth_success");
-      newSearchParams.delete("account");
-      const newSearch = newSearchParams.toString();
-      navigate(
-        {
-          pathname: location.pathname,
-          search: newSearch ? `?${newSearch}` : "",
-        },
-        { replace: true },
-      );
+      // Don't clear the URL params yet if we're showing property selector
+      // They will be cleared when the selector is closed
+      if (!shouldSelectProperties) {
+        // Clear OAuth params from URL
+        const newSearchParams = new URLSearchParams(location.search);
+        newSearchParams.delete("oauth_success");
+        newSearchParams.delete("account");
+        newSearchParams.delete("select_properties");
+        const newSearch = newSearchParams.toString();
+        navigate(
+          {
+            pathname: location.pathname,
+            search: newSearch ? `?${newSearch}` : "",
+          },
+          { replace: true },
+        );
+      }
     }
-  }, [oauthSuccess, oauthAccount, navigate, location, toast]);
+  }, [oauthSuccess, oauthAccount, shouldSelectProperties, navigate, location, toast]);
+  
+  // Debug effect to monitor state changes
+  useEffect(() => {
+    console.log("[AccountSettings] State changed:", {
+      showPropertySelector,
+      propertySelectionAccountId,
+    });
+  }, [showPropertySelector, propertySelectionAccountId]);
   const {
     user,
     updateUser,
@@ -632,7 +742,63 @@ const AccountSettings = () => {
       (user?.permissions?.organizations?.[currentOrgId] === "admin" ||
         user?.permissions?.organizations?.[currentOrgId] === "owner"));
 
+  // NOTE: window.showPropertySelector is now set up earlier in the component before any conditional returns
+
   return (
+    <>
+      {/* Google Analytics Property Selector Modal */}
+      {showPropertySelector && propertySelectionAccountId && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+            <GoogleAnalyticsPropertySelector
+            accountId={propertySelectionAccountId}
+            onComplete={(selectedProperties) => {
+              console.log("Properties selected:", selectedProperties);
+              setShowPropertySelector(false);
+              setPropertySelectionAccountId(null);
+              
+              // Clear URL params
+              const newSearchParams = new URLSearchParams(location.search);
+              newSearchParams.delete("oauth_success");
+              newSearchParams.delete("account");
+              newSearchParams.delete("select_properties");
+              const newSearch = newSearchParams.toString();
+              navigate(
+                {
+                  pathname: location.pathname,
+                  search: newSearch ? `?${newSearch}` : "",
+                },
+                { replace: true },
+              );
+              
+              toast({
+                title: "Properties Selected",
+                description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? 'property' : 'properties'} for Google Analytics integration.`,
+              });
+            }}
+            onSkip={() => {
+              setShowPropertySelector(false);
+              setPropertySelectionAccountId(null);
+              
+              // Clear URL params
+              const newSearchParams = new URLSearchParams(location.search);
+              newSearchParams.delete("oauth_success");
+              newSearchParams.delete("account");
+              newSearchParams.delete("select_properties");
+              const newSearch = newSearchParams.toString();
+              navigate(
+                {
+                  pathname: location.pathname,
+                  search: newSearch ? `?${newSearch}` : "",
+                },
+                { replace: true },
+              );
+            }}
+          />
+          </div>
+        </>
+      )}
+
     <SettingsLayout
       pageTitle={getPageTitle()}
       currentPage={getCurrentPage()}
@@ -746,6 +912,7 @@ const AccountSettings = () => {
         </>
       )}
     </SettingsLayout>
+    </>
   );
 };
 

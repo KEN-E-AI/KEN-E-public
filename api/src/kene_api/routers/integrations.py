@@ -34,8 +34,9 @@ def check_account_permission(user_context: UserContext, account_id: str) -> bool
 
     # Check if user has edit permission for this account
     account_permissions = user_context.account_permissions or {}
-    account_perm = account_permissions.get(account_id, {})
-    return account_perm.get("role") in ["admin", "editor"]
+    account_perm = account_permissions.get(account_id)
+    # account_perm is a string like "edit" or "view", not a dict
+    return account_perm in ["edit", "admin", "editor"]
 
 
 async def test_google_analytics_connection(

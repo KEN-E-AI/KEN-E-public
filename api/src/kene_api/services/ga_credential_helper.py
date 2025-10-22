@@ -105,8 +105,9 @@ class GACredentialHelper:
 
                 # Get OAuth client configuration from environment
                 import os
+                from ..utils.secrets import get_env_or_secret
                 client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-                client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+                client_secret = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET")
 
                 logger.info(f"OAuth client ID found: {bool(client_id)}, Secret found: {bool(client_secret)}")
 
@@ -172,7 +173,9 @@ class GACredentialHelper:
             agent_credentials = {
                 "access_token": credentials.get("access_token"),
                 "refresh_token": credentials.get("refresh_token"),
-                "tenant_id": account_id
+                "tenant_id": account_id,
+                "selected_property_ids": credentials.get("selected_property_ids", []),
+                "selected_properties": credentials.get("selected_properties", [])
             }
 
             # Convert to JSON and encode to base64
@@ -196,7 +199,7 @@ class GACredentialHelper:
             account_id: The account ID
             
         Returns:
-            Dictionary with tenant_id and formatted credentials, or None if not available
+            Dictionary with tenant_id, formatted credentials, and property info, or None if not available
         """
         try:
             # Get OAuth credentials
@@ -212,9 +215,15 @@ class GACredentialHelper:
             # Format for agent
             formatted_creds = self.format_for_agent(credentials, account_id)
 
+            # Get selected properties for context
+            selected_property_ids = credentials.get("selected_property_ids", [])
+            selected_properties = credentials.get("selected_properties", [])
+
             return {
                 "tenant_id": account_id,
-                "tenant_credentials": formatted_creds
+                "tenant_credentials": formatted_creds,
+                "selected_property_ids": selected_property_ids,
+                "selected_properties": selected_properties
             }
 
         except Exception as e:
