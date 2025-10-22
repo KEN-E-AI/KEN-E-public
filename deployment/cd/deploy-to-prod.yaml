@@ -58,9 +58,19 @@ steps:
       - "--build-arg"
       - "VITE_FIREBASE_AUTH_DOMAIN=${_VITE_FIREBASE_AUTH_DOMAIN}"
       - "--build-arg"
+      - "VITE_FIREBASE_PROJECT_ID=${_VITE_FIREBASE_PROJECT_ID_PROD}"
+      - "--build-arg"
+      - "VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET_PROD}"
+      - "--build-arg"
+      - "VITE_FIREBASE_MESSAGING_SENDER_ID=${_VITE_FIREBASE_MESSAGING_SENDER_ID_PROD}"
+      - "--build-arg"
+      - "VITE_FIREBASE_APP_ID=${_VITE_FIREBASE_APP_ID_PROD}"
+      - "--build-arg"
       - "VITE_API_BASE_URL=${_VITE_API_BASE_URL}"
       - "--build-arg"
       - "VITE_RECAPTCHA_SITE_KEY=${_RECAPTCHA_SITE_KEY_PROD}"
+      - "--build-arg"
+      - "VITE_ENVIRONMENT=production"
       - "./frontend"
 
   - name: "gcr.io/cloud-builders/docker"
@@ -119,7 +129,7 @@ steps:
           --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
           --vpc-connector=ken-e-prod-connector \
           --clear-secrets \
-          --set-env-vars "DEBUG=false,HOST=0.0.0.0,ENVIRONMENT=production,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},AURA_INSTANCEID=${_AURA_INSTANCEID},AURA_INSTANCENAME=${_AURA_INSTANCENAME},SUPERSET_BASE_URL=${_SUPERSET_BASE_URL},SUPERSET_USERNAME=${_SUPERSET_USERNAME},SUPERSET_PASSWORD=${_SUPERSET_PASSWORD},GOOGLE_CLOUD_PROJECT_ID=${_PROD_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,USE_APPLICATION_DEFAULT_CREDENTIALS=true,RECAPTCHA_SITE_KEY=${_RECAPTCHA_SITE_KEY_PROD},RECAPTCHA_SECRET_KEY=${_RECAPTCHA_SECRET_KEY_PROD},VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_PROD},REDIS_HOST=${_REDIS_HOST_PROD},REDIS_PORT=${_REDIS_PORT},REDIS_DB=${_REDIS_DB},SUPPRESS_REDIS_WARNING=false,SENDGRID_API_KEY=${_SENDGRID_API_KEY_PROD},APP_BASE_URL=https://app.ken-e.ai,EMAIL_FROM_ADDRESS=noreply@ken-e.ai,EMAIL_FROM_NAME=KEN-E Team"
+          --set-env-vars "DEBUG=false,HOST=0.0.0.0,ENVIRONMENT=production,NEO4J_URI=${_NEO4J_URI},NEO4J_USERNAME=${_NEO4J_USERNAME},NEO4J_PASSWORD=${_NEO4J_PASSWORD},NEO4J_DATABASE=${_NEO4J_DATABASE},AURA_INSTANCEID=${_AURA_INSTANCEID},AURA_INSTANCENAME=${_AURA_INSTANCENAME},SUPERSET_BASE_URL=${_SUPERSET_BASE_URL},SUPERSET_USERNAME=${_SUPERSET_USERNAME},SUPERSET_PASSWORD=${_SUPERSET_PASSWORD},GOOGLE_CLOUD_PROJECT_ID=${_PROD_PROJECT_ID},FIRESTORE_DATABASE_ID=(default),LOG_LEVEL=INFO,USE_APPLICATION_DEFAULT_CREDENTIALS=true,RECAPTCHA_SITE_KEY=${_RECAPTCHA_SITE_KEY_PROD},RECAPTCHA_SECRET_KEY=${_RECAPTCHA_SECRET_KEY_PROD},VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_PROD},REDIS_HOST=${_REDIS_HOST_PROD},REDIS_PORT=${_REDIS_PORT},REDIS_DB=${_REDIS_DB},SUPPRESS_REDIS_WARNING=false,SENDGRID_API_KEY=${_SENDGRID_API_KEY_PROD},APP_BASE_URL=https://app.ken-e.ai,EMAIL_FROM_ADDRESS=noreply@ken-e.ai,EMAIL_FROM_NAME=KEN-E Team,KEN_E_ENGINE_ID=${_KEN_E_ENGINE_ID_PROD},STRATEGY_SUPERVISOR_ENGINE_ID=${_STRATEGY_SUPERVISOR_ENGINE_ID_PROD},ENCRYPTION_KEY=${_ENCRYPTION_KEY_PROD},GOOGLE_OAUTH_CLIENT_ID=${_GOOGLE_OAUTH_CLIENT_ID_PROD},GOOGLE_OAUTH_CLIENT_SECRET=${_GOOGLE_OAUTH_CLIENT_SECRET_PROD},GOOGLE_OAUTH_REDIRECT_URI=https://kene-api-prod-395770269870.us-central1.run.app/api/oauth/callback/google,FRONTEND_URL=https://kene-frontend-prod-395770269870.us-central1.run.app,OPENAI_API_KEY=${_OPENAI_API_KEY_PROD},WANDB_API_KEY=${_WANDB_API_KEY_PROD},WANDB_PROJECT=ken-e-strategy-agent-production,WANDB_ENTITY=ken-e,WEAVE_PROJECT_NAME=ken-e-strategy-agent-production,VERTEX_AI_PROJECT_ID=${_PROD_PROJECT_ID}"
 
 substitutions:
   _PROD_PROJECT_ID: ken-e-production
@@ -139,15 +149,36 @@ substitutions:
   _VITE_FIREBASE_AUTH_DOMAIN: ken-e-production.firebaseapp.com
   _VITE_API_BASE_URL: https://kene-api-prod-395770269870.us-central1.run.app # You can update this later
   _API_SERVICE_ACCOUNT_EMAIL: ken-e-api@ken-e-production.iam.gserviceaccount.com
-  _RECAPTCHA_SITE_KEY_PROD: ${_RECAPTCHA_SITE_KEY_PROD}
-  _RECAPTCHA_SECRET_KEY_PROD: ${_RECAPTCHA_SECRET_KEY_PROD}
+  _RECAPTCHA_SITE_KEY_PROD: projects/395770269870/secrets/recaptcha-site-key/versions/latest
+  _RECAPTCHA_SECRET_KEY_PROD: projects/395770269870/secrets/recaptcha-secret-key/versions/latest
   _VERTEX_AI_LOCATION: us-central1
-  _VERTEX_AI_AGENT_ENGINE_ID_PROD: projects/ken-e-staging/locations/us-central1/reasoningEngines/98331523895263232 # TODO: UPDATE TO PRODUCTION ID
+  _VERTEX_AI_AGENT_ENGINE_ID_PROD: projects/395770269870/secrets/strategy-supervisor-engine-id/versions/latest
   # Redis configuration for production (Memorystore IP will be set after Terraform deployment)
   _REDIS_HOST_PROD: ${_REDIS_HOST_PROD}  # Set this in Cloud Build trigger to Memorystore IP
   _REDIS_PORT: "6379"
   _REDIS_DB: "0"
   _SENDGRID_API_KEY_PROD: projects/395770269870/secrets/sendgrid-api-key/versions/latest
+
+  # Agent Engine IDs (deployed separately to production project)
+  _KEN_E_ENGINE_ID_PROD: projects/395770269870/secrets/ken-e-engine-id/versions/latest
+  _STRATEGY_SUPERVISOR_ENGINE_ID_PROD: projects/395770269870/secrets/strategy-supervisor-engine-id/versions/latest
+
+  # OAuth Configuration (environment-specific)
+  _ENCRYPTION_KEY_PROD: projects/395770269870/secrets/ENCRYPTION_KEY/versions/latest
+  _GOOGLE_OAUTH_CLIENT_ID_PROD: projects/395770269870/secrets/GOOGLE_OAUTH_CLIENT_ID/versions/latest
+  _GOOGLE_OAUTH_CLIENT_SECRET_PROD: projects/395770269870/secrets/GOOGLE_OAUTH_CLIENT_SECRET/versions/latest
+
+  # OpenAI (for strategy formatters)
+  _OPENAI_API_KEY_PROD: projects/395770269870/secrets/OPENAI_API_KEY/versions/latest
+
+  # Weights & Biases / Weave (CRITICAL for agent observability)
+  _WANDB_API_KEY_PROD: projects/395770269870/secrets/wandb_api_key/versions/latest
+
+  # Firebase Configuration for Frontend Build
+  _VITE_FIREBASE_PROJECT_ID_PROD: ken-e-production
+  _VITE_FIREBASE_STORAGE_BUCKET_PROD: ken-e-production.firebasestorage.app
+  _VITE_FIREBASE_MESSAGING_SENDER_ID_PROD: "395770269870"
+  _VITE_FIREBASE_APP_ID_PROD: "1:395770269870:web:YOUR_PROD_APP_ID"
 
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
