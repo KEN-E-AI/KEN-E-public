@@ -19,13 +19,12 @@ from ..firestore import get_firestore_service
 from ..metrics.oauth_metrics import (
     OAuthMetricsCollector,
     measure_oauth_flow,
-    measure_encryption_operation,
     track_oauth_attempt,
-    track_oauth_success,
     track_oauth_callback_error,
-    track_token_refresh_success,
-    track_token_refresh_failure,
+    track_oauth_success,
     track_state_transition,
+    track_token_refresh_failure,
+    track_token_refresh_success,
 )
 from ..models.integration_models import (
     IntegrationStatus,
@@ -33,20 +32,20 @@ from ..models.integration_models import (
     IntegrationType,
 )
 from ..models.oauth_models import (
-    OAuthErrorCode,
-    GoogleAnalyticsProperty,
     GoogleAnalyticsPropertiesResponse,
+    GoogleAnalyticsProperty,
+    OAuthErrorCode,
     UpdateSelectedPropertiesRequest,
 )
 from ..services.encryption_service import IntegrationCredentialsService
 from ..services.oauth_state_service import OAuthStateService
+from ..utils.secrets import get_env_or_secret
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
 # Google OAuth 2.0 configuration
-from ..utils.secrets import get_env_or_secret
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET", "")
@@ -96,18 +95,14 @@ async def authorize_google_analytics(
     """
     # Track OAuth attempt
     track_oauth_attempt("google_analytics")
-    
-    # Check permissions
-    if not current_user.is_super_admin:
-        account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id)
-        # account_perm is a string like "edit" or "view", not a dict
-        if account_perm not in ["edit", "admin", "editor"]:
-            track_oauth_callback_error("google_analytics", "permission_denied")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to manage this account's integrations",
-            )
+
+    # Check permissions using has_account_access which handles org admins correctly
+    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+        track_oauth_callback_error("google_analytics", "permission_denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to manage this account's integrations",
+        )
 
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         track_oauth_callback_error("google_analytics", "config_missing")
@@ -145,7 +140,7 @@ async def authorize_google_analytics(
         integration_type="google_analytics",
         ttl_minutes=15,
     )
-    
+
     logger.info(f"[OAUTH_STATE] State token created successfully: {state[:8]}...")
 
     # Build authorization URL
@@ -225,7 +220,7 @@ async def google_oauth_callback(
 
         user_id = oauth_state.user_id
         account_id = oauth_state.account_id
-        
+
         logger.info(f"[OAUTH_CALLBACK] Valid state token for user {user_id}, account {account_id}")
         track_state_transition("google_analytics", "initiated", "verified")
 
@@ -289,7 +284,7 @@ async def google_oauth_callback(
 
             # Clean up state from database
             await oauth_state_service.delete_state(state)
-            
+
             # Mark success
             logger.info(f"[OAUTH_CALLBACK] Successfully completed OAuth flow for account {account_id}")
             collector.track_success()
@@ -329,18 +324,14 @@ async def refresh_google_analytics_token(
     Refresh the access token for Google Analytics using the stored refresh token.
     """
     logger.info(f"[TOKEN_REFRESH] Starting token refresh for account {account_id}")
-    
-    # Check permissions
-    if not current_user.is_super_admin:
-        account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id)
-        # account_perm is a string like "edit" or "view", not a dict
-        if account_perm not in ["edit", "admin", "editor"]:
-            track_token_refresh_failure("google_analytics", "permission_denied")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to manage this account's integrations",
-            )
+
+    # Check permissions using has_account_access which handles org admins correctly
+    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+        track_token_refresh_failure("google_analytics", "permission_denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to manage this account's integrations",
+        )
 
     try:
         # Get stored credentials
@@ -393,7 +384,7 @@ async def refresh_google_analytics_token(
             credentials=credentials,
             user_id=current_user.user_id,
         )
-        
+
         logger.info(f"[TOKEN_REFRESH] Successfully refreshed token for account {account_id}")
         track_token_refresh_success("google_analytics")
 
@@ -418,16 +409,12 @@ async def disconnect_google_analytics(
     """
     Disconnect Google Analytics by removing stored tokens.
     """
-    # Check permissions
-    if not current_user.is_super_admin:
-        account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id)
-        # account_perm is a string like "edit" or "view", not a dict
-        if account_perm not in ["edit", "admin", "editor"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to manage this account's integrations",
-            )
+    # Check permissions using has_account_access which handles org admins correctly
+    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to manage this account's integrations",
+        )
 
     try:
         # Remove stored credentials
@@ -458,16 +445,12 @@ async def get_google_analytics_properties(
     """
     Get list of Google Analytics properties accessible with the stored OAuth token.
     """
-    # Check permissions
-    if not current_user.is_super_admin:
-        account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id)
-        # account_perm is a string like "edit" or "view", not a dict
-        if account_perm not in ["edit", "view", "admin", "editor", "viewer"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this account's integrations",
-            )
+    # Check permissions using has_account_access which handles org admins correctly
+    if not current_user.has_account_access(account_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this account's integrations",
+        )
 
     try:
         # Get stored credentials
@@ -524,11 +507,11 @@ async def get_google_analytics_properties(
 
                 new_tokens = refresh_response.json()
                 access_token = new_tokens.get("access_token")
-                
+
                 # Update stored credentials
                 credentials["access_token"] = access_token
                 credentials["expires_at"] = datetime.now().timestamp() + new_tokens.get("expires_in", 3600)
-                
+
                 await creds_service.update_credentials(
                     account_id=account_id,
                     integration_type="google_analytics",
@@ -539,11 +522,11 @@ async def get_google_analytics_properties(
         # Check if credentials have stored GA account info from old integration
         stored_ga_account = credentials.get("ga_account", {})
         logger.info(f"[GA_PROPERTIES] Stored GA account info in credentials: {json.dumps(stored_ga_account, indent=2)}")
-        
+
         # Call Google Analytics Admin API to list properties
         logger.info(f"[GA_PROPERTIES] Starting to fetch properties for account {account_id}")
         logger.info(f"[GA_PROPERTIES] Using access token: {access_token[:20]}..." if access_token else "No token")
-        
+
         properties = []
         async with httpx.AsyncClient() as client:
             # First, get the list of accounts
@@ -555,7 +538,7 @@ async def get_google_analytics_properties(
             )
 
             logger.info(f"[GA_PROPERTIES] Accounts API response status: {accounts_response.status_code}")
-            
+
             if accounts_response.status_code != 200:
                 logger.error(f"[GA_PROPERTIES] Failed to fetch GA accounts: {accounts_response.text}")
                 raise HTTPException(
@@ -567,7 +550,7 @@ async def get_google_analytics_properties(
             logger.info(f"[GA_PROPERTIES] Raw accounts response: {json.dumps(accounts_data, indent=2)}")
             accounts = accounts_data.get("accounts", [])
             logger.info(f"[GA_PROPERTIES] Found {len(accounts)} GA accounts: {[acc.get('displayName', 'Unknown') for acc in accounts]}")
-            
+
             # Log the structure of ALL accounts for debugging
             for idx, acc in enumerate(accounts):
                 logger.info(f"[GA_PROPERTIES] Account {idx}: {json.dumps(acc, indent=2)}")
@@ -576,21 +559,21 @@ async def get_google_analytics_properties(
             for account in accounts:
                 # The account dict might have either 'name' (resource name) or 'account' (account ID)
                 # Let's handle both cases
-                account_name = account.get("name", "")  
+                account_name = account.get("name", "")
                 account_id = account.get("account", "")  # Sometimes the API returns just the ID
                 account_display_name = account.get("displayName", "Unknown Account")
-                
+
                 # If we don't have account_name but have account_id, use that
                 if not account_name and account_id:
                     account_name = account_id
-                
+
                 logger.info(f"[GA_PROPERTIES] Processing account: {account_display_name} (name={account_name}, id={account_id})")
                 logger.info(f"[GA_PROPERTIES] Full account object: {json.dumps(account, indent=2)}")
-                
+
                 if not account_name:
                     logger.warning(f"[GA_PROPERTIES] Skipping account {account_display_name} - no name or ID field")
                     continue
-                    
+
                 # Ensure account_name has the proper format for the API
                 # The API expects: /v1beta/accounts/{accountId}/properties
                 if account_name.startswith("accounts/"):
@@ -607,19 +590,19 @@ async def get_google_analytics_properties(
                     else:
                         logger.error(f"[GA_PROPERTIES] Cannot parse account identifier: {account_name}")
                         continue
-                
+
                 # According to GA Admin API docs, we need to use the properties endpoint with a filter
                 # The account_name should be in format "accounts/123456"
                 properties_url = "https://analyticsadmin.googleapis.com/v1alpha/properties"
-                
+
                 # Ensure we have the proper account format for the filter
                 if not account_name.startswith("accounts/"):
                     filter_account = f"accounts/{account_name}"
                 else:
                     filter_account = account_name
-                
+
                 logger.info(f"[GA_PROPERTIES] Fetching from URL: {properties_url} with filter: parent:{filter_account}")
-                
+
                 properties_response = await client.get(
                     properties_url,
                     headers={"Authorization": f"Bearer {access_token}"},
@@ -630,18 +613,18 @@ async def get_google_analytics_properties(
                 )
 
                 logger.info(f"[GA_PROPERTIES] Properties API response status for {account_display_name}: {properties_response.status_code}")
-                
+
                 if properties_response.status_code != 200:
                     error_detail = properties_response.text
                     logger.error(f"[GA_PROPERTIES] Failed to fetch properties for {account_display_name}: {error_detail}")
                     logger.error(f"[GA_PROPERTIES] Request URL was: {properties_url}")
                     continue
-                
+
                 if properties_response.status_code == 200:
                     properties_data = properties_response.json()
                     account_properties = properties_data.get("properties", [])
                     logger.info(f"[GA_PROPERTIES] Found {len(account_properties)} properties in account {account_display_name}")
-                    
+
                     for prop in account_properties:
                         property_info = GoogleAnalyticsProperty(
                             property_id=prop.get("name", ""),  # Format: properties/123456
@@ -659,7 +642,7 @@ async def get_google_analytics_properties(
 
         # Get currently selected properties if any
         selected_property_ids = credentials.get("selected_property_ids", [])
-        
+
         logger.info(f"[GA_PROPERTIES] Total properties found: {len(properties)}")
         logger.info(f"[GA_PROPERTIES] Selected property IDs: {selected_property_ids}")
 
@@ -688,16 +671,12 @@ async def update_selected_properties(
     """
     Update the selected Google Analytics properties for an account.
     """
-    # Check permissions - only admin or editor can update
-    if not current_user.is_super_admin:
-        account_permissions = current_user.account_permissions or {}
-        account_perm = account_permissions.get(account_id)
-        # account_perm is a string like "edit" or "view", not a dict
-        if account_perm not in ["edit", "admin", "editor"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to manage this account's integrations",
-            )
+    # Check permissions using has_account_access which handles org admins correctly
+    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to manage this account's integrations",
+        )
 
     try:
         # Get stored credentials
@@ -768,7 +747,7 @@ async def get_google_analytics_status(
             # Check if token is expired
             expires_at = credentials.get("expires_at", 0)
             is_expired = datetime.now().timestamp() > expires_at
-            
+
             # Get selected properties count
             selected_properties = credentials.get("selected_properties", [])
             property_count = len(selected_properties) if selected_properties else 0
