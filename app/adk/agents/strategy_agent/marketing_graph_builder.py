@@ -215,8 +215,8 @@ class MarketingGraphBuilder:
             {"account_id": account_id, "category_name": category_name},
         )
 
-        if result and len(result[0]) > 0:
-            return result[0][0]["node_id"]
+        if result and len(result) > 0:
+            return result[0]["node_id"]
         return None
 
     def _create_customer_profile(
