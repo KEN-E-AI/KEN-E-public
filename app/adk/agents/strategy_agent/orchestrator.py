@@ -12,7 +12,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 # Import weave for tracing
 import weave  # noqa: E402
@@ -368,9 +368,9 @@ def extract_document_sections(
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
-    analytics_service: AnalyticsService | None = None,
-    performance_profiler: PerformanceProfiler | None = None,
-    alert_manager: AlertManager | None = None,
+    analytics_service: Optional[AnalyticsService] = None,
+    performance_profiler: Optional[PerformanceProfiler] = None,
+    alert_manager: Optional[AlertManager] = None,
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
@@ -917,8 +917,8 @@ def execute_strategy_generation(
     account_id: str,
     user_id: str,
     annual_ad_budget: float = 0.0,
-    project_id: str | None = None,
-    uploaded_documents: list[str] | None = None,
+    project_id: Optional[str] = None,
+    uploaded_documents: Optional[List[str]] = None,
     enable_analytics: bool = True,
 ) -> str:
     """
