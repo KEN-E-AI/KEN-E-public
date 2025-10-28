@@ -1,5 +1,8 @@
 Deployment: strategy-supervisor-py312
 Python Version: 3.12
-Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/3155462032275275776
+Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/2014925426643697664
 Project: ken-e-dev
 Location: us-central1
+Deployed: 2025-10-28
+Changes: Fixed Python 3.10+ union syntax (str | None) to typing.Optional[str] for Agent Engine compatibility
+Secret Manager: strategy-supervisor-engine-id updated (version 92)
