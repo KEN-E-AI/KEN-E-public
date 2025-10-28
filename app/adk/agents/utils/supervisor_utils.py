@@ -5,6 +5,7 @@ Extracted from create_strategy_docs_supervisor.py to promote reuse.
 
 import asyncio
 import concurrent.futures
+import functools
 import json
 import logging
 import uuid
