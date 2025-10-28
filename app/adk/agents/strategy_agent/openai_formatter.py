@@ -4,11 +4,14 @@ Provides fallback when Gemini formatter fails with complex schemas.
 """
 
 import json
+import logging
 import os
 from typing import Any
 
 import weave
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 def _get_openai_key() -> str:
@@ -28,7 +31,7 @@ def _get_openai_key() -> str:
     except Exception as e:
         raise ValueError(
             f"OPENAI_API_KEY not found in environment or Secret Manager: {e}"
-        )
+        ) from e
 
 
 @weave.op(name="openai_formatter")
@@ -36,7 +39,8 @@ def format_with_openai(
     research_data: str,
     model_class: type[BaseModel],
     strategy_type: str,
-    source_urls: list = None,
+    source_urls: list | None = None,
+    custom_instructions: str | None = None,
 ) -> dict[str, Any]:
     """
     Use OpenAI to format research data into structured strategy.
@@ -49,6 +53,8 @@ def format_with_openai(
         model_class: Pydantic model class to format into
         strategy_type: Type of strategy (for logging/prompting)
         source_urls: List of source URLs from grounding metadata
+        custom_instructions: Optional custom instructions from Firestore config.
+                           If provided, these will be used instead of hardcoded instructions.
 
     Returns:
         Dictionary matching the Pydantic model schema
@@ -66,13 +72,30 @@ def format_with_openai(
                 f"- {url}" for url in source_urls
             )
 
+        # Use custom instructions if provided (from Firestore), otherwise use hardcoded fallback
+        if custom_instructions:
+            system_content = custom_instructions
+            logger.info(
+                f"Using custom instructions from Firestore for {strategy_type} OpenAI fallback"
+            )
+        else:
+            system_content = (
+                f"You are a {strategy_type} formatter. Format the research into a structured "
+                f"{strategy_type} document matching the provided schema exactly. "
+                f"IMPORTANT: For each node with descriptive information from web research, "
+                f"populate the 'references' field with relevant URLs from the provided source list."
+            )
+            logger.warning(
+                f"No custom instructions available, using hardcoded fallback for {strategy_type}"
+            )
+
         # Use OpenAI's structured output parsing
         completion = client.beta.chat.completions.parse(
             model="gpt-4o-2024-08-06",
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a {strategy_type} formatter. Format the research into a structured {strategy_type} document matching the provided schema exactly. IMPORTANT: For each node with descriptive information from web research, populate the 'references' field with relevant URLs from the provided source list.",
+                    "content": system_content,
                 },
                 {
                     "role": "user",

@@ -20,6 +20,7 @@ class IdealCustomerProfile(BaseModel):
     """
     A detailed profile of an ideal customer for a specific product category.
     """
+    display_name: str = Field(..., description="A short and unique name for the customer profile.")
     narrative: str = Field(
         ...,
         description="A narrative synthesizing the persona's name, background, pain points, core needs, buying motivations, and preferred communication channels."

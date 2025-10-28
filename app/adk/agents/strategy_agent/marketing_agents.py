@@ -8,12 +8,17 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 Configurations are now loaded from Firestore for easy iteration without redeployment.
 """
 
+import json
+import logging
+
 import google.adk as adk
 from google.adk.tools import AgentTool
 from google.genai.types import GenerateContentConfig
 
 from .config_loader import create_agent_from_firestore_config
 from .marketing_models import MarketingResearchReport
+
+logger = logging.getLogger(__name__)
 
 
 def create_marketing_researcher(google_search_agent):
@@ -51,6 +56,19 @@ def create_marketing_formatter():
     Returns:
         ADK Agent for formatting marketing research
     """
+    # DEBUG: Log the schema being used
+    schema = MarketingResearchReport.model_json_schema()
+    logger.info(f"[DEBUG] Creating marketing_formatter with schema:")
+    logger.info(f"  - Root properties: {list(schema.get('properties', {}).keys())}")
+
+    if "$defs" in schema and "IdealCustomerProfile" in schema["$defs"]:
+        icp_fields = list(schema["$defs"]["IdealCustomerProfile"].get("properties", {}).keys())
+        logger.info(f"  - IdealCustomerProfile fields: {icp_fields}")
+
+    if "$defs" in schema and "ProductCategoryMapping" in schema["$defs"]:
+        pcm_fields = list(schema["$defs"]["ProductCategoryMapping"].get("properties", {}).keys())
+        logger.info(f"  - ProductCategoryMapping fields: {pcm_fields}")
+
     return create_agent_from_firestore_config(
         doc_id="marketing_formatter",
         output_schema=MarketingResearchReport,
