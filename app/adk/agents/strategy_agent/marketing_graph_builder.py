@@ -84,6 +84,7 @@ class MarketingGraphBuilder:
             logger.info(
                 f"Phase 2: Creating product-scoped marketing strategies for {len(research_report.product_category_mappings)} product categories"
             )
+            logger.info(f"Product mappings data: {[(m.category_name, len(m.customer_strategies)) for m in research_report.product_category_mappings]}")
 
             for mapping in research_report.product_category_mappings:
                 logger.info(
@@ -187,7 +188,8 @@ class MarketingGraphBuilder:
             return created_nodes
 
         except Exception as e:
-            logger.error(f"Failed to build marketing graph: {e}")
+            logger.error(f"Failed to build marketing graph: {e}", exc_info=True)
+            logger.error(f"Exception type: {type(e).__name__}, Exception args: {e.args}")
             raise
 
     def _get_product_category_node_id(
