@@ -232,6 +232,7 @@ class MarketingGraphBuilder:
 
         node_data = {
             "node_id": node_id,
+            "display_name": icp.display_name.lower(),
             "description": icp.narrative,
             "references": icp.references,
             "created_time": datetime.now(),

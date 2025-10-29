@@ -504,3 +504,96 @@ def test_link_product_category_to_customer_profile_handles_failure(
 
     # Verify
     assert result is None
+
+
+def test_customer_profile_includes_display_name(graph_builder, mock_neo4j_ops):
+    """
+    Test that _create_customer_profile passes display_name to Neo4j.
+
+    This verifies the enhancement where display_name is added to the node_data
+    on line 235 of marketing_graph_builder.py. The display_name should be
+    lowercased and passed as a property to the Neo4j CustomerProfile node.
+
+    Validates:
+    1. display_name is included in node_data
+    2. display_name is lowercased
+    3. display_name is passed to neo4j_ops.create_strategy_node
+    """
+    account_id = "test_acc_123"
+
+    # Create test customer profile with display_name
+    test_profile = IdealCustomerProfile(
+        display_name="Recent Graduate Rachel",
+        narrative="Rachel is a 23-year-old who recently graduated...",
+        references=["https://example.com/ref1"],
+    )
+
+    # Mock the create_strategy_node method to capture the call
+    mock_neo4j_ops.create_strategy_node = Mock(
+        return_value={"node_id": "icp_test_123", "display_name": "recent graduate rachel"}
+    )
+
+    # Execute
+    result = graph_builder._create_customer_profile(test_profile, account_id)
+
+    # Verify create_strategy_node was called
+    assert mock_neo4j_ops.create_strategy_node.called
+    call_args = mock_neo4j_ops.create_strategy_node.call_args
+
+    # Verify the arguments: (node_type, node_data, account_id)
+    node_type = call_args[0][0]
+    node_data = call_args[0][1]
+    passed_account_id = call_args[0][2]
+
+    # Verify node type
+    assert node_type == "CustomerProfile"
+
+    # Verify account_id
+    assert passed_account_id == account_id
+
+    # Verify node_data contains display_name
+    assert "display_name" in node_data
+    assert node_data["display_name"] == "recent graduate rachel"  # Lowercased
+
+    # Verify other expected fields
+    assert "node_id" in node_data
+    assert "description" in node_data
+    assert node_data["description"] == test_profile.narrative
+    assert "references" in node_data
+    assert node_data["references"] == test_profile.references
+
+
+def test_display_name_lowercasing(graph_builder, mock_neo4j_ops):
+    """
+    Test that display_name is properly lowercased.
+
+    This ensures consistent querying and comparison of customer profiles
+    in Neo4j regardless of the original casing from the LLM.
+    """
+    account_id = "test_acc_456"
+
+    test_cases = [
+        ("Family Manager Frank", "family manager frank"),
+        ("SMALL BUSINESS OWNER SARAH", "small business owner sarah"),
+        ("High Net Worth Henry", "high net worth henry"),
+        ("MiXeD CaSe NaMe", "mixed case name"),
+    ]
+
+    mock_neo4j_ops.create_strategy_node = Mock(return_value={"node_id": "test_id"})
+
+    for original_name, expected_lowercase in test_cases:
+        test_profile = IdealCustomerProfile(
+            display_name=original_name,
+            narrative="Test narrative",
+            references=[],
+        )
+
+        # Execute
+        graph_builder._create_customer_profile(test_profile, account_id)
+
+        # Get the last call's arguments
+        call_args = mock_neo4j_ops.create_strategy_node.call_args
+        node_data = call_args[0][1]
+
+        # Verify lowercasing
+        assert node_data["display_name"] == expected_lowercase
