@@ -521,11 +521,11 @@ class MarketingGraphBuilder:
             },
         )
 
-        if result and len(result[0]) > 0:
+        if result and len(result) > 0:
             logger.info(
                 f"Linked ProductCategory (ID: {product_category_id}) to CustomerProfile (ID: {customer_profile_id})"
             )
-            return result[0][0]
+            return result[0]
         else:
             logger.warning(
                 f"Failed to link ProductCategory {product_category_id} to CustomerProfile {customer_profile_id}"
