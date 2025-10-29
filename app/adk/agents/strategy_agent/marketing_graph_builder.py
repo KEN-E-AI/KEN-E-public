@@ -81,20 +81,31 @@ class MarketingGraphBuilder:
                 profile_node_map[icp.display_name] = customer_profile_node["node_id"]
 
             # Phase 2: For each ProductCategory, create strategies scoped to category+profile
+            # Calculate expected strategy count for validation
+            expected_strategy_count = sum(
+                len(mapping.customer_strategies) * 5  # 5 strategies per customer_strategy
+                for mapping in research_report.product_category_mappings
+            )
             logger.info(
                 f"Phase 2: Creating product-scoped marketing strategies for {len(research_report.product_category_mappings)} product categories"
             )
+            logger.info(f"Expected to create {expected_strategy_count} total strategies (5 per customer strategy)")
             logger.info(f"Product mappings data: {[(m.category_name, len(m.customer_strategies)) for m in research_report.product_category_mappings]}")
+
+            skipped_profiles = []  # Track skipped profiles for detailed error reporting
+
+            # Batch fetch all product category IDs to avoid N+1 query pattern
+            category_names = [m.category_name for m in research_report.product_category_mappings]
+            category_id_map = self._get_product_category_node_ids(category_names, account_id)
+            logger.info(f"Fetched {len(category_id_map)} product category IDs from Neo4j")
 
             for mapping in research_report.product_category_mappings:
                 logger.info(
                     f"Processing product category '{mapping.category_name}' with {len(mapping.customer_strategies)} customer strategies"
                 )
 
-                # First, get the ProductCategory node ID
-                product_category_id = self._get_product_category_node_id(
-                    mapping.category_name, account_id
-                )
+                # Get the ProductCategory node ID from pre-fetched map
+                product_category_id = category_id_map.get(mapping.category_name)
 
                 if not product_category_id:
                     logger.warning(
@@ -109,12 +120,14 @@ class MarketingGraphBuilder:
 
                     # Validate profile reference exists
                     if profile_name not in profile_node_map:
-                        logger.error(
-                            f"Profile '{profile_name}' referenced in category '{mapping.category_name}' not found in master list"
+                        skipped_profiles.append({
+                            "profile_name": profile_name,
+                            "category": mapping.category_name
+                        })
+                        logger.warning(
+                            f"Profile '{profile_name}' referenced in category '{mapping.category_name}' not found in master profile list. Skipping."
                         )
-                        raise ValueError(
-                            f"Profile reference '{profile_name}' not found in master profile list"
-                        )
+                        continue
 
                     profile_node_id = profile_node_map[profile_name]
 
@@ -181,6 +194,22 @@ class MarketingGraphBuilder:
                             relationship
                         )
 
+            # Validate strategy count
+            actual_strategy_count = len(created_nodes["problem_awareness_strategies"])
+            if actual_strategy_count != expected_strategy_count:
+                error_msg = (
+                    f"Strategy count mismatch: expected {expected_strategy_count}, "
+                    f"but created {actual_strategy_count}. "
+                )
+                if skipped_profiles:
+                    error_msg += f"Skipped {len(skipped_profiles)} profile references: "
+                    error_msg += ", ".join(
+                        f"'{s['profile_name']}' in category '{s['category']}'"
+                        for s in skipped_profiles
+                    )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
             logger.info(
                 f"Successfully created marketing graph: {len(created_nodes['customer_profiles'])} profiles, "
                 f"{len(created_nodes['problem_awareness_strategies'])} strategy sets"
@@ -191,6 +220,44 @@ class MarketingGraphBuilder:
             logger.error(f"Failed to build marketing graph: {e}", exc_info=True)
             logger.error(f"Exception type: {type(e).__name__}, Exception args: {e.args}")
             raise
+
+    def _get_product_category_node_ids(
+        self, category_names: list[str], account_id: str
+    ) -> dict[str, str]:
+        """
+        Get node_ids for multiple ProductCategories by name in a single query.
+
+        This method batches multiple category lookups to avoid N+1 query pattern.
+
+        Args:
+            category_names: List of product category names
+            account_id: Account identifier
+
+        Returns:
+            Dictionary mapping category_name -> node_id for found categories
+        """
+        if not category_names:
+            return {}
+
+        query = """
+        MATCH (pc:ProductCategory)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        WHERE toLower(pc.product_name) IN [name IN $category_names | toLower(name)]
+        RETURN pc.product_name as category_name, pc.node_id as node_id
+        """
+        result = self.neo4j_ops.connection.execute_query(
+            query,
+            {"account_id": account_id, "category_names": category_names},
+        )
+
+        # Build mapping of category_name -> node_id (case-insensitive match)
+        category_map = {}
+        for row in result:
+            category_name = row["category_name"]
+            node_id = row["node_id"]
+            # Store with original case from database
+            category_map[category_name] = node_id
+
+        return category_map
 
     def _get_product_category_node_id(
         self, category_name: str, account_id: str

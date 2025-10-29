@@ -173,20 +173,20 @@ def create_agent_from_firestore_config(
         f"model: {config.model})"
     )
 
-    # DEBUG: Log system instructions preview for marketing agents
-    if doc_id in ["marketing_researcher", "marketing_formatter"]:
+    # DEBUG: Log system instructions preview for marketing agents (only at DEBUG level)
+    if logger.isEnabledFor(logging.DEBUG) and doc_id in ["marketing_researcher", "marketing_formatter"]:
         instructions = getattr(config, "system_instruction", "")
-        logger.info(f"[DEBUG] {doc_id} config loaded:")
-        logger.info(f"  - Version: {metadata.get('version', 'MISSING')}")
-        logger.info(f"  - Updated at: {metadata.get('updated_at', 'MISSING')}")
-        logger.info(f"  - Updated by: {metadata.get('updated_by', 'MISSING')}")
-        logger.info(f"  - Instructions length: {len(instructions)} chars")
-        logger.info(f"  - First 300 chars: {instructions[:300]}")
-        logger.info(f"  - Schema indicators:")
-        logger.info(f"    * Has 'customer_strategies': {'customer_strategies' in instructions}")
-        logger.info(f"    * Has 'MarketingStrategyForProfile': {'MarketingStrategyForProfile' in instructions}")
-        logger.info(f"    * Has 'ideal_customer_profiles: List': {'ideal_customer_profiles: List' in instructions}")
-        logger.info(f"    * Has OLD 'product_categories': {'product_categories' in instructions}")
+        logger.debug(f"[DEBUG] {doc_id} config loaded:")
+        logger.debug(f"  - Version: {metadata.get('version', 'MISSING')}")
+        logger.debug(f"  - Updated at: {metadata.get('updated_at', 'MISSING')}")
+        logger.debug(f"  - Updated by: {metadata.get('updated_by', 'MISSING')}")
+        logger.debug(f"  - Instructions length: {len(instructions)} chars")
+        logger.debug(f"  - First 300 chars: {instructions[:300]}")
+        logger.debug(f"  - Schema indicators:")
+        logger.debug(f"    * Has 'customer_strategies': {'customer_strategies' in instructions}")
+        logger.debug(f"    * Has 'MarketingStrategyForProfile': {'MarketingStrategyForProfile' in instructions}")
+        logger.debug(f"    * Has 'ideal_customer_profiles: List': {'ideal_customer_profiles: List' in instructions}")
+        logger.debug(f"    * Has OLD 'product_categories': {'product_categories' in instructions}")
 
     # Log config metadata to Weave using call.summary
     if WEAVE_AVAILABLE and weave:

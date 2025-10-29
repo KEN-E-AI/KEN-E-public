@@ -7,7 +7,7 @@ into Neo4j graph nodes and relationships.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 # Use relative imports to work both in tests and when deployed
 try:
@@ -222,10 +222,12 @@ def test_build_marketing_graph_with_valid_product_categories(
     graph_builder.build_marketing_graph(sample_marketing_report, account_id)
 
     # Verify customer profiles were created
-    assert len(profile_node_ids) == 4
+    expected_profile_count = len(sample_marketing_report.ideal_customer_profiles)
+    assert len(profile_node_ids) == expected_profile_count
 
     # Verify product category lookups were called correctly
-    assert mock_neo4j_ops.connection.execute_query.call_count == 3
+    expected_category_count = len(sample_marketing_report.product_category_mappings)
+    assert mock_neo4j_ops.connection.execute_query.call_count == expected_category_count
 
     # Verify the query structure for product category lookups
     first_call = mock_neo4j_ops.connection.execute_query.call_args_list[0]
@@ -239,7 +241,11 @@ def test_build_marketing_graph_with_valid_product_categories(
     assert params["category_name"] == "Consumer Banking"
 
     # Verify strategies were created for all valid mappings
-    assert len(created_strategies) == 4
+    expected_strategy_count = sum(
+        len(mapping.customer_strategies)
+        for mapping in sample_marketing_report.product_category_mappings
+    )
+    assert len(created_strategies) == expected_strategy_count
 
     # Verify Student Steve strategies
     steve_strategies = [
@@ -404,7 +410,12 @@ def test_build_marketing_graph_skips_invalid_product_categories(
 
     # Verify: Only strategies for Business Banking and Wealth Management were created
     # Consumer Banking strategies (Student Steve and Maria) should be skipped
-    assert len(created_strategies) == 2
+    # Calculate expected count: mappings[1] (Business Banking) + mappings[2] (Wealth Management)
+    expected_strategies = sum(
+        len(mapping.customer_strategies)
+        for mapping in sample_marketing_report.product_category_mappings[1:]  # Skip first (Consumer Banking)
+    )
+    assert len(created_strategies) == expected_strategies
 
     # Verify Sam's strategy was created
     sam_strategies = [
@@ -597,3 +608,207 @@ def test_display_name_lowercasing(graph_builder, mock_neo4j_ops):
 
         # Verify lowercasing
         assert node_data["display_name"] == expected_lowercase
+
+
+def test_build_graph_with_nonexistent_profile_reference(
+    graph_builder, mock_neo4j_ops
+):
+    """
+    Test that build_marketing_graph raises ValueError when a customer strategy
+    references a profile that doesn't exist in the master profile list.
+
+    This validates the strategy count validation that detects skipped profiles.
+    """
+    account_id = "test_acc_123"
+
+    # Create report with profile reference mismatch
+    report = MarketingResearchReport(
+        ideal_customer_profiles=[
+            IdealCustomerProfile(
+                display_name="Student Steve",
+                narrative="Steve is a student...",
+                references=[],
+            ),
+        ],
+        product_category_mappings=[
+            ProductCategoryMapping(
+                category_name="Consumer Banking",
+                customer_strategies=[
+                    CustomerStrategy(
+                        customer_profile_name="Non-Existent Profile",  # Mismatch!
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="Strategy text...",
+                            brand_awareness_strategy="Strategy text...",
+                            consideration_strategy="Strategy text...",
+                            conversion_strategy="Strategy text...",
+                            loyalty_strategy="Strategy text...",
+                            references=[],
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Mock Neo4j to return a valid product category
+    mock_neo4j_ops.connection.execute_query.return_value = [
+        {"node_id": "prod_consumer_banking_001"}
+    ]
+    mock_neo4j_ops.create_strategy_node = Mock()
+
+    # Execute and expect ValueError
+    with pytest.raises(ValueError) as exc_info:
+        graph_builder.build_marketing_graph(report, account_id, "user_123")
+
+    # Verify error message contains details
+    error_msg = str(exc_info.value)
+    assert "Strategy count mismatch" in error_msg
+    assert "expected 1" in error_msg
+    assert "created 0" in error_msg
+    assert "Non-Existent Profile" in error_msg
+
+
+def test_build_graph_with_all_strategies_skipped(
+    graph_builder, mock_neo4j_ops
+):
+    """
+    Test that build_marketing_graph raises ValueError when all strategies
+    are skipped due to profile name mismatches.
+    """
+    account_id = "test_acc_456"
+
+    # Create report where NO profiles match
+    report = MarketingResearchReport(
+        ideal_customer_profiles=[
+            IdealCustomerProfile(
+                display_name="Student Steve",
+                narrative="Steve is a student...",
+                references=[],
+            ),
+            IdealCustomerProfile(
+                display_name="Business Owner Beth",
+                narrative="Beth owns a business...",
+                references=[],
+            ),
+        ],
+        product_category_mappings=[
+            ProductCategoryMapping(
+                category_name="Consumer Banking",
+                customer_strategies=[
+                    CustomerStrategy(
+                        customer_profile_name="Wrong Name 1",
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="...",
+                            brand_awareness_strategy="...",
+                            consideration_strategy="...",
+                            conversion_strategy="...",
+                            loyalty_strategy="...",
+                            references=[],
+                        ),
+                    ),
+                ],
+            ),
+            ProductCategoryMapping(
+                category_name="Business Banking",
+                customer_strategies=[
+                    CustomerStrategy(
+                        customer_profile_name="Wrong Name 2",
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="...",
+                            brand_awareness_strategy="...",
+                            consideration_strategy="...",
+                            conversion_strategy="...",
+                            loyalty_strategy="...",
+                            references=[],
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Mock Neo4j to return valid product categories
+    mock_neo4j_ops.connection.execute_query.side_effect = [
+        [{"node_id": "prod_consumer_001"}],
+        [{"node_id": "prod_business_002"}],
+    ]
+    mock_neo4j_ops.create_strategy_node = Mock()
+
+    # Execute and expect ValueError
+    with pytest.raises(ValueError) as exc_info:
+        graph_builder.build_marketing_graph(report, account_id, "user_456")
+
+    # Verify error contains both skipped profiles
+    error_msg = str(exc_info.value)
+    assert "expected 2" in error_msg
+    assert "created 0" in error_msg
+    assert "Skipped 2 profile references" in error_msg
+    assert "Wrong Name 1" in error_msg
+    assert "Wrong Name 2" in error_msg
+
+
+def test_build_graph_with_partial_profile_matches(
+    graph_builder, mock_neo4j_ops
+):
+    """
+    Test that build_marketing_graph raises ValueError when some (but not all)
+    profile references don't match, providing detailed error information.
+    """
+    account_id = "test_acc_789"
+
+    # Create report with mix of valid and invalid references
+    report = MarketingResearchReport(
+        ideal_customer_profiles=[
+            IdealCustomerProfile(
+                display_name="Student Steve",
+                narrative="Steve is a student...",
+                references=[],
+            ),
+        ],
+        product_category_mappings=[
+            ProductCategoryMapping(
+                category_name="Consumer Banking",
+                customer_strategies=[
+                    CustomerStrategy(
+                        customer_profile_name="Student Steve",  # Valid
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="...",
+                            brand_awareness_strategy="...",
+                            consideration_strategy="...",
+                            conversion_strategy="...",
+                            loyalty_strategy="...",
+                            references=[],
+                        ),
+                    ),
+                    CustomerStrategy(
+                        customer_profile_name="Invalid Profile",  # Invalid
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="...",
+                            brand_awareness_strategy="...",
+                            consideration_strategy="...",
+                            conversion_strategy="...",
+                            loyalty_strategy="...",
+                            references=[],
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Mock Neo4j responses
+    mock_neo4j_ops.connection.execute_query.return_value = [
+        {"node_id": "prod_consumer_001"}
+    ]
+    mock_neo4j_ops.create_strategy_node = Mock()
+
+    # Execute and expect ValueError
+    with pytest.raises(ValueError) as exc_info:
+        graph_builder.build_marketing_graph(report, account_id, "user_789")
+
+    # Verify error shows partial success
+    error_msg = str(exc_info.value)
+    assert "expected 2" in error_msg
+    assert "created 1" in error_msg
+    assert "Skipped 1 profile references" in error_msg
+    assert "Invalid Profile" in error_msg
