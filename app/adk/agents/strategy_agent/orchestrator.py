@@ -500,6 +500,7 @@ def execute_strategy_generation_direct(
                 google_search_agent
             ),
             "create_formatter": create_business_formatter,
+            "formatter_doc_id": "business_formatter",
             "model_class": StructuredBusinessStrategy,
             "graph_builder_class": GraphBuilder,
             "graph_method": "build_strategy_graph",
@@ -510,6 +511,7 @@ def execute_strategy_generation_direct(
                 google_search_agent
             ),
             "create_formatter": create_competitive_formatter,
+            "formatter_doc_id": "competitive_formatter",
             "model_class": CompetitiveAnalysis,
             "graph_builder_class": CompetitiveGraphBuilder,
             "graph_method": "build_competitive_graph",
@@ -529,6 +531,7 @@ def execute_strategy_generation_direct(
             "name": "brand_guidelines",
             "create_researcher": lambda: create_brand_researcher(google_search_agent),
             "create_formatter": create_brand_formatter,
+            "formatter_doc_id": "brand_formatter",
             "model_class": BrandGuidelines,
             "graph_builder_class": BrandGraphBuilder,
             "graph_method": "build_brand_graph",
