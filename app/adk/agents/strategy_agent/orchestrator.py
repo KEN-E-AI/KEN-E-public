@@ -520,6 +520,7 @@ def execute_strategy_generation_direct(
                 google_search_agent
             ),
             "create_formatter": create_marketing_formatter,
+            "formatter_doc_id": "marketing_formatter",
             "model_class": MarketingResearchReport,
             "graph_builder_class": MarketingGraphBuilder,
             "graph_method": "build_marketing_graph",
@@ -676,16 +677,32 @@ def execute_strategy_generation_direct(
             logger.info(f"[SPLIT AGENT] Step 2: Format phase for {strategy_name}")
             formatter = strategy_config["create_formatter"]()
 
-            # Extract Firestore instructions immediately after formatter creation
-            # This ensures we have them even if the formatter fails during execution
-            firestore_instructions = getattr(formatter, "system_instructions", None)
-            if firestore_instructions:
-                logger.info(
-                    f"[SPLIT AGENT] Extracted Firestore instructions for {strategy_name} formatter"
-                )
+            # Load Firestore instructions directly from config if formatter_doc_id is provided
+            # This ensures we have them for OpenAI fallback even if Gemini formatter fails
+            firestore_instructions = None
+            if "formatter_doc_id" in strategy_config:
+                try:
+                    from .config_loader import load_config_from_firestore
+                    config, _ = load_config_from_firestore(strategy_config["formatter_doc_id"])
+                    # Try both field names: 'instruction' (Firestore field name) and 'system_instruction' (ADK field name)
+                    firestore_instructions = getattr(config, "instruction", None) or getattr(config, "system_instruction", None)
+                    if firestore_instructions:
+                        logger.info(
+                            f"[SPLIT AGENT] ✅ Loaded Firestore instructions for {strategy_name} formatter "
+                            f"(length: {len(firestore_instructions)} chars, type: {type(firestore_instructions).__name__})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[SPLIT AGENT] ⚠️ Config loaded but no system_instruction found for {strategy_name} "
+                            f"(value: {repr(firestore_instructions)})"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"[SPLIT AGENT] ⚠️ Failed to load Firestore instructions for {strategy_name}: {e}"
+                    )
             else:
-                logger.info(
-                    f"[SPLIT AGENT] No Firestore instructions found for {strategy_name} formatter"
+                logger.warning(
+                    f"[SPLIT AGENT] ⚠️ No formatter_doc_id in config for {strategy_name}, cannot load Firestore instructions"
                 )
 
             # Try Gemini formatter first
@@ -757,6 +774,17 @@ Research text:
                 logger.warning(
                     f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI"
                 )
+                # Log the instructions being passed to OpenAI fallback
+                if firestore_instructions:
+                    logger.info(
+                        f"[SPLIT AGENT] Passing Firestore instructions to OpenAI fallback "
+                        f"(length: {len(firestore_instructions)} chars)"
+                    )
+                else:
+                    logger.warning(
+                        f"[SPLIT AGENT] ⚠️ No Firestore instructions available for OpenAI fallback "
+                        f"(value: {repr(firestore_instructions)})"
+                    )
                 # Fallback to OpenAI using shared formatter
                 try:
                     openai_dict = format_with_openai(

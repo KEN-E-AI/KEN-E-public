@@ -234,6 +234,9 @@ Please execute strategy generation with these parameters:
                         "STRATEGY_SUPERVISOR_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not configured"
                     )
 
+                # TEMPORARY DEBUG LOGGING
+                logger.info(f"🔍 DEBUG: Using agent_engine_id: {agent_engine_id}")
+
                 # Initialize Vertex AI
                 vertexai.init(project=project_id, location=location)
 

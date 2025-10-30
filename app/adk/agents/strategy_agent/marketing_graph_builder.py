@@ -66,7 +66,7 @@ class MarketingGraphBuilder:
             }
 
             # Phase 1: Create master CustomerProfile nodes (2-5 total, NO strategies)
-            profile_node_map = {}  # display_name -> node_id
+            profile_node_map = {}  # lowercase display_name -> node_id
 
             logger.info(
                 f"Phase 1: Creating {len(research_report.ideal_customer_profiles)} master customer profiles (without strategies)"
@@ -78,7 +78,10 @@ class MarketingGraphBuilder:
                 # Create CustomerProfile node (no strategies attached yet)
                 customer_profile_node = self._create_customer_profile(icp, account_id)
                 created_nodes["customer_profiles"].append(customer_profile_node)
-                profile_node_map[icp.display_name] = customer_profile_node["node_id"]
+                # Store with lowercase key and strip whitespace for case-insensitive lookup
+                profile_key = icp.display_name.lower().strip()
+                profile_node_map[profile_key] = customer_profile_node["node_id"]
+                logger.info(f"Stored profile in map with key: '{profile_key}' (length: {len(profile_key)})")
 
             # Phase 2: For each ProductCategory, create strategies scoped to category+profile
             # Calculate expected strategy count for validation
@@ -91,13 +94,16 @@ class MarketingGraphBuilder:
             )
             logger.info(f"Expected to create {expected_strategy_count} total strategies (5 per customer strategy)")
             logger.info(f"Product mappings data: {[(m.category_name, len(m.customer_strategies)) for m in research_report.product_category_mappings]}")
+            logger.info(f"Available profile keys in map: {list(profile_node_map.keys())}")
 
             skipped_profiles = []  # Track skipped profiles for detailed error reporting
 
             # Batch fetch all product category IDs to avoid N+1 query pattern
             category_names = [m.category_name for m in research_report.product_category_mappings]
+            logger.info(f"Attempting to fetch product categories: {category_names}")
             category_id_map = self._get_product_category_node_ids(category_names, account_id)
-            logger.info(f"Fetched {len(category_id_map)} product category IDs from Neo4j")
+            logger.info(f"Fetched {len(category_id_map)} product category IDs from Neo4j: {category_id_map}")
+            logger.info(f"Categories requested but not found: {[name for name in category_names if name not in category_id_map]}")
 
             for mapping in research_report.product_category_mappings:
                 logger.info(
@@ -116,20 +122,23 @@ class MarketingGraphBuilder:
                 # For each customer strategy in this product category
                 for customer_strategy in mapping.customer_strategies:
                     profile_name = customer_strategy.customer_profile_name
+                    profile_name_lower = profile_name.lower().strip()  # Normalize for lookup
                     strategy = customer_strategy.strategy
 
-                    # Validate profile reference exists
-                    if profile_name not in profile_node_map:
+                    logger.info(f"Looking up profile with key: '{profile_name_lower}' (length: {len(profile_name_lower)}) for category '{mapping.category_name}'")
+
+                    # Validate profile reference exists (case-insensitive)
+                    if profile_name_lower not in profile_node_map:
                         skipped_profiles.append({
                             "profile_name": profile_name,
                             "category": mapping.category_name
                         })
                         logger.warning(
-                            f"Profile '{profile_name}' referenced in category '{mapping.category_name}' not found in master profile list. Skipping."
+                            f"Profile '{profile_name}' (normalized: '{profile_name_lower}', length: {len(profile_name_lower)}) referenced in category '{mapping.category_name}' not found in master profile list. Available keys: {list(profile_node_map.keys())}"
                         )
                         continue
 
-                    profile_node_id = profile_node_map[profile_name]
+                    profile_node_id = profile_node_map[profile_name_lower]
 
                     logger.info(
                         f"Creating strategies for '{profile_name}' in category '{mapping.category_name}'"
@@ -194,8 +203,15 @@ class MarketingGraphBuilder:
                             relationship
                         )
 
-            # Validate strategy count
-            actual_strategy_count = len(created_nodes["problem_awareness_strategies"])
+            # Validate strategy count - we create 5 strategy types per profile
+            # Count all created strategies across all 5 types
+            actual_strategy_count = (
+                len(created_nodes["problem_awareness_strategies"])
+                + len(created_nodes["brand_awareness_strategies"])
+                + len(created_nodes["consideration_strategies"])
+                + len(created_nodes["conversion_strategies"])
+                + len(created_nodes["loyalty_strategies"])
+            )
             if actual_strategy_count != expected_strategy_count:
                 error_msg = (
                     f"Strategy count mismatch: expected {expected_strategy_count}, "
@@ -244,6 +260,7 @@ class MarketingGraphBuilder:
         WHERE toLower(pc.product_name) IN [name IN $category_names | toLower(name)]
         RETURN pc.product_name as category_name, pc.node_id as node_id
         """
+        logger.info(f"Querying Neo4j for product categories with account_id: {account_id}, category_names: {category_names}")
         result = self.neo4j_ops.connection.execute_query(
             query,
             {"account_id": account_id, "category_names": category_names},
@@ -251,9 +268,11 @@ class MarketingGraphBuilder:
 
         # Build mapping of category_name -> node_id (case-insensitive match)
         category_map = {}
-        for row in result:
-            category_name = row["category_name"]
-            node_id = row["node_id"]
+        logger.info(f"Neo4j query returned {len(result)} rows")
+        for record in result:
+            category_name = record["category_name"]
+            node_id = record["node_id"]
+            logger.info(f"Found ProductCategory in Neo4j: '{category_name}' -> {node_id}")
             # Store with original case from database
             category_map[category_name] = node_id
 
@@ -293,6 +312,7 @@ class MarketingGraphBuilder:
         Create CustomerProfile node with identifying information only.
 
         Note: Strategies are NOT created here. They are created per product category.
+        Note: created_time, last_modified, created_by, last_modified_by are set by create_strategy_node
         """
         # Generate unique ID
         node_id = f"icp_{uuid.uuid4().hex}"
@@ -309,7 +329,7 @@ class MarketingGraphBuilder:
             "embedding": None,
         }
 
-        # Use create_strategy_node which handles MERGE
+        # Use create_strategy_node which handles MERGE and sets timestamps/audit fields
         self.neo4j_ops.create_strategy_node("CustomerProfile", node_data, account_id)
         return node_data
 
