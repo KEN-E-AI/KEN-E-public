@@ -30,11 +30,8 @@ const ReCaptchaWrapper = ({ children }: ReCaptchaWrapperProps) => {
     return <>{children}</>;
   }
 
-  if (!isReady) {
-    // Return children without provider during initialization
-    return <>{children}</>;
-  }
-
+  // Always wrap with provider, but only render children when ready
+  // This ensures the provider context is available when useGoogleReCaptcha hook is called
   return (
     <GoogleReCaptchaProvider
       reCaptchaKey={siteKey}
@@ -45,7 +42,7 @@ const ReCaptchaWrapper = ({ children }: ReCaptchaWrapperProps) => {
       }}
       container={{ parameters: { theme: "light" } }}
     >
-      {children}
+      {isReady ? children : <div>Loading...</div>}
     </GoogleReCaptchaProvider>
   );
 };

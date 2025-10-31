@@ -6,12 +6,37 @@
  */
 
 import { SecretManagerServiceClient } from "@google-cloud/secret-manager";
+import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/**
+ * Get GCP project number from gcloud.
+ */
+function getProjectNumber() {
+  try {
+    const projectNumber = execSync(
+      "gcloud projects describe $(gcloud config get-value project) --format='value(projectNumber)'",
+      { encoding: "utf8" }
+    ).trim();
+
+    if (projectNumber && projectNumber !== "(unset)") {
+      console.log(`Detected project number from gcloud: ${projectNumber}`);
+      return projectNumber;
+    }
+  } catch (error) {
+    console.error("Failed to get project number from gcloud:", error.message);
+    throw new Error(
+      "Could not determine GCP project number. Please ensure you are authenticated with gcloud."
+    );
+  }
+
+  throw new Error("Project number not found in gcloud config");
+}
 
 async function getSecret(secretPath, serviceAccountPath) {
   try {
@@ -64,6 +89,9 @@ async function resolveSecrets(envFile) {
     console.warn(`Will fall back to Application Default Credentials`);
   }
 
+  // Get project number dynamically from gcloud
+  const projectNumber = getProjectNumber();
+
   const envContent = fs.readFileSync(envPath, "utf8");
   const lines = envContent.split("\n");
   const resolvedLines = [];
@@ -81,16 +109,28 @@ async function resolveSecrets(envFile) {
     }
 
     const cleanValue = value.trim();
+    let secretPath = null;
 
-    // Check if the value looks like a Secret Manager path
-    if (
+    // Check if value uses sm:// prefix (Python-style secret reference)
+    if (cleanValue.startsWith("sm://")) {
+      const secretName = cleanValue.substring(5); // Remove "sm://" prefix
+      secretPath = `projects/${projectNumber}/secrets/${secretName}/versions/latest`;
+      console.log(`Expanding sm://${secretName} to ${secretPath}`);
+    }
+    // Check if value is already a full Secret Manager path
+    else if (
       cleanValue.startsWith("projects/") &&
       cleanValue.includes("/secrets/") &&
       cleanValue.includes("/versions/")
     ) {
+      secretPath = cleanValue;
+    }
+
+    // Fetch secret if we identified a secret path
+    if (secretPath) {
       try {
         console.log(`Resolving secret for ${key}...`);
-        const secretValue = await getSecret(cleanValue, serviceAccountPath);
+        const secretValue = await getSecret(secretPath, serviceAccountPath);
         resolvedLines.push(`${key}=${secretValue}`);
       } catch (error) {
         console.error(
@@ -108,8 +148,18 @@ async function resolveSecrets(envFile) {
   fs.writeFileSync(resolvedEnvPath, resolvedLines.join("\n"));
   console.log(`Resolved secrets written to .env.resolved`);
 
-  // Also create a .env.local file for Vite to pick up during development
-  const envLocalPath = path.join(__dirname, "..", ".env.local");
+  // Create environment-specific .local file for Vite (highest priority)
+  // This ensures resolved secrets override the sm:// references
+  let envLocalPath;
+  if (envFile.includes("development")) {
+    envLocalPath = path.join(__dirname, "..", ".env.development.local");
+  } else if (envFile.includes("staging")) {
+    envLocalPath = path.join(__dirname, "..", ".env.staging.local");
+  } else if (envFile.includes("production")) {
+    envLocalPath = path.join(__dirname, "..", ".env.production.local");
+  } else {
+    envLocalPath = path.join(__dirname, "..", ".env.local");
+  }
 
   // Only write secrets-related variables to .env.local to avoid conflicts
   const secretLines = resolvedLines.filter((line) => {
@@ -130,7 +180,8 @@ async function resolveSecrets(envFile) {
   if (secretLines.length > 1) {
     // More than just empty/comment lines
     fs.writeFileSync(envLocalPath, secretLines.join("\n"));
-    console.log(`Secret environment variables written to .env.local`);
+    console.log(`Secret environment variables written to ${path.basename(envLocalPath)}`);
+    console.log(`NOTE: Vite will load ${path.basename(envLocalPath)} with highest priority`);
   }
 }
 
