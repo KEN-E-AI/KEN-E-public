@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class MarketingGraphBuilder:
     """Builds marketing strategy knowledge graph in Neo4j."""
 
-    def __init__(self, neo4j_ops: Neo4jOperations):
+    def __init__(self, neo4j_ops: Neo4jOperations) -> None:
         """
         Initialize graph builder.
 
