@@ -12,7 +12,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 # Import weave for tracing
 import weave  # noqa: E402
@@ -150,9 +150,9 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
     from .marketing_models import (
         IdealCustomerProfile,
         MarketingResearchReport,
-    )
-    from .marketing_models import (
-        ProductCategory as MarketingProductCategory,
+        MarketingStrategy,
+        MarketingStrategyForProfile,
+        ProductCategoryMapping,
     )
     from .structured_models import (
         ProductCategory,
@@ -278,23 +278,50 @@ def _create_placeholder_strategy(model_class, strategy_name: str, company_name: 
         )
 
     elif model_class == MarketingResearchReport:
-        # Marketing: Create customer profile
+        # Marketing: Create master customer profiles and category mappings
+        # Note: Strategies are now scoped to product category + profile combinations
         return MarketingResearchReport(
-            product_categories=[
-                MarketingProductCategory(
+            ideal_customer_profiles=[
+                IdealCustomerProfile(
+                    display_name="Placeholder Customer",
+                    narrative=f"Customer analysis for {company_name} requires further research.",
+                    references=[],
+                ),
+                IdealCustomerProfile(
+                    display_name="Generic Buyer",
+                    narrative=f"Generic buyer profile for {company_name} requires further research.",
+                    references=[],
+                ),
+            ],
+            product_category_mappings=[
+                ProductCategoryMapping(
                     category_name="Primary Products",
-                    ideal_customer_profiles=[
-                        IdealCustomerProfile(
-                            narrative=f"Customer analysis for {company_name} requires further research.",
-                            problem_awareness_strategy="Requires further research",
-                            brand_awareness_strategy="Requires further research",
-                            consideration_strategy="Requires further research",
-                            conversion_strategy="Requires further research",
-                            loyalty_strategy="Requires further research",
-                        )
+                    customer_strategies=[
+                        MarketingStrategyForProfile(
+                            customer_profile_name="Placeholder Customer",
+                            strategy=MarketingStrategy(
+                                problem_awareness_strategy="Requires further research",
+                                brand_awareness_strategy="Requires further research",
+                                consideration_strategy="Requires further research",
+                                conversion_strategy="Requires further research",
+                                loyalty_strategy="Requires further research",
+                                references=[],
+                            ),
+                        ),
+                        MarketingStrategyForProfile(
+                            customer_profile_name="Generic Buyer",
+                            strategy=MarketingStrategy(
+                                problem_awareness_strategy="Requires further research",
+                                brand_awareness_strategy="Requires further research",
+                                consideration_strategy="Requires further research",
+                                conversion_strategy="Requires further research",
+                                loyalty_strategy="Requires further research",
+                                references=[],
+                            ),
+                        ),
                     ],
                 )
-            ]
+            ],
         )
 
     elif model_class == BrandGuidelines:
@@ -473,6 +500,7 @@ def execute_strategy_generation_direct(
                 google_search_agent
             ),
             "create_formatter": create_business_formatter,
+            "formatter_doc_id": "business_formatter",
             "model_class": StructuredBusinessStrategy,
             "graph_builder_class": GraphBuilder,
             "graph_method": "build_strategy_graph",
@@ -483,6 +511,7 @@ def execute_strategy_generation_direct(
                 google_search_agent
             ),
             "create_formatter": create_competitive_formatter,
+            "formatter_doc_id": "competitive_formatter",
             "model_class": CompetitiveAnalysis,
             "graph_builder_class": CompetitiveGraphBuilder,
             "graph_method": "build_competitive_graph",
@@ -493,6 +522,7 @@ def execute_strategy_generation_direct(
                 google_search_agent
             ),
             "create_formatter": create_marketing_formatter,
+            "formatter_doc_id": "marketing_formatter",
             "model_class": MarketingResearchReport,
             "graph_builder_class": MarketingGraphBuilder,
             "graph_method": "build_marketing_graph",
@@ -501,6 +531,7 @@ def execute_strategy_generation_direct(
             "name": "brand_guidelines",
             "create_researcher": lambda: create_brand_researcher(google_search_agent),
             "create_formatter": create_brand_formatter,
+            "formatter_doc_id": "brand_formatter",
             "model_class": BrandGuidelines,
             "graph_builder_class": BrandGraphBuilder,
             "graph_method": "build_brand_graph",
@@ -566,11 +597,30 @@ def execute_strategy_generation_direct(
 
             # For marketing strategy, include ProductCategory names from business strategy
             if strategy_name == "marketing_strategy" and product_category_names:
-                research_query += "\nIMPORTANT: Generate customer profiles for these specific product categories:\n"
+                research_query += (
+                    "\n\n=== CRITICAL STRUCTURE REQUIREMENTS ===\n"
+                )
+                research_query += "\nPHASE 1: Create 2-5 MASTER customer profiles for the entire company\n"
+                research_query += "- Give each profile a unique, descriptive display_name (e.g., 'Marketing Manager Mary', 'Technical Director Tom')\n"
+                research_query += "- Include ONLY: display_name, narrative (persona background/needs/motivations), references\n"
+                research_query += "- Do NOT include strategies in profiles - strategies are created separately per product category\n"
+                research_query += "- Focus on distinct customer segments with different needs, behaviors, and buying patterns\n"
+                research_query += "\nPHASE 2: For EACH product category below, create marketing strategies for relevant profiles\n"
+                research_query += "Product categories:\n"
                 for cat_name in product_category_names:
                     research_query += f"- {cat_name}\n"
+                research_query += "\nFor each category:\n"
+                research_query += "1. Identify which 1-5 master profiles are most relevant to this category\n"
+                research_query += "2. For EACH relevant profile, create a COMPLETE 5-stage marketing strategy:\n"
+                research_query += "   - problem_awareness_strategy (how to make this profile aware of problems this category solves)\n"
+                research_query += "   - brand_awareness_strategy (how to make this profile aware of our brand for this category)\n"
+                research_query += "   - consideration_strategy (how to persuade this profile to evaluate this category)\n"
+                research_query += "   - conversion_strategy (how to convert this profile to purchase this category)\n"
+                research_query += "   - loyalty_strategy (how to build loyalty with this profile after purchasing this category)\n"
+                research_query += "\nIMPORTANT: Each strategy is SPECIFIC to the combination of product category + customer profile.\n"
+                research_query += "The same profile can have DIFFERENT strategies for different categories.\n"
                 logger.info(
-                    f"[COORDINATION] Passing {len(product_category_names)} ProductCategory names to marketing research"
+                    f"[COORDINATION] Passing {len(product_category_names)} ProductCategory names to marketing research with product-scoped strategy instructions"
                 )
 
             message_content = Content(role="user", parts=[{"text": research_query}])
@@ -629,6 +679,34 @@ def execute_strategy_generation_direct(
             # ===== STEP 2: FORMAT (no tools, with schema) =====
             logger.info(f"[SPLIT AGENT] Step 2: Format phase for {strategy_name}")
             formatter = strategy_config["create_formatter"]()
+
+            # Load Firestore instructions directly from config if formatter_doc_id is provided
+            # This ensures we have them for OpenAI fallback even if Gemini formatter fails
+            firestore_instructions = None
+            if "formatter_doc_id" in strategy_config:
+                try:
+                    from .config_loader import load_config_from_firestore
+                    config, _ = load_config_from_firestore(strategy_config["formatter_doc_id"])
+                    # Try both field names: 'instruction' (Firestore field name) and 'system_instruction' (ADK field name)
+                    firestore_instructions = getattr(config, "instruction", None) or getattr(config, "system_instruction", None)
+                    if firestore_instructions:
+                        logger.info(
+                            f"[SPLIT AGENT] ✅ Loaded Firestore instructions for {strategy_name} formatter "
+                            f"(length: {len(firestore_instructions)} chars, type: {type(firestore_instructions).__name__})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[SPLIT AGENT] ⚠️ Config loaded but no system_instruction found for {strategy_name} "
+                            f"(value: {repr(firestore_instructions)})"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"[SPLIT AGENT] ⚠️ Failed to load Firestore instructions for {strategy_name}: {e}"
+                    )
+            else:
+                logger.warning(
+                    f"[SPLIT AGENT] ⚠️ No formatter_doc_id in config for {strategy_name}, cannot load Firestore instructions"
+                )
 
             # Try Gemini formatter first
             formatted_data = None
@@ -699,6 +777,17 @@ Research text:
                 logger.warning(
                     f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI"
                 )
+                # Log the instructions being passed to OpenAI fallback
+                if firestore_instructions:
+                    logger.info(
+                        f"[SPLIT AGENT] Passing Firestore instructions to OpenAI fallback "
+                        f"(length: {len(firestore_instructions)} chars)"
+                    )
+                else:
+                    logger.warning(
+                        f"[SPLIT AGENT] ⚠️ No Firestore instructions available for OpenAI fallback "
+                        f"(value: {repr(firestore_instructions)})"
+                    )
                 # Fallback to OpenAI using shared formatter
                 try:
                     openai_dict = format_with_openai(
@@ -706,6 +795,7 @@ Research text:
                         strategy_config["model_class"],
                         strategy_name,
                         source_urls,
+                        custom_instructions=firestore_instructions,
                     )
                     formatted_data = strategy_config["model_class"](**openai_dict)
                     used_openai = True
@@ -859,7 +949,7 @@ def execute_strategy_generation(
     user_id: str,
     annual_ad_budget: float = 0.0,
     project_id: Optional[str] = None,
-    uploaded_documents: Optional[list[str]] = None,
+    uploaded_documents: Optional[List[str]] = None,
     enable_analytics: bool = True,
 ) -> str:
     """
@@ -1223,9 +1313,9 @@ def process_and_save_documents_with_analytics(
     account_id: str,
     user_id: str,
     firestore_client: FirestoreClient,
-    analytics_service: Optional[AnalyticsService] = None,
-    performance_profiler: Optional[PerformanceProfiler] = None,
-    alert_manager: Optional[AlertManager] = None,
+    analytics_service: AnalyticsService | None = None,
+    performance_profiler: PerformanceProfiler | None = None,
+    alert_manager: AlertManager | None = None,
 ) -> dict[str, Any]:
     """
     Process execution events and save documents to Firestore with analytics tracking.

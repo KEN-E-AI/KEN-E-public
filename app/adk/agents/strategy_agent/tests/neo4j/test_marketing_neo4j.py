@@ -294,11 +294,11 @@ Ensure all required fields are populated with rich, detailed content.""",
                 if not validation_passed:
                     raise ValueError("Graph creation incomplete - some nodes missing")
 
-                # Check ARE_SOLD_TO relationships
-                are_sold_to_count = len(
-                    graph_nodes.get("are_sold_to_relationships", [])
+                # Check IS_MARKETED_TO relationships
+                is_marketed_to_count = len(
+                    graph_nodes.get("is_marketed_to_relationships", [])
                 )
-                print(f"   ✅ ARE_SOLD_TO relationships: {are_sold_to_count} created")
+                print(f"   ✅ IS_MARKETED_TO relationships: {is_marketed_to_count} created")
 
             except Exception as e:
                 print(f"\n❌ Graph creation failed: {e}")

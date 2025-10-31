@@ -6,7 +6,8 @@ with full observability via Weave tracing.
 """
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from google.adk.agents import Agent
 from google.adk.agents.llm_agent_config import LlmAgentConfig
@@ -43,7 +44,7 @@ class FirestoreConnectionError(Exception):
     pass
 
 
-def _weave_op(func):
+def _weave_op(func: Callable) -> Callable:
     """Decorator that applies @weave.op only if Weave is available."""
     if WEAVE_AVAILABLE and weave:
         return weave.op()(func)
@@ -53,7 +54,7 @@ def _weave_op(func):
 @_weave_op
 def load_config_from_firestore(
     doc_id: str, project_id: str = "ken-e-dev"
-) -> Tuple[LlmAgentConfig, Dict[str, Any]]:
+) -> tuple[LlmAgentConfig, dict[str, Any]]:
     """
     Load agent configuration from Firestore.
 
@@ -104,9 +105,9 @@ def load_config_from_firestore(
         try:
             config = LlmAgentConfig.model_validate(config_dict)
         except Exception as e:
-            error_msg = f"Failed to validate config for '{doc_id}': {str(e)}"
+            error_msg = f"Failed to validate config for '{doc_id}': {e!s}"
             logger.error(error_msg)
-            raise ConfigValidationError(error_msg)
+            raise ConfigValidationError(error_msg) from e
 
         logger.info(
             f"Loaded config '{doc_id}' from Firestore "
@@ -131,16 +132,16 @@ def load_config_from_firestore(
         # Re-raise our custom exceptions
         raise
     except Exception as e:
-        error_msg = f"Firestore connection error while loading '{doc_id}': {str(e)}"
+        error_msg = f"Firestore connection error while loading '{doc_id}': {e!s}"
         logger.error(error_msg)
-        raise FirestoreConnectionError(error_msg)
+        raise FirestoreConnectionError(error_msg) from e
 
 
 @_weave_op
 def create_agent_from_firestore_config(
     doc_id: str,
-    google_search_agent: Optional[Any] = None,
-    output_schema: Optional[Any] = None,
+    google_search_agent: Any | None = None,
+    output_schema: Any | None = None,
     project_id: str = "ken-e-dev",
 ) -> Agent:
     """
@@ -172,6 +173,16 @@ def create_agent_from_firestore_config(
         f"(version: {metadata.get('version', 'unknown')}, "
         f"model: {config.model})"
     )
+
+    # DEBUG: Log system instructions preview for marketing agents (only at DEBUG level)
+    if logger.isEnabledFor(logging.DEBUG) and doc_id in ["marketing_researcher", "marketing_formatter"]:
+        instructions = getattr(config, "system_instruction", "")
+        has_new_schema = 'customer_strategies' in instructions and 'ideal_customer_profiles: List' in instructions
+        has_old_schema = 'product_categories' in instructions
+        logger.debug(
+            f"[DEBUG] {doc_id} config loaded: v{metadata.get('version', 'MISSING')}, "
+            f"{len(instructions)} chars, schema={'NEW' if has_new_schema else 'OLD' if has_old_schema else 'UNKNOWN'}"
+        )
 
     # Log config metadata to Weave using call.summary
     if WEAVE_AVAILABLE and weave:
@@ -218,7 +229,7 @@ def create_agent_from_firestore_config(
 
 def get_current_config_metadata(
     doc_id: str, project_id: str = "ken-e-dev"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get metadata for a config document without loading the full config.
 
