@@ -7,6 +7,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from src.kene_api.exceptions import NodeNotFoundException
 from src.kene_api.models.graph_models import (
     OpportunityCreate,
     ProductCategoryCreate,
@@ -38,9 +39,23 @@ def mock_firestore_service():
 
 
 @pytest.fixture
-def mock_validation_service(mock_neo4j_service):
+def mock_validation_service():
     """Mock GraphValidationService."""
-    return GraphValidationService(mock_neo4j_service)
+    service = AsyncMock()
+    # Set up default return values for validation methods
+    service.validate_account_exists = AsyncMock(return_value=True)
+    service.validate_node_exists = AsyncMock(return_value=True)
+    service.validate_non_empty_string = Mock(return_value=(True, ""))
+    service.validate_url_format = Mock(return_value=True)
+    service.validate_unique_product_category_name = AsyncMock(return_value=(True, ""))
+    service.validate_unique_product_name = AsyncMock(return_value=(True, ""))
+    service.validate_unique_display_name = AsyncMock(return_value=(True, ""))
+    service.validate_can_delete_product_category = AsyncMock(return_value=(True, ""))
+    service.validate_can_delete_product = AsyncMock(return_value=(True, ""))
+    service.validate_can_delete_strength = AsyncMock(return_value=(True, ""))
+    service.validate_can_delete_weakness = AsyncMock(return_value=(True, ""))
+    service.get_or_create_swot_hub = AsyncMock(return_value="swot_test123_abc")
+    return service
 
 
 @pytest.fixture
@@ -57,16 +72,13 @@ class TestProductCategoryOperations:
 
     @pytest.mark.asyncio
     async def test_create_product_category_success(
-        self, graph_sync_service, mock_neo4j_service, mock_firestore_service
+        self, graph_sync_service, mock_neo4j_service, mock_firestore_service, mock_validation_service
     ):
         """Test successful product category creation."""
         # Arrange
         account_id = "acc_test123"
         user_id = "user_test456"
         category_create = ProductCategoryCreate(product_name="Test Category", description="Test description")
-
-        # Mock account validation
-        mock_neo4j_service.execute_query.return_value = [{"acc": {"account_id": account_id}}]
 
         # Mock Neo4j create
         expected_node_id = "productcat_test123_abc123"
@@ -95,6 +107,12 @@ class TestProductCategoryOperations:
         assert result.account_id == account_id
         assert result.node_id == expected_node_id
 
+        # Verify validations were called
+        mock_validation_service.validate_non_empty_string.assert_called()
+        mock_validation_service.validate_unique_product_category_name.assert_called_once_with(
+            account_id, "Test Category"
+        )
+
         # Verify Neo4j was called
         assert mock_neo4j_service.execute_write_query.call_count >= 1
 
@@ -102,18 +120,20 @@ class TestProductCategoryOperations:
         mock_firestore_service.update_document.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_product_category_account_not_found(self, graph_sync_service, mock_neo4j_service):
+    async def test_create_product_category_account_not_found(
+        self, graph_sync_service, mock_validation_service, mock_neo4j_service
+    ):
         """Test creation fails when account doesn't exist."""
         # Arrange
         account_id = "acc_nonexistent"
         user_id = "user_test456"
         category_create = ProductCategoryCreate(product_name="Test Category", description="Test description")
 
-        # Mock account validation to return empty
-        mock_neo4j_service.execute_query.return_value = []
+        # Mock account validation to return False (account not found)
+        mock_validation_service.validate_account_exists.return_value = False
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"Account .* not found"):
+        with pytest.raises(NodeNotFoundException, match=r"Account.*not found"):
             await graph_sync_service.create_product_category(account_id, category_create, user_id)
 
     @pytest.mark.asyncio

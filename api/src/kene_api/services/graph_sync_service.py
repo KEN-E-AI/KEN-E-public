@@ -12,6 +12,13 @@ from typing import Any
 from fastapi import Depends
 
 from ..database import Neo4jService, get_neo4j_service
+from ..exceptions import (
+    DuplicateNodeException,
+    GraphSyncException,
+    NodeHasDependenciesException,
+    NodeNotFoundException,
+    ValidationException,
+)
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.graph_models import (
     GoalCreate,
@@ -103,12 +110,12 @@ class GraphSyncService:
         try:
             # 1. Validate account exists
             if not await self.validation.validate_account_exists(account_id):
-                raise ValueError(f"Account {account_id} not found")
+                raise NodeNotFoundException("Account", account_id)
 
             # 2. Validate parent exists (if required)
             if parent_node_id:
                 if not await self.validation.validate_node_exists(parent_node_id, parent_node_type):
-                    raise ValueError(f"Parent {parent_node_type} {parent_node_id} not found")
+                    raise NodeNotFoundException(parent_node_type, parent_node_id)
 
             # 3. Generate node_id with appropriate prefix
             node_id = self._generate_node_id(node_type, account_id)
@@ -138,7 +145,9 @@ class GraphSyncService:
                 # Rollback Neo4j on Firestore failure
                 logger.error(f"Firestore sync failed, rolling back Neo4j: {firestore_error}")
                 await self._delete_node_neo4j(node_id)
-                raise Exception(f"Firestore sync failed, rolled back Neo4j: {firestore_error}") from firestore_error
+                raise GraphSyncException(
+                    str(firestore_error), operation="create", node_type=node_type, node_id=node_id
+                ) from firestore_error
 
             return neo4j_result
 
@@ -176,7 +185,7 @@ class GraphSyncService:
             # 1. Verify node exists and get current state
             existing_node = await self.get_node(account_id, node_id, node_type)
             if not existing_node:
-                raise ValueError(f"{node_type} {node_id} not found")
+                raise NodeNotFoundException(node_type, node_id)
 
             # 2. Update in Neo4j
             neo4j_result = await self._update_node_neo4j(
@@ -206,7 +215,9 @@ class GraphSyncService:
                     updates={k: v for k, v in existing_node.items() if k in updates},
                     user_id=user_id,
                 )
-                raise Exception(f"Firestore sync failed, rolled back Neo4j: {firestore_error}") from firestore_error
+                raise GraphSyncException(
+                    str(firestore_error), operation="update", node_type=node_type, node_id=node_id
+                ) from firestore_error
 
             return neo4j_result
 
@@ -241,13 +252,24 @@ class GraphSyncService:
             # 1. Verify node exists
             existing_node = await self.get_node(account_id, node_id, node_type)
             if not existing_node:
-                raise ValueError(f"{node_type} {node_id} not found")
+                raise NodeNotFoundException(node_type, node_id)
 
             # 2. Check dependencies if required
             if check_dependencies:
                 can_delete, reason = await self._validate_can_delete(node_id, node_type)
                 if not can_delete:
-                    raise ValueError(reason)
+                    # Parse reason to extract dependency info for proper exception
+                    # Reason format: "Cannot delete NodeType with N existing dependencies"
+                    import re
+
+                    match = re.search(r"with (\d+) (?:existing )?(.+?)(?:\(s\))?$", reason)
+                    if match:
+                        count = int(match.group(1))
+                        dependency_type = match.group(2).strip()
+                        raise NodeHasDependenciesException(node_type, node_id, dependency_type, count)
+                    else:
+                        # Fallback if parsing fails
+                        raise NodeHasDependenciesException(node_type, node_id, "dependent nodes", 0)
 
             # 3. Delete from Neo4j
             await self._delete_node_neo4j(node_id)
@@ -275,7 +297,9 @@ class GraphSyncService:
                     parent_node_type=existing_node.get("parent_node_type"),
                     user_id=user_id,
                 )
-                raise Exception(f"Firestore sync failed, rolled back Neo4j: {firestore_error}") from firestore_error
+                raise GraphSyncException(
+                    str(firestore_error), operation="delete", node_type=node_type, node_id=node_id
+                ) from firestore_error
 
         except Exception as e:
             logger.error(f"Failed to delete {node_type} {node_id}: {e}")
@@ -286,20 +310,25 @@ class GraphSyncService:
         account_id: str,
         node_type: str,
         parent_node_id: str | None = None,
+        skip: int = 0,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Generic list operation for any node type.
+        """Generic list operation for any node type with optional pagination.
 
         Args:
             account_id: Account identifier
             node_type: Node type label
             parent_node_id: Optional filter by parent relationship
+            skip: Number of nodes to skip (default: 0)
+            limit: Maximum number of nodes to return (default: None = all)
 
         Returns:
             List of nodes as dictionaries
         """
+        # Build base query
         if parent_node_id:
             # Query with parent filter - match relationship in both directions
-            query = f"""
+            base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
             MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
             WHERE (node)-[:BELONGS_TO]->(acc)
@@ -307,16 +336,22 @@ class GraphSyncService:
             ORDER BY node.display_name, node.product_name, node.name
             """
         else:
-            query = f"""
+            base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
             MATCH (node:{node_type})-[:BELONGS_TO]->(acc)
             RETURN node
             ORDER BY node.display_name, node.product_name, node.name
             """
 
-        result = await self.neo4j.execute_query(
-            query, {"account_id": account_id, "parent_node_id": parent_node_id}
-        )
+        # Add pagination if limit is specified
+        if limit is not None:
+            query = f"{base_query} SKIP $skip LIMIT $limit"
+            params = {"account_id": account_id, "parent_node_id": parent_node_id, "skip": skip, "limit": limit}
+        else:
+            query = base_query
+            params = {"account_id": account_id, "parent_node_id": parent_node_id}
+
+        result = await self.neo4j.execute_query(query, params)
 
         return [self._neo4j_node_to_dict(record["node"]) for record in result]
 
@@ -366,8 +401,28 @@ class GraphSyncService:
 
         Returns:
             Created product category
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If category name already exists
         """
-        node_data = {"product_name": category.product_name, "description": category.description}
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(category.product_name, "product_name")
+        if not is_valid:
+            raise ValidationException(error, "product_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(category.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Check for duplicate name
+        is_unique, error = await self.validation.validate_unique_product_category_name(
+            account_id, category.product_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("ProductCategory", "product_name", category.product_name, account_id)
+
+        node_data = {"product_name": category.product_name.strip(), "description": category.description.strip()}
 
         result = await self.create_node(
             account_id=account_id,
@@ -452,10 +507,38 @@ class GraphSyncService:
 
         Returns:
             Created product
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If product name already exists in category
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(product.product_name, "product_name")
+        if not is_valid:
+            raise ValidationException(error, "product_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(product.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        if product.product_detail_page and not self.validation.validate_url_format(product.product_detail_page):
+            raise ValidationException(f"Invalid URL format: {product.product_detail_page}", "product_detail_page")
+
+        for ref in product.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate name within category
+        is_unique, error = await self.validation.validate_unique_product_name(
+            account_id, product.product_name.strip(), product.category_node_id
+        )
+        if not is_unique:
+            raise DuplicateNodeException("Product", "product_name", product.product_name, product.category_node_id)
+
         node_data = {
-            "product_name": product.product_name,
-            "description": product.description,
+            "product_name": product.product_name.strip(),
+            "description": product.description.strip(),
             "references": product.references,
             "product_detail_page": product.product_detail_page,
             "category_node_id": product.category_node_id,
@@ -544,10 +627,35 @@ class GraphSyncService:
 
         Returns:
             Created value proposition
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(value_prop.display_name, "display_name")
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(value_prop.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        for ref in value_prop.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate display_name
+        is_unique, error = await self.validation.validate_unique_display_name(
+            account_id, "ValueProposition", value_prop.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("ValueProposition", "display_name", value_prop.display_name, account_id)
+
         node_data = {
-            "display_name": value_prop.display_name,
-            "description": value_prop.description,
+            "display_name": value_prop.display_name.strip(),
+            "description": value_prop.description.strip(),
             "references": value_prop.references,
             "parent_node_id": value_prop.parent_node_id,
             "parent_node_type": value_prop.parent_node_type,
@@ -633,13 +741,38 @@ class GraphSyncService:
 
         Returns:
             Created strength
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(strength.display_name, "display_name")
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(strength.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        for ref in strength.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate display_name
+        is_unique, error = await self.validation.validate_unique_display_name(
+            account_id, "Strength", strength.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("Strength", "display_name", strength.display_name, account_id)
+
         # Ensure SWOT Analysis hub exists
         swot_node_id = await self.validation.get_or_create_swot_hub(account_id, user_id)
 
         node_data = {
-            "display_name": strength.display_name,
-            "description": strength.description,
+            "display_name": strength.display_name.strip(),
+            "description": strength.description.strip(),
             "references": strength.references,
         }
 
@@ -726,13 +859,38 @@ class GraphSyncService:
 
         Returns:
             Created weakness
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(weakness.display_name, "display_name")
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(weakness.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        for ref in weakness.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate display_name
+        is_unique, error = await self.validation.validate_unique_display_name(
+            account_id, "Weakness", weakness.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("Weakness", "display_name", weakness.display_name, account_id)
+
         # Ensure SWOT Analysis hub exists
         swot_node_id = await self.validation.get_or_create_swot_hub(account_id, user_id)
 
         node_data = {
-            "display_name": weakness.display_name,
-            "description": weakness.description,
+            "display_name": weakness.display_name.strip(),
+            "description": weakness.description.strip(),
             "references": weakness.references,
         }
 
@@ -819,10 +977,36 @@ class GraphSyncService:
 
         Returns:
             Created opportunity
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
+            NodeNotFoundException: If parent strength doesn't exist
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(opportunity.display_name, "display_name")
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(opportunity.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        for ref in opportunity.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate display_name
+        is_unique, error = await self.validation.validate_unique_display_name(
+            account_id, "Opportunity", opportunity.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("Opportunity", "display_name", opportunity.display_name, account_id)
+
         node_data = {
-            "display_name": opportunity.display_name,
-            "description": opportunity.description,
+            "display_name": opportunity.display_name.strip(),
+            "description": opportunity.description.strip(),
             "references": opportunity.references,
             "strength_node_id": opportunity.strength_node_id,
         }
@@ -907,10 +1091,36 @@ class GraphSyncService:
 
         Returns:
             Created risk
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
+            NodeNotFoundException: If parent weakness doesn't exist
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(risk.display_name, "display_name")
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(risk.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        for ref in risk.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate display_name
+        is_unique, error = await self.validation.validate_unique_display_name(
+            account_id, "Risk", risk.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("Risk", "display_name", risk.display_name, account_id)
+
         node_data = {
-            "display_name": risk.display_name,
-            "description": risk.description,
+            "display_name": risk.display_name.strip(),
+            "description": risk.description.strip(),
             "references": risk.references,
             "weakness_node_id": risk.weakness_node_id,
         }
@@ -995,10 +1205,35 @@ class GraphSyncService:
 
         Returns:
             Created goal
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
         """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(goal.display_name, "display_name")
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(goal.description, "description")
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate URLs
+        for ref in goal.references:
+            if not self.validation.validate_url_format(ref):
+                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+
+        # Check for duplicate display_name
+        is_unique, error = await self.validation.validate_unique_display_name(
+            account_id, "Goal", goal.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException("Goal", "display_name", goal.display_name, account_id)
+
         node_data = {
-            "display_name": goal.display_name,
-            "description": goal.description,
+            "display_name": goal.display_name.strip(),
+            "description": goal.description.strip(),
             "references": goal.references,
         }
 

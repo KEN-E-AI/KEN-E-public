@@ -4,10 +4,16 @@ Provides shared validation logic for graph node operations.
 """
 
 import logging
+import re
 
 from ..database import Neo4jService
 
 logger = logging.getLogger(__name__)
+
+# URL validation pattern: allows http/https/relative URLs
+URL_PATTERN = re.compile(
+    r"^(https?://[^\s]+|/[^\s]*|[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)*(/[^\s]*)?)$"
+)
 
 
 class GraphValidationService:
@@ -207,6 +213,137 @@ class GraphValidationService:
 
         logger.info(f"Created SWOT Analysis hub {swot_node_id} for account {account_id}")
         return result[0]["node_id"]
+
+    def validate_url_format(self, url: str) -> bool:
+        """Validate URL format.
+
+        Accepts:
+        - Full URLs: https://example.com/path
+        - Protocol-relative: //example.com/path
+        - Absolute paths: /path/to/resource
+        - Relative paths: path/to/resource
+
+        Args:
+            url: URL string to validate
+
+        Returns:
+            True if valid URL format, False otherwise
+        """
+        if not url or not url.strip():
+            return False
+
+        # Allow common URL patterns
+        return bool(URL_PATTERN.match(url.strip()))
+
+    def validate_non_empty_string(self, value: str, field_name: str) -> tuple[bool, str]:
+        """Validate that string is not empty after trimming whitespace.
+
+        Args:
+            value: String value to validate
+            field_name: Name of field being validated (for error message)
+
+        Returns:
+            (is_valid, error_message) tuple
+        """
+        if not value or not value.strip():
+            return False, f"{field_name} cannot be empty or contain only whitespace"
+
+        return True, ""
+
+    async def validate_unique_product_category_name(
+        self, account_id: str, product_name: str, exclude_node_id: str | None = None
+    ) -> tuple[bool, str]:
+        """Check if product category name is unique within account.
+
+        Args:
+            account_id: Account identifier
+            product_name: Product category name to check
+            exclude_node_id: Optional node_id to exclude (for updates)
+
+        Returns:
+            (is_unique, error_message) tuple
+        """
+        query = """
+        MATCH (cat:ProductCategory {account_id: $account_id, product_name: $product_name})
+        WHERE $exclude_node_id IS NULL OR cat.node_id <> $exclude_node_id
+        RETURN count(cat) as count
+        """
+        result = await self.neo4j.execute_query(
+            query, {"account_id": account_id, "product_name": product_name, "exclude_node_id": exclude_node_id}
+        )
+
+        count = result[0]["count"] if result else 0
+        if count > 0:
+            return False, f"Product category with name '{product_name}' already exists in this account"
+
+        return True, ""
+
+    async def validate_unique_product_name(
+        self, account_id: str, product_name: str, category_node_id: str, exclude_node_id: str | None = None
+    ) -> tuple[bool, str]:
+        """Check if product name is unique within category.
+
+        Args:
+            account_id: Account identifier
+            product_name: Product name to check
+            category_node_id: Category node_id to check within
+            exclude_node_id: Optional node_id to exclude (for updates)
+
+        Returns:
+            (is_unique, error_message) tuple
+        """
+        query = """
+        MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product {product_name: $product_name})
+        WHERE p.account_id = $account_id
+        AND ($exclude_node_id IS NULL OR p.node_id <> $exclude_node_id)
+        RETURN count(p) as count
+        """
+        result = await self.neo4j.execute_query(
+            query,
+            {
+                "account_id": account_id,
+                "product_name": product_name,
+                "category_node_id": category_node_id,
+                "exclude_node_id": exclude_node_id,
+            },
+        )
+
+        count = result[0]["count"] if result else 0
+        if count > 0:
+            return False, f"Product with name '{product_name}' already exists in this category"
+
+        return True, ""
+
+    async def validate_unique_display_name(
+        self, account_id: str, node_type: str, display_name: str, exclude_node_id: str | None = None
+    ) -> tuple[bool, str]:
+        """Check if display_name is unique for node type within account.
+
+        Used for Strength, Weakness, Opportunity, Risk, Goal, ValueProposition.
+
+        Args:
+            account_id: Account identifier
+            node_type: Type of node (e.g., "Strength", "Goal")
+            display_name: Display name to check
+            exclude_node_id: Optional node_id to exclude (for updates)
+
+        Returns:
+            (is_unique, error_message) tuple
+        """
+        query = f"""
+        MATCH (n:{node_type} {{account_id: $account_id, display_name: $display_name}})
+        WHERE $exclude_node_id IS NULL OR n.node_id <> $exclude_node_id
+        RETURN count(n) as count
+        """
+        result = await self.neo4j.execute_query(
+            query, {"account_id": account_id, "display_name": display_name, "exclude_node_id": exclude_node_id}
+        )
+
+        count = result[0]["count"] if result else 0
+        if count > 0:
+            return False, f"{node_type} with display name '{display_name}' already exists in this account"
+
+        return True, ""
 
 
 async def get_graph_validation_service(
