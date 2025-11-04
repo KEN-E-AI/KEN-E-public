@@ -11,6 +11,7 @@ import {
 import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
 import { WizardStep2MarketingChannelsImproved } from "./wizard/WizardStep2MarketingChannelsImproved";
 import { WizardStep3ProductIntegrationsImproved } from "./wizard/WizardStep3ProductIntegrationsImproved";
+import { WizardStep4StrategySelection } from "./wizard/WizardStep4StrategySelection";
 import { WizardStep5ConfirmImproved } from "./wizard/WizardStep5ConfirmImproved";
 import {
   templateService,
@@ -38,6 +39,10 @@ export interface AccountCreationData {
 
   // Step 3: Product Integrations
   product_integrations: string[];
+
+  // Step 4: Strategy Selection (admin only)
+  enabled_strategies: string[];
+  override_product_categories: string[];
 
   // Configuration fields (from step 1 and template)
   timezone: string;
@@ -77,6 +82,8 @@ export const AccountCreationWizard = ({
     template_id: "",
     marketing_channels: [],
     product_integrations: [],
+    enabled_strategies: ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"],
+    override_product_categories: [],
     objectives: [],
     kpis: [],
     timezone: "America/New_York",
@@ -84,7 +91,7 @@ export const AccountCreationWizard = ({
     region: ["US"],
   });
 
-  const totalSteps = 4; // Removed objectives/KPIs step
+  const totalSteps = 5; // Added strategy selection step
   const progress = (currentStep / totalSteps) * 100;
 
   // Reset wizard state when modal opens
@@ -100,6 +107,8 @@ export const AccountCreationWizard = ({
         template_id: "",
         marketing_channels: [],
         product_integrations: [],
+        enabled_strategies: ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"],
+        override_product_categories: [],
         objectives: [],
         kpis: [],
         timezone: "America/New_York",
@@ -316,6 +325,14 @@ export const AccountCreationWizard = ({
               )}
 
               {currentStep === 4 && (
+                <WizardStep4StrategySelection
+                  enabled_strategies={formData.enabled_strategies}
+                  override_product_categories={formData.override_product_categories}
+                  onUpdate={(data) => setFormData({ ...formData, ...data })}
+                />
+              )}
+
+              {currentStep === 5 && (
                 <WizardStep5ConfirmImproved
                   formData={formData}
                   selectedTemplate={loadedTemplate}
