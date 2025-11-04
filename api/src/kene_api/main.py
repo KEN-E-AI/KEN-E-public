@@ -28,6 +28,7 @@ from .routers import (
     integrations,
     intuitions,
     items,
+    knowledge_graph,
     metrics,
     monitoring,
     monitoring_topics,
@@ -160,6 +161,7 @@ app.include_router(
     prefix="/api/v1",
     tags=["industry-templates"],
 )
+app.include_router(knowledge_graph.router)  # Knowledge graph router already has its prefix
 
 
 # Health and root endpoints below routers
