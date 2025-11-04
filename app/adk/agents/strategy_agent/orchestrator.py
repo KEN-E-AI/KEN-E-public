@@ -36,6 +36,10 @@ try:
     from agents.strategy_agent.artifact_utils import (
         load_uploaded_documents_as_artifacts,
     )
+    from agents.strategy_agent.constants import (
+        DEFAULT_PRODUCT_CATEGORIES,
+        VALID_STRATEGY_TYPES,
+    )
     from agents.strategy_agent.firestore import FirestoreClient
     from agents.strategy_agent.models import StrategyContext
     from agents.strategy_agent.performance_profiler import PerformanceProfiler
@@ -52,6 +56,7 @@ except ImportError:
     )
     from .analytics_service import AnalyticsService
     from .artifact_utils import load_uploaded_documents_as_artifacts
+    from .constants import DEFAULT_PRODUCT_CATEGORIES, VALID_STRATEGY_TYPES
     from .firestore import FirestoreClient
     from .models import StrategyContext
     from .performance_profiler import PerformanceProfiler
@@ -371,6 +376,8 @@ def execute_strategy_generation_direct(
     analytics_service: Optional[AnalyticsService] = None,
     performance_profiler: Optional[PerformanceProfiler] = None,
     alert_manager: Optional[AlertManager] = None,
+    enabled_strategies: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
@@ -389,11 +396,50 @@ def execute_strategy_generation_direct(
         analytics_service: Optional analytics service for tracking
         performance_profiler: Optional performance profiler
         alert_manager: Optional alert manager
+        enabled_strategies: Optional list of strategy types to generate.
+            Valid values: ["business_strategy", "competitive_strategy",
+            "marketing_strategy", "brand_guidelines"].
+            If None, all strategies are generated.
+        override_product_categories: Optional list of product category names
+            to use for marketing strategy when business strategy is not run.
+            If None and marketing strategy is enabled without business strategy,
+            default categories will be used.
 
     Returns:
         Dictionary of generated documents
     """
     generated_documents = {}
+
+    # Validate and set default for enabled_strategies
+    if enabled_strategies is None:
+        # If not specified, generate all strategies
+        enabled_strategies = VALID_STRATEGY_TYPES.copy()
+        logger.info("[SELECTIVE] No enabled_strategies specified, generating all strategies")
+    else:
+        # Validate that all provided strategies are valid
+        invalid_strategies = [s for s in enabled_strategies if s not in VALID_STRATEGY_TYPES]
+        if invalid_strategies:
+            raise ValueError(
+                f"Invalid strategy types: {invalid_strategies}. "
+                f"Valid types are: {VALID_STRATEGY_TYPES}"
+            )
+        logger.info(
+            f"[SELECTIVE] Generating selected strategies: {', '.join(enabled_strategies)}"
+        )
+
+    # Handle product category override for marketing strategy
+    if override_product_categories is not None:
+        if "marketing_strategy" not in enabled_strategies:
+            logger.warning(
+                "[SELECTIVE] override_product_categories provided but marketing_strategy "
+                "not in enabled_strategies - ignoring override"
+            )
+            override_product_categories = None
+        else:
+            logger.info(
+                f"[SELECTIVE] Using {len(override_product_categories)} override product "
+                f"categories for marketing strategy: {', '.join(override_product_categories)}"
+            )
 
     # Import split agent creators and graph builders
     try:
@@ -544,6 +590,15 @@ def execute_strategy_generation_direct(
     # Process each strategy type sequentially
     for strategy_config in strategy_types:
         strategy_name = strategy_config["name"]
+
+        # Check if this strategy is enabled
+        if strategy_name not in enabled_strategies:
+            logger.info(
+                f"\n[SELECTIVE] ========== Skipping {strategy_name} "
+                f"(not in enabled_strategies) =========="
+            )
+            continue
+
         logger.info(f"\n[SPLIT AGENT] ========== Starting {strategy_name} ==========")
 
         # Track operation
@@ -595,8 +650,33 @@ def execute_strategy_generation_direct(
                     f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
                 )
 
-            # For marketing strategy, include ProductCategory names from business strategy
-            if strategy_name == "marketing_strategy" and product_category_names:
+            # For marketing strategy, include ProductCategory names
+            if strategy_name == "marketing_strategy":
+                # Determine which product categories to use
+                categories_to_use = None
+                if override_product_categories is not None:
+                    # Use override categories (admin provided for testing)
+                    categories_to_use = override_product_categories
+                    logger.info(
+                        f"[SELECTIVE] Using {len(categories_to_use)} override product categories "
+                        f"for marketing strategy"
+                    )
+                elif product_category_names:
+                    # Use categories from business strategy
+                    categories_to_use = product_category_names
+                    logger.info(
+                        f"[COORDINATION] Using {len(categories_to_use)} product categories "
+                        f"from business strategy"
+                    )
+                else:
+                    # Use default categories (business strategy not run)
+                    categories_to_use = DEFAULT_PRODUCT_CATEGORIES
+                    logger.info(
+                        f"[SELECTIVE] Business strategy not run and no override provided - "
+                        f"using {len(categories_to_use)} default product categories"
+                    )
+
+                # Add structured instructions with product categories
                 research_query += (
                     "\n\n=== CRITICAL STRUCTURE REQUIREMENTS ===\n"
                 )
@@ -607,7 +687,7 @@ def execute_strategy_generation_direct(
                 research_query += "- Focus on distinct customer segments with different needs, behaviors, and buying patterns\n"
                 research_query += "\nPHASE 2: For EACH product category below, create marketing strategies for relevant profiles\n"
                 research_query += "Product categories:\n"
-                for cat_name in product_category_names:
+                for cat_name in categories_to_use:
                     research_query += f"- {cat_name}\n"
                 research_query += "\nFor each category:\n"
                 research_query += "1. Identify which 1-5 master profiles are most relevant to this category\n"
@@ -620,7 +700,7 @@ def execute_strategy_generation_direct(
                 research_query += "\nIMPORTANT: Each strategy is SPECIFIC to the combination of product category + customer profile.\n"
                 research_query += "The same profile can have DIFFERENT strategies for different categories.\n"
                 logger.info(
-                    f"[COORDINATION] Passing {len(product_category_names)} ProductCategory names to marketing research with product-scoped strategy instructions"
+                    f"[COORDINATION] Passing {len(categories_to_use)} ProductCategory names to marketing research with product-scoped strategy instructions"
                 )
 
             message_content = Content(role="user", parts=[{"text": research_query}])
@@ -951,6 +1031,8 @@ def execute_strategy_generation(
     project_id: Optional[str] = None,
     uploaded_documents: Optional[List[str]] = None,
     enable_analytics: bool = True,
+    enabled_strategies: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
 ) -> str:
     """
     Execute the complete strategy generation process with analytics tracking.
@@ -975,8 +1057,11 @@ def execute_strategy_generation(
         annual_ad_budget: Annual advertising budget
         project_id: Optional GCP project ID
         uploaded_documents: List of uploaded document URLs
-        firestore_client: Optional Firestore client
         enable_analytics: Whether to enable analytics tracking
+        enabled_strategies: Optional list of strategy types to generate.
+            If None, all strategies are generated.
+        override_product_categories: Optional list of product category names
+            to use for marketing strategy when business strategy is not run.
 
     Returns:
         Status message indicating success or failure
@@ -1281,6 +1366,8 @@ def execute_strategy_generation(
             analytics_service=analytics_service,
             performance_profiler=performance_profiler,
             alert_manager=alert_manager,
+            enabled_strategies=enabled_strategies,
+            override_product_categories=override_product_categories,
         )
 
         execution_time = time.time() - start_time
@@ -1866,7 +1953,7 @@ def create_strategy_agent_for_deployment():
         name="strategy_orchestrator",
         model="gemini-2.0-flash",
         instruction="""You coordinate strategy document generation.
-        
+
 When you receive a request to generate strategy documents, you MUST use the execute_strategy_generation tool.
 
 Look for messages that contain parameters like:
@@ -1878,6 +1965,8 @@ Look for messages that contain parameters like:
 - user_id
 - annual_ad_budget
 - project_id
+- enabled_strategies (optional: list of strategies to generate)
+- override_product_categories (optional: product categories for marketing strategy)
 
 Extract these parameters from the message and call execute_strategy_generation with them.
 
@@ -1890,18 +1979,27 @@ For example, if you receive:
 - account_id: acc_123
 - user_id: user_456
 - annual_ad_budget: 100000
-- project_id: ken-e-dev"
+- project_id: ken-e-dev
+- enabled_strategies: business_strategy,marketing_strategy
+- override_product_categories: Core Products,Premium Services"
 
 You should call execute_strategy_generation(
     company_name="Example Corp",
-    industry="Technology", 
+    industry="Technology",
     websites="example.com",
     customer_regions="USA,Europe",
     account_id="acc_123",
     user_id="user_456",
     annual_ad_budget=100000.0,
-    project_id="ken-e-dev"
+    project_id="ken-e-dev",
+    enabled_strategies=["business_strategy", "marketing_strategy"],
+    override_product_categories=["Core Products", "Premium Services"]
 )
+
+IMPORTANT:
+- If enabled_strategies is provided, convert the comma-separated string to a list of strings
+- If override_product_categories is provided, convert the comma-separated string to a list of strings
+- If enabled_strategies or override_product_categories are not present in the message, do NOT include them in the function call
 
 ALWAYS use the execute_strategy_generation tool when asked to generate strategies.
 Do NOT just respond with text - actually execute the tool.""",

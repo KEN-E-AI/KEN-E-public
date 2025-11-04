@@ -32,6 +32,8 @@ async def trigger_strategy_generation(
     uploaded_document_urls: list[str] | None = None,
     user_context: Any
     | None = None,  # Allow passing existing UserContext for chat-triggered calls
+    enabled_strategies: list[str] | None = None,
+    override_product_categories: list[str] | None = None,
 ) -> None:
     """
     Trigger strategy document generation for a new account.
@@ -46,6 +48,12 @@ async def trigger_strategy_generation(
         user_id: User ID who created the account
         annual_ad_budget: Optional annual ad budget
         uploaded_document_urls: Optional list of GCS URLs for uploaded strategy documents
+        user_context: Optional UserContext for chat-triggered calls
+        enabled_strategies: Optional list of strategy types to generate.
+            If None, all strategies are generated. Valid values:
+            ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"]
+        override_product_categories: Optional list of product category names to use for
+            marketing strategy when business strategy is not run.
     """
     try:
         print(f"[STRATEGY_GENERATION] Starting for account {account_id}")
@@ -109,6 +117,18 @@ Please execute strategy generation with these parameters:
             message += f"\n- uploaded_documents: {','.join(uploaded_document_urls)}"
             logger.info(
                 f"Including {len(uploaded_document_urls)} uploaded documents in strategy generation request"
+            )
+
+        if enabled_strategies:
+            message += f"\n- enabled_strategies: {','.join(enabled_strategies)}"
+            logger.info(
+                f"Selective strategy generation enabled: {', '.join(enabled_strategies)}"
+            )
+
+        if override_product_categories:
+            message += f"\n- override_product_categories: {','.join(override_product_categories)}"
+            logger.info(
+                f"Override product categories provided: {', '.join(override_product_categories)}"
             )
 
         # Call the strategy agent directly

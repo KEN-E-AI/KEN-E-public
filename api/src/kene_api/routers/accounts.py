@@ -555,6 +555,8 @@ async def create_account(
     marketing_channels: str | None = Form(None),  # JSON string of array
     product_integrations: str | None = Form(None),  # JSON string of array
     estimated_annual_ad_budget: int | None = Form(None),
+    enabled_strategies: str | None = Form(None),  # JSON string of array
+    override_product_categories: str | None = Form(None),  # JSON string of array
     files: list[UploadFile] | None = File(None),
     user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
@@ -634,6 +636,8 @@ async def create_account(
             marketing_channels=marketing_channels,
             product_integrations=product_integrations,
             estimated_annual_ad_budget=estimated_annual_ad_budget,
+            enabled_strategies=enabled_strategies,
+            override_product_categories=override_product_categories,
         )
     except ValueError as e:
         logger.error(f"[ACCOUNT_CREATION] Form parsing error: {e}")

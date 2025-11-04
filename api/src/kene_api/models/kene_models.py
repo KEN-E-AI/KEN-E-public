@@ -1023,6 +1023,18 @@ class AccountRequest(BaseModel):
     product_integrations: list[str] | None = Field(
         None, description="List of product integrations"
     )
+    enabled_strategies: list[str] | None = Field(
+        None,
+        description="List of strategy types to generate. Valid values: "
+        "['business_strategy', 'competitive_strategy', 'marketing_strategy', 'brand_guidelines']. "
+        "If None, all strategies are generated.",
+    )
+    override_product_categories: list[str] | None = Field(
+        None,
+        description="List of product category names to use for marketing strategy "
+        "when business strategy is not run. Only used if marketing_strategy is in "
+        "enabled_strategies but business_strategy is not.",
+    )
 
 
 class OrganizationListResponse(BaseModel):
