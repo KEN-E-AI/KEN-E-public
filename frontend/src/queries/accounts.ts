@@ -115,14 +115,15 @@ export const useCreateAccount = () => {
       product_integrations: string[];
       estimatedAnnualAdBudget?: number | null;
       businessStrategyDocuments?: File[];
+      enabled_strategies?: string[];
+      override_product_categories?: string[];
     }) => {
       // Generate idempotency key for retry safety
       const idempotencyKey = `account_create_${accountData.organizationId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       try {
         // Transform camelCase to snake_case for API with runtime validation
-        const result = await createAccountApi(
-          {
+        const apiPayload = {
             // Include account_id if pre-generated for progress tracking
             ...(accountData.accountId && { account_id: accountData.accountId }),
             account_name: accountData.accountName,
@@ -143,7 +144,16 @@ export const useCreateAccount = () => {
               : [],
             estimated_annual_ad_budget: accountData.estimatedAnnualAdBudget,
             business_strategy_documents: accountData.businessStrategyDocuments,
-          },
+            enabled_strategies: Array.isArray(accountData.enabled_strategies)
+              ? accountData.enabled_strategies
+              : undefined,
+            override_product_categories: Array.isArray(accountData.override_product_categories)
+              ? accountData.override_product_categories
+              : undefined,
+          };
+
+        const result = await createAccountApi(
+          apiPayload,
           { idempotencyKey },
         );
 

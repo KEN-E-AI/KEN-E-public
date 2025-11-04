@@ -239,6 +239,15 @@ export const AccountCreationWizard = ({
       case 3:
         return true; // Product integrations are optional
       case 4:
+        // Strategy selection - require at least one strategy
+        const hasStrategy = formData.enabled_strategies.length > 0;
+        // If marketing without business, require product categories
+        const needsCategories =
+          formData.enabled_strategies.includes("marketing_strategy") &&
+          !formData.enabled_strategies.includes("business_strategy");
+        const hasCategories = formData.override_product_categories.length > 0;
+        return hasStrategy && (!needsCategories || hasCategories);
+      case 5:
         // Final step - check all validations
         const hasBlockingErrors = stepValidations.some(
           (v) => !v.result.isValid && v.isRequired !== false,
