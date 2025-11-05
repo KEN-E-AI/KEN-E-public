@@ -21,6 +21,10 @@ import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Products from "./pages/Products";
 import Customers from "./pages/Customers";
+import Campaigns from "./pages/Campaigns";
+import Channels from "./pages/Channels";
+import Reports from "./pages/Reports";
+import Simulations from "./pages/Simulations";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
 import KnowledgeProducts from "./pages/KnowledgeProducts";
@@ -143,6 +147,38 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <Customers />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/campaigns"
+                  element={
+                    <ProtectedRoute>
+                      <Campaigns />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/channels"
+                  element={
+                    <ProtectedRoute>
+                      <Channels />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reports"
+                  element={
+                    <ProtectedRoute>
+                      <Reports />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/simulations"
+                  element={
+                    <ProtectedRoute>
+                      <Simulations />
                     </ProtectedRoute>
                   }
                 />

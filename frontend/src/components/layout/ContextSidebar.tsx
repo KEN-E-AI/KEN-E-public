@@ -31,6 +31,9 @@ import {
   Share2,
   Plus,
   User,
+  Megaphone,
+  Network,
+  Glasses,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +119,26 @@ const menuConfigurations: Record<string, MenuSection> = {
     title: "Customers",
     icon: Users,
     items: [{ id: "overview", label: "Overview", route: "/customers" }],
+  },
+  "/campaigns": {
+    title: "Campaigns",
+    icon: Megaphone,
+    items: [{ id: "overview", label: "Overview", route: "/campaigns" }],
+  },
+  "/channels": {
+    title: "Channels",
+    icon: Network,
+    items: [{ id: "overview", label: "Overview", route: "/channels" }],
+  },
+  "/reports": {
+    title: "Reports",
+    icon: FileText,
+    items: [{ id: "overview", label: "Overview", route: "/reports" }],
+  },
+  "/simulations": {
+    title: "Simulations",
+    icon: Glasses,
+    items: [{ id: "overview", label: "Overview", route: "/simulations" }],
   },
   "/knowledge": {
     title: "Knowledge Base",

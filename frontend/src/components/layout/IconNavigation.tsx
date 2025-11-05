@@ -4,6 +4,10 @@ import {
   Settings,
   Package,
   Users,
+  Megaphone,
+  Network,
+  FileText,
+  Glasses,
   BookOpen,
   User,
 } from "lucide-react";
@@ -45,6 +49,30 @@ export function IconNavigation() {
       icon: Users,
       label: "Customers",
       route: "/customers",
+    },
+    {
+      id: "campaigns",
+      icon: Megaphone,
+      label: "Campaigns",
+      route: "/campaigns",
+    },
+    {
+      id: "channels",
+      icon: Network,
+      label: "Channels",
+      route: "/channels",
+    },
+    {
+      id: "reports",
+      icon: FileText,
+      label: "Reports",
+      route: "/reports",
+    },
+    {
+      id: "simulations",
+      icon: Glasses,
+      label: "Simulations",
+      route: "/simulations",
     },
     {
       id: "knowledge",
