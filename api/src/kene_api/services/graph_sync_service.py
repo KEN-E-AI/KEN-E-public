@@ -149,7 +149,7 @@ class GraphSyncService:
                     str(firestore_error), operation="create", node_type=node_type, node_id=node_id
                 ) from firestore_error
 
-            return neo4j_result
+            return {**neo4j_result, "account_id": account_id}
 
         except Exception as e:
             logger.error(f"Failed to create {node_type}: {e}")
@@ -219,7 +219,7 @@ class GraphSyncService:
                     str(firestore_error), operation="update", node_type=node_type, node_id=node_id
                 ) from firestore_error
 
-            return neo4j_result
+            return {**neo4j_result, "account_id": account_id}
 
         except Exception as e:
             logger.error(f"Failed to update {node_type} {node_id}: {e}")
@@ -377,7 +377,7 @@ class GraphSyncService:
         query = f"""
         MATCH (node:{node_type} {{node_id: $node_id}})
         WHERE node.account_id = $account_id OR (node)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
-        RETURN node
+        RETURN node, $account_id as account_id
         """
 
         result = await self.neo4j.execute_query(query, {"node_id": node_id, "account_id": account_id})
@@ -385,7 +385,7 @@ class GraphSyncService:
         if not result:
             return None
 
-        return self._neo4j_node_to_dict(result[0]["node"])
+        return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": result[0]["account_id"]}
 
     # ==================== CONVENIENCE WRAPPERS FOR BUSINESS STRATEGY ====================
 
@@ -1432,7 +1432,7 @@ class GraphSyncService:
         if not result:
             raise Exception(f"Failed to create {node_type} in Neo4j")
 
-        return self._neo4j_node_to_dict(result[0]["node"])
+        return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": account_id}
 
     def _get_relationship_config(
         self, node_type: str, parent_node_type: str | None
