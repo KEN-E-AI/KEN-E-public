@@ -167,7 +167,7 @@ class TestProductCategoryOperations:
         mock_firestore_service.get_document.side_effect = Exception("Firestore error")
 
         # Act & Assert
-        with pytest.raises(Exception, match="Firestore sync failed"):
+        with pytest.raises(Exception, match="Graph sync failed during create"):
             await graph_sync_service.create_product_category(account_id, category_create, user_id)
 
         # Verify rollback was attempted (delete node)

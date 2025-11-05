@@ -152,9 +152,14 @@ async def list_product_categories(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "ProductCategory")
+
+        # Get paginated results
         categories_data = await service.list_nodes(account_id, "ProductCategory", skip=skip, limit=limit)
         categories = [ProductCategoryResponse(**cat) for cat in categories_data]
-        return ProductCategoryListResponse(categories=categories, total_count=len(categories))
+
+        return ProductCategoryListResponse(categories=categories, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -316,11 +321,16 @@ async def list_products(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "Product", parent_node_id=category_node_id)
+
+        # Get paginated results
         products_data = await service.list_nodes(
             account_id, "Product", parent_node_id=category_node_id, skip=skip, limit=limit
         )
         products = [ProductResponse(**prod) for prod in products_data]
-        return ProductListResponse(products=products, total_count=len(products))
+
+        return ProductListResponse(products=products, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -474,11 +484,16 @@ async def list_value_propositions(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "ValueProposition", parent_node_id=parent_node_id)
+
+        # Get paginated results
         vps_data = await service.list_nodes(
             account_id, "ValueProposition", parent_node_id=parent_node_id, skip=skip, limit=limit
         )
         value_propositions = [ValuePropositionResponse(**vp) for vp in vps_data]
-        return ValuePropositionListResponse(value_propositions=value_propositions, total_count=len(value_propositions))
+
+        return ValuePropositionListResponse(value_propositions=value_propositions, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -639,9 +654,14 @@ async def list_strengths(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "Strength")
+
+        # Get paginated results
         strengths_data = await service.list_nodes(account_id, "Strength", skip=skip, limit=limit)
         strengths = [StrengthResponse(**s) for s in strengths_data]
-        return StrengthListResponse(strengths=strengths, total_count=len(strengths))
+
+        return StrengthListResponse(strengths=strengths, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -793,9 +813,14 @@ async def list_weaknesses(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "Weakness")
+
+        # Get paginated results
         weaknesses_data = await service.list_nodes(account_id, "Weakness", skip=skip, limit=limit)
         weaknesses = [WeaknessResponse(**w) for w in weaknesses_data]
-        return WeaknessListResponse(weaknesses=weaknesses, total_count=len(weaknesses))
+
+        return WeaknessListResponse(weaknesses=weaknesses, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -948,11 +973,16 @@ async def list_opportunities(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "Opportunity", parent_node_id=strength_node_id)
+
+        # Get paginated results
         opportunities_data = await service.list_nodes(
             account_id, "Opportunity", parent_node_id=strength_node_id, skip=skip, limit=limit
         )
         opportunities = [OpportunityResponse(**o) for o in opportunities_data]
-        return OpportunityListResponse(opportunities=opportunities, total_count=len(opportunities))
+
+        return OpportunityListResponse(opportunities=opportunities, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -1106,11 +1136,16 @@ async def list_risks(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "Risk", parent_node_id=weakness_node_id)
+
+        # Get paginated results
         risks_data = await service.list_nodes(
             account_id, "Risk", parent_node_id=weakness_node_id, skip=skip, limit=limit
         )
         risks = [RiskResponse(**r) for r in risks_data]
-        return RiskListResponse(risks=risks, total_count=len(risks))
+
+        return RiskListResponse(risks=risks, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
@@ -1260,9 +1295,14 @@ async def list_goals(
     await check_graph_access(account_id, user, "view")
 
     try:
+        # Get total count from database (not just returned results)
+        total_count = await service.count_nodes(account_id, "Goal")
+
+        # Get paginated results
         goals_data = await service.list_nodes(account_id, "Goal", skip=skip, limit=limit)
         goals = [GoalResponse(**g) for g in goals_data]
-        return GoalListResponse(goals=goals, total_count=len(goals))
+
+        return GoalListResponse(goals=goals, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:

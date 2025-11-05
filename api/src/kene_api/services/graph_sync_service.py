@@ -46,7 +46,7 @@ from ..models.graph_models import (
     WeaknessResponse,
     WeaknessUpdate,
 )
-from .graph_validation_service import GraphValidationService
+from .graph_validation_service import GraphValidationService, validate_node_type
 
 logger = logging.getLogger(__name__)
 
@@ -104,35 +104,44 @@ class GraphSyncService:
             Created node as dictionary
 
         Raises:
-            ValueError: If validation fails
-            Exception: If sync fails (with rollback)
+            ValidationException: If node_type is invalid
+            NodeNotFoundException: If account or parent not found
+            GraphSyncException: If sync fails (with rollback)
         """
         try:
+            # 0. Validate node_type to prevent Cypher injection
+            validate_node_type(node_type)
+
             # 1. Validate account exists
             if not await self.validation.validate_account_exists(account_id):
                 raise NodeNotFoundException("Account", account_id)
 
             # 2. Validate parent exists (if required)
             if parent_node_id:
+                validate_node_type(parent_node_type)
                 if not await self.validation.validate_node_exists(parent_node_id, parent_node_type):
                     raise NodeNotFoundException(parent_node_type, parent_node_id)
 
             # 3. Generate node_id with appropriate prefix
             node_id = self._generate_node_id(node_type, account_id)
 
-            # 4. Create in Neo4j with bidirectional relationships
-            neo4j_result = await self._create_node_neo4j(
-                node_id=node_id,
-                node_type=node_type,
-                node_data=node_data,
-                account_id=account_id,
-                parent_node_id=parent_node_id,
-                parent_node_type=parent_node_type,
-                user_id=user_id,
-            )
-
-            # 5. Sync to Firestore
+            # 4. Use transactional approach: Create in Neo4j within transaction,
+            #    then sync to Firestore BEFORE committing
+            neo4j_result = None
             try:
+                # Step 4a: Create in Neo4j (transaction not committed yet if using session.execute_write)
+                neo4j_result = await self._create_node_neo4j(
+                    node_id=node_id,
+                    node_type=node_type,
+                    node_data=node_data,
+                    account_id=account_id,
+                    parent_node_id=parent_node_id,
+                    parent_node_type=parent_node_type,
+                    user_id=user_id,
+                )
+
+                # Step 4b: Sync to Firestore
+                # If this fails, Neo4j transaction will rollback when exception propagates
                 await self._sync_node_to_firestore(
                     account_id=account_id,
                     node_id=node_id,
@@ -141,15 +150,35 @@ class GraphSyncService:
                     firestore_doc_type=firestore_doc_type,
                     operation="create",
                 )
-            except Exception as firestore_error:
-                # Rollback Neo4j on Firestore failure
-                logger.error(f"Firestore sync failed, rolling back Neo4j: {firestore_error}")
-                await self._delete_node_neo4j(node_id)
-                raise GraphSyncException(
-                    str(firestore_error), operation="create", node_type=node_type, node_id=node_id
-                ) from firestore_error
 
-            return {**neo4j_result, "account_id": account_id}
+                # Step 4c: Both succeeded - return result
+                logger.info(f"Successfully created and synced {node_type} {node_id}")
+                return {**neo4j_result, "account_id": account_id}
+
+            except Exception as sync_error:
+                # If Firestore sync failed, explicitly rollback Neo4j
+                # Note: execute_write_query should auto-rollback on exception,
+                # but we explicitly delete to ensure cleanup
+                if neo4j_result:
+                    logger.error(f"Sync failed after Neo4j create, attempting rollback: {sync_error}")
+                    try:
+                        await self._delete_node_neo4j(node_id)
+                        logger.info(f"Successfully rolled back Neo4j node {node_id}")
+                    except Exception as rollback_error:
+                        logger.error(f"CRITICAL: Rollback failed for {node_id}: {rollback_error}")
+                        # This is a critical failure - database may be inconsistent
+                        raise GraphSyncException(
+                            f"Database sync failed AND rollback failed: {sync_error}. "
+                            f"Manual cleanup may be required for node_id={node_id}",
+                            operation="create",
+                            node_type=node_type,
+                            node_id=node_id,
+                        ) from rollback_error
+
+                # Raise appropriate exception
+                raise GraphSyncException(
+                    str(sync_error), operation="create", node_type=node_type, node_id=node_id
+                ) from sync_error
 
         except Exception as e:
             logger.error(f"Failed to create {node_type}: {e}")
@@ -178,25 +207,31 @@ class GraphSyncService:
             Updated node as dictionary
 
         Raises:
-            ValueError: If node not found
-            Exception: If sync fails (with rollback)
+            ValidationException: If node_type is invalid
+            NodeNotFoundException: If node not found
+            GraphSyncException: If sync fails (with rollback)
         """
         try:
-            # 1. Verify node exists and get current state
+            # 0. Validate node_type to prevent Cypher injection
+            validate_node_type(node_type)
+
+            # 1. Verify node exists and get current state (for potential rollback)
             existing_node = await self.get_node(account_id, node_id, node_type)
             if not existing_node:
                 raise NodeNotFoundException(node_type, node_id)
 
-            # 2. Update in Neo4j
-            neo4j_result = await self._update_node_neo4j(
-                node_id=node_id,
-                node_type=node_type,
-                updates=updates,
-                user_id=user_id,
-            )
-
-            # 3. Sync to Firestore
+            # 2. Use transactional approach: Update in Neo4j, then sync to Firestore
+            neo4j_result = None
             try:
+                # Step 2a: Update in Neo4j
+                neo4j_result = await self._update_node_neo4j(
+                    node_id=node_id,
+                    node_type=node_type,
+                    updates=updates,
+                    user_id=user_id,
+                )
+
+                # Step 2b: Sync to Firestore
                 await self._sync_node_to_firestore(
                     account_id=account_id,
                     node_id=node_id,
@@ -205,21 +240,39 @@ class GraphSyncService:
                     firestore_doc_type=firestore_doc_type,
                     operation="update",
                 )
-            except Exception as firestore_error:
-                # Rollback Neo4j on Firestore failure
-                logger.error(f"Firestore sync failed, rolling back Neo4j: {firestore_error}")
-                # Restore previous state
-                await self._update_node_neo4j(
-                    node_id=node_id,
-                    node_type=node_type,
-                    updates={k: v for k, v in existing_node.items() if k in updates},
-                    user_id=user_id,
-                )
-                raise GraphSyncException(
-                    str(firestore_error), operation="update", node_type=node_type, node_id=node_id
-                ) from firestore_error
 
-            return {**neo4j_result, "account_id": account_id}
+                # Step 2c: Both succeeded
+                logger.info(f"Successfully updated and synced {node_type} {node_id}")
+                return {**neo4j_result, "account_id": account_id}
+
+            except Exception as sync_error:
+                # If Firestore sync failed, rollback Neo4j to previous state
+                if neo4j_result:
+                    logger.error(f"Sync failed after Neo4j update, attempting rollback: {sync_error}")
+                    try:
+                        # Restore only the fields that were updated
+                        rollback_updates = {k: v for k, v in existing_node.items() if k in updates}
+                        await self._update_node_neo4j(
+                            node_id=node_id,
+                            node_type=node_type,
+                            updates=rollback_updates,
+                            user_id=user_id,
+                        )
+                        logger.info(f"Successfully rolled back Neo4j node {node_id} to previous state")
+                    except Exception as rollback_error:
+                        logger.error(f"CRITICAL: Rollback failed for {node_id}: {rollback_error}")
+                        raise GraphSyncException(
+                            f"Database sync failed AND rollback failed: {sync_error}. "
+                            f"Node {node_id} may be in inconsistent state",
+                            operation="update",
+                            node_type=node_type,
+                            node_id=node_id,
+                        ) from rollback_error
+
+                # Raise appropriate exception
+                raise GraphSyncException(
+                    str(sync_error), operation="update", node_type=node_type, node_id=node_id
+                ) from sync_error
 
         except Exception as e:
             logger.error(f"Failed to update {node_type} {node_id}: {e}")
@@ -245,10 +298,15 @@ class GraphSyncService:
             check_dependencies: Whether to validate no dependent nodes
 
         Raises:
-            ValueError: If validation fails
-            Exception: If sync fails (with rollback)
+            ValidationException: If node_type is invalid
+            NodeNotFoundException: If node not found
+            NodeHasDependenciesException: If node has dependencies
+            GraphSyncException: If sync fails (with rollback)
         """
         try:
+            # 0. Validate node_type to prevent Cypher injection
+            validate_node_type(node_type)
+
             # 1. Verify node exists
             existing_node = await self.get_node(account_id, node_id, node_type)
             if not existing_node:
@@ -271,11 +329,14 @@ class GraphSyncService:
                         # Fallback if parsing fails
                         raise NodeHasDependenciesException(node_type, node_id, "dependent nodes", 0)
 
-            # 3. Delete from Neo4j
-            await self._delete_node_neo4j(node_id)
-
-            # 4. Sync to Firestore
+            # 3. Use transactional approach: Delete from Neo4j, then sync to Firestore
+            deleted = False
             try:
+                # Step 3a: Delete from Neo4j
+                await self._delete_node_neo4j(node_id)
+                deleted = True
+
+                # Step 3b: Sync to Firestore
                 await self._sync_node_to_firestore(
                     account_id=account_id,
                     node_id=node_id,
@@ -284,22 +345,40 @@ class GraphSyncService:
                     firestore_doc_type=firestore_doc_type,
                     operation="delete",
                 )
-            except Exception as firestore_error:
-                # Rollback Neo4j on Firestore failure
-                logger.error(f"Firestore sync failed, restoring Neo4j node: {firestore_error}")
-                # Restore node
-                await self._create_node_neo4j(
-                    node_id=node_id,
-                    node_type=node_type,
-                    node_data=existing_node,
-                    account_id=account_id,
-                    parent_node_id=existing_node.get("parent_node_id"),
-                    parent_node_type=existing_node.get("parent_node_type"),
-                    user_id=user_id,
-                )
+
+                # Step 3c: Both succeeded
+                logger.info(f"Successfully deleted and synced {node_type} {node_id}")
+
+            except Exception as sync_error:
+                # If Firestore sync failed after Neo4j deletion, restore the node
+                if deleted:
+                    logger.error(f"Sync failed after Neo4j delete, attempting to restore: {sync_error}")
+                    try:
+                        # Restore the deleted node
+                        await self._create_node_neo4j(
+                            node_id=node_id,
+                            node_type=node_type,
+                            node_data=existing_node,
+                            account_id=account_id,
+                            parent_node_id=existing_node.get("parent_node_id"),
+                            parent_node_type=existing_node.get("parent_node_type"),
+                            user_id=user_id,
+                        )
+                        logger.info(f"Successfully restored Neo4j node {node_id}")
+                    except Exception as rollback_error:
+                        logger.error(f"CRITICAL: Failed to restore deleted node {node_id}: {rollback_error}")
+                        raise GraphSyncException(
+                            f"Database sync failed AND node restoration failed: {sync_error}. "
+                            f"Node {node_id} was deleted from Neo4j but not Firestore",
+                            operation="delete",
+                            node_type=node_type,
+                            node_id=node_id,
+                        ) from rollback_error
+
+                # Raise appropriate exception
                 raise GraphSyncException(
-                    str(firestore_error), operation="delete", node_type=node_type, node_id=node_id
-                ) from firestore_error
+                    str(sync_error), operation="delete", node_type=node_type, node_id=node_id
+                ) from sync_error
 
         except Exception as e:
             logger.error(f"Failed to delete {node_type} {node_id}: {e}")
@@ -324,7 +403,13 @@ class GraphSyncService:
 
         Returns:
             List of nodes as dictionaries
+
+        Raises:
+            ValidationException: If node_type is invalid
         """
+        # Validate node_type to prevent Cypher injection
+        validate_node_type(node_type)
+
         # Build base query
         if parent_node_id:
             # Query with parent filter - match relationship in both directions
@@ -373,7 +458,13 @@ class GraphSyncService:
 
         Returns:
             Node as dictionary, or None if not found
+
+        Raises:
+            ValidationException: If node_type is invalid
         """
+        # Validate node_type to prevent Cypher injection
+        validate_node_type(node_type)
+
         query = f"""
         MATCH (node:{node_type} {{node_id: $node_id}})
         WHERE node.account_id = $account_id OR (node)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
@@ -386,6 +477,51 @@ class GraphSyncService:
             return None
 
         return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": result[0]["account_id"]}
+
+    async def count_nodes(
+        self,
+        account_id: str,
+        node_type: str,
+        parent_node_id: str | None = None,
+    ) -> int:
+        """Get total count of nodes for accurate pagination.
+
+        This method returns the actual count from the database, not just the count
+        of returned results. Essential for proper pagination UI (e.g., "Page 1 of 5").
+
+        Args:
+            account_id: Account identifier
+            node_type: Node type label
+            parent_node_id: Optional filter by parent relationship
+
+        Returns:
+            Total count of matching nodes in database
+
+        Raises:
+            ValidationException: If node_type is invalid
+        """
+        # Validate node_type to prevent Cypher injection
+        validate_node_type(node_type)
+
+        # Build count query based on whether parent filter is used
+        if parent_node_id:
+            query = f"""
+            MATCH (acc:Account {{account_id: $account_id}})
+            MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
+            WHERE (node)-[:BELONGS_TO]->(acc)
+            RETURN count(node) as total
+            """
+            params = {"account_id": account_id, "parent_node_id": parent_node_id}
+        else:
+            query = f"""
+            MATCH (acc:Account {{account_id: $account_id}})
+            MATCH (node:{node_type})-[:BELONGS_TO]->(acc)
+            RETURN count(node) as total
+            """
+            params = {"account_id": account_id}
+
+        result = await self.neo4j.execute_query(query, params)
+        return result[0]["total"] if result else 0
 
     # ==================== CONVENIENCE WRAPPERS FOR BUSINESS STRATEGY ====================
 

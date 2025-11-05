@@ -6,7 +6,9 @@ Provides shared validation logic for graph node operations.
 import logging
 import re
 
+from ..constants import VALID_NODE_TYPES
 from ..database import Neo4jService
+from ..exceptions import ValidationException
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,25 @@ logger = logging.getLogger(__name__)
 URL_PATTERN = re.compile(
     r"^(https?://[^\s]+|/[^\s]*|[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9][a-zA-Z0-9\-]*)*(/[^\s]*)?)$"
 )
+
+
+def validate_node_type(node_type: str) -> None:
+    """Validate node type against whitelist to prevent Cypher injection.
+
+    This function protects against Cypher injection attacks by ensuring that only
+    valid node types are used in dynamic Cypher query construction.
+
+    Args:
+        node_type: Node type to validate
+
+    Raises:
+        ValidationException: If node type is not in the whitelist
+    """
+    if node_type not in VALID_NODE_TYPES:
+        valid_types = ", ".join(sorted(VALID_NODE_TYPES))
+        raise ValidationException(
+            f"Invalid node type '{node_type}'. Must be one of: {valid_types}", field_name="node_type"
+        )
 
 
 class GraphValidationService:
@@ -49,7 +70,13 @@ class GraphValidationService:
 
         Returns:
             True if node exists, False otherwise
+
+        Raises:
+            ValidationException: If node_type is not valid
         """
+        # Validate node_type to prevent Cypher injection
+        validate_node_type(node_type)
+
         query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
         result = await self.neo4j.execute_query(query, {"node_id": node_id})
         return len(result) > 0
@@ -329,7 +356,13 @@ class GraphValidationService:
 
         Returns:
             (is_unique, error_message) tuple
+
+        Raises:
+            ValidationException: If node_type is not valid
         """
+        # Validate node_type to prevent Cypher injection
+        validate_node_type(node_type)
+
         query = f"""
         MATCH (n:{node_type} {{account_id: $account_id, display_name: $display_name}})
         WHERE $exclude_node_id IS NULL OR n.node_id <> $exclude_node_id
