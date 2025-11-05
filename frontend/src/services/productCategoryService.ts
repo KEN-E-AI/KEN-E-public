@@ -5,9 +5,13 @@ export interface ProductCategory {
   node_id: string;
   product_name: string;
   description: string;
-  account_id: string;
-  created_at: string;
-  updated_at: string;
+  account_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  created_time?: string;
+  last_modified?: string;
+  created_by?: string;
+  last_modified_by?: string;
 }
 
 export interface ProductCategoryCreate {
