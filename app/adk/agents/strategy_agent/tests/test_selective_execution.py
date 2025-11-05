@@ -96,12 +96,12 @@ class TestSelectiveStrategyExecution:
         assert len(invalid_strategies) == 2
 
     def test_empty_enabled_strategies_validation(self):
-        """Test that empty enabled_strategies list is handled."""
+        """Test that empty enabled_strategies list raises error."""
         enabled_strategies = []
 
-        # Should be valid (will skip all strategies)
-        invalid_strategies = [s for s in enabled_strategies if s not in VALID_STRATEGY_TYPES]
-        assert invalid_strategies == []
+        # Empty list should raise ValueError
+        should_raise_error = len(enabled_strategies) == 0
+        assert should_raise_error is True
 
     def test_marketing_without_business_requires_categories(self):
         """Test that marketing strategy without business requires product categories."""

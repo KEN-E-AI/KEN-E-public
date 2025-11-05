@@ -423,6 +423,9 @@ def execute_strategy_generation_direct(
                 f"Invalid strategy types: {invalid_strategies}. "
                 f"Valid types are: {VALID_STRATEGY_TYPES}"
             )
+        # Validate that at least one strategy is selected
+        if len(enabled_strategies) == 0:
+            raise ValueError("At least one strategy must be selected for generation")
         logger.info(
             f"[SELECTIVE] Generating selected strategies: {', '.join(enabled_strategies)}"
         )

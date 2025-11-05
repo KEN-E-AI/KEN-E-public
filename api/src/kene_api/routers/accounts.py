@@ -621,6 +621,13 @@ async def create_account(
     logger.info(f"  websites (raw): {websites}")
     logger.info(f"  files: {files}")
 
+    # Check admin authorization for selective strategy execution
+    if enabled_strategies is not None and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Strategy selection is only available for admin users",
+        )
+
     # Parse form data into AccountRequest using the service
     try:
         account_request = parse_account_form_data(

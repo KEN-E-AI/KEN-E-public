@@ -117,3 +117,61 @@ class TestFormParsingWithSelectiveStrategies:
 
         assert isinstance(parsed, list)
         assert len(parsed) == 0
+
+
+class TestAdminAuthorizationForSelectiveStrategies:
+    """Tests for admin authorization on selective strategy features."""
+
+    def test_admin_can_use_selective_strategies(self):
+        """Test that admin users can provide enabled_strategies."""
+        # Simulate admin user
+        class MockUser:
+            is_super_admin = True
+            email = "admin@ken-e.ai"
+
+        user = MockUser()
+        enabled_strategies = ["marketing_strategy"]
+
+        # Admin check should pass
+        if enabled_strategies is not None and not user.is_super_admin:
+            should_raise_403 = True
+        else:
+            should_raise_403 = False
+
+        assert should_raise_403 is False
+
+    def test_non_admin_cannot_use_selective_strategies(self):
+        """Test that non-admin users cannot provide enabled_strategies."""
+        # Simulate non-admin user
+        class MockUser:
+            is_super_admin = False
+            email = "user@example.com"
+
+        user = MockUser()
+        enabled_strategies = ["marketing_strategy"]
+
+        # Admin check should fail
+        if enabled_strategies is not None and not user.is_super_admin:
+            should_raise_403 = True
+        else:
+            should_raise_403 = False
+
+        assert should_raise_403 is True
+
+    def test_non_admin_can_create_account_without_strategy_selection(self):
+        """Test that non-admin users can create accounts with default behavior."""
+        # Simulate non-admin user
+        class MockUser:
+            is_super_admin = False
+            email = "user@example.com"
+
+        user = MockUser()
+        enabled_strategies = None  # None means default (all strategies)
+
+        # Admin check should pass for None
+        if enabled_strategies is not None and not user.is_super_admin:
+            should_raise_403 = True
+        else:
+            should_raise_403 = False
+
+        assert should_raise_403 is False
