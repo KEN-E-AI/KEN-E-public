@@ -2,7 +2,7 @@ import {
   Home,
   BarChart3,
   Settings,
-  Target,
+  Package,
   Search,
   BookOpen,
   User,
@@ -39,7 +39,7 @@ export function IconNavigation() {
       label: "Performance",
       route: "/performance",
     },
-    { id: "big-bets", icon: Target, label: "Big Bets", route: "/big-bets" },
+    { id: "products", icon: Package, label: "Products", route: "/products" },
     {
       id: "exploration",
       icon: Search,

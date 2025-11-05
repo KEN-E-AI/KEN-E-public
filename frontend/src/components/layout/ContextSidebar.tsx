@@ -6,7 +6,7 @@ import {
   Menu,
   Home,
   BarChart3,
-  Target,
+  Package,
   Search,
   BookOpen,
   Settings,
@@ -107,14 +107,10 @@ const menuConfigurations: Record<string, MenuSection> = {
       },
     ],
   },
-  "/big-bets": {
-    title: "Big Bets",
-    icon: Target,
-    items: [
-      { id: "overview", label: "Overview", route: "/big-bets" },
-      { id: "bet1", label: "Big Bet 1", route: "/big-bets/1" },
-      { id: "bet2", label: "Big Bet 2", route: "/big-bets/2" },
-    ],
+  "/products": {
+    title: "Products",
+    icon: Package,
+    items: [{ id: "overview", label: "Overview", route: "/products" }],
   },
   "/exploration": {
     title: "Data Exploration",

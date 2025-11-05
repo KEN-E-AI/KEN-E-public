@@ -19,7 +19,7 @@ import "./App.css";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
-import BigBets from "./pages/BigBets";
+import Products from "./pages/Products";
 import Exploration from "./pages/Exploration";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
@@ -131,10 +131,10 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/big-bets"
+                  path="/products"
                   element={
                     <ProtectedRoute>
-                      <BigBets />
+                      <Products />
                     </ProtectedRoute>
                   }
                 />
