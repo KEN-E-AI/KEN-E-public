@@ -162,6 +162,13 @@ export const accountCreationSchema = z.object({
 
   product_integrations: z.array(z.string()).default([]), // Optional
 
+  enabled_strategies: z
+    .array(z.string())
+    .min(1, "At least one strategy must be selected")
+    .default(["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"]),
+
+  override_product_categories: z.array(z.string()).default([]),
+
   objectives: z.array(z.string()).min(1, "At least one objective is required"),
 
   kpis: z.array(z.string()).min(1, "At least one KPI is required"),

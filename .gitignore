@@ -212,3 +212,6 @@ firebase-key.json
 *service-account-key.json
 **/*service-account*.json
 **/ken-e-*.json
+
+# Deployment logs (environment-specific)
+app/adk/agents/logs/*.txt

@@ -400,6 +400,8 @@ const AccountsManagement = ({
     businessStrategyDocuments: data.business_strategy_documents || [],
     marketing_channels: data.marketing_channels || [],
     product_integrations: data.product_integrations || [],
+    enabled_strategies: data.enabled_strategies,
+    override_product_categories: data.override_product_categories,
   });
 
   const updateContextsAfterCreation = (account: any, orgId: string) => {
@@ -962,18 +964,20 @@ const AccountsManagement = ({
       // Create account in Neo4j (source of truth) with pre-generated ID
       const newAccount = await createAccountMutation.mutateAsync({
         accountId: newAccountId,
-        accountName: createAccountFormData.account_name,
+        accountName: wizardData.account_name,
         organizationId: currentOrgId,
-        industry: createAccountFormData.industry,
-        status: createAccountFormData.status,
-        websites: createAccountFormData.websites,
-        timezone: createAccountFormData.timezone,
-        dataRegion: createAccountFormData.data_region,
-        region: createAccountFormData.region,
-        estimatedAnnualAdBudget:
-          createAccountFormData.estimated_annual_ad_budget,
-        businessStrategyDocuments:
-          createAccountFormData.business_strategy_documents,
+        industry: wizardData.industry,
+        status: "Active",
+        websites: wizardData.websites,
+        timezone: wizardData.timezone,
+        dataRegion: wizardData.data_region,
+        region: wizardData.region,
+        marketing_channels: wizardData.marketing_channels,
+        product_integrations: wizardData.product_integrations,
+        estimatedAnnualAdBudget: wizardData.estimated_annual_ad_budget,
+        businessStrategyDocuments: wizardData.business_strategy_documents,
+        enabled_strategies: wizardData.enabled_strategies,
+        override_product_categories: wizardData.override_product_categories,
       });
 
       console.log(

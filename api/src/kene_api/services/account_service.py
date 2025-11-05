@@ -142,6 +142,8 @@ async def create_account_internal(
         annual_ad_budget=request.estimated_annual_ad_budget,
         uploaded_document_urls=uploaded_document_urls,
         user_context=None,  # No user context for background task
+        enabled_strategies=request.enabled_strategies,
+        override_product_categories=request.override_product_categories,
     )
 
     # Log account structure created (progress tracking simplified)

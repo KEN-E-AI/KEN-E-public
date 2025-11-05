@@ -226,6 +226,8 @@ export async function createAccount(
     product_integrations?: string[];
     estimated_annual_ad_budget?: number | null;
     business_strategy_documents?: File[];
+    enabled_strategies?: string[];
+    override_product_categories?: string[];
   },
   options?: {
     idempotencyKey?: string;
@@ -268,7 +270,9 @@ export async function createAccount(
     .append(
       "estimated_annual_ad_budget",
       accountData.estimated_annual_ad_budget,
-    );
+    )
+    .append("enabled_strategies", accountData.enabled_strategies)
+    .append("override_product_categories", accountData.override_product_categories);
 
   // Add files if they exist
   if (
