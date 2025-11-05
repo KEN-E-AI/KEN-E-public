@@ -20,7 +20,7 @@ import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Products from "./pages/Products";
-import Exploration from "./pages/Exploration";
+import Customers from "./pages/Customers";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
 import KnowledgeProducts from "./pages/KnowledgeProducts";
@@ -139,10 +139,10 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/exploration"
+                  path="/customers"
                   element={
                     <ProtectedRoute>
-                      <Exploration />
+                      <Customers />
                     </ProtectedRoute>
                   }
                 />

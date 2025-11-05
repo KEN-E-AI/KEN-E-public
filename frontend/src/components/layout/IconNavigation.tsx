@@ -3,7 +3,7 @@ import {
   BarChart3,
   Settings,
   Package,
-  Search,
+  Users,
   BookOpen,
   User,
 } from "lucide-react";
@@ -41,10 +41,10 @@ export function IconNavigation() {
     },
     { id: "products", icon: Package, label: "Products", route: "/products" },
     {
-      id: "exploration",
-      icon: Search,
-      label: "Data Exploration",
-      route: "/exploration",
+      id: "customers",
+      icon: Users,
+      label: "Customers",
+      route: "/customers",
     },
     {
       id: "knowledge",

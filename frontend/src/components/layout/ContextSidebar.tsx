@@ -112,18 +112,10 @@ const menuConfigurations: Record<string, MenuSection> = {
     icon: Package,
     items: [{ id: "overview", label: "Overview", route: "/products" }],
   },
-  "/exploration": {
-    title: "Data Exploration",
-    icon: Search,
-    items: [
-      { id: "charts", label: "Charts", route: "/exploration/charts" },
-      {
-        id: "dashboards",
-        label: "Dashboards",
-        route: "/exploration/dashboards",
-      },
-      { id: "catalog", label: "Data Catalog", route: "/exploration/catalog" },
-    ],
+  "/customers": {
+    title: "Customers",
+    icon: Users,
+    items: [{ id: "overview", label: "Overview", route: "/customers" }],
   },
   "/knowledge": {
     title: "Knowledge Base",
