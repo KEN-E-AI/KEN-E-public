@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import {
   Plus,
   Mic,
@@ -11,11 +11,7 @@ import {
   AudioWaveform,
   Wrench,
 } from "lucide-react";
-import {
-  chatService,
-  type ChatMessage,
-  type ConversationInfo,
-} from "@/services/chatService";
+import { useChat } from "@/contexts/ChatContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -27,283 +23,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MessageContent } from "./MessageContent";
 
-interface Message {
-  id: string;
-  content: string;
-  isUser: boolean;
-  timestamp: string;
-}
-
-const initialMessages: Message[] = [
-  {
-    id: "1",
-    content: "Oh?",
-    isUser: true,
-    timestamp: "Nov 30, 2023, 9:41 AM",
-  },
-  {
-    id: "2",
-    content: "Cool",
-    isUser: true,
-    timestamp: "",
-  },
-  {
-    id: "3",
-    content: "How does it work?",
-    isUser: true,
-    timestamp: "",
-  },
-  {
-    id: "4",
-    content: "No honestly I'm thinking of a career pivot",
-    isUser: false,
-    timestamp: "",
-  },
-  {
-    id: "5",
-    content: "Welcome to KEN-E, your marketing intelligence assistant!",
-    isUser: false,
-    timestamp: "",
-  },
-  {
-    id: "6",
-    content:
-      "I can help you analyze your marketing performance, understand customer insights, and optimize your strategies. What would you like to explore today?",
-    isUser: false,
-    timestamp: "",
-  },
-  {
-    id: "7",
-    content: "Show me the latest performance metrics",
-    isUser: true,
-    timestamp: "",
-  },
-  {
-    id: "8",
-    content: "I think I get it",
-    isUser: true,
-    timestamp: "",
-  },
-  {
-    id: "9",
-    content: "Let me know if you need help with anything specific!",
-    isUser: false,
-    timestamp: "",
-  },
-];
-
 const HomeChatArea = () => {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [newMessage, setNewMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
-  const [currentConversation, setCurrentConversation] =
-    useState<ConversationInfo | null>(null);
+  const {
+    messages,
+    newMessage,
+    setNewMessage,
+    isLoading,
+    conversations,
+    createNewChat,
+    sendMessage,
+    switchToConversation,
+    handleKeyPress,
+    updateChatContext,
+  } = useChat();
 
-  // Load conversations on component mount
+  // Update chat context for Home page
   useEffect(() => {
-    const loadConversations = async () => {
-      try {
-        const userConversations = await chatService.getConversations();
-        // Ensure we always set an array, even if API returns unexpected data
-        setConversations(
-          Array.isArray(userConversations) ? userConversations : [],
-        );
-
-        // If no current session, create a new one or use the most recent
-        if (
-          !sessionId &&
-          Array.isArray(userConversations) &&
-          userConversations.length > 0
-        ) {
-          const mostRecent = userConversations[0]; // API returns sorted by last_updated
-          setCurrentConversation(mostRecent);
-          setSessionId(mostRecent.session_id);
-        }
-      } catch (error) {
-        console.error("Failed to load conversations:", error);
-        // Set empty array on error to prevent crashes
-        setConversations([]);
-      }
-    };
-
-    loadConversations();
-  }, [sessionId]);
-
-  // Create a new chat conversation
-  const createNewChat = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const newConversation = await chatService.createConversation("New Chat");
-
-      // Update conversations list
-      setConversations((prev) => [newConversation, ...prev]);
-
-      // Switch to the new conversation
-      setCurrentConversation(newConversation);
-      setSessionId(newConversation.session_id);
-
-      // Clear current messages to start fresh
-      setMessages([
-        {
-          id: "1",
-          content:
-            "Hello! I'm KEN-E, your marketing intelligence assistant. How can I help you today?",
-          isUser: false,
-          timestamp: new Date().toLocaleString(),
-        },
-      ]);
-    } catch (error) {
-      console.error("Failed to create new chat:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // Switch to an existing conversation
-  const switchToConversation = useCallback(
-    async (conversation: ConversationInfo) => {
-      try {
-        setIsLoading(true);
-        setCurrentConversation(conversation);
-        setSessionId(conversation.session_id);
-
-        // Load actual conversation history from ADK session service
-        const history = await chatService.getConversationHistory(
-          conversation.session_id,
-        );
-
-        if (history && (history.messages || history.events)) {
-          // Convert ADK session data to our Message format
-          const events = history.events || history.messages || [];
-          const loadedMessages: Message[] = events.map(
-            (event: any, index: number) => {
-              // Handle ADK event format: event.content.parts[].text
-              let content = "Empty message";
-              let role = "assistant";
-
-              if (
-                event.content &&
-                event.content.parts &&
-                event.content.parts.length > 0
-              ) {
-                // Extract text from first part
-                content =
-                  event.content.parts[0].text ||
-                  event.content.parts[0].content ||
-                  "Empty message";
-                role = event.content.role || event.role || "assistant";
-              } else if (event.content) {
-                // Simple content format
-                content =
-                  event.content.text || event.content || "Empty message";
-                role = event.role || "assistant";
-              }
-
-              return {
-                id: `${index}`,
-                content: content,
-                isUser: role === "user",
-                timestamp: event.timestamp || "",
-              };
-            },
-          );
-          setMessages(loadedMessages);
-        } else {
-          // Fallback if no history available
-          setMessages([
-            {
-              id: "1",
-              content: `Resumed conversation: ${conversation.conversation_name || "Untitled Chat"}`,
-              isUser: false,
-              timestamp: new Date().toLocaleString(),
-            },
-          ]);
-        }
-      } catch (error) {
-        console.error("Failed to load conversation history:", error);
-        // Fallback on error
-        setMessages([
-          {
-            id: "1",
-            content: `Error loading conversation history. Starting fresh chat.`,
-            isUser: false,
-            timestamp: new Date().toLocaleString(),
-          },
-        ]);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [],
-  );
-
-  const sendMessage = useCallback(async () => {
-    if (!newMessage.trim() || isLoading) return;
-
-    // Validate message
-    const validation = chatService.validateMessage(newMessage);
-    if (!validation.valid) {
-      console.error("Invalid message:", validation.reason);
-      return;
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: newMessage,
-      isUser: true,
-      timestamp: "",
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setNewMessage("");
-    setIsLoading(true);
-
-    try {
-      // Convert messages to ChatMessage format
-      const chatMessages: ChatMessage[] = [...messages, userMessage].map(
-        (msg) => ({
-          role: msg.isUser ? "user" : "assistant",
-          content: msg.content,
-          timestamp: msg.timestamp,
-        }),
-      );
-
-      // Get response from Agent Engine
-      const response = await chatService.sendMessage(chatMessages, sessionId);
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: response.content,
-        isUser: false,
-        timestamp: "",
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Error sending message:", error);
-
-      // Add error message
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content:
-          "I'm sorry, I'm having trouble processing your request. Please try again.",
-        isUser: false,
-        timestamp: "",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [newMessage, messages, isLoading, sessionId]);
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+    updateChatContext("Home");
+  }, [updateChatContext]);
 
   return (
     <Card className="h-[calc(100vh-200px)] flex flex-col bg-white border border-dashboard-gray-200">
@@ -392,19 +129,19 @@ const HomeChatArea = () => {
 
             <div
               className={`flex ${
-                message.isUser ? "justify-end" : "justify-start"
+                message.role === "user" ? "justify-end" : "justify-start"
               }`}
             >
               <div
                 className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
-                  message.isUser
+                  message.role === "user"
                     ? "bg-dashboard-gray-100 text-dashboard-gray-900"
                     : "bg-brand-medium-blue text-white"
                 }`}
               >
                 <MessageContent
                   content={message.content}
-                  isAssistant={!message.isUser}
+                  isAssistant={message.role === "assistant"}
                 />
               </div>
             </div>

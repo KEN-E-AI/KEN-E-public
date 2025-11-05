@@ -11,6 +11,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -105,263 +106,265 @@ const App = () => (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <AccountOperationsProvider>
-            <BrowserRouter>
-              <Routes>
-                {/* Unprotected routes */}
-                <Route path="/auth/signin" element={<AuthenticationPage />} />
-                <Route path="/auth/signup" element={<AuthenticationPage />} />
-                <Route
-                  path="/create-organization"
-                  element={<AccountSettings />}
-                />
-                <Route path="/invite/:token" element={<AcceptInvitation />} />
-                <Route path="/auth/action" element={<EmailActionHandler />} />
-                {/* Protected routes */}
-                <Route
-                  path="/"
-                  element={
-                    <ProtectedRoute>
-                      <Home />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/performance"
-                  element={
-                    <ProtectedRoute>
-                      <Performance />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/products"
-                  element={
-                    <ProtectedRoute>
-                      <Products />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/customers"
-                  element={
-                    <ProtectedRoute>
-                      <Customers />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/campaigns"
-                  element={
-                    <ProtectedRoute>
-                      <Campaigns />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/channels"
-                  element={
-                    <ProtectedRoute>
-                      <Channels />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/reports"
-                  element={
-                    <ProtectedRoute>
-                      <Reports />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/simulations"
-                  element={
-                    <ProtectedRoute>
-                      <Simulations />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/strategy"
-                  element={
-                    <ProtectedRoute>
-                      <Index />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/measurement-plan"
-                  element={
-                    <ProtectedRoute>
-                      <Index />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/analysis-report/:reportId"
-                  element={
-                    <ProtectedRoute>
-                      <AnalysisReport />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge"
-                  element={
-                    <ProtectedRoute>
-                      <Knowledge />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/products"
-                  element={
-                    <ProtectedRoute>
-                      <KnowledgeProducts />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/metrics"
-                  element={
-                    <ProtectedRoute>
-                      <KnowledgeMetrics />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/activities"
-                  element={
-                    <ProtectedRoute>
-                      <KnowledgeActivities />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/insights"
-                  element={
-                    <ProtectedRoute>
-                      <Insights />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/account"
-                  element={
-                    <ProtectedRoute>
-                      <KnowledgeAccount />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/customers"
-                  element={
-                    <ProtectedRoute>
-                      <KnowledgeCustomers />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/knowledge/competitors"
-                  element={
-                    <ProtectedRoute>
-                      <KnowledgeCompetitors />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings"
-                  element={
-                    <ProtectedRoute>
-                      <Settings />
-                    </ProtectedRoute>
-                  }
-                />
-                {/* New organized settings routes */}
-                <Route
-                  path="/settings/organization"
-                  element={
-                    <ProtectedRoute>
-                      <AccountSettings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings/account/:accountId"
-                  element={
-                    <ProtectedRoute>
-                      <AccountSettings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings/user"
-                  element={
-                    <ProtectedRoute>
-                      <UserSettings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings/admin"
-                  element={
-                    <ProtectedRoute>
-                      <AdminSettings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings/admin/industry-keywords"
-                  element={
-                    <ProtectedRoute>
-                      <AdminIndustryKeywords />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings/admin/agent-configs"
-                  element={
-                    <ProtectedRoute>
-                      <AgentConfigManagement />
-                    </ProtectedRoute>
-                  }
-                />
-                {/* Backward compatibility routes */}
-                <Route
-                  path="/login"
-                  element={<Navigate to="/auth/signin" replace />}
-                />
-                <Route
-                  path="/signup"
-                  element={<Navigate to="/auth/signup" replace />}
-                />
-                <Route
-                  path="/organization-settings"
-                  element={<Navigate to="/settings/organization" replace />}
-                />
-                <Route
-                  path="/account-settings"
-                  element={<Navigate to="/settings/organization" replace />}
-                />
-                <Route
-                  path="/user-settings"
-                  element={<Navigate to="/settings/user" replace />}
-                />
-                <Route
-                  path="/organization-selection"
-                  element={
-                    <ProtectedRoute>
-                      <OrganizationSelectionPage />
-                    </ProtectedRoute>
-                  }
-                />
-                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-              <Toaster />
-            </BrowserRouter>
-          </AccountOperationsProvider>
+          <ChatProvider>
+            <AccountOperationsProvider>
+              <BrowserRouter>
+                <Routes>
+                  {/* Unprotected routes */}
+                  <Route path="/auth/signin" element={<AuthenticationPage />} />
+                  <Route path="/auth/signup" element={<AuthenticationPage />} />
+                  <Route
+                    path="/create-organization"
+                    element={<AccountSettings />}
+                  />
+                  <Route path="/invite/:token" element={<AcceptInvitation />} />
+                  <Route path="/auth/action" element={<EmailActionHandler />} />
+                  {/* Protected routes */}
+                  <Route
+                    path="/"
+                    element={
+                      <ProtectedRoute>
+                        <Home />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/performance"
+                    element={
+                      <ProtectedRoute>
+                        <Performance />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/products"
+                    element={
+                      <ProtectedRoute>
+                        <Products />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/customers"
+                    element={
+                      <ProtectedRoute>
+                        <Customers />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/campaigns"
+                    element={
+                      <ProtectedRoute>
+                        <Campaigns />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/channels"
+                    element={
+                      <ProtectedRoute>
+                        <Channels />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/reports"
+                    element={
+                      <ProtectedRoute>
+                        <Reports />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/simulations"
+                    element={
+                      <ProtectedRoute>
+                        <Simulations />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/strategy"
+                    element={
+                      <ProtectedRoute>
+                        <Index />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/measurement-plan"
+                    element={
+                      <ProtectedRoute>
+                        <Index />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/analysis-report/:reportId"
+                    element={
+                      <ProtectedRoute>
+                        <AnalysisReport />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge"
+                    element={
+                      <ProtectedRoute>
+                        <Knowledge />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/products"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeProducts />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/metrics"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeMetrics />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/activities"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeActivities />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/insights"
+                    element={
+                      <ProtectedRoute>
+                        <Insights />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/account"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeAccount />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/customers"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeCustomers />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/competitors"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeCompetitors />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <ProtectedRoute>
+                        <Settings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  {/* New organized settings routes */}
+                  <Route
+                    path="/settings/organization"
+                    element={
+                      <ProtectedRoute>
+                        <AccountSettings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings/account/:accountId"
+                    element={
+                      <ProtectedRoute>
+                        <AccountSettings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings/user"
+                    element={
+                      <ProtectedRoute>
+                        <UserSettings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings/admin"
+                    element={
+                      <ProtectedRoute>
+                        <AdminSettings />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings/admin/industry-keywords"
+                    element={
+                      <ProtectedRoute>
+                        <AdminIndustryKeywords />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings/admin/agent-configs"
+                    element={
+                      <ProtectedRoute>
+                        <AgentConfigManagement />
+                      </ProtectedRoute>
+                    }
+                  />
+                  {/* Backward compatibility routes */}
+                  <Route
+                    path="/login"
+                    element={<Navigate to="/auth/signin" replace />}
+                  />
+                  <Route
+                    path="/signup"
+                    element={<Navigate to="/auth/signup" replace />}
+                  />
+                  <Route
+                    path="/organization-settings"
+                    element={<Navigate to="/settings/organization" replace />}
+                  />
+                  <Route
+                    path="/account-settings"
+                    element={<Navigate to="/settings/organization" replace />}
+                  />
+                  <Route
+                    path="/user-settings"
+                    element={<Navigate to="/settings/user" replace />}
+                  />
+                  <Route
+                    path="/organization-selection"
+                    element={
+                      <ProtectedRoute>
+                        <OrganizationSelectionPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+                <Toaster />
+              </BrowserRouter>
+            </AccountOperationsProvider>
+          </ChatProvider>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

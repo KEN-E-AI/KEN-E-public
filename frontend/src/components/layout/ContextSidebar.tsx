@@ -54,27 +54,16 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
+import { useChat } from "@/contexts/ChatContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { iconMap } from "@/lib/iconMap";
 import api from "@/lib/api";
 import type { NotificationCategory } from "@/types/notification.types";
-import {
-  chatService,
-  type ChatMessage,
-  type ConversationInfo,
-} from "@/services/chatService";
 
 interface SubMenuItem {
   id: string;
   label: string;
   route: string;
-}
-
-interface DisplayMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: string;
 }
 
 // Notification category icon mapping matching NotificationPreferences.tsx
@@ -202,21 +191,26 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   const navigate = useNavigate();
   const isHomePage = location.pathname === "/";
 
-  // Chat state (from ChatSidebar)
-  const [newMessage, setNewMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
-  const [currentConversation, setCurrentConversation] =
-    useState<ConversationInfo | null>(null);
-  const [messages, setMessages] = useState<DisplayMessage[]>([
-    {
-      id: "1",
-      role: "assistant",
-      content: `Hello! I'm here to help with your ${selectedTab} strategy. What would you like to discuss?`,
-      timestamp: new Date().toISOString(),
-    },
-  ]);
+  // Chat state and functions from ChatContext
+  const {
+    messages,
+    newMessage,
+    setNewMessage,
+    isLoading,
+    conversations,
+    createNewChat,
+    sendMessage,
+    switchToConversation,
+    handleKeyPress,
+    updateChatContext,
+  } = useChat();
+
+  // Update chat context when selectedTab changes
+  useEffect(() => {
+    if (!isHomePage) {
+      updateChatContext(selectedTab);
+    }
+  }, [selectedTab, isHomePage, updateChatContext]);
 
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
@@ -268,197 +262,6 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
       setNotifications(notifications.filter((n) => n.id !== notificationId));
     } catch (error) {
       console.error("Failed to archive notification:", error);
-    }
-  };
-
-  // Load conversations on component mount (chat functionality)
-  useEffect(() => {
-    if (isHomePage) return; // Skip chat loading on home page
-
-    const loadConversations = async () => {
-      try {
-        const userConversations = await chatService.getConversations();
-        setConversations(
-          Array.isArray(userConversations) ? userConversations : [],
-        );
-
-        if (
-          !sessionId &&
-          Array.isArray(userConversations) &&
-          userConversations.length > 0
-        ) {
-          const mostRecent = userConversations[0];
-          setCurrentConversation(mostRecent);
-          setSessionId(mostRecent.session_id);
-        }
-      } catch (error) {
-        console.error("Failed to load conversations:", error);
-        setConversations([]);
-      }
-    };
-
-    loadConversations();
-  }, [sessionId, isHomePage]);
-
-  // Create a new chat conversation
-  const createNewChat = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const newConversation =
-        await chatService.createConversation("Dashboard Chat");
-
-      setConversations((prev) => [newConversation, ...prev]);
-      setCurrentConversation(newConversation);
-      setSessionId(newConversation.session_id);
-
-      setMessages([
-        {
-          id: "1",
-          role: "assistant",
-          content: `Hello! I'm here to help with your ${selectedTab} strategy. What would you like to discuss?`,
-          timestamp: new Date().toISOString(),
-        },
-      ]);
-    } catch (error) {
-      console.error("Failed to create new chat:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedTab]);
-
-  // Switch to an existing conversation
-  const switchToConversation = useCallback(
-    async (conversation: ConversationInfo) => {
-      try {
-        setIsLoading(true);
-        setCurrentConversation(conversation);
-        setSessionId(conversation.session_id);
-
-        const history = await chatService.getConversationHistory(
-          conversation.session_id,
-        );
-
-        if (history && (history.messages || history.events)) {
-          const events = history.events || history.messages || [];
-          const loadedMessages: DisplayMessage[] = events.map(
-            (event: any, index: number) => {
-              let content = "Empty message";
-              let role = "assistant";
-
-              if (
-                event.content &&
-                event.content.parts &&
-                event.content.parts.length > 0
-              ) {
-                content =
-                  event.content.parts[0].text ||
-                  event.content.parts[0].content ||
-                  "Empty message";
-                role = event.content.role || event.role || "assistant";
-              } else if (event.content) {
-                content =
-                  event.content.text || event.content || "Empty message";
-                role = event.role || "assistant";
-              }
-
-              return {
-                id: `${index}`,
-                role: role === "user" ? "user" : "assistant",
-                content: content,
-                timestamp: new Date(
-                  event.timestamp || Date.now(),
-                ).toISOString(),
-              };
-            },
-          );
-          setMessages(loadedMessages);
-        } else {
-          setMessages([
-            {
-              id: "1",
-              role: "assistant",
-              content: `Resumed conversation: ${conversation.conversation_name || "Untitled Chat"} for ${selectedTab}`,
-              timestamp: new Date().toISOString(),
-            },
-          ]);
-        }
-      } catch (error) {
-        console.error("Failed to load conversation history:", error);
-        setMessages([
-          {
-            id: "1",
-            role: "assistant",
-            content: `Error loading conversation history. Starting fresh chat for ${selectedTab}.`,
-            timestamp: new Date().toISOString(),
-          },
-        ]);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [selectedTab],
-  );
-
-  // Send new chat message
-  const sendNewMessage = useCallback(async () => {
-    if (!newMessage.trim() || isLoading) return;
-
-    const validation = chatService.validateMessage(newMessage);
-    if (!validation.valid) {
-      console.error("Invalid message:", validation.reason);
-      return;
-    }
-
-    const userMessage = {
-      id: Date.now().toString(),
-      role: "user" as const,
-      content: newMessage,
-      timestamp: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setNewMessage("");
-    setIsLoading(true);
-
-    try {
-      const chatMessages: ChatMessage[] = [...messages, userMessage].map(
-        (msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }),
-      );
-
-      const response = await chatService.sendMessage(chatMessages, sessionId);
-
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant" as const,
-        content: response.content,
-        timestamp: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Error sending message:", error);
-
-      const errorMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant" as const,
-        content:
-          "I'm sorry, I'm having trouble processing your request. Please try again.",
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [newMessage, messages, isLoading, sessionId]);
-
-  // Handle key press for chat input
-  const handleNewKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendNewMessage();
     }
   };
 
@@ -956,7 +759,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                         <Input
                           value={newMessage}
                           onChange={(e) => setNewMessage(e.target.value)}
-                          onKeyDown={handleNewKeyPress}
+                          onKeyDown={handleKeyPress}
                           placeholder="What would you like to discuss?"
                           className="w-full border-0 focus:ring-0 focus:border-0 shadow-none"
                           disabled={isLoading}
@@ -983,7 +786,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                         </Button>
 
                         <Button
-                          onClick={sendNewMessage}
+                          onClick={sendMessage}
                           disabled={!newMessage.trim() || isLoading}
                           size="sm"
                           className="bg-brand-medium-blue hover:bg-brand-medium-blue/90 text-white px-4"
