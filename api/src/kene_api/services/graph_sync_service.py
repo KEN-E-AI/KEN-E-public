@@ -332,14 +332,14 @@ class GraphSyncService:
             MATCH (acc:Account {{account_id: $account_id}})
             MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
             WHERE (node)-[:BELONGS_TO]->(acc)
-            RETURN node
+            RETURN node, acc.account_id as account_id
             ORDER BY node.display_name, node.product_name, node.name
             """
         else:
             base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
             MATCH (node:{node_type})-[:BELONGS_TO]->(acc)
-            RETURN node
+            RETURN node, acc.account_id as account_id
             ORDER BY node.display_name, node.product_name, node.name
             """
 
@@ -353,7 +353,10 @@ class GraphSyncService:
 
         result = await self.neo4j.execute_query(query, params)
 
-        return [self._neo4j_node_to_dict(record["node"]) for record in result]
+        return [
+            {**self._neo4j_node_to_dict(record["node"]), "account_id": record["account_id"]}
+            for record in result
+        ]
 
     async def get_node(
         self,
@@ -1623,21 +1626,51 @@ class GraphSyncService:
         # For Phase 1, we accept eventual consistency and focus on Neo4j as primary
         logger.info(f"Firestore sync stub: {operation} {node_type} {node_id}")
 
+    def _convert_neo4j_value(self, value: Any) -> Any:
+        """Convert Neo4j-specific types to Python-native types.
+
+        Args:
+            value: Value to convert (may be Neo4j DateTime, native Python, etc.)
+
+        Returns:
+            Python-native value suitable for JSON serialization
+        """
+        try:
+            from neo4j.time import DateTime as Neo4jDateTime
+
+            if isinstance(value, Neo4jDateTime):
+                return value.to_native().isoformat()
+        except ImportError:
+            pass
+
+        if isinstance(value, datetime):
+            return value.isoformat()
+
+        if isinstance(value, list):
+            return [self._convert_neo4j_value(item) for item in value]
+
+        if isinstance(value, dict):
+            return {k: self._convert_neo4j_value(v) for k, v in value.items()}
+
+        return value
+
     def _neo4j_node_to_dict(self, node: Any) -> dict[str, Any]:
-        """Convert Neo4j node to dictionary.
+        """Convert Neo4j node to dictionary with proper type conversion.
 
         Args:
             node: Neo4j node object
 
         Returns:
-            Node as dictionary
+            Node as dictionary with Neo4j types converted to Python types
         """
         if hasattr(node, "_properties"):
-            return dict(node._properties)
+            props = dict(node._properties)
         elif hasattr(node, "items"):
-            return dict(node.items())
+            props = dict(node.items())
         else:
-            return dict(node)
+            props = dict(node)
+
+        return {key: self._convert_neo4j_value(value) for key, value in props.items()}
 
 
 def get_graph_sync_service(
