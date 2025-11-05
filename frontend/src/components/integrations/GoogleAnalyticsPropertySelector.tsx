@@ -46,17 +46,20 @@ export const GoogleAnalyticsPropertySelector = ({
   onSkip,
   isAccountCreation = false,
 }: GoogleAnalyticsPropertySelectorProps) => {
-  console.log("[GoogleAnalyticsPropertySelector] Component mounted/rendered with props:", {
-    accountId,
-    onComplete: !!onComplete,
-    onSkip: !!onSkip,
-    isAccountCreation,
-    timestamp: new Date().toISOString(),
-  });
-  
+  console.log(
+    "[GoogleAnalyticsPropertySelector] Component mounted/rendered with props:",
+    {
+      accountId,
+      onComplete: !!onComplete,
+      onSkip: !!onSkip,
+      isAccountCreation,
+      timestamp: new Date().toISOString(),
+    },
+  );
+
   const [properties, setProperties] = useState<GoogleAnalyticsProperty[]>([]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -73,28 +76,34 @@ export const GoogleAnalyticsPropertySelector = ({
     setError(null);
     try {
       const response = await api.get(
-        `/api/oauth/google-analytics/properties/${accountId}`
+        `/api/oauth/google-analytics/properties/${accountId}`,
       );
-      console.log("[GoogleAnalyticsPropertySelector] Fetched properties:", response.data);
-      
+      console.log(
+        "[GoogleAnalyticsPropertySelector] Fetched properties:",
+        response.data,
+      );
+
       const data = response.data;
       setProperties(data.properties || []);
-      
+
       // Pre-select previously selected properties
       if (data.selected_property_ids && data.selected_property_ids.length > 0) {
         setSelectedPropertyIds(new Set(data.selected_property_ids));
       }
     } catch (error: any) {
-      console.error("[GoogleAnalyticsPropertySelector] Failed to fetch properties:", {
-        error,
-        response: error.response,
-        status: error.response?.status,
-        data: error.response?.data,
-        accountId
-      });
+      console.error(
+        "[GoogleAnalyticsPropertySelector] Failed to fetch properties:",
+        {
+          error,
+          response: error.response,
+          status: error.response?.status,
+          data: error.response?.data,
+          accountId,
+        },
+      );
       setError(
-        error.response?.data?.detail || 
-        "Failed to fetch Google Analytics properties. Please ensure you've connected your Google account."
+        error.response?.data?.detail ||
+          "Failed to fetch Google Analytics properties. Please ensure you've connected your Google account.",
       );
     } finally {
       setIsLoading(false);
@@ -117,7 +126,7 @@ export const GoogleAnalyticsPropertySelector = ({
       setSelectedPropertyIds(new Set());
     } else {
       // Select all visible
-      const allIds = new Set(filteredProperties.map(p => p.property_id));
+      const allIds = new Set(filteredProperties.map((p) => p.property_id));
       setSelectedPropertyIds(allIds);
     }
   };
@@ -134,22 +143,19 @@ export const GoogleAnalyticsPropertySelector = ({
 
     setIsSaving(true);
     try {
-      const selectedProperties = properties.filter(p => 
-        selectedPropertyIds.has(p.property_id)
+      const selectedProperties = properties.filter((p) =>
+        selectedPropertyIds.has(p.property_id),
       );
 
-      await api.post(
-        `/api/oauth/google-analytics/properties/${accountId}`,
-        {
-          property_ids: Array.from(selectedPropertyIds),
-          properties: selectedProperties,
-        }
-      );
+      await api.post(`/api/oauth/google-analytics/properties/${accountId}`, {
+        property_ids: Array.from(selectedPropertyIds),
+        properties: selectedProperties,
+      });
 
       toast({
         title: "Success",
         description: `${selectedPropertyIds.size} ${
-          selectedPropertyIds.size === 1 ? 'property' : 'properties'
+          selectedPropertyIds.size === 1 ? "property" : "properties"
         } selected successfully.`,
       });
 
@@ -173,19 +179,24 @@ export const GoogleAnalyticsPropertySelector = ({
   const filteredProperties = properties.filter(
     (property) =>
       property.display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      property.account_display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      property.property_id.toLowerCase().includes(searchQuery.toLowerCase())
+      property.account_display_name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      property.property_id.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   // Group properties by account
-  const propertiesByAccount = filteredProperties.reduce((acc, property) => {
-    const accountName = property.account_display_name;
-    if (!acc[accountName]) {
-      acc[accountName] = [];
-    }
-    acc[accountName].push(property);
-    return acc;
-  }, {} as Record<string, GoogleAnalyticsProperty[]>);
+  const propertiesByAccount = filteredProperties.reduce(
+    (acc, property) => {
+      const accountName = property.account_display_name;
+      if (!acc[accountName]) {
+        acc[accountName] = [];
+      }
+      acc[accountName].push(property);
+      return acc;
+    },
+    {} as Record<string, GoogleAnalyticsProperty[]>,
+  );
 
   // Now we can have conditional returns since all hooks have been called
   if (isLoading) {
@@ -232,8 +243,8 @@ export const GoogleAnalyticsPropertySelector = ({
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>No Properties Found</AlertTitle>
             <AlertDescription>
-              No Google Analytics properties were found for your account. 
-              Please ensure you have access to at least one GA4 property.
+              No Google Analytics properties were found for your account. Please
+              ensure you have access to at least one GA4 property.
             </AlertDescription>
           </Alert>
           {onSkip && (
@@ -246,14 +257,19 @@ export const GoogleAnalyticsPropertySelector = ({
     );
   }
 
-  console.log("[GoogleAnalyticsPropertySelector] Rendering main UI with", properties.length, "properties");
+  console.log(
+    "[GoogleAnalyticsPropertySelector] Rendering main UI with",
+    properties.length,
+    "properties",
+  );
   return (
     <Card className="w-full max-w-4xl mx-auto bg-white relative z-[10000]">
       <CardHeader>
         <CardTitle>Select Google Analytics Properties</CardTitle>
         <CardDescription>
           Choose which Google Analytics properties KEN-E should have access to.
-          {isAccountCreation && " You can modify this selection later in account settings."}
+          {isAccountCreation &&
+            " You can modify this selection later in account settings."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -273,7 +289,8 @@ export const GoogleAnalyticsPropertySelector = ({
             onClick={handleSelectAll}
             disabled={filteredProperties.length === 0}
           >
-            {selectedPropertyIds.size === filteredProperties.length && filteredProperties.length > 0
+            {selectedPropertyIds.size === filteredProperties.length &&
+            filteredProperties.length > 0
               ? "Deselect All"
               : "Select All"}
           </Button>
@@ -284,58 +301,65 @@ export const GoogleAnalyticsPropertySelector = ({
           <Alert className="border-green-500">
             <CheckCircle className="h-4 w-4 text-green-600" />
             <AlertDescription>
-              {selectedPropertyIds.size} {selectedPropertyIds.size === 1 ? 'property' : 'properties'} selected
+              {selectedPropertyIds.size}{" "}
+              {selectedPropertyIds.size === 1 ? "property" : "properties"}{" "}
+              selected
             </AlertDescription>
           </Alert>
         )}
 
         {/* Properties List */}
         <ScrollArea className="h-[400px] border rounded-lg p-4">
-          {Object.entries(propertiesByAccount).map(([accountName, accountProperties]) => (
-            <div key={accountName} className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Building className="h-4 w-4 text-dashboard-gray-500" />
-                <h4 className="font-medium text-sm">{accountName}</h4>
-                <Badge variant="secondary" className="text-xs">
-                  {accountProperties.length} {accountProperties.length === 1 ? 'property' : 'properties'}
-                </Badge>
-              </div>
-              <div className="space-y-2 ml-6">
-                {accountProperties.map((property) => (
-                  <div
-                    key={property.property_id}
-                    className="flex items-start space-x-3 p-3 rounded-lg hover:bg-dashboard-gray-50 transition-colors"
-                  >
-                    <Checkbox
-                      id={property.property_id}
-                      checked={selectedPropertyIds.has(property.property_id)}
-                      onCheckedChange={() => handlePropertyToggle(property.property_id)}
-                      className="mt-1"
-                    />
-                    <label
-                      htmlFor={property.property_id}
-                      className="flex-1 cursor-pointer"
+          {Object.entries(propertiesByAccount).map(
+            ([accountName, accountProperties]) => (
+              <div key={accountName} className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <Building className="h-4 w-4 text-dashboard-gray-500" />
+                  <h4 className="font-medium text-sm">{accountName}</h4>
+                  <Badge variant="secondary" className="text-xs">
+                    {accountProperties.length}{" "}
+                    {accountProperties.length === 1 ? "property" : "properties"}
+                  </Badge>
+                </div>
+                <div className="space-y-2 ml-6">
+                  {accountProperties.map((property) => (
+                    <div
+                      key={property.property_id}
+                      className="flex items-start space-x-3 p-3 rounded-lg hover:bg-dashboard-gray-50 transition-colors"
                     >
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-3 w-3 text-dashboard-gray-400" />
-                        <span className="font-medium text-sm">
-                          {property.display_name}
-                        </span>
-                      </div>
-                      <div className="text-xs text-dashboard-gray-500 mt-1">
-                        ID: {property.property_id}
-                      </div>
-                      {property.time_zone && (
-                        <div className="text-xs text-dashboard-gray-400 mt-1">
-                          Timezone: {property.time_zone}
+                      <Checkbox
+                        id={property.property_id}
+                        checked={selectedPropertyIds.has(property.property_id)}
+                        onCheckedChange={() =>
+                          handlePropertyToggle(property.property_id)
+                        }
+                        className="mt-1"
+                      />
+                      <label
+                        htmlFor={property.property_id}
+                        className="flex-1 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Globe className="h-3 w-3 text-dashboard-gray-400" />
+                          <span className="font-medium text-sm">
+                            {property.display_name}
+                          </span>
                         </div>
-                      )}
-                    </label>
-                  </div>
-                ))}
+                        <div className="text-xs text-dashboard-gray-500 mt-1">
+                          ID: {property.property_id}
+                        </div>
+                        {property.time_zone && (
+                          <div className="text-xs text-dashboard-gray-400 mt-1">
+                            Timezone: {property.time_zone}
+                          </div>
+                        )}
+                      </label>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </ScrollArea>
 
         {/* Action Buttons */}

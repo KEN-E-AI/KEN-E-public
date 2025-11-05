@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import GlobalHeader from "@/components/dashboard/GlobalHeader";
-import ChatSidebar from "@/components/dashboard/ChatSidebar";
 import { IconNavigation } from "@/components/layout/IconNavigation";
 import { ContextSidebar } from "@/components/layout/ContextSidebar";
 
@@ -9,8 +8,6 @@ interface LayoutProps {
   children: React.ReactNode;
   pageTitle?: string;
   selectedTab?: string;
-  selectedChannel?: string;
-  selectedTactic?: string;
   dateRange?: {
     from: Date;
     to: Date;
@@ -23,7 +20,6 @@ interface LayoutProps {
   setComparisonDateRange?: (
     range: { from: Date; to: Date } | undefined,
   ) => void;
-  hideChatSidebar?: boolean;
   hideContextSidebar?: boolean;
 }
 
@@ -31,8 +27,6 @@ const Layout = ({
   children,
   pageTitle = "Measurement Strategy",
   selectedTab = "Awareness",
-  selectedChannel = "Overview",
-  selectedTactic = "",
   dateRange = {
     from: new Date(2025, 0, 1),
     to: new Date(2025, 0, 31),
@@ -40,10 +34,8 @@ const Layout = ({
   setDateRange = () => {},
   comparisonDateRange,
   setComparisonDateRange = () => {},
-  hideChatSidebar = false,
   hideContextSidebar = false,
 }: LayoutProps) => {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextSidebarCollapsed, setContextSidebarCollapsed] = useState(() => {
     // Initialize from localStorage
     const saved = localStorage.getItem("contextSidebarCollapsed");
@@ -68,23 +60,18 @@ const Layout = ({
               newState.toString(),
             );
           }}
+          selectedTab={selectedTab}
         />
       )}
 
       {/* Main Content */}
       <div
-        className={`transition-all duration-300 p-4 sm:p-6 space-y-6 min-h-screen ${
+        className={`transition-all duration-300 p-4 sm:p-6 space-y-6 min-h-screen pr-4 sm:pr-6 ${
           hideContextSidebar
-            ? "pl-[calc(3.5rem+1rem)] sm:pl-[calc(3.5rem+1.5rem)]" // Only IconNavigation width
+            ? "pl-[calc(3.5rem+1rem)] sm:pl-[calc(3.5rem+1.5rem)]"
             : contextSidebarCollapsed
-              ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
-              : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
-        } ${
-          !hideChatSidebar
-            ? sidebarCollapsed
-              ? "pr-[calc(4rem+1rem)] sm:pr-[calc(4rem+1.5rem)]"
-              : "pr-[calc(20rem+1rem)] sm:pr-[calc(20rem+1.5rem)]"
-            : "pr-4 sm:pr-6"
+              ? "pl-[calc(7rem+1rem)] sm:pl-[calc(7rem+1.5rem)]"
+              : "pl-[calc(3.5rem+360px+1rem)] sm:pl-[calc(3.5rem+360px+1.5rem)]"
         }`}
       >
         {/* Header */}
@@ -101,17 +88,6 @@ const Layout = ({
         {/* Page Content */}
         {children}
       </div>
-
-      {/* Chat Sidebar - Fixed right sidebar */}
-      {!hideChatSidebar && (
-        <ChatSidebar
-          selectedTab={selectedTab}
-          selectedChannel={selectedChannel}
-          selectedTactic={selectedTactic}
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        />
-      )}
     </div>
   );
 };

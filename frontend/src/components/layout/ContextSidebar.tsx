@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,9 +22,19 @@ import {
   FileText,
   TrendingUp,
   Sparkles,
+  Send,
+  Mic,
+  AudioWaveform,
+  Wrench,
+  Mail,
+  MessageSquare,
+  Share2,
+  Plus,
+  User,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -45,11 +55,23 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { iconMap } from "@/lib/iconMap";
 import api from "@/lib/api";
 import type { NotificationCategory } from "@/types/notification.types";
+import {
+  chatService,
+  type ChatMessage,
+  type ConversationInfo,
+} from "@/services/chatService";
 
 interface SubMenuItem {
   id: string;
   label: string;
   route: string;
+}
+
+interface DisplayMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
 }
 
 // Notification category icon mapping matching NotificationPreferences.tsx
@@ -146,11 +168,13 @@ const menuConfigurations: Record<string, MenuSection> = {
 interface ContextSidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  selectedTab?: string;
 }
 
 export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
+  selectedTab = "Awareness",
 }) => {
   const {
     notifications,
@@ -165,6 +189,23 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const isHomePage = location.pathname === "/";
+
+  // Chat state (from ChatSidebar)
+  const [newMessage, setNewMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationInfo[]>([]);
+  const [currentConversation, setCurrentConversation] =
+    useState<ConversationInfo | null>(null);
+  const [messages, setMessages] = useState<DisplayMessage[]>([
+    {
+      id: "1",
+      role: "assistant",
+      content: `Hello! I'm here to help with your ${selectedTab} strategy. What would you like to discuss?`,
+      timestamp: new Date().toISOString(),
+    },
+  ]);
 
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
@@ -219,6 +260,197 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     }
   };
 
+  // Load conversations on component mount (chat functionality)
+  useEffect(() => {
+    if (isHomePage) return; // Skip chat loading on home page
+
+    const loadConversations = async () => {
+      try {
+        const userConversations = await chatService.getConversations();
+        setConversations(
+          Array.isArray(userConversations) ? userConversations : [],
+        );
+
+        if (
+          !sessionId &&
+          Array.isArray(userConversations) &&
+          userConversations.length > 0
+        ) {
+          const mostRecent = userConversations[0];
+          setCurrentConversation(mostRecent);
+          setSessionId(mostRecent.session_id);
+        }
+      } catch (error) {
+        console.error("Failed to load conversations:", error);
+        setConversations([]);
+      }
+    };
+
+    loadConversations();
+  }, [sessionId, isHomePage]);
+
+  // Create a new chat conversation
+  const createNewChat = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const newConversation =
+        await chatService.createConversation("Dashboard Chat");
+
+      setConversations((prev) => [newConversation, ...prev]);
+      setCurrentConversation(newConversation);
+      setSessionId(newConversation.session_id);
+
+      setMessages([
+        {
+          id: "1",
+          role: "assistant",
+          content: `Hello! I'm here to help with your ${selectedTab} strategy. What would you like to discuss?`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    } catch (error) {
+      console.error("Failed to create new chat:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedTab]);
+
+  // Switch to an existing conversation
+  const switchToConversation = useCallback(
+    async (conversation: ConversationInfo) => {
+      try {
+        setIsLoading(true);
+        setCurrentConversation(conversation);
+        setSessionId(conversation.session_id);
+
+        const history = await chatService.getConversationHistory(
+          conversation.session_id,
+        );
+
+        if (history && (history.messages || history.events)) {
+          const events = history.events || history.messages || [];
+          const loadedMessages: DisplayMessage[] = events.map(
+            (event: any, index: number) => {
+              let content = "Empty message";
+              let role = "assistant";
+
+              if (
+                event.content &&
+                event.content.parts &&
+                event.content.parts.length > 0
+              ) {
+                content =
+                  event.content.parts[0].text ||
+                  event.content.parts[0].content ||
+                  "Empty message";
+                role = event.content.role || event.role || "assistant";
+              } else if (event.content) {
+                content =
+                  event.content.text || event.content || "Empty message";
+                role = event.role || "assistant";
+              }
+
+              return {
+                id: `${index}`,
+                role: role === "user" ? "user" : "assistant",
+                content: content,
+                timestamp: new Date(
+                  event.timestamp || Date.now(),
+                ).toISOString(),
+              };
+            },
+          );
+          setMessages(loadedMessages);
+        } else {
+          setMessages([
+            {
+              id: "1",
+              role: "assistant",
+              content: `Resumed conversation: ${conversation.conversation_name || "Untitled Chat"} for ${selectedTab}`,
+              timestamp: new Date().toISOString(),
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error("Failed to load conversation history:", error);
+        setMessages([
+          {
+            id: "1",
+            role: "assistant",
+            content: `Error loading conversation history. Starting fresh chat for ${selectedTab}.`,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [selectedTab],
+  );
+
+  // Send new chat message
+  const sendNewMessage = useCallback(async () => {
+    if (!newMessage.trim() || isLoading) return;
+
+    const validation = chatService.validateMessage(newMessage);
+    if (!validation.valid) {
+      console.error("Invalid message:", validation.reason);
+      return;
+    }
+
+    const userMessage = {
+      id: Date.now().toString(),
+      role: "user" as const,
+      content: newMessage,
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setNewMessage("");
+    setIsLoading(true);
+
+    try {
+      const chatMessages: ChatMessage[] = [...messages, userMessage].map(
+        (msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }),
+      );
+
+      const response = await chatService.sendMessage(chatMessages, sessionId);
+
+      const assistantMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant" as const,
+        content: response.content,
+        timestamp: new Date().toISOString(),
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error sending message:", error);
+
+      const errorMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant" as const,
+        content:
+          "I'm sorry, I'm having trouble processing your request. Please try again.",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [newMessage, messages, isLoading, sessionId]);
+
+  // Handle key press for chat input
+  const handleNewKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendNewMessage();
+    }
+  };
+
   // Determine which menu to show based on current route
   const getActiveMenu = () => {
     const path = location.pathname;
@@ -248,7 +480,6 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   };
 
   const activeMenu = getActiveMenu();
-  const isHomePage = location.pathname === "/";
 
   // Organization dropdown logic
   const accessibleOrgIds = isSuperAdmin
@@ -357,7 +588,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     <div
       className={cn(
         "fixed top-0 left-14 h-full bg-white border-r border-dashboard-gray-200 z-30 transition-all duration-300 flex flex-col",
-        isCollapsed ? "w-16" : "w-80 md:w-80",
+        isCollapsed ? "w-14" : "w-[360px]",
       )}
     >
       {/* Header */}
@@ -370,7 +601,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
             className="h-8 w-8 p-0"
             aria-label="Toggle sidebar"
           >
-            <Menu className="h-4 w-4" />
+            <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -378,7 +609,10 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
           {/* Organization/Account Selector */}
           {combinedOptions.length > 0 && (
             <div className="flex-1 mr-2">
-              <Select value={currentValue} onValueChange={handleOrgAccountChange}>
+              <Select
+                value={currentValue}
+                onValueChange={handleOrgAccountChange}
+              >
                 <SelectTrigger className="w-full h-auto py-2 text-sm border-0 bg-transparent hover:bg-gray-50 focus:ring-1 focus:ring-brand-medium-blue [&>svg]:hidden">
                   <div className="flex items-start gap-2 text-left w-full">
                     <ChevronDown className="h-4 w-4 mt-0.5 flex-shrink-0 text-gray-500" />
@@ -393,7 +627,9 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                               <div className="flex items-start gap-2 text-left">
                                 <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
                                 <div className="min-w-0">
-                                  <div className="font-semibold text-sm truncate">{selected.orgName}</div>
+                                  <div className="font-semibold text-sm truncate">
+                                    {selected.orgName}
+                                  </div>
                                   <div className="text-xs text-gray-600 truncate">
                                     {selected.label}
                                   </div>
@@ -594,31 +830,196 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                 )}
               </div>
             </div>
-          ) : activeMenu ? (
-            // Sub-menu content for other pages
-            <div className="py-2">
-              {activeMenu.config.items.map((item) => {
-                const isActive = location.pathname === item.route;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => navigate(item.route)}
+          ) : (
+            // Chat interface for non-home pages
+            <div className="flex flex-col h-full">
+              {/* Chat Controls */}
+              <div className="p-4 border-b border-dashboard-gray-200">
+                <div className="flex gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex-1">
+                        <span className="lg:mr-auto">Resume Conversation</span>
+                        <ChevronDown className="ml-2 h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      {!Array.isArray(conversations) ||
+                      conversations.length === 0 ? (
+                        <DropdownMenuItem disabled>
+                          No previous conversations
+                        </DropdownMenuItem>
+                      ) : (
+                        conversations.slice(0, 4).map((conversation) => (
+                          <DropdownMenuItem
+                            key={conversation.session_id}
+                            onClick={() => switchToConversation(conversation)}
+                            className="cursor-pointer"
+                          >
+                            {conversation.conversation_name ||
+                              `Chat ${conversation.session_id.slice(-6)}`}
+                          </DropdownMenuItem>
+                        ))
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    size="sm"
+                    className="bg-brand-medium-blue hover:bg-brand-medium-blue/90"
+                    onClick={createNewChat}
+                    disabled={isLoading}
+                  >
+                    New
+                  </Button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                      >
+                        <Share2 className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                        <Mail className="h-4 w-4" />
+                        Share chat by email
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                        <MessageSquare className="h-4 w-4" />
+                        Share chat by Slack
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              {/* Chat Messages - scrollable area with padding for fixed input */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-48">
+                {messages.map((msg) => (
+                  <div
+                    key={msg.id}
                     className={cn(
-                      "w-full text-left px-4 py-2 text-sm transition-colors",
-                      isActive
-                        ? "bg-brand-light-blue/20 text-brand-medium-blue border-r-2 border-brand-medium-blue"
-                        : "text-gray-700 hover:bg-gray-50 hover:text-gray-900",
+                      "flex gap-3",
+                      msg.role === "user" ? "justify-end" : "justify-start",
                     )}
                   >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            // Empty state
-            <div className="p-4 text-center text-gray-500 text-sm">
-              No menu items available
+                    {msg.role === "assistant" && (
+                      <div className="w-6 h-6 rounded-sm flex items-center justify-center flex-shrink-0 mt-1 overflow-hidden">
+                        <img
+                          src="https://cdn.builder.io/api/v1/assets/c9d6292aa8bc48fc881c52163e11eef1/headshot-1-1-modified-178e67?format=webp&width=800"
+                          alt="KEN-E Assistant"
+                          className="w-full h-full object-cover rounded-sm"
+                        />
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        "max-w-[80%] rounded-lg px-3 py-2 text-sm",
+                        msg.role === "user"
+                          ? "bg-brand-medium-blue text-white"
+                          : "bg-dashboard-gray-100 text-dashboard-gray-900",
+                      )}
+                    >
+                      {msg.content}
+                    </div>
+                    {msg.role === "user" && (
+                      <div className="w-6 h-6 bg-brand-medium-blue rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
+                        <User className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* New Message Input Section - Fixed at bottom */}
+              <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-dashboard-gray-200 p-4">
+                <div className="space-y-3">
+                  {/* Input Container */}
+                  <div className="border border-[#CBD5E1] rounded-md p-2">
+                    <div className="flex flex-col gap-2">
+                      {/* Input Field Row */}
+                      <div className="flex-1">
+                        <Input
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          onKeyDown={handleNewKeyPress}
+                          placeholder="What would you like to discuss?"
+                          className="w-full border-0 focus:ring-0 focus:border-0 shadow-none"
+                          disabled={isLoading}
+                        />
+                      </div>
+
+                      {/* Buttons Row */}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900 flex flex-col"
+                        >
+                          <Mic className="h-5 w-5 mx-auto" />
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900 flex flex-col mr-2"
+                          title="Enable voice mode"
+                        >
+                          <AudioWaveform className="h-5 w-5" />
+                        </Button>
+
+                        <Button
+                          onClick={sendNewMessage}
+                          disabled={!newMessage.trim() || isLoading}
+                          size="sm"
+                          className="bg-brand-medium-blue hover:bg-brand-medium-blue/90 text-white px-4"
+                        >
+                          {isLoading ? "..." : "Send"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Button Row */}
+                  <div className="flex items-center gap-2 justify-start">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                      title="Upload a file"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                          title="Select a tool"
+                        >
+                          <Wrench className="h-5 w-5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                          Explain a change to a metric
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                          Create a chart
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="flex items-center gap-2 cursor-pointer">
+                          Draft content
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
