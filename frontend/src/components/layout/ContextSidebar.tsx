@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Menu,
   Home,
   BarChart3,
@@ -373,15 +374,76 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
           </Button>
         </div>
       ) : (
-        <div className="h-12 flex items-center justify-between px-4 border-b border-dashboard-gray-200">
-          <h2 className="text-lg font-semibold text-dashboard-gray-900">
-            {isHomePage ? "Notifications" : activeMenu?.config.title || "Menu"}
-          </h2>
+        <div className="flex items-center justify-between px-3 py-2 border-b border-dashboard-gray-200">
+          {/* Organization/Account Selector */}
+          {combinedOptions.length > 0 && (
+            <div className="flex-1 mr-2">
+              <Select value={currentValue} onValueChange={handleOrgAccountChange}>
+                <SelectTrigger className="w-full h-auto py-2 text-sm border-0 bg-transparent hover:bg-gray-50 focus:ring-1 focus:ring-brand-medium-blue [&>svg]:hidden">
+                  <div className="flex items-start gap-2 text-left w-full">
+                    <ChevronDown className="h-4 w-4 mt-0.5 flex-shrink-0 text-gray-500" />
+                    <SelectValue placeholder="Select Account">
+                      {currentValue &&
+                        (() => {
+                          const selected = combinedOptions.find(
+                            (opt) => opt.value === currentValue,
+                          );
+                          if (selected) {
+                            return (
+                              <div className="flex items-start gap-2 text-left">
+                                <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-sm truncate">{selected.orgName}</div>
+                                  <div className="text-xs text-gray-600 truncate">
+                                    {selected.label}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                    </SelectValue>
+                  </div>
+                </SelectTrigger>
+                <SelectContent align="start" className="max-w-[300px]">
+                  {combinedOptions.map((option, index) => (
+                    <SelectItem
+                      key={`${option.orgId}-${option.accountId}-${index}`}
+                      value={option.value}
+                    >
+                      <div className="flex items-start gap-2">
+                        <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <div className="font-bold">{option.orgName}</div>
+                          <div className="text-xs text-gray-600">
+                            {option.label}
+                          </div>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                  {combinedOptions.length > 1 && (
+                    <SelectItem
+                      key="all-orgs-accounts"
+                      value="all-orgs-accounts"
+                      className="border-t border-gray-200 mt-1 pt-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Building className="h-4 w-4" />
+                        <div className="truncate">All Orgs and Accounts</div>
+                      </div>
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="sm"
             onClick={onToggleCollapse}
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 flex-shrink-0"
             aria-label="Toggle sidebar"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -391,9 +453,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
 
       {/* Content - grows to fill available space */}
       {!isCollapsed && (
-        <div className="flex-1 overflow-y-auto pb-20">
-          {" "}
-          {/* Add padding bottom for org dropdown */}
+        <div className="flex-1 overflow-y-auto">
           {isHomePage ? (
             // Notifications content for home page
             <div className="pr-4 pl-0 py-4">
@@ -561,68 +621,6 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
               No menu items available
             </div>
           )}
-        </div>
-      )}
-
-      {/* Organization dropdown - fixed at bottom */}
-      {!isCollapsed && combinedOptions.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
-          <Select value={currentValue} onValueChange={handleOrgAccountChange}>
-            <SelectTrigger className="w-full h-auto py-2 text-sm">
-              <SelectValue placeholder="Select Organization & Account">
-                {currentValue &&
-                  (() => {
-                    const selected = combinedOptions.find(
-                      (opt) => opt.value === currentValue,
-                    );
-                    if (selected) {
-                      return (
-                        <div className="flex items-start gap-2 text-left">
-                          <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <div className="font-bold">{selected.orgName}</div>
-                            <div className="text-xs text-gray-600">
-                              {selected.label}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start" className="max-w-[300px]">
-              {combinedOptions.map((option, index) => (
-                <SelectItem
-                  key={`${option.orgId}-${option.accountId}-${index}`}
-                  value={option.value}
-                >
-                  <div className="flex items-start gap-2">
-                    <Building className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <div className="font-bold">{option.orgName}</div>
-                      <div className="text-xs text-gray-600">
-                        {option.label}
-                      </div>
-                    </div>
-                  </div>
-                </SelectItem>
-              ))}
-              {combinedOptions.length > 1 && (
-                <SelectItem
-                  key="all-orgs-accounts"
-                  value="all-orgs-accounts"
-                  className="border-t border-gray-200 mt-1 pt-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <Building className="h-4 w-4" />
-                    <div className="truncate">All Orgs and Accounts</div>
-                  </div>
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
         </div>
       )}
     </div>

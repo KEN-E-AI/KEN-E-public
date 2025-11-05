@@ -7,6 +7,7 @@
     --font-size: 14px;
 
     /* Brand Colors */
+    --brand-charcoal: #1f1f1f;
     --brand-dark-blue: #163354;
     --brand-medium-blue: #468fd0;
     --brand-light-green: #b8e2af;
@@ -88,7 +89,7 @@
     --chart-3: oklch(0.769 0.188 70.08);
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar-background: oklch(0.205 0 0);
+    --sidebar-background: #1f1f1f;
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);

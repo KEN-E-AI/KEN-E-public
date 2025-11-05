@@ -64,6 +64,7 @@ export default {
         },
         // Brand colors
         brand: {
+          charcoal: "#1f1f1f",
           "dark-blue": "#163354",
           "medium-blue": "#468FD0",
           "light-green": "#B8E2AF",

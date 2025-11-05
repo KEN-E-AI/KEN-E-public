@@ -62,12 +62,14 @@ export function IconNavigation() {
   };
 
   return (
-    <div className="w-14 bg-brand-dark-blue h-screen flex flex-col fixed left-0 top-0 z-40">
+    <div className="w-14 bg-brand-charcoal h-screen flex flex-col fixed left-0 top-0 z-40">
       {/* Logo/Brand */}
-      <div className="h-14 flex items-center justify-center border-b border-gray-700">
-        <div className="w-8 h-8 bg-brand-medium-blue rounded flex items-center justify-center">
-          <span className="text-white text-xs font-bold">K</span>
-        </div>
+      <div className="h-14 flex items-center justify-center border-b border-gray-700 bg-brand-medium-blue">
+        <img
+          src="/KEN-E Logo E Small Charcoal.png"
+          alt="KEN-E Logo"
+          className="w-8 h-8 object-contain"
+        />
       </div>
 
       {/* Navigation Icons */}
