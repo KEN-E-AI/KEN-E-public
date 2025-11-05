@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Layout from "@/components/layout/Layout";
+import { useAuth } from "@/contexts/AuthContext";
+import { ProductCategoriesManagement } from "@/components/products/ProductCategoriesManagement";
 
 const Products = () => {
   const [dateRange, setDateRange] = useState({
@@ -13,6 +15,24 @@ const Products = () => {
       }
     | undefined
   >(undefined);
+
+  const { selectedOrgAccount, user, isSuperAdmin } = useAuth();
+
+  const hasEditAccess = useMemo(() => {
+    if (!selectedOrgAccount) return false;
+    if (isSuperAdmin) return true;
+
+    const accountId = selectedOrgAccount.accountId;
+    const orgId = selectedOrgAccount.orgId;
+
+    const orgRole = user?.permissions?.organizations?.[orgId];
+    if (orgRole === "admin" || orgRole === "owner") return true;
+
+    const accountPerm =
+      user?.permissions?.accounts?.[accountId] ||
+      user?.permissions?.[accountId];
+    return accountPerm === "edit" || accountPerm === "admin";
+  }, [selectedOrgAccount, user, isSuperAdmin]);
 
   return (
     <Layout
@@ -34,6 +54,8 @@ const Products = () => {
             effectiveness.
           </p>
         </div>
+
+        <ProductCategoriesManagement hasEditAccess={hasEditAccess} />
       </div>
     </Layout>
   );
