@@ -60,20 +60,28 @@ const AccountSettings = () => {
     new Set(),
   );
   const [showPropertySelector, setShowPropertySelector] = useState(false);
-  const [propertySelectionAccountId, setPropertySelectionAccountId] = useState<string | null>(null);
+  const [propertySelectionAccountId, setPropertySelectionAccountId] = useState<
+    string | null
+  >(null);
 
   // Parse URL parameters using useMemo to ensure consistent hook order
-  const { searchParams, shouldOpenCreateAccount, oauthSuccess, oauthAccount, shouldSelectProperties } = useMemo(() => {
+  const {
+    searchParams,
+    shouldOpenCreateAccount,
+    oauthSuccess,
+    oauthAccount,
+    shouldSelectProperties,
+  } = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return {
       searchParams: params,
       shouldOpenCreateAccount: params.get("openCreateAccount") === "true",
       oauthSuccess: params.get("oauth_success"),
       oauthAccount: params.get("account"),
-      shouldSelectProperties: params.get("select_properties") === "true"
+      shouldSelectProperties: params.get("select_properties") === "true",
     };
   }, [location.search]);
-  
+
   // Enhanced debug logging - moved inside useMemo to avoid hooks order issues
   useEffect(() => {
     console.log("[AccountSettings] URL params debug:", {
@@ -85,39 +93,62 @@ const AccountSettings = () => {
       searchParamsString: searchParams.toString(),
       allParams: Array.from(searchParams.entries()),
     });
-  }, [location.search, oauthSuccess, oauthAccount, shouldSelectProperties, searchParams]);
-  
+  }, [
+    location.search,
+    oauthSuccess,
+    oauthAccount,
+    shouldSelectProperties,
+    searchParams,
+  ]);
+
   // CRITICAL: Set up window.showPropertySelector IMMEDIATELY, before any conditional returns
   // This must run on every render to ensure the function is available
   useEffect(() => {
     // Expose function to manually trigger property selector for debugging
     (window as any).showPropertySelector = (accountId?: string) => {
-      const testAccountId = accountId || oauthAccount || "acc_ffe6269d30874f27b36a3cb1666a9037";
-      console.log("[DEBUG] Manually triggering property selector with account:", testAccountId);
+      const testAccountId =
+        accountId || oauthAccount || "acc_ffe6269d30874f27b36a3cb1666a9037";
+      console.log(
+        "[DEBUG] Manually triggering property selector with account:",
+        testAccountId,
+      );
       setPropertySelectionAccountId(testAccountId);
       setShowPropertySelector(true);
     };
-    
+
     return () => {
       delete (window as any).showPropertySelector;
     };
   }, [oauthAccount]);
-  
+
   // Initialize property selector state based on URL params
   // This ensures the state is set immediately on component mount
   useEffect(() => {
-    console.log("[AccountSettings] Mount effect - checking for property selector trigger", {
-      oauthSuccess,
-      oauthAccount,
-      shouldSelectProperties,
-      condition: oauthSuccess === "google_analytics" && oauthAccount && shouldSelectProperties
-    });
-    
-    if (oauthSuccess === "google_analytics" && oauthAccount && shouldSelectProperties) {
-      console.log("[AccountSettings] CONDITIONS MET! Showing property selector for account:", oauthAccount);
+    console.log(
+      "[AccountSettings] Mount effect - checking for property selector trigger",
+      {
+        oauthSuccess,
+        oauthAccount,
+        shouldSelectProperties,
+        condition:
+          oauthSuccess === "google_analytics" &&
+          oauthAccount &&
+          shouldSelectProperties,
+      },
+    );
+
+    if (
+      oauthSuccess === "google_analytics" &&
+      oauthAccount &&
+      shouldSelectProperties
+    ) {
+      console.log(
+        "[AccountSettings] CONDITIONS MET! Showing property selector for account:",
+        oauthAccount,
+      );
       setPropertySelectionAccountId(oauthAccount);
       setShowPropertySelector(true);
-      
+
       // Delay clearing the URL params to ensure state is set first
       setTimeout(() => {
         const newSearchParams = new URLSearchParams(window.location.search);
@@ -136,8 +167,14 @@ const AccountSettings = () => {
     } else {
       console.log("[AccountSettings] Property selector conditions NOT met");
     }
-  }, [oauthSuccess, oauthAccount, shouldSelectProperties, navigate, location.pathname]); // Watch for changes in these params
-  
+  }, [
+    oauthSuccess,
+    oauthAccount,
+    shouldSelectProperties,
+    navigate,
+    location.pathname,
+  ]); // Watch for changes in these params
+
   // Debug logging for component state
   useEffect(() => {
     console.log("[AccountSettings] Component rendering with state:", {
@@ -172,7 +209,7 @@ const AccountSettings = () => {
         shouldSelectProperties,
         showPropertySelector,
         propertySelectionAccountId,
-      }
+      },
     );
 
     if (oauthSuccess === "google_analytics" && oauthAccount) {
@@ -184,10 +221,12 @@ const AccountSettings = () => {
       // Add the account to the setup tracking
       setAccountsInSetup((prev) => new Set(prev).add(oauthAccount));
 
-      // Check if we should show property selector  
+      // Check if we should show property selector
       // Note: We already set the state in the mount effect, but also handle it here for completeness
       if (shouldSelectProperties && !showPropertySelector) {
-        console.log("[AccountSettings] Setting up property selector from OAuth effect");
+        console.log(
+          "[AccountSettings] Setting up property selector from OAuth effect",
+        );
         setPropertySelectionAccountId(oauthAccount);
         setShowPropertySelector(true);
       } else if (!shouldSelectProperties) {
@@ -217,8 +256,15 @@ const AccountSettings = () => {
         );
       }
     }
-  }, [oauthSuccess, oauthAccount, shouldSelectProperties, navigate, location, toast]);
-  
+  }, [
+    oauthSuccess,
+    oauthAccount,
+    shouldSelectProperties,
+    navigate,
+    location,
+    toast,
+  ]);
+
   // Debug effect to monitor state changes
   useEffect(() => {
     console.log("[AccountSettings] State changed:", {
@@ -749,169 +795,177 @@ const AccountSettings = () => {
       {/* Google Analytics Property Selector Modal */}
       {showPropertySelector && propertySelectionAccountId && (
         <>
-          <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+          <div
+            className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4"
+            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
+          >
             <GoogleAnalyticsPropertySelector
-            accountId={propertySelectionAccountId}
-            onComplete={(selectedProperties) => {
-              console.log("Properties selected:", selectedProperties);
-              setShowPropertySelector(false);
-              setPropertySelectionAccountId(null);
-              
-              // Clear URL params
-              const newSearchParams = new URLSearchParams(location.search);
-              newSearchParams.delete("oauth_success");
-              newSearchParams.delete("account");
-              newSearchParams.delete("select_properties");
-              const newSearch = newSearchParams.toString();
-              navigate(
-                {
-                  pathname: location.pathname,
-                  search: newSearch ? `?${newSearch}` : "",
-                },
-                { replace: true },
-              );
-              
-              toast({
-                title: "Properties Selected",
-                description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? 'property' : 'properties'} for Google Analytics integration.`,
-              });
-            }}
-            onSkip={() => {
-              setShowPropertySelector(false);
-              setPropertySelectionAccountId(null);
-              
-              // Clear URL params
-              const newSearchParams = new URLSearchParams(location.search);
-              newSearchParams.delete("oauth_success");
-              newSearchParams.delete("account");
-              newSearchParams.delete("select_properties");
-              const newSearch = newSearchParams.toString();
-              navigate(
-                {
-                  pathname: location.pathname,
-                  search: newSearch ? `?${newSearch}` : "",
-                },
-                { replace: true },
-              );
-            }}
-          />
+              accountId={propertySelectionAccountId}
+              onComplete={(selectedProperties) => {
+                console.log("Properties selected:", selectedProperties);
+                setShowPropertySelector(false);
+                setPropertySelectionAccountId(null);
+
+                // Clear URL params
+                const newSearchParams = new URLSearchParams(location.search);
+                newSearchParams.delete("oauth_success");
+                newSearchParams.delete("account");
+                newSearchParams.delete("select_properties");
+                const newSearch = newSearchParams.toString();
+                navigate(
+                  {
+                    pathname: location.pathname,
+                    search: newSearch ? `?${newSearch}` : "",
+                  },
+                  { replace: true },
+                );
+
+                toast({
+                  title: "Properties Selected",
+                  description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? "property" : "properties"} for Google Analytics integration.`,
+                });
+              }}
+              onSkip={() => {
+                setShowPropertySelector(false);
+                setPropertySelectionAccountId(null);
+
+                // Clear URL params
+                const newSearchParams = new URLSearchParams(location.search);
+                newSearchParams.delete("oauth_success");
+                newSearchParams.delete("account");
+                newSearchParams.delete("select_properties");
+                const newSearch = newSearchParams.toString();
+                navigate(
+                  {
+                    pathname: location.pathname,
+                    search: newSearch ? `?${newSearch}` : "",
+                  },
+                  { replace: true },
+                );
+              }}
+            />
           </div>
         </>
       )}
 
-    <SettingsLayout
-      pageTitle={getPageTitle()}
-      currentPage={getCurrentPage()}
-      showBackButton={!isCreatingNew}
-      showContextSidebar={!isCreatingNew}
-    >
-      {/* Organization Settings Header with create button - Always visible */}
-      {!isCreatingNew && !isAccountSpecific && (
-        <div className="space-y-6 mb-6">
-          {/* Description */}
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-dashboard-gray-600">
-                Manage your organization profile, subscription, and team
-                settings
-              </p>
+      <SettingsLayout
+        pageTitle={getPageTitle()}
+        currentPage={getCurrentPage()}
+        showBackButton={!isCreatingNew}
+        showContextSidebar={!isCreatingNew}
+      >
+        {/* Organization Settings Header with create button - Always visible */}
+        {!isCreatingNew && !isAccountSpecific && (
+          <div className="space-y-6 mb-6">
+            {/* Description */}
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-dashboard-gray-600">
+                  Manage your organization profile, subscription, and team
+                  settings
+                </p>
+              </div>
+              <Button
+                onClick={() => navigate("/create-organization")}
+                className="flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Create New Organization
+              </Button>
             </div>
-            <Button
-              onClick={() => navigate("/create-organization")}
-              className="flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Create New Organization
-            </Button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* View-only access alert */}
-      {!isCreatingNew && currentOrgId && !hasAdminAccess && (
-        <Alert className="mb-6">
-          <Shield className="h-4 w-4" />
-          <AlertDescription>
-            You have view-only access to this organization. You can view
-            settings but cannot make changes. To manage your own organization,
-            click "Create New Organization" above.
-          </AlertDescription>
-        </Alert>
-      )}
+        {/* View-only access alert */}
+        {!isCreatingNew && currentOrgId && !hasAdminAccess && (
+          <Alert className="mb-6">
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              You have view-only access to this organization. You can view
+              settings but cannot make changes. To manage your own organization,
+              click "Create New Organization" above.
+            </AlertDescription>
+          </Alert>
+        )}
 
-      {/* Organization Information - Show form for new org or if user has admin access */}
-      {(isCreatingNew || hasAdminAccess) && (
-        <OrganizationForm
-          isCreatingNew={isCreatingNew}
-          orgData={orgData}
-          formData={newOrgFormData}
-          setFormData={setNewOrgFormData}
-          editAgencyData={editAgencyData}
-          setEditAgencyData={setEditAgencyData}
-          editOrgName={editOrgName}
-          setEditOrgName={setEditOrgName}
-          onSubmit={
-            isCreatingNew ? handleCreateOrganization : handleUpdateOrganization
-          }
-          isLoading={isCreatingOrganization}
-        />
-      )}
+        {/* Organization Information - Show form for new org or if user has admin access */}
+        {(isCreatingNew || hasAdminAccess) && (
+          <OrganizationForm
+            isCreatingNew={isCreatingNew}
+            orgData={orgData}
+            formData={newOrgFormData}
+            setFormData={setNewOrgFormData}
+            editAgencyData={editAgencyData}
+            setEditAgencyData={setEditAgencyData}
+            editOrgName={editOrgName}
+            setEditOrgName={setEditOrgName}
+            onSubmit={
+              isCreatingNew
+                ? handleCreateOrganization
+                : handleUpdateOrganization
+            }
+            isLoading={isCreatingOrganization}
+          />
+        )}
 
-      {/* Show loading state while fetching organization data */}
-      {isLoadingOrgData && !isCreatingNew && (
-        <div className="text-center py-8">
-          <div className="inline-flex items-center space-x-2">
-            <div className="w-4 h-4 border-2 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-600">Loading organization data...</span>
+        {/* Show loading state while fetching organization data */}
+        {isLoadingOrgData && !isCreatingNew && (
+          <div className="text-center py-8">
+            <div className="inline-flex items-center space-x-2">
+              <div className="w-4 h-4 border-2 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
+              <span className="text-gray-600">
+                Loading organization data...
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Conditional sections for existing organizations */}
-      {orgData && !isLoadingOrgData && (
-        <>
-          {/* Show all sections if user has admin access */}
-          {hasAdminAccess ? (
-            <>
-              <SubscriptionCard
-                orgData={orgData}
-                onOrganizationUpdate={(updatedOrg) => {
-                  setOrgMetadata({
-                    ...orgMetadata,
-                    [updatedOrg.organization_id]: updatedOrg,
-                  });
-                }}
-              />
-              <AccountsManagement
-                orgData={orgData}
-                currentOrgId={currentOrgId!}
-                openCreateModal={shouldOpenCreateAccount}
-                hasAdminAccess={hasAdminAccess}
-                accountsInSetup={accountsInSetup}
-                setAccountsInSetup={setAccountsInSetup}
-              />
-              <BillingSection orgData={orgData} />
-              {(user?.permissions?.organizations?.[currentOrgId!] === "admin" ||
-                user?.permissions?.organizations?.[currentOrgId!] ===
-                  "owner") && <TeamManagement orgData={orgData} />}
-              <DangerZone orgData={orgData} />
-            </>
-          ) : (
-            <>
-              {/* View-only users can still see accounts (read-only) */}
-              <AccountsManagement
-                orgData={orgData}
-                currentOrgId={currentOrgId!}
-                openCreateModal={shouldOpenCreateAccount}
-                hasAdminAccess={hasAdminAccess}
-                accountsInSetup={accountsInSetup}
-                setAccountsInSetup={setAccountsInSetup}
-              />
-            </>
-          )}
-        </>
-      )}
-    </SettingsLayout>
+        {/* Conditional sections for existing organizations */}
+        {orgData && !isLoadingOrgData && (
+          <>
+            {/* Show all sections if user has admin access */}
+            {hasAdminAccess ? (
+              <>
+                <SubscriptionCard
+                  orgData={orgData}
+                  onOrganizationUpdate={(updatedOrg) => {
+                    setOrgMetadata({
+                      ...orgMetadata,
+                      [updatedOrg.organization_id]: updatedOrg,
+                    });
+                  }}
+                />
+                <AccountsManagement
+                  orgData={orgData}
+                  currentOrgId={currentOrgId!}
+                  openCreateModal={shouldOpenCreateAccount}
+                  hasAdminAccess={hasAdminAccess}
+                  accountsInSetup={accountsInSetup}
+                  setAccountsInSetup={setAccountsInSetup}
+                />
+                <BillingSection orgData={orgData} />
+                {(user?.permissions?.organizations?.[currentOrgId!] ===
+                  "admin" ||
+                  user?.permissions?.organizations?.[currentOrgId!] ===
+                    "owner") && <TeamManagement orgData={orgData} />}
+                <DangerZone orgData={orgData} />
+              </>
+            ) : (
+              <>
+                {/* View-only users can still see accounts (read-only) */}
+                <AccountsManagement
+                  orgData={orgData}
+                  currentOrgId={currentOrgId!}
+                  openCreateModal={shouldOpenCreateAccount}
+                  hasAdminAccess={hasAdminAccess}
+                  accountsInSetup={accountsInSetup}
+                  setAccountsInSetup={setAccountsInSetup}
+                />
+              </>
+            )}
+          </>
+        )}
+      </SettingsLayout>
     </>
   );
 };

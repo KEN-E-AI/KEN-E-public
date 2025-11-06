@@ -56,8 +56,8 @@ const HomeLayout = ({
       <div
         className={`transition-all duration-300 p-4 sm:p-6 space-y-6 min-h-screen ${
           sidebarCollapsed
-            ? "pl-[calc(7.5rem+1rem)] sm:pl-[calc(7.5rem+1.5rem)]"
-            : "pl-[calc(23.5rem+1rem)] sm:pl-[calc(23.5rem+1.5rem)]"
+            ? "pl-[calc(7rem+1rem)] sm:pl-[calc(7rem+1.5rem)]"
+            : "pl-[calc(3.5rem+360px+1rem)] sm:pl-[calc(3.5rem+360px+1.5rem)]"
         } pr-4 sm:pr-6`}
       >
         {/* Header */}

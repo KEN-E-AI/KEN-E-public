@@ -2,8 +2,12 @@ import {
   Home,
   BarChart3,
   Settings,
-  Target,
-  Search,
+  Package,
+  Users,
+  Megaphone,
+  Network,
+  FileText,
+  Glasses,
   BookOpen,
   User,
 } from "lucide-react";
@@ -39,12 +43,36 @@ export function IconNavigation() {
       label: "Performance",
       route: "/performance",
     },
-    { id: "big-bets", icon: Target, label: "Big Bets", route: "/big-bets" },
+    { id: "products", icon: Package, label: "Products", route: "/products" },
     {
-      id: "exploration",
-      icon: Search,
-      label: "Data Exploration",
-      route: "/exploration",
+      id: "customers",
+      icon: Users,
+      label: "Customers",
+      route: "/customers",
+    },
+    {
+      id: "campaigns",
+      icon: Megaphone,
+      label: "Campaigns",
+      route: "/campaigns",
+    },
+    {
+      id: "channels",
+      icon: Network,
+      label: "Channels",
+      route: "/channels",
+    },
+    {
+      id: "reports",
+      icon: FileText,
+      label: "Reports",
+      route: "/reports",
+    },
+    {
+      id: "simulations",
+      icon: Glasses,
+      label: "Simulations",
+      route: "/simulations",
     },
     {
       id: "knowledge",
@@ -62,12 +90,14 @@ export function IconNavigation() {
   };
 
   return (
-    <div className="w-14 bg-brand-dark-blue h-screen flex flex-col fixed left-0 top-0 z-40">
+    <div className="w-14 bg-brand-charcoal h-screen flex flex-col fixed left-0 top-0 z-40">
       {/* Logo/Brand */}
-      <div className="h-14 flex items-center justify-center border-b border-gray-700">
-        <div className="w-8 h-8 bg-brand-medium-blue rounded flex items-center justify-center">
-          <span className="text-white text-xs font-bold">K</span>
-        </div>
+      <div className="h-14 flex items-center justify-center border-b border-gray-700 bg-brand-medium-blue">
+        <img
+          src="/KEN-E Logo E Small Charcoal.png"
+          alt="KEN-E Logo"
+          className="w-8 h-8 object-contain"
+        />
       </div>
 
       {/* Navigation Icons */}

@@ -70,17 +70,21 @@ export const GoogleAnalyticsOAuth = ({
       setStatus({ configured: false });
       setIsLoading(false);
     }
-    
+
     // Check if we just returned from OAuth and should show property selector
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('oauth_success') === 'google_analytics' && 
-        urlParams.get('account') === accountId && 
-        urlParams.get('select_properties') === 'true') {
-      console.log('[GoogleAnalyticsOAuth] Detected OAuth callback, showing property selector');
+    if (
+      urlParams.get("oauth_success") === "google_analytics" &&
+      urlParams.get("account") === accountId &&
+      urlParams.get("select_properties") === "true"
+    ) {
+      console.log(
+        "[GoogleAnalyticsOAuth] Detected OAuth callback, showing property selector",
+      );
       setShowPropertySelector(true);
       // Clear URL params
       const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
+      window.history.replaceState({}, "", newUrl);
     }
   }, [isOpen, isAccountCreation, accountId]);
 
@@ -186,18 +190,21 @@ export const GoogleAnalyticsOAuth = ({
       <GoogleAnalyticsPropertySelector
         accountId={accountId}
         onComplete={(selectedProperties) => {
-          console.log('[GoogleAnalyticsOAuth] Properties selected:', selectedProperties);
+          console.log(
+            "[GoogleAnalyticsOAuth] Properties selected:",
+            selectedProperties,
+          );
           setShowPropertySelector(false);
           toast({
             title: "Properties Selected",
-            description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? 'property' : 'properties'} for Google Analytics integration.`,
+            description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? "property" : "properties"} for Google Analytics integration.`,
           });
           // Refresh status to show connected state
           checkStatus();
           onSuccess?.();
         }}
         onSkip={() => {
-          console.log('[GoogleAnalyticsOAuth] Property selection skipped');
+          console.log("[GoogleAnalyticsOAuth] Property selection skipped");
           setShowPropertySelector(false);
           checkStatus();
           onSuccess?.();
@@ -234,14 +241,19 @@ export const GoogleAnalyticsOAuth = ({
                     <AlertDescription>
                       Your Google Analytics account is connected
                       {status.userEmail && ` (${status.userEmail})`}
-                      {status.propertyCount !== undefined && status.propertyCount > 0 && (
-                        <>
-                          <br />
-                          <span className="text-sm">
-                            {status.propertyCount} {status.propertyCount === 1 ? 'property' : 'properties'} selected
-                          </span>
-                        </>
-                      )}
+                      {status.propertyCount !== undefined &&
+                        status.propertyCount > 0 && (
+                          <>
+                            <br />
+                            <span className="text-sm">
+                              {status.propertyCount}{" "}
+                              {status.propertyCount === 1
+                                ? "property"
+                                : "properties"}{" "}
+                              selected
+                            </span>
+                          </>
+                        )}
                     </AlertDescription>
                   </Alert>
 
@@ -274,11 +286,12 @@ export const GoogleAnalyticsOAuth = ({
                     >
                       <Settings className="mr-2 h-4 w-4" />
                       Manage Properties
-                      {status.propertyCount !== undefined && status.propertyCount > 0 && (
-                        <Badge variant="secondary" className="ml-2">
-                          {status.propertyCount}
-                        </Badge>
-                      )}
+                      {status.propertyCount !== undefined &&
+                        status.propertyCount > 0 && (
+                          <Badge variant="secondary" className="ml-2">
+                            {status.propertyCount}
+                          </Badge>
+                        )}
                     </Button>
                     <Button
                       variant="destructive"

@@ -21,7 +21,7 @@ function getProjectNumber() {
   try {
     const projectNumber = execSync(
       "gcloud projects describe $(gcloud config get-value project) --format='value(projectNumber)'",
-      { encoding: "utf8" }
+      { encoding: "utf8" },
     ).trim();
 
     if (projectNumber && projectNumber !== "(unset)") {
@@ -31,7 +31,7 @@ function getProjectNumber() {
   } catch (error) {
     console.error("Failed to get project number from gcloud:", error.message);
     throw new Error(
-      "Could not determine GCP project number. Please ensure you are authenticated with gcloud."
+      "Could not determine GCP project number. Please ensure you are authenticated with gcloud.",
     );
   }
 
@@ -180,8 +180,12 @@ async function resolveSecrets(envFile) {
   if (secretLines.length > 1) {
     // More than just empty/comment lines
     fs.writeFileSync(envLocalPath, secretLines.join("\n"));
-    console.log(`Secret environment variables written to ${path.basename(envLocalPath)}`);
-    console.log(`NOTE: Vite will load ${path.basename(envLocalPath)} with highest priority`);
+    console.log(
+      `Secret environment variables written to ${path.basename(envLocalPath)}`,
+    );
+    console.log(
+      `NOTE: Vite will load ${path.basename(envLocalPath)} with highest priority`,
+    );
   }
 }
 
