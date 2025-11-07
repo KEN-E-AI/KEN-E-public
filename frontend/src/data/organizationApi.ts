@@ -272,7 +272,10 @@ export async function createAccount(
       accountData.estimated_annual_ad_budget,
     )
     .append("enabled_strategies", accountData.enabled_strategies)
-    .append("override_product_categories", accountData.override_product_categories);
+    .append(
+      "override_product_categories",
+      accountData.override_product_categories,
+    );
 
   // Add files if they exist
   if (
