@@ -8,6 +8,7 @@ import {
   Users,
   TrendingUp,
   ExternalLink,
+  Palette,
 } from "lucide-react";
 import { renderConfigurationSection } from "@/lib/knowledgeUtils";
 
@@ -15,7 +16,7 @@ const Knowledge = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Knowledge">
+    <Layout pageTitle="Knowledge Base">
       <div>
         {/* Header */}
         <div className="mb-8">
@@ -33,7 +34,7 @@ const Knowledge = () => {
           {renderConfigurationSection(
             ExternalLink,
             "Products",
-            "Link and configure your MarTech products",
+            "Describe the products or services that you offer, as well as the substitutes that are offered by your competitors.",
             "",
             () => navigate("/knowledge/products"),
             false,
@@ -106,6 +107,16 @@ const Knowledge = () => {
             "Configure KEN-E's understanding of your competitors",
             "",
             () => navigate("/knowledge/competitors"),
+            false,
+          )}
+
+          {/* Brand Guidelines Section */}
+          {renderConfigurationSection(
+            Palette,
+            "Brand Guidelines",
+            "Describe the standards that define your brand's identity to ensure that all content drafted by KEN-E is consistent and aligned with your brand strategy.",
+            "",
+            () => navigate("/knowledge/brand"),
             false,
           )}
         </div>

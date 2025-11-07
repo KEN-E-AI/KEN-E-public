@@ -33,6 +33,7 @@ import KnowledgeActivities from "./pages/KnowledgeActivities";
 import KnowledgeAccount from "./pages/KnowledgeAccount";
 import KnowledgeCustomers from "./pages/KnowledgeCustomers";
 import KnowledgeCompetitors from "./pages/KnowledgeCompetitors";
+import KnowledgeBrand from "./pages/KnowledgeBrand";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
@@ -260,6 +261,14 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <KnowledgeCompetitors />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/brand"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeBrand />
                       </ProtectedRoute>
                     }
                   />

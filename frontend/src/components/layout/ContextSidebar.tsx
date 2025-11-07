@@ -149,6 +149,7 @@ const menuConfigurations: Record<string, MenuSection> = {
         label: "Competitors",
         route: "/knowledge/competitors",
       },
+      { id: "brand", label: "Brand Guidelines", route: "/knowledge/brand" },
     ],
   },
   "/settings": {
