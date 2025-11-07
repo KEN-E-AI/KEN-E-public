@@ -1,9 +1,13 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProductCategoriesManagement } from "@/components/products/ProductCategoriesManagement";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 
 const Products = () => {
+  const navigate = useNavigate();
   const [dateRange, setDateRange] = useState({
     from: new Date(2025, 0, 1),
     to: new Date(2025, 0, 31),
@@ -44,6 +48,19 @@ const Products = () => {
       setComparisonDateRange={setComparisonDateRange}
     >
       <div className="space-y-6">
+        {/* Back to Knowledge Base Link */}
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/knowledge")}
+            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Knowledge Base
+          </Button>
+        </div>
+
         <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
           <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
             Products Overview

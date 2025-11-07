@@ -1,15 +1,18 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import CompanyKeywordsConfiguration from "@/components/configuration/CompanyKeywordsConfiguration";
 import Layout from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import type { MonitoringTopics } from "@/types/monitoring";
 import api from "@/lib/api";
 
 export default function KnowledgeAccount() {
+  const navigate = useNavigate();
   const { selectedOrgAccount } = useAuth();
 
   // Fetch monitoring topics to display industry keywords
@@ -30,6 +33,19 @@ export default function KnowledgeAccount() {
   return (
     <Layout pageTitle="Account Knowledge">
       <div className="space-y-6">
+        {/* Back to Knowledge Base Link */}
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/knowledge")}
+            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Knowledge Base
+          </Button>
+        </div>
+
         <p className="text-muted-foreground">
           Manage keywords that describe your company and industry for news
           monitoring.
