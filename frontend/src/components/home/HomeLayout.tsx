@@ -54,7 +54,7 @@ const HomeLayout = ({
 
       {/* Main Content */}
       <div
-        className={`transition-all duration-300 p-4 sm:p-6 h-screen flex flex-col ${
+        className={`transition-all duration-300 pt-4 sm:pt-6 pb-0 h-screen flex flex-col ${
           sidebarCollapsed
             ? "pl-[calc(7rem+1rem)] sm:pl-[calc(7rem+1.5rem)]"
             : "pl-[calc(3.5rem+360px+1rem)] sm:pl-[calc(3.5rem+360px+1.5rem)]"
