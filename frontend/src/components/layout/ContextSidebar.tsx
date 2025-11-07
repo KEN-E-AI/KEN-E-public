@@ -1,15 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Menu,
   Home,
-  BarChart3,
-  Package,
-  Search,
-  BookOpen,
-  Settings,
   Building,
   Check,
   Archive,
@@ -22,7 +16,6 @@ import {
   FileText,
   TrendingUp,
   Sparkles,
-  Send,
   Mic,
   AudioWaveform,
   Wrench,
@@ -31,9 +24,6 @@ import {
   Share2,
   Plus,
   User,
-  Megaphone,
-  Network,
-  Glasses,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,15 +46,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
 import { useChat } from "@/contexts/ChatContext";
 import { useLocation, useNavigate } from "react-router-dom";
-import { iconMap } from "@/lib/iconMap";
 import api from "@/lib/api";
 import type { NotificationCategory } from "@/types/notification.types";
-
-interface SubMenuItem {
-  id: string;
-  label: string;
-  route: string;
-}
 
 // Notification category icon mapping matching NotificationPreferences.tsx
 const NOTIFICATION_CATEGORY_ICONS: Record<
@@ -78,92 +61,6 @@ const NOTIFICATION_CATEGORY_ICONS: Record<
   "Scheduled Report Status": FileText,
   "KPI Performance": TrendingUp,
   "New Features": Sparkles,
-};
-
-interface MenuSection {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  items: SubMenuItem[];
-}
-
-const menuConfigurations: Record<string, MenuSection> = {
-  "/performance": {
-    title: "Performance",
-    icon: BarChart3,
-    items: [
-      { id: "overview", label: "Overview", route: "/performance" },
-      {
-        id: "channel",
-        label: "Channel Performance",
-        route: "/performance/channels",
-      },
-    ],
-  },
-  "/products": {
-    title: "Products",
-    icon: Package,
-    items: [{ id: "overview", label: "Overview", route: "/products" }],
-  },
-  "/customers": {
-    title: "Customers",
-    icon: Users,
-    items: [{ id: "overview", label: "Overview", route: "/customers" }],
-  },
-  "/campaigns": {
-    title: "Campaigns",
-    icon: Megaphone,
-    items: [{ id: "overview", label: "Overview", route: "/campaigns" }],
-  },
-  "/channels": {
-    title: "Channels",
-    icon: Network,
-    items: [{ id: "overview", label: "Overview", route: "/channels" }],
-  },
-  "/reports": {
-    title: "Reports",
-    icon: FileText,
-    items: [{ id: "overview", label: "Overview", route: "/reports" }],
-  },
-  "/simulations": {
-    title: "Simulations",
-    icon: Glasses,
-    items: [{ id: "overview", label: "Overview", route: "/simulations" }],
-  },
-  "/knowledge": {
-    title: "Knowledge Base",
-    icon: BookOpen,
-    items: [
-      { id: "products", label: "Products", route: "/knowledge/products" },
-      { id: "metrics", label: "Metrics", route: "/knowledge/metrics" },
-      { id: "activities", label: "Activities", route: "/knowledge/activities" },
-      { id: "insights", label: "Insights", route: "/knowledge/insights" },
-      {
-        id: "strategy",
-        label: "Marketing Strategies",
-        route: "/knowledge/strategy",
-      },
-      { id: "account", label: "Account Overview", route: "/knowledge/account" },
-      { id: "customers", label: "Customers", route: "/knowledge/customers" },
-      {
-        id: "competitors",
-        label: "Competitors",
-        route: "/knowledge/competitors",
-      },
-      { id: "brand", label: "Brand Guidelines", route: "/knowledge/brand" },
-    ],
-  },
-  "/settings": {
-    title: "Settings",
-    icon: Settings,
-    items: [
-      {
-        id: "organization",
-        label: "Organization",
-        route: "/settings/organization",
-      },
-      { id: "user", label: "User", route: "/settings/user" },
-    ],
-  },
 };
 
 interface ContextSidebarProps {
@@ -265,36 +162,6 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
       console.error("Failed to archive notification:", error);
     }
   };
-
-  // Determine which menu to show based on current route
-  const getActiveMenu = () => {
-    const path = location.pathname;
-
-    // Check each menu configuration to see if the current path starts with it
-    for (const [menuPath, config] of Object.entries(menuConfigurations)) {
-      if (path.startsWith(menuPath)) {
-        // Add admin link to settings menu for super admins
-        if (menuPath === "/settings" && isSuperAdmin) {
-          return {
-            path: menuPath,
-            config: {
-              ...config,
-              items: [
-                ...config.items,
-                { id: "admin", label: "Admin", route: "/settings/admin" },
-              ],
-            },
-          };
-        }
-        return { path: menuPath, config };
-      }
-    }
-
-    // Default to home/notifications
-    return null;
-  };
-
-  const activeMenu = getActiveMenu();
 
   // Organization dropdown logic
   const accessibleOrgIds = isSuperAdmin
