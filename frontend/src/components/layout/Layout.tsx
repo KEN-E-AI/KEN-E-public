@@ -25,7 +25,7 @@ interface LayoutProps {
 
 const Layout = ({
   children,
-  pageTitle = "Measurement Strategy",
+  pageTitle = "Marketing Strategies",
   selectedTab = "Awareness",
   dateRange = {
     from: new Date(2025, 0, 1),

@@ -211,7 +211,7 @@ const AnalysisReport = () => {
           </div>
         </div>
 
-        {/* Measurement Strategy Snapshot */}
+        {/* Marketing Strategies Snapshot */}
         <ChannelControlsSnapshot />
 
         {/* Analysis Section */}

@@ -21,7 +21,7 @@ const Index = () => {
 
   return (
     <Layout
-      pageTitle="Measurement Strategy"
+      pageTitle="Marketing Strategies"
       selectedTab={selectedTab}
       selectedChannel={selectedChannel}
       selectedTactic={selectedTactic}

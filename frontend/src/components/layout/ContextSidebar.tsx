@@ -139,7 +139,7 @@ const menuConfigurations: Record<string, MenuSection> = {
       { id: "insights", label: "Insights", route: "/knowledge/insights" },
       {
         id: "strategy",
-        label: "Measurement Strategy",
+        label: "Marketing Strategies",
         route: "/knowledge/strategy",
       },
       { id: "account", label: "Account Overview", route: "/knowledge/account" },

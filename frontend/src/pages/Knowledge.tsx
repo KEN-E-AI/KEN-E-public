@@ -69,10 +69,10 @@ const Knowledge = () => {
             false,
           )}
 
-          {/* Measurement Strategy Section */}
+          {/* Marketing Strategies Section */}
           {renderConfigurationSection(
             TrendingUp,
-            "Measurement Strategy",
+            "Marketing Strategies",
             "Define your organizations objectives and KPI's",
             "",
             () => navigate("/knowledge/strategy"),
