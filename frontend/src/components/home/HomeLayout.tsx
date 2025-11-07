@@ -54,25 +54,27 @@ const HomeLayout = ({
 
       {/* Main Content */}
       <div
-        className={`transition-all duration-300 p-4 sm:p-6 space-y-6 min-h-screen ${
+        className={`transition-all duration-300 p-4 sm:p-6 h-screen flex flex-col ${
           sidebarCollapsed
             ? "pl-[calc(7rem+1rem)] sm:pl-[calc(7rem+1.5rem)]"
             : "pl-[calc(3.5rem+360px+1rem)] sm:pl-[calc(3.5rem+360px+1.5rem)]"
         } pr-4 sm:pr-6`}
       >
         {/* Header */}
-        <GlobalHeader
-          pageTitle="Home"
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-          comparisonDateRange={comparisonDateRange}
-          setComparisonDateRange={setComparisonDateRange}
-          selectedOrgAccount={selectedOrgAccount}
-          setSelectedOrgAccount={setSelectedOrgAccount}
-        />
+        <div className="flex-shrink-0">
+          <GlobalHeader
+            pageTitle="Home"
+            dateRange={dateRange}
+            setDateRange={setDateRange}
+            comparisonDateRange={comparisonDateRange}
+            setComparisonDateRange={setComparisonDateRange}
+            selectedOrgAccount={selectedOrgAccount}
+            setSelectedOrgAccount={setSelectedOrgAccount}
+          />
+        </div>
 
         {/* Page Content */}
-        {children}
+        <div className="flex-1 min-h-0">{children}</div>
       </div>
     </div>
   );
