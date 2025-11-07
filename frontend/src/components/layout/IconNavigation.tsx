@@ -7,6 +7,7 @@ import {
   Glasses,
   BookOpen,
   User,
+  Filter,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,12 @@ export function IconNavigation() {
       icon: BarChart3,
       label: "Performance",
       route: "/performance",
+    },
+    {
+      id: "funnel",
+      icon: Filter,
+      label: "Funnel",
+      route: "/funnel",
     },
     {
       id: "campaigns",
