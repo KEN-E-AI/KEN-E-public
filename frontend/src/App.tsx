@@ -28,7 +28,6 @@ import Reports from "./pages/Reports";
 import Simulations from "./pages/Simulations";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
-import KnowledgeProducts from "./pages/KnowledgeProducts";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
 import KnowledgeAccount from "./pages/KnowledgeAccount";
@@ -137,14 +136,6 @@ const App = () => (
                     }
                   />
                   <Route
-                    path="/products"
-                    element={
-                      <ProtectedRoute>
-                        <Products />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
                     path="/customers"
                     element={
                       <ProtectedRoute>
@@ -220,7 +211,7 @@ const App = () => (
                     path="/knowledge/products"
                     element={
                       <ProtectedRoute>
-                        <KnowledgeProducts />
+                        <Products />
                       </ProtectedRoute>
                     }
                   />

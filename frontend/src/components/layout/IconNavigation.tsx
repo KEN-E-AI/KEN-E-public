@@ -2,7 +2,6 @@ import {
   Home,
   BarChart3,
   Settings,
-  Package,
   Users,
   Megaphone,
   Network,
@@ -43,7 +42,6 @@ export function IconNavigation() {
       label: "Performance",
       route: "/performance",
     },
-    { id: "products", icon: Package, label: "Products", route: "/products" },
     {
       id: "customers",
       icon: Users,
