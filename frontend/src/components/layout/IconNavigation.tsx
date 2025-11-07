@@ -2,9 +2,7 @@ import {
   Home,
   BarChart3,
   Settings,
-  Users,
   Megaphone,
-  Network,
   FileText,
   Glasses,
   BookOpen,
@@ -43,22 +41,10 @@ export function IconNavigation() {
       route: "/performance",
     },
     {
-      id: "customers",
-      icon: Users,
-      label: "Customers",
-      route: "/customers",
-    },
-    {
       id: "campaigns",
       icon: Megaphone,
       label: "Campaigns",
       route: "/campaigns",
-    },
-    {
-      id: "channels",
-      icon: Network,
-      label: "Channels",
-      route: "/channels",
     },
     {
       id: "reports",

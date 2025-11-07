@@ -21,9 +21,7 @@ import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Products from "./pages/Products";
-import Customers from "./pages/Customers";
 import Campaigns from "./pages/Campaigns";
-import Channels from "./pages/Channels";
 import Reports from "./pages/Reports";
 import Simulations from "./pages/Simulations";
 import AnalysisReport from "./pages/AnalysisReport";
@@ -137,26 +135,10 @@ const App = () => (
                     }
                   />
                   <Route
-                    path="/customers"
-                    element={
-                      <ProtectedRoute>
-                        <Customers />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
                     path="/campaigns"
                     element={
                       <ProtectedRoute>
                         <Campaigns />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/channels"
-                    element={
-                      <ProtectedRoute>
-                        <Channels />
                       </ProtectedRoute>
                     }
                   />
