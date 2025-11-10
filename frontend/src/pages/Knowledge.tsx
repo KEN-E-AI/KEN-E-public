@@ -7,7 +7,7 @@ import {
   Building,
   Users,
   TrendingUp,
-  ExternalLink,
+  Package,
   Palette,
 } from "lucide-react";
 import { renderConfigurationSection } from "@/lib/knowledgeUtils";
@@ -32,7 +32,7 @@ const Knowledge = () => {
         <div className="space-y-4">
           {/* Products Section */}
           {renderConfigurationSection(
-            ExternalLink,
+            Package,
             "Products",
             "Describe the products or services that you offer, as well as the substitutes that are offered by your competitors.",
             "",
