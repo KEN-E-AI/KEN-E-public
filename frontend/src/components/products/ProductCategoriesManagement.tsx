@@ -284,11 +284,11 @@ export const ProductCategoriesManagement = ({
               {hasEditAccess && " Click 'Create Category' to add one."}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="flex gap-3 overflow-x-auto pb-2">
               {categories.map((category) => (
                 <div
                   key={category.node_id}
-                  className={`p-4 border border-dashboard-gray-200 rounded-lg transition-colors hover:ring-2 hover:ring-gray-300 ${
+                  className={`flex-shrink-0 p-4 border border-dashboard-gray-200 rounded-lg transition-colors hover:ring-2 hover:ring-gray-300 ${
                     hasEditAccess ? "cursor-pointer" : ""
                   }`}
                   onClick={() => hasEditAccess && handleEditClick(category)}
@@ -308,9 +308,12 @@ export const ProductCategoriesManagement = ({
                     <div className="flex-shrink-0 -ml-12 relative z-10">
                       <div
                         className="rounded-full bg-brand-medium-blue flex items-center justify-center"
-                        style={{ width: '72px', height: '72px' }}
+                        style={{ width: "72px", height: "72px" }}
                       >
-                        <Blocks className="text-white" style={{ width: '48px', height: '48px' }} />
+                        <Blocks
+                          className="text-white"
+                          style={{ width: "48px", height: "48px" }}
+                        />
                       </div>
                     </div>
                   </div>
