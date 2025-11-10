@@ -293,13 +293,13 @@ export const ProductCategoriesManagement = ({
                   }`}
                   onClick={() => hasEditAccess && handleEditClick(category)}
                 >
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
                     {/* Text Box - Left */}
-                    <div className="flex-1 min-w-0 bg-brand-medium-blue bg-opacity-50 rounded-lg p-3">
-                      <p className="font-semibold text-dashboard-gray-900 mb-1">
+                    <div className="bg-brand-medium-blue bg-opacity-50 rounded-lg p-3">
+                      <p className="text-sm text-dashboard-gray-600 mb-0.5">
                         Product Category
                       </p>
-                      <p className="text-sm text-dashboard-gray-600">
+                      <p className="font-semibold text-dashboard-gray-900">
                         {category.product_name}
                       </p>
                     </div>

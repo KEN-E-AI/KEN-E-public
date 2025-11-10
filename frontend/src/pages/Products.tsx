@@ -62,13 +62,9 @@ const Products = () => {
         </div>
 
         <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-          <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
-            Products Overview
-          </h2>
           <p className="text-dashboard-gray-600">
-            Manage and analyze your product portfolio, track performance
-            metrics, and gain insights into product-level marketing
-            effectiveness.
+            Create product categories to help KEN-E understand the types of
+            products or services that your business sells.
           </p>
         </div>
 
