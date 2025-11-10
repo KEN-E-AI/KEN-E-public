@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Boxes } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import {
@@ -257,11 +257,18 @@ export const ProductCategoriesManagement = ({
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>Product Categories</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Boxes className="h-5 w-5" />
+              Product Categories
+            </CardTitle>
             {hasEditAccess && (
-              <Button onClick={handleCreateClick}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Category
+              <Button
+                onClick={handleCreateClick}
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+              >
+                <Plus className="h-5 w-5" />
               </Button>
             )}
           </div>
