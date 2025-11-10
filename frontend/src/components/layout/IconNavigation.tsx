@@ -8,6 +8,7 @@ import {
   BookOpen,
   User,
   Filter,
+  ThumbsUp,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,12 @@ export function IconNavigation() {
       icon: BarChart3,
       label: "Performance",
       route: "/performance",
+    },
+    {
+      id: "recommendations",
+      icon: ThumbsUp,
+      label: "Recommendations",
+      route: "/recommendations",
     },
     {
       id: "funnel",

@@ -20,6 +20,7 @@ import "./App.css";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
+import Recommendations from "./pages/Recommendations";
 import Funnel from "./pages/Funnel";
 import Products from "./pages/Products";
 import Campaigns from "./pages/Campaigns";
@@ -132,6 +133,14 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <Performance />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/recommendations"
+                    element={
+                      <ProtectedRoute>
+                        <Recommendations />
                       </ProtectedRoute>
                     }
                   />
