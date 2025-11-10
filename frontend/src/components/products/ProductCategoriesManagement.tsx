@@ -6,6 +6,7 @@ import {
   Blocks,
   ChevronLeft,
   ChevronRight,
+  Pencil,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
@@ -51,10 +52,13 @@ export const ProductCategoriesManagement = ({
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] =
     useState<ProductCategory | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    null,
+  );
+  const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<ProductCategoryCreate>({
     product_name: "",
     description: "",
@@ -124,13 +128,14 @@ export const ProductCategoriesManagement = ({
     setIsCreateModalOpen(true);
   };
 
-  const handleEditClick = (category: ProductCategory) => {
+  const handleCategoryClick = (category: ProductCategory) => {
+    setSelectedCategoryId(category.node_id);
     setSelectedCategory(category);
     setFormData({
       product_name: category.product_name,
       description: category.description,
     });
-    setIsEditModalOpen(true);
+    setIsEditing(false);
   };
 
   const handleDeleteClick = (category: ProductCategory) => {
@@ -210,7 +215,7 @@ export const ProductCategoriesManagement = ({
 
     try {
       startOperation("Updating product category...");
-      setIsEditModalOpen(false);
+      setIsEditing(false);
 
       await productCategoryService.update(
         selectedOrgAccount.accountId,
@@ -219,6 +224,13 @@ export const ProductCategoriesManagement = ({
       );
 
       await loadCategories();
+
+      // Update selected category with new data
+      setSelectedCategory({
+        ...selectedCategory,
+        product_name: formData.product_name,
+        description: formData.description,
+      });
 
       toast({
         title: "Success",
@@ -339,10 +351,12 @@ export const ProductCategoriesManagement = ({
                 {categories.map((category) => (
                   <div
                     key={category.node_id}
-                    className={`flex-shrink-0 p-4 rounded-lg transition-colors hover:ring-2 hover:ring-gray-300 ${
-                      hasEditAccess ? "cursor-pointer" : ""
+                    className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
+                      selectedCategoryId === category.node_id
+                        ? "ring-2 ring-brand-medium-blue"
+                        : "hover:ring-2 hover:ring-gray-300"
                     }`}
-                    onClick={() => hasEditAccess && handleEditClick(category)}
+                    onClick={() => handleCategoryClick(category)}
                   >
                     <div className="flex items-center">
                       {/* Text Box - Left */}
@@ -385,6 +399,98 @@ export const ProductCategoriesManagement = ({
           )}
         </CardContent>
       </Card>
+
+      {/* About Section or Empty State */}
+      {selectedCategoryId ? (
+        <Card className="w-[400px] mt-6">
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle className="flex items-center gap-2">
+                About
+                {hasEditAccess && !isEditing && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </CardTitle>
+              {hasEditAccess && !isEditing && (
+                <button
+                  onClick={() =>
+                    selectedCategory && handleDeleteClick(selectedCategory)
+                  }
+                  className="text-brand-red hover:text-brand-red/80"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isEditing ? (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="edit-name">Name:</Label>
+                  <Input
+                    id="edit-name"
+                    value={formData.product_name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, product_name: e.target.value })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-description">Description:</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    rows={4}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      setIsEditing(false);
+                      setFormData({
+                        product_name: selectedCategory?.product_name || "",
+                        description: selectedCategory?.description || "",
+                      });
+                    }}
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSave}>Save Changes</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <p className="font-semibold">Name:</p>
+                  <p>{selectedCategory?.product_name}</p>
+                </div>
+                <div>
+                  <p className="font-semibold">Description:</p>
+                  <p className="text-sm text-dashboard-gray-600">
+                    {selectedCategory?.description || "No description provided"}
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mt-6 p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200">
+          <p className="text-dashboard-gray-500 text-center">
+            Select a product category to view details.
+          </p>
+        </div>
+      )}
 
       {/* Create Modal */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
@@ -433,72 +539,6 @@ export const ProductCategoriesManagement = ({
             >
               Create
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Modal */}
-      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Product Category</DialogTitle>
-            <DialogDescription>
-              Update the category name or description.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label htmlFor="edit-product-name">Category Name</Label>
-              <Input
-                id="edit-product-name"
-                value={formData.product_name}
-                onChange={(e) =>
-                  setFormData({ ...formData, product_name: e.target.value })
-                }
-                placeholder="e.g., Software Products"
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-description">Description</Label>
-              <Textarea
-                id="edit-description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="Describe this product category..."
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditModalOpen(false);
-                if (selectedCategory) {
-                  handleDeleteClick(selectedCategory);
-                }
-              }}
-              className="text-brand-red hover:text-brand-red hover:bg-red-50"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsEditModalOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={!formData.product_name.trim()}
-              >
-                Save Changes
-              </Button>
-            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
