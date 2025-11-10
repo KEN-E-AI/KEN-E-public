@@ -361,7 +361,7 @@ export const ProductCategoriesManagement = ({
                   >
                     <div className="flex items-center">
                       {/* Text Box - Left */}
-                      <div className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
+                      <div className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
                         <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
                           Product Category
                         </p>
@@ -373,7 +373,7 @@ export const ProductCategoriesManagement = ({
                       {/* Circle with Icon - Right */}
                       <div className="flex-shrink-0 -ml-12 relative z-10">
                         <div
-                          className="rounded-full bg-brand-medium-blue flex items-center justify-center"
+                          className="rounded-full bg-brand-light-blue flex items-center justify-center"
                           style={{ width: "72px", height: "72px" }}
                         >
                           <Blocks
