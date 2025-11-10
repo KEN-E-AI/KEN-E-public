@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2, Boxes } from "lucide-react";
+import { Plus, Trash2, Boxes } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import {
@@ -288,35 +288,17 @@ export const ProductCategoriesManagement = ({
               {categories.map((category) => (
                 <div
                   key={category.node_id}
-                  className="flex items-start justify-between p-4 border border-dashboard-gray-200 rounded-lg hover:bg-dashboard-gray-50 transition-colors"
+                  className={`p-4 border border-dashboard-gray-200 rounded-lg hover:bg-dashboard-gray-50 transition-colors ${
+                    hasEditAccess ? "cursor-pointer" : ""
+                  }`}
+                  onClick={() => hasEditAccess && handleEditClick(category)}
                 >
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-dashboard-gray-900 mb-1">
-                      {category.product_name}
-                    </h3>
-                    <p className="text-sm text-dashboard-gray-600">
-                      {category.description}
-                    </p>
-                  </div>
-                  {hasEditAccess && (
-                    <div className="flex gap-2 ml-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditClick(category)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteClick(category)}
-                        className="text-brand-red hover:text-brand-red"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
+                  <h3 className="font-semibold text-dashboard-gray-900 mb-1">
+                    {category.product_name}
+                  </h3>
+                  <p className="text-sm text-dashboard-gray-600">
+                    {category.description}
+                  </p>
                 </div>
               ))}
             </div>
@@ -409,16 +391,34 @@ export const ProductCategoriesManagement = ({
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
-              Cancel
-            </Button>
+          <DialogFooter className="flex justify-between">
             <Button
-              onClick={handleSave}
-              disabled={!formData.product_name.trim()}
+              variant="outline"
+              onClick={() => {
+                setIsEditModalOpen(false);
+                if (selectedCategory) {
+                  handleDeleteClick(selectedCategory);
+                }
+              }}
+              className="text-brand-red hover:text-brand-red hover:bg-red-50"
             >
-              Save Changes
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
             </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsEditModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={!formData.product_name.trim()}
+              >
+                Save Changes
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
