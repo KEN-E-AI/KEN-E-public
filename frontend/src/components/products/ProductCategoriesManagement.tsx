@@ -306,8 +306,8 @@ export const ProductCategoriesManagement = ({
 
                     {/* Circle with Icon - Right */}
                     <div className="flex-shrink-0">
-                      <div className="w-15 h-15 rounded-full bg-brand-medium-blue flex items-center justify-center">
-                        <Boxes className="h-6 w-6 text-white" />
+                      <div className="w-[60px] h-[60px] rounded-full bg-brand-medium-blue flex items-center justify-center">
+                        <Boxes className="h-8 w-8 text-white" />
                       </div>
                     </div>
                   </div>
