@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Boxes } from "lucide-react";
+import { Plus, Trash2, Boxes, Blocks } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import {
@@ -258,7 +258,7 @@ export const ProductCategoriesManagement = ({
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle className="flex items-center gap-2">
-              <Boxes className="h-5 w-5" />
+              <Blocks className="h-5 w-5" />
               Product Categories
             </CardTitle>
             {hasEditAccess && (
@@ -293,21 +293,24 @@ export const ProductCategoriesManagement = ({
                   }`}
                   onClick={() => hasEditAccess && handleEditClick(category)}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center">
                     {/* Text Box - Left */}
-                    <div className="bg-brand-medium-blue bg-opacity-50 rounded-lg px-4 py-2">
-                      <p className="text-sm text-dashboard-gray-600 mb-0.5">
+                    <div className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
+                      <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
                         Product Category
                       </p>
-                      <p className="font-semibold text-dashboard-gray-900">
+                      <p className="font-semibold text-dashboard-gray-900 leading-tight">
                         {category.product_name}
                       </p>
                     </div>
 
                     {/* Circle with Icon - Right */}
-                    <div className="flex-shrink-0">
-                      <div className="w-[72px] h-[72px] rounded-full bg-brand-medium-blue flex items-center justify-center">
-                        <Boxes className="h-10 w-10 text-white" />
+                    <div className="flex-shrink-0 -ml-12 relative z-10">
+                      <div
+                        className="rounded-full bg-brand-medium-blue flex items-center justify-center"
+                        style={{ width: '72px', height: '72px' }}
+                      >
+                        <Blocks className="text-white" style={{ width: '48px', height: '48px' }} />
                       </div>
                     </div>
                   </div>

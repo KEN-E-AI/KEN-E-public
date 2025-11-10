@@ -18,6 +18,18 @@ export default {
       },
     },
     extend: {
+      spacing: {
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
+      width: {
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
+      height: {
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
       colors: {
         border: "var(--border)",
         input: "var(--input)",
