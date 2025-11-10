@@ -288,17 +288,29 @@ export const ProductCategoriesManagement = ({
               {categories.map((category) => (
                 <div
                   key={category.node_id}
-                  className={`p-4 border border-dashboard-gray-200 rounded-lg hover:bg-dashboard-gray-50 transition-colors ${
+                  className={`p-4 border border-dashboard-gray-200 rounded-lg transition-colors hover:ring-2 hover:ring-gray-300 ${
                     hasEditAccess ? "cursor-pointer" : ""
                   }`}
                   onClick={() => hasEditAccess && handleEditClick(category)}
                 >
-                  <h3 className="font-semibold text-dashboard-gray-900 mb-1">
-                    {category.product_name}
-                  </h3>
-                  <p className="text-sm text-dashboard-gray-600">
-                    {category.description}
-                  </p>
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Text Box - Left */}
+                    <div className="flex-1 min-w-0 bg-brand-medium-blue bg-opacity-50 rounded-lg p-3">
+                      <p className="font-semibold text-dashboard-gray-900 mb-1">
+                        Product Category
+                      </p>
+                      <p className="text-sm text-dashboard-gray-600">
+                        {category.product_name}
+                      </p>
+                    </div>
+
+                    {/* Circle with Icon - Right */}
+                    <div className="flex-shrink-0">
+                      <div className="w-15 h-15 rounded-full bg-brand-medium-blue flex items-center justify-center">
+                        <Boxes className="h-6 w-6 text-white" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
