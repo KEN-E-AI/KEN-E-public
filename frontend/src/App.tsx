@@ -21,7 +21,6 @@ import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Recommendations from "./pages/Recommendations";
-import Funnel from "./pages/Funnel";
 import Products from "./pages/Products";
 import Campaigns from "./pages/Campaigns";
 import Reports from "./pages/Reports";
@@ -141,14 +140,6 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <Recommendations />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/funnel"
-                    element={
-                      <ProtectedRoute>
-                        <Funnel />
                       </ProtectedRoute>
                     }
                   />

@@ -7,7 +7,6 @@ import {
   Glasses,
   BookOpen,
   User,
-  Filter,
   ThumbsUp,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -47,12 +46,6 @@ export function IconNavigation() {
       icon: ThumbsUp,
       label: "Recommendations",
       route: "/recommendations",
-    },
-    {
-      id: "funnel",
-      icon: Filter,
-      label: "Funnel",
-      route: "/funnel",
     },
     {
       id: "campaigns",
