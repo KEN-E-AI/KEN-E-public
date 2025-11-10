@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Pencil,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
@@ -345,7 +346,7 @@ export const ProductCategoriesManagement = ({
               {/* Scrollable Container */}
               <div
                 ref={scrollContainerRef}
-                className="flex gap-3 overflow-x-auto py-2"
+                className="flex gap-3 overflow-x-auto px-2 py-2"
                 onScroll={checkScrollPosition}
               >
                 {categories.map((category) => (
@@ -401,96 +402,122 @@ export const ProductCategoriesManagement = ({
       </Card>
 
       {/* About Section or Empty State */}
-      {selectedCategoryId ? (
-        <Card className="w-[400px] mt-6">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle className="flex items-center gap-2">
-                About
+      <div className="flex gap-6 mt-6">
+        {selectedCategoryId ? (
+          <Card className="w-[400px]">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle className="flex items-center gap-2">
+                  About
+                  {hasEditAccess && !isEditing && (
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  )}
+                </CardTitle>
                 {hasEditAccess && !isEditing && (
                   <button
-                    onClick={() => setIsEditing(true)}
-                    className="text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                    onClick={() =>
+                      selectedCategory && handleDeleteClick(selectedCategory)
+                    }
+                    className="text-brand-red hover:text-brand-red/80"
                   >
-                    <Pencil className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 )}
-              </CardTitle>
-              {hasEditAccess && !isEditing && (
-                <button
-                  onClick={() =>
-                    selectedCategory && handleDeleteClick(selectedCategory)
-                  }
-                  className="text-brand-red hover:text-brand-red/80"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isEditing ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="edit-name">Name:</Label>
+                    <Input
+                      id="edit-name"
+                      value={formData.product_name}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          product_name: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-description">Description:</Label>
+                    <Textarea
+                      id="edit-description"
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
+                      rows={4}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        setIsEditing(false);
+                        setFormData({
+                          product_name: selectedCategory?.product_name || "",
+                          description: selectedCategory?.description || "",
+                        });
+                      }}
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handleSave}>Save Changes</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-semibold">Name:</p>
+                    <p>{selectedCategory?.product_name}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold">Description:</p>
+                    <p className="text-sm text-dashboard-gray-600">
+                      {selectedCategory?.description ||
+                        "No description provided"}
+                    </p>
+                  </div>
+                </div>
               )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isEditing ? (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="edit-name">Name:</Label>
-                  <Input
-                    id="edit-name"
-                    value={formData.product_name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, product_name: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-description">Description:</Label>
-                  <Textarea
-                    id="edit-description"
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                    rows={4}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      setIsEditing(false);
-                      setFormData({
-                        product_name: selectedCategory?.product_name || "",
-                        description: selectedCategory?.description || "",
-                      });
-                    }}
-                    variant="outline"
-                  >
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSave}>Save Changes</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <p className="font-semibold">Name:</p>
-                  <p>{selectedCategory?.product_name}</p>
-                </div>
-                <div>
-                  <p className="font-semibold">Description:</p>
-                  <p className="text-sm text-dashboard-gray-600">
-                    {selectedCategory?.description || "No description provided"}
-                  </p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="mt-6 p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200">
-          <p className="text-dashboard-gray-500 text-center">
-            Select a product category to view details.
-          </p>
-        </div>
-      )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200">
+            <p className="text-dashboard-gray-500 text-center">
+              Select a product category to view details.
+            </p>
+          </div>
+        )}
+
+        {/* Products Card - Only show when category is selected */}
+        {selectedCategoryId && (
+          <Card className="flex-1 h-[600px]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Products
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-dashboard-gray-500">
+                Products content will appear here.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Create Modal */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
