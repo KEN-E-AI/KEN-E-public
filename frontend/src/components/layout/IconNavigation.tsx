@@ -137,7 +137,7 @@ export function IconNavigation() {
         {/* Settings Icon */}
         <div className="relative group">
           <button
-            onClick={() => navigate("/settings/organization")}
+            onClick={() => navigate("/settings")}
             className={cn(
               "w-full h-12 flex items-center justify-center transition-colors rounded",
               isActive("/settings")
