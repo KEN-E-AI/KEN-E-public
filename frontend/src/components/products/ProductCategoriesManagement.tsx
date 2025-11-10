@@ -1,5 +1,12 @@
-import { useState, useEffect } from "react";
-import { Plus, Trash2, Boxes, Blocks } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import {
+  Plus,
+  Trash2,
+  Boxes,
+  Blocks,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import {
@@ -52,6 +59,9 @@ export const ProductCategoriesManagement = ({
     product_name: "",
     description: "",
   });
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
@@ -83,6 +93,31 @@ export const ProductCategoriesManagement = ({
       setIsLoading(false);
     }
   };
+
+  const checkScrollPosition = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    setCanScrollLeft(container.scrollLeft > 0);
+    setCanScrollRight(
+      container.scrollLeft < container.scrollWidth - container.clientWidth - 1,
+    );
+  };
+
+  const scrollLeft = () => {
+    scrollContainerRef.current?.scrollBy({ left: -300, behavior: "smooth" });
+  };
+
+  const scrollRight = () => {
+    scrollContainerRef.current?.scrollBy({ left: 300, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    checkScrollPosition();
+    const handleResize = () => checkScrollPosition();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [categories]);
 
   const handleCreateClick = () => {
     setFormData({ product_name: "", description: "" });
@@ -284,41 +319,68 @@ export const ProductCategoriesManagement = ({
               {hasEditAccess && " Click 'Create Category' to add one."}
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {categories.map((category) => (
-                <div
-                  key={category.node_id}
-                  className={`flex-shrink-0 p-4 border border-dashboard-gray-200 rounded-lg transition-colors hover:ring-2 hover:ring-gray-300 ${
-                    hasEditAccess ? "cursor-pointer" : ""
-                  }`}
-                  onClick={() => hasEditAccess && handleEditClick(category)}
+            <div className="relative">
+              {/* Left Scroll Arrow */}
+              {canScrollLeft && (
+                <button
+                  className="absolute left-0 top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity"
+                  onClick={scrollLeft}
                 >
-                  <div className="flex items-center">
-                    {/* Text Box - Left */}
-                    <div className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
-                      <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-                        Product Category
-                      </p>
-                      <p className="font-semibold text-dashboard-gray-900 leading-tight">
-                        {category.product_name}
-                      </p>
-                    </div>
+                  <ChevronLeft className="h-6 w-6 text-white" />
+                </button>
+              )}
 
-                    {/* Circle with Icon - Right */}
-                    <div className="flex-shrink-0 -ml-12 relative z-10">
-                      <div
-                        className="rounded-full bg-brand-medium-blue flex items-center justify-center"
-                        style={{ width: "72px", height: "72px" }}
-                      >
-                        <Blocks
-                          className="text-white"
-                          style={{ width: "48px", height: "48px" }}
-                        />
+              {/* Scrollable Container */}
+              <div
+                ref={scrollContainerRef}
+                className="flex gap-3 overflow-x-auto py-2"
+                onScroll={checkScrollPosition}
+              >
+                {categories.map((category) => (
+                  <div
+                    key={category.node_id}
+                    className={`flex-shrink-0 p-4 rounded-lg transition-colors hover:ring-2 hover:ring-gray-300 ${
+                      hasEditAccess ? "cursor-pointer" : ""
+                    }`}
+                    onClick={() => hasEditAccess && handleEditClick(category)}
+                  >
+                    <div className="flex items-center">
+                      {/* Text Box - Left */}
+                      <div className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
+                        <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                          Product Category
+                        </p>
+                        <p className="font-semibold text-dashboard-gray-900 leading-tight">
+                          {category.product_name}
+                        </p>
+                      </div>
+
+                      {/* Circle with Icon - Right */}
+                      <div className="flex-shrink-0 -ml-12 relative z-10">
+                        <div
+                          className="rounded-full bg-brand-medium-blue flex items-center justify-center"
+                          style={{ width: "72px", height: "72px" }}
+                        >
+                          <Blocks
+                            className="text-white"
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+
+              {/* Right Scroll Arrow */}
+              {canScrollRight && (
+                <button
+                  className="absolute right-0 top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity"
+                  onClick={scrollRight}
+                >
+                  <ChevronRight className="h-6 w-6 text-white" />
+                </button>
+              )}
             </div>
           )}
         </CardContent>
