@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { ReactFlow, Controls, Background } from "reactflow";
+import type { Node, Edge } from "reactflow";
+import "reactflow/dist/style.css";
 import {
   Plus,
   Trash2,
@@ -8,6 +11,7 @@ import {
   ChevronRight,
   Pencil,
   Package,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
@@ -17,6 +21,12 @@ import {
   type ProductCategoryCreate,
   type ProductCategoryUpdate,
 } from "@/services/productCategoryService";
+import {
+  productService,
+  type Product,
+  type ProductCreate,
+} from "@/services/productService";
+import { CategoryNode, ProductNode } from "./ProductFlowNodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,6 +78,23 @@ export const ProductCategoriesManagement = ({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Product state
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(
+    null,
+  );
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [isCreateProductModalOpen, setIsCreateProductModalOpen] =
+    useState(false);
+  const [productFormData, setProductFormData] = useState<ProductCreate>({
+    product_name: "",
+    description: "",
+    category_node_id: "",
+    references: [],
+    product_detail_page: "",
+  });
+
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
   const { toast } = useToast();
@@ -99,6 +126,28 @@ export const ProductCategoriesManagement = ({
     }
   };
 
+  const fetchProducts = async (categoryNodeId: string) => {
+    if (!selectedOrgAccount?.accountId) return;
+
+    try {
+      setIsLoadingProducts(true);
+      const response = await productService.list(
+        selectedOrgAccount.accountId,
+        categoryNodeId,
+      );
+      setProducts(response.products);
+    } catch (error) {
+      console.error("Failed to load products:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load products",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
   const checkScrollPosition = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -123,6 +172,16 @@ export const ProductCategoriesManagement = ({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [categories]);
+
+  useEffect(() => {
+    if (selectedCategoryId) {
+      fetchProducts(selectedCategoryId);
+    } else {
+      setProducts([]);
+      setSelectedProductId(null);
+      setSelectedProduct(null);
+    }
+  }, [selectedCategoryId, selectedOrgAccount]);
 
   const handleCreateClick = () => {
     setFormData({ product_name: "", description: "" });
@@ -300,6 +359,211 @@ export const ProductCategoriesManagement = ({
     }
   };
 
+  // React Flow node types
+  const nodeTypes = {
+    categoryNode: CategoryNode,
+    productNode: ProductNode,
+  };
+
+  // Generate nodes for React Flow
+  const generateNodes = (): Node[] => {
+    if (!selectedCategory) return [];
+
+    const nodes: Node[] = [];
+
+    // Category Node (top center)
+    nodes.push({
+      id: selectedCategory.node_id,
+      type: "categoryNode",
+      position: { x: 300, y: 50 },
+      data: {
+        label: selectedCategory.product_name,
+        onAddProduct: () => setIsCreateProductModalOpen(true),
+      },
+    });
+
+    // Product Nodes (row below, horizontally spaced)
+    const productWidth = 300;
+    const gap = 12;
+    const totalWidth = products.length * (productWidth + gap) - gap;
+    const startX = 300 - totalWidth / 2;
+
+    products.forEach((product, index) => {
+      nodes.push({
+        id: product.node_id,
+        type: "productNode",
+        position: {
+          x: startX + index * (productWidth + gap),
+          y: 224,
+        },
+        data: {
+          label: product.product_name,
+          showHandle: selectedProductId === product.node_id,
+          isSelected: selectedProductId === product.node_id,
+          onAddSubstitute: () => {
+            toast({
+              title: "Coming Soon",
+              description: "Substitute products API not yet available",
+            });
+          },
+        },
+      });
+    });
+
+    return nodes;
+  };
+
+  // Generate edges for React Flow
+  const generateEdges = (): Edge[] => {
+    if (!selectedCategory) return [];
+
+    const edges: Edge[] = [];
+
+    products.forEach((product) => {
+      edges.push({
+        id: `${selectedCategory.node_id}-${product.node_id}`,
+        source: selectedCategory.node_id,
+        target: product.node_id,
+        type: "smoothstep",
+        style: {
+          stroke: "#000",
+          strokeWidth: 2,
+        },
+        sourceHandle: "bottom",
+        targetHandle: "top",
+      });
+    });
+
+    return edges;
+  };
+
+  // Handle node clicks in React Flow
+  const handleProductNodeClick = (_event: React.MouseEvent, node: Node) => {
+    if (node.type === "productNode") {
+      const product = products.find((p) => p.node_id === node.id);
+      if (!product) return;
+
+      setSelectedProductId(node.id);
+      setSelectedProduct(product);
+
+      setSelectedCategory(null);
+      setSelectedCategoryId(null);
+
+      setFormData({
+        product_name: product.product_name,
+        description: product.description,
+      });
+
+      setIsEditing(false);
+    } else if (node.type === "categoryNode") {
+      const category = categories.find((c) => c.node_id === node.id);
+      if (!category) return;
+
+      setSelectedCategoryId(category.node_id);
+      setSelectedCategory(category);
+      setSelectedProductId(null);
+      setSelectedProduct(null);
+
+      setFormData({
+        product_name: category.product_name,
+        description: category.description,
+      });
+
+      setIsEditing(false);
+    }
+  };
+
+  // Handle product creation
+  const handleCreateProduct = async () => {
+    if (!selectedOrgAccount?.accountId || !selectedCategory) return;
+    if (
+      !productFormData.product_name.trim() ||
+      !productFormData.description.trim()
+    ) {
+      toast({
+        title: "Validation Error",
+        description: "Product name and description are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      startOperation("Creating product...");
+      setIsCreateProductModalOpen(false);
+
+      const productData: ProductCreate = {
+        product_name: productFormData.product_name,
+        description: productFormData.description,
+        category_node_id: selectedCategory.node_id,
+        references: productFormData.references?.filter((r) => r.trim()) || [],
+        product_detail_page:
+          productFormData.product_detail_page?.trim() || undefined,
+      };
+
+      const newProduct = await productService.create(
+        selectedOrgAccount.accountId,
+        productData,
+      );
+
+      await fetchProducts(selectedCategory.node_id);
+
+      setSelectedProductId(newProduct.node_id);
+      setSelectedProduct(newProduct);
+      setSelectedCategory(null);
+      setSelectedCategoryId(null);
+
+      setFormData({
+        product_name: newProduct.product_name,
+        description: newProduct.description,
+      });
+
+      setProductFormData({
+        product_name: "",
+        description: "",
+        category_node_id: "",
+        references: [],
+        product_detail_page: "",
+      });
+
+      toast({
+        title: "Success",
+        description: "Product created successfully",
+      });
+    } catch (error) {
+      console.error("Failed to create product:", error);
+
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const message =
+          error.response?.data?.detail || "Failed to create product";
+
+        if (status === 409) {
+          toast({
+            title: "Duplicate Product",
+            description:
+              "A product with this name already exists in this category",
+            variant: "destructive",
+          });
+        } else if (status === 403) {
+          toast({
+            title: "Permission Denied",
+            description: "You don't have permission to create products",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: message,
+            variant: "destructive",
+          });
+        }
+      }
+    } finally {
+      endOperation();
+    }
+  };
+
   return (
     <>
       <Card>
@@ -403,7 +667,7 @@ export const ProductCategoriesManagement = ({
 
       {/* About Section or Empty State */}
       <div className="flex gap-6 mt-6">
-        {selectedCategoryId ? (
+        {selectedCategory || selectedProduct ? (
           <Card className="w-[400px]">
             <CardHeader>
               <div className="flex justify-between items-center">
@@ -420,9 +684,17 @@ export const ProductCategoriesManagement = ({
                 </CardTitle>
                 {hasEditAccess && !isEditing && (
                   <button
-                    onClick={() =>
-                      selectedCategory && handleDeleteClick(selectedCategory)
-                    }
+                    onClick={() => {
+                      if (selectedCategory) {
+                        handleDeleteClick(selectedCategory);
+                      } else if (selectedProduct) {
+                        toast({
+                          title: "Coming Soon",
+                          description:
+                            "Product deletion will be implemented in a future session",
+                        });
+                      }
+                    }}
                     className="text-brand-red hover:text-brand-red/80"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -464,28 +736,57 @@ export const ProductCategoriesManagement = ({
                     <Button
                       onClick={() => {
                         setIsEditing(false);
-                        setFormData({
-                          product_name: selectedCategory?.product_name || "",
-                          description: selectedCategory?.description || "",
-                        });
+                        if (selectedCategory) {
+                          setFormData({
+                            product_name: selectedCategory.product_name,
+                            description: selectedCategory.description,
+                          });
+                        } else if (selectedProduct) {
+                          setFormData({
+                            product_name: selectedProduct.product_name,
+                            description: selectedProduct.description,
+                          });
+                        }
                       }}
                       variant="outline"
                     >
                       Cancel
                     </Button>
-                    <Button onClick={handleSave}>Save Changes</Button>
+                    <Button
+                      onClick={
+                        selectedCategory
+                          ? handleSave
+                          : () => {
+                              toast({
+                                title: "Coming Soon",
+                                description:
+                                  "Product editing will be implemented in a future session",
+                              });
+                            }
+                      }
+                    >
+                      Save Changes
+                    </Button>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <div>
+                    <p className="font-semibold">Type:</p>
+                    <p>{selectedCategory ? "Product Category" : "Product"}</p>
+                  </div>
+                  <div>
                     <p className="font-semibold">Name:</p>
-                    <p>{selectedCategory?.product_name}</p>
+                    <p>
+                      {selectedCategory?.product_name ||
+                        selectedProduct?.product_name}
+                    </p>
                   </div>
                   <div>
                     <p className="font-semibold">Description:</p>
                     <p className="text-sm text-dashboard-gray-600">
                       {selectedCategory?.description ||
+                        selectedProduct?.description ||
                         "No description provided"}
                     </p>
                   </div>
@@ -510,10 +811,31 @@ export const ProductCategoriesManagement = ({
                 Products
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-dashboard-gray-500">
-                Products content will appear here.
-              </p>
+            <CardContent className="h-[520px]">
+              {isLoadingProducts ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : (
+                <ReactFlow
+                  nodes={generateNodes()}
+                  edges={generateEdges()}
+                  nodeTypes={nodeTypes}
+                  onNodeClick={handleProductNodeClick}
+                  defaultViewport={{ x: 250, y: 50, zoom: 1 }}
+                  minZoom={0.5}
+                  maxZoom={1.5}
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  elementsSelectable={true}
+                  panOnScroll={true}
+                  zoomOnScroll={false}
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
+              )}
             </CardContent>
           </Card>
         )}
@@ -599,6 +921,117 @@ export const ProductCategoriesManagement = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Product Modal */}
+      <Dialog
+        open={isCreateProductModalOpen}
+        onOpenChange={setIsCreateProductModalOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Product</DialogTitle>
+            <DialogDescription>
+              Add a new product to {selectedCategory?.product_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <Label htmlFor="create-product-name">Product Name *</Label>
+              <Input
+                id="create-product-name"
+                value={productFormData.product_name}
+                onChange={(e) =>
+                  setProductFormData({
+                    ...productFormData,
+                    product_name: e.target.value,
+                  })
+                }
+                placeholder="e.g., Business Loans"
+                maxLength={200}
+              />
+            </div>
+            <div>
+              <Label htmlFor="create-product-description">Description *</Label>
+              <Textarea
+                id="create-product-description"
+                value={productFormData.description}
+                onChange={(e) =>
+                  setProductFormData({
+                    ...productFormData,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Describe this product..."
+                rows={4}
+                maxLength={4000}
+              />
+            </div>
+            <div>
+              <Label htmlFor="create-product-detail-page">
+                Product Detail Page (Optional)
+              </Label>
+              <Input
+                id="create-product-detail-page"
+                type="url"
+                value={productFormData.product_detail_page}
+                onChange={(e) =>
+                  setProductFormData({
+                    ...productFormData,
+                    product_detail_page: e.target.value,
+                  })
+                }
+                placeholder="https://..."
+              />
+            </div>
+            <div>
+              <Label htmlFor="create-product-references">
+                References (Optional)
+              </Label>
+              <Textarea
+                id="create-product-references"
+                value={productFormData.references?.join("\n") || ""}
+                onChange={(e) => {
+                  const refs = e.target.value
+                    .split("\n")
+                    .filter((r) => r.trim());
+                  setProductFormData({
+                    ...productFormData,
+                    references: refs,
+                  });
+                }}
+                placeholder="One URL per line"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateProductModalOpen(false);
+                setProductFormData({
+                  product_name: "",
+                  description: "",
+                  category_node_id: "",
+                  references: [],
+                  product_detail_page: "",
+                });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateProduct}
+              disabled={
+                !productFormData.product_name.trim() ||
+                !productFormData.description.trim()
+              }
+            >
+              Create Product
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

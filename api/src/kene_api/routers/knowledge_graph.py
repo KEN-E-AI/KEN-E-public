@@ -321,13 +321,54 @@ async def list_products(
     await check_graph_access(account_id, user, "view")
 
     try:
-        # Get total count from database (not just returned results)
-        total_count = await service.count_nodes(account_id, "Product", parent_node_id=category_node_id)
+        # Build custom query to include category_node_id from relationship
+        if category_node_id:
+            # Query products filtered by category with relationship data
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
+            WHERE (p)-[:BELONGS_TO]->(acc)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            if limit is not None:
+                query += " SKIP $skip LIMIT $limit"
+                params = {"account_id": account_id, "category_node_id": category_node_id, "skip": skip, "limit": limit}
+            else:
+                params = {"account_id": account_id, "category_node_id": category_node_id}
 
-        # Get paginated results
-        products_data = await service.list_nodes(
-            account_id, "Product", parent_node_id=category_node_id, skip=skip, limit=limit
-        )
+            # Get count
+            count_query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
+            WHERE (p)-[:BELONGS_TO]->(acc)
+            RETURN count(p) as total
+            """
+            count_result = await service.neo4j.execute_query(count_query, {"account_id": account_id, "category_node_id": category_node_id})
+            total_count = count_result[0]["total"] if count_result else 0
+
+            # Get products
+            result = await service.neo4j.execute_query(query, params)
+            products_data = [
+                {**service._neo4j_node_to_dict(record["node"]), "account_id": record["account_id"], "category_node_id": record["category_node_id"]}
+                for record in result
+            ]
+        else:
+            # Query all products for account (no category filter)
+            total_count = await service.count_nodes(account_id, "Product")
+            products_data = await service.list_nodes(account_id, "Product", skip=skip, limit=limit)
+            # For products without category filter, we need to fetch their category_node_id
+            # This is a fallback - in practice, products should always have a category
+            for prod in products_data:
+                # Query to find the category
+                cat_query = """
+                MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p:Product {node_id: $node_id})
+                RETURN cat.node_id as category_node_id
+                LIMIT 1
+                """
+                cat_result = await service.neo4j.execute_query(cat_query, {"node_id": prod["node_id"]})
+                prod["category_node_id"] = cat_result[0]["category_node_id"] if cat_result else ""
+
         products = [ProductResponse(**prod) for prod in products_data]
 
         return ProductListResponse(products=products, total_count=total_count)
