@@ -74,12 +74,15 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
     <div className="relative">
       {/* Badge matching horizontal scroll design */}
       <div className="flex items-center">
-        {/* Text Box - Left */}
-        <div className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
+        {/* Text Box - Left - Fixed width for consistent spacing */}
+        <div
+          className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
+          style={{ width: "200px" }}
+        >
           <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
             Product
           </p>
-          <p className="font-semibold text-dashboard-gray-900 leading-tight">
+          <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
             {data.label}
           </p>
         </div>
@@ -88,7 +91,13 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
         <div className="flex-shrink-0 -ml-12 relative z-10">
           <div
             className="rounded-full bg-brand-medium-blue flex items-center justify-center"
-            style={{ width: "72px", height: "72px" }}
+            style={{
+              width: "72px",
+              height: "72px",
+              boxShadow: data.isSelected
+                ? "0 0 0 3px rgba(70, 143, 208, 0.4)"
+                : "none",
+            }}
           >
             <Package
               className="text-white"

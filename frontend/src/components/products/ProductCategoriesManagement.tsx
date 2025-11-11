@@ -50,6 +50,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
 
@@ -94,6 +100,18 @@ export const ProductCategoriesManagement = ({
     references: [],
     product_detail_page: "",
   });
+
+  // Context menu state
+  const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
+  const [contextMenuType, setContextMenuType] = useState<
+    "category" | "product" | null
+  >(null);
+  const [isUnsavedChangesDialogOpen, setIsUnsavedChangesDialogOpen] =
+    useState(false);
+  const [pendingNode, setPendingNode] = useState<{
+    type: "category" | "product";
+    data: ProductCategory | Product;
+  } | null>(null);
 
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
@@ -196,6 +214,7 @@ export const ProductCategoriesManagement = ({
       description: category.description,
     });
     setIsEditing(false);
+    // Do NOT open context menu from horizontal scroll click
   };
 
   const handleDeleteClick = (category: ProductCategory) => {
@@ -383,8 +402,8 @@ export const ProductCategoriesManagement = ({
     });
 
     // Product Nodes (row below, horizontally spaced)
-    const productWidth = 300;
-    const gap = 12;
+    const productWidth = 224; // Fixed width: 200px text box - 48px overlap + 72px circle
+    const gap = 36;
     const totalWidth = products.length * (productWidth + gap) - gap;
     const startX = 300 - totalWidth / 2;
 
@@ -438,39 +457,126 @@ export const ProductCategoriesManagement = ({
   };
 
   // Handle node clicks in React Flow
-  const handleProductNodeClick = (_event: React.MouseEvent, node: Node) => {
+  const handleNodeClick = (_event: React.MouseEvent, node: Node) => {
+    // Check for unsaved changes
+    if (isEditing) {
+      // Check if data was actually modified (trim to ignore whitespace-only changes)
+      const hasChanges =
+        (selectedCategory &&
+          (formData.product_name.trim() !==
+            selectedCategory.product_name.trim() ||
+            formData.description.trim() !==
+              selectedCategory.description.trim())) ||
+        (selectedProduct &&
+          (formData.product_name.trim() !==
+            selectedProduct.product_name.trim() ||
+            formData.description.trim() !==
+              selectedProduct.description.trim()));
+
+      if (hasChanges) {
+        // Store pending node and show warning
+        if (node.type === "productNode") {
+          const product = products.find((p) => p.node_id === node.id);
+          if (product) {
+            setPendingNode({ type: "product", data: product });
+            setIsUnsavedChangesDialogOpen(true);
+          }
+        } else if (node.type === "categoryNode") {
+          const category = categories.find((c) => c.node_id === node.id);
+          if (category) {
+            setPendingNode({ type: "category", data: category });
+            setIsUnsavedChangesDialogOpen(true);
+          }
+        }
+        return;
+      } else {
+        // No actual changes, just exit edit mode and continue
+        setIsEditing(false);
+      }
+    }
+
+    // Open context menu
     if (node.type === "productNode") {
       const product = products.find((p) => p.node_id === node.id);
       if (!product) return;
 
       setSelectedProductId(node.id);
       setSelectedProduct(product);
-
-      setSelectedCategory(null);
-      setSelectedCategoryId(null);
+      // Keep category selected to maintain diagram visibility
 
       setFormData({
         product_name: product.product_name,
         description: product.description,
       });
 
+      setContextMenuType("product");
+      setIsContextMenuOpen(true);
       setIsEditing(false);
     } else if (node.type === "categoryNode") {
       const category = categories.find((c) => c.node_id === node.id);
       if (!category) return;
 
-      setSelectedCategoryId(category.node_id);
-      setSelectedCategory(category);
+      // When clicking category node, clear product selection
       setSelectedProductId(null);
       setSelectedProduct(null);
+
+      // Set category as selected (may already be selected from horizontal scroll)
+      setSelectedCategoryId(category.node_id);
+      setSelectedCategory(category);
 
       setFormData({
         product_name: category.product_name,
         description: category.description,
       });
 
+      setContextMenuType("category");
+      setIsContextMenuOpen(true);
       setIsEditing(false);
     }
+  };
+
+  // Handle discarding changes and switching to pending node
+  const handleDiscardChanges = () => {
+    if (!pendingNode) return;
+
+    setIsEditing(false);
+    setIsUnsavedChangesDialogOpen(false);
+
+    // Switch to the pending node
+    if (pendingNode.type === "product") {
+      const product = pendingNode.data as Product;
+      setSelectedProductId(product.node_id);
+      setSelectedProduct(product);
+      // Keep category selected to maintain diagram visibility
+
+      setFormData({
+        product_name: product.product_name,
+        description: product.description,
+      });
+
+      setContextMenuType("product");
+      setIsContextMenuOpen(true);
+    } else {
+      const category = pendingNode.data as ProductCategory;
+
+      // Clear product selection when switching to category
+      setSelectedProductId(null);
+      setSelectedProduct(null);
+
+      // Set category as selected
+      setSelectedCategoryId(category.node_id);
+      setSelectedCategory(category);
+
+      setFormData({
+        product_name: category.product_name,
+        description: category.description,
+      });
+
+      setContextMenuType("category");
+      setIsContextMenuOpen(true);
+    }
+
+    setPendingNode(null);
   };
 
   // Handle product creation
@@ -665,146 +771,10 @@ export const ProductCategoriesManagement = ({
         </CardContent>
       </Card>
 
-      {/* About Section or Empty State */}
-      <div className="flex gap-6 mt-6">
-        {selectedCategory || selectedProduct ? (
-          <Card className="w-[400px]">
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-2">
-                  About
-                  {hasEditAccess && !isEditing && (
-                    <button
-                      onClick={() => setIsEditing(true)}
-                      className="text-dashboard-gray-600 hover:text-dashboard-gray-900"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                  )}
-                </CardTitle>
-                {hasEditAccess && !isEditing && (
-                  <button
-                    onClick={() => {
-                      if (selectedCategory) {
-                        handleDeleteClick(selectedCategory);
-                      } else if (selectedProduct) {
-                        toast({
-                          title: "Coming Soon",
-                          description:
-                            "Product deletion will be implemented in a future session",
-                        });
-                      }
-                    }}
-                    className="text-brand-red hover:text-brand-red/80"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isEditing ? (
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="edit-name">Name:</Label>
-                    <Input
-                      id="edit-name"
-                      value={formData.product_name}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          product_name: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="edit-description">Description:</Label>
-                    <Textarea
-                      id="edit-description"
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          description: e.target.value,
-                        })
-                      }
-                      rows={4}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => {
-                        setIsEditing(false);
-                        if (selectedCategory) {
-                          setFormData({
-                            product_name: selectedCategory.product_name,
-                            description: selectedCategory.description,
-                          });
-                        } else if (selectedProduct) {
-                          setFormData({
-                            product_name: selectedProduct.product_name,
-                            description: selectedProduct.description,
-                          });
-                        }
-                      }}
-                      variant="outline"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={
-                        selectedCategory
-                          ? handleSave
-                          : () => {
-                              toast({
-                                title: "Coming Soon",
-                                description:
-                                  "Product editing will be implemented in a future session",
-                              });
-                            }
-                      }
-                    >
-                      Save Changes
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div>
-                    <p className="font-semibold">Type:</p>
-                    <p>{selectedCategory ? "Product Category" : "Product"}</p>
-                  </div>
-                  <div>
-                    <p className="font-semibold">Name:</p>
-                    <p>
-                      {selectedCategory?.product_name ||
-                        selectedProduct?.product_name}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-semibold">Description:</p>
-                    <p className="text-sm text-dashboard-gray-600">
-                      {selectedCategory?.description ||
-                        selectedProduct?.description ||
-                        "No description provided"}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200">
-            <p className="text-dashboard-gray-500 text-center">
-              Select a product category to view details.
-            </p>
-          </div>
-        )}
-
-        {/* Products Card - Only show when category is selected */}
-        {selectedCategoryId && (
-          <Card className="flex-1 h-[600px]">
+      {/* Products Card - Full width, shown when category is selected */}
+      <div className="mt-6">
+        {selectedCategoryId ? (
+          <Card className="h-[600px]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
@@ -821,7 +791,8 @@ export const ProductCategoriesManagement = ({
                   nodes={generateNodes()}
                   edges={generateEdges()}
                   nodeTypes={nodeTypes}
-                  onNodeClick={handleProductNodeClick}
+                  onNodeClick={handleNodeClick}
+                  onNodeDoubleClick={handleNodeClick}
                   defaultViewport={{ x: 250, y: 50, zoom: 1 }}
                   minZoom={0.5}
                   maxZoom={1.5}
@@ -838,6 +809,12 @@ export const ProductCategoriesManagement = ({
               )}
             </CardContent>
           </Card>
+        ) : (
+          <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200">
+            <p className="text-dashboard-gray-500 text-center">
+              Select a product category to view details.
+            </p>
+          </div>
         )}
       </div>
 
@@ -917,6 +894,32 @@ export const ProductCategoriesManagement = ({
               className="bg-brand-red hover:bg-brand-red/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unsaved Changes Warning */}
+      <AlertDialog
+        open={isUnsavedChangesDialogOpen}
+        onOpenChange={setIsUnsavedChangesDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to discard them?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingNode(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDiscardChanges}
+              className="bg-brand-red hover:bg-brand-red/90"
+            >
+              Discard Changes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1032,6 +1035,188 @@ export const ProductCategoriesManagement = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Node Context Menu - Slides in from right */}
+      <Sheet
+        open={isContextMenuOpen}
+        modal={false}
+        onOpenChange={(open) => {
+          // Prevent closing if there are unsaved changes
+          if (!open && isEditing) {
+            const hasChanges =
+              (selectedCategory &&
+                (formData.product_name.trim() !==
+                  selectedCategory.product_name.trim() ||
+                  formData.description.trim() !==
+                    selectedCategory.description.trim())) ||
+              (selectedProduct &&
+                (formData.product_name.trim() !==
+                  selectedProduct.product_name.trim() ||
+                  formData.description.trim() !==
+                    selectedProduct.description.trim()));
+
+            if (hasChanges) {
+              // Don't close, user must explicitly cancel or save
+              return;
+            }
+          }
+          setIsContextMenuOpen(open);
+          if (!open) {
+            setIsEditing(false);
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-[400px] flex flex-col">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              {contextMenuType === "category" ? (
+                <Blocks className="h-5 w-5" />
+              ) : (
+                <Package className="h-5 w-5" />
+              )}
+              {contextMenuType === "category" ? "Product Category" : "Product"}
+            </SheetTitle>
+          </SheetHeader>
+
+          <div className="flex-1 mt-6 overflow-y-auto">
+            {isEditing ? (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="context-edit-name">Name:</Label>
+                  <Input
+                    id="context-edit-name"
+                    value={formData.product_name}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        product_name: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="context-edit-description">Description:</Label>
+                  <Textarea
+                    id="context-edit-description"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        description: e.target.value,
+                      })
+                    }
+                    rows={4}
+                  />
+                </div>
+                {/* TODO: Add product_detail_page field for products in future update */}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <p className="font-semibold">Type:</p>
+                  <p>
+                    {contextMenuType === "category"
+                      ? "Product Category"
+                      : "Product"}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-semibold">Name:</p>
+                  <p>
+                    {selectedCategory?.product_name ||
+                      selectedProduct?.product_name}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-semibold">Description:</p>
+                  <p className="text-sm text-dashboard-gray-600">
+                    {selectedCategory?.description ||
+                      selectedProduct?.description ||
+                      "No description provided"}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons - Fixed at bottom */}
+          {hasEditAccess && (
+            <div className="flex gap-2 pt-4 border-t">
+              {isEditing ? (
+                <>
+                  <Button
+                    onClick={() => {
+                      setIsEditing(false);
+                      if (selectedCategory) {
+                        setFormData({
+                          product_name: selectedCategory.product_name,
+                          description: selectedCategory.description,
+                        });
+                      } else if (selectedProduct) {
+                        setFormData({
+                          product_name: selectedProduct.product_name,
+                          description: selectedProduct.description,
+                        });
+                      }
+                    }}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={
+                      contextMenuType === "category"
+                        ? handleSave
+                        : () => {
+                            toast({
+                              title: "Coming Soon",
+                              description:
+                                "Product editing will be implemented in a future session",
+                            });
+                          }
+                    }
+                    className="flex-1"
+                  >
+                    Save Changes
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={() => setIsEditing(true)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (contextMenuType === "category" && selectedCategory) {
+                        setIsContextMenuOpen(false);
+                        handleDeleteClick(selectedCategory);
+                      } else if (contextMenuType === "product" && selectedProduct) {
+                        setIsContextMenuOpen(false);
+                        toast({
+                          title: "Coming Soon",
+                          description:
+                            "Product deletion will be implemented in a future session",
+                        });
+                      }
+                    }}
+                    variant="destructive"
+                    className="flex-1"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </>
   );
 };

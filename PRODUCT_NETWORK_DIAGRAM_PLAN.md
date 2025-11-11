@@ -8,42 +8,54 @@ ProductCategory → Product → Substitute Product (placeholder)
 See attached screenshot showing:
 - Light blue category node at top (Business Banking)
 - Medium blue product nodes in middle row (Loans, Mortgages)
-- Coral/pink substitute nodes at bottom (Truist Mortgages, Rocket Mortgage)
-- Black straight edges connecting nodes
+- Dark blue substitute nodes at bottom (Truist Mortgages, Rocket Mortgage)
+- **Smooth step edges** connecting nodes (updated from straight)
 - "+" handles on nodes for creating children
+- **Context menu (Sheet)** for node details (replaces About card)
 
-## Current State
+## Current State (Updated After Session 2)
 - ✅ ProductCategoriesManagement component with horizontal scrollable list
-- ✅ About card showing selected category details with inline editing
-- ✅ Products card placeholder (600px height, fills width)
+- ✅ Context Menu (Sheet) replaces About card - slides in from right
+- ✅ Full-width Products card with React Flow diagram
 - ✅ ReactFlow v11.11.4 installed and verified
 - ✅ Codebase analysis complete - patterns identified
+- ✅ Backend fix for category_node_id in list_products endpoint
+- ✅ All MVP features implemented and working
 
 ## Design Decisions (Finalized)
 
-### Visual Design
+### Visual Design (UPDATED)
 - **Node sizing**: Match exact badge design from horizontal scroll (72px circles, 48px icons)
+- **Product node width**: Fixed 200px text boxes with truncation
 - **Colors**:
   - Category: `bg-brand-light-blue` (#8DC4F9)
   - Product: `bg-brand-medium-blue` (#468FD0)
   - Substitute: `bg-brand-dark-blue` (#163354)
 - **Typography**: Exactly match existing category badges
-- **Selection**: NO selection ring - use About card update + show "+" handle instead
-- **"+" Handles**: Use React Flow built-in Handle components with custom styling positioned absolutely
+- **Selection indicator**: Blue glow (box-shadow) on selected product node circle
+- **"+" Handles**: React Flow Handle at `right: "30px"`, button at `right-[25px]`, `-bottom-[12px]`
+- **Edge style**: Smooth step edges (type: "smoothstep")
+- **React Flow attribution**: Hidden via proOptions
 
-### Interaction Behavior
-- **Product click**: Immediately update About card (replace category info)
-- **Category node click**: Restore category info in About card
+### Interaction Behavior (UPDATED)
+- **Product click**: Open context menu (Sheet) with product details
+- **Category node click**: Open context menu (Sheet) with category details
+- **Context menu**: Slides in from right, non-modal (diagram stays interactive)
+- **Selection indicator**: Blue glow on selected product node
 - **"+" on category**: Open create product modal
 - **"+" on product**: Open create substitute product modal (toast for now)
 - **NO hover states** on "+" buttons
-- **Initial state**: No product selected on load, no selection maintained on refresh
+- **Initial state**: No product selected on load, context menu closed
+- **Unsaved changes**: Warning only appears if fields actually modified
 
-### Layout Behavior
-- **Vertical spacing**: As specified in plan (y: 224 for products)
-- **Horizontal spacing**: Measure actual badge width for proper centering
+### Layout Behavior (UPDATED)
+- **Vertical spacing**: y: 224 for products (from category node)
+- **Horizontal spacing**: Fixed 224px node width, 36px gap between nodes
+- **Product text boxes**: Fixed 200px width with truncation for long names
 - **Canvas interaction**: Pan by dragging background, zoom with controls (not scroll-to-zoom)
-- **Substitute products**: Centered under parent product
+- **No auto-zoom**: defaultViewport={{ x: 250, y: 50, zoom: 1 }} prevents fitView
+- **Full-width diagram**: Products card spans full width (About card removed)
+- **Substitute products**: Centered under parent product (not yet implemented)
 
 ### Empty States
 - **No products**: Show category node + "+" handle, empty space below
@@ -1055,16 +1067,182 @@ const handleProductSave = async () => {
 - Long product names (test text truncation)
 - Switching between categories quickly
 
-## Known Limitations
+## Session 2 Completed Features (NEW)
 
-1. **Node positioning**: Using approximate badge width (300px) - may need adjustment
+### Major UX Improvements
+1. **Context Menu (Sheet Component)**
+   - Replaced About card with right-sliding Sheet
+   - 400px wide, non-modal (background stays interactive)
+   - Edit/Delete buttons at bottom (not crowded in header)
+   - Unsaved changes warning with smart detection (only on actual changes)
+   - Supports both category and product display
+
+2. **Full-Width Diagram**
+   - Removed About card from layout
+   - Products card now spans full width
+   - Better use of screen real estate
+
+3. **Visual Polish**
+   - Smooth step edges (prettier than straight lines)
+   - Blue glow on selected product nodes
+   - Fixed node widths (200px) with text truncation
+   - Consistent 36px spacing between nodes
+   - No auto-zoom (stays at 1:1 scale)
+
+4. **Backend Fix**
+   - Updated `list_products` endpoint to fetch category_node_id from INCLUDES_PRODUCT relationship
+   - Custom Cypher query instead of generic list_nodes
+
+5. **State Management Improvements**
+   - Keep category selected when viewing products (don't clear on product click)
+   - Proper context menu state tracking
+   - Pending node pattern for unsaved changes workflow
+
+### Technical Details
+- **Handle positioning**: right: "30px" for React Flow, right-[25px] for visual button
+- **Node dimensions**: 224px total width (200px box - 48px overlap + 72px circle)
+- **Gap**: 36px between nodes
+- **Edge type**: "smoothstep"
+- **Zoom**: defaultViewport prevents auto-zoom, manual controls only
+
+## Known Limitations (UPDATED)
+
+1. ~~**Node positioning**: Using approximate badge width~~ - ✅ FIXED: Using exact 224px width
 2. **No substitute products**: API not available yet, placeholder toast only
-3. **No product edit/delete**: Placeholders in place, implement in future session
-4. **No dynamic layout**: Fixed positioning, may need improvement for many nodes
-5. **No branded types**: Using plain strings for IDs (can add later)
+3. **No product edit**: Toast placeholder in context menu, implement in future session
+4. **No product delete**: Toast placeholder in context menu, implement in future session
+5. ~~**No dynamic layout**~~ - ✅ IMPROVED: Fixed widths with proper spacing
+6. **No branded types**: Using plain strings for IDs (can add later)
+7. **Create product behavior**: Still clears category selection (lines 541-542) - needs fix to keep diagram visible
 
-## Token Budget Check
-Current: ~54K / 1M tokens used
-Remaining: ~946K tokens
+## Session 2 Summary
 
-Ready to implement!
+**Token Usage:** ~532K / 1M tokens
+**Files Modified:**
+- `frontend/src/components/products/ProductCategoriesManagement.tsx` (major refactor)
+- `frontend/src/components/products/ProductFlowNodes.tsx` (visual updates)
+- `api/src/kene_api/routers/knowledge_graph.py` (backend fix)
+
+**Commits:**
+1. feat(products): add React Flow network diagram with product management
+2. (pending) refactor(products): replace About card with context menu Sheet
+
+---
+
+## Next Session Recommendations
+
+### Priority 1: Fix Create Product Flow (Quick Win)
+**Issue:** After creating a product (lines 541-542), we clear `selectedCategory` and `selectedCategoryId`, which hides the diagram.
+
+**Fix:**
+```typescript
+// In handleCreateProduct, after creating new product:
+// DON'T clear category - keep diagram visible
+// setSelectedCategory(null);  // ❌ Remove this
+// setSelectedCategoryId(null); // ❌ Remove this
+
+// Instead, keep category and open context menu:
+setContextMenuType("product");
+setIsContextMenuOpen(true);
+```
+
+**Effort:** 5 minutes
+
+---
+
+### Priority 2: Product Edit Functionality (Medium Effort)
+**Goal:** Make "Save Changes" work for products in context menu
+
+**Steps:**
+1. Create `handleProductSave` function (similar to `handleSave` for categories)
+2. Call `productService.update()` with form data
+3. Refresh products list
+4. Show success toast
+5. Exit edit mode
+
+**Estimated Effort:** 30 minutes
+
+---
+
+### Priority 3: Product Delete Functionality (Medium Effort)
+**Goal:** Make Delete button work for products
+
+**Steps:**
+1. Create delete confirmation dialog for products (reuse existing AlertDialog pattern)
+2. Implement `handleDeleteProduct` function
+3. Call `productService.delete()`
+4. Refresh products list
+5. Close context menu
+6. Show success toast
+
+**Estimated Effort:** 30 minutes
+
+---
+
+### Priority 4: Context Menu Field Enhancements (Nice-to-Have)
+**Goal:** Show additional product fields in context menu
+
+**Add to context menu display:**
+- `product_detail_page` (clickable link if present)
+- `references` (list of URLs)
+- `created_time`, `last_modified` timestamps
+
+**Add to edit mode:**
+- `product_detail_page` field (already has TODO comment at line 812)
+
+**Estimated Effort:** 45 minutes
+
+---
+
+### Priority 5: Substitute Products (Major Feature - Future)
+**Prerequisites:**
+- Backend API endpoint for substitute products
+- Neo4j relationship pattern defined
+
+**Implementation:**
+1. Create `substituteProductService.ts`
+2. Add SubstituteNode component (dark blue styling)
+3. Update node generation to show substitutes under selected product
+4. Create "Create Substitute Product" modal
+5. Update edges to connect products → substitutes
+
+**Estimated Effort:** 2-3 hours
+
+---
+
+## Recommended Next Session Plan
+
+**Session 3 Goals (1-2 hours):**
+1. Fix create product flow (keep diagram visible) - 5 min
+2. Implement product edit functionality - 30 min
+3. Implement product delete functionality - 30 min
+4. Test all CRUD operations thoroughly - 15 min
+5. Add product_detail_page to context menu - 20 min (optional)
+
+**Session 4 Goals (if time):**
+- Product field enhancements (references, timestamps)
+- Layout refinements based on testing
+- Performance optimizations
+
+**Session 5+ Goals:**
+- Substitute products (requires backend work first)
+- Advanced filtering/search
+- Branded types for IDs
+
+---
+
+## Quick Start for Next Session
+
+To pick up where we left off:
+
+```bash
+# Start backend
+cd api && uv run uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Start frontend
+cd frontend && npm run dev:development
+```
+
+**First task:** Fix lines 541-542 in ProductCategoriesManagement.tsx to keep category selected after creating product.
+
+**Test:** Create a new product and verify the diagram stays visible with the new product shown.
