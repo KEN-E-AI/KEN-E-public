@@ -724,6 +724,17 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
+        # Fetch category_node_id from relationship
+        query = """
+        MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p:Product {node_id: $node_id})
+        RETURN cat.node_id as category_node_id
+        """
+
+        category_result = await self.neo4j.execute_query(query, {"node_id": node_id})
+
+        if category_result and len(category_result) > 0:
+            result["category_node_id"] = category_result[0]["category_node_id"]
+
         return ProductResponse(**result)
 
     async def delete_product(

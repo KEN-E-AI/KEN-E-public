@@ -25,6 +25,7 @@ import {
   productService,
   type Product,
   type ProductCreate,
+  type ProductUpdate,
 } from "@/services/productService";
 import { CategoryNode, ProductNode } from "./ProductFlowNodes";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,12 @@ interface ProductCategoriesManagementProps {
   hasEditAccess: boolean;
 }
 
+interface FormDataState {
+  product_name: string;
+  description: string;
+  product_detail_page?: string;
+}
+
 export const ProductCategoriesManagement = ({
   hasEditAccess,
 }: ProductCategoriesManagementProps) => {
@@ -76,9 +83,10 @@ export const ProductCategoriesManagement = ({
     null,
   );
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<ProductCategoryCreate>({
+  const [formData, setFormData] = useState<FormDataState>({
     product_name: "",
     description: "",
+    product_detail_page: "",
   });
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -112,6 +120,10 @@ export const ProductCategoriesManagement = ({
     type: "category" | "product";
     data: ProductCategory | Product;
   } | null>(null);
+
+  // Product delete state
+  const [isDeleteProductDialogOpen, setIsDeleteProductDialogOpen] =
+    useState(false);
 
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
@@ -202,7 +214,7 @@ export const ProductCategoriesManagement = ({
   }, [selectedCategoryId, selectedOrgAccount]);
 
   const handleCreateClick = () => {
-    setFormData({ product_name: "", description: "" });
+    setFormData({ product_name: "", description: "", product_detail_page: "" });
     setIsCreateModalOpen(true);
   };
 
@@ -212,6 +224,7 @@ export const ProductCategoriesManagement = ({
     setFormData({
       product_name: category.product_name,
       description: category.description,
+      product_detail_page: "",
     });
     setIsEditing(false);
     // Do NOT open context menu from horizontal scroll click
@@ -345,6 +358,14 @@ export const ProductCategoriesManagement = ({
       );
 
       await loadCategories();
+
+      // Clear all selections to return to initial state
+      setSelectedCategoryId(null);
+      setSelectedCategory(null);
+      setSelectedProductId(null);
+      setSelectedProduct(null);
+      setProducts([]);
+      setIsContextMenuOpen(false);
 
       toast({
         title: "Success",
@@ -507,6 +528,7 @@ export const ProductCategoriesManagement = ({
       setFormData({
         product_name: product.product_name,
         description: product.description,
+        product_detail_page: product.product_detail_page || "",
       });
 
       setContextMenuType("product");
@@ -527,6 +549,7 @@ export const ProductCategoriesManagement = ({
       setFormData({
         product_name: category.product_name,
         description: category.description,
+        product_detail_page: "",
       });
 
       setContextMenuType("category");
@@ -552,6 +575,7 @@ export const ProductCategoriesManagement = ({
       setFormData({
         product_name: product.product_name,
         description: product.description,
+        product_detail_page: product.product_detail_page || "",
       });
 
       setContextMenuType("product");
@@ -570,6 +594,7 @@ export const ProductCategoriesManagement = ({
       setFormData({
         product_name: category.product_name,
         description: category.description,
+        product_detail_page: "",
       });
 
       setContextMenuType("category");
@@ -616,13 +641,15 @@ export const ProductCategoriesManagement = ({
 
       setSelectedProductId(newProduct.node_id);
       setSelectedProduct(newProduct);
-      setSelectedCategory(null);
-      setSelectedCategoryId(null);
 
       setFormData({
         product_name: newProduct.product_name,
         description: newProduct.description,
+        product_detail_page: newProduct.product_detail_page || "",
       });
+
+      setContextMenuType("product");
+      setIsContextMenuOpen(true);
 
       setProductFormData({
         product_name: "",
@@ -655,6 +682,140 @@ export const ProductCategoriesManagement = ({
           toast({
             title: "Permission Denied",
             description: "You don't have permission to create products",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: message,
+            variant: "destructive",
+          });
+        }
+      }
+    } finally {
+      endOperation();
+    }
+  };
+
+  const handleProductSave = async () => {
+    if (!selectedOrgAccount?.accountId || !selectedProduct) return;
+
+    if (!formData.product_name.trim() || !formData.description.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Product name and description are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      startOperation("Updating product...");
+      setIsEditing(false);
+
+      const updateData: ProductUpdate = {
+        product_name: formData.product_name.trim(),
+        description: formData.description.trim(),
+        product_detail_page: formData.product_detail_page?.trim() || undefined,
+      };
+
+      const updatedProduct = await productService.update(
+        selectedOrgAccount.accountId,
+        selectedProduct.node_id,
+        updateData,
+      );
+
+      // Refresh products list
+      if (selectedCategory) {
+        await fetchProducts(selectedCategory.node_id);
+      }
+
+      // Update selected product
+      setSelectedProduct(updatedProduct);
+
+      // Update form data to match saved values
+      setFormData({
+        product_name: updatedProduct.product_name,
+        description: updatedProduct.description,
+        product_detail_page: updatedProduct.product_detail_page || "",
+      });
+
+      toast({
+        title: "Success",
+        description: "Product updated successfully",
+      });
+    } catch (error) {
+      console.error("Failed to update product:", error);
+
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const message =
+          error.response?.data?.detail || "Failed to update product";
+
+        if (status === 409) {
+          toast({
+            title: "Duplicate Product",
+            description:
+              "A product with this name already exists in this category",
+            variant: "destructive",
+          });
+        } else if (status === 403) {
+          toast({
+            title: "Permission Denied",
+            description: "You don't have permission to edit products",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: message,
+            variant: "destructive",
+          });
+        }
+      }
+    } finally {
+      endOperation();
+    }
+  };
+
+  const handleDeleteProduct = async () => {
+    if (!selectedOrgAccount?.accountId || !selectedProduct) return;
+
+    try {
+      startOperation("Deleting product...");
+      setIsDeleteProductDialogOpen(false);
+
+      await productService.delete(
+        selectedOrgAccount.accountId,
+        selectedProduct.node_id,
+      );
+
+      // Refresh products list
+      if (selectedCategory) {
+        await fetchProducts(selectedCategory.node_id);
+      }
+
+      // Close context menu and clear product selection
+      setIsContextMenuOpen(false);
+      setSelectedProductId(null);
+      setSelectedProduct(null);
+
+      toast({
+        title: "Success",
+        description: "Product deleted successfully",
+      });
+    } catch (error) {
+      console.error("Failed to delete product:", error);
+
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const message =
+          error.response?.data?.detail || "Failed to delete product";
+
+        if (status === 403) {
+          toast({
+            title: "Permission Denied",
+            description: "You don't have permission to delete products",
             variant: "destructive",
           });
         } else {
@@ -899,6 +1060,31 @@ export const ProductCategoriesManagement = ({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Product Delete Confirmation */}
+      <AlertDialog
+        open={isDeleteProductDialogOpen}
+        onOpenChange={setIsDeleteProductDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Product</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedProduct?.product_name}"?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProduct}
+              className="bg-brand-red hover:bg-brand-red/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Unsaved Changes Warning */}
       <AlertDialog
         open={isUnsavedChangesDialogOpen}
@@ -986,26 +1172,6 @@ export const ProductCategoriesManagement = ({
                 placeholder="https://..."
               />
             </div>
-            <div>
-              <Label htmlFor="create-product-references">
-                References (Optional)
-              </Label>
-              <Textarea
-                id="create-product-references"
-                value={productFormData.references?.join("\n") || ""}
-                onChange={(e) => {
-                  const refs = e.target.value
-                    .split("\n")
-                    .filter((r) => r.trim());
-                  setProductFormData({
-                    ...productFormData,
-                    references: refs,
-                  });
-                }}
-                placeholder="One URL per line"
-                rows={3}
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button
@@ -1053,7 +1219,9 @@ export const ProductCategoriesManagement = ({
                 (formData.product_name.trim() !==
                   selectedProduct.product_name.trim() ||
                   formData.description.trim() !==
-                    selectedProduct.description.trim()));
+                    selectedProduct.description.trim() ||
+                  (formData.product_detail_page || "").trim() !==
+                    (selectedProduct.product_detail_page || "").trim()));
 
             if (hasChanges) {
               // Don't close, user must explicitly cancel or save
@@ -1108,33 +1276,58 @@ export const ProductCategoriesManagement = ({
                     rows={4}
                   />
                 </div>
-                {/* TODO: Add product_detail_page field for products in future update */}
+                {contextMenuType === "product" && (
+                  <div>
+                    <Label htmlFor="context-edit-product-detail-page">
+                      Product Detail Page (Optional):
+                    </Label>
+                    <Input
+                      id="context-edit-product-detail-page"
+                      type="url"
+                      value={formData.product_detail_page || ""}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          product_detail_page: e.target.value,
+                        })
+                      }
+                      placeholder="https://example.com/product-details"
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
                 <div>
-                  <p className="font-semibold">Type:</p>
-                  <p>
-                    {contextMenuType === "category"
-                      ? "Product Category"
-                      : "Product"}
-                  </p>
-                </div>
-                <div>
                   <p className="font-semibold">Name:</p>
                   <p>
-                    {selectedCategory?.product_name ||
-                      selectedProduct?.product_name}
+                    {contextMenuType === "category"
+                      ? selectedCategory?.product_name
+                      : selectedProduct?.product_name}
                   </p>
                 </div>
                 <div>
                   <p className="font-semibold">Description:</p>
                   <p className="text-sm text-dashboard-gray-600">
-                    {selectedCategory?.description ||
-                      selectedProduct?.description ||
-                      "No description provided"}
+                    {contextMenuType === "category"
+                      ? selectedCategory?.description
+                      : selectedProduct?.description}
                   </p>
                 </div>
+                {contextMenuType === "product" &&
+                  selectedProduct?.product_detail_page && (
+                    <div>
+                      <p className="font-semibold">Product Detail Page:</p>
+                      <a
+                        href={selectedProduct.product_detail_page}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:text-blue-800 underline break-all"
+                      >
+                        {selectedProduct.product_detail_page}
+                      </a>
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -1151,11 +1344,14 @@ export const ProductCategoriesManagement = ({
                         setFormData({
                           product_name: selectedCategory.product_name,
                           description: selectedCategory.description,
+                          product_detail_page: "",
                         });
                       } else if (selectedProduct) {
                         setFormData({
                           product_name: selectedProduct.product_name,
                           description: selectedProduct.description,
+                          product_detail_page:
+                            selectedProduct.product_detail_page || "",
                         });
                       }
                     }}
@@ -1168,13 +1364,7 @@ export const ProductCategoriesManagement = ({
                     onClick={
                       contextMenuType === "category"
                         ? handleSave
-                        : () => {
-                            toast({
-                              title: "Coming Soon",
-                              description:
-                                "Product editing will be implemented in a future session",
-                            });
-                          }
+                        : handleProductSave
                     }
                     className="flex-1"
                   >
@@ -1196,13 +1386,12 @@ export const ProductCategoriesManagement = ({
                       if (contextMenuType === "category" && selectedCategory) {
                         setIsContextMenuOpen(false);
                         handleDeleteClick(selectedCategory);
-                      } else if (contextMenuType === "product" && selectedProduct) {
+                      } else if (
+                        contextMenuType === "product" &&
+                        selectedProduct
+                      ) {
                         setIsContextMenuOpen(false);
-                        toast({
-                          title: "Coming Soon",
-                          description:
-                            "Product deletion will be implemented in a future session",
-                        });
+                        setIsDeleteProductDialogOpen(true);
                       }
                     }}
                     variant="destructive"

@@ -103,7 +103,7 @@ class ProductResponse(NodeBase):
     product_name: str
     description: str
     references: list[str]
-    product_detail_page: str | None
+    product_detail_page: str | None = None
     category_node_id: str
 
 
