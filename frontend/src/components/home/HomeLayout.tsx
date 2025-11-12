@@ -61,7 +61,7 @@ const HomeLayout = ({
         } pr-4 sm:pr-6`}
       >
         <div
-          className="mx-auto w-full h-full flex flex-col"
+          className="w-full h-full flex flex-col"
           style={{ maxWidth: "1200px" }}
         >
           {/* Header */}

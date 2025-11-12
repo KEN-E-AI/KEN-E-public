@@ -77,7 +77,7 @@ const Layout = ({
         }`}
       >
         <div
-          className="mx-auto w-full"
+          className="w-full"
           style={maxWidth !== false ? { maxWidth: `${maxWidth}px` } : undefined}
         >
           {/* Header */}
