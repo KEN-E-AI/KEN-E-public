@@ -8,7 +8,7 @@ const KnowledgeMetrics = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Metrics Configuration">
+    <Layout pageTitle="Metrics Configuration" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>

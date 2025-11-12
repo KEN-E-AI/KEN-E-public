@@ -230,7 +230,7 @@ const Insights = () => {
   };
 
   return (
-    <Layout pageTitle="Insights">
+    <Layout pageTitle="Insights" maxWidth={false}>
       <div className="space-y-6 flex flex-col">
         {/* Back to Knowledge Base Link */}
         <div>

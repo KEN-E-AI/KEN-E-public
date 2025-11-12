@@ -31,7 +31,7 @@ export default function KnowledgeAccount() {
     });
 
   return (
-    <Layout pageTitle="Account Knowledge">
+    <Layout pageTitle="Account Knowledge" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>

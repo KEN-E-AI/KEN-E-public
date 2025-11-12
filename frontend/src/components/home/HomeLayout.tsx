@@ -60,21 +60,26 @@ const HomeLayout = ({
             : "pl-[calc(3.5rem+360px+1rem)] sm:pl-[calc(3.5rem+360px+1.5rem)]"
         } pr-4 sm:pr-6`}
       >
-        {/* Header */}
-        <div className="flex-shrink-0">
-          <GlobalHeader
-            pageTitle="Home"
-            dateRange={dateRange}
-            setDateRange={setDateRange}
-            comparisonDateRange={comparisonDateRange}
-            setComparisonDateRange={setComparisonDateRange}
-            selectedOrgAccount={selectedOrgAccount}
-            setSelectedOrgAccount={setSelectedOrgAccount}
-          />
-        </div>
+        <div
+          className="mx-auto w-full h-full flex flex-col"
+          style={{ maxWidth: "1200px" }}
+        >
+          {/* Header */}
+          <div className="flex-shrink-0">
+            <GlobalHeader
+              pageTitle="Home"
+              dateRange={dateRange}
+              setDateRange={setDateRange}
+              comparisonDateRange={comparisonDateRange}
+              setComparisonDateRange={setComparisonDateRange}
+              selectedOrgAccount={selectedOrgAccount}
+              setSelectedOrgAccount={setSelectedOrgAccount}
+            />
+          </div>
 
-        {/* Page Content */}
-        <div className="flex-1 min-h-0">{children}</div>
+          {/* Page Content */}
+          <div className="flex-1 min-h-0">{children}</div>
+        </div>
       </div>
     </div>
   );

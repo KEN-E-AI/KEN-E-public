@@ -16,7 +16,7 @@ const Knowledge = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Knowledge Base">
+    <Layout pageTitle="Knowledge Base" maxWidth={false}>
       <div>
         {/* Header */}
         <div className="mb-8">

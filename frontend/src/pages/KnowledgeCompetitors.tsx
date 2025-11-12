@@ -8,7 +8,7 @@ export default function KnowledgeCompetitors() {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Competitor Knowledge">
+    <Layout pageTitle="Competitor Knowledge" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>

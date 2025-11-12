@@ -33,6 +33,7 @@ const Index = () => {
       setDateRange={setDateRange}
       comparisonDateRange={comparisonDateRange}
       setComparisonDateRange={setComparisonDateRange}
+      maxWidth={false}
     >
       {/* Back to Knowledge Base Link */}
       <div className="mb-6">

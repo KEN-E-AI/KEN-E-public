@@ -21,6 +21,7 @@ interface LayoutProps {
     range: { from: Date; to: Date } | undefined,
   ) => void;
   hideContextSidebar?: boolean;
+  maxWidth?: number | false;
 }
 
 const Layout = ({
@@ -35,6 +36,7 @@ const Layout = ({
   comparisonDateRange,
   setComparisonDateRange = () => {},
   hideContextSidebar = false,
+  maxWidth = 1200,
 }: LayoutProps) => {
   const [contextSidebarCollapsed, setContextSidebarCollapsed] = useState(() => {
     // Initialize from localStorage
@@ -74,19 +76,24 @@ const Layout = ({
               : "pl-[calc(3.5rem+360px+1rem)] sm:pl-[calc(3.5rem+360px+1.5rem)]"
         }`}
       >
-        {/* Header */}
-        <GlobalHeader
-          pageTitle={pageTitle}
-          dateRange={dateRange}
-          setDateRange={setDateRange}
-          comparisonDateRange={comparisonDateRange}
-          setComparisonDateRange={setComparisonDateRange}
-          selectedOrgAccount={selectedOrgAccount}
-          setSelectedOrgAccount={setSelectedOrgAccount}
-        />
+        <div
+          className="mx-auto w-full"
+          style={maxWidth !== false ? { maxWidth: `${maxWidth}px` } : undefined}
+        >
+          {/* Header */}
+          <GlobalHeader
+            pageTitle={pageTitle}
+            dateRange={dateRange}
+            setDateRange={setDateRange}
+            comparisonDateRange={comparisonDateRange}
+            setComparisonDateRange={setComparisonDateRange}
+            selectedOrgAccount={selectedOrgAccount}
+            setSelectedOrgAccount={setSelectedOrgAccount}
+          />
 
-        {/* Page Content */}
-        {children}
+          {/* Page Content */}
+          {children}
+        </div>
       </div>
     </div>
   );

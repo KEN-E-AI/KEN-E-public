@@ -8,7 +8,7 @@ export default function KnowledgeCustomers() {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Customer Knowledge">
+    <Layout pageTitle="Customer Knowledge" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>

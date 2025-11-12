@@ -7,7 +7,7 @@ const KnowledgeBrand = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Brand Guidelines">
+    <Layout pageTitle="Brand Guidelines" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>

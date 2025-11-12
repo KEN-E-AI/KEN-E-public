@@ -8,7 +8,7 @@ const KnowledgeActivities = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Activities Configuration">
+    <Layout pageTitle="Activities Configuration" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>

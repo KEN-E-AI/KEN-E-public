@@ -46,6 +46,7 @@ const Products = () => {
       setDateRange={setDateRange}
       comparisonDateRange={comparisonDateRange}
       setComparisonDateRange={setComparisonDateRange}
+      maxWidth={false}
     >
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
