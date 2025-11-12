@@ -12,6 +12,7 @@ import {
   Pencil,
   Package,
   Loader2,
+  Info,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
@@ -24,6 +25,10 @@ import type {
   ProductCreate,
   ProductUpdate,
 } from "@/services/productService";
+import type {
+  ValueProposition,
+  ValuePropositionCreate,
+} from "@/services/valuePropositionService";
 import {
   useProductCategories,
   useProducts,
@@ -33,6 +38,10 @@ import {
   useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
+  useValuePropositions,
+  useCreateValueProposition,
+  useUpdateValueProposition,
+  useDeleteValueProposition,
 } from "@/queries/products";
 import { CategoryNode, ProductNode } from "./ProductFlowNodes";
 import { Button } from "@/components/ui/button";
@@ -64,6 +73,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
 
@@ -155,6 +170,37 @@ export const ProductCategoriesManagement = ({
   const createProductMutation = useCreateProduct();
   const updateProductMutation = useUpdateProduct();
   const deleteProductMutation = useDeleteProduct();
+
+  // Value Proposition state and mutations
+  const [valuePropositionFormData, setValuePropositionFormData] =
+    useState<ValuePropositionCreate>({
+      display_name: "",
+      description: "",
+      parent_node_id: "",
+      parent_node_type: "ProductCategory",
+      references: [],
+    });
+  const [isCreateVPModalOpen, setIsCreateVPModalOpen] = useState(false);
+  const [selectedValueProposition, setSelectedValueProposition] =
+    useState<ValueProposition | null>(null);
+  const [isDeleteVPDialogOpen, setIsDeleteVPDialogOpen] = useState(false);
+
+  // Query for value propositions based on selected node
+  const parentNodeId =
+    contextMenuType === "category"
+      ? selectedCategory?.node_id
+      : selectedProduct?.node_id;
+
+  const { data: valuePropositionsData, isLoading: isLoadingVPs } =
+    useValuePropositions(
+      selectedOrgAccount?.accountId || null,
+      parentNodeId || null,
+    );
+  const valuePropositions = valuePropositionsData?.value_propositions || [];
+
+  const createVPMutation = useCreateValueProposition();
+  const updateVPMutation = useUpdateValueProposition();
+  const deleteVPMutation = useDeleteValueProposition();
 
   const checkScrollPosition = () => {
     const container = scrollContainerRef.current;
@@ -379,6 +425,8 @@ export const ProductCategoriesManagement = ({
       position: { x: 300, y: 50 },
       data: {
         label: selectedCategory.product_name,
+        isSelected:
+          selectedCategoryId === selectedCategory.node_id && !selectedProductId,
         onAddProduct: () => setIsCreateProductModalOpen(true),
       },
     });
@@ -784,6 +832,135 @@ export const ProductCategoriesManagement = ({
     }
   };
 
+  // Value Proposition handlers
+  const handleCreateValueProposition = async () => {
+    if (!selectedOrgAccount) return;
+
+    try {
+      startOperation("Creating value proposition...");
+
+      await createVPMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        valueProposition: valuePropositionFormData,
+      });
+
+      toast({
+        title: "Success",
+        description: "Value proposition created successfully",
+      });
+
+      setIsCreateVPModalOpen(false);
+      setValuePropositionFormData({
+        display_name: "",
+        description: "",
+        parent_node_id: "",
+        parent_node_type: "ProductCategory",
+        references: [],
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 409) {
+          toast({
+            title: "Duplicate Value Proposition",
+            description: "A value proposition with this name already exists",
+            variant: "destructive",
+          });
+        } else if (status === 403) {
+          toast({
+            title: "Permission Denied",
+            description:
+              "You don't have permission to create value propositions",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description:
+              error.response?.data?.detail ||
+              "Failed to create value proposition",
+            variant: "destructive",
+          });
+        }
+      }
+    } finally {
+      endOperation();
+    }
+  };
+
+  const handleUpdateValueProposition = async () => {
+    if (!selectedOrgAccount || !selectedValueProposition) return;
+
+    try {
+      startOperation("Updating value proposition...");
+
+      await updateVPMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        nodeId: selectedValueProposition.node_id,
+        updates: {
+          display_name: valuePropositionFormData.display_name,
+          description: valuePropositionFormData.description,
+          references: valuePropositionFormData.references,
+        },
+        parentNodeId: valuePropositionFormData.parent_node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Value proposition updated successfully",
+      });
+
+      setIsCreateVPModalOpen(false);
+      setSelectedValueProposition(null);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        toast({
+          title: "Error",
+          description:
+            error.response?.data?.detail ||
+            "Failed to update value proposition",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      endOperation();
+    }
+  };
+
+  const handleDeleteValueProposition = async () => {
+    if (!selectedOrgAccount || !selectedValueProposition) return;
+
+    try {
+      startOperation("Deleting value proposition...");
+
+      await deleteVPMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        nodeId: selectedValueProposition.node_id,
+        parentNodeId: valuePropositionFormData.parent_node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Value proposition deleted successfully",
+      });
+
+      setIsDeleteVPDialogOpen(false);
+      setSelectedValueProposition(null);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        toast({
+          title: "Error",
+          description:
+            error.response?.data?.detail ||
+            "Failed to delete value proposition",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      endOperation();
+    }
+  };
+
   return (
     <>
       <Card>
@@ -792,6 +969,19 @@ export const ProductCategoriesManagement = ({
             <CardTitle className="flex items-center gap-2">
               <Blocks className="h-5 w-5" />
               Product Categories
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-dashboard-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>
+                      Create product categories to help KEN-E understand the
+                      types of products or services that your business sells.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </CardTitle>
             {hasEditAccess && (
               <Button
@@ -892,7 +1082,21 @@ export const ProductCategoriesManagement = ({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                Products
+                Products and Services
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-dashboard-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>
+                        Identify a few of your flagship products within the
+                        selected product category. An exhaustive list is not
+                        required.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </CardTitle>
             </CardHeader>
             <CardContent className="h-[520px]">
@@ -1038,6 +1242,41 @@ export const ProductCategoriesManagement = ({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Value Proposition Delete Confirmation */}
+      <AlertDialog
+        open={isDeleteVPDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteVPDialogOpen(open);
+          if (!open) {
+            setSelectedValueProposition(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Value Proposition?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "
+              {selectedValueProposition?.display_name}"? This action cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setSelectedValueProposition(null)}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteValueProposition}
+              className="bg-brand-red hover:bg-brand-red/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Unsaved Changes Warning */}
       <AlertDialog
         open={isUnsavedChangesDialogOpen}
@@ -1155,11 +1394,103 @@ export const ProductCategoriesManagement = ({
         </DialogContent>
       </Dialog>
 
+      {/* Create/Edit Value Proposition Modal */}
+      <Dialog
+        open={isCreateVPModalOpen}
+        onOpenChange={(open) => {
+          setIsCreateVPModalOpen(open);
+          if (!open) {
+            setSelectedValueProposition(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedValueProposition ? "Edit" : "Create"} Value Proposition
+            </DialogTitle>
+            <DialogDescription>
+              {selectedValueProposition
+                ? "Update the value proposition details"
+                : `Add a value proposition to ${
+                    contextMenuType === "category"
+                      ? selectedCategory?.product_name
+                      : selectedProduct?.product_name
+                  }`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <Label htmlFor="vp-display-name">Display Name *</Label>
+              <Input
+                id="vp-display-name"
+                value={valuePropositionFormData.display_name}
+                onChange={(e) =>
+                  setValuePropositionFormData({
+                    ...valuePropositionFormData,
+                    display_name: e.target.value,
+                  })
+                }
+                placeholder="e.g., Fast Processing Times"
+                maxLength={60}
+              />
+              <p className="text-xs text-dashboard-gray-500 mt-1">
+                Short, descriptive name (max 60 characters)
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="vp-description">Description *</Label>
+              <Textarea
+                id="vp-description"
+                value={valuePropositionFormData.description}
+                onChange={(e) =>
+                  setValuePropositionFormData({
+                    ...valuePropositionFormData,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Describe the value this provides to customers..."
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateVPModalOpen(false);
+                setSelectedValueProposition(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={
+                selectedValueProposition
+                  ? handleUpdateValueProposition
+                  : handleCreateValueProposition
+              }
+              disabled={
+                !valuePropositionFormData.display_name.trim() ||
+                !valuePropositionFormData.description.trim()
+              }
+            >
+              {selectedValueProposition ? "Save Changes" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Node Context Menu - Slides in from right */}
       <Sheet
         open={isContextMenuOpen}
         modal={false}
         onOpenChange={(open) => {
+          // Prevent closing if value proposition dialogs are open
+          if (!open && (isCreateVPModalOpen || isDeleteVPDialogOpen)) {
+            return;
+          }
+
           // Prevent closing if there are unsaved changes
           if (!open && isEditing) {
             const hasChanges =
@@ -1283,6 +1614,121 @@ export const ProductCategoriesManagement = ({
                   )}
               </div>
             )}
+
+            {/* Value Propositions Section */}
+            <div className="mt-6 pt-6 border-t">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold">Value Propositions</p>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-dashboard-gray-400" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm">
+                        <p>
+                          {contextMenuType === "category"
+                            ? "Create a list of reasons why customers might choose to purchase the products or services within this category. What problems do they solve for them? How is your offering unique from those of your competitors?"
+                            : "Create a list of reasons why customers might choose to purchase this product or service. What problems does it solve for them? How is this product or service unique from those of your competitors?"}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                {!isEditing && hasEditAccess && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setValuePropositionFormData({
+                        display_name: "",
+                        description: "",
+                        parent_node_id: parentNodeId || "",
+                        parent_node_type:
+                          contextMenuType === "category"
+                            ? "ProductCategory"
+                            : "Product",
+                        references: [],
+                      });
+                      setIsCreateVPModalOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add
+                  </Button>
+                )}
+              </div>
+
+              {isLoadingVPs ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : valuePropositions.length === 0 ? (
+                <p className="text-sm text-dashboard-gray-500 italic">
+                  No value propositions yet
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {valuePropositions.map((vp) => (
+                    <div
+                      key={vp.node_id}
+                      className="p-3 rounded-md border border-dashboard-gray-200
+                               bg-dashboard-gray-50 hover:bg-dashboard-gray-100
+                               transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">
+                            {vp.display_name}
+                          </p>
+                          <p className="text-xs text-dashboard-gray-600 mt-1">
+                            {vp.description}
+                          </p>
+                        </div>
+                        {!isEditing && hasEditAccess && (
+                          <div className="flex gap-1 ml-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedValueProposition(vp);
+                                setValuePropositionFormData({
+                                  display_name: vp.display_name,
+                                  description: vp.description,
+                                  parent_node_id: parentNodeId || "",
+                                  parent_node_type:
+                                    contextMenuType === "category"
+                                      ? "ProductCategory"
+                                      : "Product",
+                                  references: vp.references || [],
+                                });
+                                setIsCreateVPModalOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedValueProposition(vp);
+                                setValuePropositionFormData({
+                                  ...valuePropositionFormData,
+                                  parent_node_id: parentNodeId || "",
+                                });
+                                setIsDeleteVPDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Action Buttons - Fixed at bottom */}

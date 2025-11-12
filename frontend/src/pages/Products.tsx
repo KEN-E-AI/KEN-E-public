@@ -40,7 +40,7 @@ const Products = () => {
 
   return (
     <Layout
-      pageTitle="Products"
+      pageTitle="Products and Services"
       selectedTab="Products"
       dateRange={dateRange}
       setDateRange={setDateRange}
@@ -59,13 +59,6 @@ const Products = () => {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Knowledge Base
           </Button>
-        </div>
-
-        <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-          <p className="text-dashboard-gray-600">
-            Create product categories to help KEN-E understand the types of
-            products or services that your business sells.
-          </p>
         </div>
 
         <ProductCategoriesManagement hasEditAccess={hasEditAccess} />

@@ -5,6 +5,7 @@ import { Plus, Blocks, Package } from "lucide-react";
 
 interface CategoryNodeData {
   label: string;
+  isSelected: boolean;
   onAddProduct: () => void;
 }
 
@@ -27,7 +28,13 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
         <div className="flex-shrink-0 -ml-12 relative z-10">
           <div
             className="rounded-full bg-brand-light-blue flex items-center justify-center"
-            style={{ width: "72px", height: "72px" }}
+            style={{
+              width: "72px",
+              height: "72px",
+              boxShadow: data.isSelected
+                ? "0 0 0 3px rgba(108, 198, 242, 0.4)"
+                : "none",
+            }}
           >
             <Blocks
               className="text-white"

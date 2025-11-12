@@ -413,11 +413,12 @@ class GraphSyncService:
         # Build base query
         if parent_node_id:
             # Query with parent filter - match relationship in both directions
+            # Include parent information for nodes that need it (like ValueProposition)
             base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
             MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
             WHERE (node)-[:BELONGS_TO]->(acc)
-            RETURN node, acc.account_id as account_id
+            RETURN node, acc.account_id as account_id, parent.node_id as parent_node_id, labels(parent)[0] as parent_node_type
             ORDER BY node.display_name, node.product_name, node.name
             """
         else:
@@ -438,10 +439,18 @@ class GraphSyncService:
 
         result = await self.neo4j.execute_query(query, params)
 
-        return [
-            {**self._neo4j_node_to_dict(record["node"]), "account_id": record["account_id"]}
-            for record in result
-        ]
+        # Build result with parent information if available
+        nodes = []
+        for record in result:
+            node_dict = {**self._neo4j_node_to_dict(record["node"]), "account_id": record["account_id"]}
+            # Add parent information if it exists in the query result
+            if "parent_node_id" in record and record["parent_node_id"]:
+                node_dict["parent_node_id"] = record["parent_node_id"]
+            if "parent_node_type" in record and record["parent_node_type"]:
+                node_dict["parent_node_type"] = record["parent_node_type"]
+            nodes.append(node_dict)
+
+        return nodes
 
     async def get_node(
         self,
@@ -612,23 +621,47 @@ class GraphSyncService:
         node_id: str,
         user_id: str,
     ) -> None:
-        """Delete a product category.
+        """Delete a product category and cascade delete its products and value propositions.
 
         Args:
             account_id: Account identifier
             node_id: Category node_id
             user_id: User performing deletion
-
-        Raises:
-            ValueError: If category has dependent products
         """
+        # First, get all products in this category
+        prod_query = """
+        MATCH (cat:ProductCategory {node_id: $node_id})-[:INCLUDES_PRODUCT]->(prod:Product)
+        RETURN prod.node_id as prod_node_id
+        """
+        prod_results = await self.neo4j.execute_query(prod_query, {"node_id": node_id})
+
+        # Cascade delete each product (which will in turn delete their VPs)
+        for record in prod_results:
+            prod_node_id = record["prod_node_id"]
+            logger.info(f"Cascade deleting product {prod_node_id} from category {node_id}")
+            await self.delete_product(account_id, prod_node_id, user_id)
+
+        # Delete value propositions directly linked to the category
+        cat_vp_query = """
+        MATCH (cat:ProductCategory {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN vp.node_id as vp_node_id
+        """
+        cat_vp_results = await self.neo4j.execute_query(cat_vp_query, {"node_id": node_id})
+
+        # Delete each category-level value proposition
+        for record in cat_vp_results:
+            vp_node_id = record["vp_node_id"]
+            logger.info(f"Cascade deleting value proposition {vp_node_id} from category {node_id}")
+            await self.delete_value_proposition(account_id, vp_node_id, user_id)
+
+        # Now delete the category itself (no dependency check needed since we cleaned up)
         await self.delete_node(
             account_id=account_id,
             node_id=node_id,
             node_type="ProductCategory",
             user_id=user_id,
             firestore_doc_type="business_strategy",
-            check_dependencies=True,
+            check_dependencies=False,
         )
 
     async def create_product(
@@ -743,23 +776,34 @@ class GraphSyncService:
         node_id: str,
         user_id: str,
     ) -> None:
-        """Delete a product.
+        """Delete a product and cascade delete its value propositions.
 
         Args:
             account_id: Account identifier
             node_id: Product node_id
             user_id: User performing deletion
-
-        Raises:
-            ValueError: If product has dependent value propositions
         """
+        # First, cascade delete all value propositions linked to this product
+        vp_query = """
+        MATCH (prod:Product {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN vp.node_id as vp_node_id
+        """
+        vp_results = await self.neo4j.execute_query(vp_query, {"node_id": node_id})
+
+        # Delete each value proposition
+        for record in vp_results:
+            vp_node_id = record["vp_node_id"]
+            logger.info(f"Cascade deleting value proposition {vp_node_id} from product {node_id}")
+            await self.delete_value_proposition(account_id, vp_node_id, user_id)
+
+        # Now delete the product itself (no dependency check needed since we cleaned up VPs)
         await self.delete_node(
             account_id=account_id,
             node_id=node_id,
             node_type="Product",
             user_id=user_id,
             firestore_doc_type="business_strategy",
-            check_dependencies=True,
+            check_dependencies=False,
         )
 
     async def create_value_proposition(

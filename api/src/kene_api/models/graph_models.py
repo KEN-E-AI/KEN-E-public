@@ -152,8 +152,8 @@ class ValuePropositionResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
-    parent_node_id: str
-    parent_node_type: str
+    parent_node_id: str | None = None
+    parent_node_type: str | None = None
 
 
 class ValuePropositionListResponse(BaseModel):
