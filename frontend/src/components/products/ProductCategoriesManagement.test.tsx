@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProductCategoriesManagement } from "./ProductCategoriesManagement";
 import { AuthContext } from "@/contexts/AuthContext";
 import * as productCategoryService from "@/services/productCategoryService";
@@ -54,6 +55,8 @@ vi.mock("./ProductFlowNodes", () => ({
 }));
 
 describe("ProductCategoriesManagement - Product CRUD Integration Tests", () => {
+  let queryClient: QueryClient;
+
   const mockAuthContext = {
     selectedOrgAccount: {
       orgId: "org_test" as any,
@@ -89,6 +92,12 @@ describe("ProductCategoriesManagement - Product CRUD Integration Tests", () => {
   };
 
   beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
     vi.clearAllMocks();
     mockToast.mockClear();
 
@@ -96,7 +105,7 @@ describe("ProductCategoriesManagement - Product CRUD Integration Tests", () => {
     vi.mocked(
       productCategoryService.productCategoryService.list,
     ).mockResolvedValue({
-      product_categories: [mockCategory],
+      categories: [mockCategory],
       total_count: 1,
     });
 
@@ -108,9 +117,11 @@ describe("ProductCategoriesManagement - Product CRUD Integration Tests", () => {
 
   const renderComponent = (hasEditAccess = true) => {
     return render(
-      <AuthContext.Provider value={mockAuthContext as any}>
-        <ProductCategoriesManagement hasEditAccess={hasEditAccess} />
-      </AuthContext.Provider>,
+      <QueryClientProvider client={queryClient}>
+        <AuthContext.Provider value={mockAuthContext as any}>
+          <ProductCategoriesManagement hasEditAccess={hasEditAccess} />
+        </AuthContext.Provider>
+      </QueryClientProvider>,
     );
   };
 
@@ -280,6 +291,7 @@ describe("ProductCategoriesManagement - Product CRUD Integration Tests", () => {
 
         const detailPageInput = screen.queryByLabelText(/Product Detail Page/i);
         if (detailPageInput) {
+          await user.clear(detailPageInput);
           await user.type(detailPageInput, "https://example.com/updated");
         }
 

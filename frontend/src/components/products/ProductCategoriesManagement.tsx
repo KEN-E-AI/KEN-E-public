@@ -15,18 +15,25 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
-import {
-  productCategoryService,
-  type ProductCategory,
-  type ProductCategoryCreate,
-  type ProductCategoryUpdate,
+import type {
+  ProductCategory,
+  ProductCategoryCreate,
 } from "@/services/productCategoryService";
-import {
-  productService,
-  type Product,
-  type ProductCreate,
-  type ProductUpdate,
+import type {
+  Product,
+  ProductCreate,
+  ProductUpdate,
 } from "@/services/productService";
+import {
+  useProductCategories,
+  useProducts,
+  useCreateProductCategory,
+  useUpdateProductCategory,
+  useDeleteProductCategory,
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+} from "@/queries/products";
 import { CategoryNode, ProductNode } from "./ProductFlowNodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,8 +80,19 @@ interface FormDataState {
 export const ProductCategoriesManagement = ({
   hasEditAccess,
 }: ProductCategoriesManagementProps) => {
-  const [categories, setCategories] = useState<ProductCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { selectedOrgAccount } = useAuth();
+  const { startOperation, endOperation } = useAccountOperations();
+  const { toast } = useToast();
+
+  // React Query hooks for data fetching with caching
+  const {
+    data: categoriesData,
+    isLoading,
+    refetch: refetchCategories,
+  } = useProductCategories(selectedOrgAccount?.accountId || null);
+  const categories = categoriesData?.categories || [];
+
+  // UI state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] =
@@ -92,13 +110,18 @@ export const ProductCategoriesManagement = ({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Product state
-  const [products, setProducts] = useState<Product[]>([]);
+  // Product state and queries
+  const {
+    data: productsData,
+    isLoading: isLoadingProducts,
+    refetch: refetchProducts,
+  } = useProducts(selectedOrgAccount?.accountId || null, selectedCategoryId);
+  const products = productsData?.products || [];
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
     null,
   );
-  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isCreateProductModalOpen, setIsCreateProductModalOpen] =
     useState(false);
   const [productFormData, setProductFormData] = useState<ProductCreate>({
@@ -125,58 +148,13 @@ export const ProductCategoriesManagement = ({
   const [isDeleteProductDialogOpen, setIsDeleteProductDialogOpen] =
     useState(false);
 
-  const { selectedOrgAccount } = useAuth();
-  const { startOperation, endOperation } = useAccountOperations();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    if (selectedOrgAccount?.accountId) {
-      loadCategories();
-    }
-  }, [selectedOrgAccount]);
-
-  const loadCategories = async () => {
-    if (!selectedOrgAccount?.accountId) return;
-
-    try {
-      setIsLoading(true);
-      const response = await productCategoryService.list(
-        selectedOrgAccount.accountId,
-      );
-      setCategories(response.categories);
-    } catch (error) {
-      console.error("Failed to load product categories:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load product categories",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchProducts = async (categoryNodeId: string) => {
-    if (!selectedOrgAccount?.accountId) return;
-
-    try {
-      setIsLoadingProducts(true);
-      const response = await productService.list(
-        selectedOrgAccount.accountId,
-        categoryNodeId,
-      );
-      setProducts(response.products);
-    } catch (error) {
-      console.error("Failed to load products:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load products",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingProducts(false);
-    }
-  };
+  // React Query mutations
+  const createCategoryMutation = useCreateProductCategory();
+  const updateCategoryMutation = useUpdateProductCategory();
+  const deleteCategoryMutation = useDeleteProductCategory();
+  const createProductMutation = useCreateProduct();
+  const updateProductMutation = useUpdateProduct();
+  const deleteProductMutation = useDeleteProduct();
 
   const checkScrollPosition = () => {
     const container = scrollContainerRef.current;
@@ -202,16 +180,6 @@ export const ProductCategoriesManagement = ({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [categories]);
-
-  useEffect(() => {
-    if (selectedCategoryId) {
-      fetchProducts(selectedCategoryId);
-    } else {
-      setProducts([]);
-      setSelectedProductId(null);
-      setSelectedProduct(null);
-    }
-  }, [selectedCategoryId, selectedOrgAccount]);
 
   const handleCreateClick = () => {
     setFormData({ product_name: "", description: "", product_detail_page: "" });
@@ -250,12 +218,10 @@ export const ProductCategoriesManagement = ({
       startOperation("Creating product category...");
       setIsCreateModalOpen(false);
 
-      await productCategoryService.create(
-        selectedOrgAccount.accountId,
-        formData,
-      );
-
-      await loadCategories();
+      await createCategoryMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        category: formData,
+      });
 
       toast({
         title: "Success",
@@ -309,13 +275,11 @@ export const ProductCategoriesManagement = ({
       startOperation("Updating product category...");
       setIsEditing(false);
 
-      await productCategoryService.update(
-        selectedOrgAccount.accountId,
-        selectedCategory.node_id,
-        formData,
-      );
-
-      await loadCategories();
+      await updateCategoryMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        nodeId: selectedCategory.node_id,
+        updates: formData,
+      });
 
       // Update selected category with new data
       setSelectedCategory({
@@ -352,19 +316,16 @@ export const ProductCategoriesManagement = ({
       startOperation("Deleting product category...");
       setIsDeleteDialogOpen(false);
 
-      await productCategoryService.delete(
-        selectedOrgAccount.accountId,
-        selectedCategory.node_id,
-      );
-
-      await loadCategories();
+      await deleteCategoryMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        nodeId: selectedCategory.node_id,
+      });
 
       // Clear all selections to return to initial state
       setSelectedCategoryId(null);
       setSelectedCategory(null);
       setSelectedProductId(null);
       setSelectedProduct(null);
-      setProducts([]);
       setIsContextMenuOpen(false);
 
       toast({
@@ -632,12 +593,10 @@ export const ProductCategoriesManagement = ({
           productFormData.product_detail_page?.trim() || undefined,
       };
 
-      const newProduct = await productService.create(
-        selectedOrgAccount.accountId,
-        productData,
-      );
-
-      await fetchProducts(selectedCategory.node_id);
+      const newProduct = await createProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        product: productData,
+      });
 
       setSelectedProductId(newProduct.node_id);
       setSelectedProduct(newProduct);
@@ -719,16 +678,13 @@ export const ProductCategoriesManagement = ({
         product_detail_page: formData.product_detail_page?.trim() || undefined,
       };
 
-      const updatedProduct = await productService.update(
-        selectedOrgAccount.accountId,
-        selectedProduct.node_id,
-        updateData,
-      );
-
-      // Refresh products list
-      if (selectedCategory) {
-        await fetchProducts(selectedCategory.node_id);
-      }
+      const updatedProduct = await updateProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        nodeId: selectedProduct.node_id,
+        updates: updateData,
+        categoryId:
+          selectedCategory?.node_id || selectedProduct.category_node_id,
+      });
 
       // Update selected product
       setSelectedProduct(updatedProduct);
@@ -785,15 +741,12 @@ export const ProductCategoriesManagement = ({
       startOperation("Deleting product...");
       setIsDeleteProductDialogOpen(false);
 
-      await productService.delete(
-        selectedOrgAccount.accountId,
-        selectedProduct.node_id,
-      );
-
-      // Refresh products list
-      if (selectedCategory) {
-        await fetchProducts(selectedCategory.node_id);
-      }
+      await deleteProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        nodeId: selectedProduct.node_id,
+        categoryId:
+          selectedCategory?.node_id || selectedProduct.category_node_id,
+      });
 
       // Close context menu and clear product selection
       setIsContextMenuOpen(false);
