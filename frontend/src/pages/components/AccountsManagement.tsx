@@ -961,6 +961,10 @@ const AccountsManagement = ({
       // Close the modal immediately to prevent duplicate clicks
       setIsCreateAccountModalOpen(false);
 
+      // Debug: Check wizardData.dry_run
+      console.log('[DEBUG] wizardData.dry_run:', wizardData.dry_run);
+      console.log('[DEBUG] Full wizardData:', wizardData);
+
       // Create account in Neo4j (source of truth) with pre-generated ID
       const newAccount = await createAccountMutation.mutateAsync({
         accountId: newAccountId,
@@ -978,6 +982,7 @@ const AccountsManagement = ({
         businessStrategyDocuments: wizardData.business_strategy_documents,
         enabled_strategies: wizardData.enabled_strategies,
         override_product_categories: wizardData.override_product_categories,
+        dry_run: wizardData.dry_run,
       });
 
       console.log(

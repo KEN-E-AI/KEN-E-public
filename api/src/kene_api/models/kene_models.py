@@ -1035,6 +1035,10 @@ class AccountRequest(BaseModel):
         "when business strategy is not run. Only used if marketing_strategy is in "
         "enabled_strategies but business_strategy is not.",
     )
+    dry_run: bool = Field(
+        False,
+        description="If True, skip Firestore/Neo4j/embedding storage for evaluation runs.",
+    )
 
 
 class OrganizationListResponse(BaseModel):

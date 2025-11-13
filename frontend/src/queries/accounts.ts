@@ -124,38 +124,35 @@ export const useCreateAccount = () => {
       try {
         // Transform camelCase to snake_case for API with runtime validation
         const apiPayload = {
-            // Include account_id if pre-generated for progress tracking
-            ...(accountData.accountId && { account_id: accountData.accountId }),
-            account_name: accountData.accountName,
-            organization_id: accountData.organizationId,
-            industry: accountData.industry,
-            status: accountData.status,
-            websites: accountData.websites,
-            timezone: accountData.timezone,
-            data_region: accountData.dataRegion,
-            region: accountData.region,
-            marketing_channels: Array.isArray(accountData.marketing_channels)
-              ? accountData.marketing_channels
-              : [],
-            product_integrations: Array.isArray(
-              accountData.product_integrations,
-            )
-              ? accountData.product_integrations
-              : [],
-            estimated_annual_ad_budget: accountData.estimatedAnnualAdBudget,
-            business_strategy_documents: accountData.businessStrategyDocuments,
-            enabled_strategies: Array.isArray(accountData.enabled_strategies)
-              ? accountData.enabled_strategies
-              : undefined,
-            override_product_categories: Array.isArray(accountData.override_product_categories)
-              ? accountData.override_product_categories
-              : undefined,
-          };
+          // Include account_id if pre-generated for progress tracking
+          ...(accountData.accountId && { account_id: accountData.accountId }),
+          account_name: accountData.accountName,
+          organization_id: accountData.organizationId,
+          industry: accountData.industry,
+          status: accountData.status,
+          websites: accountData.websites,
+          timezone: accountData.timezone,
+          data_region: accountData.dataRegion,
+          region: accountData.region,
+          marketing_channels: Array.isArray(accountData.marketing_channels)
+            ? accountData.marketing_channels
+            : [],
+          product_integrations: Array.isArray(accountData.product_integrations)
+            ? accountData.product_integrations
+            : [],
+          estimated_annual_ad_budget: accountData.estimatedAnnualAdBudget,
+          business_strategy_documents: accountData.businessStrategyDocuments,
+          enabled_strategies: Array.isArray(accountData.enabled_strategies)
+            ? accountData.enabled_strategies
+            : undefined,
+          override_product_categories: Array.isArray(
+            accountData.override_product_categories,
+          )
+            ? accountData.override_product_categories
+            : undefined,
+        };
 
-        const result = await createAccountApi(
-          apiPayload,
-          { idempotencyKey },
-        );
+        const result = await createAccountApi(apiPayload, { idempotencyKey });
 
         console.log("[useCreateAccount] Account created successfully:", result);
         return result;

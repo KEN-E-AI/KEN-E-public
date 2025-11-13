@@ -557,6 +557,7 @@ async def create_account(
     estimated_annual_ad_budget: int | None = Form(None),
     enabled_strategies: str | None = Form(None),  # JSON string of array
     override_product_categories: str | None = Form(None),  # JSON string of array
+    dry_run: bool = Form(False),
     files: list[UploadFile] | None = File(None),
     user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
@@ -628,6 +629,9 @@ async def create_account(
             detail="Strategy selection is only available for admin users",
         )
 
+    # Debug log for dry_run parameter
+    logger.info(f"[DEBUG] Received dry_run parameter: {dry_run} (type: {type(dry_run).__name__})")
+
     # Parse form data into AccountRequest using the service
     try:
         account_request = parse_account_form_data(
@@ -645,6 +649,7 @@ async def create_account(
             estimated_annual_ad_budget=estimated_annual_ad_budget,
             enabled_strategies=enabled_strategies,
             override_product_categories=override_product_categories,
+            dry_run=dry_run,
         )
     except ValueError as e:
         logger.error(f"[ACCOUNT_CREATION] Form parsing error: {e}")

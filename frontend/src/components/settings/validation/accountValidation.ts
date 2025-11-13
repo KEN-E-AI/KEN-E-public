@@ -165,7 +165,12 @@ export const accountCreationSchema = z.object({
   enabled_strategies: z
     .array(z.string())
     .min(1, "At least one strategy must be selected")
-    .default(["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"]),
+    .default([
+      "business_strategy",
+      "competitive_strategy",
+      "marketing_strategy",
+      "brand_guidelines",
+    ]),
 
   override_product_categories: z.array(z.string()).default([]),
 

@@ -2,7 +2,13 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, Plus, X } from "lucide-react";
 import { useState } from "react";
@@ -17,15 +23,20 @@ import {
 export interface WizardStep4StrategySelectionProps {
   enabled_strategies: string[];
   override_product_categories: string[];
-  onUpdate: (data: Partial<{
-    enabled_strategies: string[];
-    override_product_categories: string[];
-  }>) => void;
+  dry_run?: boolean;
+  onUpdate: (
+    data: Partial<{
+      enabled_strategies: string[];
+      override_product_categories: string[];
+      dry_run?: boolean;
+    }>,
+  ) => void;
 }
 
 export const WizardStep4StrategySelection = ({
   enabled_strategies,
   override_product_categories,
+  dry_run = false,
   onUpdate,
 }: WizardStep4StrategySelectionProps) => {
   const [newCategory, setNewCategory] = useState("");
@@ -38,9 +49,15 @@ export const WizardStep4StrategySelection = ({
   };
 
   const handleAddCategory = () => {
-    if (newCategory.trim() && !override_product_categories.includes(newCategory.trim())) {
+    if (
+      newCategory.trim() &&
+      !override_product_categories.includes(newCategory.trim())
+    ) {
       onUpdate({
-        override_product_categories: [...override_product_categories, newCategory.trim()],
+        override_product_categories: [
+          ...override_product_categories,
+          newCategory.trim(),
+        ],
       });
       setNewCategory("");
     }
@@ -48,7 +65,9 @@ export const WizardStep4StrategySelection = ({
 
   const handleRemoveCategory = (category: string) => {
     onUpdate({
-      override_product_categories: override_product_categories.filter((c) => c !== category),
+      override_product_categories: override_product_categories.filter(
+        (c) => c !== category,
+      ),
     });
   };
 
@@ -65,7 +84,8 @@ export const WizardStep4StrategySelection = ({
       <div>
         <h3 className="text-lg font-semibold mb-2">Strategy Selection</h3>
         <p className="text-sm text-muted-foreground">
-          Select which marketing strategies to generate for this account. All strategies are selected by default.
+          Select which marketing strategies to generate for this account. All
+          strategies are selected by default.
         </p>
       </div>
 
@@ -78,7 +98,10 @@ export const WizardStep4StrategySelection = ({
         </CardHeader>
         <CardContent className="space-y-4">
           {VALID_STRATEGY_TYPES.map((strategy) => (
-            <div key={strategy} className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
+            <div
+              key={strategy}
+              className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors"
+            >
               <Checkbox
                 id={strategy}
                 checked={enabled_strategies.includes(strategy)}
@@ -106,8 +129,9 @@ export const WizardStep4StrategySelection = ({
           <AlertDescription>
             <div className="space-y-4">
               <p>
-                Marketing Strategy is selected without Business Strategy. Please provide product categories
-                to use for marketing strategy generation, or use the default categories.
+                Marketing Strategy is selected without Business Strategy. Please
+                provide product categories to use for marketing strategy
+                generation, or use the default categories.
               </p>
 
               <div className="space-y-3">
@@ -147,7 +171,9 @@ export const WizardStep4StrategySelection = ({
 
                 {override_product_categories.length > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Product Categories:</Label>
+                    <Label className="text-sm font-medium">
+                      Product Categories:
+                    </Label>
                     <div className="flex flex-wrap gap-2">
                       {override_product_categories.map((category) => (
                         <div
@@ -174,6 +200,41 @@ export const WizardStep4StrategySelection = ({
           </AlertDescription>
         </Alert>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Evaluation Mode</CardTitle>
+          <CardDescription>
+            For @ken-e.ai users: Enable dry-run mode to skip database storage
+            (for testing/evaluation)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
+            <Checkbox
+              id="dry_run"
+              checked={dry_run}
+              onCheckedChange={(checked) => {
+                console.log('[DRY_RUN] Checkbox changed to:', checked);
+                onUpdate({ dry_run: checked as boolean });
+              }}
+            />
+            <div className="flex-1 space-y-1">
+              <Label
+                htmlFor="dry_run"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Dry-run mode (Skip storage)
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                When enabled, strategies will be generated and traced in W&B
+                Weave, but NOT saved to Firestore or Neo4j. Use this for
+                evaluation runs without polluting production data.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {enabled_strategies.length === 0 && (
         <Alert variant="destructive">

@@ -34,6 +34,7 @@ async def trigger_strategy_generation(
     | None = None,  # Allow passing existing UserContext for chat-triggered calls
     enabled_strategies: list[str] | None = None,
     override_product_categories: list[str] | None = None,
+    dry_run: bool = False,
 ) -> None:
     """
     Trigger strategy document generation for a new account.
@@ -54,6 +55,7 @@ async def trigger_strategy_generation(
             ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"]
         override_product_categories: Optional list of product category names to use for
             marketing strategy when business strategy is not run.
+        dry_run: If True, skips Firestore, Neo4j, and embedding storage for evaluation runs.
     """
     try:
         print(f"[STRATEGY_GENERATION] Starting for account {account_id}")
@@ -129,6 +131,12 @@ Please execute strategy generation with these parameters:
             message += f"\n- override_product_categories: {','.join(override_product_categories)}"
             logger.info(
                 f"Override product categories provided: {', '.join(override_product_categories)}"
+            )
+
+        if dry_run:
+            message += "\n- dry_run: true"
+            logger.info(
+                "Dry-run mode enabled - strategies will NOT be saved to Firestore/Neo4j"
             )
 
         # Call the strategy agent directly
@@ -401,7 +409,9 @@ Please execute strategy generation with these parameters:
                                                     )
                                                 # Handle function_call parts (likely contains strategy documents)
                                                 elif "function_call" in part:
-                                                    function_call = part["function_call"]
+                                                    function_call = part[
+                                                        "function_call"
+                                                    ]
                                                     logger.info(
                                                         f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
                                                     )
@@ -426,14 +436,22 @@ Please execute strategy generation with these parameters:
                                                             )
                                                         elif "output" in function_call:
                                                             response_parts.append(
-                                                                str(function_call["output"])
+                                                                str(
+                                                                    function_call[
+                                                                        "output"
+                                                                    ]
+                                                                )
                                                             )
                                                             logger.info(
                                                                 f"    Added function output: {len(str(function_call['output']))} chars"
                                                             )
                                                         elif "args" in function_call:
                                                             response_parts.append(
-                                                                str(function_call["args"])
+                                                                str(
+                                                                    function_call[
+                                                                        "args"
+                                                                    ]
+                                                                )
                                                             )
                                                             logger.info(
                                                                 f"    Added function args: {len(str(function_call['args']))} chars"

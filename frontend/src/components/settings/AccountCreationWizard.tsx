@@ -43,6 +43,7 @@ export interface AccountCreationData {
   // Step 4: Strategy Selection (admin only)
   enabled_strategies: string[];
   override_product_categories: string[];
+  dry_run?: boolean;
 
   // Configuration fields (from step 1 and template)
   timezone: string;
@@ -82,8 +83,14 @@ export const AccountCreationWizard = ({
     template_id: "",
     marketing_channels: [],
     product_integrations: [],
-    enabled_strategies: ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"],
+    enabled_strategies: [
+      "business_strategy",
+      "competitive_strategy",
+      "marketing_strategy",
+      "brand_guidelines",
+    ],
     override_product_categories: [],
+    dry_run: false,
     objectives: [],
     kpis: [],
     timezone: "America/New_York",
@@ -107,7 +114,12 @@ export const AccountCreationWizard = ({
         template_id: "",
         marketing_channels: [],
         product_integrations: [],
-        enabled_strategies: ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"],
+        enabled_strategies: [
+          "business_strategy",
+          "competitive_strategy",
+          "marketing_strategy",
+          "brand_guidelines",
+        ],
         override_product_categories: [],
         objectives: [],
         kpis: [],
@@ -336,7 +348,10 @@ export const AccountCreationWizard = ({
               {currentStep === 4 && (
                 <WizardStep4StrategySelection
                   enabled_strategies={formData.enabled_strategies}
-                  override_product_categories={formData.override_product_categories}
+                  override_product_categories={
+                    formData.override_product_categories
+                  }
+                  dry_run={formData.dry_run}
                   onUpdate={(data) => setFormData({ ...formData, ...data })}
                 />
               )}

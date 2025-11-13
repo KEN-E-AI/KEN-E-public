@@ -144,6 +144,7 @@ async def create_account_internal(
         user_context=None,  # No user context for background task
         enabled_strategies=request.enabled_strategies,
         override_product_categories=request.override_product_categories,
+        dry_run=request.dry_run,
     )
 
     # Log account structure created (progress tracking simplified)
