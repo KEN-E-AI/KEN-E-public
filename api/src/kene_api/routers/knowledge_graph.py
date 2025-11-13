@@ -149,7 +149,7 @@ async def create_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating product category: {e}")
+        logger.exception(f"Unexpected error creating product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create product category"
         ) from e
@@ -185,7 +185,7 @@ async def list_product_categories(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list product categories: {e}")
+        logger.exception(f"Failed to list product categories: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list product categories"
         ) from e
@@ -212,7 +212,7 @@ async def get_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get product category: {e}")
+        logger.exception(f"Failed to get product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get product category"
         ) from e
@@ -247,7 +247,7 @@ async def update_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating product category: {e}")
+        logger.exception(f"Unexpected error updating product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update product category"
         ) from e
@@ -282,7 +282,7 @@ async def delete_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting product category: {e}")
+        logger.exception(f"Unexpected error deleting product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete product category"
         ) from e
@@ -319,7 +319,7 @@ async def create_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating product: {e}")
+        logger.exception(f"Unexpected error creating product: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create product") from e
 
 
@@ -397,7 +397,7 @@ async def list_products(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list products: {e}")
+        logger.exception(f"Failed to list products: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list products") from e
 
 
@@ -422,7 +422,7 @@ async def get_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get product: {e}")
+        logger.exception(f"Failed to get product: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get product") from e
 
 
@@ -455,7 +455,7 @@ async def update_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating product: {e}")
+        logger.exception(f"Unexpected error updating product: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update product") from e
 
 
@@ -486,7 +486,7 @@ async def delete_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting product: {e}")
+        logger.exception(f"Unexpected error deleting product: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete product") from e
 
 
@@ -521,7 +521,7 @@ async def create_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating value proposition: {e}")
+        logger.exception(f"Unexpected error creating value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create value proposition"
         ) from e
@@ -560,7 +560,7 @@ async def list_value_propositions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list value propositions: {e}")
+        logger.exception(f"Failed to list value propositions: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list value propositions"
         ) from e
@@ -587,7 +587,7 @@ async def get_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get value proposition: {e}")
+        logger.exception(f"Failed to get value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get value proposition"
         ) from e
@@ -622,7 +622,7 @@ async def update_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating value proposition: {e}")
+        logger.exception(f"Unexpected error updating value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update value proposition"
         ) from e
@@ -656,7 +656,7 @@ async def delete_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting value proposition: {e}")
+        logger.exception(f"Unexpected error deleting value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete value proposition"
         ) from e
@@ -694,7 +694,7 @@ async def create_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating strength: {e}")
+        logger.exception(f"Unexpected error creating strength: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create strength") from e
 
 
@@ -728,7 +728,7 @@ async def list_strengths(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list strengths: {e}")
+        logger.exception(f"Failed to list strengths: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list strengths") from e
 
 
@@ -753,7 +753,7 @@ async def get_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get strength: {e}")
+        logger.exception(f"Failed to get strength: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get strength") from e
 
 
@@ -786,7 +786,7 @@ async def update_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating strength: {e}")
+        logger.exception(f"Unexpected error updating strength: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update strength") from e
 
 
@@ -817,7 +817,7 @@ async def delete_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting strength: {e}")
+        logger.exception(f"Unexpected error deleting strength: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete strength") from e
 
 
@@ -853,7 +853,7 @@ async def create_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating weakness: {e}")
+        logger.exception(f"Unexpected error creating weakness: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create weakness") from e
 
 
@@ -887,7 +887,7 @@ async def list_weaknesses(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list weaknesses: {e}")
+        logger.exception(f"Failed to list weaknesses: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list weaknesses") from e
 
 
@@ -912,7 +912,7 @@ async def get_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get weakness: {e}")
+        logger.exception(f"Failed to get weakness: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get weakness") from e
 
 
@@ -945,7 +945,7 @@ async def update_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating weakness: {e}")
+        logger.exception(f"Unexpected error updating weakness: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update weakness") from e
 
 
@@ -976,7 +976,7 @@ async def delete_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting weakness: {e}")
+        logger.exception(f"Unexpected error deleting weakness: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete weakness") from e
 
 
@@ -1012,7 +1012,7 @@ async def create_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating opportunity: {e}")
+        logger.exception(f"Unexpected error creating opportunity: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create opportunity") from e
 
 
@@ -1055,7 +1055,7 @@ async def list_opportunities(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list opportunities: {e}")
+        logger.exception(f"Failed to list opportunities: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list opportunities") from e
 
 
@@ -1091,7 +1091,7 @@ async def get_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get opportunity: {e}")
+        logger.exception(f"Failed to get opportunity: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get opportunity") from e
 
 
@@ -1124,7 +1124,7 @@ async def update_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating opportunity: {e}")
+        logger.exception(f"Unexpected error updating opportunity: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update opportunity") from e
 
 
@@ -1156,7 +1156,7 @@ async def delete_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting opportunity: {e}")
+        logger.exception(f"Unexpected error deleting opportunity: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete opportunity") from e
 
 
@@ -1192,7 +1192,7 @@ async def create_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating risk: {e}")
+        logger.exception(f"Unexpected error creating risk: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create risk") from e
 
 
@@ -1235,7 +1235,7 @@ async def list_risks(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list risks: {e}")
+        logger.exception(f"Failed to list risks: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list risks") from e
 
 
@@ -1271,7 +1271,7 @@ async def get_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get risk: {e}")
+        logger.exception(f"Failed to get risk: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get risk") from e
 
 
@@ -1304,7 +1304,7 @@ async def update_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating risk: {e}")
+        logger.exception(f"Unexpected error updating risk: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update risk") from e
 
 
@@ -1334,7 +1334,7 @@ async def delete_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting risk: {e}")
+        logger.exception(f"Unexpected error deleting risk: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete risk") from e
 
 
@@ -1369,7 +1369,7 @@ async def create_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating goal: {e}")
+        logger.exception(f"Unexpected error creating goal: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create goal") from e
 
 
@@ -1403,7 +1403,7 @@ async def list_goals(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list goals: {e}")
+        logger.exception(f"Failed to list goals: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list goals") from e
 
 
@@ -1428,7 +1428,7 @@ async def get_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get goal: {e}")
+        logger.exception(f"Failed to get goal: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get goal") from e
 
 
@@ -1461,7 +1461,7 @@ async def update_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating goal: {e}")
+        logger.exception(f"Unexpected error updating goal: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update goal") from e
 
 
@@ -1491,7 +1491,7 @@ async def delete_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting goal: {e}")
+        logger.exception(f"Unexpected error deleting goal: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete goal") from e
 
 
@@ -1552,7 +1552,7 @@ async def get_business_strategy(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get business strategy: {e}")
+        logger.exception(f"Failed to get business strategy: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get business strategy"
         ) from e

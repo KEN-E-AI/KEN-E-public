@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { ReactFlow, Controls, Background } from "reactflow";
 import type { Node, Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import {
   Plus,
   Trash2,
-  Boxes,
   Blocks,
   ChevronLeft,
   ChevronRight,
@@ -16,10 +15,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
-import type {
-  ProductCategory,
-  ProductCategoryCreate,
-} from "@/services/productCategoryService";
+import type { ProductCategory } from "@/services/productCategoryService";
 import type {
   Product,
   ProductCreate,
@@ -91,6 +87,30 @@ interface FormDataState {
   description: string;
   product_detail_page?: string;
 }
+
+// Layout constants for React Flow diagram
+const DIAGRAM_LAYOUT = {
+  // Node dimensions
+  NODE_CIRCLE_SIZE: 72, // Circle badge size (px)
+  NODE_ICON_SIZE: 48, // Icon size within circle (px)
+  NODE_TEXT_WIDTH: 200, // Fixed width for product name text (px)
+
+  // Spacing
+  VERTICAL_SPACING: 224, // Y offset from category to products (px)
+  HORIZONTAL_GAP: 36, // Gap between product nodes (px)
+  NODE_TOTAL_WIDTH: 224, // Total node width including padding (px)
+
+  // Initial positioning
+  CATEGORY_X: 300, // Category node X position (px)
+  CATEGORY_Y: 50, // Category node Y position (px)
+
+  // Canvas viewport
+  DEFAULT_VIEWPORT: {
+    x: 250,
+    y: 50,
+    zoom: 1,
+  },
+} as const;
 
 export const ProductCategoriesManagement = ({
   hasEditAccess,
@@ -422,7 +442,7 @@ export const ProductCategoriesManagement = ({
     nodes.push({
       id: selectedCategory.node_id,
       type: "categoryNode",
-      position: { x: 300, y: 50 },
+      position: { x: DIAGRAM_LAYOUT.CATEGORY_X, y: DIAGRAM_LAYOUT.CATEGORY_Y },
       data: {
         label: selectedCategory.product_name,
         isSelected:
@@ -432,18 +452,18 @@ export const ProductCategoriesManagement = ({
     });
 
     // Product Nodes (row below, horizontally spaced)
-    const productWidth = 224; // Fixed width: 200px text box - 48px overlap + 72px circle
-    const gap = 36;
-    const totalWidth = products.length * (productWidth + gap) - gap;
-    const startX = 300 - totalWidth / 2;
+    const totalWidth =
+      products.length * DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH -
+      DIAGRAM_LAYOUT.HORIZONTAL_GAP;
+    const startX = DIAGRAM_LAYOUT.CATEGORY_X - totalWidth / 2;
 
     products.forEach((product, index) => {
       nodes.push({
         id: product.node_id,
         type: "productNode",
         position: {
-          x: startX + index * (productWidth + gap),
-          y: 224,
+          x: startX + index * DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH,
+          y: DIAGRAM_LAYOUT.CATEGORY_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
         },
         data: {
           label: product.product_name,
@@ -716,6 +736,22 @@ export const ProductCategoriesManagement = ({
       return;
     }
 
+    // Check if anything actually changed
+    const hasChanges =
+      formData.product_name.trim() !== selectedProduct.product_name.trim() ||
+      formData.description.trim() !== selectedProduct.description.trim() ||
+      (formData.product_detail_page || "").trim() !==
+        (selectedProduct.product_detail_page || "").trim();
+
+    if (!hasChanges) {
+      setIsEditing(false);
+      toast({
+        title: "No Changes",
+        description: "No changes were made",
+      });
+      return;
+    }
+
     try {
       startOperation("Updating product...");
       setIsEditing(false);
@@ -776,6 +812,12 @@ export const ProductCategoriesManagement = ({
             variant: "destructive",
           });
         }
+      } else {
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred",
+          variant: "destructive",
+        });
       }
     } finally {
       endOperation();
@@ -813,7 +855,20 @@ export const ProductCategoriesManagement = ({
         const message =
           error.response?.data?.detail || "Failed to delete product";
 
-        if (status === 403) {
+        if (status === 404) {
+          toast({
+            title: "Product Not Found",
+            description: "This product may have already been deleted",
+            variant: "destructive",
+          });
+        } else if (status === 409) {
+          toast({
+            title: "Cannot Delete Product",
+            description:
+              "This product has dependent items (attributes or substitute products). Delete those first.",
+            variant: "destructive",
+          });
+        } else if (status === 403) {
           toast({
             title: "Permission Denied",
             description: "You don't have permission to delete products",
@@ -826,6 +881,12 @@ export const ProductCategoriesManagement = ({
             variant: "destructive",
           });
         }
+      } else {
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred",
+          variant: "destructive",
+        });
       }
     } finally {
       endOperation();
@@ -960,6 +1021,15 @@ export const ProductCategoriesManagement = ({
       endOperation();
     }
   };
+
+  // Memoize nodes and edges generation for performance
+  const nodes = useMemo(() => {
+    return generateNodes();
+  }, [selectedCategory, products, selectedProductId]);
+
+  const edges = useMemo(() => {
+    return generateEdges();
+  }, [selectedCategory, products]);
 
   return (
     <>
@@ -1106,12 +1176,12 @@ export const ProductCategoriesManagement = ({
                 </div>
               ) : (
                 <ReactFlow
-                  nodes={generateNodes()}
-                  edges={generateEdges()}
+                  nodes={nodes}
+                  edges={edges}
                   nodeTypes={nodeTypes}
                   onNodeClick={handleNodeClick}
                   onNodeDoubleClick={handleNodeClick}
-                  defaultViewport={{ x: 250, y: 50, zoom: 1 }}
+                  defaultViewport={DIAGRAM_LAYOUT.DEFAULT_VIEWPORT}
                   minZoom={0.5}
                   maxZoom={1.5}
                   nodesDraggable={false}
