@@ -932,92 +932,619 @@ async def create_brand_awareness_strategy(
 
 ---
 
-### Step 6: Update Brand Strategist Documentation
+### Step 6: Update Brand Strategist Documentation ⏳ NOT STARTED
 
 **Goal**: Ensure `knowledge_graph/brand_requirements.md` accurately reflects Neo4j implementation
 
 **Task**: Review `app/adk/agents/strategy_agent/brand_graph_builder.py` and update documentation
 
+**Estimated Time**: 30-45 minutes
+
+**Context Files to Review**:
+1. `app/adk/agents/strategy_agent/brand_graph_builder.py` - Current implementation
+2. `knowledge_graph/brand_requirements.md` - Current documentation
+3. `knowledge_graph/competitor_requirements.md` - Reference for implementation notes format
+4. `knowledge_graph/marketing_requirements.md` - Reference for comprehensive documentation
+
 **Required Updates:**
 
-1. **Add Implementation Notes Section**:
+1. **Add Implementation Notes Section** (following competitive/marketing pattern):
 ```markdown
+## Brand Guidelines Nodes
+
 **Important Implementation Notes:**
 
-1. **Strategy Label**: All brand nodes receive dual labels:
-   - Specific label (e.g., `BrandIdentity`, `BrandPersonality`)
-   - Generic `Strategy` label
+1. **Strategy Label**: All brand nodes receive TWO labels in Neo4j:
+   - Specific node type label (e.g., `BrandIdentity`, `BrandPersonality`, `VoiceAndTone`)
+   - Generic `Strategy` label for embedding search functionality
 
-2. **Hub Pattern**: BrandIdentity is the central hub with 6 child nodes:
-   - BrandPersonality
-   - VoiceAndTone
-   - ColorPalette
-   - Typography
-   - ImageStyle
-   - MissionAndValues
+2. **Hub Pattern**: BrandIdentity is the central hub node (single instance per account):
+   - Only ONE BrandIdentity per account
+   - Auto-created on first brand guideline node creation (or create/update pattern like CompetitiveEnvironment)
+   - Has 6 child nodes linked via specific relationships
 
-3. **Account Link**:
-   - `Account -[:FOLLOWS_THESE_BRAND_GUIDELINES]-> BrandIdentity`
+3. **Parent-Child Relationships**:
+   - All 6 child nodes link to BrandIdentity hub
+   - BrandIdentity links to Account via BELONGS_TO and FOLLOWS_THESE_BRAND_GUIDELINES
+   - Child nodes:
+     * BrandIdentity -[:HAS_TRAITS_AND_CHARACTERISTICS]-> BrandPersonality
+     * BrandIdentity -[:USES_COMMUNICATION_STYLE]-> VoiceAndTone
+     * BrandIdentity -[:USES_COLORS]-> ColorPalette
+     * BrandIdentity -[:USES_FONTS_AND_TYPEFACES]-> Typography
+     * BrandIdentity -[:USES_IMAGE_STYLE]-> ImageStyle
+     * BrandIdentity -[:HAS_MISSION]-> MissionAndValues
+
+4. **References Field**: All brand nodes support a `references` field (array of strings) for source URLs or brand documentation links
+
+5. **Hub Node Behavior**: BrandIdentity should be created/retrieved like CompetitiveEnvironment:
+   - Check if exists, update if found, create if not
+   - Only one per account
+   - Cannot be deleted (or deletion should cascade to all 6 children)
+
+6. **Child Node Pattern**: Each of the 6 child nodes:
+   - Stores guidelines content in `description` field
+   - Links to BrandIdentity parent via specific relationship type
+   - Can be created/updated/deleted independently
+   - Deletion should be blocked if it's the ONLY child (to prevent empty hub)
 ```
 
-2. **Add Missing Fields:**
-- Add `references` field where applicable
-- Document audit fields consistently
+2. **Add Missing Fields to All Node Tables:**
+   - Add `account_id` field to all 7 node types
+   - Add `references` field (list[string]) where applicable
+   - Verify standard audit fields: created_time, last_modified, created_by, last_modified_by, embedding
+   - For child nodes: Add `brand_identity_node_id` property (parent reference)
 
-3. **Verify All 7 Node Types:**
-- BrandIdentity (hub)
-- BrandPersonality
-- VoiceAndTone
-- ColorPalette
-- Typography
-- ImageStyle
-- MissionAndValues
+3. **Verify and Document All 7 Node Types:**
+   - **BrandIdentity** (hub): description field, no parent reference
+   - **BrandPersonality**: description field, brand_identity_node_id
+   - **VoiceAndTone**: description field, brand_identity_node_id
+   - **ColorPalette**: description field, brand_identity_node_id
+   - **Typography**: description field, brand_identity_node_id
+   - **ImageStyle**: description field, brand_identity_node_id
+   - **MissionAndValues**: description field, brand_identity_node_id
+
+4. **Add Example node_id Formats:**
+   - BrandIdentity: `brand_acc123_abc789de`
+   - BrandPersonality: `personality_acc123_xyz`
+   - VoiceAndTone: `voicetone_acc123_def`
+   - ColorPalette: `colors_acc123_ghi`
+   - Typography: `typography_acc123_jkl`
+   - ImageStyle: `imagestyle_acc123_mno`
+   - MissionAndValues: `mission_acc123_pqr`
+
+**Checklist**:
+- [ ] Add "Important Implementation Notes" section at start of "Brand Guidelines Nodes"
+- [ ] Update BrandIdentity table with account_id, references fields
+- [ ] Update all 6 child node tables with account_id, references, brand_identity_node_id
+- [ ] Verify relationship documentation matches brand_graph_builder.py implementation
+- [ ] Document hub behavior (single instance, auto-create pattern)
+- [ ] Document deletion behavior (cascade vs validate dependencies)
+- [ ] Add examples with realistic brand guideline content
 
 ---
 
-### Step 7: Add Brand Strategy Endpoints
+### Step 7: Add Brand Strategy Endpoints ⏳ NOT STARTED
 
 **Goal**: Extend unified router/service to support Brand Strategy nodes
 
+**Estimated Time**: 4-6 hours
+**Complexity**: Medium (similar to Competitive - single parent hierarchy, simpler than Marketing)
+
+**Pattern to Follow**: Competitive Strategy (NOT Marketing - brand has single parents, not dual)
+
 **Files to Modify:**
-- `api/src/kene_api/routers/knowledge_graph.py` (ADD brand endpoints section)
-- `api/src/kene_api/services/graph_sync_service.py` (ADD brand-specific helpers if needed)
-- `api/src/kene_api/models/graph_models.py` (ADD brand Pydantic models)
-- `api/tests/integration/test_knowledge_graph.py` (ADD brand endpoint tests)
-- `api/tests/unit/services/test_graph_sync_service.py` (ADD brand operation tests)
+1. `api/src/kene_api/constants.py` - Add 7 node types + prefixes
+2. `api/src/kene_api/models/graph_models.py` - Add ~32 models
+3. `api/src/kene_api/services/graph_sync_service.py` - Add ~15 methods
+4. `api/src/kene_api/services/graph_validation_service.py` - Add ~3 validation methods
+5. `api/src/kene_api/routers/knowledge_graph.py` - Add ~28 endpoints
+6. `api/tests/unit/test_graph_sync_service.py` - Add ~7 tests
+7. `api/tests/integration/test_knowledge_graph_endpoints.py` - Add ~3 test classes
 
-**Node Types to Support:**
-- BrandIdentity (hub)
-- BrandPersonality
-- VoiceAndTone
-- ColorPalette
-- Typography
-- ImageStyle
-- MissionAndValues
+**Node Types to Support** (7 total):
+- BrandIdentity (hub - single instance per account)
+- BrandPersonality (child)
+- VoiceAndTone (child)
+- ColorPalette (child)
+- Typography (child)
+- ImageStyle (child)
+- MissionAndValues (child)
 
-**Endpoints to Create:**
+---
 
-**BrandIdentity:**
+**Step 7.1: Add to Constants** (~5 minutes)
+
+File: `api/src/kene_api/constants.py`
+
+Add to VALID_NODE_TYPES:
+```python
+# Brand Strategy nodes (Steps 6 & 7)
+"BrandIdentity",
+"BrandPersonality",
+"VoiceAndTone",
+"ColorPalette",
+"Typography",
+"ImageStyle",
+"MissionAndValues",
 ```
-GET    /api/v1/knowledge-graph/{account_id}/brand-identity
-PATCH  /api/v1/knowledge-graph/{account_id}/brand-identity
+
+Add to NODE_TYPE_TO_PREFIX:
+```python
+# Brand Strategy
+"BrandIdentity": "brand",
+"BrandPersonality": "personality",
+"VoiceAndTone": "voicetone",
+"ColorPalette": "colors",
+"Typography": "typography",
+"ImageStyle": "imagestyle",
+"MissionAndValues": "mission",
 ```
 
-**Brand Child Nodes:**
-```
-PATCH  /api/v1/knowledge-graph/{account_id}/brand-personality
-GET    /api/v1/knowledge-graph/{account_id}/brand-personality
+---
 
-PATCH  /api/v1/knowledge-graph/{account_id}/voice-and-tone
-GET    /api/v1/knowledge-graph/{account_id}/voice-and-tone
+**Step 7.2: Create Pydantic Models** (~1 hour)
 
-# Similar for color-palette, typography, image-style, mission-and-values
+File: `api/src/kene_api/models/graph_models.py`
+
+Add after MarketingStrategyResponse (line ~1045):
+
+**BrandIdentity Models** (4 models):
+```python
+class BrandIdentityCreate(BaseModel):
+    """Request model for creating/updating brand identity hub."""
+    description: str = Field(..., max_length=4000, description="Brand introduction and tagline")
+    references: list[str] = Field(default_factory=list)
+
+class BrandIdentityUpdate(BaseModel):
+    """Request model for updating brand identity."""
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+class BrandIdentityResponse(NodeBase):
+    """Response model for brand identity."""
+    description: str
+    references: list[str]
+
+class BrandIdentityListResponse(BaseModel):
+    """Response model for list of brand identities."""
+    identities: list[BrandIdentityResponse]
+    total_count: int
 ```
 
-**Aggregated View:**
+**Child Node Models** (4 models each × 6 types = 24 models):
+
+Pattern for each child node (BrandPersonality example):
+```python
+class BrandPersonalityCreate(BaseModel):
+    """Request model for creating brand personality."""
+    description: str = Field(..., max_length=4000, description="Brand personality traits")
+    references: list[str] = Field(default_factory=list)
+    brand_identity_node_id: str = Field(..., description="Parent BrandIdentity node_id")
+
+class BrandPersonalityUpdate(BaseModel):
+    """Request model for updating brand personality."""
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+class BrandPersonalityResponse(NodeBase):
+    """Response model for brand personality."""
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+class BrandPersonalityListResponse(BaseModel):
+    """Response model for list of brand personalities."""
+    personalities: list[BrandPersonalityResponse]
+    total_count: int
 ```
-GET    /api/v1/knowledge-graph/{account_id}/brand-guidelines
+
+Repeat for: VoiceAndTone, ColorPalette, Typography, ImageStyle, MissionAndValues
+
+**Aggregated View** (1 model):
+```python
+class BrandGuidelinesResponse(BaseModel):
+    """Aggregated response for complete brand guidelines."""
+    account_id: str
+    brand_identity: BrandIdentityResponse | None
+    brand_personality: BrandPersonalityResponse | None
+    voice_and_tone: VoiceAndToneResponse | None
+    color_palette: ColorPaletteResponse | None
+    typography: TypographyResponse | None
+    image_style: ImageStyleResponse | None
+    mission_and_values: MissionAndValuesResponse | None
 ```
+
+**Total**: 33 models
+
+---
+
+**Step 7.3: Add Service Methods** (~2 hours)
+
+File: `api/src/kene_api/services/graph_sync_service.py`
+
+Add after LoyaltyStrategy methods (line ~2602), before "GENERIC HELPER METHODS":
+
+**BrandIdentity Methods** (2 methods - similar to CompetitiveEnvironment):
+```python
+async def create_brand_identity(
+    self, account_id: str, identity: BrandIdentityCreate, user_id: str
+) -> BrandIdentityResponse:
+    """Create or update brand identity hub (only one per account)."""
+    # Check if exists
+    existing = await self.list_nodes(account_id, "BrandIdentity", skip=0, limit=1)
+    if existing:
+        # Update existing
+        return await self.update_brand_identity(
+            account_id, existing[0]["node_id"],
+            BrandIdentityUpdate(**identity.model_dump()), user_id
+        )
+    # Create new
+    result = await self.create_node(
+        account_id=account_id, node_type="BrandIdentity",
+        node_data={"description": identity.description.strip(), "references": identity.references},
+        parent_node_id=None, parent_node_type=None,
+        user_id=user_id, firestore_doc_type="brand_guidelines"
+    )
+    return BrandIdentityResponse(**result)
+
+async def update_brand_identity(...) -> BrandIdentityResponse:
+    """Update brand identity hub."""
+    # Similar to update_competitive_environment
+```
+
+**Child Node Methods** (3 methods each × 6 types = 18 methods):
+
+Pattern (BrandPersonality example):
+```python
+async def create_brand_personality(
+    self, account_id: str, personality: BrandPersonalityCreate, user_id: str
+) -> BrandPersonalityResponse:
+    """Create brand personality node."""
+    # Validate parent BrandIdentity exists
+    # Call generic create_node with parent_node_id=brand_identity_node_id
+    # Return typed response
+
+async def update_brand_personality(...) -> BrandPersonalityResponse:
+    """Update brand personality."""
+
+async def delete_brand_personality(...) -> None:
+    """Delete brand personality."""
+```
+
+Repeat for: VoiceAndTone, ColorPalette, Typography, ImageStyle, MissionAndValues
+
+**Total**: 20 service methods
+
+**Reference**: Follow patterns from:
+- CompetitiveEnvironment (hub) - graph_sync_service.py:1447-1510
+- Competitor (child) - graph_sync_service.py:1512-1606
+- CompetitorTactic (child) - graph_sync_service.py:1608-1673
+
+---
+
+**Step 7.4: Add Validation Methods** (~30 minutes)
+
+File: `api/src/kene_api/services/graph_validation_service.py`
+
+Add after validate_can_delete_customer_profile (line ~670):
+
+```python
+# ==================== BRAND STRATEGY VALIDATION ====================
+
+async def validate_can_delete_brand_identity(self, node_id: str) -> tuple[bool, str]:
+    """Validate brand identity can be deleted.
+
+    Should check if any of the 6 child nodes exist.
+    """
+    child_types = [
+        "BrandPersonality", "VoiceAndTone", "ColorPalette",
+        "Typography", "ImageStyle", "MissionAndValues"
+    ]
+    for child_type in child_types:
+        query = f"""
+        MATCH (bi:BrandIdentity {{node_id: $node_id}})-[]->(child:{child_type})
+        RETURN count(child) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        count = result[0]["count"] if result else 0
+        if count > 0:
+            return False, f"Cannot delete BrandIdentity with {count} existing {child_type} node(s)"
+    return True, ""
+
+async def validate_can_delete_brand_child(
+    self, node_id: str, node_type: str
+) -> tuple[bool, str]:
+    """Validate brand child node can be deleted.
+
+    Always allow (no dependencies for brand children).
+    """
+    return True, ""
+```
+
+**Update _validate_can_delete** in graph_sync_service.py:
+```python
+elif node_type == "BrandIdentity":
+    return await self.validation.validate_can_delete_brand_identity(node_id)
+elif node_type in ["BrandPersonality", "VoiceAndTone", "ColorPalette",
+                    "Typography", "ImageStyle", "MissionAndValues"]:
+    return await self.validation.validate_can_delete_brand_child(node_id, node_type)
+```
+
+---
+
+**Step 7.5: Update Relationship Mapping** (~15 minutes)
+
+File: `api/src/kene_api/services/graph_sync_service.py`
+
+Find `_get_relationship_config` method and add:
+
+```python
+# Brand Strategy
+("BrandPersonality", "BrandIdentity"): {"from_parent": "HAS_TRAITS_AND_CHARACTERISTICS"},
+("VoiceAndTone", "BrandIdentity"): {"from_parent": "USES_COMMUNICATION_STYLE"},
+("ColorPalette", "BrandIdentity"): {"from_parent": "USES_COLORS"},
+("Typography", "BrandIdentity"): {"from_parent": "USES_FONTS_AND_TYPEFACES"},
+("ImageStyle", "BrandIdentity"): {"from_parent": "USES_IMAGE_STYLE"},
+("MissionAndValues", "BrandIdentity"): {"from_parent": "HAS_MISSION"},
+```
+
+---
+
+**Step 7.6: Update Firestore Sync** (~15 minutes)
+
+File: `api/src/kene_api/services/graph_sync_service.py`
+
+**Add to _sync_node_to_firestore**:
+```python
+elif node_type in [
+    "BrandIdentity", "BrandPersonality", "VoiceAndTone",
+    "ColorPalette", "Typography", "ImageStyle", "MissionAndValues"
+]:
+    self._sync_brand_node_to_doc(doc, node_id, node_type, node_data, operation)
+```
+
+**Add to _create_initial_firestore_doc**:
+```python
+elif doc_type == "brand_guidelines":
+    return {
+        "account_id": account_id,
+        "brand_identity": None,
+        "brand_personality": None,
+        "voice_and_tone": None,
+        "color_palette": None,
+        "typography": None,
+        "image_style": None,
+        "mission_and_values": None,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+    }
+```
+
+**Add stub sync method**:
+```python
+def _sync_brand_node_to_doc(
+    self, doc: dict[str, Any], node_id: str, node_type: str,
+    node_data: dict[str, Any], operation: str
+) -> None:
+    """Sync brand strategy node to Firestore document structure."""
+    logger.info(f"Firestore sync stub (brand): {operation} {node_type} {node_id}")
+```
+
+---
+
+**Step 7.7: Add Router Endpoints** (~2 hours)
+
+File: `api/src/kene_api/routers/knowledge_graph.py`
+
+**Add Imports** (after MarketingStrategyResponse):
+```python
+BrandGuidelinesResponse,
+BrandIdentityCreate, BrandIdentityResponse, BrandIdentityUpdate,
+BrandPersonalityCreate, BrandPersonalityListResponse, BrandPersonalityResponse, BrandPersonalityUpdate,
+VoiceAndToneCreate, VoiceAndToneListResponse, VoiceAndToneResponse, VoiceAndToneUpdate,
+ColorPaletteCreate, ColorPaletteListResponse, ColorPaletteResponse, ColorPaletteUpdate,
+TypographyCreate, TypographyListResponse, TypographyResponse, TypographyUpdate,
+ImageStyleCreate, ImageStyleListResponse, ImageStyleResponse, ImageStyleUpdate,
+MissionAndValuesCreate, MissionAndValuesListResponse, MissionAndValuesResponse, MissionAndValuesUpdate,
+```
+
+**Add Endpoints** (after marketing section):
+
+**BrandIdentity** (2 endpoints - no POST/DELETE, hub managed like CompetitiveEnvironment):
+```python
+@router.get("/{account_id}/brand-identity", response_model=BrandIdentityResponse)
+async def get_brand_identity(...):
+    """Get brand identity hub. Returns 404 if doesn't exist."""
+
+@router.patch("/{account_id}/brand-identity/{node_id}", response_model=BrandIdentityResponse)
+async def update_brand_identity(...):
+    """Update brand identity hub."""
+```
+
+**Child Nodes** (5 endpoints each × 6 types = 30 endpoints):
+
+Pattern for each child (BrandPersonality example):
+```python
+@router.post("/{account_id}/brand-personalities", response_model=BrandPersonalityResponse)
+async def create_brand_personality(...):
+    """Create brand personality node."""
+
+@router.get("/{account_id}/brand-personalities", response_model=BrandPersonalityListResponse)
+async def list_brand_personalities(...):
+    """List all brand personalities (typically 0-1)."""
+
+@router.get("/{account_id}/brand-personalities/{node_id}", response_model=BrandPersonalityResponse)
+async def get_brand_personality(...):
+    """Get specific brand personality."""
+
+@router.patch("/{account_id}/brand-personalities/{node_id}", response_model=BrandPersonalityResponse)
+async def update_brand_personality(...):
+    """Update brand personality."""
+
+@router.delete("/{account_id}/brand-personalities/{node_id}", response_model=DeleteResponse)
+async def delete_brand_personality(...):
+    """Delete brand personality."""
+```
+
+**Note**: Since there's typically only 1 of each child node per account, you might consider GET singular endpoints like GET /brand-personality instead of list endpoints. Review brand_graph_builder.py to confirm.
+
+**Aggregated View** (1 endpoint):
+```python
+@router.get("/{account_id}/brand-guidelines", response_model=BrandGuidelinesResponse)
+async def get_brand_guidelines(...):
+    """Get complete brand guidelines (BrandIdentity + all 6 children)."""
+    # Query for hub + all 6 child nodes
+    # Return aggregated response
+```
+
+**Total Endpoints**: 33 (2 hub + 30 children + 1 aggregated)
+
+**Reference Patterns**:
+- CompetitiveEnvironment endpoints (hub) - knowledge_graph.py:2775-2835
+- Competitor endpoints (child with parent) - knowledge_graph.py:1596-1644
+- CompetitorTactic endpoints (child) - knowledge_graph.py:1750-1798
+
+---
+
+**Step 7.8: Write Tests** (~1-2 hours)
+
+**Unit Tests** (`tests/unit/test_graph_sync_service.py`):
+```python
+class TestBrandIdentityOperations:
+    """Tests for BrandIdentity CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_brand_identity_creates_or_updates_hub(...):
+        """Test creating brand identity creates hub if doesn't exist."""
+
+    @pytest.mark.asyncio
+    async def test_create_brand_identity_updates_if_exists(...):
+        """Test creating brand identity updates existing hub."""
+
+class TestBrandPersonalityOperations:
+    """Tests for BrandPersonality CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_brand_personality_validates_parent_exists(...):
+        """Test creating personality requires BrandIdentity."""
+
+    @pytest.mark.asyncio
+    async def test_delete_brand_identity_blocks_when_children_exist(...):
+        """Test can't delete hub with children."""
+```
+
+**Integration Tests** (`tests/integration/test_knowledge_graph_endpoints.py`):
+```python
+class TestBrandIdentityEndpoints:
+    """Integration tests for BrandIdentity endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_brand_identity_hub_behavior(...):
+        """Test hub auto-create/update pattern."""
+
+class TestBrandGuidelinesAggregatedView:
+    """Integration tests for aggregated brand guidelines endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_get_brand_guidelines_returns_all_nodes(...):
+        """Test aggregated view structure."""
+```
+
+---
+
+**Step 7.9: Implementation Checklist**
+
+**Constants**:
+- [ ] Add 7 node types to VALID_NODE_TYPES
+- [ ] Add 7 prefixes to NODE_TYPE_TO_PREFIX
+
+**Models** (33 total):
+- [ ] BrandIdentity: 4 models
+- [ ] BrandPersonality: 4 models
+- [ ] VoiceAndTone: 4 models
+- [ ] ColorPalette: 4 models
+- [ ] Typography: 4 models
+- [ ] ImageStyle: 4 models
+- [ ] MissionAndValues: 4 models
+- [ ] BrandGuidelinesResponse: 1 model
+- [ ] Add imports to graph_sync_service.py
+
+**Service Methods** (20 total):
+- [ ] create/update_brand_identity: 2 methods (hub)
+- [ ] create/update/delete_brand_personality: 3 methods
+- [ ] create/update/delete_voice_and_tone: 3 methods
+- [ ] create/update/delete_color_palette: 3 methods
+- [ ] create/update/delete_typography: 3 methods
+- [ ] create/update/delete_image_style: 3 methods
+- [ ] create/update/delete_mission_and_values: 3 methods
+
+**Validation** (3 methods):
+- [ ] validate_can_delete_brand_identity
+- [ ] validate_can_delete_brand_child
+- [ ] Update _validate_can_delete in graph_sync_service.py
+
+**Relationship Mapping**:
+- [ ] Add 6 brand relationships to _get_relationship_config
+
+**Firestore Sync**:
+- [ ] Add brand node types to _sync_node_to_firestore routing
+- [ ] Add brand_guidelines document structure to _create_initial_firestore_doc
+- [ ] Add _sync_brand_node_to_doc stub method
+
+**Router Endpoints** (33 total):
+- [ ] Add 33 model imports
+- [ ] BrandIdentity: 2 endpoints (GET, PATCH)
+- [ ] BrandPersonality: 5 endpoints
+- [ ] VoiceAndTone: 5 endpoints
+- [ ] ColorPalette: 5 endpoints
+- [ ] Typography: 5 endpoints
+- [ ] ImageStyle: 5 endpoints
+- [ ] MissionAndValues: 5 endpoints
+- [ ] Aggregated view: 1 endpoint
+
+**Tests**:
+- [ ] Add 7-8 unit tests
+- [ ] Add 3 integration test classes
+- [ ] Run pytest and fix failures
+
+**Quality**:
+- [ ] Run `uv run ruff format .`
+- [ ] Run `uv run ruff check --fix .`
+- [ ] Run `uv run pytest tests/unit/test_graph_sync_service.py -k Brand`
+- [ ] Commit with conventional commits format
+
+---
+
+**Detailed Endpoint Specifications:**
+
+**BrandIdentity Endpoints** (2 total):
+```
+GET    /{account_id}/brand-identity           # Get hub (404 if doesn't exist)
+PATCH  /{account_id}/brand-identity/{node_id} # Update hub
+```
+
+**Child Node Endpoints** (5 each × 6 = 30 total):
+```
+POST   /{account_id}/brand-personalities
+GET    /{account_id}/brand-personalities
+GET    /{account_id}/brand-personalities/{node_id}
+PATCH  /{account_id}/brand-personalities/{node_id}
+DELETE /{account_id}/brand-personalities/{node_id}
+
+# Repeat pattern for:
+# - voice-and-tones
+# - color-palettes
+# - typographies
+# - image-styles
+# - mission-and-values
+```
+
+**Aggregated View** (1 endpoint):
+```
+GET    /{account_id}/brand-guidelines  # Returns hub + all 6 children
+```
+
+**Total**: 33 endpoints
 
 ---
 
