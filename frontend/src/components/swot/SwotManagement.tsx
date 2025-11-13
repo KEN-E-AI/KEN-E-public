@@ -683,10 +683,7 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
           display_name: childFormData.display_name,
           description: childFormData.description,
           strength_node_id: selectedParent.node_id,
-          references:
-            (childFormData as OpportunityCreate).references?.filter((r) =>
-              r.trim(),
-            ) || [],
+          references: childFormData.references?.filter((r) => r.trim()) || [],
         };
 
         newChild = await createOpportunityMutation.mutateAsync({
@@ -698,9 +695,7 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
           display_name: childFormData.display_name,
           description: childFormData.description,
           weakness_node_id: selectedParent.node_id,
-          references:
-            (childFormData as RiskCreate).references?.filter((r) => r.trim()) ||
-            [],
+          references: childFormData.references?.filter((r) => r.trim()) || [],
         };
 
         newChild = await createRiskMutation.mutateAsync({
@@ -720,12 +715,14 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
       setContextMenuType("child");
       setIsContextMenuOpen(true);
 
+      // Reset form with empty state
       setChildFormData({
         display_name: "",
         description: "",
         strength_node_id: "",
+        weakness_node_id: "",
         references: [],
-      });
+      } as OpportunityCreate | RiskCreate);
 
       toast({
         title: "Success",
@@ -1331,8 +1328,9 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
                   display_name: "",
                   description: "",
                   strength_node_id: "",
+                  weakness_node_id: "",
                   references: [],
-                });
+                } as OpportunityCreate | RiskCreate);
               }}
             >
               Cancel

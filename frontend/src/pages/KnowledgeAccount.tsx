@@ -268,7 +268,24 @@ export default function KnowledgeAccount() {
             {/* Value Propositions (Read-only) */}
             {valuePropositions.length > 0 && (
               <div className="pt-4 border-t">
-                <p className="font-semibold text-sm mb-2">Value Propositions</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="font-semibold text-sm">Value Propositions</p>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-dashboard-gray-400" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm">
+                        <p>
+                          Create a list of reasons why customers might choose to
+                          do business with your company. What problems do you
+                          solve for them? How is your offering unique from those
+                          of your competitors?
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="space-y-2">
                   {valuePropositions.map((vp) => (
                     <div
