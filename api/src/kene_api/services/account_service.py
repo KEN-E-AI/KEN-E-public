@@ -172,195 +172,209 @@ async def create_account_internal(
         "updated_by": user.user_id,  # Fixed: use user_id instead of uid
     }
 
-    # Create account in Neo4j database
-    logger.info(f"[ACCOUNT_CREATION] Creating account in Neo4j: {account_id}")
-    create_query = """
-    MATCH (org:Organization {organization_id: $organization_id})
-    CREATE (acc:Account {
-        account_id: $account_id,
-        account_name: $account_name,
-        company_name: $company_name,
-        organization_id: $organization_id,
-        industry: $industry,
-        status: $status,
-        websites: $websites,
-        timezone: $timezone,
-        data_region: $data_region,
-        region: $region,
-        estimated_annual_ad_budget: $estimated_annual_ad_budget,
-        marketing_channels: $marketing_channels,
-        product_integrations: $product_integrations
-    })
-    CREATE (acc)-[:BELONGS_TO]->(org)
-    RETURN acc
-    """
-
-    params = {
-        "account_id": account_id,
-        "account_name": request.account_name,
-        "company_name": request.account_name,  # Initially same as account_name, agents can refine
-        "organization_id": request.organization_id,
-        "industry": request.industry,
-        "status": request.status,
-        "websites": request.websites,
-        "timezone": request.timezone,
-        "data_region": request.data_region or "",
-        "region": request.region or [],
-        "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
-        "marketing_channels": request.marketing_channels or [],
-        "product_integrations": request.product_integrations or [],
-    }
-
-    try:
-        result = await neo4j_service.execute_write_query(create_query, params)
+    # Create account in Neo4j database (skip if dry_run=true)
+    if request.dry_run:
         logger.info(
-            f"[ACCOUNT_CREATION] Account created successfully in Neo4j: {account_id}"
+            f"[ACCOUNT_CREATION] DRY-RUN MODE: Skipping Neo4j account creation for {account_id}"
         )
-
-        # Verify account data was saved correctly
-        verify_query = """
-        MATCH (acc:Account {account_id: $account_id})
-        RETURN acc.websites as websites, acc.industry as industry, acc.estimated_annual_ad_budget as budget
+    else:
+        logger.info(f"[ACCOUNT_CREATION] Creating account in Neo4j: {account_id}")
+        create_query = """
+        MATCH (org:Organization {organization_id: $organization_id})
+        CREATE (acc:Account {
+            account_id: $account_id,
+            account_name: $account_name,
+            company_name: $company_name,
+            organization_id: $organization_id,
+            industry: $industry,
+            status: $status,
+            websites: $websites,
+            timezone: $timezone,
+            data_region: $data_region,
+            region: $region,
+            estimated_annual_ad_budget: $estimated_annual_ad_budget,
+            marketing_channels: $marketing_channels,
+            product_integrations: $product_integrations
+        })
+        CREATE (acc)-[:BELONGS_TO]->(org)
+        RETURN acc
         """
-        verify_result = await neo4j_service.execute_query(
-            verify_query, {"account_id": account_id}
-        )
-        if verify_result and len(verify_result) > 0:
-            saved_data = verify_result[0]
-            logger.info(
-                f"[ACCOUNT_CREATION] Verification - Websites: {saved_data.get('websites', [])}"
-            )
-            logger.info(
-                f"[ACCOUNT_CREATION] Verification - Industry: {saved_data.get('industry')}"
-            )
-            logger.info(
-                f"[ACCOUNT_CREATION] Verification - Budget: {saved_data.get('budget')}"
-            )
 
-            # Warn if user provided websites but they weren't saved
-            if request.websites and not saved_data.get("websites"):
-                logger.warning(
-                    "[ACCOUNT_CREATION] ⚠️ User provided websites but none were saved to Neo4j!"
-                )
-            elif request.websites and saved_data.get("websites"):
-                logger.info(
-                    f"[ACCOUNT_CREATION] ✅ {len(saved_data.get('websites'))} website(s) saved correctly"
-                )
-        else:
-            logger.warning("[ACCOUNT_CREATION] Could not verify account data")
+        params = {
+            "account_id": account_id,
+            "account_name": request.account_name,
+            "company_name": request.account_name,  # Initially same as account_name, agents can refine
+            "organization_id": request.organization_id,
+            "industry": request.industry,
+            "status": request.status,
+            "websites": request.websites,
+            "timezone": request.timezone,
+            "data_region": request.data_region or "",
+            "region": request.region or [],
+            "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
+            "marketing_channels": request.marketing_channels or [],
+            "product_integrations": request.product_integrations or [],
+        }
 
-    except Exception as e:
-        logger.error(f"[ACCOUNT_CREATION] Failed to create account in Neo4j: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create account: {e!s}")
-
-    # Log database setup continuing (progress tracking simplified)
-    logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
-
-    # Create initial activities from Firestore templates
     try:
-        from ..routers.accounts import _create_initial_activities
+        if not request.dry_run:
+            _ = await neo4j_service.execute_write_query(create_query, params)
+            logger.info(
+                f"[ACCOUNT_CREATION] Account created successfully in Neo4j: {account_id}"
+            )
 
-        activities_count = await _create_initial_activities(
-            db=neo4j_service, firestore=firestore, account_id=account_id
-        )
-        logger.info(
-            f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
-        )
+            # Verify account data was saved correctly
+            verify_query = """
+            MATCH (acc:Account {account_id: $account_id})
+            RETURN acc.websites as websites, acc.industry as industry, acc.estimated_annual_ad_budget as budget
+            """
+            verify_result = await neo4j_service.execute_query(
+                verify_query, {"account_id": account_id}
+            )
+            if verify_result and len(verify_result) > 0:
+                saved_data = verify_result[0]
+                logger.info(
+                    f"[ACCOUNT_CREATION] Verification - Websites: {saved_data.get('websites', [])}"
+                )
+                logger.info(
+                    f"[ACCOUNT_CREATION] Verification - Industry: {saved_data.get('industry')}"
+                )
+                logger.info(
+                    f"[ACCOUNT_CREATION] Verification - Budget: {saved_data.get('budget')}"
+                )
+
+                # Warn if user provided websites but they weren't saved
+                if request.websites and not saved_data.get("websites"):
+                    logger.warning(
+                        "[ACCOUNT_CREATION] ⚠️ User provided websites but none were saved to Neo4j!"
+                    )
+                elif request.websites and saved_data.get("websites"):
+                    logger.info(
+                        f"[ACCOUNT_CREATION] ✅ {len(saved_data.get('websites'))} website(s) saved correctly"
+                    )
+            else:
+                logger.warning("[ACCOUNT_CREATION] Could not verify account data")
+
     except Exception as e:
-        logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
-        # Don't fail account creation if initial activities fail
+        if not request.dry_run:
+            logger.error(f"[ACCOUNT_CREATION] Failed to create account in Neo4j: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create account: {e!s}") from e
 
-    # Create initial activity logs if BigQuery service is available
-    if bigquery_service:
+    # Skip database setup for dry-run mode
+    if not request.dry_run:
+        # Log database setup continuing (progress tracking simplified)
+        logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
+
+        # Create initial activities from Firestore templates
         try:
-            created_count = await create_initial_activity_logs(
-                account_id=account_id, industry=request.industry, db=bigquery_service
+            from ..routers.accounts import _create_initial_activities
+
+            activities_count = await _create_initial_activities(
+                db=neo4j_service, firestore=firestore, account_id=account_id
             )
             logger.info(
-                f"[ACCOUNT_CREATION] Created {created_count} initial activity logs"
+                f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
             )
         except Exception as e:
-            logger.error(f"[ACCOUNT_CREATION] Failed to create activity logs: {e}")
-            # Don't fail account creation if activity logs fail
+            logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
+            # Don't fail account creation if initial activities fail
 
-    # Log database setup continuing (progress tracking simplified)
-    logger.info(f"[ACCOUNT_CREATION] Configuring data streams for {account_id}")
+        # Create initial activity logs if BigQuery service is available
+        if bigquery_service:
+            try:
+                created_count = await create_initial_activity_logs(
+                    account_id=account_id, industry=request.industry, db=bigquery_service
+                )
+                logger.info(
+                    f"[ACCOUNT_CREATION] Created {created_count} initial activity logs"
+                )
+            except Exception as e:
+                logger.error(f"[ACCOUNT_CREATION] Failed to create activity logs: {e}")
+                # Don't fail account creation if activity logs fail
 
-    # Ensure GCS bucket and folder exist for the account
-    try:
-        data_region = request.data_region or "US"
-        bucket_name, location = await storage.ensure_bucket_exists(data_region)
-        logger.info(
-            f"Ensured GCS bucket {bucket_name} exists in {location} for account {account_id}"
-        )
+        # Log database setup continuing (progress tracking simplified)
+        logger.info(f"[ACCOUNT_CREATION] Configuring data streams for {account_id}")
 
-        # Create account folder
-        folder_created = await storage.ensure_account_folder(account_id, data_region)
-        if folder_created:
+    # Ensure GCS bucket and folder exist for the account (skip for dry-run)
+    if not request.dry_run:
+        try:
+            data_region = request.data_region or "US"
+            bucket_name, location = await storage.ensure_bucket_exists(data_region)
             logger.info(
-                f"Created GCS folder for account {account_id} in region {data_region}"
+                f"Ensured GCS bucket {bucket_name} exists in {location} for account {account_id}"
             )
-    except Exception as e:
-        logger.error(f"Failed to ensure GCS storage for account {account_id}: {e}")
-        # Don't fail account creation if storage setup fails
 
-    # Create Firestore collection for strategy documents
-    try:
-        collection_name = f"strategy_docs_{account_id}"
-        initial_doc_data = {
-            "account_id": account_id,
-            "created_at": datetime.utcnow().isoformat(),
-            "created_by": user.user_id,
-            "type": "placeholder",
-            "description": "Initial placeholder document - collection ready for business strategy documents",
-            "organization_id": request.organization_id,
-        }
-        doc_id = firestore.create_document(
-            collection_name, "_placeholder", initial_doc_data
-        )
-        logger.info(
-            f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
-        )
-    except Exception as e:
-        logger.error(
-            f"Failed to create Firestore collection for account {account_id}: {e}"
-        )
-        # Don't fail account creation if collection creation fails
+            # Create account folder
+            folder_created = await storage.ensure_account_folder(account_id, data_region)
+            if folder_created:
+                logger.info(
+                    f"Created GCS folder for account {account_id} in region {data_region}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to ensure GCS storage for account {account_id}: {e}")
+            # Don't fail account creation if storage setup fails
 
-    # Grant the creating user admin permissions on the new account
-    try:
-        success = firestore.set_nested_field(
-            collection="users",
-            document_id=user.user_id,
-            field_path=f"permissions.accounts.{account_id}",
-            value="admin",
-        )
-        if success:
+        # Create Firestore collection for strategy documents
+        try:
+            collection_name = f"strategy_docs_{account_id}"
+            initial_doc_data = {
+                "account_id": account_id,
+                "created_at": datetime.utcnow().isoformat(),
+                "created_by": user.user_id,
+                "type": "placeholder",
+                "description": "Initial placeholder document - collection ready for business strategy documents",
+                "organization_id": request.organization_id,
+            }
+            doc_id = firestore.create_document(
+                collection_name, "_placeholder", initial_doc_data
+            )
             logger.info(
-                f"Granted admin permissions to user {user.user_id} for account {account_id}"
+                f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
             )
-        else:
-            logger.warning(
-                f"Failed to grant permissions to user {user.user_id} for account {account_id}"
+        except Exception as e:
+            logger.error(
+                f"Failed to create Firestore collection for account {account_id}: {e}"
             )
-    except Exception as e:
-        logger.error(
-            f"Error granting permissions to user {user.user_id} for account {account_id}: {e}"
-        )
-        # Don't fail account creation if permission grant fails
+            # Don't fail account creation if collection creation fails
 
-    # Invalidate the user's cache to ensure their context includes the new account
-    try:
-        from ..auth.cached_user_context import get_cached_user_context_service
+        # Grant the creating user admin permissions on the new account
+        try:
+            success = firestore.set_nested_field(
+                collection="users",
+                document_id=user.user_id,
+                field_path=f"permissions.accounts.{account_id}",
+                value="admin",
+            )
+            if success:
+                logger.info(
+                    f"Granted admin permissions to user {user.user_id} for account {account_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to grant permissions to user {user.user_id} for account {account_id}"
+                )
+        except Exception as e:
+            logger.error(
+                f"Error granting permissions to user {user.user_id} for account {account_id}: {e}"
+            )
+            # Don't fail account creation if permission grant fails
 
-        cached_user_service = get_cached_user_context_service()
-        cached_user_service.invalidate_user_context(user.user_id)
+        # Invalidate the user's cache to ensure their context includes the new account
+        try:
+            from ..auth.cached_user_context import get_cached_user_context_service
+
+            cached_user_service = get_cached_user_context_service()
+            cached_user_service.invalidate_user_context(user.user_id)
+            logger.info(
+                f"Invalidated cache for user {user.user_id} after creating account {account_id}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to invalidate user cache: {e}")
+            # Don't fail account creation if cache invalidation fails
+    else:
         logger.info(
-            f"Invalidated cache for user {user.user_id} after creating account {account_id}"
+            f"[ACCOUNT_CREATION] DRY-RUN MODE: Skipped all database and storage setup for {account_id}"
         )
-    except Exception as e:
-        logger.error(f"Failed to invalidate user cache: {e}")
-        # Don't fail account creation if cache invalidation fails
 
     # Log database setup complete (progress tracking simplified)
     # Don't mark as fully complete yet - the strategy generation task will do that

@@ -215,7 +215,7 @@ export const WizardStep4StrategySelection = ({
               id="dry_run"
               checked={dry_run}
               onCheckedChange={(checked) => {
-                console.log('[DRY_RUN] Checkbox changed to:', checked);
+                console.log("[DRY_RUN] Checkbox changed to:", checked);
                 onUpdate({ dry_run: checked as boolean });
               }}
             />

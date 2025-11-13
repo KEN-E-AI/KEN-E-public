@@ -185,6 +185,8 @@ export const accountCreationSchema = z.object({
   region: z
     .array(z.string())
     .min(1, "At least one customer region is required"),
+
+  dry_run: z.boolean().default(false),
 });
 
 // Validation schema for KPI

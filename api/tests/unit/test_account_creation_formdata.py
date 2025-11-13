@@ -115,6 +115,50 @@ class TestFormDataParsing:
         assert result.marketing_channels == []
         assert result.product_integrations == []
 
+    def test_parse_account_form_data_with_dry_run_true(self):
+        """Test parsing account form data with dry_run=true."""
+        result = parse_account_form_data(
+            account_name="Test Account",
+            organization_id="org123",
+            industry="Technology",
+            status="Active",
+            websites='["https://example.com"]',
+            timezone="America/New_York",
+            dry_run=True,
+        )
+
+        assert isinstance(result, AccountRequest)
+        assert result.dry_run is True
+
+    def test_parse_account_form_data_with_dry_run_false(self):
+        """Test parsing account form data with dry_run=false."""
+        result = parse_account_form_data(
+            account_name="Test Account",
+            organization_id="org123",
+            industry="Technology",
+            status="Active",
+            websites='["https://example.com"]',
+            timezone="America/New_York",
+            dry_run=False,
+        )
+
+        assert isinstance(result, AccountRequest)
+        assert result.dry_run is False
+
+    def test_parse_account_form_data_default_dry_run(self):
+        """Test parsing account form data defaults dry_run to False."""
+        result = parse_account_form_data(
+            account_name="Test Account",
+            organization_id="org123",
+            industry="Technology",
+            status="Active",
+            websites='["https://example.com"]',
+            timezone="America/New_York",
+        )
+
+        assert isinstance(result, AccountRequest)
+        assert result.dry_run is False
+
     def test_parse_account_form_data_invalid_json(self):
         """Test parsing with invalid JSON raises ValueError."""
         with pytest.raises(ValueError, match="Invalid JSON"):

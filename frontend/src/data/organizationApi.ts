@@ -279,7 +279,7 @@ export async function createAccount(
     )
     .append("dry_run", accountData.dry_run ?? false);
 
-  console.log('[CREATE_ACCOUNT] accountData.dry_run:', accountData.dry_run);
+  console.log("[CREATE_ACCOUNT] accountData.dry_run:", accountData.dry_run);
 
   // Add files if they exist
   if (

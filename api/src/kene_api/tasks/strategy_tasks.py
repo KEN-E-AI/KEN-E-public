@@ -64,8 +64,11 @@ async def trigger_strategy_generation(
         # Log strategy generation is starting (progress tracking simplified)
         logger.info(f"Setting up database structures for account {account_id}")
 
-        # Update account status to processing
-        await update_account_setup_status(account_id, "processing")
+        # Update account status to processing (skip for dry-run)
+        if not dry_run:
+            await update_account_setup_status(account_id, "processing")
+        else:
+            logger.info(f"[DRY-RUN] Skipping account status update for {account_id}")
 
         # Call the strategy agent directly via the Agent Engine
         # This is an internal system call, so we can use the AgentEngineClient directly
@@ -170,43 +173,49 @@ Please execute strategy generation with these parameters:
                     result = response_content
 
                     # IMPORTANT: Wait for documents to be created, same as system-triggered path
-                    max_wait_time = 1800  # 30 minutes max wait for documents
-                    poll_interval = 60  # Check every 60 seconds
-                    elapsed_time = 0
-                    all_docs_complete = False
-
-                    logger.info(
-                        f"[User-triggered] Waiting for all strategy documents to be complete for account {account_id}..."
-                    )
-
-                    while elapsed_time < max_wait_time:
-                        all_docs_complete = await verify_strategy_documents_created(
-                            account_id, require_all=True
-                        )
-
-                        if all_docs_complete:
-                            logger.info(
-                                f"✅ [User-triggered] All strategy documents are complete for account {account_id}"
-                            )
-                            break
+                    # Skip for dry-run mode since documents won't be saved
+                    if not dry_run:
+                        max_wait_time = 1800  # 30 minutes max wait for documents
+                        poll_interval = 60  # Check every 60 seconds
+                        elapsed_time = 0
+                        all_docs_complete = False
 
                         logger.info(
-                            f"[User-triggered] Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)"
+                            f"[User-triggered] Waiting for all strategy documents to be complete for account {account_id}..."
                         )
-                        await asyncio.sleep(poll_interval)
-                        elapsed_time += poll_interval
 
-                    if not all_docs_complete:
-                        logger.error(
-                            f"❌ [User-triggered] Strategy documents not all complete after {max_wait_time} seconds for account {account_id}"
+                        while elapsed_time < max_wait_time:
+                            all_docs_complete = await verify_strategy_documents_created(
+                                account_id, require_all=True
+                            )
+
+                            if all_docs_complete:
+                                logger.info(
+                                    f"✅ [User-triggered] All strategy documents are complete for account {account_id}"
+                                )
+                                break
+
+                            logger.info(
+                                f"[User-triggered] Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)"
+                            )
+                            await asyncio.sleep(poll_interval)
+                            elapsed_time += poll_interval
+
+                        if not all_docs_complete:
+                            logger.error(
+                                f"❌ [User-triggered] Strategy documents not all complete after {max_wait_time} seconds for account {account_id}"
+                            )
+                            await update_account_setup_status(
+                                account_id, "failed", completed=False
+                            )
+                            logger.error(
+                                f"[User-triggered] Account {account_id} marked as failed due to incomplete strategy documents"
+                            )
+                            return  # Exit early without marking as completed
+                    else:
+                        logger.info(
+                            f"[DRY-RUN] Skipping document verification for {account_id} - documents won't be saved in dry-run mode"
                         )
-                        await update_account_setup_status(
-                            account_id, "failed", completed=False
-                        )
-                        logger.error(
-                            f"[User-triggered] Account {account_id} marked as failed due to incomplete strategy documents"
-                        )
-                        return  # Exit early without marking as completed
                 else:
                     logger.error(
                         f"Strategy generation returned empty response for {company_name}"
@@ -564,81 +573,89 @@ Please execute strategy generation with these parameters:
                     logger.warning("Agent returned empty response!")
 
                 # Only proceed with document verification if we got a valid response
+                # Skip for dry-run mode
                 if result and got_response:
-                    # Wait for all documents to be fully created before marking as complete
-                    # Poll for document completion with timeout
-                    max_wait_time = 1800  # 30 minutes max wait for documents
-                    poll_interval = 15  # Check every 15 seconds
-                    elapsed_time = 0
-                    all_docs_complete = False
+                    if not dry_run:
+                        # Wait for all documents to be fully created before marking as complete
+                        # Poll for document completion with timeout
+                        max_wait_time = 1800  # 30 minutes max wait for documents
+                        poll_interval = 15  # Check every 15 seconds
+                        elapsed_time = 0
+                        all_docs_complete = False
 
-                    logger.info(
-                        f"Waiting for all strategy documents to be complete for account {account_id}..."
-                    )
-
-                    while elapsed_time < max_wait_time:
-                        # Check if all documents are complete (strict mode)
-                        all_docs_complete = await verify_strategy_documents_created(
-                            account_id, require_all=True
-                        )
-
-                        if all_docs_complete:
-                            logger.info(
-                                f"✅ All strategy documents are complete for account {account_id}"
-                            )
-                            break
-
-                        # Wait before checking again
                         logger.info(
-                            f"Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)"
+                            f"Waiting for all strategy documents to be complete for account {account_id}..."
                         )
-                        await asyncio.sleep(poll_interval)
-                        elapsed_time += poll_interval
 
-                    if not all_docs_complete:
-                        logger.error(
-                            f"❌ Strategy documents not all complete after {max_wait_time} seconds for account {account_id}"
+                        while elapsed_time < max_wait_time:
+                            # Check if all documents are complete (strict mode)
+                            all_docs_complete = await verify_strategy_documents_created(
+                                account_id, require_all=True
+                            )
+
+                            if all_docs_complete:
+                                logger.info(
+                                    f"✅ All strategy documents are complete for account {account_id}"
+                                )
+                                break
+
+                            # Wait before checking again
+                            logger.info(
+                                f"Documents not yet complete, waiting {poll_interval} seconds... (elapsed: {elapsed_time}s)"
+                            )
+                            await asyncio.sleep(poll_interval)
+                            elapsed_time += poll_interval
+
+                        if not all_docs_complete:
+                            logger.error(
+                                f"❌ Strategy documents not all complete after {max_wait_time} seconds for account {account_id}"
+                            )
+                            # DO NOT mark as completed if documents are not ready
+                            # Mark as failed instead
+                            await update_account_setup_status(
+                                account_id,
+                                "failed",
+                                completed=False,
+                                error_message="Strategy document generation timed out. Please try again.",
+                            )
+                            logger.error(
+                                f"Account {account_id} marked as failed due to incomplete strategy documents"
+                            )
+                            return  # Exit early without marking as completed
+                    else:
+                        logger.info(
+                            f"[DRY-RUN] Skipping document verification for {account_id} - documents won't be saved in dry-run mode"
                         )
-                        # DO NOT mark as completed if documents are not ready
-                        # Mark as failed instead
+                else:
+                    if not dry_run:
+                        logger.error(
+                            f"Strategy generation returned empty response for {company_name}"
+                        )
+                        # Mark as failed if no response from agent
                         await update_account_setup_status(
                             account_id,
                             "failed",
                             completed=False,
-                            error_message="Strategy document generation timed out. Please try again.",
+                            error_message="Strategy generation returned no content. Please try again.",
                         )
                         logger.error(
-                            f"Account {account_id} marked as failed due to incomplete strategy documents"
+                            f"Account {account_id} marked as failed due to empty agent response"
                         )
                         return  # Exit early without marking as completed
-                else:
-                    logger.error(
-                        f"Strategy generation returned empty response for {company_name}"
-                    )
-                    # Mark as failed if no response from agent
-                    await update_account_setup_status(
-                        account_id,
-                        "failed",
-                        completed=False,
-                        error_message="Strategy generation returned no content. Please try again.",
-                    )
-                    logger.error(
-                        f"Account {account_id} marked as failed due to empty agent response"
-                    )
-                    return  # Exit early without marking as completed
 
         except Exception as e:
             logger.error(f"Failed to call strategy agent: {e}")
-            # Mark as failed on exception
-            await update_account_setup_status(
-                account_id,
-                "failed",
-                completed=False,
-                error_message=f"Strategy generation failed: {str(e)[:200]}",
-            )
-            logger.error(
-                f"Account {account_id} marked as failed due to agent error: {e}"
-            )
+            # Mark as failed on exception (skip for dry-run)
+            if not dry_run:
+                await update_account_setup_status(
+                    account_id,
+                    "failed",
+                    completed=False,
+                    error_message=f"Strategy generation failed: {str(e)[:200]}",
+                )
+                logger.error(
+                    f"Account {account_id} marked as failed due to agent error: {e}"
+                )
             return  # Exit early without marking as completed
 
         # Only reach here if everything succeeded
@@ -646,8 +663,11 @@ Please execute strategy generation with these parameters:
             f"✅ Successfully completed strategy generation for account {account_id}"
         )
 
-        # Update account status to completed
-        await update_account_setup_status(account_id, "completed", completed=True)
+        # Update account status to completed (skip for dry-run)
+        if not dry_run:
+            await update_account_setup_status(account_id, "completed", completed=True)
+        else:
+            logger.info(f"[DRY-RUN] Strategy generation complete - skipping status update for {account_id}")
 
         # Send email notification
         try:

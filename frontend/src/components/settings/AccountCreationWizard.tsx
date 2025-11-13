@@ -90,12 +90,12 @@ export const AccountCreationWizard = ({
       "brand_guidelines",
     ],
     override_product_categories: [],
-    dry_run: false,
     objectives: [],
     kpis: [],
     timezone: "America/New_York",
     data_region: "US",
     region: ["US"],
+    dry_run: false,
   });
 
   const totalSteps = 5; // Added strategy selection step
@@ -126,6 +126,7 @@ export const AccountCreationWizard = ({
         timezone: "America/New_York",
         data_region: "US",
         region: ["US"],
+        dry_run: false,
       });
       setValidationErrors([]);
       setSubmitError(null);
