@@ -1160,3 +1160,297 @@ class MarketingStrategyResponse(BaseModel):
     consideration_strategies: list[ConsiderationStrategyResponse]
     conversion_strategies: list[ConversionStrategyResponse]
     loyalty_strategies: list[LoyaltyStrategyResponse]
+
+
+# ==================== Brand Strategy Models ====================
+
+
+class BrandIdentityUpdate(BaseModel):
+    """Request model for updating brand identity hub (no create - auto-created)."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class BrandIdentityResponse(NodeBase):
+    """Response model for brand identity hub."""
+
+    description: str
+    references: list[str]
+
+
+class BrandPersonalityCreate(BaseModel):
+    """Request model for creating brand personality."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Innovative, approachable, and forward-thinking. We're the friend who always has the latest tech but explains it in a way everyone can understand.",
+                    "references": ["https://example.com/brand-guidelines"],
+                }
+            ]
+        }
+    )
+
+    description: str = Field(
+        ..., max_length=4000, description="Brand personality traits"
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class BrandPersonalityUpdate(BaseModel):
+    """Request model for updating brand personality."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class BrandPersonalityResponse(NodeBase):
+    """Response model for brand personality."""
+
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+
+class BrandPersonalityListResponse(BaseModel):
+    """Response model for list of brand personalities."""
+
+    brand_personalities: list[BrandPersonalityResponse]
+    total_count: int
+
+
+class VoiceAndToneCreate(BaseModel):
+    """Request model for creating voice and tone."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Conversational yet professional. We use active voice, contractions, and clear language. Avoid jargon unless explaining it. Tone is optimistic and empowering.",
+                    "references": ["https://example.com/voice-guide"],
+                }
+            ]
+        }
+    )
+
+    description: str = Field(
+        ..., max_length=4000, description="Voice and tone guidelines"
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class VoiceAndToneUpdate(BaseModel):
+    """Request model for updating voice and tone."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class VoiceAndToneResponse(NodeBase):
+    """Response model for voice and tone."""
+
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+
+class VoiceAndToneListResponse(BaseModel):
+    """Response model for list of voice and tone."""
+
+    voice_and_tones: list[VoiceAndToneResponse]
+    total_count: int
+
+
+class ColorPaletteCreate(BaseModel):
+    """Request model for creating color palette."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Primary: Navy Blue (#1A2B3C, RGB 26,43,60, CMYK 100,65,0,76). Secondary: Sky Blue (#4A90E2). Accent: Coral (#FF6B6B). Use navy for headings, sky blue for interactive elements, coral sparingly for CTAs.",
+                    "references": ["https://example.com/color-guide"],
+                }
+            ]
+        }
+    )
+
+    description: str = Field(
+        ..., max_length=4000, description="Color palette specifications"
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class ColorPaletteUpdate(BaseModel):
+    """Request model for updating color palette."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class ColorPaletteResponse(NodeBase):
+    """Response model for color palette."""
+
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+
+class ColorPaletteListResponse(BaseModel):
+    """Response model for list of color palettes."""
+
+    color_palettes: list[ColorPaletteResponse]
+    total_count: int
+
+
+class TypographyCreate(BaseModel):
+    """Request model for creating typography."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Headlines: Inter Bold 32-48pt. Body: Inter Regular 16pt, line height 1.5. Captions: Inter Regular 14pt. Maintain 60-75 characters per line for readability.",
+                    "references": ["https://example.com/typography-guide"],
+                }
+            ]
+        }
+    )
+
+    description: str = Field(..., max_length=4000, description="Typography guidelines")
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class TypographyUpdate(BaseModel):
+    """Request model for updating typography."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class TypographyResponse(NodeBase):
+    """Response model for typography."""
+
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+
+class TypographyListResponse(BaseModel):
+    """Response model for list of typography."""
+
+    typographies: list[TypographyResponse]
+    total_count: int
+
+
+class ImageStyleCreate(BaseModel):
+    """Request model for creating image style."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Clean, minimalist product photography on white backgrounds. Lifestyle images should feel authentic and diverse. Use natural lighting. Avoid heavy filters. Images should be high-resolution (min 1920px wide).",
+                    "references": ["https://example.com/image-guide"],
+                }
+            ]
+        }
+    )
+
+    description: str = Field(..., max_length=4000, description="Image style guidelines")
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class ImageStyleUpdate(BaseModel):
+    """Request model for updating image style."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class ImageStyleResponse(NodeBase):
+    """Response model for image style."""
+
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+
+class ImageStyleListResponse(BaseModel):
+    """Response model for list of image styles."""
+
+    image_styles: list[ImageStyleResponse]
+    total_count: int
+
+
+class MissionAndValuesCreate(BaseModel):
+    """Request model for creating mission and values."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Mission: Empower businesses to make data-driven decisions. Values: Transparency, Innovation, Customer Success, Continuous Learning, Collaboration.",
+                    "references": ["https://example.com/mission-values"],
+                }
+            ]
+        }
+    )
+
+    description: str = Field(
+        ..., max_length=4000, description="Mission and values statement"
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class MissionAndValuesUpdate(BaseModel):
+    """Request model for updating mission and values."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class MissionAndValuesResponse(NodeBase):
+    """Response model for mission and values."""
+
+    description: str
+    references: list[str]
+    brand_identity_node_id: str
+
+
+class MissionAndValuesListResponse(BaseModel):
+    """Response model for list of mission and values."""
+
+    mission_and_values: list[MissionAndValuesResponse]
+    total_count: int
+
+
+class BrandStrategyResponse(BaseModel):
+    """Aggregated response for complete brand strategy graph.
+
+    Returns all brand nodes in a structured format for easy consumption by frontend.
+    This avoids making separate queries for each related node type.
+    """
+
+    account_id: str
+    brand_identity: BrandIdentityResponse | None
+    brand_personalities: list[BrandPersonalityResponse]
+    voice_and_tones: list[VoiceAndToneResponse]
+    color_palettes: list[ColorPaletteResponse]
+    typographies: list[TypographyResponse]
+    image_styles: list[ImageStyleResponse]
+    mission_and_values: list[MissionAndValuesResponse]
