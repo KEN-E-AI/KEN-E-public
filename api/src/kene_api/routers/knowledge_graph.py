@@ -1037,13 +1037,19 @@ async def list_opportunities(
 
     try:
         # Get total count from database (not just returned results)
-        total_count = await service.count_nodes(account_id, "Opportunity", parent_node_id=strength_node_id)
+        total_count = await service.count_nodes(
+            account_id, "Opportunity", parent_node_id=strength_node_id, parent_node_type="Strength"
+        )
 
         # Get paginated results
         opportunities_data = await service.list_nodes(
-            account_id, "Opportunity", parent_node_id=strength_node_id, skip=skip, limit=limit
+            account_id, "Opportunity", parent_node_id=strength_node_id, parent_node_type="Strength", skip=skip, limit=limit
         )
-        opportunities = [OpportunityResponse(**o) for o in opportunities_data]
+        # Map parent_node_id to strength_node_id for the response model
+        opportunities = [
+            OpportunityResponse(**{**o, "strength_node_id": o.get("parent_node_id", o.get("strength_node_id"))})
+            for o in opportunities_data
+        ]
 
         return OpportunityListResponse(opportunities=opportunities, total_count=total_count)
     except HTTPException:
@@ -1070,6 +1076,17 @@ async def get_opportunity(
         opportunity = await service.get_node(account_id, node_id, "Opportunity")
         if not opportunity:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found")
+
+        # Fetch the parent strength relationship
+        strength_query = """
+        MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
+        RETURN s.node_id as strength_node_id
+        LIMIT 1
+        """
+        strength_result = await service.neo4j.execute_query(strength_query, {"node_id": node_id})
+        if strength_result and strength_result[0]:
+            opportunity["strength_node_id"] = strength_result[0]["strength_node_id"]
+
         return OpportunityResponse(**opportunity)
     except HTTPException:
         raise
@@ -1200,13 +1217,19 @@ async def list_risks(
 
     try:
         # Get total count from database (not just returned results)
-        total_count = await service.count_nodes(account_id, "Risk", parent_node_id=weakness_node_id)
+        total_count = await service.count_nodes(
+            account_id, "Risk", parent_node_id=weakness_node_id, parent_node_type="Weakness"
+        )
 
         # Get paginated results
         risks_data = await service.list_nodes(
-            account_id, "Risk", parent_node_id=weakness_node_id, skip=skip, limit=limit
+            account_id, "Risk", parent_node_id=weakness_node_id, parent_node_type="Weakness", skip=skip, limit=limit
         )
-        risks = [RiskResponse(**r) for r in risks_data]
+        # Map parent_node_id to weakness_node_id for the response model
+        risks = [
+            RiskResponse(**{**r, "weakness_node_id": r.get("parent_node_id", r.get("weakness_node_id"))})
+            for r in risks_data
+        ]
 
         return RiskListResponse(risks=risks, total_count=total_count)
     except HTTPException:
@@ -1233,6 +1256,17 @@ async def get_risk(
         risk = await service.get_node(account_id, node_id, "Risk")
         if not risk:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found")
+
+        # Fetch the parent weakness relationship
+        weakness_query = """
+        MATCH (w:Weakness)-[:CREATES]->(r:Risk {node_id: $node_id})
+        RETURN w.node_id as weakness_node_id
+        LIMIT 1
+        """
+        weakness_result = await service.neo4j.execute_query(weakness_query, {"node_id": node_id})
+        if weakness_result and weakness_result[0]:
+            risk["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
+
         return RiskResponse(**risk)
     except HTTPException:
         raise

@@ -389,6 +389,7 @@ class GraphSyncService:
         account_id: str,
         node_type: str,
         parent_node_id: str | None = None,
+        parent_node_type: str | None = None,
         skip: int = 0,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -398,6 +399,7 @@ class GraphSyncService:
             account_id: Account identifier
             node_type: Node type label
             parent_node_id: Optional filter by parent relationship
+            parent_node_type: Optional parent node type (required if parent_node_id is provided)
             skip: Number of nodes to skip (default: 0)
             limit: Maximum number of nodes to return (default: None = all)
 
@@ -412,12 +414,22 @@ class GraphSyncService:
 
         # Build base query
         if parent_node_id:
-            # Query with parent filter - match relationship in both directions
-            # Include parent information for nodes that need it (like ValueProposition)
+            # Get relationship configuration for this node type and parent type
+            # If parent_node_type is not provided, match any relationship type (for backwards compatibility)
+            if parent_node_type:
+                relationship_config = self._get_relationship_config(node_type, parent_node_type)
+                relationship_type = relationship_config["from_parent"] if relationship_config else "HAS_VALUE_PROPOSITION"
+                relationship_pattern = f"-[:{relationship_type}]->"
+            else:
+                # Match any relationship type (for ValuePropositions with unknown parent type)
+                relationship_pattern = "-->"
+
+            # Query with parent filter - match relationship based on node types
+            # Include parent information for nodes that need it
             # Special handling for Account parent nodes which use account_id instead of node_id
             base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
-            MATCH (parent)-[:HAS_VALUE_PROPOSITION]->(node:{node_type})
+            MATCH (parent){relationship_pattern}(node:{node_type})
             WHERE (parent.node_id = $parent_node_id OR parent.account_id = $parent_node_id)
               AND (node)-[:BELONGS_TO]->(acc)
             RETURN DISTINCT node, acc.account_id as account_id,
@@ -496,6 +508,7 @@ class GraphSyncService:
         account_id: str,
         node_type: str,
         parent_node_id: str | None = None,
+        parent_node_type: str | None = None,
     ) -> int:
         """Get total count of nodes for accurate pagination.
 
@@ -506,6 +519,7 @@ class GraphSyncService:
             account_id: Account identifier
             node_type: Node type label
             parent_node_id: Optional filter by parent relationship
+            parent_node_type: Optional parent node type (required if parent_node_id is provided)
 
         Returns:
             Total count of matching nodes in database
@@ -518,10 +532,20 @@ class GraphSyncService:
 
         # Build count query based on whether parent filter is used
         if parent_node_id:
+            # Get relationship configuration for this node type and parent type
+            # If parent_node_type is not provided, match any relationship type (for backwards compatibility)
+            if parent_node_type:
+                relationship_config = self._get_relationship_config(node_type, parent_node_type)
+                relationship_type = relationship_config["from_parent"] if relationship_config else "HAS_VALUE_PROPOSITION"
+                relationship_pattern = f"-[:{relationship_type}]->"
+            else:
+                # Match any relationship type (for ValuePropositions with unknown parent type)
+                relationship_pattern = "-->"
+
             # Special handling for Account parent nodes which use account_id instead of node_id
             query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
-            MATCH (parent)-[:HAS_VALUE_PROPOSITION]->(node:{node_type})
+            MATCH (parent){relationship_pattern}(node:{node_type})
             WHERE (parent.node_id = $parent_node_id OR parent.account_id = $parent_node_id)
               AND (node)-[:BELONGS_TO]->(acc)
             RETURN count(DISTINCT node) as total
@@ -1252,6 +1276,16 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
+        # Fetch the parent strength relationship
+        strength_query = """
+        MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
+        RETURN s.node_id as strength_node_id
+        LIMIT 1
+        """
+        strength_result = await self.neo4j.execute_query(strength_query, {"node_id": node_id})
+        if strength_result and strength_result[0]:
+            result["strength_node_id"] = strength_result[0]["strength_node_id"]
+
         return OpportunityResponse(**result)
 
     async def delete_opportunity(
@@ -1365,6 +1399,16 @@ class GraphSyncService:
             user_id=user_id,
             firestore_doc_type="business_strategy",
         )
+
+        # Fetch the parent weakness relationship
+        weakness_query = """
+        MATCH (w:Weakness)-[:CREATES]->(r:Risk {node_id: $node_id})
+        RETURN w.node_id as weakness_node_id
+        LIMIT 1
+        """
+        weakness_result = await self.neo4j.execute_query(weakness_query, {"node_id": node_id})
+        if weakness_result and weakness_result[0]:
+            result["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
 
         return RiskResponse(**result)
 

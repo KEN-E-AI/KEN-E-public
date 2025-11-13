@@ -5,7 +5,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/use-toast";
-import { Loader2, Plus, X, Building } from "lucide-react";
+import { Loader2, Plus, X, Building, Info } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 import type { MonitoringTopics } from "@/types/monitoring";
 import api from "@/lib/api";
@@ -139,6 +145,19 @@ export default function CompanyKeywordsConfiguration({
         <CardTitle className="flex items-center gap-2">
           <Building className="h-5 w-5" />
           Company Keywords
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-dashboard-gray-400" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                <p>
+                  Add keywords that KEN-E can use to track updates about your
+                  company or products in the news.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
