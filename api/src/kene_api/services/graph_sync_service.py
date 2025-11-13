@@ -414,11 +414,15 @@ class GraphSyncService:
         if parent_node_id:
             # Query with parent filter - match relationship in both directions
             # Include parent information for nodes that need it (like ValueProposition)
+            # Special handling for Account parent nodes which use account_id instead of node_id
             base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
-            MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
-            WHERE (node)-[:BELONGS_TO]->(acc)
-            RETURN node, acc.account_id as account_id, parent.node_id as parent_node_id, labels(parent)[0] as parent_node_type
+            MATCH (parent)-[:HAS_VALUE_PROPOSITION]->(node:{node_type})
+            WHERE (parent.node_id = $parent_node_id OR parent.account_id = $parent_node_id)
+              AND (node)-[:BELONGS_TO]->(acc)
+            RETURN DISTINCT node, acc.account_id as account_id,
+                   COALESCE(parent.node_id, parent.account_id) as parent_node_id,
+                   labels(parent)[0] as parent_node_type
             ORDER BY node.display_name, node.product_name, node.name
             """
         else:
@@ -514,11 +518,13 @@ class GraphSyncService:
 
         # Build count query based on whether parent filter is used
         if parent_node_id:
+            # Special handling for Account parent nodes which use account_id instead of node_id
             query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
-            MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
-            WHERE (node)-[:BELONGS_TO]->(acc)
-            RETURN count(node) as total
+            MATCH (parent)-[:HAS_VALUE_PROPOSITION]->(node:{node_type})
+            WHERE (parent.node_id = $parent_node_id OR parent.account_id = $parent_node_id)
+              AND (node)-[:BELONGS_TO]->(acc)
+            RETURN count(DISTINCT node) as total
             """
             params = {"account_id": account_id, "parent_node_id": parent_node_id}
         else:
@@ -1594,11 +1600,19 @@ class GraphSyncService:
 
         # Add parent relationship if specified
         if parent_node_id and relationship_config:
-            query += f"""
-            WITH node, acc
-            MATCH (parent:{parent_node_type} {{node_id: $parent_node_id}})
-            MERGE (parent)-[:{relationship_config['from_parent']}]->(node)
-            """
+            # Special handling for Account parent nodes which use account_id instead of node_id
+            if parent_node_type == "Account":
+                query += f"""
+                WITH node, acc
+                MATCH (parent:{parent_node_type} {{account_id: $parent_node_id}})
+                MERGE (parent)-[:{relationship_config['from_parent']}]->(node)
+                """
+            else:
+                query += f"""
+                WITH node, acc
+                MATCH (parent:{parent_node_type} {{node_id: $parent_node_id}})
+                MERGE (parent)-[:{relationship_config['from_parent']}]->(node)
+                """
 
         # Add bidirectional relationship to Account for certain node types
         if node_type in ["ProductCategory", "Goal"]:

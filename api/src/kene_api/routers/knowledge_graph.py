@@ -82,13 +82,35 @@ async def check_graph_access(
     if user.is_super_admin:
         return user
 
-    # Check account-level permissions
-    if not user.has_account_access(account_id, [required_level] if required_level == "edit" else None):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions for {required_level} access to account {account_id}",
-        )
+    # Check if user has org admin/owner access (grants access to ALL accounts)
+    has_org_admin = any(
+        role in ["admin", "owner"] for role in user.organization_permissions.values()
+    )
+    if has_org_admin:
+        logger.info(f"[check_graph_access] Access granted via org admin for user {user.email}")
+        return user
 
+    # For non-admin users, check account-specific permissions
+    # For view access: use same pattern as monitoring_topics (no role check)
+    # For edit access: explicitly require "edit" role
+    if required_level == "edit":
+        # Edit requires explicit "edit" role
+        if not user.has_account_access(account_id, ["edit"]):
+            logger.warning(f"[check_graph_access] Edit access denied for user {user.email} to account {account_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions for edit access to account {account_id}",
+            )
+    else:
+        # View access: use same logic as monitoring_topics - just check if account is accessible
+        if not user.has_account_access(account_id) and not user.is_super_admin:
+            logger.warning(f"[check_graph_access] View access denied for user {user.email} to account {account_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {account_id}",
+            )
+
+    logger.info(f"[check_graph_access] Access granted for user {user.email} to account {account_id}")
     return user
 
 

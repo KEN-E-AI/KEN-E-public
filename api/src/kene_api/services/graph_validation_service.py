@@ -66,7 +66,7 @@ class GraphValidationService:
 
         Args:
             node_id: Node identifier
-            node_type: Type of node (e.g., "Product", "ProductCategory")
+            node_type: Type of node (e.g., "Product", "ProductCategory", "Account")
 
         Returns:
             True if node exists, False otherwise
@@ -77,7 +77,12 @@ class GraphValidationService:
         # Validate node_type to prevent Cypher injection
         validate_node_type(node_type)
 
-        query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
+        # Special handling for Account nodes which use account_id instead of node_id
+        if node_type == "Account":
+            query = f"MATCH (n:{node_type} {{account_id: $node_id}}) RETURN n LIMIT 1"
+        else:
+            query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
+
         result = await self.neo4j.execute_query(query, {"node_id": node_id})
         return len(result) > 0
 

@@ -1668,7 +1668,7 @@ export const ProductCategoriesManagement = ({
                   No value propositions yet
                 </p>
               ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <div className="space-y-2">
                   {valuePropositions.map((vp) => (
                     <div
                       key={vp.node_id}

@@ -940,6 +940,7 @@ class Account(BaseModel):
     """Account entity model."""
 
     account_id: str = Field(..., description="Unique identifier for the account")
+    node_id: str | None = Field(None, description="Neo4j internal node identifier")
     account_name: str = Field(..., description="Name of the account")
     organization_id: str = Field(
         ..., description="ID of the organization this account belongs to"
@@ -972,6 +973,10 @@ class Account(BaseModel):
     )
     product_integrations: list[str] = Field(
         default_factory=list, description="List of product integrations"
+    )
+    company_overview: str | None = Field(
+        default=None,
+        description="Comprehensive description of the company including founding story, mission, products, brand identity and target customers",
     )
 
 
@@ -1034,6 +1039,10 @@ class AccountRequest(BaseModel):
         description="List of product category names to use for marketing strategy "
         "when business strategy is not run. Only used if marketing_strategy is in "
         "enabled_strategies but business_strategy is not.",
+    )
+    company_overview: str | None = Field(
+        None,
+        description="Comprehensive description of the company including founding story, mission, products, brand identity and target customers",
     )
 
 
