@@ -84,7 +84,7 @@ export function IconNavigation() {
   return (
     <div className="w-14 bg-brand-charcoal h-screen flex flex-col fixed left-0 top-0 z-40">
       {/* Logo/Brand */}
-      <div className="h-14 flex items-center justify-center border-b border-gray-700 bg-brand-medium-blue">
+      <div className="h-16 flex items-center justify-center border-b border-gray-700 bg-brand-medium-blue">
         <img
           src="/KEN-E Logo E Small Charcoal.png"
           alt="KEN-E Logo"
