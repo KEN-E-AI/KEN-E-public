@@ -1,5 +1,268 @@
 # Phase 1 Implementation Plan: Strategy Graph CRUD APIs
 
+## Implementation Status (Updated: 2025-01-13)
+
+**Overall Progress**: 5 of 7 steps complete (71%)
+
+| Step | Status | Commit | Lines Added | PR |
+|------|--------|--------|-------------|-----|
+| Step 1: Business Strategy API | ✅ COMPLETE | be98325 | +4,711 | #168 (merged) |
+| Steps 2 & 3: Competitive Strategy API | ✅ COMPLETE | 32627c9 | +4,368 | Pending |
+| Steps 4 & 5: Marketing Strategy API | ✅ PARTIAL (60%) | 1a39bd9 | +2,376 | Pending |
+| Steps 6 & 7: Brand Strategy API | ⏳ NOT STARTED | - | - | - |
+
+**Total Implementation**: 11,455 lines added, 58 endpoints created, 21 node types supported
+
+---
+
+## Quick Start: Completing Remaining Work
+
+### For Steps 4 & 5 (Marketing) - Estimated 2-3 hours
+
+**What's Already Done:**
+- ✅ ALL service methods implemented (graph_sync_service.py:2051-2602)
+- ✅ ALL models created (graph_models.py:807-1045)
+- ✅ ALL validation logic ready (graph_validation_service.py:585-670)
+- ✅ Core endpoints working (CustomerProfile + ProblemAwareness)
+
+**What You Need to Do:**
+
+1. **Add 20 Router Endpoints** (~2 hours):
+   - Open: `api/src/kene_api/routers/knowledge_graph.py`
+   - Find: ProblemAwarenessStrategy endpoints (lines 3169-3302)
+   - Copy 133 lines, find/replace strategy names
+   - Repeat for: BrandAwareness, Consideration, Conversion, Loyalty
+   - Insert after ProblemAwarenessStrategy section
+
+2. **Add Basic Tests** (~30 min):
+   - Copy competitive strategy test patterns
+   - Test CustomerProfile CRUD
+   - Test cascade deletion
+   - Test dual-parent strategy creation
+
+3. **Run Quality Checks** (~30 min):
+   ```bash
+   cd api
+   uv run ruff format .
+   uv run ruff check --fix .
+   uv run pytest tests/unit/test_graph_sync_service.py -k Marketing
+   ```
+
+**Reference Files:**
+- Service methods: `api/src/kene_api/services/graph_sync_service.py:2280-2602`
+- Models: `api/src/kene_api/models/graph_models.py:903-1045`
+- Pattern to copy: `api/src/kene_api/routers/knowledge_graph.py:3169-3302`
+
+### For Steps 6 & 7 (Brand) - Estimated 4-6 hours
+
+Follow the same pattern as Competitive Strategy (simpler than Marketing - no dual parents).
+
+---
+
+### Steps 4 & 5 Completion Status
+
+**What's Complete** (60%):
+- ✅ Documentation: marketing_requirements.md fully updated
+- ✅ Constants: 6 node types added to whitelist
+- ✅ Models: All 26 Pydantic models created
+- ✅ Service Layer: All 18 methods implemented (CustomerProfile + 5 strategy types)
+- ✅ Validation: 2 validation methods added
+- ✅ Router: 11 core endpoints (CustomerProfile + ProblemAwarenessStrategy + aggregated view)
+- ✅ Dual-Parent Architecture: Custom _create_marketing_strategy_node helper implemented
+
+**What Remains** (40%):
+- ⏳ Router: 20 endpoints for 4 remaining strategy types (BrandAwareness, Consideration, Conversion, Loyalty)
+  - Each follows IDENTICAL pattern to ProblemAwarenessStrategy
+  - Service methods already implemented
+  - Models already created
+  - Just need to copy/paste/rename 5 endpoints × 4 types
+- ⏳ Tests: Unit + Integration tests (~400 lines)
+- ⏳ Quality: Run full test suite, fix any failures
+
+**Estimated Time to Complete Steps 4 & 5**: 2-3 hours (mostly repetitive endpoint creation)
+
+---
+
+## Implementation Details by Strategy Type
+
+### Business Strategy (Step 1) ✅ COMPLETE
+
+**PR**: #168 (merged to main)
+**Commit**: be98325
+**Lines**: +4,711
+
+**Node Types** (9):
+- ProductCategory, Product, ValueProposition
+- SWOTAnalysis (hub), Strength, Weakness, Opportunity, Risk
+- Goal
+
+**Endpoints**: 45 total
+- 9 node types × 5 endpoints each (POST, GET list, GET one, PATCH, DELETE)
+- Aggregated view: GET /business-strategy
+
+**Key Features**:
+- Hub pattern: SWOTAnalysis auto-created
+- SWOT connections: Strength→Opportunity, Weakness→Risk
+- Atomic rollback on Firestore sync failure
+- Comprehensive validation (prevents orphaned nodes)
+
+**Files**:
+- constants.py: +40 lines
+- graph_models.py: +434 lines
+- knowledge_graph.py: +1,461 lines
+- graph_sync_service.py: +1,826 lines
+- graph_validation_service.py: +393 lines
+- Tests: +644 integration, +573 unit, +148 security
+
+---
+
+### Competitive Strategy (Steps 2 & 3) ✅ COMPLETE
+
+**Branch**: feature/extend-graph-api
+**Commit**: 32627c9
+**Lines**: +4,368
+
+**Node Types** (6):
+- CompetitiveEnvironment (hub), Competitor
+- CompetitorTactic, CompetitorStrength, CompetitorWeakness
+- SubstituteProduct
+
+**Endpoints**: 27 total
+- Competitor: 5 endpoints
+- CompetitorTactic: 5 endpoints
+- CompetitorStrength: 5 endpoints
+- CompetitorWeakness: 5 endpoints
+- SubstituteProduct: 5 endpoints
+- CompetitiveEnvironment: 2 endpoints (GET, PATCH only - no DELETE)
+- Aggregated view: GET /competitive-strategy
+
+**Key Features**:
+- Hub pattern: CompetitiveEnvironment auto-created on first competitor
+- SWOT pattern: CompetitorStrength→Risk, CompetitorWeakness→Opportunity
+- Shared nodes: ValueProposition, Risk, Opportunity work across strategies
+- Dependency validation: Can't delete competitor with dependent nodes
+
+**Files**:
+- constants.py: +12 lines (6 node types)
+- graph_models.py: +287 lines (31 models)
+- knowledge_graph.py: +901 lines (27 endpoints)
+- graph_sync_service.py: +432 lines (15 methods)
+- graph_validation_service.py: +130 lines (4 methods)
+- competitor_requirements.md: +67 lines (implementation notes)
+- Tests: +388 integration, +352 unit
+
+**Test Status**: ✅ 7/7 competitive unit tests passing
+
+---
+
+### Marketing Strategy (Steps 4 & 5) ⏳ 60% COMPLETE
+
+**Branch**: feature/extend-graph-api
+**Commit**: 1a39bd9
+**Lines**: +2,376 (so far)
+
+**Node Types** (6):
+- CustomerProfile (hub, multi-instance)
+- ProblemAwarenessStrategy (dual-parent)
+- BrandAwarenessStrategy (dual-parent)
+- ConsiderationStrategy (dual-parent)
+- ConversionStrategy (dual-parent)
+- LoyaltyStrategy (dual-parent)
+
+**Endpoints Completed**: 11 of 31
+- ✅ CustomerProfile: 5 endpoints
+- ✅ ProblemAwarenessStrategy: 5 endpoints
+- ✅ Aggregated view: 1 endpoint
+- ⏳ BrandAwarenessStrategy: 0 of 5 (service ready, just need router)
+- ⏳ ConsiderationStrategy: 0 of 5 (service ready, just need router)
+- ⏳ ConversionStrategy: 0 of 5 (service ready, just need router)
+- ⏳ LoyaltyStrategy: 0 of 5 (service ready, just need router)
+
+**Key Features** (Unique Architecture):
+- **Dual-Parent Architecture**: Strategy nodes link to BOTH CustomerProfile AND ProductCategory
+- **Parent ID Storage**: customer_profile_node_id and product_category_node_id stored as properties
+- **Composite node_ids**: `{type}_{category_id}_{profile_id}` ensures uniqueness
+- **IS_MARKETED_TO Management**: Auto-created when first strategy is added
+- **Cascade Deletion**: Deleting profile removes ALL strategies across all categories
+- **Case-Insensitive Uniqueness**: display_name must be unique per account
+- **No Auto-Creation**: Strategies NOT auto-created with profile (unlike CompetitiveEnvironment)
+
+**Files**:
+- constants.py: +16 lines (6 node types)
+- graph_models.py: +294 lines (26 models - ALL types)
+- knowledge_graph.py: +427 lines (11 of 31 endpoints)
+- graph_sync_service.py: +742 lines (18 methods - ALL types, including custom dual-parent helper)
+- graph_validation_service.py: +89 lines (2 methods)
+- marketing_requirements.md: +118 lines (comprehensive docs)
+- MARKETING_STRATEGY_IMPLEMENTATION_PLAN.md: +704 lines (planning doc)
+
+**Completion Roadmap:**
+
+**Remaining Work** (~500 lines, 2-3 hours):
+1. Add 20 router endpoints (copy/paste pattern from ProblemAwareness)
+2. Add unit tests for CustomerProfile and strategy creation
+3. Add integration tests for cascade deletion
+4. Run test suite and fix failures
+
+**Why Only 60% Complete Despite Full Service Layer:**
+The router endpoints are repetitive but bulky (~400 lines for 4 strategy types). All the complex logic (dual-parent creation, cascade deletion, validation) is complete. Adding the remaining endpoints is mechanical work.
+
+---
+
+### Brand Strategy (Steps 6 & 7) ⏳ NOT STARTED
+
+**Estimated Lines**: ~2,500-3,000
+**Estimated Time**: 4-6 hours
+**Complexity**: Medium (similar to Competitive - single parent hierarchy)
+
+**Node Types** (7 planned):
+- BrandIdentity (hub)
+- BrandPersonality, VoiceAndTone, ColorPalette
+- Typography, ImageStyle, MissionAndValues
+
+**Pattern to Follow**: Competitive Strategy (simpler than Marketing - no dual parents)
+
+---
+
+## Architectural Patterns by Strategy Type
+
+### Summary Table
+
+| Strategy | Node Types | Endpoints | Hub Type | Parent Pattern | Auto-Creation | Complexity |
+|----------|------------|-----------|----------|----------------|---------------|------------|
+| Business | 9 | 45 | SWOTAnalysis (single) | Single parent | Hub auto-created | Medium |
+| Competitive | 6 | 27 | CompetitiveEnvironment (single) | Single parent | Hub auto-created | Medium |
+| Marketing | 6 | 31 | CustomerProfile (multi) | **Dual parent** | NO auto-creation | **High** |
+| Brand | 7 | ~28 | BrandIdentity (single) | Single parent | TBD | Medium |
+
+### Detailed Pattern Comparison
+
+**Hub Behavior:**
+- Business: SWOTAnalysis - single instance, auto-created on first strength/weakness
+- Competitive: CompetitiveEnvironment - single instance, auto-created on first competitor
+- Marketing: CustomerProfile - **multiple instances** (2-5 typical), NO auto-creation
+- Brand: BrandIdentity - single instance (expected)
+
+**Parent Relationships:**
+- Business: Product → ProductCategory, ValueProp → Product/Category/Account, SWOT children → SWOTAnalysis
+- Competitive: All children → Competitor → CompetitiveEnvironment
+- Marketing: **Strategy → BOTH CustomerProfile AND ProductCategory** (dual-parent)
+- Brand: All children → BrandIdentity → Account
+
+**Deletion Strategy:**
+- Business: Validate dependencies, block if children exist
+- Competitive: Validate dependencies, block if children exist
+- Marketing: **CASCADE deletion** - profile deletion removes all linked strategies
+- Brand: TBD (likely validate dependencies)
+
+**Node ID Formats:**
+- Business: `{prefix}_{account_id}_{random_8_chars}` (e.g., `prod_acc123_abc789de`)
+- Competitive: `{prefix}_{account_id}_{random_8_chars}` (e.g., `competitor_acc123_xyz`)
+- Marketing: `{prefix}_{product_category_id}_{customer_profile_id}` (**composite**, e.g., `problemaware_productcat_abc_icp_xyz`)
+- Brand: Expected similar to Business/Competitive
+
+---
+
 ## Executive Summary
 
 This document provides a comprehensive implementation plan for creating CRUD API endpoints for all four strategy types (Business, Competitive, Marketing, Brand). The goal is to enable users to edit individual nodes in the knowledge graph without regenerating entire strategy documents.
@@ -417,93 +680,254 @@ GET    /api/v1/knowledge-graph/{account_id}/competitive-strategy
 
 ---
 
-### Step 4: Update Marketing Strategist Documentation
+### Step 4: Update Marketing Strategist Documentation ✅ COMPLETE
+
+**Status**: ✅ **COMPLETE** (Commit: 1a39bd9)
 
 **Goal**: Ensure `knowledge_graph/marketing_requirements.md` accurately reflects Neo4j implementation
 
 **Task**: Review `app/adk/agents/strategy_agent/marketing_graph_builder.py` and update documentation
 
-**Required Updates:**
+**Completed Work**:
 
-1. **Add Implementation Notes Section**:
-```markdown
-**Important Implementation Notes:**
+**Completed Updates:**
 
-1. **Strategy Label**: All marketing nodes (CustomerProfile, strategy nodes) receive:
-   - Specific label (e.g., `CustomerProfile`, `ProblemAwarenessStrategy`)
-   - Generic `Strategy` label
+1. ✅ **Added 8-Point Implementation Notes Section** covering:
+   - Strategy Label pattern (dual labels in Neo4j)
+   - **Dual-Parent Architecture** (key architectural discovery):
+     * Strategy nodes scoped to (ProductCategory, CustomerProfile) pairs
+     * node_id format: `{strategy_type}_{product_category_id}_{customer_profile_id}`
+     * Example: `problemaware_productcat_abc123_icp_xyz789`
+     * Multiple instances per CustomerProfile (one per ProductCategory)
+   - Bidirectional relationships
+   - Dual relationships for strategy nodes (to both parents)
+   - Parent ID storage as properties (customer_profile_node_id, product_category_node_id)
+   - References field support
+   - Cascade deletion behavior
+   - Unique constraint on CustomerProfile display_name
 
-2. **Linking Pattern**: ProductCategory links to CustomerProfile via:
-   - `ProductCategory -[:IS_MARKETED_TO]-> CustomerProfile`
+2. ✅ **Added Missing Fields to All Nodes:**
+   - `account_id` field added to all node tables
+   - `references` field (list[string]) added to CustomerProfile and all strategy nodes
+   - `customer_profile_node_id` and `product_category_node_id` properties added to strategy nodes
+   - Fixed CustomerProfile field naming: `display_name` + `narrative` (NOT description)
+   - Standard audit fields documented consistently
 
-3. **Strategy Chain**: Each CustomerProfile connects to 5 strategy nodes:
-   - ProblemAwarenessStrategy
-   - BrandAwarenessStrategy
-   - ConsiderationStrategy
-   - ConversionStrategy
-   - LoyaltyStrategy
-```
+3. ✅ **Verified and Updated All 6 Node Structures:**
+   - CustomerProfile: Fixed to use display_name (lowercase stored) + narrative
+   - ProblemAwarenessStrategy: Added parent ID fields + ProductCategory relationship
+   - BrandAwarenessStrategy: Added parent ID fields + ProductCategory relationship
+   - ConsiderationStrategy: Added parent ID fields + ProductCategory relationship
+   - ConversionStrategy: Added parent ID fields + ProductCategory relationship
+   - LoyaltyStrategy: Added parent ID fields + ProductCategory relationship
 
-2. **Add Missing Fields:**
-- Add `references` field to CustomerProfile and strategy nodes
-- Document standard audit fields (`created_time`, etc.)
+4. ✅ **Added ProductCategory Relationships** (critical discovery from code review):
+   - `ProductCategory -[:HAS_PROBLEM_AWARENESS_STRATEGY]-> ProblemAwarenessStrategy`
+   - `ProductCategory -[:HAS_BRAND_AWARENESS_STRATEGY]-> BrandAwarenessStrategy`
+   - `ProductCategory -[:HAS_CONSIDERATION_STRATEGY]-> ConsiderationStrategy`
+   - `ProductCategory -[:HAS_CONVERSION_STRATEGY]-> ConversionStrategy`
+   - `ProductCategory -[:HAS_LOYALTY_STRATEGY]-> LoyaltyStrategy`
 
-3. **Verify Node Structures:**
-- CustomerProfile (hub)
-- ProblemAwarenessStrategy
-- BrandAwarenessStrategy
-- ConsiderationStrategy
-- ConversionStrategy
-- LoyaltyStrategy
+5. ✅ **Documented Critical Behaviors:**
+   - Strategy nodes are NOT auto-created with CustomerProfile
+   - They're created when linking profile to a ProductCategory
+   - IS_MARKETED_TO relationship auto-created on first strategy creation
+   - Deleting CustomerProfile cascades to ALL linked strategies (across all categories)
+
+**Files Modified:**
+- `knowledge_graph/marketing_requirements.md` (+118 lines)
+
+**Key Architectural Discovery:**
+Unlike Competitive Strategy where nodes have single parents, Marketing Strategy nodes have **dual parentage** - they belong to both a CustomerProfile AND a ProductCategory. This required custom creation logic and parent ID storage.
 
 ---
 
-### Step 5: Add Marketing Strategy Endpoints
+### Step 5: Add Marketing Strategy Endpoints ⏳ 60% COMPLETE
+
+**Status**: ⏳ **PARTIAL** (Commit: 1a39bd9) - Core functionality complete, 4 strategy types pending
 
 **Goal**: Extend unified router/service to support Marketing Strategy nodes
 
-**Files to Modify:**
-- `api/src/kene_api/routers/knowledge_graph.py` (ADD marketing endpoints section)
-- `api/src/kene_api/services/graph_sync_service.py` (ADD marketing-specific helpers if needed)
-- `api/src/kene_api/models/graph_models.py` (ADD marketing Pydantic models)
-- `api/tests/integration/test_knowledge_graph.py` (ADD marketing endpoint tests)
-- `api/tests/unit/services/test_graph_sync_service.py` (ADD marketing operation tests)
+**Files Modified:**
+- ✅ `api/src/kene_api/constants.py` (+16 lines) - Added 6 node types + prefixes
+- ✅ `api/src/kene_api/models/graph_models.py` (+294 lines) - All 26 models created
+- ✅ `api/src/kene_api/services/graph_sync_service.py` (+742 lines) - All 18 methods implemented
+- ✅ `api/src/kene_api/services/graph_validation_service.py` (+89 lines) - 2 validation methods
+- ⏳ `api/src/kene_api/routers/knowledge_graph.py` (+427 lines) - 11 of 31 endpoints complete
+- ⏳ `api/tests/integration/test_knowledge_graph_endpoints.py` - Tests pending
+- ⏳ `api/tests/unit/test_graph_sync_service.py` - Tests pending
 
-**Node Types to Support:**
-- CustomerProfile
-- ProblemAwarenessStrategy
-- BrandAwarenessStrategy
-- ConsiderationStrategy
-- ConversionStrategy
-- LoyaltyStrategy
+**Completion Summary:**
 
-**Endpoints to Create:**
+✅ **COMPLETE Components:**
+1. **Constants** - All 6 node types in whitelist with proper prefixes
+2. **Pydantic Models** - All 26 models created:
+   - CustomerProfile: 4 models (Create, Update, Response, ListResponse)
+   - 5 Strategy types × 4 models each = 20 models
+   - MarketingStrategyResponse (aggregated)
+   - LoyaltyStrategyResponse (aggregated)
+3. **Service Layer** - All 18 methods fully implemented:
+   - create/update/delete_customer_profile (3 methods)
+   - create/update/delete_problem_awareness_strategy (3 methods)
+   - create/update/delete_brand_awareness_strategy (3 methods)
+   - create/update/delete_consideration_strategy (3 methods)
+   - create/update/delete_conversion_strategy (3 methods)
+   - create/update/delete_loyalty_strategy (3 methods)
+   - **Custom Helper**: `_create_marketing_strategy_node()` for dual-parent creation
+4. **Validation** - 2 methods:
+   - validate_unique_customer_profile_name (case-insensitive)
+   - validate_can_delete_customer_profile (informational, always allows)
+5. **Firestore Sync** - marketing_strategy document structure + stub
+6. **Router Endpoints** - 11 of 31 complete:
+   - CustomerProfile: All 5 endpoints (POST, GET list, GET one, PATCH, DELETE)
+   - ProblemAwarenessStrategy: All 5 endpoints
+   - Aggregated view: 1 endpoint
 
-**CustomerProfile:**
+⏳ **PENDING Components:**
+1. **Router Endpoints** - 20 endpoints for 4 remaining strategy types:
+   - BrandAwarenessStrategy: 5 endpoints (POST, GET list, GET one, PATCH, DELETE)
+   - ConsiderationStrategy: 5 endpoints
+   - ConversionStrategy: 5 endpoints
+   - LoyaltyStrategy: 5 endpoints
+   - **Pattern**: IDENTICAL to ProblemAwarenessStrategy (lines 3169-3302)
+   - **Effort**: ~2 hours (copy/paste/rename pattern)
+2. **Unit Tests** - ~6-8 tests needed (~300 lines)
+3. **Integration Tests** - ~3 test classes needed (~200 lines)
+4. **Test Execution** - Run suite, fix any failures
+
+**Key Implementation Details:**
+
+**Dual-Parent Architecture** (unique to marketing):
+```python
+# Strategy nodes have TWO parents via relationships AND properties
+node_data = {
+    "description": "...",
+    "customer_profile_node_id": "icp_abc123",     # Stored as property
+    "product_category_node_id": "productcat_xyz", # Stored as property
+    "references": []
+}
+
+# Creates TWO relationships:
+# CustomerProfile -[:DISCOVERS_THE_PROBLEM_BY]-> Strategy
+# ProductCategory -[:HAS_PROBLEM_AWARENESS_STRATEGY]-> Strategy
 ```
-POST   /api/v1/knowledge-graph/{account_id}/customer-profiles
-GET    /api/v1/knowledge-graph/{account_id}/customer-profiles
-GET    /api/v1/knowledge-graph/{account_id}/customer-profiles/{node_id}
-PATCH  /api/v1/knowledge-graph/{account_id}/customer-profiles/{node_id}
-DELETE /api/v1/knowledge-graph/{account_id}/customer-profiles/{node_id}
+
+**Cascade Deletion Logic**:
+```python
+async def delete_customer_profile(...):
+    # 1. Find ALL strategies linked to profile (across all ProductCategories)
+    # 2. Delete each of 5 strategy types
+    # 3. Delete profile (IS_MARKETED_TO auto-deleted by DETACH DELETE)
 ```
 
-**Marketing Strategies:**
-```
-# Problem Awareness
-PATCH  /api/v1/knowledge-graph/{account_id}/problem-awareness-strategies/{node_id}
-GET    /api/v1/knowledge-graph/{account_id}/problem-awareness-strategies/{node_id}
-
-# Brand Awareness
-PATCH  /api/v1/knowledge-graph/{account_id}/brand-awareness-strategies/{node_id}
-GET    /api/v1/knowledge-graph/{account_id}/brand-awareness-strategies/{node_id}
-
-# Similar for consideration, conversion, loyalty
+**Custom Creation Method**:
+```python
+async def _create_marketing_strategy_node(
+    node_id, node_type, node_data, account_id,
+    customer_profile_id, product_category_id, user_id,
+    profile_relationship, category_relationship
+):
+    # Creates node with BELONGS_TO + dual parent relationships
+    # Auto-creates IS_MARKETED_TO if doesn't exist
 ```
 
-**Aggregated View:**
+---
+
+**Completed Endpoints** (11 total):
+
+✅ **CustomerProfile** (5 endpoints in knowledge_graph.py:3030-3163):
 ```
-GET    /api/v1/knowledge-graph/{account_id}/marketing-strategy
+POST   /{account_id}/customer-profiles
+GET    /{account_id}/customer-profiles
+GET    /{account_id}/customer-profiles/{node_id}
+PATCH  /{account_id}/customer-profiles/{node_id}
+DELETE /{account_id}/customer-profiles/{node_id}  # Cascades
+```
+
+✅ **ProblemAwarenessStrategy** (5 endpoints in knowledge_graph.py:3169-3302):
+```
+POST   /{account_id}/problem-awareness-strategies
+GET    /{account_id}/problem-awareness-strategies
+GET    /{account_id}/problem-awareness-strategies/{node_id}
+PATCH  /{account_id}/problem-awareness-strategies/{node_id}
+DELETE /{account_id}/problem-awareness-strategies/{node_id}
+```
+
+✅ **Aggregated View** (1 endpoint in knowledge_graph.py:3308-3340):
+```
+GET    /{account_id}/marketing-strategy
+```
+
+---
+
+**Remaining Endpoints to Add** (20 total):
+
+⏳ **BrandAwarenessStrategy** (5 endpoints) - **SERVICE METHODS READY**:
+```
+POST   /{account_id}/brand-awareness-strategies
+GET    /{account_id}/brand-awareness-strategies
+GET    /{account_id}/brand-awareness-strategies/{node_id}
+PATCH  /{account_id}/brand-awareness-strategies/{node_id}
+DELETE /{account_id}/brand-awareness-strategies/{node_id}
+```
+
+⏳ **ConsiderationStrategy** (5 endpoints) - **SERVICE METHODS READY**:
+```
+POST   /{account_id}/consideration-strategies
+GET    /{account_id}/consideration-strategies
+GET    /{account_id}/consideration-strategies/{node_id}
+PATCH  /{account_id}/consideration-strategies/{node_id}
+DELETE /{account_id}/consideration-strategies/{node_id}
+```
+
+⏳ **ConversionStrategy** (5 endpoints) - **SERVICE METHODS READY**:
+```
+POST   /{account_id}/conversion-strategies
+GET    /{account_id}/conversion-strategies
+GET    /{account_id}/conversion-strategies/{node_id}
+PATCH  /{account_id}/conversion-strategies/{node_id}
+DELETE /{account_id}/conversion-strategies/{node_id}
+```
+
+⏳ **LoyaltyStrategy** (5 endpoints) - **SERVICE METHODS READY**:
+```
+POST   /{account_id}/loyalty-strategies
+GET    /{account_id}/loyalty-strategies
+GET    /{account_id}/loyalty-strategies/{node_id}
+PATCH  /{account_id}/loyalty-strategies/{node_id}
+DELETE /{account_id}/loyalty-strategies/{node_id}
+```
+
+**How to Complete Remaining Endpoints:**
+
+The 4 remaining strategy types follow the EXACT same pattern. To add them:
+
+1. **Copy ProblemAwarenessStrategy endpoints** (knowledge_graph.py:3169-3302)
+2. **Find/Replace**:
+   - `problem-awareness-strategies` → `brand-awareness-strategies`
+   - `ProblemAwarenessStrategy` → `BrandAwarenessStrategy`
+   - `problem_awareness_strategy` → `brand_awareness_strategy`
+   - `problem awareness strategy` → `brand awareness strategy`
+3. **Repeat for**: ConsiderationStrategy, ConversionStrategy, LoyaltyStrategy
+4. **Verify**: Service method calls match (already implemented in graph_sync_service.py)
+
+**Example Pattern** (all 5 endpoints identical structure):
+```python
+# POST
+@router.post("/{account_id}/brand-awareness-strategies", response_model=BrandAwarenessStrategyResponse)
+async def create_brand_awareness_strategy(
+    account_id: str,
+    strategy: BrandAwarenessStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyResponse:
+    await check_graph_access(account_id, user, "edit")
+    try:
+        result = await service.create_brand_awareness_strategy(account_id, strategy, user.user_id)
+        return result
+    except ValidationException as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    # ... (identical exception handling)
 ```
 
 ---
