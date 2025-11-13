@@ -2015,7 +2015,9 @@ strategy_agent = create_strategy_agent_for_deployment()
 
 try:
     # Wrap with AdkApp for deployment
-    app = reasoning_engines.AdkApp(agent=strategy_agent, enable_tracing=True)
+    # Disable Cloud Tracing due to OpenTelemetry instrumentation bug with Pydantic models
+    # Weave tracing (via @weave.op decorators) is still fully functional
+    app = reasoning_engines.AdkApp(agent=strategy_agent, enable_tracing=False)
     logger.info("✅ Strategy Agent ready for deployment")
 except Exception as e:
     logger.error(f"Failed to create Strategy Agent app: {e}")

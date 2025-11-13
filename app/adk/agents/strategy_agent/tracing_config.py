@@ -19,6 +19,12 @@ import certifi
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
+# Configure OpenTelemetry to handle large Pydantic field descriptions
+# Set high limits to support detailed model schemas with extensive documentation
+# This prevents serialization errors when capturing complex Pydantic models in traces
+os.environ["OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT"] = "50000"  # 50KB per attribute
+os.environ["OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT"] = "50000"
+
 # Ensure WANDB environment variables are loaded
 if "WANDB_API_KEY" not in os.environ:
     # Try to load from .env file
