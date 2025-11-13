@@ -110,11 +110,42 @@ class IdealCustomerProfile(BaseModel):
     )
     narrative: str = Field(
         ...,
-        description=(
-            "A narrative synthesizing the persona's name, background, pain points, "
-            "core needs, buying motivations, and preferred communication channels. "
-            "This narrative is product-agnostic and describes the persona holistically."
-        ),
+        description="""A comprehensive narrative (2000-6000 characters) describing this customer persona.
+
+MUST include ALL of the following as bulleted lists or clearly structured sections:
+
+1. Demographics (as bulleted list):
+   - Age range
+   - Gender
+   - Education level
+   - Location/geography
+   - Household income/purchasing power
+   - Race/ethnicity/cultural background (if relevant)
+   - Other person-level details
+
+2. Psychographics (as bulleted list):
+   - Values (what they care about)
+   - Culture and lifestyle
+   - Activities and behaviors
+   - Interests
+   - Opinions and attitudes
+   - Hobbies
+
+3. Pain Points (as bulleted list):
+   - Specific problems that are PAINFUL for this persona
+   - Frustrations they experience
+
+4. Purchase Motivations:
+   - What drives them to make a purchase to solve these problems
+   - Goals they want to achieve
+
+5. Communication Channels (as bulleted list):
+   - Effective channels for reaching this persona
+   - Preferred methods of communication
+
+Use only complete, self-contained thoughts. Avoid references requiring external context.
+
+Target length: 2000-6000 characters. This narrative is product-agnostic and describes the persona holistically.""",
     )
     references: list[str] = Field(
         default=[],
