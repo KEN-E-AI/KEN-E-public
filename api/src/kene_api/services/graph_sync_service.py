@@ -2915,6 +2915,517 @@ class GraphSyncService:
             check_dependencies=False,
         )
 
+    # ==================== Brand Strategy Methods ====================
+
+    async def get_or_create_brand_identity(
+        self,
+        account_id: str,
+        user_id: str,
+        description: str | None = None,
+        references: list[str] | None = None,
+    ) -> str:
+        """Get existing BrandIdentity hub or create if missing.
+
+        BrandIdentity is a hub node - only one per account is allowed.
+        Auto-created when first brand child node is added.
+
+        Args:
+            account_id: Account identifier
+            user_id: User creating the hub
+            description: Optional description for new hub
+            references: Optional references for new hub
+
+        Returns:
+            BrandIdentity node_id
+        """
+        # Check if brand identity already exists
+        existing = await self.list_nodes(account_id, "BrandIdentity", skip=0, limit=1)
+
+        if existing:
+            return existing[0]["node_id"]
+
+        # Create new brand identity hub
+        node_data = {
+            "description": description or "Brand identity and guidelines hub",
+            "references": references or [],
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="BrandIdentity",
+            node_data=node_data,
+            parent_node_id=None,  # Links to Account
+            parent_node_type=None,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return result["node_id"]
+
+    async def get_brand_identity(self, account_id: str) -> dict[str, Any] | None:
+        """Get brand identity hub for an account.
+
+        Args:
+            account_id: Account identifier
+
+        Returns:
+            Brand identity node or None if not found
+        """
+        existing = await self.list_nodes(account_id, "BrandIdentity", skip=0, limit=1)
+        return existing[0] if existing else None
+
+    async def update_brand_identity(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # BrandIdentityUpdate
+        user_id: str,
+    ) -> Any:  # BrandIdentityResponse
+        """Update brand identity hub."""
+        from ..models.graph_models import BrandIdentityResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="BrandIdentity",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return BrandIdentityResponse(**result)
+
+    async def create_brand_personality(
+        self,
+        account_id: str,
+        personality: Any,  # BrandPersonalityCreate
+        user_id: str,
+    ) -> Any:  # BrandPersonalityResponse
+        """Create a brand personality node.
+
+        Auto-creates BrandIdentity hub if it doesn't exist.
+        """
+        from ..models.graph_models import BrandPersonalityResponse
+
+        # Ensure brand identity hub exists
+        brand_identity_node_id = await self.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        node_data = {
+            "description": personality.description.strip(),
+            "references": personality.references,
+            "brand_identity_node_id": brand_identity_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="BrandPersonality",
+            node_data=node_data,
+            parent_node_id=brand_identity_node_id,
+            parent_node_type="BrandIdentity",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return BrandPersonalityResponse(**result)
+
+    async def update_brand_personality(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # BrandPersonalityUpdate
+        user_id: str,
+    ) -> Any:  # BrandPersonalityResponse
+        """Update a brand personality."""
+        from ..models.graph_models import BrandPersonalityResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="BrandPersonality",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return BrandPersonalityResponse(**result)
+
+    async def delete_brand_personality(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a brand personality."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="BrandPersonality",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_voice_and_tone(
+        self,
+        account_id: str,
+        voice_tone: Any,  # VoiceAndToneCreate
+        user_id: str,
+    ) -> Any:  # VoiceAndToneResponse
+        """Create a voice and tone node."""
+        from ..models.graph_models import VoiceAndToneResponse
+
+        # Ensure brand identity hub exists
+        brand_identity_node_id = await self.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        node_data = {
+            "description": voice_tone.description.strip(),
+            "references": voice_tone.references,
+            "brand_identity_node_id": brand_identity_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="VoiceAndTone",
+            node_data=node_data,
+            parent_node_id=brand_identity_node_id,
+            parent_node_type="BrandIdentity",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return VoiceAndToneResponse(**result)
+
+    async def update_voice_and_tone(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # VoiceAndToneUpdate
+        user_id: str,
+    ) -> Any:  # VoiceAndToneResponse
+        """Update a voice and tone."""
+        from ..models.graph_models import VoiceAndToneResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="VoiceAndTone",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return VoiceAndToneResponse(**result)
+
+    async def delete_voice_and_tone(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a voice and tone."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="VoiceAndTone",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_color_palette(
+        self,
+        account_id: str,
+        palette: Any,  # ColorPaletteCreate
+        user_id: str,
+    ) -> Any:  # ColorPaletteResponse
+        """Create a color palette node."""
+        from ..models.graph_models import ColorPaletteResponse
+
+        # Ensure brand identity hub exists
+        brand_identity_node_id = await self.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        node_data = {
+            "description": palette.description.strip(),
+            "references": palette.references,
+            "brand_identity_node_id": brand_identity_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="ColorPalette",
+            node_data=node_data,
+            parent_node_id=brand_identity_node_id,
+            parent_node_type="BrandIdentity",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return ColorPaletteResponse(**result)
+
+    async def update_color_palette(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # ColorPaletteUpdate
+        user_id: str,
+    ) -> Any:  # ColorPaletteResponse
+        """Update a color palette."""
+        from ..models.graph_models import ColorPaletteResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ColorPalette",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return ColorPaletteResponse(**result)
+
+    async def delete_color_palette(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a color palette."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ColorPalette",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_typography(
+        self,
+        account_id: str,
+        typography: Any,  # TypographyCreate
+        user_id: str,
+    ) -> Any:  # TypographyResponse
+        """Create a typography node."""
+        from ..models.graph_models import TypographyResponse
+
+        # Ensure brand identity hub exists
+        brand_identity_node_id = await self.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        node_data = {
+            "description": typography.description.strip(),
+            "references": typography.references,
+            "brand_identity_node_id": brand_identity_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="Typography",
+            node_data=node_data,
+            parent_node_id=brand_identity_node_id,
+            parent_node_type="BrandIdentity",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return TypographyResponse(**result)
+
+    async def update_typography(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # TypographyUpdate
+        user_id: str,
+    ) -> Any:  # TypographyResponse
+        """Update a typography."""
+        from ..models.graph_models import TypographyResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Typography",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return TypographyResponse(**result)
+
+    async def delete_typography(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a typography."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Typography",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_image_style(
+        self,
+        account_id: str,
+        image_style: Any,  # ImageStyleCreate
+        user_id: str,
+    ) -> Any:  # ImageStyleResponse
+        """Create an image style node."""
+        from ..models.graph_models import ImageStyleResponse
+
+        # Ensure brand identity hub exists
+        brand_identity_node_id = await self.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        node_data = {
+            "description": image_style.description.strip(),
+            "references": image_style.references,
+            "brand_identity_node_id": brand_identity_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="ImageStyle",
+            node_data=node_data,
+            parent_node_id=brand_identity_node_id,
+            parent_node_type="BrandIdentity",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return ImageStyleResponse(**result)
+
+    async def update_image_style(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # ImageStyleUpdate
+        user_id: str,
+    ) -> Any:  # ImageStyleResponse
+        """Update an image style."""
+        from ..models.graph_models import ImageStyleResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ImageStyle",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return ImageStyleResponse(**result)
+
+    async def delete_image_style(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete an image style."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ImageStyle",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_mission_and_values(
+        self,
+        account_id: str,
+        mission_values: Any,  # MissionAndValuesCreate
+        user_id: str,
+    ) -> Any:  # MissionAndValuesResponse
+        """Create a mission and values node."""
+        from ..models.graph_models import MissionAndValuesResponse
+
+        # Ensure brand identity hub exists
+        brand_identity_node_id = await self.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        node_data = {
+            "description": mission_values.description.strip(),
+            "references": mission_values.references,
+            "brand_identity_node_id": brand_identity_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="MissionAndValues",
+            node_data=node_data,
+            parent_node_id=brand_identity_node_id,
+            parent_node_type="BrandIdentity",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return MissionAndValuesResponse(**result)
+
+    async def update_mission_and_values(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: Any,  # MissionAndValuesUpdate
+        user_id: str,
+    ) -> Any:  # MissionAndValuesResponse
+        """Update mission and values."""
+        from ..models.graph_models import MissionAndValuesResponse
+
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="MissionAndValues",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+        )
+
+        return MissionAndValuesResponse(**result)
+
+    async def delete_mission_and_values(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete mission and values."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="MissionAndValues",
+            user_id=user_id,
+            firestore_doc_type="brand_strategy",
+            check_dependencies=False,
+        )
+
     # ==================== GENERIC HELPER METHODS ====================
 
     def _generate_node_id(self, node_type: str, account_id: str) -> str:
@@ -3335,6 +3846,18 @@ class GraphSyncService:
             self._sync_marketing_node_to_doc(
                 doc, node_id, node_type, node_data, operation
             )
+        elif node_type in [
+            "BrandIdentity",
+            "BrandPersonality",
+            "VoiceAndTone",
+            "ColorPalette",
+            "Typography",
+            "ImageStyle",
+            "MissionAndValues",
+        ]:
+            self._sync_brand_node_to_doc(
+                doc, node_id, node_type, node_data, operation
+            )
         else:
             raise ValueError(f"Unsupported node type for Firestore sync: {node_type}")
 
@@ -3467,6 +3990,28 @@ class GraphSyncService:
         logger.info(
             f"Firestore sync stub (marketing): {operation} {node_type} {node_id}"
         )
+
+    def _sync_brand_node_to_doc(
+        self,
+        doc: dict[str, Any],
+        node_id: str,
+        node_type: str,
+        node_data: dict[str, Any],
+        operation: str,
+    ) -> None:
+        """Sync brand strategy node to Firestore document structure.
+
+        Args:
+            doc: Firestore document
+            node_id: Node identifier
+            node_type: Node type
+            node_data: Node data
+            operation: "create", "update", or "delete"
+        """
+        # Stub implementation - detailed sync logic would go here
+        # For now, we accept eventual consistency and focus on Neo4j as primary
+        # TODO: Implement full bidirectional sync when Firestore structure is finalized
+        logger.info(f"Firestore sync stub (brand): {operation} {node_type} {node_id}")
 
     def _convert_neo4j_value(self, value: Any) -> Any:
         """Convert Neo4j-specific types to Python-native types.
