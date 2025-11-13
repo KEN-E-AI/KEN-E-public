@@ -30,10 +30,10 @@ const Knowledge = () => {
 
         {/* Configuration Sections */}
         <div className="space-y-4">
-          {/* Account Overview Section */}
+          {/* Account Section */}
           {renderConfigurationSection(
             Building,
-            "Account Overview",
+            "Account",
             "Configure KEN-E's understanding of your business strategy, goals and history",
             "",
             () => navigate("/knowledge/account"),

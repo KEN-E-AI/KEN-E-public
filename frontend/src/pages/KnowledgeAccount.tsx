@@ -18,9 +18,8 @@ import {
   Pencil,
   Plus,
   Trash2,
-  Dumbbell,
 } from "lucide-react";
-import { StrengthsManagement } from "@/components/strengths/StrengthsManagement";
+import { SwotManagement } from "@/components/swot/SwotManagement";
 import {
   Sheet,
   SheetContent,
@@ -211,7 +210,7 @@ export default function KnowledgeAccount() {
   };
 
   return (
-    <Layout pageTitle="Account Knowledge" maxWidth={false}>
+    <Layout pageTitle="Account" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -291,16 +290,10 @@ export default function KnowledgeAccount() {
         {/* Company Keywords (Editable) */}
         <CompanyKeywordsConfiguration hasEditAccess={hasEditAccess} />
 
-        {/* Strengths & Opportunities */}
+        {/* SWOT Analysis */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Dumbbell className="h-5 w-5" />
-              Strengths & Opportunities
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <StrengthsManagement hasEditAccess={hasEditAccess} />
+          <CardContent className="pt-6">
+            <SwotManagement hasEditAccess={hasEditAccess} />
           </CardContent>
         </Card>
 
