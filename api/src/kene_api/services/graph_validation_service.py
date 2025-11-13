@@ -559,6 +559,95 @@ class GraphValidationService:
 
         return True, ""
 
+    # ==================== MARKETING STRATEGY VALIDATION ====================
+
+    async def validate_unique_customer_profile_name(
+        self,
+        account_id: str,
+        display_name: str,
+        exclude_node_id: str | None = None,
+    ) -> tuple[bool, str]:
+        """Validate customer profile display_name is unique within account (case-insensitive).
+
+        Args:
+            account_id: Account identifier
+            display_name: Display name to check
+            exclude_node_id: Optional node_id to exclude (for updates)
+
+        Returns:
+            (is_unique, error_message) tuple
+        """
+        query = """
+        MATCH (cp:CustomerProfile)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        WHERE toLower(cp.display_name) = toLower($display_name)
+        AND ($exclude_node_id IS NULL OR cp.node_id <> $exclude_node_id)
+        RETURN count(cp) as count
+        """
+        result = await self.neo4j.execute_query(
+            query,
+            {
+                "account_id": account_id,
+                "display_name": display_name,
+                "exclude_node_id": exclude_node_id,
+            },
+        )
+
+        count = result[0]["count"] if result else 0
+        if count > 0:
+            return (
+                False,
+                f"CustomerProfile with display name '{display_name}' already exists in this account",
+            )
+
+        return True, ""
+
+    async def validate_can_delete_customer_profile(
+        self, node_id: str
+    ) -> tuple[bool, str]:
+        """Validate a customer profile can be safely deleted.
+
+        Note: This returns informational message about cascade deletions.
+        Deletion is always allowed but user should be informed about cascading effects.
+
+        Args:
+            node_id: CustomerProfile node_id
+
+        Returns:
+            (can_delete, info_message) tuple
+        """
+        # Count linked strategy nodes (will be cascade deleted)
+        strategy_types = [
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]
+
+        total_strategies = 0
+        for strategy_type in strategy_types:
+            query = f"""
+            MATCH (cp:CustomerProfile {{node_id: $node_id}})-[]->(s:{strategy_type})
+            RETURN count(s) as count
+            """
+            result = await self.neo4j.execute_query(query, {"node_id": node_id})
+            total_strategies += result[0]["count"] if result else 0
+
+        # Count IS_MARKETED_TO relationships
+        query = """
+        MATCH (cp:CustomerProfile {node_id: $node_id})<-[:IS_MARKETED_TO]-(pc:ProductCategory)
+        RETURN count(pc) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        category_count = result[0]["count"] if result else 0
+
+        # Always allow deletion, but inform user about cascade
+        if total_strategies > 0 or category_count > 0:
+            info = f"Will cascade delete {total_strategies} strategy node(s) and {category_count} category link(s)"
+            logger.info(f"CustomerProfile {node_id} deletion: {info}")
+
+        return True, ""  # Always allow
+
 
 async def get_graph_validation_service(
     neo4j: Neo4jService,

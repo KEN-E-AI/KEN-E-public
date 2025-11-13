@@ -866,3 +866,297 @@ class CompetitiveStrategyResponse(BaseModel):
     substitute_products: list[SubstituteProductResponse]
     # Note: Risks and Opportunities created by competitive SWOT are shared with business strategy
     # They can be queried separately if needed
+
+
+# ==================== MARKETING STRATEGY MODELS ====================
+# Steps 4 & 5 Implementation
+
+
+class CustomerProfileCreate(BaseModel):
+    """Request model for creating a customer profile."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "display_name": "Marketing Mary",
+                    "narrative": "Marketing Mary is a 35-year-old marketing director at a mid-sized SaaS company. She struggles with attribution tracking across multiple channels and needs tools that integrate with her existing martech stack. She prefers learning through webinars and case studies.",
+                    "references": ["https://example.com/customer-research"],
+                }
+            ]
+        }
+    )
+
+    display_name: str = Field(
+        ...,
+        max_length=200,
+        description="Short, unique persona name (e.g., 'Marketing Mary')",
+    )
+    narrative: str = Field(
+        ...,
+        max_length=4000,
+        description="Full persona narrative including background, pain points, needs, and communication preferences",
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+
+
+class CustomerProfileUpdate(BaseModel):
+    """Request model for updating a customer profile."""
+
+    display_name: str | None = Field(None, max_length=200)
+    narrative: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class CustomerProfileResponse(NodeBase):
+    """Response model for customer profile."""
+
+    display_name: str
+    narrative: str
+    references: list[str]
+
+
+class CustomerProfileListResponse(BaseModel):
+    """Response model for list of customer profiles."""
+
+    profiles: list[CustomerProfileResponse]
+    total_count: int
+
+
+class ProblemAwarenessStrategyCreate(BaseModel):
+    """Request model for creating a problem awareness strategy."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Marketing Mary becomes aware of attribution problems through industry reports, LinkedIn discussions, and conversations with peers who struggle with multi-channel tracking. Target her through marketing automation blogs and webinars.",
+                    "references": ["https://example.com/research"],
+                    "customer_profile_node_id": "icp_abc123",
+                    "product_category_node_id": "productcat_xyz789",
+                }
+            ]
+        }
+    )
+
+    description: str = Field(
+        ...,
+        max_length=4000,
+        description="Strategy for making profile aware of the problem",
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+    customer_profile_node_id: str = Field(
+        ..., description="CustomerProfile this strategy applies to"
+    )
+    product_category_node_id: str = Field(
+        ..., description="ProductCategory this strategy applies to"
+    )
+
+
+class ProblemAwarenessStrategyUpdate(BaseModel):
+    """Request model for updating a problem awareness strategy."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class ProblemAwarenessStrategyResponse(NodeBase):
+    """Response model for problem awareness strategy."""
+
+    description: str
+    references: list[str]
+    customer_profile_node_id: str
+    product_category_node_id: str
+
+
+class ProblemAwarenessStrategyListResponse(BaseModel):
+    """Response model for list of problem awareness strategies."""
+
+    strategies: list[ProblemAwarenessStrategyResponse]
+    total_count: int
+
+
+class BrandAwarenessStrategyCreate(BaseModel):
+    """Request model for creating a brand awareness strategy."""
+
+    description: str = Field(
+        ...,
+        max_length=4000,
+        description="Strategy for making profile aware of the brand",
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+    customer_profile_node_id: str = Field(
+        ..., description="CustomerProfile this strategy applies to"
+    )
+    product_category_node_id: str = Field(
+        ..., description="ProductCategory this strategy applies to"
+    )
+
+
+class BrandAwarenessStrategyUpdate(BaseModel):
+    """Request model for updating a brand awareness strategy."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class BrandAwarenessStrategyResponse(NodeBase):
+    """Response model for brand awareness strategy."""
+
+    description: str
+    references: list[str]
+    customer_profile_node_id: str
+    product_category_node_id: str
+
+
+class BrandAwarenessStrategyListResponse(BaseModel):
+    """Response model for list of brand awareness strategies."""
+
+    strategies: list[BrandAwarenessStrategyResponse]
+    total_count: int
+
+
+class ConsiderationStrategyCreate(BaseModel):
+    """Request model for creating a consideration strategy."""
+
+    description: str = Field(
+        ...,
+        max_length=4000,
+        description="Strategy for persuading profile to consider our brand",
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+    customer_profile_node_id: str = Field(
+        ..., description="CustomerProfile this strategy applies to"
+    )
+    product_category_node_id: str = Field(
+        ..., description="ProductCategory this strategy applies to"
+    )
+
+
+class ConsiderationStrategyUpdate(BaseModel):
+    """Request model for updating a consideration strategy."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class ConsiderationStrategyResponse(NodeBase):
+    """Response model for consideration strategy."""
+
+    description: str
+    references: list[str]
+    customer_profile_node_id: str
+    product_category_node_id: str
+
+
+class ConsiderationStrategyListResponse(BaseModel):
+    """Response model for list of consideration strategies."""
+
+    strategies: list[ConsiderationStrategyResponse]
+    total_count: int
+
+
+class ConversionStrategyCreate(BaseModel):
+    """Request model for creating a conversion strategy."""
+
+    description: str = Field(
+        ...,
+        max_length=4000,
+        description="Strategy for converting profile to paying customer",
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+    customer_profile_node_id: str = Field(
+        ..., description="CustomerProfile this strategy applies to"
+    )
+    product_category_node_id: str = Field(
+        ..., description="ProductCategory this strategy applies to"
+    )
+
+
+class ConversionStrategyUpdate(BaseModel):
+    """Request model for updating a conversion strategy."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class ConversionStrategyResponse(NodeBase):
+    """Response model for conversion strategy."""
+
+    description: str
+    references: list[str]
+    customer_profile_node_id: str
+    product_category_node_id: str
+
+
+class ConversionStrategyListResponse(BaseModel):
+    """Response model for list of conversion strategies."""
+
+    strategies: list[ConversionStrategyResponse]
+    total_count: int
+
+
+class LoyaltyStrategyCreate(BaseModel):
+    """Request model for creating a loyalty strategy."""
+
+    description: str = Field(
+        ..., max_length=4000, description="Strategy for building loyalty and advocacy"
+    )
+    references: list[str] = Field(
+        default_factory=list, description="Source URLs or references"
+    )
+    customer_profile_node_id: str = Field(
+        ..., description="CustomerProfile this strategy applies to"
+    )
+    product_category_node_id: str = Field(
+        ..., description="ProductCategory this strategy applies to"
+    )
+
+
+class LoyaltyStrategyUpdate(BaseModel):
+    """Request model for updating a loyalty strategy."""
+
+    description: str | None = Field(None, max_length=4000)
+    references: list[str] | None = None
+
+
+class LoyaltyStrategyResponse(NodeBase):
+    """Response model for loyalty strategy."""
+
+    description: str
+    references: list[str]
+    customer_profile_node_id: str
+    product_category_node_id: str
+
+
+class LoyaltyStrategyListResponse(BaseModel):
+    """Response model for list of loyalty strategies."""
+
+    strategies: list[LoyaltyStrategyResponse]
+    total_count: int
+
+
+class MarketingStrategyResponse(BaseModel):
+    """Aggregated response for complete marketing strategy graph.
+
+    Returns all marketing nodes in a structured format for easy consumption by frontend.
+    This avoids making separate queries for each related node type.
+    """
+
+    account_id: str
+    customer_profiles: list[CustomerProfileResponse]
+    problem_awareness_strategies: list[ProblemAwarenessStrategyResponse]
+    brand_awareness_strategies: list[BrandAwarenessStrategyResponse]
+    consideration_strategies: list[ConsiderationStrategyResponse]
+    conversion_strategies: list[ConversionStrategyResponse]
+    loyalty_strategies: list[LoyaltyStrategyResponse]
