@@ -519,53 +519,102 @@ const AccountsManagement = ({
     });
   }, [accounts, user?.permissions?.accounts, isSuperAdmin, hasAdminAccess]);
 
-  // Check all accounts for their creation status on mount and when accounts change
+  // Check accounts for their creation status - only on mount, not on every change
   useEffect(() => {
+    let isMounted = true;
+    let intervalId: NodeJS.Timeout | null = null;
+    const knownCompletedAccounts = new Set<string>();
+
     const checkAccountStatuses = async () => {
-      if (!organizationAccounts || organizationAccounts.length === 0) return;
+      if (
+        !isMounted ||
+        !organizationAccounts ||
+        organizationAccounts.length === 0
+      )
+        return;
 
       const setupAccounts = new Set<string>();
 
-      // Check each account's creation status
-      for (const account of organizationAccounts) {
-        try {
-          const response = await api.get(
-            `/api/v1/accounts/${account.account_id}/creation-status`,
-          );
+      // Only check accounts that aren't known to be completed
+      const accountsToCheck = organizationAccounts.filter(
+        (acc) => !knownCompletedAccounts.has(acc.account_id),
+      );
 
-          if (
-            response.data &&
-            (response.data.status === "pending" ||
-              response.data.status === "processing")
-          ) {
-            console.log(
-              `[AccountsManagement] Account ${account.account_id} is still being set up`,
-            );
-            setupAccounts.add(account.account_id);
-          }
-        } catch (error) {
-          // Account might not have a creation status, which is fine
-          console.debug(
-            `[AccountsManagement] No creation status for account ${account.account_id}`,
-          );
-        }
+      if (accountsToCheck.length === 0) {
+        setAccountsInSetup(setupAccounts);
+        return;
       }
 
-      setAccountsInSetup(setupAccounts);
+      console.log(
+        `[AccountsManagement] Checking status of ${accountsToCheck.length} accounts (${knownCompletedAccounts.size} already completed)`,
+      );
+
+      // Limit concurrent checks to avoid overwhelming Neo4j connection pool
+      const CONCURRENT_LIMIT = 5;
+      const accountBatches = [];
+      for (let i = 0; i < accountsToCheck.length; i += CONCURRENT_LIMIT) {
+        accountBatches.push(accountsToCheck.slice(i, i + CONCURRENT_LIMIT));
+      }
+
+      // Process batches sequentially, accounts within batch concurrently
+      for (const batch of accountBatches) {
+        if (!isMounted) break;
+
+        await Promise.all(
+          batch.map(async (account) => {
+            try {
+              const response = await api.get(
+                `/api/v1/accounts/${account.account_id}/creation-status`,
+              );
+
+              if (!isMounted) return;
+
+              if (response.data) {
+                if (
+                  response.data.status === "pending" ||
+                  response.data.status === "processing"
+                ) {
+                  setupAccounts.add(account.account_id);
+                } else if (
+                  response.data.status === "completed" ||
+                  response.data.status === "failed"
+                ) {
+                  // Mark as completed so we don't check again
+                  knownCompletedAccounts.add(account.account_id);
+                }
+              }
+            } catch (error) {
+              // Account might not have a creation status - assume it's complete
+              if (isMounted) {
+                knownCompletedAccounts.add(account.account_id);
+              }
+            }
+          }),
+        );
+      }
+
+      if (isMounted) {
+        setAccountsInSetup(setupAccounts);
+      }
     };
 
-    // Check immediately
+    // Check immediately on mount
     checkAccountStatuses();
 
-    // Check periodically while there are accounts in setup
-    const intervalId = setInterval(() => {
+    // Poll every 60 seconds (increased from 30s) while there are accounts in setup
+    intervalId = setInterval(() => {
       if (accountsInSetup.size > 0) {
         checkAccountStatuses();
       }
-    }, 30000); // Check every 30 seconds
+    }, 60000); // Check every 60 seconds
 
-    return () => clearInterval(intervalId);
-  }, [organizationAccounts.length, accountsInSetup.size]); // Re-run when accounts change
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, []); // Only run on mount, not when accounts change
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
@@ -2322,7 +2371,14 @@ const AccountsManagement = ({
       {/* Account Creation Wizard */}
       <AccountCreationWizard
         isOpen={isCreateAccountModalOpen}
-        onClose={() => setIsCreateAccountModalOpen(false)}
+        onClose={() => {
+          setIsCreateAccountModalOpen(false);
+          // Clean up operation state when wizard closes
+          if (isOperationInProgress) {
+            endOperation();
+          }
+          setCreatingAccountId(null);
+        }}
         onComplete={handleWizardComplete}
       />
 

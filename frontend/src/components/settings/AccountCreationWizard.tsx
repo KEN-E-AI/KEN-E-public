@@ -82,7 +82,12 @@ export const AccountCreationWizard = ({
     template_id: "",
     marketing_channels: [],
     product_integrations: [],
-    enabled_strategies: ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"],
+    enabled_strategies: [
+      "business_strategy",
+      "competitive_strategy",
+      "marketing_strategy",
+      "brand_guidelines",
+    ],
     override_product_categories: [],
     objectives: [],
     kpis: [],
@@ -107,7 +112,12 @@ export const AccountCreationWizard = ({
         template_id: "",
         marketing_channels: [],
         product_integrations: [],
-        enabled_strategies: ["business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"],
+        enabled_strategies: [
+          "business_strategy",
+          "competitive_strategy",
+          "marketing_strategy",
+          "brand_guidelines",
+        ],
         override_product_categories: [],
         objectives: [],
         kpis: [],
@@ -336,7 +346,9 @@ export const AccountCreationWizard = ({
               {currentStep === 4 && (
                 <WizardStep4StrategySelection
                   enabled_strategies={formData.enabled_strategies}
-                  override_product_categories={formData.override_product_categories}
+                  override_product_categories={
+                    formData.override_product_categories
+                  }
                   onUpdate={(data) => setFormData({ ...formData, ...data })}
                 />
               )}

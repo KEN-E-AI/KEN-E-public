@@ -143,7 +143,260 @@ async def get_organizations(
             ) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching organizations: {e!s}"
+        ) from e
+
+
+@router.get("/batch", response_model=dict[str, Any])
+async def get_organizations_batch(
+    ids: str,
+    include_accounts: bool = True,
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+) -> dict[str, Any]:
+    """
+    Get multiple organizations with their accounts in a single request.
+
+    **Parameters:**
+    - `ids` (query): Comma-separated list of organization IDs
+    - `include_accounts` (query): Whether to include accounts (default: true)
+
+    **Returns:**
+    - Dictionary mapping organization_id to organization data with accounts
+
+    **Example:**
+    ```
+    GET /api/v1/organizations/batch?ids=org1,org2,org3&include_accounts=true
+    ```
+
+    **Note:** Only returns organizations the user has access to.
+    """
+    try:
+        # Parse organization IDs
+        org_ids = [oid.strip() for oid in ids.split(",") if oid.strip()]
+
+        if not org_ids:
+            return {}
+
+        # Filter to only organizations user has access to
+        accessible_org_ids = [
+            oid
+            for oid in org_ids
+            if user.is_super_admin or user.has_organization_access(oid)
+        ]
+
+        if not accessible_org_ids:
+            return {}
+
+        # Check Neo4j connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # Build query to fetch organizations with optional accounts
+        if include_accounts:
+            query = """
+            MATCH (org:Organization)
+            WHERE org.organization_id IN $org_ids
+            OPTIONAL MATCH (org)<-[:BELONGS_TO]-(acc:Account)
+            WITH org, collect(acc) as accounts
+            RETURN org, accounts
+            """
+        else:
+            query = """
+            MATCH (org:Organization)
+            WHERE org.organization_id IN $org_ids
+            RETURN org, [] as accounts
+            """
+
+        result = await db.execute_query(query, {"org_ids": accessible_org_ids})
+
+        # Build response dictionary
+        response = {}
+        for record in result:
+            org_data = record.get("org")
+            accounts_data = record.get("accounts", [])
+
+            if org_data:
+                organization = _create_organization_from_record(org_data)
+                org_dict = organization.model_dump()
+
+                # Add accounts if requested
+                if include_accounts and accounts_data:
+                    from .accounts import Account as AccountModel
+
+                    accounts = []
+                    for acc_data in accounts_data:
+                        if acc_data:  # Skip None values
+                            account = AccountModel(
+                                account_id=acc_data.get("account_id"),
+                                account_name=acc_data.get("account_name"),
+                                organization_id=acc_data.get("organization_id"),
+                                industry=acc_data.get("industry"),
+                                status=acc_data.get("status"),
+                                websites=acc_data.get("websites", []),
+                                timezone=acc_data.get("timezone"),
+                                data_region=acc_data.get("data_region", ""),
+                                region=acc_data.get("region", []),
+                                estimated_annual_ad_budget=acc_data.get(
+                                    "estimated_annual_ad_budget"
+                                ),
+                                marketing_channels=acc_data.get(
+                                    "marketing_channels", []
+                                ),
+                                product_integrations=acc_data.get(
+                                    "product_integrations", []
+                                ),
+                            )
+                            accounts.append(account.model_dump())
+                    org_dict["accounts"] = accounts
+                else:
+                    org_dict["accounts"] = []
+
+                response[org_data.get("organization_id")] = org_dict
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "Neo4j" in str(e) or "connect" in str(e).lower():
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching organizations batch: {e!s}"
+        ) from e
+
+
+@router.get("/{organization_id}/children", response_model=dict[str, Any])
+async def get_child_organizations(
+    organization_id: str,
+    include_accounts: bool = True,
+    user: UserContext = Depends(get_current_user_context),
+    db: Neo4jService = Depends(get_neo4j_service),
+) -> dict[str, Any]:
+    """
+    Get child organizations with their accounts.
+
+    **Parameters:**
+    - `organization_id` (path): The parent organization ID
+    - `include_accounts` (query): Whether to include accounts (default: true)
+
+    **Returns:**
+    - List of child organizations with their accounts
+
+    **Example:**
+    ```
+    GET /api/v1/organizations/parent-org-id/children?include_accounts=true
+    ```
+
+    **Note:** User must have access to the parent organization.
+    """
+    # Check if user has access to this organization
+    if not user.has_organization_access(organization_id):
+        raise HTTPException(
+            status_code=403, detail=f"Access denied to organization {organization_id}"
         )
+
+    try:
+        # Check Neo4j connectivity
+        is_healthy = await db.health_check()
+        if not is_healthy:
+            raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
+
+        # First get the parent organization to find its child_organizations list
+        parent_org = await _get_organization_by_id(organization_id, db)
+
+        if not parent_org.child_organizations:
+            return {"children": []}
+
+        # Filter child orgs user has access to
+        accessible_child_ids = [
+            cid
+            for cid in parent_org.child_organizations
+            if user.is_super_admin or user.has_organization_access(cid)
+        ]
+
+        if not accessible_child_ids:
+            return {"children": []}
+
+        # Build query to fetch child organizations with optional accounts
+        if include_accounts:
+            query = """
+            MATCH (org:Organization)
+            WHERE org.organization_id IN $child_ids
+            OPTIONAL MATCH (org)<-[:BELONGS_TO]-(acc:Account)
+            WITH org, collect(acc) as accounts
+            RETURN org, accounts
+            ORDER BY org.organization_name
+            """
+        else:
+            query = """
+            MATCH (org:Organization)
+            WHERE org.organization_id IN $child_ids
+            RETURN org, [] as accounts
+            ORDER BY org.organization_name
+            """
+
+        result = await db.execute_query(query, {"child_ids": accessible_child_ids})
+
+        # Build response list
+        children = []
+        for record in result:
+            org_data = record.get("org")
+            accounts_data = record.get("accounts", [])
+
+            if org_data:
+                organization = _create_organization_from_record(org_data)
+                org_dict = organization.model_dump()
+
+                # Add accounts if requested
+                if include_accounts and accounts_data:
+                    from .accounts import Account as AccountModel
+
+                    accounts = []
+                    for acc_data in accounts_data:
+                        if acc_data:  # Skip None values
+                            account = AccountModel(
+                                account_id=acc_data.get("account_id"),
+                                account_name=acc_data.get("account_name"),
+                                organization_id=acc_data.get("organization_id"),
+                                industry=acc_data.get("industry"),
+                                status=acc_data.get("status"),
+                                websites=acc_data.get("websites", []),
+                                timezone=acc_data.get("timezone"),
+                                data_region=acc_data.get("data_region", ""),
+                                region=acc_data.get("region", []),
+                                estimated_annual_ad_budget=acc_data.get(
+                                    "estimated_annual_ad_budget"
+                                ),
+                                marketing_channels=acc_data.get(
+                                    "marketing_channels", []
+                                ),
+                                product_integrations=acc_data.get(
+                                    "product_integrations", []
+                                ),
+                            )
+                            accounts.append(account.model_dump())
+                    org_dict["accounts"] = accounts
+                else:
+                    org_dict["accounts"] = []
+
+                children.append(org_dict)
+
+        return {"children": children}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        if "Neo4j" in str(e) or "connect" in str(e).lower():
+            raise HTTPException(
+                status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE
+            ) from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching child organizations: {e!s}",
+        ) from e
 
 
 @router.get("/{organization_id}", response_model=Organization)
@@ -380,7 +633,7 @@ async def create_organization(
             raise HTTPException(
                 status_code=500,
                 detail="Failed to complete organization setup due to permission system error.",
-            )
+            ) from e
 
         # Fetch the created organization
         return await _get_organization_by_id(organization_id, db)
@@ -394,7 +647,7 @@ async def create_organization(
             ) from e
         raise HTTPException(
             status_code=500, detail=f"Error creating organization: {e!s}"
-        )
+        ) from e
 
 
 @router.put("/{organization_id}", response_model=Organization)
@@ -511,7 +764,7 @@ async def update_organization(
             ) from e
         raise HTTPException(
             status_code=500, detail=f"Error updating organization: {e!s}"
-        )
+        ) from e
 
 
 async def check_user_organization_permission(
@@ -558,7 +811,9 @@ async def check_user_organization_permission(
         raise
     except Exception as e:
         logger.error(f"Error checking user permissions: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to verify user permissions")
+        raise HTTPException(
+            status_code=500, detail="Failed to verify user permissions"
+        ) from e
 
 
 async def validate_plan_change(
@@ -769,7 +1024,7 @@ async def change_organization_subscription(
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred while changing the subscription",
-        )
+        ) from e
 
 
 async def get_organization_team(
@@ -1105,7 +1360,7 @@ async def delete_organization(
     ```
     DELETE /api/v1/organizations/healthway
     ```
-    
+
     **Note:** User must have admin permissions for the organization.
     """
     try:
@@ -1175,7 +1430,7 @@ async def delete_organization(
             ) from e
         raise HTTPException(
             status_code=500, detail=f"Error deleting organization: {e!s}"
-        )
+        ) from e
 
 
 async def _check_organization_exists(db: Neo4jService, organization_id: str) -> bool:
@@ -1239,7 +1494,7 @@ async def _get_organization_by_id(
             ) from e
         raise HTTPException(
             status_code=500, detail=f"Error fetching organization: {e!s}"
-        )
+        ) from e
 
 
 async def remove_organization_from_all_users(
