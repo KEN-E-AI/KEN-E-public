@@ -896,3 +896,145 @@ class TestCompetitiveEnvironmentHubBehavior:
         await authenticated_client.delete(
             f"{base_url}/competitors/{competitor_node_id}"
         )
+
+
+class TestCompetitorLimits:
+    """Integration tests for competitor resource limits."""
+
+    @pytest.mark.asyncio
+    async def test_create_competitor_enforces_account_limit(self, authenticated_client):
+        """Test that creating 6th competitor fails with clear error."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 5 competitors (the maximum)
+        competitor_ids = []
+        for i in range(5):
+            response = await authenticated_client.post(
+                f"{base_url}/competitors",
+                json={
+                    "display_name": f"Test Competitor {i + 1}",
+                    "description": f"Competitor description {i + 1}",
+                    "references": [],
+                },
+            )
+            assert response.status_code == 200
+            competitor_ids.append(response.json()["node_id"])
+
+        # Attempt to create 6th competitor should fail
+        response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "Test Competitor 6",
+                "description": "This should fail due to limit",
+                "references": [],
+            },
+        )
+        assert response.status_code == 400
+        error_detail = response.json()["detail"]
+        assert "Maximum of 5 competitors" in error_detail
+        assert "delete an existing competitor" in error_detail.lower()
+
+        # Verify count is still 5
+        list_response = await authenticated_client.get(f"{base_url}/competitors")
+        assert list_response.status_code == 200
+        assert list_response.json()["total_count"] == 5
+
+        # Cleanup
+        for competitor_id in competitor_ids:
+            await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+    @pytest.mark.asyncio
+    async def test_create_competitor_tactic_enforces_per_competitor_limit(
+        self, authenticated_client
+    ):
+        """Test that creating 6th tactic for same competitor fails."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create competitor
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "Tactic Limit Test Competitor",
+                "description": "Testing tactic limits",
+                "references": [],
+            },
+        )
+        assert comp_response.status_code == 200
+        competitor_id = comp_response.json()["node_id"]
+
+        # Create 5 tactics (the maximum)
+        tactic_ids = []
+        for i in range(5):
+            response = await authenticated_client.post(
+                f"{base_url}/competitor-tactics",
+                json={
+                    "display_name": f"Tactic {i + 1}",
+                    "description": f"Tactic description {i + 1}",
+                    "references": [],
+                    "competitor_node_id": competitor_id,
+                },
+            )
+            assert response.status_code == 200
+            tactic_ids.append(response.json()["node_id"])
+
+        # Attempt to create 6th tactic should fail
+        response = await authenticated_client.post(
+            f"{base_url}/competitor-tactics",
+            json={
+                "display_name": "Tactic 6",
+                "description": "This should fail due to limit",
+                "references": [],
+                "competitor_node_id": competitor_id,
+            },
+        )
+        assert response.status_code == 400
+        assert "Maximum of 5 tactics" in response.json()["detail"]
+
+        # Cleanup
+        for tactic_id in tactic_ids:
+            await authenticated_client.delete(
+                f"{base_url}/competitor-tactics/{tactic_id}"
+            )
+        await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+    @pytest.mark.asyncio
+    async def test_delete_competitor_frees_up_account_limit(self, authenticated_client):
+        """Test that deleting a competitor allows creating a new one."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 5 competitors (the maximum)
+        competitor_ids = []
+        for i in range(5):
+            response = await authenticated_client.post(
+                f"{base_url}/competitors",
+                json={
+                    "display_name": f"Delete Test Competitor {i + 1}",
+                    "description": f"Competitor description {i + 1}",
+                    "references": [],
+                },
+            )
+            assert response.status_code == 200
+            competitor_ids.append(response.json()["node_id"])
+
+        # Delete one competitor
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_ids[0]}"
+        )
+        assert delete_response.status_code == 200
+
+        # Now should be able to create a new competitor
+        response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "New Competitor After Delete",
+                "description": "This should succeed",
+                "references": [],
+            },
+        )
+        assert response.status_code == 200
+        new_competitor_id = response.json()["node_id"]
+
+        # Cleanup
+        await authenticated_client.delete(f"{base_url}/competitors/{new_competitor_id}")
+        for competitor_id in competitor_ids[1:]:  # Skip the already deleted one
+            await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")

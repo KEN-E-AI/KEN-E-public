@@ -1865,6 +1865,17 @@ async def create_competitor(
 
     Requires edit permission for the account.
     Auto-creates CompetitiveEnvironment hub if it doesn't exist.
+
+    **Limitations:**
+    - Maximum 5 competitors per account
+    - display_name must be unique within account
+    - All references must be valid URLs
+
+    **Returns:**
+    - 200 OK: Competitor created successfully
+    - 400 Bad Request: Validation failed or limit exceeded
+    - 403 Forbidden: Insufficient permissions
+    - 404 Not Found: Account not found
     """
     await check_graph_access(account_id, user, "edit")
 
@@ -2056,6 +2067,10 @@ async def create_competitor_tactic(
     """Create a new competitor tactic.
 
     Requires edit permission for the account.
+
+    **Limitations:**
+    - Maximum 5 tactics per competitor
+    - Requires valid competitor_node_id
     """
     await check_graph_access(account_id, user, "edit")
 
@@ -2253,6 +2268,10 @@ async def create_competitor_strength(
     """Create a new competitor strength.
 
     Requires edit permission for the account.
+
+    **Limitations:**
+    - Maximum 5 strengths per competitor
+    - Requires valid competitor_node_id
     """
     await check_graph_access(account_id, user, "edit")
 
@@ -2457,6 +2476,10 @@ async def create_competitor_weakness(
     """Create a new competitor weakness.
 
     Requires edit permission for the account.
+
+    **Limitations:**
+    - Maximum 5 weaknesses per competitor
+    - Requires valid competitor_node_id
     """
     await check_graph_access(account_id, user, "edit")
 
@@ -2661,6 +2684,10 @@ async def create_substitute_product(
     """Create a new substitute product.
 
     Requires edit permission for the account.
+
+    **Limitations:**
+    - Maximum 10 substitute products per competitor
+    - Requires valid competitor_node_id
     """
     await check_graph_access(account_id, user, "edit")
 
