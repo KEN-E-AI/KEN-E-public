@@ -20,6 +20,7 @@ from ..exceptions import (
 from ..models.graph_models import (
     BusinessStrategyResponse,
     CompetitiveEnvironmentResponse,
+    CompetitiveStrategyResponse,
     CompetitiveEnvironmentUpdate,
     CompetitorCreate,
     CompetitorListResponse,
@@ -62,8 +63,10 @@ from ..models.graph_models import (
     StrengthListResponse,
     StrengthResponse,
     StrengthUpdate,
+    SubstituteProductCreate,
     SubstituteProductListResponse,
     SubstituteProductResponse,
+    SubstituteProductUpdate,
     ValuePropositionCreate,
     ValuePropositionListResponse,
     ValuePropositionResponse,
