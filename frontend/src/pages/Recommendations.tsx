@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Layout from "@/components/layout/Layout";
 
-const Customers = () => {
+const Recommendations = () => {
   const [dateRange, setDateRange] = useState({
     from: new Date(2025, 0, 1),
     to: new Date(2025, 0, 31),
@@ -16,8 +16,8 @@ const Customers = () => {
 
   return (
     <Layout
-      pageTitle="Customers"
-      selectedTab="Customers"
+      pageTitle="Recommendations"
+      selectedTab="Recommendations"
       dateRange={dateRange}
       setDateRange={setDateRange}
       comparisonDateRange={comparisonDateRange}
@@ -26,11 +26,12 @@ const Customers = () => {
       <div className="space-y-6">
         <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
           <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
-            Customers Overview
+            Recommendations Overview
           </h2>
           <p className="text-dashboard-gray-600">
-            Analyze customer behavior, segment audiences, and track customer
-            lifetime value and engagement metrics.
+            View AI-powered recommendations to optimize your marketing
+            performance, improve campaign effectiveness, and maximize ROI across
+            all channels.
           </p>
         </div>
       </div>
@@ -38,4 +39,4 @@ const Customers = () => {
   );
 };
 
-export default Customers;
+export default Recommendations;

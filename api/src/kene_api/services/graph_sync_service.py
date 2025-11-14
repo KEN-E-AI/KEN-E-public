@@ -440,6 +440,7 @@ class GraphSyncService:
         account_id: str,
         node_type: str,
         parent_node_id: str | None = None,
+        parent_node_type: str | None = None,
         skip: int = 0,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -449,6 +450,7 @@ class GraphSyncService:
             account_id: Account identifier
             node_type: Node type label
             parent_node_id: Optional filter by parent relationship
+            parent_node_type: Optional parent node type (required if parent_node_id is provided)
             skip: Number of nodes to skip (default: 0)
             limit: Maximum number of nodes to return (default: None = all)
 
@@ -463,12 +465,33 @@ class GraphSyncService:
 
         # Build base query
         if parent_node_id:
-            # Query with parent filter - match relationship in both directions
+            # Get relationship configuration for this node type and parent type
+            # If parent_node_type is not provided, match any relationship type (for backwards compatibility)
+            if parent_node_type:
+                relationship_config = self._get_relationship_config(
+                    node_type, parent_node_type
+                )
+                relationship_type = (
+                    relationship_config["from_parent"]
+                    if relationship_config
+                    else "HAS_VALUE_PROPOSITION"
+                )
+                relationship_pattern = f"-[:{relationship_type}]->"
+            else:
+                # Match any relationship type (for ValuePropositions with unknown parent type)
+                relationship_pattern = "-->"
+
+            # Query with parent filter - match relationship based on node types
+            # Include parent information for nodes that need it
+            # Special handling for Account parent nodes which use account_id instead of node_id
             base_query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
-            MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
-            WHERE (node)-[:BELONGS_TO]->(acc)
-            RETURN node, acc.account_id as account_id
+            MATCH (parent){relationship_pattern}(node:{node_type})
+            WHERE (parent.node_id = $parent_node_id OR parent.account_id = $parent_node_id)
+              AND (node)-[:BELONGS_TO]->(acc)
+            RETURN DISTINCT node, acc.account_id as account_id,
+                   COALESCE(parent.node_id, parent.account_id) as parent_node_id,
+                   labels(parent)[0] as parent_node_type
             ORDER BY node.display_name, node.product_name, node.name
             """
         else:
@@ -494,13 +517,21 @@ class GraphSyncService:
 
         result = await self.neo4j.execute_query(query, params)
 
-        return [
-            {
+        # Build result with parent information if available
+        nodes = []
+        for record in result:
+            node_dict = {
                 **self._neo4j_node_to_dict(record["node"]),
                 "account_id": record["account_id"],
             }
-            for record in result
-        ]
+            # Add parent information if it exists in the query result
+            if "parent_node_id" in record and record["parent_node_id"]:
+                node_dict["parent_node_id"] = record["parent_node_id"]
+            if "parent_node_type" in record and record["parent_node_type"]:
+                node_dict["parent_node_type"] = record["parent_node_type"]
+            nodes.append(node_dict)
+
+        return nodes
 
     async def get_node(
         self,
@@ -547,6 +578,7 @@ class GraphSyncService:
         account_id: str,
         node_type: str,
         parent_node_id: str | None = None,
+        parent_node_type: str | None = None,
     ) -> int:
         """Get total count of nodes for accurate pagination.
 
@@ -557,6 +589,7 @@ class GraphSyncService:
             account_id: Account identifier
             node_type: Node type label
             parent_node_id: Optional filter by parent relationship
+            parent_node_type: Optional parent node type (required if parent_node_id is provided)
 
         Returns:
             Total count of matching nodes in database
@@ -569,11 +602,29 @@ class GraphSyncService:
 
         # Build count query based on whether parent filter is used
         if parent_node_id:
+            # Get relationship configuration for this node type and parent type
+            # If parent_node_type is not provided, match any relationship type (for backwards compatibility)
+            if parent_node_type:
+                relationship_config = self._get_relationship_config(
+                    node_type, parent_node_type
+                )
+                relationship_type = (
+                    relationship_config["from_parent"]
+                    if relationship_config
+                    else "HAS_VALUE_PROPOSITION"
+                )
+                relationship_pattern = f"-[:{relationship_type}]->"
+            else:
+                # Match any relationship type (for ValuePropositions with unknown parent type)
+                relationship_pattern = "-->"
+
+            # Special handling for Account parent nodes which use account_id instead of node_id
             query = f"""
             MATCH (acc:Account {{account_id: $account_id}})
-            MATCH (parent {{node_id: $parent_node_id}})-[r]-(node:{node_type})
-            WHERE (node)-[:BELONGS_TO]->(acc)
-            RETURN count(node) as total
+            MATCH (parent){relationship_pattern}(node:{node_type})
+            WHERE (parent.node_id = $parent_node_id OR parent.account_id = $parent_node_id)
+              AND (node)-[:BELONGS_TO]->(acc)
+            RETURN count(DISTINCT node) as total
             """
             params = {"account_id": account_id, "parent_node_id": parent_node_id}
         else:
@@ -685,23 +736,53 @@ class GraphSyncService:
         node_id: str,
         user_id: str,
     ) -> None:
-        """Delete a product category.
+        """Delete a product category and cascade delete its products and value propositions.
 
         Args:
             account_id: Account identifier
             node_id: Category node_id
             user_id: User performing deletion
-
-        Raises:
-            ValueError: If category has dependent products
         """
+        # First, get all products in this category
+        prod_query = """
+        MATCH (cat:ProductCategory {node_id: $node_id})-[:INCLUDES_PRODUCT]->(prod:Product)
+        RETURN prod.node_id as prod_node_id
+        """
+        prod_results = await self.neo4j.execute_query(prod_query, {"node_id": node_id})
+
+        # Cascade delete each product (which will in turn delete their VPs)
+        for record in prod_results:
+            prod_node_id = record["prod_node_id"]
+            logger.info(
+                f"Cascade deleting product {prod_node_id} from category {node_id}"
+            )
+            await self.delete_product(account_id, prod_node_id, user_id)
+
+        # Delete value propositions directly linked to the category
+        cat_vp_query = """
+        MATCH (cat:ProductCategory {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN vp.node_id as vp_node_id
+        """
+        cat_vp_results = await self.neo4j.execute_query(
+            cat_vp_query, {"node_id": node_id}
+        )
+
+        # Delete each category-level value proposition
+        for record in cat_vp_results:
+            vp_node_id = record["vp_node_id"]
+            logger.info(
+                f"Cascade deleting value proposition {vp_node_id} from category {node_id}"
+            )
+            await self.delete_value_proposition(account_id, vp_node_id, user_id)
+
+        # Now delete the category itself (no dependency check needed since we cleaned up)
         await self.delete_node(
             account_id=account_id,
             node_id=node_id,
             node_type="ProductCategory",
             user_id=user_id,
             firestore_doc_type="business_strategy",
-            check_dependencies=True,
+            check_dependencies=False,
         )
 
     async def create_product(
@@ -813,6 +894,17 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
+        # Fetch category_node_id from relationship
+        query = """
+        MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p:Product {node_id: $node_id})
+        RETURN cat.node_id as category_node_id
+        """
+
+        category_result = await self.neo4j.execute_query(query, {"node_id": node_id})
+
+        if category_result and len(category_result) > 0:
+            result["category_node_id"] = category_result[0]["category_node_id"]
+
         return ProductResponse(**result)
 
     async def delete_product(
@@ -821,24 +913,123 @@ class GraphSyncService:
         node_id: str,
         user_id: str,
     ) -> None:
-        """Delete a product.
+        """Delete a product and cascade delete its value propositions.
 
         Args:
             account_id: Account identifier
             node_id: Product node_id
             user_id: User performing deletion
-
-        Raises:
-            ValueError: If product has dependent value propositions
         """
+        # First, cascade delete all value propositions linked to this product
+        vp_query = """
+        MATCH (prod:Product {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN vp.node_id as vp_node_id
+        """
+        vp_results = await self.neo4j.execute_query(vp_query, {"node_id": node_id})
+
+        # Delete each value proposition
+        for record in vp_results:
+            vp_node_id = record["vp_node_id"]
+            logger.info(
+                f"Cascade deleting value proposition {vp_node_id} from product {node_id}"
+            )
+            await self.delete_value_proposition(account_id, vp_node_id, user_id)
+
+        # Now delete the product itself (no dependency check needed since we cleaned up VPs)
         await self.delete_node(
             account_id=account_id,
             node_id=node_id,
             node_type="Product",
             user_id=user_id,
             firestore_doc_type="business_strategy",
-            check_dependencies=True,
+            check_dependencies=False,
         )
+
+    async def list_products_with_categories(
+        self,
+        account_id: str,
+        category_node_id: str | None = None,
+        skip: int = 0,
+        limit: int | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List products with their category information in a single query.
+
+        Optimized to avoid N+1 query problem by using OPTIONAL MATCH to fetch
+        category_node_id for all products in one database round-trip.
+
+        Args:
+            account_id: Account identifier
+            category_node_id: Optional filter by specific category
+            skip: Number of products to skip (default: 0)
+            limit: Maximum number of products to return (default: None = all)
+
+        Returns:
+            Tuple of (products_list, total_count)
+            Each product dict includes category_node_id from relationship
+
+        Raises:
+            ValidationException: If validation fails
+        """
+        if category_node_id:
+            # Query products filtered by specific category
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
+            WHERE (p)-[:BELONGS_TO]->(acc)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            count_query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
+            WHERE (p)-[:BELONGS_TO]->(acc)
+            RETURN count(p) as total
+            """
+            count_params = {
+                "account_id": account_id,
+                "category_node_id": category_node_id,
+            }
+        else:
+            # Query ALL products with OPTIONAL MATCH for category (avoids N+1)
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (p:Product)-[:BELONGS_TO]->(acc)
+            OPTIONAL MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            count_query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (p:Product)-[:BELONGS_TO]->(acc)
+            RETURN count(p) as total
+            """
+            count_params = {"account_id": account_id}
+
+        # Add pagination if limit is specified
+        if limit is not None:
+            query += " SKIP $skip LIMIT $limit"
+            params = {**count_params, "skip": skip, "limit": limit}
+        else:
+            params = count_params
+
+        # Execute count query
+        count_result = await self.neo4j.execute_query(count_query, count_params)
+        total_count = count_result[0]["total"] if count_result else 0
+
+        # Execute main query
+        result = await self.neo4j.execute_query(query, params)
+
+        # Build products list with category information
+        products = []
+        for record in result:
+            product_dict = {
+                **self._neo4j_node_to_dict(record["node"]),
+                "account_id": record["account_id"],
+                "category_node_id": record.get("category_node_id", ""),
+            }
+            products.append(product_dict)
+
+        return products, total_count
 
     async def create_value_proposition(
         self,
@@ -1312,6 +1503,18 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
+        # Fetch the parent strength relationship
+        strength_query = """
+        MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
+        RETURN s.node_id as strength_node_id
+        LIMIT 1
+        """
+        strength_result = await self.neo4j.execute_query(
+            strength_query, {"node_id": node_id}
+        )
+        if strength_result and strength_result[0]:
+            result["strength_node_id"] = strength_result[0]["strength_node_id"]
+
         return OpportunityResponse(**result)
 
     async def delete_opportunity(
@@ -1433,6 +1636,18 @@ class GraphSyncService:
             user_id=user_id,
             firestore_doc_type="business_strategy",
         )
+
+        # Fetch the parent weakness relationship
+        weakness_query = """
+        MATCH (w:Weakness)-[:CREATES]->(r:Risk {node_id: $node_id})
+        RETURN w.node_id as weakness_node_id
+        LIMIT 1
+        """
+        weakness_result = await self.neo4j.execute_query(
+            weakness_query, {"node_id": node_id}
+        )
+        if weakness_result and weakness_result[0]:
+            result["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
 
         return RiskResponse(**result)
 
@@ -2191,11 +2406,19 @@ class GraphSyncService:
 
         # Add parent relationship if specified
         if parent_node_id and relationship_config:
-            query += f"""
-            WITH node, acc
-            MATCH (parent:{parent_node_type} {{node_id: $parent_node_id}})
-            MERGE (parent)-[:{relationship_config["from_parent"]}]->(node)
-            """
+            # Special handling for Account parent nodes which use account_id instead of node_id
+            if parent_node_type == "Account":
+                query += f"""
+                WITH node, acc
+                MATCH (parent:{parent_node_type} {{account_id: $parent_node_id}})
+                MERGE (parent)-[:{relationship_config["from_parent"]}]->(node)
+                """
+            else:
+                query += f"""
+                WITH node, acc
+                MATCH (parent:{parent_node_type} {{node_id: $parent_node_id}})
+                MERGE (parent)-[:{relationship_config["from_parent"]}]->(node)
+                """
 
         # Add bidirectional relationship to Account for certain node types
         if node_type in ["ProductCategory", "Goal"]:

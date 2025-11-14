@@ -51,6 +51,7 @@ export interface Organization {
 // Account types
 export interface Account {
   account_id: AccountId;
+  node_id?: string;
   account_name: string;
   organization_id: OrganizationId;
   industry: string;
@@ -63,6 +64,7 @@ export interface Account {
   product_integrations?: string[];
   estimated_annual_ad_budget?: number | null;
   description?: string;
+  company_overview?: string | null;
   created_at?: string;
   updated_at?: string;
 }

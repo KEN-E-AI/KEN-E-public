@@ -5,7 +5,7 @@ All models for Business, Competitive, Marketing, and Brand strategy nodes.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ==================== BASE MODELS ====================
 
@@ -111,13 +111,29 @@ class ProductUpdate(BaseModel):
 
 
 class ProductResponse(NodeBase):
-    """Response model for product."""
+    """Response model for product.
+
+    Note: product_detail_page is optional (None) because:
+    - Legacy data may not have this field populated
+    - Some products may not have dedicated detail pages
+    - Field is validated for URL format when present
+    """
 
     product_name: str
     description: str
     references: list[str]
-    product_detail_page: str | None
+    product_detail_page: str | None = None
     category_node_id: str
+
+    @field_validator("product_detail_page")
+    @classmethod
+    def validate_product_detail_page_url(cls, v: str | None) -> str | None:
+        """Validate product_detail_page is a valid URL if provided."""
+        if v is not None and v.strip():
+            v = v.strip()
+            if not (v.startswith("http://") or v.startswith("https://")):
+                raise ValueError("product_detail_page must be a valid HTTP(S) URL")
+        return v
 
 
 class ProductListResponse(BaseModel):
@@ -168,13 +184,61 @@ class ValuePropositionUpdate(BaseModel):
 
 
 class ValuePropositionResponse(NodeBase):
-    """Response model for value proposition."""
+    """Response model for value proposition.
+
+    Note: parent_node_id and parent_node_type are optional (None) because:
+    - Some GET operations don't include parent relationship data in queries
+    - Backward compatibility with existing API responses
+    - When present, both fields must be populated together (validated)
+    - Valid parent types: Product, ProductCategory, Account
+
+    Semantic note: ValuePropositions SHOULD always have a parent in the database,
+    but the response model is flexible to accommodate various query patterns.
+    """
 
     display_name: str
     description: str
     references: list[str]
-    parent_node_id: str
-    parent_node_type: str
+    parent_node_id: str | None = None
+    parent_node_type: str | None = None
+
+    @field_validator("parent_node_type")
+    @classmethod
+    def validate_parent_node_type(cls, v: str | None, info) -> str | None:
+        """Validate parent_node_type is a valid type and consistent with parent_node_id.
+
+        Both parent_node_id and parent_node_type should be present together or both None.
+        """
+        if v is not None:
+            # Validate it's a known parent type
+            valid_parent_types = {"Product", "ProductCategory", "Account"}
+            if v not in valid_parent_types:
+                raise ValueError(
+                    f"parent_node_type must be one of {valid_parent_types}, got: {v}"
+                )
+
+            # Check that parent_node_id is also present
+            parent_node_id = info.data.get("parent_node_id")
+            if parent_node_id is None or (
+                isinstance(parent_node_id, str) and not parent_node_id.strip()
+            ):
+                raise ValueError(
+                    "parent_node_type is set but parent_node_id is missing or empty. "
+                    "Both fields must be present together or both None."
+                )
+
+        return v
+
+    @field_validator("parent_node_id")
+    @classmethod
+    def validate_parent_node_id(cls, v: str | None) -> str | None:
+        """Validate parent_node_id is non-empty if provided."""
+        if v is not None and isinstance(v, str):
+            v = v.strip()
+            if not v:
+                # Empty string should be treated as None
+                return None
+        return v
 
 
 class ValuePropositionListResponse(BaseModel):

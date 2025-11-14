@@ -846,6 +846,10 @@ async def update_account(
             update_clauses.append("acc.product_integrations = $product_integrations")
             params["product_integrations"] = request.product_integrations
 
+        if request.company_overview is not None:
+            update_clauses.append("acc.company_overview = $company_overview")
+            params["company_overview"] = request.company_overview
+
         if not update_clauses:
             raise HTTPException(status_code=400, detail="No fields provided to update")
 
@@ -1138,6 +1142,7 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
 
     return Account(
         account_id=acc_data.get("account_id"),
+        node_id=acc_data.get("node_id"),
         account_name=acc_data.get("account_name"),
         organization_id=acc_data.get("organization_id"),
         industry=acc_data.get("industry"),
@@ -1149,6 +1154,7 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         estimated_annual_ad_budget=acc_data.get("estimated_annual_ad_budget"),
         marketing_channels=acc_data.get("marketing_channels", []),
         product_integrations=acc_data.get("product_integrations", []),
+        company_overview=acc_data.get("company_overview"),
     )
 
 

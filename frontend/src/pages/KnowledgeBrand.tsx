@@ -1,14 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
-import { ActivitiesConfiguration } from "@/components/configuration";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
-const KnowledgeActivities = () => {
+const KnowledgeBrand = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Activities Configuration" maxWidth={false}>
+    <Layout pageTitle="Brand Guidelines" maxWidth={false}>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -23,13 +22,15 @@ const KnowledgeActivities = () => {
           </Button>
         </div>
 
-        {/* Activities Page Content */}
+        {/* Brand Guidelines Page Content */}
         <div className="bg-white rounded-lg border border-dashboard-gray-200 p-6">
-          <ActivitiesConfiguration />
+          <p className="text-dashboard-gray-600">
+            Brand guidelines content will be displayed here.
+          </p>
         </div>
       </div>
     </Layout>
   );
 };
 
-export default KnowledgeActivities;
+export default KnowledgeBrand;

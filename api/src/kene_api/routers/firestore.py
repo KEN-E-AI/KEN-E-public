@@ -1,5 +1,6 @@
 """Firestore router for CRUD operations on Google Firestore."""
 
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -10,6 +11,8 @@ from pydantic import BaseModel, Field
 from ..email_service import get_email_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import BaseRequest, SuccessResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["firestore"])
 

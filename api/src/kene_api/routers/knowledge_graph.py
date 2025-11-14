@@ -21,7 +21,6 @@ from ..models.graph_models import (
     BusinessStrategyResponse,
     CompetitiveEnvironmentResponse,
     CompetitiveEnvironmentUpdate,
-    CompetitiveStrategyResponse,
     CompetitorCreate,
     CompetitorListResponse,
     CompetitorResponse,
@@ -63,10 +62,8 @@ from ..models.graph_models import (
     StrengthListResponse,
     StrengthResponse,
     StrengthUpdate,
-    SubstituteProductCreate,
     SubstituteProductListResponse,
     SubstituteProductResponse,
-    SubstituteProductUpdate,
     ValuePropositionCreate,
     ValuePropositionListResponse,
     ValuePropositionResponse,
@@ -105,15 +102,43 @@ async def check_graph_access(
     if user.is_super_admin:
         return user
 
-    # Check account-level permissions
-    if not user.has_account_access(
-        account_id, [required_level] if required_level == "edit" else None
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions for {required_level} access to account {account_id}",
+    # Check if user has org admin/owner access (grants access to ALL accounts)
+    has_org_admin = any(
+        role in ["admin", "owner"] for role in user.organization_permissions.values()
+    )
+    if has_org_admin:
+        logger.info(
+            f"[check_graph_access] Access granted via org admin for user {user.email}"
         )
+        return user
 
+    # For non-admin users, check account-specific permissions
+    # For view access: use same pattern as monitoring_topics (no role check)
+    # For edit access: explicitly require "edit" role
+    if required_level == "edit":
+        # Edit requires explicit "edit" role
+        if not user.has_account_access(account_id, ["edit"]):
+            logger.warning(
+                f"[check_graph_access] Edit access denied for user {user.email} to account {account_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions for edit access to account {account_id}",
+            )
+    else:
+        # View access: use same logic as monitoring_topics - just check if account is accessible
+        if not user.has_account_access(account_id) and not user.is_super_admin:
+            logger.warning(
+                f"[check_graph_access] View access denied for user {user.email} to account {account_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {account_id}",
+            )
+
+    logger.info(
+        f"[check_graph_access] Access granted for user {user.email} to account {account_id}"
+    )
     return user
 
 
@@ -158,7 +183,7 @@ async def create_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating product category: {e}")
+        logger.exception(f"Unexpected error creating product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create product category",
@@ -206,7 +231,7 @@ async def list_product_categories(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list product categories: {e}")
+        logger.exception(f"Failed to list product categories: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list product categories",
@@ -239,7 +264,7 @@ async def get_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get product category: {e}")
+        logger.exception(f"Failed to get product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get product category",
@@ -283,7 +308,7 @@ async def update_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating product category: {e}")
+        logger.exception(f"Unexpected error updating product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update product category",
@@ -327,7 +352,7 @@ async def delete_product_category(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting product category: {e}")
+        logger.exception(f"Unexpected error deleting product category: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete product category",
@@ -369,7 +394,7 @@ async def create_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating product: {e}")
+        logger.exception(f"Unexpected error creating product: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create product",
@@ -401,26 +426,22 @@ async def list_products(
     await check_graph_access(account_id, user, "view")
 
     try:
-        # Get total count from database (not just returned results)
-        total_count = await service.count_nodes(
-            account_id, "Product", parent_node_id=category_node_id
-        )
-
-        # Get paginated results
-        products_data = await service.list_nodes(
-            account_id,
-            "Product",
-            parent_node_id=category_node_id,
+        # Use optimized method that fetches category information in single query
+        # Avoids N+1 query problem by using OPTIONAL MATCH
+        products_data, total_count = await service.list_products_with_categories(
+            account_id=account_id,
+            category_node_id=category_node_id,
             skip=skip,
             limit=limit,
         )
+
         products = [ProductResponse(**prod) for prod in products_data]
 
         return ProductListResponse(products=products, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list products: {e}")
+        logger.exception(f"Failed to list products: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list products",
@@ -450,7 +471,7 @@ async def get_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get product: {e}")
+        logger.exception(f"Failed to get product: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get product",
@@ -492,7 +513,7 @@ async def update_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating product: {e}")
+        logger.exception(f"Unexpected error updating product: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update product",
@@ -534,7 +555,7 @@ async def delete_product(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting product: {e}")
+        logger.exception(f"Unexpected error deleting product: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete product",
@@ -580,7 +601,7 @@ async def create_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating value proposition: {e}")
+        logger.exception(f"Unexpected error creating value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create value proposition",
@@ -637,7 +658,7 @@ async def list_value_propositions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list value propositions: {e}")
+        logger.exception(f"Failed to list value propositions: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list value propositions",
@@ -671,7 +692,7 @@ async def get_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get value proposition: {e}")
+        logger.exception(f"Failed to get value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get value proposition",
@@ -716,7 +737,7 @@ async def update_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating value proposition: {e}")
+        logger.exception(f"Unexpected error updating value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update value proposition",
@@ -759,7 +780,7 @@ async def delete_value_proposition(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting value proposition: {e}")
+        logger.exception(f"Unexpected error deleting value proposition: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete value proposition",
@@ -802,7 +823,7 @@ async def create_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating strength: {e}")
+        logger.exception(f"Unexpected error creating strength: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create strength",
@@ -846,7 +867,7 @@ async def list_strengths(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list strengths: {e}")
+        logger.exception(f"Failed to list strengths: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list strengths",
@@ -876,7 +897,7 @@ async def get_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get strength: {e}")
+        logger.exception(f"Failed to get strength: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get strength",
@@ -918,7 +939,7 @@ async def update_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating strength: {e}")
+        logger.exception(f"Unexpected error updating strength: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update strength",
@@ -960,7 +981,7 @@ async def delete_strength(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting strength: {e}")
+        logger.exception(f"Unexpected error deleting strength: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete strength",
@@ -1003,7 +1024,7 @@ async def create_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating weakness: {e}")
+        logger.exception(f"Unexpected error creating weakness: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create weakness",
@@ -1047,7 +1068,7 @@ async def list_weaknesses(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list weaknesses: {e}")
+        logger.exception(f"Failed to list weaknesses: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list weaknesses",
@@ -1077,7 +1098,7 @@ async def get_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get weakness: {e}")
+        logger.exception(f"Failed to get weakness: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get weakness",
@@ -1119,7 +1140,7 @@ async def update_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating weakness: {e}")
+        logger.exception(f"Unexpected error updating weakness: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update weakness",
@@ -1161,7 +1182,7 @@ async def delete_weakness(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting weakness: {e}")
+        logger.exception(f"Unexpected error deleting weakness: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete weakness",
@@ -1204,7 +1225,7 @@ async def create_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating opportunity: {e}")
+        logger.exception(f"Unexpected error creating opportunity: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create opportunity",
@@ -1238,7 +1259,10 @@ async def list_opportunities(
     try:
         # Get total count from database (not just returned results)
         total_count = await service.count_nodes(
-            account_id, "Opportunity", parent_node_id=strength_node_id
+            account_id,
+            "Opportunity",
+            parent_node_id=strength_node_id,
+            parent_node_type="Strength",
         )
 
         # Get paginated results
@@ -1246,10 +1270,22 @@ async def list_opportunities(
             account_id,
             "Opportunity",
             parent_node_id=strength_node_id,
+            parent_node_type="Strength",
             skip=skip,
             limit=limit,
         )
-        opportunities = [OpportunityResponse(**o) for o in opportunities_data]
+        # Map parent_node_id to strength_node_id for the response model
+        opportunities = [
+            OpportunityResponse(
+                **{
+                    **o,
+                    "strength_node_id": o.get(
+                        "parent_node_id", o.get("strength_node_id")
+                    ),
+                }
+            )
+            for o in opportunities_data
+        ]
 
         return OpportunityListResponse(
             opportunities=opportunities, total_count=total_count
@@ -1257,7 +1293,7 @@ async def list_opportunities(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list opportunities: {e}")
+        logger.exception(f"Failed to list opportunities: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list opportunities",
@@ -1283,11 +1319,24 @@ async def get_opportunity(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found"
             )
+
+        # Fetch the parent strength relationship
+        strength_query = """
+        MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
+        RETURN s.node_id as strength_node_id
+        LIMIT 1
+        """
+        strength_result = await service.neo4j.execute_query(
+            strength_query, {"node_id": node_id}
+        )
+        if strength_result and strength_result[0]:
+            opportunity["strength_node_id"] = strength_result[0]["strength_node_id"]
+
         return OpportunityResponse(**opportunity)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get opportunity: {e}")
+        logger.exception(f"Failed to get opportunity: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get opportunity",
@@ -1331,7 +1380,7 @@ async def update_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating opportunity: {e}")
+        logger.exception(f"Unexpected error updating opportunity: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update opportunity",
@@ -1372,7 +1421,7 @@ async def delete_opportunity(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting opportunity: {e}")
+        logger.exception(f"Unexpected error deleting opportunity: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete opportunity",
@@ -1415,7 +1464,7 @@ async def create_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating risk: {e}")
+        logger.exception(f"Unexpected error creating risk: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create risk",
@@ -1449,20 +1498,39 @@ async def list_risks(
     try:
         # Get total count from database (not just returned results)
         total_count = await service.count_nodes(
-            account_id, "Risk", parent_node_id=weakness_node_id
+            account_id,
+            "Risk",
+            parent_node_id=weakness_node_id,
+            parent_node_type="Weakness",
         )
 
         # Get paginated results
         risks_data = await service.list_nodes(
-            account_id, "Risk", parent_node_id=weakness_node_id, skip=skip, limit=limit
+            account_id,
+            "Risk",
+            parent_node_id=weakness_node_id,
+            parent_node_type="Weakness",
+            skip=skip,
+            limit=limit,
         )
-        risks = [RiskResponse(**r) for r in risks_data]
+        # Map parent_node_id to weakness_node_id for the response model
+        risks = [
+            RiskResponse(
+                **{
+                    **r,
+                    "weakness_node_id": r.get(
+                        "parent_node_id", r.get("weakness_node_id")
+                    ),
+                }
+            )
+            for r in risks_data
+        ]
 
         return RiskListResponse(risks=risks, total_count=total_count)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list risks: {e}")
+        logger.exception(f"Failed to list risks: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list risks",
@@ -1488,11 +1556,24 @@ async def get_risk(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found"
             )
+
+        # Fetch the parent weakness relationship
+        weakness_query = """
+        MATCH (w:Weakness)-[:CREATES]->(r:Risk {node_id: $node_id})
+        RETURN w.node_id as weakness_node_id
+        LIMIT 1
+        """
+        weakness_result = await service.neo4j.execute_query(
+            weakness_query, {"node_id": node_id}
+        )
+        if weakness_result and weakness_result[0]:
+            risk["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
+
         return RiskResponse(**risk)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get risk: {e}")
+        logger.exception(f"Failed to get risk: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get risk",
@@ -1532,7 +1613,7 @@ async def update_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating risk: {e}")
+        logger.exception(f"Unexpected error updating risk: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update risk",
@@ -1573,7 +1654,7 @@ async def delete_risk(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting risk: {e}")
+        logger.exception(f"Unexpected error deleting risk: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete risk",
@@ -1615,7 +1696,7 @@ async def create_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error creating goal: {e}")
+        logger.exception(f"Unexpected error creating goal: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create goal",
@@ -1659,7 +1740,7 @@ async def list_goals(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list goals: {e}")
+        logger.exception(f"Failed to list goals: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list goals",
@@ -1689,7 +1770,7 @@ async def get_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get goal: {e}")
+        logger.exception(f"Failed to get goal: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get goal",
@@ -1729,7 +1810,7 @@ async def update_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error updating goal: {e}")
+        logger.exception(f"Unexpected error updating goal: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update goal",
@@ -1770,7 +1851,7 @@ async def delete_goal(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error deleting goal: {e}")
+        logger.exception(f"Unexpected error deleting goal: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete goal",
@@ -1840,7 +1921,7 @@ async def get_business_strategy(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get business strategy: {e}")
+        logger.exception(f"Failed to get business strategy: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get business strategy",

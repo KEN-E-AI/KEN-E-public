@@ -249,6 +249,57 @@ class TestProductEndpoints:
         await authenticated_client.delete(f"{base_url}/product-categories/{cat1_id}")
         await authenticated_client.delete(f"{base_url}/product-categories/{cat2_id}")
 
+    @pytest.mark.asyncio
+    async def test_list_all_products_includes_category_info(self, authenticated_client):
+        """Test listing all products includes category_node_id (N+1 query fix).
+
+        Verifies that when listing products without category filter, the endpoint
+        returns category information without making N+1 queries.
+        """
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create a category
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={
+                "product_name": "Test Category",
+                "description": "Test category for N+1 fix",
+            },
+        )
+        assert cat_response.status_code == 200
+        cat_id = cat_response.json()["node_id"]
+
+        # Create multiple products in the category
+        product_ids = []
+        for i in range(3):
+            prod_response = await authenticated_client.post(
+                f"{base_url}/products",
+                json={
+                    "product_name": f"Test Product {i}",
+                    "description": f"Product {i} description",
+                    "category_node_id": cat_id,
+                },
+            )
+            assert prod_response.status_code == 200
+            product_ids.append(prod_response.json()["node_id"])
+
+        # List ALL products (no category filter) - this tests the N+1 fix
+        list_response = await authenticated_client.get(f"{base_url}/products")
+        assert list_response.status_code == 200
+        products = list_response.json()
+
+        # Verify all products have category_node_id populated
+        test_products = [p for p in products["products"] if p["node_id"] in product_ids]
+        assert len(test_products) == 3
+        for product in test_products:
+            assert "category_node_id" in product
+            assert product["category_node_id"] == cat_id
+
+        # Cleanup
+        for prod_id in product_ids:
+            await authenticated_client.delete(f"{base_url}/products/{prod_id}")
+        await authenticated_client.delete(f"{base_url}/product-categories/{cat_id}")
+
 
 class TestSWOTEndpoints:
     """Integration tests for SWOT Analysis endpoints."""

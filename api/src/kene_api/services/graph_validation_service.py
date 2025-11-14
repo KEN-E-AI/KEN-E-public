@@ -67,7 +67,7 @@ class GraphValidationService:
 
         Args:
             node_id: Node identifier
-            node_type: Type of node (e.g., "Product", "ProductCategory")
+            node_type: Type of node (e.g., "Product", "ProductCategory", "Account")
 
         Returns:
             True if node exists, False otherwise
@@ -78,7 +78,12 @@ class GraphValidationService:
         # Validate node_type to prevent Cypher injection
         validate_node_type(node_type)
 
-        query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
+        # Special handling for Account nodes which use account_id instead of node_id
+        if node_type == "Account":
+            query = f"MATCH (n:{node_type} {{account_id: $node_id}}) RETURN n LIMIT 1"
+        else:
+            query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
+
         result = await self.neo4j.execute_query(query, {"node_id": node_id})
         return len(result) > 0
 
@@ -87,7 +92,8 @@ class GraphValidationService:
     ) -> tuple[bool, str]:
         """Validate that a product category can be deleted.
 
-        ProductCategory can only be deleted if it has no products.
+        ProductCategory deletion will cascade delete all products and their value propositions.
+        This is always allowed.
 
         Args:
             node_id: ProductCategory node_id
@@ -95,28 +101,14 @@ class GraphValidationService:
         Returns:
             (can_delete, reason) tuple
         """
-        query = """
-        MATCH (cat:ProductCategory {node_id: $node_id})-[:INCLUDES_PRODUCT]->(prod:Product)
-        RETURN count(prod) as product_count
-        """
-        result = await self.neo4j.execute_query(query, {"node_id": node_id})
-
-        if not result:
-            return False, "ProductCategory not found"
-
-        product_count = result[0]["product_count"]
-        if product_count > 0:
-            return (
-                False,
-                f"Cannot delete ProductCategory with {product_count} existing products",
-            )
-
+        # No validation needed - cascade delete handles cleanup
         return True, ""
 
     async def validate_can_delete_product(self, node_id: str) -> tuple[bool, str]:
         """Validate that a product can be deleted.
 
-        Product can only be deleted if it has no value propositions.
+        Product deletion will cascade delete all its value propositions.
+        This is always allowed.
 
         Args:
             node_id: Product node_id
@@ -124,22 +116,7 @@ class GraphValidationService:
         Returns:
             (can_delete, reason) tuple
         """
-        query = """
-        MATCH (prod:Product {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
-        RETURN count(vp) as vp_count
-        """
-        result = await self.neo4j.execute_query(query, {"node_id": node_id})
-
-        if not result:
-            return False, "Product not found"
-
-        vp_count = result[0]["vp_count"]
-        if vp_count > 0:
-            return (
-                False,
-                f"Cannot delete Product with {vp_count} existing value propositions",
-            )
-
+        # No validation needed - cascade delete handles cleanup
         return True, ""
 
     async def validate_can_delete_strength(self, node_id: str) -> tuple[bool, str]:

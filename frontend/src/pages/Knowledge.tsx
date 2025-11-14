@@ -7,7 +7,8 @@ import {
   Building,
   Users,
   TrendingUp,
-  ExternalLink,
+  Package,
+  Palette,
 } from "lucide-react";
 import { renderConfigurationSection } from "@/lib/knowledgeUtils";
 
@@ -15,7 +16,7 @@ const Knowledge = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Knowledge">
+    <Layout pageTitle="Knowledge Base">
       <div>
         {/* Header */}
         <div className="mb-8">
@@ -29,63 +30,33 @@ const Knowledge = () => {
 
         {/* Configuration Sections */}
         <div className="space-y-4">
-          {/* Products Section */}
-          {renderConfigurationSection(
-            ExternalLink,
-            "Products",
-            "Link and configure your MarTech products",
-            "",
-            () => navigate("/knowledge/products"),
-            false,
-          )}
-
-          {/* Metrics Section */}
-          {renderConfigurationSection(
-            BarChart3,
-            "Metrics",
-            "Define metrics that can be used to analyze performance",
-            "",
-            () => navigate("/knowledge/metrics"),
-            false,
-          )}
-
-          {/* Activities Section */}
-          {renderConfigurationSection(
-            Activity,
-            "Activities",
-            "Define the internal and external activities that influence your business metrics",
-            "",
-            () => navigate("/knowledge/activities"),
-            false,
-          )}
-
-          {/* Insights Section */}
-          {renderConfigurationSection(
-            Lightbulb,
-            "Insights",
-            "Review and manage the insights that KEN-E has uncovered about your business",
-            "",
-            () => navigate("/knowledge/insights"),
-            false,
-          )}
-
-          {/* Measurement Strategy Section */}
-          {renderConfigurationSection(
-            TrendingUp,
-            "Measurement Strategy",
-            "Define your organizations objectives and KPI's",
-            "",
-            () => navigate("/knowledge/strategy"),
-            false,
-          )}
-
-          {/* Account Overview Section */}
+          {/* Account Section */}
           {renderConfigurationSection(
             Building,
-            "Account Overview",
+            "Account",
             "Configure KEN-E's understanding of your business strategy, goals and history",
             "",
             () => navigate("/knowledge/account"),
+            false,
+          )}
+
+          {/* Competitors Section */}
+          {renderConfigurationSection(
+            TrendingUp,
+            "Competitors",
+            "Configure KEN-E's understanding of your competitors",
+            "",
+            () => navigate("/knowledge/competitors"),
+            false,
+          )}
+
+          {/* Products Section */}
+          {renderConfigurationSection(
+            Package,
+            "Products",
+            "Describe the products or services that you offer, as well as the substitutes that are offered by your competitors.",
+            "",
+            () => navigate("/knowledge/products"),
             false,
           )}
 
@@ -99,13 +70,53 @@ const Knowledge = () => {
             false,
           )}
 
-          {/* Competitors Section */}
+          {/* Marketing Strategies Section */}
           {renderConfigurationSection(
             TrendingUp,
-            "Competitors",
-            "Configure KEN-E's understanding of your competitors",
+            "Marketing Strategies",
+            "Define your organizations objectives and KPI's",
             "",
-            () => navigate("/knowledge/competitors"),
+            () => navigate("/knowledge/strategy"),
+            false,
+          )}
+
+          {/* Brand Guidelines Section */}
+          {renderConfigurationSection(
+            Palette,
+            "Brand Guidelines",
+            "Describe the standards that define your brand's identity to ensure that all content drafted by KEN-E is consistent and aligned with your brand strategy.",
+            "",
+            () => navigate("/knowledge/brand"),
+            false,
+          )}
+
+          {/* Activities Section */}
+          {renderConfigurationSection(
+            Activity,
+            "Activities",
+            "Define the internal and external activities that influence your business metrics",
+            "",
+            () => navigate("/knowledge/activities"),
+            false,
+          )}
+
+          {/* Metrics Section */}
+          {renderConfigurationSection(
+            BarChart3,
+            "Metrics",
+            "Define metrics that can be used to analyze performance",
+            "",
+            () => navigate("/knowledge/metrics"),
+            false,
+          )}
+
+          {/* Insights Section */}
+          {renderConfigurationSection(
+            Lightbulb,
+            "Insights",
+            "Review and manage the insights that KEN-E has uncovered about your business",
+            "",
+            () => navigate("/knowledge/insights"),
             false,
           )}
         </div>
