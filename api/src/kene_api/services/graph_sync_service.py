@@ -21,6 +21,9 @@ from ..exceptions import (
 )
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.graph_models import (
+    BrandAwarenessStrategyCreate,
+    BrandAwarenessStrategyResponse,
+    BrandAwarenessStrategyUpdate,
     CompetitiveEnvironmentCreate,
     CompetitiveEnvironmentResponse,
     CompetitiveEnvironmentUpdate,
@@ -36,12 +39,27 @@ from ..models.graph_models import (
     CompetitorWeaknessCreate,
     CompetitorWeaknessResponse,
     CompetitorWeaknessUpdate,
+    ConsiderationStrategyCreate,
+    ConsiderationStrategyResponse,
+    ConsiderationStrategyUpdate,
+    ConversionStrategyCreate,
+    ConversionStrategyResponse,
+    ConversionStrategyUpdate,
+    CustomerProfileCreate,
+    CustomerProfileResponse,
+    CustomerProfileUpdate,
     GoalCreate,
     GoalResponse,
     GoalUpdate,
+    LoyaltyStrategyCreate,
+    LoyaltyStrategyResponse,
+    LoyaltyStrategyUpdate,
     OpportunityCreate,
     OpportunityResponse,
     OpportunityUpdate,
+    ProblemAwarenessStrategyCreate,
+    ProblemAwarenessStrategyResponse,
+    ProblemAwarenessStrategyUpdate,
     ProductCategoryCreate,
     ProductCategoryResponse,
     ProductCategoryUpdate,
@@ -2308,6 +2326,595 @@ class GraphSyncService:
             check_dependencies=True,
         )
 
+    # ==================== CONVENIENCE WRAPPERS FOR MARKETING STRATEGY ====================
+    # Steps 4 & 5 Implementation
+
+    async def create_customer_profile(
+        self,
+        account_id: str,
+        profile: CustomerProfileCreate,
+        user_id: str,
+    ) -> CustomerProfileResponse:
+        """Create a customer profile node.
+
+        Note: Strategy nodes are NOT auto-created. They must be created separately
+        when linking the profile to a ProductCategory.
+
+        Args:
+            account_id: Account identifier
+            profile: Profile creation data
+            user_id: User creating the profile
+
+        Returns:
+            Created customer profile
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If display_name already exists
+        """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(
+            profile.display_name, "display_name"
+        )
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(
+            profile.narrative, "narrative"
+        )
+        if not is_valid:
+            raise ValidationException(error, "narrative")
+
+        # Check for duplicate display_name (case-insensitive)
+        is_unique, error = await self.validation.validate_unique_customer_profile_name(
+            account_id, profile.display_name.strip()
+        )
+        if not is_unique:
+            raise DuplicateNodeException(
+                "CustomerProfile", "display_name", profile.display_name, account_id
+            )
+
+        node_data = {
+            "display_name": profile.display_name.strip().lower(),  # Store lowercase for case-insensitive matching
+            "narrative": profile.narrative.strip(),
+            "references": profile.references,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="CustomerProfile",
+            node_data=node_data,
+            parent_node_id=None,  # Links directly to Account
+            parent_node_type=None,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return CustomerProfileResponse(**result)
+
+    async def update_customer_profile(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: CustomerProfileUpdate,
+        user_id: str,
+    ) -> CustomerProfileResponse:
+        """Update a customer profile."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        # If updating display_name, convert to lowercase
+        if "display_name" in update_dict:
+            update_dict["display_name"] = update_dict["display_name"].strip().lower()
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CustomerProfile",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return CustomerProfileResponse(**result)
+
+    async def delete_customer_profile(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a customer profile with cascade deletion of linked strategy nodes.
+
+        This will:
+        1. Delete all marketing strategy nodes linked to this profile (across all ProductCategories)
+        2. Delete all IS_MARKETED_TO relationships
+        3. Delete the CustomerProfile node
+
+        Args:
+            account_id: Account identifier
+            node_id: CustomerProfile node_id
+            user_id: User performing deletion
+        """
+        # First, delete all linked strategy nodes
+        strategy_types = [
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]
+
+        for strategy_type in strategy_types:
+            # Find all strategies linked to this profile
+            query = f"""
+            MATCH (cp:CustomerProfile {{node_id: $profile_id}})-[]->(s:{strategy_type})
+            WHERE (s)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
+            RETURN s.node_id as node_id
+            """
+            strategies = await self.neo4j.execute_query(
+                query, {"profile_id": node_id, "account_id": account_id}
+            )
+
+            # Delete each strategy
+            for strategy in strategies:
+                strategy_node_id = strategy["node_id"]
+                await self.delete_node(
+                    account_id=account_id,
+                    node_id=strategy_node_id,
+                    node_type=strategy_type,
+                    user_id=user_id,
+                    firestore_doc_type="marketing_strategy",
+                    check_dependencies=False,  # No dependencies to check for strategy nodes
+                )
+
+        # Then delete the profile (IS_MARKETED_TO relationships will be auto-deleted by DETACH DELETE)
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CustomerProfile",
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+            check_dependencies=False,  # We already cascaded the dependencies
+        )
+
+    async def create_problem_awareness_strategy(
+        self,
+        account_id: str,
+        strategy: ProblemAwarenessStrategyCreate,
+        user_id: str,
+    ) -> ProblemAwarenessStrategyResponse:
+        """Create a problem awareness strategy with dual-parent relationships."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            strategy.description, "description"
+        )
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate both parents exist
+        if not await self.validation.validate_node_exists(
+            strategy.customer_profile_node_id, "CustomerProfile"
+        ):
+            raise NodeNotFoundException(
+                "CustomerProfile", strategy.customer_profile_node_id
+            )
+
+        if not await self.validation.validate_node_exists(
+            strategy.product_category_node_id, "ProductCategory"
+        ):
+            raise NodeNotFoundException(
+                "ProductCategory", strategy.product_category_node_id
+            )
+
+        # Generate composite node_id from both parents
+        node_id = f"problemaware_{strategy.product_category_node_id}_{strategy.customer_profile_node_id}"
+
+        node_data = {
+            "description": strategy.description.strip(),
+            "references": strategy.references,
+            "customer_profile_node_id": strategy.customer_profile_node_id,
+            "product_category_node_id": strategy.product_category_node_id,
+        }
+
+        # Create with dual-parent relationships
+        result = await self._create_marketing_strategy_node(
+            node_id=node_id,
+            node_type="ProblemAwarenessStrategy",
+            node_data=node_data,
+            account_id=account_id,
+            customer_profile_id=strategy.customer_profile_node_id,
+            product_category_id=strategy.product_category_node_id,
+            user_id=user_id,
+            profile_relationship="DISCOVERS_THE_PROBLEM_BY",
+            category_relationship="HAS_PROBLEM_AWARENESS_STRATEGY",
+        )
+
+        return ProblemAwarenessStrategyResponse(**result)
+
+    async def update_problem_awareness_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: ProblemAwarenessStrategyUpdate,
+        user_id: str,
+    ) -> ProblemAwarenessStrategyResponse:
+        """Update a problem awareness strategy."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ProblemAwarenessStrategy",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return ProblemAwarenessStrategyResponse(**result)
+
+    async def delete_problem_awareness_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a problem awareness strategy."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ProblemAwarenessStrategy",
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_brand_awareness_strategy(
+        self,
+        account_id: str,
+        strategy: BrandAwarenessStrategyCreate,
+        user_id: str,
+    ) -> BrandAwarenessStrategyResponse:
+        """Create a brand awareness strategy with dual-parent relationships."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            strategy.description, "description"
+        )
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        if not await self.validation.validate_node_exists(
+            strategy.customer_profile_node_id, "CustomerProfile"
+        ):
+            raise NodeNotFoundException(
+                "CustomerProfile", strategy.customer_profile_node_id
+            )
+
+        if not await self.validation.validate_node_exists(
+            strategy.product_category_node_id, "ProductCategory"
+        ):
+            raise NodeNotFoundException(
+                "ProductCategory", strategy.product_category_node_id
+            )
+
+        node_id = f"brandaware_{strategy.product_category_node_id}_{strategy.customer_profile_node_id}"
+
+        node_data = {
+            "description": strategy.description.strip(),
+            "references": strategy.references,
+            "customer_profile_node_id": strategy.customer_profile_node_id,
+            "product_category_node_id": strategy.product_category_node_id,
+        }
+
+        result = await self._create_marketing_strategy_node(
+            node_id=node_id,
+            node_type="BrandAwarenessStrategy",
+            node_data=node_data,
+            account_id=account_id,
+            customer_profile_id=strategy.customer_profile_node_id,
+            product_category_id=strategy.product_category_node_id,
+            user_id=user_id,
+            profile_relationship="DISCOVERS_OUR_BRAND_BY",
+            category_relationship="HAS_BRAND_AWARENESS_STRATEGY",
+        )
+
+        return BrandAwarenessStrategyResponse(**result)
+
+    async def update_brand_awareness_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: BrandAwarenessStrategyUpdate,
+        user_id: str,
+    ) -> BrandAwarenessStrategyResponse:
+        """Update a brand awareness strategy."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="BrandAwarenessStrategy",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return BrandAwarenessStrategyResponse(**result)
+
+    async def delete_brand_awareness_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a brand awareness strategy."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="BrandAwarenessStrategy",
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_consideration_strategy(
+        self,
+        account_id: str,
+        strategy: ConsiderationStrategyCreate,
+        user_id: str,
+    ) -> ConsiderationStrategyResponse:
+        """Create a consideration strategy with dual-parent relationships."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            strategy.description, "description"
+        )
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        if not await self.validation.validate_node_exists(
+            strategy.customer_profile_node_id, "CustomerProfile"
+        ):
+            raise NodeNotFoundException(
+                "CustomerProfile", strategy.customer_profile_node_id
+            )
+
+        if not await self.validation.validate_node_exists(
+            strategy.product_category_node_id, "ProductCategory"
+        ):
+            raise NodeNotFoundException(
+                "ProductCategory", strategy.product_category_node_id
+            )
+
+        node_id = f"consideration_{strategy.product_category_node_id}_{strategy.customer_profile_node_id}"
+
+        node_data = {
+            "description": strategy.description.strip(),
+            "references": strategy.references,
+            "customer_profile_node_id": strategy.customer_profile_node_id,
+            "product_category_node_id": strategy.product_category_node_id,
+        }
+
+        result = await self._create_marketing_strategy_node(
+            node_id=node_id,
+            node_type="ConsiderationStrategy",
+            node_data=node_data,
+            account_id=account_id,
+            customer_profile_id=strategy.customer_profile_node_id,
+            product_category_id=strategy.product_category_node_id,
+            user_id=user_id,
+            profile_relationship="CONSIDERS_OUR_BRAND_BECAUSE",
+            category_relationship="HAS_CONSIDERATION_STRATEGY",
+        )
+
+        return ConsiderationStrategyResponse(**result)
+
+    async def update_consideration_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: ConsiderationStrategyUpdate,
+        user_id: str,
+    ) -> ConsiderationStrategyResponse:
+        """Update a consideration strategy."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ConsiderationStrategy",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return ConsiderationStrategyResponse(**result)
+
+    async def delete_consideration_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a consideration strategy."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ConsiderationStrategy",
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_conversion_strategy(
+        self,
+        account_id: str,
+        strategy: ConversionStrategyCreate,
+        user_id: str,
+    ) -> ConversionStrategyResponse:
+        """Create a conversion strategy with dual-parent relationships."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            strategy.description, "description"
+        )
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        if not await self.validation.validate_node_exists(
+            strategy.customer_profile_node_id, "CustomerProfile"
+        ):
+            raise NodeNotFoundException(
+                "CustomerProfile", strategy.customer_profile_node_id
+            )
+
+        if not await self.validation.validate_node_exists(
+            strategy.product_category_node_id, "ProductCategory"
+        ):
+            raise NodeNotFoundException(
+                "ProductCategory", strategy.product_category_node_id
+            )
+
+        node_id = f"conversion_{strategy.product_category_node_id}_{strategy.customer_profile_node_id}"
+
+        node_data = {
+            "description": strategy.description.strip(),
+            "references": strategy.references,
+            "customer_profile_node_id": strategy.customer_profile_node_id,
+            "product_category_node_id": strategy.product_category_node_id,
+        }
+
+        result = await self._create_marketing_strategy_node(
+            node_id=node_id,
+            node_type="ConversionStrategy",
+            node_data=node_data,
+            account_id=account_id,
+            customer_profile_id=strategy.customer_profile_node_id,
+            product_category_id=strategy.product_category_node_id,
+            user_id=user_id,
+            profile_relationship="PURCHASES_OUR_BRAND_BECAUSE",
+            category_relationship="HAS_CONVERSION_STRATEGY",
+        )
+
+        return ConversionStrategyResponse(**result)
+
+    async def update_conversion_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: ConversionStrategyUpdate,
+        user_id: str,
+    ) -> ConversionStrategyResponse:
+        """Update a conversion strategy."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ConversionStrategy",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return ConversionStrategyResponse(**result)
+
+    async def delete_conversion_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a conversion strategy."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="ConversionStrategy",
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_loyalty_strategy(
+        self,
+        account_id: str,
+        strategy: LoyaltyStrategyCreate,
+        user_id: str,
+    ) -> LoyaltyStrategyResponse:
+        """Create a loyalty strategy with dual-parent relationships."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            strategy.description, "description"
+        )
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        if not await self.validation.validate_node_exists(
+            strategy.customer_profile_node_id, "CustomerProfile"
+        ):
+            raise NodeNotFoundException(
+                "CustomerProfile", strategy.customer_profile_node_id
+            )
+
+        if not await self.validation.validate_node_exists(
+            strategy.product_category_node_id, "ProductCategory"
+        ):
+            raise NodeNotFoundException(
+                "ProductCategory", strategy.product_category_node_id
+            )
+
+        node_id = f"loyalty_{strategy.product_category_node_id}_{strategy.customer_profile_node_id}"
+
+        node_data = {
+            "description": strategy.description.strip(),
+            "references": strategy.references,
+            "customer_profile_node_id": strategy.customer_profile_node_id,
+            "product_category_node_id": strategy.product_category_node_id,
+        }
+
+        result = await self._create_marketing_strategy_node(
+            node_id=node_id,
+            node_type="LoyaltyStrategy",
+            node_data=node_data,
+            account_id=account_id,
+            customer_profile_id=strategy.customer_profile_node_id,
+            product_category_id=strategy.product_category_node_id,
+            user_id=user_id,
+            profile_relationship="BECOMES_AN_ADVOCATE_BECAUSE",
+            category_relationship="HAS_LOYALTY_STRATEGY",
+        )
+
+        return LoyaltyStrategyResponse(**result)
+
+    async def update_loyalty_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: LoyaltyStrategyUpdate,
+        user_id: str,
+    ) -> LoyaltyStrategyResponse:
+        """Update a loyalty strategy."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="LoyaltyStrategy",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+        )
+
+        return LoyaltyStrategyResponse(**result)
+
+    async def delete_loyalty_strategy(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a loyalty strategy."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="LoyaltyStrategy",
+            user_id=user_id,
+            firestore_doc_type="marketing_strategy",
+            check_dependencies=False,
+        )
+
     # ==================== GENERIC HELPER METHODS ====================
 
     def _generate_node_id(self, node_type: str, account_id: str) -> str:
@@ -2444,6 +3051,94 @@ class GraphSyncService:
             raise Exception(f"Failed to create {node_type} in Neo4j")
 
         return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": account_id}
+
+    async def _create_marketing_strategy_node(
+        self,
+        node_id: str,
+        node_type: str,
+        node_data: dict[str, Any],
+        account_id: str,
+        customer_profile_id: str,
+        product_category_id: str,
+        user_id: str,
+        profile_relationship: str,
+        category_relationship: str,
+    ) -> dict[str, Any]:
+        """Create marketing strategy node with dual-parent relationships.
+
+        Marketing strategies are unique because they link to BOTH CustomerProfile AND
+        ProductCategory through separate relationships.
+
+        Args:
+            node_id: Pre-generated node ID (format: {type}_{category_id}_{profile_id})
+            node_type: Strategy node type
+            node_data: Node properties (includes parent IDs)
+            account_id: Account identifier
+            customer_profile_id: CustomerProfile parent
+            product_category_id: ProductCategory parent
+            user_id: User creating the node
+            profile_relationship: Relationship from CustomerProfile to strategy
+            category_relationship: Relationship from ProductCategory to strategy
+
+        Returns:
+            Created node as dictionary
+        """
+        validate_node_type(node_type)
+
+        # Create strategy node with BELONGS_TO + dual parent relationships
+        query = f"""
+        MATCH (acc:Account {{account_id: $account_id}})
+        MATCH (cp:CustomerProfile {{node_id: $customer_profile_id}})
+        MATCH (pc:ProductCategory {{node_id: $product_category_id}})
+
+        CREATE (node:{node_type}:Strategy)
+        SET node += $node_data,
+            node.node_id = $node_id,
+            node.account_id = $account_id,
+            node.created_time = datetime(),
+            node.last_modified = datetime(),
+            node.created_by = $user_id,
+            node.last_modified_by = $user_id,
+            node.embedding = null
+
+        MERGE (node)-[:BELONGS_TO]->(acc)
+        MERGE (cp)-[:{profile_relationship}]->(node)
+        MERGE (pc)-[:{category_relationship}]->(node)
+        MERGE (pc)-[:IS_MARKETED_TO]->(cp)
+
+        RETURN node
+        """
+
+        params = {
+            "node_id": node_id,
+            "account_id": account_id,
+            "customer_profile_id": customer_profile_id,
+            "product_category_id": product_category_id,
+            "node_data": node_data,
+            "user_id": user_id,
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+
+        if not result:
+            raise Exception(f"Failed to create {node_type} in Neo4j")
+
+        created_node = {
+            **self._neo4j_node_to_dict(result[0]["node"]),
+            "account_id": account_id,
+        }
+
+        # Sync to Firestore
+        await self._sync_node_to_firestore(
+            account_id=account_id,
+            node_id=node_id,
+            node_type=node_type,
+            node_data=created_node,
+            firestore_doc_type="marketing_strategy",
+            operation="create",
+        )
+
+        return created_node
 
     def _get_relationship_config(
         self, node_type: str, parent_node_type: str | None
@@ -2629,6 +3324,17 @@ class GraphSyncService:
             self._sync_competitive_node_to_doc(
                 doc, node_id, node_type, node_data, operation
             )
+        elif node_type in [
+            "CustomerProfile",
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]:
+            self._sync_marketing_node_to_doc(
+                doc, node_id, node_type, node_data, operation
+            )
         else:
             raise ValueError(f"Unsupported node type for Firestore sync: {node_type}")
 
@@ -2671,6 +3377,18 @@ class GraphSyncService:
                 "competitor_strengths": [],
                 "competitor_weaknesses": [],
                 "substitute_products": [],
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            }
+        elif doc_type == "marketing_strategy":
+            return {
+                "account_id": account_id,
+                "customer_profiles": [],
+                "problem_awareness_strategies": [],
+                "brand_awareness_strategies": [],
+                "consideration_strategies": [],
+                "conversion_strategies": [],
+                "loyalty_strategies": [],
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
             }
@@ -2724,6 +3442,30 @@ class GraphSyncService:
         # TODO: Implement full bidirectional sync when Firestore structure is finalized
         logger.info(
             f"Firestore sync stub (competitive): {operation} {node_type} {node_id}"
+        )
+
+    def _sync_marketing_node_to_doc(
+        self,
+        doc: dict[str, Any],
+        node_id: str,
+        node_type: str,
+        node_data: dict[str, Any],
+        operation: str,
+    ) -> None:
+        """Sync marketing strategy node to Firestore document structure.
+
+        Args:
+            doc: Firestore document
+            node_id: Node identifier
+            node_type: Node type
+            node_data: Node data
+            operation: "create", "update", or "delete"
+        """
+        # Stub implementation - detailed sync logic would go here
+        # For now, we accept eventual consistency and focus on Neo4j as primary
+        # TODO: Implement full bidirectional sync when Firestore structure is finalized
+        logger.info(
+            f"Firestore sync stub (marketing): {operation} {node_type} {node_id}"
         )
 
     def _convert_neo4j_value(self, value: Any) -> Any:

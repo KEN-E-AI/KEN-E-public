@@ -18,10 +18,14 @@ from ..exceptions import (
     ValidationException,
 )
 from ..models.graph_models import (
+    BrandAwarenessStrategyCreate,
+    BrandAwarenessStrategyListResponse,
+    BrandAwarenessStrategyResponse,
+    BrandAwarenessStrategyUpdate,
     BusinessStrategyResponse,
     CompetitiveEnvironmentResponse,
-    CompetitiveStrategyResponse,
     CompetitiveEnvironmentUpdate,
+    CompetitiveStrategyResponse,
     CompetitorCreate,
     CompetitorListResponse,
     CompetitorResponse,
@@ -38,15 +42,36 @@ from ..models.graph_models import (
     CompetitorWeaknessListResponse,
     CompetitorWeaknessResponse,
     CompetitorWeaknessUpdate,
+    ConsiderationStrategyCreate,
+    ConsiderationStrategyListResponse,
+    ConsiderationStrategyResponse,
+    ConsiderationStrategyUpdate,
+    ConversionStrategyCreate,
+    ConversionStrategyListResponse,
+    ConversionStrategyResponse,
+    ConversionStrategyUpdate,
+    CustomerProfileCreate,
+    CustomerProfileListResponse,
+    CustomerProfileResponse,
+    CustomerProfileUpdate,
     DeleteResponse,
     GoalCreate,
     GoalListResponse,
     GoalResponse,
     GoalUpdate,
+    LoyaltyStrategyCreate,
+    LoyaltyStrategyListResponse,
+    LoyaltyStrategyResponse,
+    LoyaltyStrategyUpdate,
+    MarketingStrategyResponse,
     OpportunityCreate,
     OpportunityListResponse,
     OpportunityResponse,
     OpportunityUpdate,
+    ProblemAwarenessStrategyCreate,
+    ProblemAwarenessStrategyListResponse,
+    ProblemAwarenessStrategyResponse,
+    ProblemAwarenessStrategyUpdate,
     ProductCategoryCreate,
     ProductCategoryListResponse,
     ProductCategoryResponse,
@@ -3103,4 +3128,1146 @@ async def get_competitive_strategy(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get competitive strategy",
+        ) from e
+
+
+# ==================== MARKETING STRATEGY ENDPOINTS ====================
+# Steps 4 & 5 Implementation: Dual-parent architecture for strategy nodes
+
+
+# ---------- CustomerProfile Endpoints ----------
+
+
+@router.post("/{account_id}/customer-profiles", response_model=CustomerProfileResponse)
+async def create_customer_profile(
+    account_id: str,
+    profile: CustomerProfileCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CustomerProfileResponse:
+    """Create a new customer profile. Strategy nodes created separately."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_customer_profile(
+            account_id, profile, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except DuplicateNodeException as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating customer profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create customer profile",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/customer-profiles", response_model=CustomerProfileListResponse
+)
+async def list_customer_profiles(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CustomerProfileListResponse:
+    """List all customer profiles."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "CustomerProfile")
+        profiles_data = await service.list_nodes(
+            account_id, "CustomerProfile", skip=skip, limit=limit
+        )
+        profiles = [CustomerProfileResponse(**p) for p in profiles_data]
+
+        return CustomerProfileListResponse(profiles=profiles, total_count=total_count)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list customer profiles: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list customer profiles",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/customer-profiles/{node_id}", response_model=CustomerProfileResponse
+)
+async def get_customer_profile(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CustomerProfileResponse:
+    """Get a specific customer profile by node_id."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        profile = await service.get_node(account_id, node_id, "CustomerProfile")
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Customer profile not found",
+            )
+        return CustomerProfileResponse(**profile)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get customer profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get customer profile",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/customer-profiles/{node_id}", response_model=CustomerProfileResponse
+)
+async def update_customer_profile(
+    account_id: str,
+    node_id: str,
+    updates: CustomerProfileUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CustomerProfileResponse:
+    """Update a customer profile."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_customer_profile(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update customer profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update customer profile",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/customer-profiles/{node_id}", response_model=DeleteResponse
+)
+async def delete_customer_profile(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete customer profile. Cascades to all linked strategies."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_customer_profile(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Customer profile {node_id} deleted (cascaded)"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete customer profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete customer profile",
+        ) from e
+
+
+# ---------- ProblemAwarenessStrategy Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/problem-awareness-strategies",
+    response_model=ProblemAwarenessStrategyResponse,
+)
+async def create_problem_awareness_strategy(
+    account_id: str,
+    strategy: ProblemAwarenessStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProblemAwarenessStrategyResponse:
+    """Create problem awareness strategy. Links to CustomerProfile and ProductCategory."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_problem_awareness_strategy(
+            account_id, strategy, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating problem awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create problem awareness strategy",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/problem-awareness-strategies",
+    response_model=ProblemAwarenessStrategyListResponse,
+)
+async def list_problem_awareness_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProblemAwarenessStrategyListResponse:
+    """List all problem awareness strategies."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "ProblemAwarenessStrategy")
+        strategies_data = await service.list_nodes(
+            account_id, "ProblemAwarenessStrategy", skip=skip, limit=limit
+        )
+        strategies = [ProblemAwarenessStrategyResponse(**s) for s in strategies_data]
+
+        return ProblemAwarenessStrategyListResponse(
+            strategies=strategies, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list problem awareness strategies: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list problem awareness strategies",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/problem-awareness-strategies/{node_id}",
+    response_model=ProblemAwarenessStrategyResponse,
+)
+async def get_problem_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProblemAwarenessStrategyResponse:
+    """Get a specific problem awareness strategy."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        strategy = await service.get_node(
+            account_id, node_id, "ProblemAwarenessStrategy"
+        )
+        if not strategy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Problem awareness strategy not found",
+            )
+        return ProblemAwarenessStrategyResponse(**strategy)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get problem awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get problem awareness strategy",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/problem-awareness-strategies/{node_id}",
+    response_model=ProblemAwarenessStrategyResponse,
+)
+async def update_problem_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    updates: ProblemAwarenessStrategyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProblemAwarenessStrategyResponse:
+    """Update a problem awareness strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_problem_awareness_strategy(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update problem awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update problem awareness strategy",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/problem-awareness-strategies/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_problem_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a problem awareness strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_problem_awareness_strategy(
+            account_id, node_id, user.user_id
+        )
+        return DeleteResponse(
+            success=True, message=f"Problem awareness strategy {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete problem awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete problem awareness strategy",
+        ) from e
+
+
+# ---------- BrandAwarenessStrategy Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/brand-awareness-strategies",
+    response_model=BrandAwarenessStrategyResponse,
+)
+async def create_brand_awareness_strategy(
+    account_id: str,
+    strategy: BrandAwarenessStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyResponse:
+    """Create brand awareness strategy. Links to CustomerProfile and ProductCategory."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_brand_awareness_strategy(
+            account_id, strategy, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating brand awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create brand awareness strategy",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/brand-awareness-strategies",
+    response_model=BrandAwarenessStrategyListResponse,
+)
+async def list_brand_awareness_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyListResponse:
+    """List all brand awareness strategies."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "BrandAwarenessStrategy")
+        strategies_data = await service.list_nodes(
+            account_id, "BrandAwarenessStrategy", skip=skip, limit=limit
+        )
+        strategies = [BrandAwarenessStrategyResponse(**s) for s in strategies_data]
+
+        return BrandAwarenessStrategyListResponse(
+            strategies=strategies, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list brand awareness strategies: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list brand awareness strategies",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/brand-awareness-strategies/{node_id}",
+    response_model=BrandAwarenessStrategyResponse,
+)
+async def get_brand_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyResponse:
+    """Get a specific brand awareness strategy."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        strategy = await service.get_node(account_id, node_id, "BrandAwarenessStrategy")
+        if not strategy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Brand awareness strategy not found",
+            )
+        return BrandAwarenessStrategyResponse(**strategy)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get brand awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get brand awareness strategy",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/brand-awareness-strategies/{node_id}",
+    response_model=BrandAwarenessStrategyResponse,
+)
+async def update_brand_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    updates: BrandAwarenessStrategyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyResponse:
+    """Update a brand awareness strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_brand_awareness_strategy(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update brand awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update brand awareness strategy",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/brand-awareness-strategies/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_brand_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a brand awareness strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_brand_awareness_strategy(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Brand awareness strategy {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete brand awareness strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete brand awareness strategy",
+        ) from e
+
+
+# ---------- ConsiderationStrategy Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/consideration-strategies",
+    response_model=ConsiderationStrategyResponse,
+)
+async def create_consideration_strategy(
+    account_id: str,
+    strategy: ConsiderationStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConsiderationStrategyResponse:
+    """Create consideration strategy. Links to CustomerProfile and ProductCategory."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_consideration_strategy(
+            account_id, strategy, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating consideration strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create consideration strategy",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/consideration-strategies",
+    response_model=ConsiderationStrategyListResponse,
+)
+async def list_consideration_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConsiderationStrategyListResponse:
+    """List all consideration strategies."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "ConsiderationStrategy")
+        strategies_data = await service.list_nodes(
+            account_id, "ConsiderationStrategy", skip=skip, limit=limit
+        )
+        strategies = [ConsiderationStrategyResponse(**s) for s in strategies_data]
+
+        return ConsiderationStrategyListResponse(
+            strategies=strategies, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list consideration strategies: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list consideration strategies",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/consideration-strategies/{node_id}",
+    response_model=ConsiderationStrategyResponse,
+)
+async def get_consideration_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConsiderationStrategyResponse:
+    """Get a specific consideration strategy."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        strategy = await service.get_node(account_id, node_id, "ConsiderationStrategy")
+        if not strategy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Consideration strategy not found",
+            )
+        return ConsiderationStrategyResponse(**strategy)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get consideration strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get consideration strategy",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/consideration-strategies/{node_id}",
+    response_model=ConsiderationStrategyResponse,
+)
+async def update_consideration_strategy(
+    account_id: str,
+    node_id: str,
+    updates: ConsiderationStrategyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConsiderationStrategyResponse:
+    """Update a consideration strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_consideration_strategy(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update consideration strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update consideration strategy",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/consideration-strategies/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_consideration_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a consideration strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_consideration_strategy(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Consideration strategy {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete consideration strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete consideration strategy",
+        ) from e
+
+
+# ---------- ConversionStrategy Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/conversion-strategies",
+    response_model=ConversionStrategyResponse,
+)
+async def create_conversion_strategy(
+    account_id: str,
+    strategy: ConversionStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConversionStrategyResponse:
+    """Create conversion strategy. Links to CustomerProfile and ProductCategory."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_conversion_strategy(
+            account_id, strategy, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating conversion strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create conversion strategy",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/conversion-strategies",
+    response_model=ConversionStrategyListResponse,
+)
+async def list_conversion_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConversionStrategyListResponse:
+    """List all conversion strategies."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "ConversionStrategy")
+        strategies_data = await service.list_nodes(
+            account_id, "ConversionStrategy", skip=skip, limit=limit
+        )
+        strategies = [ConversionStrategyResponse(**s) for s in strategies_data]
+
+        return ConversionStrategyListResponse(
+            strategies=strategies, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list conversion strategies: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list conversion strategies",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/conversion-strategies/{node_id}",
+    response_model=ConversionStrategyResponse,
+)
+async def get_conversion_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConversionStrategyResponse:
+    """Get a specific conversion strategy."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        strategy = await service.get_node(account_id, node_id, "ConversionStrategy")
+        if not strategy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversion strategy not found",
+            )
+        return ConversionStrategyResponse(**strategy)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get conversion strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get conversion strategy",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/conversion-strategies/{node_id}",
+    response_model=ConversionStrategyResponse,
+)
+async def update_conversion_strategy(
+    account_id: str,
+    node_id: str,
+    updates: ConversionStrategyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConversionStrategyResponse:
+    """Update a conversion strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_conversion_strategy(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update conversion strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update conversion strategy",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/conversion-strategies/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_conversion_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a conversion strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_conversion_strategy(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Conversion strategy {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete conversion strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete conversion strategy",
+        ) from e
+
+
+# ---------- LoyaltyStrategy Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/loyalty-strategies",
+    response_model=LoyaltyStrategyResponse,
+)
+async def create_loyalty_strategy(
+    account_id: str,
+    strategy: LoyaltyStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> LoyaltyStrategyResponse:
+    """Create loyalty strategy. Links to CustomerProfile and ProductCategory."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_loyalty_strategy(
+            account_id, strategy, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating loyalty strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create loyalty strategy",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/loyalty-strategies",
+    response_model=LoyaltyStrategyListResponse,
+)
+async def list_loyalty_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> LoyaltyStrategyListResponse:
+    """List all loyalty strategies."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "LoyaltyStrategy")
+        strategies_data = await service.list_nodes(
+            account_id, "LoyaltyStrategy", skip=skip, limit=limit
+        )
+        strategies = [LoyaltyStrategyResponse(**s) for s in strategies_data]
+
+        return LoyaltyStrategyListResponse(
+            strategies=strategies, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list loyalty strategies: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list loyalty strategies",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/loyalty-strategies/{node_id}",
+    response_model=LoyaltyStrategyResponse,
+)
+async def get_loyalty_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> LoyaltyStrategyResponse:
+    """Get a specific loyalty strategy."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        strategy = await service.get_node(account_id, node_id, "LoyaltyStrategy")
+        if not strategy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Loyalty strategy not found",
+            )
+        return LoyaltyStrategyResponse(**strategy)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get loyalty strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get loyalty strategy",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/loyalty-strategies/{node_id}",
+    response_model=LoyaltyStrategyResponse,
+)
+async def update_loyalty_strategy(
+    account_id: str,
+    node_id: str,
+    updates: LoyaltyStrategyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> LoyaltyStrategyResponse:
+    """Update a loyalty strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_loyalty_strategy(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update loyalty strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update loyalty strategy",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/loyalty-strategies/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_loyalty_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a loyalty strategy."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_loyalty_strategy(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Loyalty strategy {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete loyalty strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete loyalty strategy",
+        ) from e
+
+
+# ---------- Aggregated Marketing Strategy View ----------
+
+
+@router.get(
+    "/{account_id}/marketing-strategy", response_model=MarketingStrategyResponse
+)
+async def get_marketing_strategy(
+    account_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> MarketingStrategyResponse:
+    """Get complete marketing strategy graph."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        profiles_data = await service.list_nodes(account_id, "CustomerProfile")
+        problem_data = await service.list_nodes(account_id, "ProblemAwarenessStrategy")
+        brand_data = await service.list_nodes(account_id, "BrandAwarenessStrategy")
+        consideration_data = await service.list_nodes(
+            account_id, "ConsiderationStrategy"
+        )
+        conversion_data = await service.list_nodes(account_id, "ConversionStrategy")
+        loyalty_data = await service.list_nodes(account_id, "LoyaltyStrategy")
+
+        return MarketingStrategyResponse(
+            account_id=account_id,
+            customer_profiles=[CustomerProfileResponse(**p) for p in profiles_data],
+            problem_awareness_strategies=[
+                ProblemAwarenessStrategyResponse(**s) for s in problem_data
+            ],
+            brand_awareness_strategies=[
+                BrandAwarenessStrategyResponse(**s) for s in brand_data
+            ],
+            consideration_strategies=[
+                ConsiderationStrategyResponse(**s) for s in consideration_data
+            ],
+            conversion_strategies=[
+                ConversionStrategyResponse(**s) for s in conversion_data
+            ],
+            loyalty_strategies=[LoyaltyStrategyResponse(**s) for s in loyalty_data],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get marketing strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get marketing strategy",
         ) from e

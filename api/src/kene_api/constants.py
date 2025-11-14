@@ -25,9 +25,16 @@ VALID_NODE_TYPES = frozenset(
         "CompetitorStrength",
         "CompetitorWeakness",
         "SubstituteProduct",
+        # Marketing Strategy nodes (Steps 4 & 5)
+        "CustomerProfile",
+        "ProblemAwarenessStrategy",
+        "BrandAwarenessStrategy",
+        "ConsiderationStrategy",
+        "ConversionStrategy",
+        "LoyaltyStrategy",
         # Core system nodes
         "Account",
-        # Future phases: Marketing, Brand strategy nodes will be added here
+        # Future phases: Brand strategy nodes will be added here
     }
 )
 
@@ -51,6 +58,13 @@ NODE_TYPE_TO_PREFIX: dict[str, str] = {
     "CompetitorStrength": "compstrength",
     "CompetitorWeakness": "compweakness",
     "SubstituteProduct": "substitute",
+    # Marketing Strategy
+    "CustomerProfile": "icp",
+    "ProblemAwarenessStrategy": "problemaware",
+    "BrandAwarenessStrategy": "brandaware",
+    "ConsiderationStrategy": "consideration",
+    "ConversionStrategy": "conversion",
+    "LoyaltyStrategy": "loyalty",
     # System
     "Account": "acc",
 }
