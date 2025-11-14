@@ -22,7 +22,18 @@ from ..models.graph_models import (
     BrandAwarenessStrategyListResponse,
     BrandAwarenessStrategyResponse,
     BrandAwarenessStrategyUpdate,
+    BrandIdentityResponse,
+    BrandIdentityUpdate,
+    BrandPersonalityCreate,
+    BrandPersonalityListResponse,
+    BrandPersonalityResponse,
+    BrandPersonalityUpdate,
+    BrandStrategyResponse,
     BusinessStrategyResponse,
+    ColorPaletteCreate,
+    ColorPaletteListResponse,
+    ColorPaletteResponse,
+    ColorPaletteUpdate,
     CompetitiveEnvironmentResponse,
     CompetitiveEnvironmentUpdate,
     CompetitiveStrategyResponse,
@@ -59,11 +70,19 @@ from ..models.graph_models import (
     GoalListResponse,
     GoalResponse,
     GoalUpdate,
+    ImageStyleCreate,
+    ImageStyleListResponse,
+    ImageStyleResponse,
+    ImageStyleUpdate,
     LoyaltyStrategyCreate,
     LoyaltyStrategyListResponse,
     LoyaltyStrategyResponse,
     LoyaltyStrategyUpdate,
     MarketingStrategyResponse,
+    MissionAndValuesCreate,
+    MissionAndValuesListResponse,
+    MissionAndValuesResponse,
+    MissionAndValuesUpdate,
     OpportunityCreate,
     OpportunityListResponse,
     OpportunityResponse,
@@ -92,10 +111,18 @@ from ..models.graph_models import (
     SubstituteProductListResponse,
     SubstituteProductResponse,
     SubstituteProductUpdate,
+    TypographyCreate,
+    TypographyListResponse,
+    TypographyResponse,
+    TypographyUpdate,
     ValuePropositionCreate,
     ValuePropositionListResponse,
     ValuePropositionResponse,
     ValuePropositionUpdate,
+    VoiceAndToneCreate,
+    VoiceAndToneListResponse,
+    VoiceAndToneResponse,
+    VoiceAndToneUpdate,
     WeaknessCreate,
     WeaknessListResponse,
     WeaknessResponse,
@@ -4270,4 +4297,1180 @@ async def get_marketing_strategy(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get marketing strategy",
+        ) from e
+
+
+# ==================== Brand Strategy Endpoints ====================
+
+
+# ---------- BrandIdentity Hub Endpoints ----------
+
+
+@router.get("/{account_id}/brand-identity", response_model=BrandIdentityResponse)
+async def get_brand_identity(
+    account_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandIdentityResponse:
+    """Get brand identity hub. Returns 404 if not created yet."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        identity = await service.get_brand_identity(account_id)
+        if not identity:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Brand identity not found",
+            )
+        return BrandIdentityResponse(**identity)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get brand identity: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get brand identity",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/brand-identity/{node_id}",
+    response_model=BrandIdentityResponse,
+)
+async def update_brand_identity(
+    account_id: str,
+    node_id: str,
+    updates: BrandIdentityUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandIdentityResponse:
+    """Update brand identity hub."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_brand_identity(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update brand identity: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update brand identity",
+        ) from e
+
+
+# ---------- BrandPersonality Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/brand-personalities",
+    response_model=BrandPersonalityResponse,
+)
+async def create_brand_personality(
+    account_id: str,
+    personality: BrandPersonalityCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandPersonalityResponse:
+    """Create brand personality. Auto-creates BrandIdentity hub if needed."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_brand_personality(
+            account_id, personality, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating brand personality: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create brand personality",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/brand-personalities",
+    response_model=BrandPersonalityListResponse,
+)
+async def list_brand_personalities(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandPersonalityListResponse:
+    """List all brand personalities."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "BrandPersonality")
+        personalities_data = await service.list_nodes(
+            account_id, "BrandPersonality", skip=skip, limit=limit
+        )
+        personalities = [BrandPersonalityResponse(**p) for p in personalities_data]
+
+        return BrandPersonalityListResponse(
+            brand_personalities=personalities, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list brand personalities: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list brand personalities",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/brand-personalities/{node_id}",
+    response_model=BrandPersonalityResponse,
+)
+async def get_brand_personality(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandPersonalityResponse:
+    """Get a specific brand personality."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        personality = await service.get_node(account_id, node_id, "BrandPersonality")
+        if not personality:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Brand personality not found",
+            )
+        return BrandPersonalityResponse(**personality)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get brand personality: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get brand personality",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/brand-personalities/{node_id}",
+    response_model=BrandPersonalityResponse,
+)
+async def update_brand_personality(
+    account_id: str,
+    node_id: str,
+    updates: BrandPersonalityUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandPersonalityResponse:
+    """Update a brand personality."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_brand_personality(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update brand personality: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update brand personality",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/brand-personalities/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_brand_personality(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a brand personality."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_brand_personality(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Brand personality {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete brand personality: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete brand personality",
+        ) from e
+
+
+# ---------- VoiceAndTone Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/voice-and-tone",
+    response_model=VoiceAndToneResponse,
+)
+async def create_voice_and_tone(
+    account_id: str,
+    voice_tone: VoiceAndToneCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> VoiceAndToneResponse:
+    """Create voice and tone. Auto-creates BrandIdentity hub if needed."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_voice_and_tone(
+            account_id, voice_tone, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating voice and tone: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create voice and tone",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/voice-and-tone",
+    response_model=VoiceAndToneListResponse,
+)
+async def list_voice_and_tone(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> VoiceAndToneListResponse:
+    """List all voice and tone."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "VoiceAndTone")
+        voice_tones_data = await service.list_nodes(
+            account_id, "VoiceAndTone", skip=skip, limit=limit
+        )
+        voice_tones = [VoiceAndToneResponse(**v) for v in voice_tones_data]
+
+        return VoiceAndToneListResponse(
+            voice_and_tones=voice_tones, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list voice and tone: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list voice and tone",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/voice-and-tone/{node_id}",
+    response_model=VoiceAndToneResponse,
+)
+async def get_voice_and_tone(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> VoiceAndToneResponse:
+    """Get a specific voice and tone."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        voice_tone = await service.get_node(account_id, node_id, "VoiceAndTone")
+        if not voice_tone:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Voice and tone not found",
+            )
+        return VoiceAndToneResponse(**voice_tone)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get voice and tone: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get voice and tone",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/voice-and-tone/{node_id}",
+    response_model=VoiceAndToneResponse,
+)
+async def update_voice_and_tone(
+    account_id: str,
+    node_id: str,
+    updates: VoiceAndToneUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> VoiceAndToneResponse:
+    """Update a voice and tone."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_voice_and_tone(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update voice and tone: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update voice and tone",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/voice-and-tone/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_voice_and_tone(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a voice and tone."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_voice_and_tone(account_id, node_id, user.user_id)
+        return DeleteResponse(success=True, message=f"Voice and tone {node_id} deleted")
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete voice and tone: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete voice and tone",
+        ) from e
+
+
+# ---------- ColorPalette Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/color-palettes",
+    response_model=ColorPaletteResponse,
+)
+async def create_color_palette(
+    account_id: str,
+    palette: ColorPaletteCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ColorPaletteResponse:
+    """Create color palette. Auto-creates BrandIdentity hub if needed."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_color_palette(account_id, palette, user.user_id)
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating color palette: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create color palette",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/color-palettes",
+    response_model=ColorPaletteListResponse,
+)
+async def list_color_palettes(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ColorPaletteListResponse:
+    """List all color palettes."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "ColorPalette")
+        palettes_data = await service.list_nodes(
+            account_id, "ColorPalette", skip=skip, limit=limit
+        )
+        palettes = [ColorPaletteResponse(**p) for p in palettes_data]
+
+        return ColorPaletteListResponse(
+            color_palettes=palettes, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list color palettes: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list color palettes",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/color-palettes/{node_id}",
+    response_model=ColorPaletteResponse,
+)
+async def get_color_palette(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ColorPaletteResponse:
+    """Get a specific color palette."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        palette = await service.get_node(account_id, node_id, "ColorPalette")
+        if not palette:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Color palette not found",
+            )
+        return ColorPaletteResponse(**palette)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get color palette: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get color palette",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/color-palettes/{node_id}",
+    response_model=ColorPaletteResponse,
+)
+async def update_color_palette(
+    account_id: str,
+    node_id: str,
+    updates: ColorPaletteUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ColorPaletteResponse:
+    """Update a color palette."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_color_palette(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update color palette: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update color palette",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/color-palettes/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_color_palette(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a color palette."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_color_palette(account_id, node_id, user.user_id)
+        return DeleteResponse(success=True, message=f"Color palette {node_id} deleted")
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete color palette: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete color palette",
+        ) from e
+
+
+# ---------- Typography Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/typography",
+    response_model=TypographyResponse,
+)
+async def create_typography(
+    account_id: str,
+    typography: TypographyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> TypographyResponse:
+    """Create typography. Auto-creates BrandIdentity hub if needed."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_typography(account_id, typography, user.user_id)
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating typography: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create typography",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/typography",
+    response_model=TypographyListResponse,
+)
+async def list_typography(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> TypographyListResponse:
+    """List all typography."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "Typography")
+        typographies_data = await service.list_nodes(
+            account_id, "Typography", skip=skip, limit=limit
+        )
+        typographies = [TypographyResponse(**t) for t in typographies_data]
+
+        return TypographyListResponse(
+            typographies=typographies, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list typography: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list typography",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/typography/{node_id}",
+    response_model=TypographyResponse,
+)
+async def get_typography(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> TypographyResponse:
+    """Get a specific typography."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        typography = await service.get_node(account_id, node_id, "Typography")
+        if not typography:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Typography not found",
+            )
+        return TypographyResponse(**typography)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get typography: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get typography",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/typography/{node_id}",
+    response_model=TypographyResponse,
+)
+async def update_typography(
+    account_id: str,
+    node_id: str,
+    updates: TypographyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> TypographyResponse:
+    """Update a typography."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_typography(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update typography: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update typography",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/typography/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_typography(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a typography."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_typography(account_id, node_id, user.user_id)
+        return DeleteResponse(success=True, message=f"Typography {node_id} deleted")
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete typography: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete typography",
+        ) from e
+
+
+# ---------- ImageStyle Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/image-styles",
+    response_model=ImageStyleResponse,
+)
+async def create_image_style(
+    account_id: str,
+    image_style: ImageStyleCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ImageStyleResponse:
+    """Create image style. Auto-creates BrandIdentity hub if needed."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_image_style(account_id, image_style, user.user_id)
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating image style: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create image style",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/image-styles",
+    response_model=ImageStyleListResponse,
+)
+async def list_image_styles(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ImageStyleListResponse:
+    """List all image styles."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "ImageStyle")
+        styles_data = await service.list_nodes(
+            account_id, "ImageStyle", skip=skip, limit=limit
+        )
+        styles = [ImageStyleResponse(**s) for s in styles_data]
+
+        return ImageStyleListResponse(image_styles=styles, total_count=total_count)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list image styles: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list image styles",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/image-styles/{node_id}",
+    response_model=ImageStyleResponse,
+)
+async def get_image_style(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ImageStyleResponse:
+    """Get a specific image style."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        style = await service.get_node(account_id, node_id, "ImageStyle")
+        if not style:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Image style not found",
+            )
+        return ImageStyleResponse(**style)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get image style: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get image style",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/image-styles/{node_id}",
+    response_model=ImageStyleResponse,
+)
+async def update_image_style(
+    account_id: str,
+    node_id: str,
+    updates: ImageStyleUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ImageStyleResponse:
+    """Update an image style."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_image_style(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update image style: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update image style",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/image-styles/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_image_style(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete an image style."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_image_style(account_id, node_id, user.user_id)
+        return DeleteResponse(success=True, message=f"Image style {node_id} deleted")
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete image style: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete image style",
+        ) from e
+
+
+# ---------- MissionAndValues Endpoints ----------
+
+
+@router.post(
+    "/{account_id}/mission-and-values",
+    response_model=MissionAndValuesResponse,
+)
+async def create_mission_and_values(
+    account_id: str,
+    mission_values: MissionAndValuesCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> MissionAndValuesResponse:
+    """Create mission and values. Auto-creates BrandIdentity hub if needed."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.create_mission_and_values(
+            account_id, mission_values, user.user_id
+        )
+        return result
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating mission and values: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create mission and values",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/mission-and-values",
+    response_model=MissionAndValuesListResponse,
+)
+async def list_mission_and_values(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> MissionAndValuesListResponse:
+    """List all mission and values."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(account_id, "MissionAndValues")
+        mission_values_data = await service.list_nodes(
+            account_id, "MissionAndValues", skip=skip, limit=limit
+        )
+        mission_values = [MissionAndValuesResponse(**m) for m in mission_values_data]
+
+        return MissionAndValuesListResponse(
+            mission_and_values=mission_values, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to list mission and values: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list mission and values",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/mission-and-values/{node_id}",
+    response_model=MissionAndValuesResponse,
+)
+async def get_mission_and_values(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> MissionAndValuesResponse:
+    """Get a specific mission and values."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        mission_values = await service.get_node(account_id, node_id, "MissionAndValues")
+        if not mission_values:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mission and values not found",
+            )
+        return MissionAndValuesResponse(**mission_values)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get mission and values: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get mission and values",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/mission-and-values/{node_id}",
+    response_model=MissionAndValuesResponse,
+)
+async def update_mission_and_values(
+    account_id: str,
+    node_id: str,
+    updates: MissionAndValuesUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> MissionAndValuesResponse:
+    """Update mission and values."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        result = await service.update_mission_and_values(
+            account_id, node_id, updates, user.user_id
+        )
+        return result
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except ValidationException as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update mission and values: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update mission and values",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/mission-and-values/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_mission_and_values(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete mission and values."""
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.delete_mission_and_values(account_id, node_id, user.user_id)
+        return DeleteResponse(
+            success=True, message=f"Mission and values {node_id} deleted"
+        )
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except GraphSyncException as e:
+        logger.error(f"Graph sync error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete mission and values: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete mission and values",
+        ) from e
+
+
+# ---------- Aggregated Brand Strategy View ----------
+
+
+@router.get("/{account_id}/brand-strategy", response_model=BrandStrategyResponse)
+async def get_brand_strategy(
+    account_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandStrategyResponse:
+    """Get complete brand strategy graph."""
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        identity = await service.get_brand_identity(account_id)
+        personalities_data = await service.list_nodes(account_id, "BrandPersonality")
+        voice_tones_data = await service.list_nodes(account_id, "VoiceAndTone")
+        palettes_data = await service.list_nodes(account_id, "ColorPalette")
+        typographies_data = await service.list_nodes(account_id, "Typography")
+        styles_data = await service.list_nodes(account_id, "ImageStyle")
+        mission_data = await service.list_nodes(account_id, "MissionAndValues")
+
+        return BrandStrategyResponse(
+            account_id=account_id,
+            brand_identity=BrandIdentityResponse(**identity) if identity else None,
+            brand_personalities=[
+                BrandPersonalityResponse(**p) for p in personalities_data
+            ],
+            voice_and_tones=[VoiceAndToneResponse(**v) for v in voice_tones_data],
+            color_palettes=[ColorPaletteResponse(**c) for c in palettes_data],
+            typographies=[TypographyResponse(**t) for t in typographies_data],
+            image_styles=[ImageStyleResponse(**s) for s in styles_data],
+            mission_and_values=[MissionAndValuesResponse(**m) for m in mission_data],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get brand strategy: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get brand strategy",
         ) from e
