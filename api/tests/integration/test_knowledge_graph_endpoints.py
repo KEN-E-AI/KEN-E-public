@@ -7,12 +7,17 @@ import pytest
 from httpx import AsyncClient
 from kene_api.main import app
 from kene_api.models.graph_models import (
+    CompetitorCreate,
+    CompetitorStrengthCreate,
+    CompetitorTacticCreate,
+    CompetitorWeaknessCreate,
     GoalCreate,
     OpportunityCreate,
     ProductCategoryCreate,
     ProductCreate,
     RiskCreate,
     StrengthCreate,
+    SubstituteProductCreate,
     ValuePropositionCreate,
 )
 
@@ -709,3 +714,378 @@ class TestErrorHandling:
             json={"product_name": "New Name"},
         )
         assert response.status_code == 400 or response.status_code == 404
+
+
+# ==================== Competitive Strategy Integration Tests ====================
+
+
+class TestCompetitorEndpoints:
+    """Integration tests for Competitor CRUD endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_create_list_get_update_delete_competitor(self, authenticated_client):
+        """Test complete CRUD flow for competitor."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # 1. CREATE - Create a new competitor
+        competitor_data = CompetitorCreate(
+            display_name="Molekule, Inc",
+            description="Premium air purifier manufacturer with PECO technology",
+            references=["https://molekule.com/about"],
+        )
+
+        create_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert create_response.status_code == 200
+        created_competitor = create_response.json()
+        assert created_competitor["display_name"] == "Molekule, Inc"
+        assert created_competitor["account_id"] == TEST_ACCOUNT_ID
+        assert "node_id" in created_competitor
+        assert created_competitor["references"] == ["https://molekule.com/about"]
+
+        competitor_node_id = created_competitor["node_id"]
+
+        # 2. LIST - Verify competitor appears in list
+        list_response = await authenticated_client.get(f"{base_url}/competitors")
+        assert list_response.status_code == 200
+        competitors = list_response.json()
+        assert competitors["total_count"] >= 1
+        assert any(
+            c["node_id"] == competitor_node_id for c in competitors["competitors"]
+        )
+
+        # 3. GET - Retrieve specific competitor
+        get_response = await authenticated_client.get(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+        assert get_response.status_code == 200
+        retrieved_competitor = get_response.json()
+        assert retrieved_competitor["node_id"] == competitor_node_id
+        assert retrieved_competitor["display_name"] == "Molekule, Inc"
+
+        # 4. UPDATE - Update competitor
+        update_response = await authenticated_client.patch(
+            f"{base_url}/competitors/{competitor_node_id}",
+            json={
+                "description": "Premium air purifier manufacturer with patented PECO technology"
+            },
+        )
+        assert update_response.status_code == 200
+        updated_competitor = update_response.json()
+        assert "patented PECO" in updated_competitor["description"]
+        assert updated_competitor["display_name"] == "Molekule, Inc"  # Unchanged
+
+        # 5. DELETE - Delete competitor (should succeed if no dependencies)
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+        assert delete_response.status_code == 200
+        delete_data = delete_response.json()
+        assert delete_data["success"] is True
+
+        # Verify deletion
+        get_after_delete = await authenticated_client.get(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+        assert get_after_delete.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_competitor_with_tactics_fails(self, authenticated_client):
+        """Test that deleting competitor with tactics fails."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create competitor
+        competitor_data = CompetitorCreate(
+            display_name="Test Competitor with Tactics",
+            description="Test competitor",
+            references=[],
+        )
+        create_comp_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert create_comp_response.status_code == 200
+        competitor_node_id = create_comp_response.json()["node_id"]
+
+        # Create tactic linked to competitor
+        tactic_data = CompetitorTacticCreate(
+            display_name="Social Media Campaign",
+            description="Active on LinkedIn and Twitter",
+            references=[],
+            competitor_node_id=competitor_node_id,
+        )
+        create_tactic_response = await authenticated_client.post(
+            f"{base_url}/competitor-tactics", json=tactic_data.model_dump()
+        )
+        assert create_tactic_response.status_code == 200
+        tactic_node_id = create_tactic_response.json()["node_id"]
+
+        # Try to delete competitor (should fail due to tactic dependency)
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+        assert delete_response.status_code == 400
+        error_data = delete_response.json()
+        assert "dependent" in error_data["detail"].lower()
+
+        # Cleanup: Delete tactic first, then competitor
+        await authenticated_client.delete(
+            f"{base_url}/competitor-tactics/{tactic_node_id}"
+        )
+        delete_comp_response = await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+        assert delete_comp_response.status_code == 200
+
+
+class TestCompetitiveStrategyAggregatedView:
+    """Integration tests for aggregated competitive strategy endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_get_competitive_strategy_returns_all_nodes(
+        self, authenticated_client
+    ):
+        """Test that aggregated view returns complete competitive graph."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create test data
+        # 1. Create competitor
+        competitor_data = CompetitorCreate(
+            display_name="Aggregation Test Competitor",
+            description="Test competitor for aggregation",
+            references=[],
+        )
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert comp_response.status_code == 200
+        competitor_node_id = comp_response.json()["node_id"]
+
+        # 2. Create tactic
+        tactic_data = CompetitorTacticCreate(
+            display_name="Test Tactic",
+            description="Test tactic",
+            references=[],
+            competitor_node_id=competitor_node_id,
+        )
+        tactic_response = await authenticated_client.post(
+            f"{base_url}/competitor-tactics", json=tactic_data.model_dump()
+        )
+        assert tactic_response.status_code == 200
+        tactic_node_id = tactic_response.json()["node_id"]
+
+        # 3. Get aggregated view
+        agg_response = await authenticated_client.get(
+            f"{base_url}/competitive-strategy"
+        )
+        assert agg_response.status_code == 200
+        strategy = agg_response.json()
+
+        # Verify structure
+        assert "account_id" in strategy
+        assert strategy["account_id"] == TEST_ACCOUNT_ID
+        assert "competitive_environment" in strategy
+        assert "competitors" in strategy
+        assert "competitor_tactics" in strategy
+        assert "competitor_strengths" in strategy
+        assert "competitor_weaknesses" in strategy
+        assert "substitute_products" in strategy
+
+        # Verify created nodes appear
+        assert any(c["node_id"] == competitor_node_id for c in strategy["competitors"])
+        assert any(
+            t["node_id"] == tactic_node_id for t in strategy["competitor_tactics"]
+        )
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/competitor-tactics/{tactic_node_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+
+
+class TestCompetitiveEnvironmentHubBehavior:
+    """Integration tests for CompetitiveEnvironment hub node behavior."""
+
+    @pytest.mark.asyncio
+    async def test_competitive_environment_auto_created_with_first_competitor(
+        self, authenticated_client
+    ):
+        """Test that CompetitiveEnvironment is auto-created when first competitor is added."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Check if environment exists before
+        env_before = await authenticated_client.get(
+            f"{base_url}/competitive-environment"
+        )
+        # May or may not exist depending on previous tests
+
+        # Create first competitor
+        competitor_data = CompetitorCreate(
+            display_name="Hub Test Competitor",
+            description="Test for hub creation",
+            references=[],
+        )
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert comp_response.status_code == 200
+        competitor_node_id = comp_response.json()["node_id"]
+
+        # Verify environment now exists
+        env_after = await authenticated_client.get(
+            f"{base_url}/competitive-environment"
+        )
+        assert env_after.status_code == 200
+        environment = env_after.json()
+        assert "node_id" in environment
+        assert "description" in environment
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
+
+
+class TestCompetitorLimits:
+    """Integration tests for competitor resource limits."""
+
+    @pytest.mark.asyncio
+    async def test_create_competitor_enforces_account_limit(self, authenticated_client):
+        """Test that creating 6th competitor fails with clear error."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 5 competitors (the maximum)
+        competitor_ids = []
+        for i in range(5):
+            response = await authenticated_client.post(
+                f"{base_url}/competitors",
+                json={
+                    "display_name": f"Test Competitor {i + 1}",
+                    "description": f"Competitor description {i + 1}",
+                    "references": [],
+                },
+            )
+            assert response.status_code == 200
+            competitor_ids.append(response.json()["node_id"])
+
+        # Attempt to create 6th competitor should fail
+        response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "Test Competitor 6",
+                "description": "This should fail due to limit",
+                "references": [],
+            },
+        )
+        assert response.status_code == 400
+        error_detail = response.json()["detail"]
+        assert "Maximum of 5 competitors" in error_detail
+        assert "delete an existing competitor" in error_detail.lower()
+
+        # Verify count is still 5
+        list_response = await authenticated_client.get(f"{base_url}/competitors")
+        assert list_response.status_code == 200
+        assert list_response.json()["total_count"] == 5
+
+        # Cleanup
+        for competitor_id in competitor_ids:
+            await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+    @pytest.mark.asyncio
+    async def test_create_competitor_tactic_enforces_per_competitor_limit(
+        self, authenticated_client
+    ):
+        """Test that creating 6th tactic for same competitor fails."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create competitor
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "Tactic Limit Test Competitor",
+                "description": "Testing tactic limits",
+                "references": [],
+            },
+        )
+        assert comp_response.status_code == 200
+        competitor_id = comp_response.json()["node_id"]
+
+        # Create 5 tactics (the maximum)
+        tactic_ids = []
+        for i in range(5):
+            response = await authenticated_client.post(
+                f"{base_url}/competitor-tactics",
+                json={
+                    "display_name": f"Tactic {i + 1}",
+                    "description": f"Tactic description {i + 1}",
+                    "references": [],
+                    "competitor_node_id": competitor_id,
+                },
+            )
+            assert response.status_code == 200
+            tactic_ids.append(response.json()["node_id"])
+
+        # Attempt to create 6th tactic should fail
+        response = await authenticated_client.post(
+            f"{base_url}/competitor-tactics",
+            json={
+                "display_name": "Tactic 6",
+                "description": "This should fail due to limit",
+                "references": [],
+                "competitor_node_id": competitor_id,
+            },
+        )
+        assert response.status_code == 400
+        assert "Maximum of 5 tactics" in response.json()["detail"]
+
+        # Cleanup
+        for tactic_id in tactic_ids:
+            await authenticated_client.delete(
+                f"{base_url}/competitor-tactics/{tactic_id}"
+            )
+        await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+    @pytest.mark.asyncio
+    async def test_delete_competitor_frees_up_account_limit(self, authenticated_client):
+        """Test that deleting a competitor allows creating a new one."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 5 competitors (the maximum)
+        competitor_ids = []
+        for i in range(5):
+            response = await authenticated_client.post(
+                f"{base_url}/competitors",
+                json={
+                    "display_name": f"Delete Test Competitor {i + 1}",
+                    "description": f"Competitor description {i + 1}",
+                    "references": [],
+                },
+            )
+            assert response.status_code == 200
+            competitor_ids.append(response.json()["node_id"])
+
+        # Delete one competitor
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_ids[0]}"
+        )
+        assert delete_response.status_code == 200
+
+        # Now should be able to create a new competitor
+        response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "New Competitor After Delete",
+                "description": "This should succeed",
+                "references": [],
+            },
+        )
+        assert response.status_code == 200
+        new_competitor_id = response.json()["node_id"]
+
+        # Cleanup
+        await authenticated_client.delete(f"{base_url}/competitors/{new_competitor_id}")
+        for competitor_id in competitor_ids[1:]:  # Skip the already deleted one
+            await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")

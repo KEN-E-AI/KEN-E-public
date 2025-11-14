@@ -21,6 +21,21 @@ from ..exceptions import (
 )
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.graph_models import (
+    CompetitiveEnvironmentCreate,
+    CompetitiveEnvironmentResponse,
+    CompetitiveEnvironmentUpdate,
+    CompetitorCreate,
+    CompetitorResponse,
+    CompetitorStrengthCreate,
+    CompetitorStrengthResponse,
+    CompetitorStrengthUpdate,
+    CompetitorTacticCreate,
+    CompetitorTacticResponse,
+    CompetitorTacticUpdate,
+    CompetitorUpdate,
+    CompetitorWeaknessCreate,
+    CompetitorWeaknessResponse,
+    CompetitorWeaknessUpdate,
     GoalCreate,
     GoalResponse,
     GoalUpdate,
@@ -39,6 +54,9 @@ from ..models.graph_models import (
     StrengthCreate,
     StrengthResponse,
     StrengthUpdate,
+    SubstituteProductCreate,
+    SubstituteProductResponse,
+    SubstituteProductUpdate,
     ValuePropositionCreate,
     ValuePropositionResponse,
     ValuePropositionUpdate,
@@ -1775,6 +1793,521 @@ class GraphSyncService:
             check_dependencies=False,
         )
 
+    # ==================== CONVENIENCE WRAPPERS FOR COMPETITIVE STRATEGY ====================
+    # Steps 2 & 3 Implementation
+
+    async def create_competitive_environment(
+        self,
+        account_id: str,
+        env: CompetitiveEnvironmentCreate,
+        user_id: str,
+    ) -> CompetitiveEnvironmentResponse:
+        """Create or update competitive environment hub node.
+
+        CompetitiveEnvironment is a hub node - only one per account is allowed.
+        If one exists, it will be updated; otherwise, a new one is created.
+
+        Args:
+            account_id: Account identifier
+            env: Environment creation data
+            user_id: User creating the environment
+
+        Returns:
+            Created or updated competitive environment
+        """
+        # Check if competitive environment already exists
+        existing = await self.list_nodes(
+            account_id, "CompetitiveEnvironment", skip=0, limit=1
+        )
+
+        if existing:
+            # Update existing
+            existing_node_id = existing[0]["node_id"]
+            return await self.update_competitive_environment(
+                account_id=account_id,
+                node_id=existing_node_id,
+                updates=CompetitiveEnvironmentUpdate(**env.model_dump()),
+                user_id=user_id,
+            )
+
+        # Create new
+        node_data = {"description": env.description.strip()}
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="CompetitiveEnvironment",
+            node_data=node_data,
+            parent_node_id=None,  # Links to Account
+            parent_node_type=None,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitiveEnvironmentResponse(**result)
+
+    async def update_competitive_environment(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: CompetitiveEnvironmentUpdate,
+        user_id: str,
+    ) -> CompetitiveEnvironmentResponse:
+        """Update competitive environment."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitiveEnvironment",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitiveEnvironmentResponse(**result)
+
+    async def create_competitor(
+        self,
+        account_id: str,
+        competitor: CompetitorCreate,
+        user_id: str,
+    ) -> CompetitorResponse:
+        """Create a competitor node.
+
+        Args:
+            account_id: Account identifier
+            competitor: Competitor creation data
+            user_id: User creating the competitor
+
+        Returns:
+            Created competitor
+
+        Raises:
+            ValidationException: If validation fails
+            DuplicateNodeException: If competitor name already exists
+        """
+        # Validate non-empty strings
+        is_valid, error = self.validation.validate_non_empty_string(
+            competitor.display_name, "display_name"
+        )
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        is_valid, error = self.validation.validate_non_empty_string(
+            competitor.description, "description"
+        )
+        if not is_valid:
+            raise ValidationException(error, "description")
+
+        # Validate competitor limit
+        from ..constants import MAX_COMPETITORS_PER_ACCOUNT
+
+        current_count = await self.count_nodes(account_id, "Competitor")
+        if current_count >= MAX_COMPETITORS_PER_ACCOUNT:
+            raise ValidationException(
+                f"Maximum of {MAX_COMPETITORS_PER_ACCOUNT} competitors allowed per account. "
+                "Please delete an existing competitor before adding a new one.",
+                "account_id",
+            )
+
+        # Ensure CompetitiveEnvironment hub exists
+        comp_envs = await self.list_nodes(
+            account_id, "CompetitiveEnvironment", skip=0, limit=1
+        )
+        if not comp_envs:
+            # Auto-create hub if it doesn't exist
+            await self.create_competitive_environment(
+                account_id=account_id,
+                env=CompetitiveEnvironmentCreate(
+                    description="Competitive environment for tracking key competitors and market analysis."
+                ),
+                user_id=user_id,
+            )
+
+        node_data = {
+            "display_name": competitor.display_name.strip(),
+            "description": competitor.description.strip(),
+            "references": competitor.references,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="Competitor",
+            node_data=node_data,
+            parent_node_id=None,  # Competitor links to CompetitiveEnvironment via IS_KEY_PLAYER in _create_node_neo4j
+            parent_node_type=None,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorResponse(**result)
+
+    async def update_competitor(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: CompetitorUpdate,
+        user_id: str,
+    ) -> CompetitorResponse:
+        """Update a competitor."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Competitor",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorResponse(**result)
+
+    async def delete_competitor(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a competitor (validates no dependent nodes exist)."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Competitor",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+            check_dependencies=True,
+        )
+
+    async def create_competitor_tactic(
+        self,
+        account_id: str,
+        tactic: CompetitorTacticCreate,
+        user_id: str,
+    ) -> CompetitorTacticResponse:
+        """Create a competitor tactic node."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            tactic.display_name, "display_name"
+        )
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        # Validate tactics limit per competitor
+        from ..constants import MAX_TACTICS_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "CompetitorTactic", parent_node_id=tactic.competitor_node_id
+        )
+        if current_count >= MAX_TACTICS_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_TACTICS_PER_COMPETITOR} tactics allowed per competitor. "
+                "Please delete an existing tactic before adding a new one.",
+                "competitor_node_id",
+            )
+
+        node_data = {
+            "display_name": tactic.display_name.strip(),
+            "description": tactic.description.strip(),
+            "references": tactic.references,
+            "competitor_node_id": tactic.competitor_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="CompetitorTactic",
+            node_data=node_data,
+            parent_node_id=tactic.competitor_node_id,
+            parent_node_type="Competitor",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorTacticResponse(**result)
+
+    async def update_competitor_tactic(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: CompetitorTacticUpdate,
+        user_id: str,
+    ) -> CompetitorTacticResponse:
+        """Update a competitor tactic."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitorTactic",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorTacticResponse(**result)
+
+    async def delete_competitor_tactic(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a competitor tactic."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitorTactic",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+            check_dependencies=False,
+        )
+
+    async def create_competitor_strength(
+        self,
+        account_id: str,
+        strength: CompetitorStrengthCreate,
+        user_id: str,
+    ) -> CompetitorStrengthResponse:
+        """Create a competitor strength node."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            strength.display_name, "display_name"
+        )
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        # Validate strengths limit per competitor
+        from ..constants import MAX_STRENGTHS_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "CompetitorStrength", parent_node_id=strength.competitor_node_id
+        )
+        if current_count >= MAX_STRENGTHS_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_STRENGTHS_PER_COMPETITOR} strengths allowed per competitor. "
+                "Please delete an existing strength before adding a new one.",
+                "competitor_node_id",
+            )
+
+        node_data = {
+            "display_name": strength.display_name.strip(),
+            "description": strength.description.strip(),
+            "references": strength.references,
+            "competitor_node_id": strength.competitor_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="CompetitorStrength",
+            node_data=node_data,
+            parent_node_id=strength.competitor_node_id,
+            parent_node_type="Competitor",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorStrengthResponse(**result)
+
+    async def update_competitor_strength(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: CompetitorStrengthUpdate,
+        user_id: str,
+    ) -> CompetitorStrengthResponse:
+        """Update a competitor strength."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitorStrength",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorStrengthResponse(**result)
+
+    async def delete_competitor_strength(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a competitor strength (validates no dependent risks exist)."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitorStrength",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+            check_dependencies=True,
+        )
+
+    async def create_competitor_weakness(
+        self,
+        account_id: str,
+        weakness: CompetitorWeaknessCreate,
+        user_id: str,
+    ) -> CompetitorWeaknessResponse:
+        """Create a competitor weakness node."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            weakness.display_name, "display_name"
+        )
+        if not is_valid:
+            raise ValidationException(error, "display_name")
+
+        # Validate weaknesses limit per competitor
+        from ..constants import MAX_WEAKNESSES_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "CompetitorWeakness", parent_node_id=weakness.competitor_node_id
+        )
+        if current_count >= MAX_WEAKNESSES_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_WEAKNESSES_PER_COMPETITOR} weaknesses allowed per competitor. "
+                "Please delete an existing weakness before adding a new one.",
+                "competitor_node_id",
+            )
+
+        node_data = {
+            "display_name": weakness.display_name.strip(),
+            "description": weakness.description.strip(),
+            "references": weakness.references,
+            "competitor_node_id": weakness.competitor_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="CompetitorWeakness",
+            node_data=node_data,
+            parent_node_id=weakness.competitor_node_id,
+            parent_node_type="Competitor",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorWeaknessResponse(**result)
+
+    async def update_competitor_weakness(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: CompetitorWeaknessUpdate,
+        user_id: str,
+    ) -> CompetitorWeaknessResponse:
+        """Update a competitor weakness."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitorWeakness",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return CompetitorWeaknessResponse(**result)
+
+    async def delete_competitor_weakness(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a competitor weakness (validates no dependent opportunities exist)."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="CompetitorWeakness",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+            check_dependencies=True,
+        )
+
+    async def create_substitute_product(
+        self,
+        account_id: str,
+        product: SubstituteProductCreate,
+        user_id: str,
+    ) -> SubstituteProductResponse:
+        """Create a substitute product node."""
+        is_valid, error = self.validation.validate_non_empty_string(
+            product.product_name, "product_name"
+        )
+        if not is_valid:
+            raise ValidationException(error, "product_name")
+
+        # Validate substitute products limit per competitor
+        from ..constants import MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "SubstituteProduct", parent_node_id=product.competitor_node_id
+        )
+        if current_count >= MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR} substitute products allowed per competitor. "
+                "Please delete an existing product before adding a new one.",
+                "competitor_node_id",
+            )
+
+        node_data = {
+            "product_name": product.product_name.strip(),
+            "description": product.description.strip(),
+            "references": product.references,
+            "product_detail_page": product.product_detail_page,
+            "competitor_node_id": product.competitor_node_id,
+        }
+
+        result = await self.create_node(
+            account_id=account_id,
+            node_type="SubstituteProduct",
+            node_data=node_data,
+            parent_node_id=product.competitor_node_id,
+            parent_node_type="Competitor",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return SubstituteProductResponse(**result)
+
+    async def update_substitute_product(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: SubstituteProductUpdate,
+        user_id: str,
+    ) -> SubstituteProductResponse:
+        """Update a substitute product."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        result = await self.update_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="SubstituteProduct",
+            updates=update_dict,
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+        )
+
+        return SubstituteProductResponse(**result)
+
+    async def delete_substitute_product(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a substitute product (validates no dependent value propositions exist)."""
+        await self.delete_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="SubstituteProduct",
+            user_id=user_id,
+            firestore_doc_type="competitive_strategy",
+            check_dependencies=True,
+        )
+
     # ==================== GENERIC HELPER METHODS ====================
 
     def _generate_node_id(self, node_type: str, account_id: str) -> str:
@@ -1938,6 +2471,19 @@ class GraphSyncService:
             ("Weakness", "SWOTAnalysis"): {"from_parent": "HAS_WEAKNESS"},
             ("Opportunity", "Strength"): {"from_parent": "CREATES"},
             ("Risk", "Weakness"): {"from_parent": "CREATES"},
+            # Competitive Strategy
+            ("CompetitorTactic", "Competitor"): {"from_parent": "USES_TACTIC"},
+            ("CompetitorStrength", "Competitor"): {"from_parent": "HAS_STRENGTH"},
+            ("CompetitorWeakness", "Competitor"): {"from_parent": "HAS_WEAKNESS"},
+            ("SubstituteProduct", "Competitor"): {"from_parent": "OFFERS_PRODUCT"},
+            ("ValueProposition", "Competitor"): {
+                "from_parent": "HAS_VALUE_PROPOSITION"
+            },
+            ("ValueProposition", "SubstituteProduct"): {
+                "from_parent": "HAS_VALUE_PROPOSITION"
+            },
+            ("Risk", "CompetitorStrength"): {"from_parent": "CREATES"},
+            ("Opportunity", "CompetitorWeakness"): {"from_parent": "CREATES"},
         }
 
         return relationship_map.get((node_type, parent_node_type))
@@ -2001,6 +2547,7 @@ class GraphSyncService:
         Returns:
             (can_delete, reason) tuple
         """
+        # Business Strategy
         if node_type == "ProductCategory":
             return await self.validation.validate_can_delete_product_category(node_id)
         elif node_type == "Product":
@@ -2009,6 +2556,19 @@ class GraphSyncService:
             return await self.validation.validate_can_delete_strength(node_id)
         elif node_type == "Weakness":
             return await self.validation.validate_can_delete_weakness(node_id)
+        # Competitive Strategy
+        elif node_type == "Competitor":
+            return await self.validation.validate_can_delete_competitor(node_id)
+        elif node_type == "CompetitorStrength":
+            return await self.validation.validate_can_delete_competitor_strength(
+                node_id
+            )
+        elif node_type == "CompetitorWeakness":
+            return await self.validation.validate_can_delete_competitor_weakness(
+                node_id
+            )
+        elif node_type == "SubstituteProduct":
+            return await self.validation.validate_can_delete_substitute_product(node_id)
         else:
             # No dependencies to check
             return True, ""
@@ -2058,6 +2618,17 @@ class GraphSyncService:
             self._sync_business_node_to_doc(
                 doc, node_id, node_type, node_data, operation
             )
+        elif node_type in [
+            "CompetitiveEnvironment",
+            "Competitor",
+            "CompetitorTactic",
+            "CompetitorStrength",
+            "CompetitorWeakness",
+            "SubstituteProduct",
+        ]:
+            self._sync_competitive_node_to_doc(
+                doc, node_id, node_type, node_data, operation
+            )
         else:
             raise ValueError(f"Unsupported node type for Firestore sync: {node_type}")
 
@@ -2091,6 +2662,18 @@ class GraphSyncService:
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
             }
+        elif doc_type == "competitive_strategy":
+            return {
+                "account_id": account_id,
+                "competitive_environment": None,
+                "competitors": [],
+                "competitor_tactics": [],
+                "competitor_strengths": [],
+                "competitor_weaknesses": [],
+                "substitute_products": [],
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            }
         else:
             return {
                 "account_id": account_id,
@@ -2118,6 +2701,30 @@ class GraphSyncService:
         # Stub implementation - detailed sync logic would go here
         # For Phase 1, we accept eventual consistency and focus on Neo4j as primary
         logger.info(f"Firestore sync stub: {operation} {node_type} {node_id}")
+
+    def _sync_competitive_node_to_doc(
+        self,
+        doc: dict[str, Any],
+        node_id: str,
+        node_type: str,
+        node_data: dict[str, Any],
+        operation: str,
+    ) -> None:
+        """Sync competitive strategy node to Firestore document structure.
+
+        Args:
+            doc: Firestore document
+            node_id: Node identifier
+            node_type: Node type
+            node_data: Node data
+            operation: "create", "update", or "delete"
+        """
+        # Stub implementation - detailed sync logic would go here
+        # For now, we accept eventual consistency and focus on Neo4j as primary
+        # TODO: Implement full bidirectional sync when Firestore structure is finalized
+        logger.info(
+            f"Firestore sync stub (competitive): {operation} {node_type} {node_id}"
+        )
 
     def _convert_neo4j_value(self, value: Any) -> Any:
         """Convert Neo4j-specific types to Python-native types.
