@@ -1335,7 +1335,7 @@ class TestCustomerProfileOperations:
         ]
 
         # Mock profile deletion
-        mock_neo4j_service.execute_write_query.return_value = None
+        mock_neo4j_service.execute_write_operation.return_value = None
         mock_firestore_service.get_document.return_value = {}
 
         # Act
@@ -1344,7 +1344,7 @@ class TestCustomerProfileOperations:
         )
 
         # Assert
-        assert mock_neo4j_service.execute_write_query.called
+        assert mock_neo4j_service.execute_write_operation.called
         # Verify firestore was synced
         assert mock_firestore_service.update_document.called
 
@@ -1429,11 +1429,11 @@ class TestProblemAwarenessStrategyOperations:
 
         # Mock parent validation failure
         mock_validation_service.validate_node_exists.side_effect = (
-            NodeNotFoundException("Product category not found")
+            NodeNotFoundException("ProductCategory", "nonexistent_category")
         )
 
         # Act & Assert
-        with pytest.raises(NodeNotFoundException, match="Product category not found"):
+        with pytest.raises(NodeNotFoundException):
             await graph_sync_service.create_problem_awareness_strategy(
                 account_id, strategy_create, user_id
             )
@@ -1535,8 +1535,12 @@ class TestConsiderationStrategyOperations:
             "account_id": account_id,
             "created_time": datetime(2025, 1, 1),
             "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
         }
-        mock_neo4j_service.execute_query.return_value = [{"node": existing_node}]
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
 
         # Mock update
         updated_node = existing_node.copy()
