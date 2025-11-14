@@ -26,9 +26,20 @@ class UserContext:
         Backward compatibility property that returns account IDs from account_permissions.
         This replaces the deprecated accessible_accounts field.
 
+        **IMPORTANT LIMITATION:**
+        This property only returns accounts with EXPLICIT permissions in account_permissions.
+        It does NOT include accounts accessible via:
+        - Super admin status (@ken-e.ai emails)
+        - Organization admin role (implicit access to all org accounts)
+
+        For org admins and super admins, this will return an empty list even though they
+        have access to accounts. Callers should:
+        1. Check if user.is_super_admin or has org admin role first
+        2. If true, fetch accounts from Neo4j instead of using this property
+        3. See notifications_v2.py:147-182 for example implementation
+
         Returns:
             List of account IDs the user has explicit permissions for.
-            Does NOT include accounts accessible via org admin (use has_account_access for that).
         """
         return list(self.account_permissions.keys())
 

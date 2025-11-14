@@ -25,8 +25,9 @@ interface User {
   lastName: string;
   jobTitle?: string;
   permissions?: {
-    accounts?: Record<string, string>;
+    account_permissions?: Record<string, string>; // New canonical structure
     organizations?: Record<string, string>;
+    accounts?: Record<string, string>; // Deprecated - kept for backward compatibility
   };
   preferences?: {
     theme?: string;
