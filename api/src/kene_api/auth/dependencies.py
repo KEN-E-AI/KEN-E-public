@@ -60,6 +60,18 @@ async def get_current_user_optional(
             user_data = user_doc.to_dict()
             permissions = user_data.get("permissions", {})
 
+            # Runtime validation: detect old structure post-migration
+            # TODO: After all environments migrated and verified, change warning to error
+            if "accounts" in permissions:
+                error_msg = (
+                    f"User {decoded_token['uid']} still has deprecated 'permissions.accounts' field. "
+                    "Migration script must be run before deploying this code."
+                )
+                logger.error(error_msg)
+                logger.warning(
+                    "Using new 'account_permissions' structure only, old 'accounts' structure ignored"
+                )
+
             user_context.account_permissions = permissions.get(
                 "account_permissions", {}
             )

@@ -41,6 +41,16 @@ class CachedUserContextService:
 
         if cached_data:
             try:
+                # Defensive check: invalidate cache if missing new structure
+                # TODO: Remove this check after all environments (dev/staging/prod) are verified migrated
+                if "account_permissions" not in cached_data:
+                    logger.warning(
+                        f"Cache for user {user_id} missing account_permissions field, "
+                        "invalidating cache to force refresh from Firestore"
+                    )
+                    self.invalidate_user_context(user_id)
+                    return None
+
                 return UserContext(
                     user_id=cached_data["user_id"],
                     email=cached_data["email"],

@@ -140,6 +140,8 @@ class PermissionMigrator:
 
         except Exception as e:
             logger.error(f"✗ Failed to migrate user {user_id}: {e}")
+            # Re-raise to be caught by outer handler in migrate_all_users()
+            # This ensures error is both logged here (with context) AND counted in error stats
             raise
 
     async def migrate_all_users(self) -> dict[str, int]:
@@ -162,11 +164,26 @@ class PermissionMigrator:
 
             logger.info(f"Found {len(users)} total users")
 
+            # Track users without UIDs for detailed reporting
+            users_without_uid: list[dict[str, Any]] = []
+
             # Process each user
             for idx, user_data in enumerate(users, 1):
                 user_id = user_data.get("uid")
                 if not user_id:
-                    logger.warning(f"Skipping user at index {idx}: Missing uid field")
+                    # Collect detailed info for reporting
+                    users_without_uid.append(
+                        {
+                            "index": idx,
+                            "email": user_data.get("email", "N/A"),
+                            "keys": list(user_data.keys()),
+                        }
+                    )
+                    logger.warning(
+                        f"Skipping user at index {idx}: Missing uid field. "
+                        f"Email: {user_data.get('email', 'N/A')}, "
+                        f"Available keys: {list(user_data.keys())}"
+                    )
                     self.stats["skipped"] += 1
                     continue
 
@@ -193,6 +210,27 @@ class PermissionMigrator:
             logger.info(f"Skipped:         {self.stats['skipped']}")
             logger.info(f"Errors:          {self.stats['errors']}")
             logger.info("=" * 80)
+
+            # Report users without UIDs if any found
+            if users_without_uid:
+                logger.warning("=" * 80)
+                logger.warning(
+                    f"⚠️  Found {len(users_without_uid)} users without UID field:"
+                )
+                for user_info in users_without_uid[:5]:  # Show first 5
+                    logger.warning(
+                        f"  Index {user_info['index']}: {user_info['email']} "
+                        f"(keys: {user_info['keys']})"
+                    )
+                if len(users_without_uid) > 5:
+                    logger.warning(f"  ... and {len(users_without_uid) - 5} more")
+                logger.warning(
+                    "These users may be incomplete records, test data, or orphaned documents."
+                )
+                logger.warning(
+                    "Consider investigating with: python api/scripts/debug_user_permissions.py <email>"
+                )
+                logger.warning("=" * 80)
 
             return self.stats
 

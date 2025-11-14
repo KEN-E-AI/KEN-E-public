@@ -19,6 +19,19 @@ class UserContext:
         """Check if user is a super admin (KEN-E support team member)."""
         return self.email.lower().endswith("@ken-e.ai")
 
+    @property
+    def accessible_accounts(self) -> list[str]:
+        """Get list of accessible account IDs.
+
+        Backward compatibility property that returns account IDs from account_permissions.
+        This replaces the deprecated accessible_accounts field.
+
+        Returns:
+            List of account IDs the user has explicit permissions for.
+            Does NOT include accounts accessible via org admin (use has_account_access for that).
+        """
+        return list(self.account_permissions.keys())
+
     def has_account_access(
         self, account_id: str, required_roles: list[str] | None = None
     ) -> bool:
