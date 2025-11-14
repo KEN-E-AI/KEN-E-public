@@ -54,12 +54,11 @@ class TestProductCategoryEndpoints:
         # 1. CREATE - Create a new product category
         category_data = ProductCategoryCreate(
             product_name="Cloud Services",
-            description="Enterprise cloud computing solutions"
+            description="Enterprise cloud computing solutions",
         )
 
         create_response = await authenticated_client.post(
-            f"{base_url}/product-categories",
-            json=category_data.model_dump()
+            f"{base_url}/product-categories", json=category_data.model_dump()
         )
         assert create_response.status_code == 200
         created_category = create_response.json()
@@ -74,7 +73,9 @@ class TestProductCategoryEndpoints:
         assert list_response.status_code == 200
         categories = list_response.json()
         assert categories["total_count"] >= 1
-        assert any(cat["node_id"] == category_node_id for cat in categories["categories"])
+        assert any(
+            cat["node_id"] == category_node_id for cat in categories["categories"]
+        )
 
         # 3. GET - Retrieve specific category
         get_response = await authenticated_client.get(
@@ -88,12 +89,14 @@ class TestProductCategoryEndpoints:
         # 4. UPDATE - Update category
         update_response = await authenticated_client.patch(
             f"{base_url}/product-categories/{category_node_id}",
-            json={"product_name": "Cloud & AI Services"}
+            json={"product_name": "Cloud & AI Services"},
         )
         assert update_response.status_code == 200
         updated_category = update_response.json()
         assert updated_category["product_name"] == "Cloud & AI Services"
-        assert updated_category["description"] == "Enterprise cloud computing solutions"  # Unchanged
+        assert (
+            updated_category["description"] == "Enterprise cloud computing solutions"
+        )  # Unchanged
 
         # 5. DELETE - Delete category
         delete_response = await authenticated_client.delete(
@@ -115,12 +118,10 @@ class TestProductCategoryEndpoints:
 
         # Create category
         category_data = ProductCategoryCreate(
-            product_name="SaaS Products",
-            description="Software as a Service offerings"
+            product_name="SaaS Products", description="Software as a Service offerings"
         )
         create_cat_response = await authenticated_client.post(
-            f"{base_url}/product-categories",
-            json=category_data.model_dump()
+            f"{base_url}/product-categories", json=category_data.model_dump()
         )
         category_node_id = create_cat_response.json()["node_id"]
 
@@ -128,11 +129,10 @@ class TestProductCategoryEndpoints:
         product_data = ProductCreate(
             product_name="Analytics Platform",
             description="Real-time analytics",
-            category_node_id=category_node_id
+            category_node_id=category_node_id,
         )
         create_prod_response = await authenticated_client.post(
-            f"{base_url}/products",
-            json=product_data.model_dump()
+            f"{base_url}/products", json=product_data.model_dump()
         )
         product_node_id = create_prod_response.json()["node_id"]
 
@@ -145,7 +145,9 @@ class TestProductCategoryEndpoints:
 
         # Cleanup: Delete product first, then category
         await authenticated_client.delete(f"{base_url}/products/{product_node_id}")
-        await authenticated_client.delete(f"{base_url}/product-categories/{category_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_node_id}"
+        )
 
 
 class TestProductEndpoints:
@@ -158,12 +160,10 @@ class TestProductEndpoints:
 
         # Create parent category
         category_data = ProductCategoryCreate(
-            product_name="Mobile Apps",
-            description="Mobile application suite"
+            product_name="Mobile Apps", description="Mobile application suite"
         )
         cat_response = await authenticated_client.post(
-            f"{base_url}/product-categories",
-            json=category_data.model_dump()
+            f"{base_url}/product-categories", json=category_data.model_dump()
         )
         category_node_id = cat_response.json()["node_id"]
 
@@ -173,11 +173,10 @@ class TestProductEndpoints:
             description="Native iOS application",
             references=["https://apps.apple.com/app"],
             product_detail_page="https://example.com/ios",
-            category_node_id=category_node_id
+            category_node_id=category_node_id,
         )
         prod_response = await authenticated_client.post(
-            f"{base_url}/products",
-            json=product_data.model_dump()
+            f"{base_url}/products", json=product_data.model_dump()
         )
         assert prod_response.status_code == 200
         product = prod_response.json()
@@ -187,7 +186,9 @@ class TestProductEndpoints:
 
         # Cleanup
         await authenticated_client.delete(f"{base_url}/products/{product['node_id']}")
-        await authenticated_client.delete(f"{base_url}/product-categories/{category_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_node_id}"
+        )
 
     @pytest.mark.asyncio
     async def test_list_products_filtered_by_category(self, authenticated_client):
@@ -197,13 +198,13 @@ class TestProductEndpoints:
         # Create two categories
         cat1_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "Hardware", "description": "Physical products"}
+            json={"product_name": "Hardware", "description": "Physical products"},
         )
         cat1_id = cat1_response.json()["node_id"]
 
         cat2_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "Software", "description": "Digital products"}
+            json={"product_name": "Software", "description": "Digital products"},
         )
         cat2_id = cat2_response.json()["node_id"]
 
@@ -213,8 +214,8 @@ class TestProductEndpoints:
             json={
                 "product_name": "Server Rack",
                 "description": "Data center hardware",
-                "category_node_id": cat1_id
-            }
+                "category_node_id": cat1_id,
+            },
         )
         prod1_id = prod1_response.json()["node_id"]
 
@@ -223,8 +224,8 @@ class TestProductEndpoints:
             json={
                 "product_name": "Database Software",
                 "description": "SQL database",
-                "category_node_id": cat2_id
-            }
+                "category_node_id": cat2_id,
+            },
         )
         prod2_id = prod2_response.json()["node_id"]
 
@@ -243,6 +244,57 @@ class TestProductEndpoints:
         await authenticated_client.delete(f"{base_url}/product-categories/{cat1_id}")
         await authenticated_client.delete(f"{base_url}/product-categories/{cat2_id}")
 
+    @pytest.mark.asyncio
+    async def test_list_all_products_includes_category_info(self, authenticated_client):
+        """Test listing all products includes category_node_id (N+1 query fix).
+
+        Verifies that when listing products without category filter, the endpoint
+        returns category information without making N+1 queries.
+        """
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create a category
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={
+                "product_name": "Test Category",
+                "description": "Test category for N+1 fix",
+            },
+        )
+        assert cat_response.status_code == 200
+        cat_id = cat_response.json()["node_id"]
+
+        # Create multiple products in the category
+        product_ids = []
+        for i in range(3):
+            prod_response = await authenticated_client.post(
+                f"{base_url}/products",
+                json={
+                    "product_name": f"Test Product {i}",
+                    "description": f"Product {i} description",
+                    "category_node_id": cat_id,
+                },
+            )
+            assert prod_response.status_code == 200
+            product_ids.append(prod_response.json()["node_id"])
+
+        # List ALL products (no category filter) - this tests the N+1 fix
+        list_response = await authenticated_client.get(f"{base_url}/products")
+        assert list_response.status_code == 200
+        products = list_response.json()
+
+        # Verify all products have category_node_id populated
+        test_products = [p for p in products["products"] if p["node_id"] in product_ids]
+        assert len(test_products) == 3
+        for product in test_products:
+            assert "category_node_id" in product
+            assert product["category_node_id"] == cat_id
+
+        # Cleanup
+        for prod_id in product_ids:
+            await authenticated_client.delete(f"{base_url}/products/{prod_id}")
+        await authenticated_client.delete(f"{base_url}/product-categories/{cat_id}")
+
 
 class TestSWOTEndpoints:
     """Integration tests for SWOT Analysis endpoints."""
@@ -256,11 +308,10 @@ class TestSWOTEndpoints:
         strength_data = StrengthCreate(
             display_name="Market Leader",
             description="Leading position in the market",
-            references=["https://example.com/report"]
+            references=["https://example.com/report"],
         )
         strength_response = await authenticated_client.post(
-            f"{base_url}/strengths",
-            json=strength_data.model_dump()
+            f"{base_url}/strengths", json=strength_data.model_dump()
         )
         assert strength_response.status_code == 200
         strength = strength_response.json()
@@ -283,8 +334,8 @@ class TestSWOTEndpoints:
             json={
                 "display_name": "Strong Brand",
                 "description": "Well-recognized brand",
-                "references": []
-            }
+                "references": [],
+            },
         )
         strength_id = strength_response.json()["node_id"]
 
@@ -293,11 +344,10 @@ class TestSWOTEndpoints:
             display_name="Market Expansion",
             description="Expand to new markets leveraging brand",
             references=["https://example.com/market-research"],
-            strength_node_id=strength_id
+            strength_node_id=strength_id,
         )
         opp_response = await authenticated_client.post(
-            f"{base_url}/opportunities",
-            json=opportunity_data.model_dump()
+            f"{base_url}/opportunities", json=opportunity_data.model_dump()
         )
         assert opp_response.status_code == 200
         opportunity = opp_response.json()
@@ -327,8 +377,8 @@ class TestSWOTEndpoints:
             json={
                 "display_name": "Limited Resources",
                 "description": "Small team size",
-                "references": []
-            }
+                "references": [],
+            },
         )
         weakness_id = weakness_response.json()["node_id"]
 
@@ -337,11 +387,10 @@ class TestSWOTEndpoints:
             display_name="Scaling Challenges",
             description="Difficulty scaling operations",
             references=[],
-            weakness_node_id=weakness_id
+            weakness_node_id=weakness_id,
         )
         risk_response = await authenticated_client.post(
-            f"{base_url}/risks",
-            json=risk_data.model_dump()
+            f"{base_url}/risks", json=risk_data.model_dump()
         )
         assert risk_response.status_code == 200
         risk = risk_response.json()
@@ -353,14 +402,20 @@ class TestSWOTEndpoints:
         await authenticated_client.delete(f"{base_url}/weaknesses/{weakness_id}")
 
     @pytest.mark.asyncio
-    async def test_cannot_delete_strength_with_opportunities(self, authenticated_client):
+    async def test_cannot_delete_strength_with_opportunities(
+        self, authenticated_client
+    ):
         """Test that strength with opportunities cannot be deleted."""
         base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
 
         # Create strength
         strength_response = await authenticated_client.post(
             f"{base_url}/strengths",
-            json={"display_name": "Innovation", "description": "Culture of innovation", "references": []}
+            json={
+                "display_name": "Innovation",
+                "description": "Culture of innovation",
+                "references": [],
+            },
         )
         strength_id = strength_response.json()["node_id"]
 
@@ -371,8 +426,8 @@ class TestSWOTEndpoints:
                 "display_name": "New Products",
                 "description": "Launch innovative products",
                 "references": [],
-                "strength_node_id": strength_id
-            }
+                "strength_node_id": strength_id,
+            },
         )
         opp_id = opp_response.json()["node_id"]
 
@@ -400,11 +455,10 @@ class TestGoalEndpoints:
         goal_data = GoalCreate(
             display_name="Increase Revenue",
             description="Achieve 50% revenue growth in 2025",
-            references=["https://example.com/strategy"]
+            references=["https://example.com/strategy"],
         )
         create_response = await authenticated_client.post(
-            f"{base_url}/goals",
-            json=goal_data.model_dump()
+            f"{base_url}/goals", json=goal_data.model_dump()
         )
         assert create_response.status_code == 200
         goal = create_response.json()
@@ -413,7 +467,7 @@ class TestGoalEndpoints:
         # Update goal
         update_response = await authenticated_client.patch(
             f"{base_url}/goals/{goal_id}",
-            json={"display_name": "Accelerate Revenue Growth"}
+            json={"display_name": "Accelerate Revenue Growth"},
         )
         assert update_response.status_code == 200
         updated_goal = update_response.json()
@@ -434,7 +488,10 @@ class TestValuePropositionEndpoints:
         # Create category and product
         cat_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "Enterprise Software", "description": "B2B solutions"}
+            json={
+                "product_name": "Enterprise Software",
+                "description": "B2B solutions",
+            },
         )
         cat_id = cat_response.json()["node_id"]
 
@@ -443,8 +500,8 @@ class TestValuePropositionEndpoints:
             json={
                 "product_name": "CRM System",
                 "description": "Customer relationship management",
-                "category_node_id": cat_id
-            }
+                "category_node_id": cat_id,
+            },
         )
         prod_id = prod_response.json()["node_id"]
 
@@ -454,11 +511,10 @@ class TestValuePropositionEndpoints:
             description="Increase sales team productivity by 30%",
             references=["https://example.com/case-study"],
             parent_node_id=prod_id,
-            parent_node_type="Product"
+            parent_node_type="Product",
         )
         vp_response = await authenticated_client.post(
-            f"{base_url}/value-propositions",
-            json=vp_data.model_dump()
+            f"{base_url}/value-propositions", json=vp_data.model_dump()
         )
         assert vp_response.status_code == 200
         value_prop = vp_response.json()
@@ -483,7 +539,7 @@ class TestBusinessStrategyAggregatedView:
         # 1. Category
         cat_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "Services", "description": "Professional services"}
+            json={"product_name": "Services", "description": "Professional services"},
         )
         cat_id = cat_response.json()["node_id"]
 
@@ -493,22 +549,30 @@ class TestBusinessStrategyAggregatedView:
             json={
                 "product_name": "Consulting",
                 "description": "Strategic consulting",
-                "category_node_id": cat_id
-            }
+                "category_node_id": cat_id,
+            },
         )
         prod_id = prod_response.json()["node_id"]
 
         # 3. Strength
         strength_response = await authenticated_client.post(
             f"{base_url}/strengths",
-            json={"display_name": "Expertise", "description": "Deep domain expertise", "references": []}
+            json={
+                "display_name": "Expertise",
+                "description": "Deep domain expertise",
+                "references": [],
+            },
         )
         strength_id = strength_response.json()["node_id"]
 
         # 4. Goal
         goal_response = await authenticated_client.post(
             f"{base_url}/goals",
-            json={"display_name": "Market Leadership", "description": "Become market leader", "references": []}
+            json={
+                "display_name": "Market Leadership",
+                "description": "Become market leader",
+                "references": [],
+            },
         )
         goal_id = goal_response.json()["node_id"]
 
@@ -548,7 +612,7 @@ class TestFirestoreSync:
         # Create category (should sync to Firestore)
         cat_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "Test Sync", "description": "Testing Firestore sync"}
+            json={"product_name": "Test Sync", "description": "Testing Firestore sync"},
         )
         assert cat_response.status_code == 200
         cat_id = cat_response.json()["node_id"]
@@ -568,13 +632,16 @@ class TestFirestoreSync:
         # Create and update
         cat_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "Original Name", "description": "Original description"}
+            json={
+                "product_name": "Original Name",
+                "description": "Original description",
+            },
         )
         cat_id = cat_response.json()["node_id"]
 
         update_response = await authenticated_client.patch(
             f"{base_url}/product-categories/{cat_id}",
-            json={"product_name": "Updated Name"}
+            json={"product_name": "Updated Name"},
         )
         assert update_response.status_code == 200
 
@@ -591,7 +658,7 @@ class TestFirestoreSync:
         # Create and delete
         cat_response = await authenticated_client.post(
             f"{base_url}/product-categories",
-            json={"product_name": "To Delete", "description": "Will be deleted"}
+            json={"product_name": "To Delete", "description": "Will be deleted"},
         )
         cat_id = cat_response.json()["node_id"]
 
@@ -616,8 +683,8 @@ class TestErrorHandling:
             json={
                 "product_name": "Orphan Product",
                 "description": "Product without valid parent",
-                "category_node_id": "nonexistent_category_id"
-            }
+                "category_node_id": "nonexistent_category_id",
+            },
         )
         assert response.status_code == 400
         assert "not found" in response.json()["detail"].lower()
@@ -639,6 +706,6 @@ class TestErrorHandling:
 
         response = await authenticated_client.patch(
             f"{base_url}/product-categories/nonexistent_node_id",
-            json={"product_name": "New Name"}
+            json={"product_name": "New Name"},
         )
         assert response.status_code == 400 or response.status_code == 404

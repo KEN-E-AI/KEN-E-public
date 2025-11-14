@@ -119,7 +119,9 @@ class GraphSyncService:
             # 2. Validate parent exists (if required)
             if parent_node_id:
                 validate_node_type(parent_node_type)
-                if not await self.validation.validate_node_exists(parent_node_id, parent_node_type):
+                if not await self.validation.validate_node_exists(
+                    parent_node_id, parent_node_type
+                ):
                     raise NodeNotFoundException(parent_node_type, parent_node_id)
 
             # 3. Generate node_id with appropriate prefix
@@ -160,12 +162,16 @@ class GraphSyncService:
                 # Note: execute_write_query should auto-rollback on exception,
                 # but we explicitly delete to ensure cleanup
                 if neo4j_result:
-                    logger.error(f"Sync failed after Neo4j create, attempting rollback: {sync_error}")
+                    logger.error(
+                        f"Sync failed after Neo4j create, attempting rollback: {sync_error}"
+                    )
                     try:
                         await self._delete_node_neo4j(node_id)
                         logger.info(f"Successfully rolled back Neo4j node {node_id}")
                     except Exception as rollback_error:
-                        logger.error(f"CRITICAL: Rollback failed for {node_id}: {rollback_error}")
+                        logger.error(
+                            f"CRITICAL: Rollback failed for {node_id}: {rollback_error}"
+                        )
                         # This is a critical failure - database may be inconsistent
                         raise GraphSyncException(
                             f"Database sync failed AND rollback failed: {sync_error}. "
@@ -177,7 +183,10 @@ class GraphSyncService:
 
                 # Raise appropriate exception
                 raise GraphSyncException(
-                    str(sync_error), operation="create", node_type=node_type, node_id=node_id
+                    str(sync_error),
+                    operation="create",
+                    node_type=node_type,
+                    node_id=node_id,
                 ) from sync_error
 
         except Exception as e:
@@ -248,19 +257,27 @@ class GraphSyncService:
             except Exception as sync_error:
                 # If Firestore sync failed, rollback Neo4j to previous state
                 if neo4j_result:
-                    logger.error(f"Sync failed after Neo4j update, attempting rollback: {sync_error}")
+                    logger.error(
+                        f"Sync failed after Neo4j update, attempting rollback: {sync_error}"
+                    )
                     try:
                         # Restore only the fields that were updated
-                        rollback_updates = {k: v for k, v in existing_node.items() if k in updates}
+                        rollback_updates = {
+                            k: v for k, v in existing_node.items() if k in updates
+                        }
                         await self._update_node_neo4j(
                             node_id=node_id,
                             node_type=node_type,
                             updates=rollback_updates,
                             user_id=user_id,
                         )
-                        logger.info(f"Successfully rolled back Neo4j node {node_id} to previous state")
+                        logger.info(
+                            f"Successfully rolled back Neo4j node {node_id} to previous state"
+                        )
                     except Exception as rollback_error:
-                        logger.error(f"CRITICAL: Rollback failed for {node_id}: {rollback_error}")
+                        logger.error(
+                            f"CRITICAL: Rollback failed for {node_id}: {rollback_error}"
+                        )
                         raise GraphSyncException(
                             f"Database sync failed AND rollback failed: {sync_error}. "
                             f"Node {node_id} may be in inconsistent state",
@@ -271,7 +288,10 @@ class GraphSyncService:
 
                 # Raise appropriate exception
                 raise GraphSyncException(
-                    str(sync_error), operation="update", node_type=node_type, node_id=node_id
+                    str(sync_error),
+                    operation="update",
+                    node_type=node_type,
+                    node_id=node_id,
                 ) from sync_error
 
         except Exception as e:
@@ -320,14 +340,20 @@ class GraphSyncService:
                     # Reason format: "Cannot delete NodeType with N existing dependencies"
                     import re
 
-                    match = re.search(r"with (\d+) (?:existing )?(.+?)(?:\(s\))?$", reason)
+                    match = re.search(
+                        r"with (\d+) (?:existing )?(.+?)(?:\(s\))?$", reason
+                    )
                     if match:
                         count = int(match.group(1))
                         dependency_type = match.group(2).strip()
-                        raise NodeHasDependenciesException(node_type, node_id, dependency_type, count)
+                        raise NodeHasDependenciesException(
+                            node_type, node_id, dependency_type, count
+                        )
                     else:
                         # Fallback if parsing fails
-                        raise NodeHasDependenciesException(node_type, node_id, "dependent nodes", 0)
+                        raise NodeHasDependenciesException(
+                            node_type, node_id, "dependent nodes", 0
+                        )
 
             # 3. Use transactional approach: Delete from Neo4j, then sync to Firestore
             deleted = False
@@ -352,7 +378,9 @@ class GraphSyncService:
             except Exception as sync_error:
                 # If Firestore sync failed after Neo4j deletion, restore the node
                 if deleted:
-                    logger.error(f"Sync failed after Neo4j delete, attempting to restore: {sync_error}")
+                    logger.error(
+                        f"Sync failed after Neo4j delete, attempting to restore: {sync_error}"
+                    )
                     try:
                         # Restore the deleted node
                         await self._create_node_neo4j(
@@ -366,7 +394,9 @@ class GraphSyncService:
                         )
                         logger.info(f"Successfully restored Neo4j node {node_id}")
                     except Exception as rollback_error:
-                        logger.error(f"CRITICAL: Failed to restore deleted node {node_id}: {rollback_error}")
+                        logger.error(
+                            f"CRITICAL: Failed to restore deleted node {node_id}: {rollback_error}"
+                        )
                         raise GraphSyncException(
                             f"Database sync failed AND node restoration failed: {sync_error}. "
                             f"Node {node_id} was deleted from Neo4j but not Firestore",
@@ -377,7 +407,10 @@ class GraphSyncService:
 
                 # Raise appropriate exception
                 raise GraphSyncException(
-                    str(sync_error), operation="delete", node_type=node_type, node_id=node_id
+                    str(sync_error),
+                    operation="delete",
+                    node_type=node_type,
+                    node_id=node_id,
                 ) from sync_error
 
         except Exception as e:
@@ -417,8 +450,14 @@ class GraphSyncService:
             # Get relationship configuration for this node type and parent type
             # If parent_node_type is not provided, match any relationship type (for backwards compatibility)
             if parent_node_type:
-                relationship_config = self._get_relationship_config(node_type, parent_node_type)
-                relationship_type = relationship_config["from_parent"] if relationship_config else "HAS_VALUE_PROPOSITION"
+                relationship_config = self._get_relationship_config(
+                    node_type, parent_node_type
+                )
+                relationship_type = (
+                    relationship_config["from_parent"]
+                    if relationship_config
+                    else "HAS_VALUE_PROPOSITION"
+                )
                 relationship_pattern = f"-[:{relationship_type}]->"
             else:
                 # Match any relationship type (for ValuePropositions with unknown parent type)
@@ -448,7 +487,12 @@ class GraphSyncService:
         # Add pagination if limit is specified
         if limit is not None:
             query = f"{base_query} SKIP $skip LIMIT $limit"
-            params = {"account_id": account_id, "parent_node_id": parent_node_id, "skip": skip, "limit": limit}
+            params = {
+                "account_id": account_id,
+                "parent_node_id": parent_node_id,
+                "skip": skip,
+                "limit": limit,
+            }
         else:
             query = base_query
             params = {"account_id": account_id, "parent_node_id": parent_node_id}
@@ -458,7 +502,10 @@ class GraphSyncService:
         # Build result with parent information if available
         nodes = []
         for record in result:
-            node_dict = {**self._neo4j_node_to_dict(record["node"]), "account_id": record["account_id"]}
+            node_dict = {
+                **self._neo4j_node_to_dict(record["node"]),
+                "account_id": record["account_id"],
+            }
             # Add parent information if it exists in the query result
             if "parent_node_id" in record and record["parent_node_id"]:
                 node_dict["parent_node_id"] = record["parent_node_id"]
@@ -496,12 +543,17 @@ class GraphSyncService:
         RETURN node, $account_id as account_id
         """
 
-        result = await self.neo4j.execute_query(query, {"node_id": node_id, "account_id": account_id})
+        result = await self.neo4j.execute_query(
+            query, {"node_id": node_id, "account_id": account_id}
+        )
 
         if not result:
             return None
 
-        return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": result[0]["account_id"]}
+        return {
+            **self._neo4j_node_to_dict(result[0]["node"]),
+            "account_id": result[0]["account_id"],
+        }
 
     async def count_nodes(
         self,
@@ -535,8 +587,14 @@ class GraphSyncService:
             # Get relationship configuration for this node type and parent type
             # If parent_node_type is not provided, match any relationship type (for backwards compatibility)
             if parent_node_type:
-                relationship_config = self._get_relationship_config(node_type, parent_node_type)
-                relationship_type = relationship_config["from_parent"] if relationship_config else "HAS_VALUE_PROPOSITION"
+                relationship_config = self._get_relationship_config(
+                    node_type, parent_node_type
+                )
+                relationship_type = (
+                    relationship_config["from_parent"]
+                    if relationship_config
+                    else "HAS_VALUE_PROPOSITION"
+                )
                 relationship_pattern = f"-[:{relationship_type}]->"
             else:
                 # Match any relationship type (for ValuePropositions with unknown parent type)
@@ -585,11 +643,15 @@ class GraphSyncService:
             DuplicateNodeException: If category name already exists
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(category.product_name, "product_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            category.product_name, "product_name"
+        )
         if not is_valid:
             raise ValidationException(error, "product_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(category.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            category.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
@@ -598,9 +660,14 @@ class GraphSyncService:
             account_id, category.product_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("ProductCategory", "product_name", category.product_name, account_id)
+            raise DuplicateNodeException(
+                "ProductCategory", "product_name", category.product_name, account_id
+            )
 
-        node_data = {"product_name": category.product_name.strip(), "description": category.description.strip()}
+        node_data = {
+            "product_name": category.product_name.strip(),
+            "description": category.description.strip(),
+        }
 
         result = await self.create_node(
             account_id=account_id,
@@ -668,7 +735,9 @@ class GraphSyncService:
         # Cascade delete each product (which will in turn delete their VPs)
         for record in prod_results:
             prod_node_id = record["prod_node_id"]
-            logger.info(f"Cascade deleting product {prod_node_id} from category {node_id}")
+            logger.info(
+                f"Cascade deleting product {prod_node_id} from category {node_id}"
+            )
             await self.delete_product(account_id, prod_node_id, user_id)
 
         # Delete value propositions directly linked to the category
@@ -676,12 +745,16 @@ class GraphSyncService:
         MATCH (cat:ProductCategory {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
         RETURN vp.node_id as vp_node_id
         """
-        cat_vp_results = await self.neo4j.execute_query(cat_vp_query, {"node_id": node_id})
+        cat_vp_results = await self.neo4j.execute_query(
+            cat_vp_query, {"node_id": node_id}
+        )
 
         # Delete each category-level value proposition
         for record in cat_vp_results:
             vp_node_id = record["vp_node_id"]
-            logger.info(f"Cascade deleting value proposition {vp_node_id} from category {node_id}")
+            logger.info(
+                f"Cascade deleting value proposition {vp_node_id} from category {node_id}"
+            )
             await self.delete_value_proposition(account_id, vp_node_id, user_id)
 
         # Now delete the category itself (no dependency check needed since we cleaned up)
@@ -715,28 +788,44 @@ class GraphSyncService:
             DuplicateNodeException: If product name already exists in category
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(product.product_name, "product_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            product.product_name, "product_name"
+        )
         if not is_valid:
             raise ValidationException(error, "product_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(product.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            product.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
-        if product.product_detail_page and not self.validation.validate_url_format(product.product_detail_page):
-            raise ValidationException(f"Invalid URL format: {product.product_detail_page}", "product_detail_page")
+        if product.product_detail_page and not self.validation.validate_url_format(
+            product.product_detail_page
+        ):
+            raise ValidationException(
+                f"Invalid URL format: {product.product_detail_page}",
+                "product_detail_page",
+            )
 
         for ref in product.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate name within category
         is_unique, error = await self.validation.validate_unique_product_name(
             account_id, product.product_name.strip(), product.category_node_id
         )
         if not is_unique:
-            raise DuplicateNodeException("Product", "product_name", product.product_name, product.category_node_id)
+            raise DuplicateNodeException(
+                "Product",
+                "product_name",
+                product.product_name,
+                product.category_node_id,
+            )
 
         node_data = {
             "product_name": product.product_name.strip(),
@@ -823,7 +912,9 @@ class GraphSyncService:
         # Delete each value proposition
         for record in vp_results:
             vp_node_id = record["vp_node_id"]
-            logger.info(f"Cascade deleting value proposition {vp_node_id} from product {node_id}")
+            logger.info(
+                f"Cascade deleting value proposition {vp_node_id} from product {node_id}"
+            )
             await self.delete_value_proposition(account_id, vp_node_id, user_id)
 
         # Now delete the product itself (no dependency check needed since we cleaned up VPs)
@@ -835,6 +926,92 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
             check_dependencies=False,
         )
+
+    async def list_products_with_categories(
+        self,
+        account_id: str,
+        category_node_id: str | None = None,
+        skip: int = 0,
+        limit: int | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List products with their category information in a single query.
+
+        Optimized to avoid N+1 query problem by using OPTIONAL MATCH to fetch
+        category_node_id for all products in one database round-trip.
+
+        Args:
+            account_id: Account identifier
+            category_node_id: Optional filter by specific category
+            skip: Number of products to skip (default: 0)
+            limit: Maximum number of products to return (default: None = all)
+
+        Returns:
+            Tuple of (products_list, total_count)
+            Each product dict includes category_node_id from relationship
+
+        Raises:
+            ValidationException: If validation fails
+        """
+        if category_node_id:
+            # Query products filtered by specific category
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
+            WHERE (p)-[:BELONGS_TO]->(acc)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            count_query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
+            WHERE (p)-[:BELONGS_TO]->(acc)
+            RETURN count(p) as total
+            """
+            count_params = {
+                "account_id": account_id,
+                "category_node_id": category_node_id,
+            }
+        else:
+            # Query ALL products with OPTIONAL MATCH for category (avoids N+1)
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (p:Product)-[:BELONGS_TO]->(acc)
+            OPTIONAL MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            count_query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (p:Product)-[:BELONGS_TO]->(acc)
+            RETURN count(p) as total
+            """
+            count_params = {"account_id": account_id}
+
+        # Add pagination if limit is specified
+        if limit is not None:
+            query += " SKIP $skip LIMIT $limit"
+            params = {**count_params, "skip": skip, "limit": limit}
+        else:
+            params = count_params
+
+        # Execute count query
+        count_result = await self.neo4j.execute_query(count_query, count_params)
+        total_count = count_result[0]["total"] if count_result else 0
+
+        # Execute main query
+        result = await self.neo4j.execute_query(query, params)
+
+        # Build products list with category information
+        products = []
+        for record in result:
+            product_dict = {
+                **self._neo4j_node_to_dict(record["node"]),
+                "account_id": record["account_id"],
+                "category_node_id": record.get("category_node_id", ""),
+            }
+            products.append(product_dict)
+
+        return products, total_count
 
     async def create_value_proposition(
         self,
@@ -857,25 +1034,33 @@ class GraphSyncService:
             DuplicateNodeException: If display_name already exists
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(value_prop.display_name, "display_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            value_prop.display_name, "display_name"
+        )
         if not is_valid:
             raise ValidationException(error, "display_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(value_prop.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            value_prop.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
         for ref in value_prop.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate display_name
         is_unique, error = await self.validation.validate_unique_display_name(
             account_id, "ValueProposition", value_prop.display_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("ValueProposition", "display_name", value_prop.display_name, account_id)
+            raise DuplicateNodeException(
+                "ValueProposition", "display_name", value_prop.display_name, account_id
+            )
 
         node_data = {
             "display_name": value_prop.display_name.strip(),
@@ -971,25 +1156,33 @@ class GraphSyncService:
             DuplicateNodeException: If display_name already exists
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(strength.display_name, "display_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            strength.display_name, "display_name"
+        )
         if not is_valid:
             raise ValidationException(error, "display_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(strength.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            strength.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
         for ref in strength.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate display_name
         is_unique, error = await self.validation.validate_unique_display_name(
             account_id, "Strength", strength.display_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("Strength", "display_name", strength.display_name, account_id)
+            raise DuplicateNodeException(
+                "Strength", "display_name", strength.display_name, account_id
+            )
 
         # Ensure SWOT Analysis hub exists
         swot_node_id = await self.validation.get_or_create_swot_hub(account_id, user_id)
@@ -1089,25 +1282,33 @@ class GraphSyncService:
             DuplicateNodeException: If display_name already exists
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(weakness.display_name, "display_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            weakness.display_name, "display_name"
+        )
         if not is_valid:
             raise ValidationException(error, "display_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(weakness.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            weakness.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
         for ref in weakness.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate display_name
         is_unique, error = await self.validation.validate_unique_display_name(
             account_id, "Weakness", weakness.display_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("Weakness", "display_name", weakness.display_name, account_id)
+            raise DuplicateNodeException(
+                "Weakness", "display_name", weakness.display_name, account_id
+            )
 
         # Ensure SWOT Analysis hub exists
         swot_node_id = await self.validation.get_or_create_swot_hub(account_id, user_id)
@@ -1208,25 +1409,33 @@ class GraphSyncService:
             NodeNotFoundException: If parent strength doesn't exist
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(opportunity.display_name, "display_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            opportunity.display_name, "display_name"
+        )
         if not is_valid:
             raise ValidationException(error, "display_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(opportunity.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            opportunity.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
         for ref in opportunity.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate display_name
         is_unique, error = await self.validation.validate_unique_display_name(
             account_id, "Opportunity", opportunity.display_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("Opportunity", "display_name", opportunity.display_name, account_id)
+            raise DuplicateNodeException(
+                "Opportunity", "display_name", opportunity.display_name, account_id
+            )
 
         node_data = {
             "display_name": opportunity.display_name.strip(),
@@ -1282,7 +1491,9 @@ class GraphSyncService:
         RETURN s.node_id as strength_node_id
         LIMIT 1
         """
-        strength_result = await self.neo4j.execute_query(strength_query, {"node_id": node_id})
+        strength_result = await self.neo4j.execute_query(
+            strength_query, {"node_id": node_id}
+        )
         if strength_result and strength_result[0]:
             result["strength_node_id"] = strength_result[0]["strength_node_id"]
 
@@ -1332,25 +1543,33 @@ class GraphSyncService:
             NodeNotFoundException: If parent weakness doesn't exist
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(risk.display_name, "display_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            risk.display_name, "display_name"
+        )
         if not is_valid:
             raise ValidationException(error, "display_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(risk.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            risk.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
         for ref in risk.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate display_name
         is_unique, error = await self.validation.validate_unique_display_name(
             account_id, "Risk", risk.display_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("Risk", "display_name", risk.display_name, account_id)
+            raise DuplicateNodeException(
+                "Risk", "display_name", risk.display_name, account_id
+            )
 
         node_data = {
             "display_name": risk.display_name.strip(),
@@ -1406,7 +1625,9 @@ class GraphSyncService:
         RETURN w.node_id as weakness_node_id
         LIMIT 1
         """
-        weakness_result = await self.neo4j.execute_query(weakness_query, {"node_id": node_id})
+        weakness_result = await self.neo4j.execute_query(
+            weakness_query, {"node_id": node_id}
+        )
         if weakness_result and weakness_result[0]:
             result["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
 
@@ -1455,25 +1676,33 @@ class GraphSyncService:
             DuplicateNodeException: If display_name already exists
         """
         # Validate non-empty strings
-        is_valid, error = self.validation.validate_non_empty_string(goal.display_name, "display_name")
+        is_valid, error = self.validation.validate_non_empty_string(
+            goal.display_name, "display_name"
+        )
         if not is_valid:
             raise ValidationException(error, "display_name")
 
-        is_valid, error = self.validation.validate_non_empty_string(goal.description, "description")
+        is_valid, error = self.validation.validate_non_empty_string(
+            goal.description, "description"
+        )
         if not is_valid:
             raise ValidationException(error, "description")
 
         # Validate URLs
         for ref in goal.references:
             if not self.validation.validate_url_format(ref):
-                raise ValidationException(f"Invalid URL format in references: {ref}", "references")
+                raise ValidationException(
+                    f"Invalid URL format in references: {ref}", "references"
+                )
 
         # Check for duplicate display_name
         is_unique, error = await self.validation.validate_unique_display_name(
             account_id, "Goal", goal.display_name.strip()
         )
         if not is_unique:
-            raise DuplicateNodeException("Goal", "display_name", goal.display_name, account_id)
+            raise DuplicateNodeException(
+                "Goal", "display_name", goal.display_name, account_id
+            )
 
         node_data = {
             "display_name": goal.display_name.strip(),
@@ -1649,13 +1878,13 @@ class GraphSyncService:
                 query += f"""
                 WITH node, acc
                 MATCH (parent:{parent_node_type} {{account_id: $parent_node_id}})
-                MERGE (parent)-[:{relationship_config['from_parent']}]->(node)
+                MERGE (parent)-[:{relationship_config["from_parent"]}]->(node)
                 """
             else:
                 query += f"""
                 WITH node, acc
                 MATCH (parent:{parent_node_type} {{node_id: $parent_node_id}})
-                MERGE (parent)-[:{relationship_config['from_parent']}]->(node)
+                MERGE (parent)-[:{relationship_config["from_parent"]}]->(node)
                 """
 
         # Add bidirectional relationship to Account for certain node types
@@ -1701,7 +1930,9 @@ class GraphSyncService:
             # Business Strategy
             ("Product", "ProductCategory"): {"from_parent": "INCLUDES_PRODUCT"},
             ("ValueProposition", "Product"): {"from_parent": "HAS_VALUE_PROPOSITION"},
-            ("ValueProposition", "ProductCategory"): {"from_parent": "HAS_VALUE_PROPOSITION"},
+            ("ValueProposition", "ProductCategory"): {
+                "from_parent": "HAS_VALUE_PROPOSITION"
+            },
             ("ValueProposition", "Account"): {"from_parent": "HAS_VALUE_PROPOSITION"},
             ("Strength", "SWOTAnalysis"): {"from_parent": "HAS_STRENGTH"},
             ("Weakness", "SWOTAnalysis"): {"from_parent": "HAS_WEAKNESS"},
@@ -1758,7 +1989,9 @@ class GraphSyncService:
         """
         await self.neo4j.execute_write_operation(query, {"node_id": node_id})
 
-    async def _validate_can_delete(self, node_id: str, node_type: str) -> tuple[bool, str]:
+    async def _validate_can_delete(
+        self, node_id: str, node_type: str
+    ) -> tuple[bool, str]:
         """Validate that a node can be safely deleted.
 
         Args:
@@ -1822,7 +2055,9 @@ class GraphSyncService:
             "Risk",
             "Goal",
         ]:
-            self._sync_business_node_to_doc(doc, node_id, node_type, node_data, operation)
+            self._sync_business_node_to_doc(
+                doc, node_id, node_type, node_data, operation
+            )
         else:
             raise ValueError(f"Unsupported node type for Firestore sync: {node_type}")
 
@@ -1832,7 +2067,9 @@ class GraphSyncService:
         # Write back to Firestore
         self.firestore.update_document(doc_path, collection_name, doc)
 
-    def _create_initial_firestore_doc(self, doc_type: str, account_id: str) -> dict[str, Any]:
+    def _create_initial_firestore_doc(
+        self, doc_type: str, account_id: str
+    ) -> dict[str, Any]:
         """Create initial Firestore document structure.
 
         Args:
@@ -1846,13 +2083,20 @@ class GraphSyncService:
             return {
                 "account_id": account_id,
                 "product_portfolio": [],
-                "swot_analysis": {"strengths_and_opportunities": [], "weaknesses_and_risks": []},
+                "swot_analysis": {
+                    "strengths_and_opportunities": [],
+                    "weaknesses_and_risks": [],
+                },
                 "strategic_goals": [],
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
             }
         else:
-            return {"account_id": account_id, "created_at": datetime.now(), "updated_at": datetime.now()}
+            return {
+                "account_id": account_id,
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            }
 
     def _sync_business_node_to_doc(
         self,

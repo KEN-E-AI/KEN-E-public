@@ -87,7 +87,9 @@ async def check_graph_access(
         role in ["admin", "owner"] for role in user.organization_permissions.values()
     )
     if has_org_admin:
-        logger.info(f"[check_graph_access] Access granted via org admin for user {user.email}")
+        logger.info(
+            f"[check_graph_access] Access granted via org admin for user {user.email}"
+        )
         return user
 
     # For non-admin users, check account-specific permissions
@@ -96,7 +98,9 @@ async def check_graph_access(
     if required_level == "edit":
         # Edit requires explicit "edit" role
         if not user.has_account_access(account_id, ["edit"]):
-            logger.warning(f"[check_graph_access] Edit access denied for user {user.email} to account {account_id}")
+            logger.warning(
+                f"[check_graph_access] Edit access denied for user {user.email} to account {account_id}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions for edit access to account {account_id}",
@@ -104,13 +108,17 @@ async def check_graph_access(
     else:
         # View access: use same logic as monitoring_topics - just check if account is accessible
         if not user.has_account_access(account_id) and not user.is_super_admin:
-            logger.warning(f"[check_graph_access] View access denied for user {user.email} to account {account_id}")
+            logger.warning(
+                f"[check_graph_access] View access denied for user {user.email} to account {account_id}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied to account {account_id}",
             )
 
-    logger.info(f"[check_graph_access] Access granted for user {user.email} to account {account_id}")
+    logger.info(
+        f"[check_graph_access] Access granted for user {user.email} to account {account_id}"
+    )
     return user
 
 
@@ -135,31 +143,45 @@ async def create_product_category(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.create_product_category(account_id, category, user.user_id)
+        result = await service.create_product_category(
+            account_id, category, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating product category: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create product category"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create product category",
         ) from e
 
 
-@router.get("/{account_id}/product-categories", response_model=ProductCategoryListResponse)
+@router.get(
+    "/{account_id}/product-categories", response_model=ProductCategoryListResponse
+)
 async def list_product_categories(
     account_id: str,
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> ProductCategoryListResponse:
@@ -178,20 +200,27 @@ async def list_product_categories(
         total_count = await service.count_nodes(account_id, "ProductCategory")
 
         # Get paginated results
-        categories_data = await service.list_nodes(account_id, "ProductCategory", skip=skip, limit=limit)
+        categories_data = await service.list_nodes(
+            account_id, "ProductCategory", skip=skip, limit=limit
+        )
         categories = [ProductCategoryResponse(**cat) for cat in categories_data]
 
-        return ProductCategoryListResponse(categories=categories, total_count=total_count)
+        return ProductCategoryListResponse(
+            categories=categories, total_count=total_count
+        )
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to list product categories: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list product categories"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list product categories",
         ) from e
 
 
-@router.get("/{account_id}/product-categories/{node_id}", response_model=ProductCategoryResponse)
+@router.get(
+    "/{account_id}/product-categories/{node_id}", response_model=ProductCategoryResponse
+)
 async def get_product_category(
     account_id: str,
     node_id: str,
@@ -207,18 +236,24 @@ async def get_product_category(
     try:
         category = await service.get_node(account_id, node_id, "ProductCategory")
         if not category:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product category not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product category not found",
+            )
         return ProductCategoryResponse(**category)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to get product category: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get product category"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get product category",
         ) from e
 
 
-@router.patch("/{account_id}/product-categories/{node_id}", response_model=ProductCategoryResponse)
+@router.patch(
+    "/{account_id}/product-categories/{node_id}", response_model=ProductCategoryResponse
+)
 async def update_product_category(
     account_id: str,
     node_id: str,
@@ -233,27 +268,36 @@ async def update_product_category(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.update_product_category(account_id, node_id, updates, user.user_id)
+        result = await service.update_product_category(
+            account_id, node_id, updates, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating product category: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update product category"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update product category",
         ) from e
 
 
-@router.delete("/{account_id}/product-categories/{node_id}", response_model=DeleteResponse)
+@router.delete(
+    "/{account_id}/product-categories/{node_id}", response_model=DeleteResponse
+)
 async def delete_product_category(
     account_id: str,
     node_id: str,
@@ -270,21 +314,28 @@ async def delete_product_category(
     try:
         await service.delete_product_category(account_id, node_id, user.user_id)
         return DeleteResponse(
-            success=True, message=f"Product category {node_id} deleted successfully", deleted_node_id=node_id
+            success=True,
+            message=f"Product category {node_id} deleted successfully",
+            deleted_node_id=node_id,
         )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting product category: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete product category"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete product category",
         ) from e
 
 
@@ -308,19 +359,26 @@ async def create_product(
         result = await service.create_product(account_id, product, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating product: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create product") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create product",
+        ) from e
 
 
 @router.get("/{account_id}/products", response_model=ProductListResponse)
@@ -328,7 +386,12 @@ async def list_products(
     account_id: str,
     category_node_id: str | None = Query(None, description="Filter by category"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> ProductListResponse:
@@ -343,53 +406,14 @@ async def list_products(
     await check_graph_access(account_id, user, "view")
 
     try:
-        # Build custom query to include category_node_id from relationship
-        if category_node_id:
-            # Query products filtered by category with relationship data
-            query = """
-            MATCH (acc:Account {account_id: $account_id})
-            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
-            WHERE (p)-[:BELONGS_TO]->(acc)
-            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
-            ORDER BY p.product_name
-            """
-            if limit is not None:
-                query += " SKIP $skip LIMIT $limit"
-                params = {"account_id": account_id, "category_node_id": category_node_id, "skip": skip, "limit": limit}
-            else:
-                params = {"account_id": account_id, "category_node_id": category_node_id}
-
-            # Get count
-            count_query = """
-            MATCH (acc:Account {account_id: $account_id})
-            MATCH (cat:ProductCategory {node_id: $category_node_id})-[:INCLUDES_PRODUCT]->(p:Product)
-            WHERE (p)-[:BELONGS_TO]->(acc)
-            RETURN count(p) as total
-            """
-            count_result = await service.neo4j.execute_query(count_query, {"account_id": account_id, "category_node_id": category_node_id})
-            total_count = count_result[0]["total"] if count_result else 0
-
-            # Get products
-            result = await service.neo4j.execute_query(query, params)
-            products_data = [
-                {**service._neo4j_node_to_dict(record["node"]), "account_id": record["account_id"], "category_node_id": record["category_node_id"]}
-                for record in result
-            ]
-        else:
-            # Query all products for account (no category filter)
-            total_count = await service.count_nodes(account_id, "Product")
-            products_data = await service.list_nodes(account_id, "Product", skip=skip, limit=limit)
-            # For products without category filter, we need to fetch their category_node_id
-            # This is a fallback - in practice, products should always have a category
-            for prod in products_data:
-                # Query to find the category
-                cat_query = """
-                MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p:Product {node_id: $node_id})
-                RETURN cat.node_id as category_node_id
-                LIMIT 1
-                """
-                cat_result = await service.neo4j.execute_query(cat_query, {"node_id": prod["node_id"]})
-                prod["category_node_id"] = cat_result[0]["category_node_id"] if cat_result else ""
+        # Use optimized method that fetches category information in single query
+        # Avoids N+1 query problem by using OPTIONAL MATCH
+        products_data, total_count = await service.list_products_with_categories(
+            account_id=account_id,
+            category_node_id=category_node_id,
+            skip=skip,
+            limit=limit,
+        )
 
         products = [ProductResponse(**prod) for prod in products_data]
 
@@ -398,7 +422,10 @@ async def list_products(
         raise
     except Exception as e:
         logger.exception(f"Failed to list products: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list products") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list products",
+        ) from e
 
 
 @router.get("/{account_id}/products/{node_id}", response_model=ProductResponse)
@@ -417,13 +444,18 @@ async def get_product(
     try:
         product = await service.get_node(account_id, node_id, "Product")
         if not product:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+            )
         return ProductResponse(**product)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to get product: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get product") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get product",
+        ) from e
 
 
 @router.patch("/{account_id}/products/{node_id}", response_model=ProductResponse)
@@ -441,22 +473,31 @@ async def update_product(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.update_product(account_id, node_id, updates, user.user_id)
+        result = await service.update_product(
+            account_id, node_id, updates, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating product: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update product") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update product",
+        ) from e
 
 
 @router.delete("/{account_id}/products/{node_id}", response_model=DeleteResponse)
@@ -475,25 +516,38 @@ async def delete_product(
 
     try:
         await service.delete_product(account_id, node_id, user.user_id)
-        return DeleteResponse(success=True, message=f"Product {node_id} deleted successfully", deleted_node_id=node_id)
+        return DeleteResponse(
+            success=True,
+            message=f"Product {node_id} deleted successfully",
+            deleted_node_id=node_id,
+        )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting product: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete product") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete product",
+        ) from e
 
 
 # ---------- ValueProposition Endpoints ----------
 
 
-@router.post("/{account_id}/value-propositions", response_model=ValuePropositionResponse)
+@router.post(
+    "/{account_id}/value-propositions", response_model=ValuePropositionResponse
+)
 async def create_value_proposition(
     account_id: str,
     value_prop: ValuePropositionCreate,
@@ -507,32 +561,48 @@ async def create_value_proposition(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.create_value_proposition(account_id, value_prop, user.user_id)
+        result = await service.create_value_proposition(
+            account_id, value_prop, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating value proposition: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create value proposition"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create value proposition",
         ) from e
 
 
-@router.get("/{account_id}/value-propositions", response_model=ValuePropositionListResponse)
+@router.get(
+    "/{account_id}/value-propositions", response_model=ValuePropositionListResponse
+)
 async def list_value_propositions(
     account_id: str,
-    parent_node_id: str | None = Query(None, description="Filter by parent (Product, ProductCategory, Account)"),
+    parent_node_id: str | None = Query(
+        None, description="Filter by parent (Product, ProductCategory, Account)"
+    ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> ValuePropositionListResponse:
@@ -548,25 +618,37 @@ async def list_value_propositions(
 
     try:
         # Get total count from database (not just returned results)
-        total_count = await service.count_nodes(account_id, "ValueProposition", parent_node_id=parent_node_id)
+        total_count = await service.count_nodes(
+            account_id, "ValueProposition", parent_node_id=parent_node_id
+        )
 
         # Get paginated results
         vps_data = await service.list_nodes(
-            account_id, "ValueProposition", parent_node_id=parent_node_id, skip=skip, limit=limit
+            account_id,
+            "ValueProposition",
+            parent_node_id=parent_node_id,
+            skip=skip,
+            limit=limit,
         )
         value_propositions = [ValuePropositionResponse(**vp) for vp in vps_data]
 
-        return ValuePropositionListResponse(value_propositions=value_propositions, total_count=total_count)
+        return ValuePropositionListResponse(
+            value_propositions=value_propositions, total_count=total_count
+        )
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to list value propositions: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list value propositions"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list value propositions",
         ) from e
 
 
-@router.get("/{account_id}/value-propositions/{node_id}", response_model=ValuePropositionResponse)
+@router.get(
+    "/{account_id}/value-propositions/{node_id}",
+    response_model=ValuePropositionResponse,
+)
 async def get_value_proposition(
     account_id: str,
     node_id: str,
@@ -582,18 +664,25 @@ async def get_value_proposition(
     try:
         value_prop = await service.get_node(account_id, node_id, "ValueProposition")
         if not value_prop:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Value proposition not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Value proposition not found",
+            )
         return ValuePropositionResponse(**value_prop)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to get value proposition: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get value proposition"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get value proposition",
         ) from e
 
 
-@router.patch("/{account_id}/value-propositions/{node_id}", response_model=ValuePropositionResponse)
+@router.patch(
+    "/{account_id}/value-propositions/{node_id}",
+    response_model=ValuePropositionResponse,
+)
 async def update_value_proposition(
     account_id: str,
     node_id: str,
@@ -608,27 +697,36 @@ async def update_value_proposition(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.update_value_proposition(account_id, node_id, updates, user.user_id)
+        result = await service.update_value_proposition(
+            account_id, node_id, updates, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating value proposition: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update value proposition"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update value proposition",
         ) from e
 
 
-@router.delete("/{account_id}/value-propositions/{node_id}", response_model=DeleteResponse)
+@router.delete(
+    "/{account_id}/value-propositions/{node_id}", response_model=DeleteResponse
+)
 async def delete_value_proposition(
     account_id: str,
     node_id: str,
@@ -644,21 +742,28 @@ async def delete_value_proposition(
     try:
         await service.delete_value_proposition(account_id, node_id, user.user_id)
         return DeleteResponse(
-            success=True, message=f"Value proposition {node_id} deleted successfully", deleted_node_id=node_id
+            success=True,
+            message=f"Value proposition {node_id} deleted successfully",
+            deleted_node_id=node_id,
         )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting value proposition: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete value proposition"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete value proposition",
         ) from e
 
 
@@ -683,26 +788,38 @@ async def create_strength(
         result = await service.create_strength(account_id, strength, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating strength: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create strength") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create strength",
+        ) from e
 
 
 @router.get("/{account_id}/strengths", response_model=StrengthListResponse)
 async def list_strengths(
     account_id: str,
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> StrengthListResponse:
@@ -721,7 +838,9 @@ async def list_strengths(
         total_count = await service.count_nodes(account_id, "Strength")
 
         # Get paginated results
-        strengths_data = await service.list_nodes(account_id, "Strength", skip=skip, limit=limit)
+        strengths_data = await service.list_nodes(
+            account_id, "Strength", skip=skip, limit=limit
+        )
         strengths = [StrengthResponse(**s) for s in strengths_data]
 
         return StrengthListResponse(strengths=strengths, total_count=total_count)
@@ -729,7 +848,10 @@ async def list_strengths(
         raise
     except Exception as e:
         logger.exception(f"Failed to list strengths: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list strengths") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list strengths",
+        ) from e
 
 
 @router.get("/{account_id}/strengths/{node_id}", response_model=StrengthResponse)
@@ -748,13 +870,18 @@ async def get_strength(
     try:
         strength = await service.get_node(account_id, node_id, "Strength")
         if not strength:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Strength not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strength not found"
+            )
         return StrengthResponse(**strength)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to get strength: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get strength") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get strength",
+        ) from e
 
 
 @router.patch("/{account_id}/strengths/{node_id}", response_model=StrengthResponse)
@@ -772,22 +899,31 @@ async def update_strength(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.update_strength(account_id, node_id, updates, user.user_id)
+        result = await service.update_strength(
+            account_id, node_id, updates, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating strength: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update strength") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update strength",
+        ) from e
 
 
 @router.delete("/{account_id}/strengths/{node_id}", response_model=DeleteResponse)
@@ -806,19 +942,30 @@ async def delete_strength(
 
     try:
         await service.delete_strength(account_id, node_id, user.user_id)
-        return DeleteResponse(success=True, message=f"Strength {node_id} deleted successfully", deleted_node_id=node_id)
+        return DeleteResponse(
+            success=True,
+            message=f"Strength {node_id} deleted successfully",
+            deleted_node_id=node_id,
+        )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting strength: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete strength") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete strength",
+        ) from e
 
 
 # ---------- SWOT: Weakness Endpoints ----------
@@ -842,26 +989,38 @@ async def create_weakness(
         result = await service.create_weakness(account_id, weakness, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating weakness: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create weakness") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create weakness",
+        ) from e
 
 
 @router.get("/{account_id}/weaknesses", response_model=WeaknessListResponse)
 async def list_weaknesses(
     account_id: str,
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> WeaknessListResponse:
@@ -880,7 +1039,9 @@ async def list_weaknesses(
         total_count = await service.count_nodes(account_id, "Weakness")
 
         # Get paginated results
-        weaknesses_data = await service.list_nodes(account_id, "Weakness", skip=skip, limit=limit)
+        weaknesses_data = await service.list_nodes(
+            account_id, "Weakness", skip=skip, limit=limit
+        )
         weaknesses = [WeaknessResponse(**w) for w in weaknesses_data]
 
         return WeaknessListResponse(weaknesses=weaknesses, total_count=total_count)
@@ -888,7 +1049,10 @@ async def list_weaknesses(
         raise
     except Exception as e:
         logger.exception(f"Failed to list weaknesses: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list weaknesses") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list weaknesses",
+        ) from e
 
 
 @router.get("/{account_id}/weaknesses/{node_id}", response_model=WeaknessResponse)
@@ -907,13 +1071,18 @@ async def get_weakness(
     try:
         weakness = await service.get_node(account_id, node_id, "Weakness")
         if not weakness:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Weakness not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Weakness not found"
+            )
         return WeaknessResponse(**weakness)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to get weakness: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get weakness") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get weakness",
+        ) from e
 
 
 @router.patch("/{account_id}/weaknesses/{node_id}", response_model=WeaknessResponse)
@@ -931,22 +1100,31 @@ async def update_weakness(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.update_weakness(account_id, node_id, updates, user.user_id)
+        result = await service.update_weakness(
+            account_id, node_id, updates, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating weakness: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update weakness") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update weakness",
+        ) from e
 
 
 @router.delete("/{account_id}/weaknesses/{node_id}", response_model=DeleteResponse)
@@ -965,19 +1143,30 @@ async def delete_weakness(
 
     try:
         await service.delete_weakness(account_id, node_id, user.user_id)
-        return DeleteResponse(success=True, message=f"Weakness {node_id} deleted successfully", deleted_node_id=node_id)
+        return DeleteResponse(
+            success=True,
+            message=f"Weakness {node_id} deleted successfully",
+            deleted_node_id=node_id,
+        )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting weakness: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete weakness") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete weakness",
+        ) from e
 
 
 # ---------- SWOT: Opportunity Endpoints ----------
@@ -1001,19 +1190,26 @@ async def create_opportunity(
         result = await service.create_opportunity(account_id, opportunity, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating opportunity: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create opportunity") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create opportunity",
+        ) from e
 
 
 @router.get("/{account_id}/opportunities", response_model=OpportunityListResponse)
@@ -1021,7 +1217,12 @@ async def list_opportunities(
     account_id: str,
     strength_node_id: str | None = Query(None, description="Filter by parent strength"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> OpportunityListResponse:
@@ -1038,25 +1239,45 @@ async def list_opportunities(
     try:
         # Get total count from database (not just returned results)
         total_count = await service.count_nodes(
-            account_id, "Opportunity", parent_node_id=strength_node_id, parent_node_type="Strength"
+            account_id,
+            "Opportunity",
+            parent_node_id=strength_node_id,
+            parent_node_type="Strength",
         )
 
         # Get paginated results
         opportunities_data = await service.list_nodes(
-            account_id, "Opportunity", parent_node_id=strength_node_id, parent_node_type="Strength", skip=skip, limit=limit
+            account_id,
+            "Opportunity",
+            parent_node_id=strength_node_id,
+            parent_node_type="Strength",
+            skip=skip,
+            limit=limit,
         )
         # Map parent_node_id to strength_node_id for the response model
         opportunities = [
-            OpportunityResponse(**{**o, "strength_node_id": o.get("parent_node_id", o.get("strength_node_id"))})
+            OpportunityResponse(
+                **{
+                    **o,
+                    "strength_node_id": o.get(
+                        "parent_node_id", o.get("strength_node_id")
+                    ),
+                }
+            )
             for o in opportunities_data
         ]
 
-        return OpportunityListResponse(opportunities=opportunities, total_count=total_count)
+        return OpportunityListResponse(
+            opportunities=opportunities, total_count=total_count
+        )
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to list opportunities: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list opportunities") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list opportunities",
+        ) from e
 
 
 @router.get("/{account_id}/opportunities/{node_id}", response_model=OpportunityResponse)
@@ -1075,7 +1296,9 @@ async def get_opportunity(
     try:
         opportunity = await service.get_node(account_id, node_id, "Opportunity")
         if not opportunity:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity not found"
+            )
 
         # Fetch the parent strength relationship
         strength_query = """
@@ -1083,7 +1306,9 @@ async def get_opportunity(
         RETURN s.node_id as strength_node_id
         LIMIT 1
         """
-        strength_result = await service.neo4j.execute_query(strength_query, {"node_id": node_id})
+        strength_result = await service.neo4j.execute_query(
+            strength_query, {"node_id": node_id}
+        )
         if strength_result and strength_result[0]:
             opportunity["strength_node_id"] = strength_result[0]["strength_node_id"]
 
@@ -1092,10 +1317,15 @@ async def get_opportunity(
         raise
     except Exception as e:
         logger.exception(f"Failed to get opportunity: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get opportunity") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get opportunity",
+        ) from e
 
 
-@router.patch("/{account_id}/opportunities/{node_id}", response_model=OpportunityResponse)
+@router.patch(
+    "/{account_id}/opportunities/{node_id}", response_model=OpportunityResponse
+)
 async def update_opportunity(
     account_id: str,
     node_id: str,
@@ -1110,22 +1340,31 @@ async def update_opportunity(
     await check_graph_access(account_id, user, "edit")
 
     try:
-        result = await service.update_opportunity(account_id, node_id, updates, user.user_id)
+        result = await service.update_opportunity(
+            account_id, node_id, updates, user.user_id
+        )
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating opportunity: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update opportunity") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update opportunity",
+        ) from e
 
 
 @router.delete("/{account_id}/opportunities/{node_id}", response_model=DeleteResponse)
@@ -1144,20 +1383,29 @@ async def delete_opportunity(
     try:
         await service.delete_opportunity(account_id, node_id, user.user_id)
         return DeleteResponse(
-            success=True, message=f"Opportunity {node_id} deleted successfully", deleted_node_id=node_id
+            success=True,
+            message=f"Opportunity {node_id} deleted successfully",
+            deleted_node_id=node_id,
         )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting opportunity: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete opportunity") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete opportunity",
+        ) from e
 
 
 # ---------- SWOT: Risk Endpoints ----------
@@ -1181,19 +1429,26 @@ async def create_risk(
         result = await service.create_risk(account_id, risk, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating risk: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create risk") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create risk",
+        ) from e
 
 
 @router.get("/{account_id}/risks", response_model=RiskListResponse)
@@ -1201,7 +1456,12 @@ async def list_risks(
     account_id: str,
     weakness_node_id: str | None = Query(None, description="Filter by parent weakness"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> RiskListResponse:
@@ -1218,16 +1478,31 @@ async def list_risks(
     try:
         # Get total count from database (not just returned results)
         total_count = await service.count_nodes(
-            account_id, "Risk", parent_node_id=weakness_node_id, parent_node_type="Weakness"
+            account_id,
+            "Risk",
+            parent_node_id=weakness_node_id,
+            parent_node_type="Weakness",
         )
 
         # Get paginated results
         risks_data = await service.list_nodes(
-            account_id, "Risk", parent_node_id=weakness_node_id, parent_node_type="Weakness", skip=skip, limit=limit
+            account_id,
+            "Risk",
+            parent_node_id=weakness_node_id,
+            parent_node_type="Weakness",
+            skip=skip,
+            limit=limit,
         )
         # Map parent_node_id to weakness_node_id for the response model
         risks = [
-            RiskResponse(**{**r, "weakness_node_id": r.get("parent_node_id", r.get("weakness_node_id"))})
+            RiskResponse(
+                **{
+                    **r,
+                    "weakness_node_id": r.get(
+                        "parent_node_id", r.get("weakness_node_id")
+                    ),
+                }
+            )
             for r in risks_data
         ]
 
@@ -1236,7 +1511,10 @@ async def list_risks(
         raise
     except Exception as e:
         logger.exception(f"Failed to list risks: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list risks") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list risks",
+        ) from e
 
 
 @router.get("/{account_id}/risks/{node_id}", response_model=RiskResponse)
@@ -1255,7 +1533,9 @@ async def get_risk(
     try:
         risk = await service.get_node(account_id, node_id, "Risk")
         if not risk:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found"
+            )
 
         # Fetch the parent weakness relationship
         weakness_query = """
@@ -1263,7 +1543,9 @@ async def get_risk(
         RETURN w.node_id as weakness_node_id
         LIMIT 1
         """
-        weakness_result = await service.neo4j.execute_query(weakness_query, {"node_id": node_id})
+        weakness_result = await service.neo4j.execute_query(
+            weakness_query, {"node_id": node_id}
+        )
         if weakness_result and weakness_result[0]:
             risk["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
 
@@ -1272,7 +1554,10 @@ async def get_risk(
         raise
     except Exception as e:
         logger.exception(f"Failed to get risk: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get risk") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get risk",
+        ) from e
 
 
 @router.patch("/{account_id}/risks/{node_id}", response_model=RiskResponse)
@@ -1293,19 +1578,26 @@ async def update_risk(
         result = await service.update_risk(account_id, node_id, updates, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating risk: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update risk") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update risk",
+        ) from e
 
 
 @router.delete("/{account_id}/risks/{node_id}", response_model=DeleteResponse)
@@ -1323,19 +1615,30 @@ async def delete_risk(
 
     try:
         await service.delete_risk(account_id, node_id, user.user_id)
-        return DeleteResponse(success=True, message=f"Risk {node_id} deleted successfully", deleted_node_id=node_id)
+        return DeleteResponse(
+            success=True,
+            message=f"Risk {node_id} deleted successfully",
+            deleted_node_id=node_id,
+        )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting risk: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete risk") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete risk",
+        ) from e
 
 
 # ---------- Goal Endpoints ----------
@@ -1358,26 +1661,38 @@ async def create_goal(
         result = await service.create_goal(account_id, goal, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error creating goal: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create goal") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create goal",
+        ) from e
 
 
 @router.get("/{account_id}/goals", response_model=GoalListResponse)
 async def list_goals(
     account_id: str,
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
-    limit: int | None = Query(None, ge=1, le=1000, description="Maximum number of items to return (default: all)"),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Maximum number of items to return (default: all)",
+    ),
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> GoalListResponse:
@@ -1396,7 +1711,9 @@ async def list_goals(
         total_count = await service.count_nodes(account_id, "Goal")
 
         # Get paginated results
-        goals_data = await service.list_nodes(account_id, "Goal", skip=skip, limit=limit)
+        goals_data = await service.list_nodes(
+            account_id, "Goal", skip=skip, limit=limit
+        )
         goals = [GoalResponse(**g) for g in goals_data]
 
         return GoalListResponse(goals=goals, total_count=total_count)
@@ -1404,7 +1721,10 @@ async def list_goals(
         raise
     except Exception as e:
         logger.exception(f"Failed to list goals: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list goals") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list goals",
+        ) from e
 
 
 @router.get("/{account_id}/goals/{node_id}", response_model=GoalResponse)
@@ -1423,13 +1743,18 @@ async def get_goal(
     try:
         goal = await service.get_node(account_id, node_id, "Goal")
         if not goal:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found"
+            )
         return GoalResponse(**goal)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Failed to get goal: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get goal") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get goal",
+        ) from e
 
 
 @router.patch("/{account_id}/goals/{node_id}", response_model=GoalResponse)
@@ -1450,19 +1775,26 @@ async def update_goal(
         result = await service.update_goal(account_id, node_id, updates, user.user_id)
         return result
     except ValidationException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except DuplicateNodeException as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error updating goal: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update goal") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update goal",
+        ) from e
 
 
 @router.delete("/{account_id}/goals/{node_id}", response_model=DeleteResponse)
@@ -1480,19 +1812,30 @@ async def delete_goal(
 
     try:
         await service.delete_goal(account_id, node_id, user.user_id)
-        return DeleteResponse(success=True, message=f"Goal {node_id} deleted successfully", deleted_node_id=node_id)
+        return DeleteResponse(
+            success=True,
+            message=f"Goal {node_id} deleted successfully",
+            deleted_node_id=node_id,
+        )
     except NodeHasDependenciesException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except NodeNotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except GraphSyncException as e:
         logger.error(f"Graph sync error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Unexpected error deleting goal: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete goal") from e
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete goal",
+        ) from e
 
 
 # ==================== AGGREGATED VIEWS ====================
@@ -1524,10 +1867,14 @@ async def get_business_strategy(
 
         # Get account info
         account_query = "MATCH (acc:Account {account_id: $account_id}) RETURN acc"
-        account_result = await service.neo4j.execute_query(account_query, {"account_id": account_id})
+        account_result = await service.neo4j.execute_query(
+            account_query, {"account_id": account_id}
+        )
 
         if not account_result:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
+            )
 
         account = account_result[0]["acc"]
 
@@ -1539,7 +1886,9 @@ async def get_business_strategy(
             account_id=account_id,
             company_name=account.get("company_name", ""),
             company_overview=account.get("company_overview", ""),
-            product_categories=[ProductCategoryResponse(**cat) for cat in categories_data],
+            product_categories=[
+                ProductCategoryResponse(**cat) for cat in categories_data
+            ],
             products=[ProductResponse(**prod) for prod in products_data],
             value_propositions=[ValuePropositionResponse(**vp) for vp in vps_data],
             swot_analysis=swot_analysis,
@@ -1554,5 +1903,6 @@ async def get_business_strategy(
     except Exception as e:
         logger.exception(f"Failed to get business strategy: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get business strategy"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get business strategy",
         ) from e
