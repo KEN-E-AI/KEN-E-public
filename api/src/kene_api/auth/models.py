@@ -43,6 +43,7 @@ class UserContext:
             True if user has access, False otherwise
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         # Super admins always have edit access
@@ -58,34 +59,48 @@ class UserContext:
             return True
 
         # Debug logging
-        logger.info(f"[has_account_access] Checking account {account_id}")
-        logger.info(f"[has_account_access] self.account_permissions: {self.account_permissions}")
-        logger.info(f"[has_account_access] self.permissions (old): {self.permissions}")
-        logger.info(f"[has_account_access] required_roles: {required_roles}")
+        logger.debug(f"[has_account_access] Checking account {account_id}")
+        logger.debug(
+            f"[has_account_access] self.account_permissions: {self.account_permissions}"
+        )
+        logger.debug(f"[has_account_access] self.permissions (old): {self.permissions}")
+        logger.debug(f"[has_account_access] required_roles: {required_roles}")
 
         # Check explicit account permissions for view-role users
         if account_id not in self.account_permissions:
-            logger.info(f"[has_account_access] Account {account_id} NOT in account_permissions")
+            logger.debug(
+                f"[has_account_access] Account {account_id} NOT in account_permissions"
+            )
             # Backward compatibility: check old permissions dict
             if account_id in self.permissions:
-                logger.info(f"[has_account_access] Account {account_id} found in old permissions")
+                logger.debug(
+                    f"[has_account_access] Account {account_id} found in old permissions"
+                )
                 return True
             # Check if account is in accessible_accounts (fallback for view-only users)
             if account_id in self.accessible_accounts:
-                logger.info(f"[has_account_access] Account {account_id} found in accessible_accounts")
+                logger.debug(
+                    f"[has_account_access] Account {account_id} found in accessible_accounts"
+                )
                 # If no required roles specified, grant access
                 # If required roles specified, assume user has view access
                 if not required_roles or "view" in required_roles:
                     return True
-            logger.warning(f"[has_account_access] Account {account_id} not found in any permissions")
+            logger.warning(
+                f"[has_account_access] Account {account_id} not found in any permissions"
+            )
             return False
 
-        logger.info(f"[has_account_access] Account {account_id} found in account_permissions")
+        logger.debug(
+            f"[has_account_access] Account {account_id} found in account_permissions"
+        )
         if required_roles:
             user_role = self.account_permissions.get(account_id, "")
-            logger.info(f"[has_account_access] user_role: {user_role}, checking if in {required_roles}")
+            logger.debug(
+                f"[has_account_access] user_role: {user_role}, checking if in {required_roles}"
+            )
             result = user_role in required_roles
-            logger.info(f"[has_account_access] Result: {result}")
+            logger.debug(f"[has_account_access] Result: {result}")
             return result
 
         return True
