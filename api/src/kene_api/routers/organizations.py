@@ -187,11 +187,28 @@ async def get_organizations_batch(
         if not accessible_org_ids:
             return {}
 
+        # Try to get from cache first
+        from ..redis_client import get_redis_service
+
+        redis_service = get_redis_service()
+        cache_key = f"org_batch:{','.join(sorted(accessible_org_ids))}:accounts={include_accounts}"
+
+        if redis_service.is_available():
+            cached_result = redis_service.get_json(cache_key)
+            if cached_result:
+                logger.info(
+                    f"[CACHE HIT] Returning cached batch for {len(accessible_org_ids)} orgs"
+                )
+                return cached_result
+
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_MESSAGE)
 
+        logger.info(
+            f"[CACHE MISS] Fetching batch from Neo4j for {len(accessible_org_ids)} orgs"
+        )
         # Build query to fetch organizations with optional accounts
         if include_accounts:
             query = """
@@ -253,6 +270,13 @@ async def get_organizations_batch(
                     org_dict["accounts"] = []
 
                 response[org_data.get("organization_id")] = org_dict
+
+        # Cache the response for 60 seconds (1 minute)
+        if redis_service.is_available() and response:
+            redis_service.set_json(cache_key, response, ttl=60)
+            logger.info(
+                f"[CACHE] Cached batch result for {len(response)} orgs with 60s TTL"
+            )
 
         return response
 

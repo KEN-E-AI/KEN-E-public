@@ -302,13 +302,22 @@ async def _get_user_context_with_limiter(
         # Re-raise HTTP exceptions
         raise
 
+    print(f"[AUTH PRINT] Checking cache for user {user_id}", flush=True)
+    logger.info(f"[AUTH] Checking cache for user {user_id}")
     # Try to get from cache first (lazy import to avoid Redis initialization at module load)
     from .cached_user_context import get_cached_user_context_service
+
     cached_user_service = get_cached_user_context_service()
+    print(f"[AUTH PRINT] Got cached service, calling get_user_context", flush=True)
+    logger.info(f"[AUTH] Got cached service, calling get_user_context")
     cached_context = cached_user_service.get_user_context(user_id)
     if cached_context:
-        logger.debug(f"Found cached user context for {user_id}")
+        print(f"[AUTH PRINT] Returning cached context for {user_id}", flush=True)
+        logger.info(f"[AUTH] Returning cached context for {user_id}")
         return cached_context
+
+    print(f"[AUTH PRINT] No cache, fetching from Firestore for {user_id}", flush=True)
+    logger.info(f"[AUTH] No cache, fetching from Firestore for {user_id}")
 
     # Get Firestore client
     firestore_db = firestore_service.get_client()
