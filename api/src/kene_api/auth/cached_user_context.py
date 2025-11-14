@@ -17,12 +17,13 @@ class CachedUserContextService:
     def __init__(self):
         """Initialize the cached user context service."""
         self._redis = None  # Lazy initialization
-    
+
     @property
     def redis(self):
         """Lazy-load Redis service to avoid initialization at module import."""
         if self._redis is None:
             from ..redis_client import get_redis_service
+
             self._redis = get_redis_service()
         return self._redis
 
@@ -40,20 +41,11 @@ class CachedUserContextService:
 
         if cached_data:
             try:
-                # Check if cache has account_permissions field
-                # If missing, invalidate cache to force fresh load from Firestore
-                if "account_permissions" not in cached_data:
-                    logger.warning(f"Cache for user {user_id} missing account_permissions field, invalidating cache")
-                    self.invalidate_user_context(user_id)
-                    return None
-
                 return UserContext(
                     user_id=cached_data["user_id"],
                     email=cached_data["email"],
-                    accessible_accounts=cached_data["accessible_accounts"],
-                    permissions=cached_data["permissions"],
                     organization_permissions=cached_data["organization_permissions"],
-                    account_permissions=cached_data.get("account_permissions", {}),
+                    account_permissions=cached_data["account_permissions"],
                 )
             except Exception as e:
                 logger.error(f"Failed to deserialize cached user context: {e}")
@@ -72,8 +64,6 @@ class CachedUserContextService:
         context_data = {
             "user_id": user_context.user_id,
             "email": user_context.email,
-            "accessible_accounts": user_context.accessible_accounts,
-            "permissions": user_context.permissions,
             "organization_permissions": user_context.organization_permissions,
             "account_permissions": user_context.account_permissions,
         }
