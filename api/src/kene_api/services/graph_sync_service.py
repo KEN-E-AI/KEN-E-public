@@ -1684,6 +1684,17 @@ class GraphSyncService:
         if not is_valid:
             raise ValidationException(error, "description")
 
+        # Validate competitor limit
+        from ..constants import MAX_COMPETITORS_PER_ACCOUNT
+
+        current_count = await self.count_nodes(account_id, "Competitor")
+        if current_count >= MAX_COMPETITORS_PER_ACCOUNT:
+            raise ValidationException(
+                f"Maximum of {MAX_COMPETITORS_PER_ACCOUNT} competitors allowed per account. "
+                "Please delete an existing competitor before adding a new one.",
+                "account_id",
+            )
+
         # Ensure CompetitiveEnvironment hub exists
         comp_envs = await self.list_nodes(
             account_id, "CompetitiveEnvironment", skip=0, limit=1
@@ -1766,6 +1777,19 @@ class GraphSyncService:
         if not is_valid:
             raise ValidationException(error, "display_name")
 
+        # Validate tactics limit per competitor
+        from ..constants import MAX_TACTICS_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "CompetitorTactic", parent_node_id=tactic.competitor_node_id
+        )
+        if current_count >= MAX_TACTICS_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_TACTICS_PER_COMPETITOR} tactics allowed per competitor. "
+                "Please delete an existing tactic before adding a new one.",
+                "competitor_node_id",
+            )
+
         node_data = {
             "display_name": tactic.display_name.strip(),
             "description": tactic.description.strip(),
@@ -1834,6 +1858,19 @@ class GraphSyncService:
         )
         if not is_valid:
             raise ValidationException(error, "display_name")
+
+        # Validate strengths limit per competitor
+        from ..constants import MAX_STRENGTHS_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "CompetitorStrength", parent_node_id=strength.competitor_node_id
+        )
+        if current_count >= MAX_STRENGTHS_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_STRENGTHS_PER_COMPETITOR} strengths allowed per competitor. "
+                "Please delete an existing strength before adding a new one.",
+                "competitor_node_id",
+            )
 
         node_data = {
             "display_name": strength.display_name.strip(),
@@ -1904,6 +1941,19 @@ class GraphSyncService:
         if not is_valid:
             raise ValidationException(error, "display_name")
 
+        # Validate weaknesses limit per competitor
+        from ..constants import MAX_WEAKNESSES_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "CompetitorWeakness", parent_node_id=weakness.competitor_node_id
+        )
+        if current_count >= MAX_WEAKNESSES_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_WEAKNESSES_PER_COMPETITOR} weaknesses allowed per competitor. "
+                "Please delete an existing weakness before adding a new one.",
+                "competitor_node_id",
+            )
+
         node_data = {
             "display_name": weakness.display_name.strip(),
             "description": weakness.description.strip(),
@@ -1972,6 +2022,19 @@ class GraphSyncService:
         )
         if not is_valid:
             raise ValidationException(error, "product_name")
+
+        # Validate substitute products limit per competitor
+        from ..constants import MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR
+
+        current_count = await self.count_nodes(
+            account_id, "SubstituteProduct", parent_node_id=product.competitor_node_id
+        )
+        if current_count >= MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR:
+            raise ValidationException(
+                f"Maximum of {MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR} substitute products allowed per competitor. "
+                "Please delete an existing product before adding a new one.",
+                "competitor_node_id",
+            )
 
         node_data = {
             "product_name": product.product_name.strip(),

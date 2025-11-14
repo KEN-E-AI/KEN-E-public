@@ -54,3 +54,11 @@ NODE_TYPE_TO_PREFIX: dict[str, str] = {
     # System
     "Account": "acc",
 }
+
+# Resource limits per account (Competitive Strategy)
+# These limits prevent database bloat and ensure reasonable UI performance
+MAX_COMPETITORS_PER_ACCOUNT = 5
+MAX_TACTICS_PER_COMPETITOR = 5
+MAX_STRENGTHS_PER_COMPETITOR = 5
+MAX_WEAKNESSES_PER_COMPETITOR = 5
+MAX_SUBSTITUTE_PRODUCTS_PER_COMPETITOR = 10

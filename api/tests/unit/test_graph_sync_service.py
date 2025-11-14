@@ -1059,3 +1059,145 @@ class TestSubstituteProductOperations:
         assert result.product_name == "Molekule Air Pro"
         assert result.product_detail_page == "https://molekule.com/air-pro"
         assert result.competitor_node_id == competitor_node_id
+
+
+class TestCompetitorLimits:
+    """Unit tests for competitor limit validation."""
+
+    @pytest.mark.asyncio
+    async def test_competitor_limit_validation_at_limit(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that ValidationException is raised when at competitor limit."""
+        # Arrange
+        account_id = "acc_test"
+        user_id = "user_test"
+        competitor_data = CompetitorCreate(
+            display_name="Test Competitor",
+            description="Test description",
+            references=[],
+        )
+
+        # Mock count_nodes to return 5 (at limit)
+        mock_neo4j_service.execute_query = AsyncMock(return_value=[{"count": 5}])
+
+        # Mock validation services
+        mock_validation_service.validate_non_empty_string = Mock(
+            return_value=(True, None)
+        )
+        mock_validation_service.validate_account_exists = AsyncMock(return_value=True)
+
+        # Act & Assert
+        with pytest.raises(ValidationException) as exc_info:
+            await graph_sync_service.create_competitor(
+                account_id=account_id, competitor=competitor_data, user_id=user_id
+            )
+
+        assert "Maximum of 5 competitors" in str(exc_info.value)
+        assert exc_info.value.field_name == "account_id"
+
+    @pytest.mark.asyncio
+    async def test_competitor_tactic_limit_validation_at_limit(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that ValidationException is raised when at tactic limit per competitor."""
+        # Arrange
+        account_id = "acc_test"
+        user_id = "user_test"
+        competitor_node_id = "competitor_acc_test_abc123"
+        tactic_data = CompetitorTacticCreate(
+            display_name="Test Tactic",
+            description="Test description",
+            references=[],
+            competitor_node_id=competitor_node_id,
+        )
+
+        # Mock count_nodes to return 5 (at limit)
+        mock_neo4j_service.execute_query = AsyncMock(return_value=[{"count": 5}])
+
+        # Mock validation services
+        mock_validation_service.validate_non_empty_string = Mock(
+            return_value=(True, None)
+        )
+
+        # Act & Assert
+        with pytest.raises(ValidationException) as exc_info:
+            await graph_sync_service.create_competitor_tactic(
+                account_id=account_id, tactic=tactic_data, user_id=user_id
+            )
+
+        assert "Maximum of 5 tactics" in str(exc_info.value)
+        assert exc_info.value.field_name == "competitor_node_id"
+
+    @pytest.mark.asyncio
+    async def test_competitor_limit_allows_creation_below_limit(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that competitor can be created when below limit."""
+        # Arrange
+        account_id = "acc_test"
+        user_id = "user_test"
+        competitor_data = CompetitorCreate(
+            display_name="Test Competitor",
+            description="Test description",
+            references=[],
+        )
+
+        # Mock count_nodes to return 4 (below limit of 5)
+        call_count = [0]
+
+        def mock_execute_query_side_effect(query, params):
+            call_count[0] += 1
+            if "COUNT" in query:
+                return [{"count": 4}]  # Below limit
+            elif "CompetitiveEnvironment" in query:
+                return []  # No environment exists
+            elif "MERGE" in query:
+                return [
+                    {
+                        "node": {
+                            "node_id": "competitor_acc_test_xyz789",
+                            "display_name": "Test Competitor",
+                            "description": "Test description",
+                            "references": [],
+                            "created_time": "2024-01-01T00:00:00Z",
+                            "last_modified": "2024-01-01T00:00:00Z",
+                            "created_by": user_id,
+                            "last_modified_by": user_id,
+                        },
+                        "account_id": account_id,
+                    }
+                ]
+            return []
+
+        mock_neo4j_service.execute_query = AsyncMock(
+            side_effect=mock_execute_query_side_effect
+        )
+
+        # Mock validation services
+        mock_validation_service.validate_non_empty_string = Mock(
+            return_value=(True, None)
+        )
+        mock_validation_service.validate_account_exists = AsyncMock(return_value=True)
+        mock_firestore_service.get_document = Mock(return_value={})
+
+        # Act
+        result = await graph_sync_service.create_competitor(
+            account_id=account_id, competitor=competitor_data, user_id=user_id
+        )
+
+        # Assert
+        assert result.display_name == "Test Competitor"
+        assert result.description == "Test description"
