@@ -22,9 +22,7 @@ class TestUserContext:
         """Test account access check without specific roles."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=["acc_1", "acc_2"],
-            permissions={"acc_1": "admin", "acc_2": "viewer"},
+            email="test@example.com",            permissions={"acc_1": "admin", "acc_2": "viewer"},
             organization_permissions={},
         )
 
@@ -39,9 +37,7 @@ class TestUserContext:
         """Test account access check with specific role requirements."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=["acc_1", "acc_2"],
-            permissions={"acc_1": "admin", "acc_2": "viewer"},
+            email="test@example.com",            permissions={"acc_1": "admin", "acc_2": "viewer"},
             organization_permissions={},
         )
 
@@ -57,9 +53,7 @@ class TestUserContext:
         """Test organization access check without specific roles."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=[],
-            permissions={},
+            email="test@example.com",            permissions={},
             organization_permissions={"org_1": "admin", "org_2": "viewer"},
         )
 
@@ -74,9 +68,7 @@ class TestUserContext:
         """Test organization access check with specific role requirements."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=[],
-            permissions={},
+            email="test@example.com",            permissions={},
             organization_permissions={"org_1": "admin", "org_2": "viewer"},
         )
 
@@ -442,9 +434,7 @@ class TestGetOptionalUserContext:
 
         expected_context = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=["acc_1"],
-            permissions={"acc_1": "admin"},
+            email="test@example.com",            permissions={"acc_1": "admin"},
             organization_permissions={},
         )
 
@@ -465,9 +455,7 @@ class TestRequireAccountAccess:
         """Test that access is granted when user has permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=["acc_1"],
-            permissions={"acc_1": "admin"},
+            email="test@example.com",            permissions={"acc_1": "admin"},
             organization_permissions={},
         )
 
@@ -479,9 +467,7 @@ class TestRequireAccountAccess:
         """Test that access is denied when user lacks permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=["acc_1"],
-            permissions={"acc_1": "admin"},
+            email="test@example.com",            permissions={"acc_1": "admin"},
             organization_permissions={},
         )
 
@@ -496,9 +482,7 @@ class TestRequireAccountAccess:
         """Test that access requires specific roles when specified."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=["acc_1"],
-            permissions={"acc_1": "viewer"},
+            email="test@example.com",            permissions={"acc_1": "viewer"},
             organization_permissions={},
         )
 
@@ -522,9 +506,7 @@ class TestRequireOrganizationAccess:
         """Test that access is granted when user has permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=[],
-            permissions={},
+            email="test@example.com",            permissions={},
             organization_permissions={"org_1": "admin"},
         )
 
@@ -536,9 +518,7 @@ class TestRequireOrganizationAccess:
         """Test that access is denied when user lacks permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",
-            accessible_accounts=[],
-            permissions={},
+            email="test@example.com",            permissions={},
             organization_permissions={"org_1": "admin"},
         )
 

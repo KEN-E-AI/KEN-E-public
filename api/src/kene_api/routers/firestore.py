@@ -468,7 +468,7 @@ async def update_document(
     ```json
     {
       "update": {
-        "field": "permissions.accounts.newAccountId",
+        "field": "permissions.account_permissions.newAccountId",
         "operator": "set",
         "value": "admin"
       }
