@@ -1814,7 +1814,7 @@ class FirestoreService:
         Args:
             collection: Collection name
             document_id: Document ID
-            field_path: Dot-separated field path (e.g., "permissions.accounts.newAccountId")
+            field_path: Dot-separated field path (e.g., "permissions.account_permissions.newAccountId")
             value: Value to set at the field path
 
         Returns:
@@ -1861,7 +1861,7 @@ class FirestoreService:
             document_id: Parent document ID
             subcollection: Subcollection name
             subdocument_id: Subdocument ID
-            field_path: Dot-separated field path (e.g., "permissions.accounts.newAccountId")
+            field_path: Dot-separated field path (e.g., "permissions.account_permissions.newAccountId")
             value: Value to set at the field path
 
         Returns:

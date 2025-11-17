@@ -51,9 +51,8 @@ async def get_current_user_optional(
         user_context = UserContext(
             user_id=decoded_token["uid"],
             email=decoded_token.get("email", ""),
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
+            account_permissions={},
         )
 
         # Add permissions from user document if it exists
@@ -61,17 +60,21 @@ async def get_current_user_optional(
             user_data = user_doc.to_dict()
             permissions = user_data.get("permissions", {})
 
-            # Merge both old and new account permission structures
-            # OLD structure: permissions.accounts.{account_id}
-            # NEW structure: permissions.account_permissions.{account_id}
-            old_accounts = permissions.get("accounts", {})
-            new_account_permissions = permissions.get("account_permissions", {})
-            # New structure takes precedence if account exists in both
-            user_context.account_permissions = {
-                **old_accounts,
-                **new_account_permissions,
-            }
+            # Runtime validation: detect old structure post-migration
+            # TODO: After all environments migrated and verified, change warning to error
+            if "accounts" in permissions:
+                error_msg = (
+                    f"User {decoded_token['uid']} still has deprecated 'permissions.accounts' field. "
+                    "Migration script must be run before deploying this code."
+                )
+                logger.error(error_msg)
+                logger.warning(
+                    "Using new 'account_permissions' structure only, old 'accounts' structure ignored"
+                )
 
+            user_context.account_permissions = permissions.get(
+                "account_permissions", {}
+            )
             user_context.organization_permissions = permissions.get("organizations", {})
 
         return user_context

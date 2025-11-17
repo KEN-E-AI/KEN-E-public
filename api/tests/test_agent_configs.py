@@ -22,9 +22,7 @@ def admin_user():
     """Create mock super admin user."""
     return UserContext(
         user_id="admin123",
-        email="admin@ken-e.ai",
-        accessible_accounts=[],
-        permissions={},
+        email="admin@ken-e.ai",        permissions={},
         organization_permissions={},
         account_permissions={},
     )
@@ -35,9 +33,7 @@ def regular_user():
     """Create mock regular user."""
     return UserContext(
         user_id="user123",
-        email="user@example.com",
-        accessible_accounts=[],
-        permissions={},
+        email="user@example.com",        permissions={},
         organization_permissions={},
         account_permissions={},
     )

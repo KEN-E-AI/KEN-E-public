@@ -342,7 +342,7 @@ async def create_account_internal(
             success = firestore.set_nested_field(
                 collection="users",
                 document_id=user.user_id,
-                field_path=f"permissions.accounts.{account_id}",
+                field_path=f"permissions.account_permissions.{account_id}",
                 value="admin",
             )
             if success:

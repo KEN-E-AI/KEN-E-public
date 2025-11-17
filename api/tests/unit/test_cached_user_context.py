@@ -16,9 +16,7 @@ class TestCachedUserContextService:
         """Create a test user context."""
         return UserContext(
             user_id="test-user-123",
-            email="test@example.com",
-            accessible_accounts=["acc_1", "acc_2"],
-            permissions={"acc_1": "admin", "acc_2": "viewer"},
+            email="test@example.com",            permissions={"acc_1": "admin", "acc_2": "viewer"},
             organization_permissions={"org_1": "admin"},
         )
 

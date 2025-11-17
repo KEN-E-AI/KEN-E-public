@@ -40,149 +40,6 @@ class TestGetCurrentUserOptional:
     """Test get_current_user_optional function."""
 
     @pytest.mark.asyncio
-    async def test_merges_old_and_new_account_permissions(
-        self,
-        mock_credentials,
-        mock_firestore_service,
-        mock_firestore_client,
-        mock_user_doc,
-    ):
-        """Test that both old and new permission structures are merged correctly."""
-        # Arrange
-        user_data = {
-            "permissions": {
-                "accounts": {
-                    "acc_old_1": "admin",
-                    "acc_old_2": "view",
-                },
-                "account_permissions": {
-                    "acc_new_1": "edit",
-                    "acc_new_2": "view",
-                },
-                "organizations": {
-                    "org_123": "view",
-                },
-            }
-        }
-        mock_user_doc.to_dict.return_value = user_data
-        mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_user_doc
-        mock_firestore_service.get_client.return_value = mock_firestore_client
-
-        decoded_token = {
-            "uid": "user_123",
-            "email": "test@example.com",
-        }
-
-        with patch(
-            "src.kene_api.auth.dependencies.verify_id_token", return_value=decoded_token
-        ):
-            # Act
-            result = await get_current_user_optional(
-                mock_credentials, mock_firestore_service
-            )
-
-            # Assert
-            assert result is not None
-            assert result.user_id == "user_123"
-            assert result.email == "test@example.com"
-            # Verify all 4 accounts are present
-            assert len(result.account_permissions) == 4
-            # Verify old accounts
-            assert result.account_permissions["acc_old_1"] == "admin"
-            assert result.account_permissions["acc_old_2"] == "view"
-            # Verify new accounts
-            assert result.account_permissions["acc_new_1"] == "edit"
-            assert result.account_permissions["acc_new_2"] == "view"
-            # Verify org permissions
-            assert result.organization_permissions["org_123"] == "view"
-
-    @pytest.mark.asyncio
-    async def test_new_permissions_override_old_when_duplicate(
-        self,
-        mock_credentials,
-        mock_firestore_service,
-        mock_firestore_client,
-        mock_user_doc,
-    ):
-        """Test that new account_permissions take precedence over old accounts when same account ID exists in both."""
-        # Arrange
-        user_data = {
-            "permissions": {
-                "accounts": {
-                    "acc_duplicate": "view",  # Old: view
-                    "acc_old_only": "admin",
-                },
-                "account_permissions": {
-                    "acc_duplicate": "edit",  # New: edit (should win)
-                    "acc_new_only": "view",
-                },
-            }
-        }
-        mock_user_doc.to_dict.return_value = user_data
-        mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_user_doc
-        mock_firestore_service.get_client.return_value = mock_firestore_client
-
-        decoded_token = {
-            "uid": "user_123",
-            "email": "test@example.com",
-        }
-
-        with patch(
-            "src.kene_api.auth.dependencies.verify_id_token", return_value=decoded_token
-        ):
-            # Act
-            result = await get_current_user_optional(
-                mock_credentials, mock_firestore_service
-            )
-
-            # Assert
-            assert result is not None
-            # New permission should override old
-            assert result.account_permissions["acc_duplicate"] == "edit"
-            assert result.account_permissions["acc_old_only"] == "admin"
-            assert result.account_permissions["acc_new_only"] == "view"
-
-    @pytest.mark.asyncio
-    async def test_handles_only_old_permissions_structure(
-        self,
-        mock_credentials,
-        mock_firestore_service,
-        mock_firestore_client,
-        mock_user_doc,
-    ):
-        """Test backward compatibility with only old permissions.accounts structure."""
-        # Arrange
-        user_data = {
-            "permissions": {
-                "accounts": {
-                    "acc_old_1": "admin",
-                    "acc_old_2": "view",
-                },
-            }
-        }
-        mock_user_doc.to_dict.return_value = user_data
-        mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_user_doc
-        mock_firestore_service.get_client.return_value = mock_firestore_client
-
-        decoded_token = {
-            "uid": "user_123",
-            "email": "test@example.com",
-        }
-
-        with patch(
-            "src.kene_api.auth.dependencies.verify_id_token", return_value=decoded_token
-        ):
-            # Act
-            result = await get_current_user_optional(
-                mock_credentials, mock_firestore_service
-            )
-
-            # Assert
-            assert result is not None
-            assert result.account_permissions["acc_old_1"] == "admin"
-            assert result.account_permissions["acc_old_2"] == "view"
-
-    @pytest.mark.asyncio
     async def test_handles_only_new_permissions_structure(
         self,
         mock_credentials,
@@ -281,3 +138,125 @@ class TestGetCurrentUserOptional:
 
         # Assert
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_mixed_permission_structures_uses_new_structure(
+        self,
+        mock_credentials,
+        mock_firestore_service,
+        mock_firestore_client,
+        mock_user_doc,
+        caplog,
+    ):
+        """Verify users with both old and new structures use account_permissions (new) only.
+
+        This tests the edge case during migration where a user might have both:
+        - Old: permissions.accounts
+        - New: permissions.account_permissions
+
+        Expected behavior: Use new structure, ignore old, log warning.
+        """
+        # Arrange: User with BOTH old and new permission structures
+        user_data = {
+            "permissions": {
+                "accounts": {
+                    "old-account-1": "edit",
+                    "old-account-2": "admin",
+                },  # Old structure
+                "account_permissions": {
+                    "new-account-1": "view",
+                    "new-account-2": "edit",
+                },  # New structure
+                "organizations": {"org_123": "view"},
+            }
+        }
+        mock_user_doc.to_dict.return_value = user_data
+        mock_firestore_client.collection.return_value.document.return_value.get.return_value = (
+            mock_user_doc
+        )
+        mock_firestore_service.get_client.return_value = mock_firestore_client
+
+        decoded_token = {
+            "uid": "mixed_user_456",
+            "email": "mixed@example.com",
+        }
+
+        with patch(
+            "src.kene_api.auth.dependencies.verify_id_token", return_value=decoded_token
+        ):
+            # Act
+            result = await get_current_user_optional(
+                mock_credentials, mock_firestore_service
+            )
+
+            # Assert: Only NEW structure is used
+            assert result is not None
+            assert result.account_permissions == {
+                "new-account-1": "view",
+                "new-account-2": "edit",
+            }
+
+            # Assert: OLD structure is NOT used
+            assert "old-account-1" not in result.account_permissions
+            assert "old-account-2" not in result.account_permissions
+
+            # Assert: Organization permissions loaded correctly
+            assert result.organization_permissions == {"org_123": "view"}
+
+            # Assert: Warning logged about old structure
+            assert any(
+                "deprecated 'permissions.accounts' field" in record.message
+                for record in caplog.records
+            ), "Should log warning about deprecated field"
+
+    @pytest.mark.asyncio
+    async def test_old_structure_only_gets_migrated_prompt(
+        self,
+        mock_credentials,
+        mock_firestore_service,
+        mock_firestore_client,
+        mock_user_doc,
+        caplog,
+    ):
+        """Verify users with ONLY old structure are detected and warned about.
+
+        This catches cases where migration hasn't been run yet.
+        """
+        # Arrange: User with ONLY old structure (no account_permissions)
+        user_data = {
+            "permissions": {
+                "accounts": {"legacy-account": "admin"},  # Old structure only
+                "organizations": {},
+            }
+        }
+        mock_user_doc.to_dict.return_value = user_data
+        mock_firestore_client.collection.return_value.document.return_value.get.return_value = (
+            mock_user_doc
+        )
+        mock_firestore_service.get_client.return_value = mock_firestore_client
+
+        decoded_token = {
+            "uid": "legacy_user_789",
+            "email": "legacy@example.com",
+        }
+
+        with patch(
+            "src.kene_api.auth.dependencies.verify_id_token", return_value=decoded_token
+        ):
+            # Act
+            result = await get_current_user_optional(
+                mock_credentials, mock_firestore_service
+            )
+
+            # Assert: User context created (doesn't crash)
+            assert result is not None
+
+            # Assert: Gets empty account_permissions (old structure ignored)
+            assert result.account_permissions == {}
+
+            # Assert: Error logged about missing migration
+            assert any(
+                "deprecated 'permissions.accounts' field" in record.message
+                and "Migration script must be run" in record.message
+                for record in caplog.records
+            ), "Should log error prompting migration"

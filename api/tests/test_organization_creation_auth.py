@@ -60,9 +60,7 @@ def mock_user_context():
     """Create a mock user context."""
     return UserContext(
         user_id="test-user-123",
-        email="test@example.com",
-        accessible_accounts=[],
-        permissions={},
+        email="test@example.com",        permissions={},
         organization_permissions={"existing-org": "admin"},
         account_permissions={},
     )
@@ -73,9 +71,7 @@ def mock_super_admin_context():
     """Create a mock super admin user context."""
     return UserContext(
         user_id="super-admin-123",
-        email="admin@ken-e.ai",
-        accessible_accounts=[],
-        permissions={},
+        email="admin@ken-e.ai",        permissions={},
         organization_permissions={},
         account_permissions={},
     )

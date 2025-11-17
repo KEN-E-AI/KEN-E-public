@@ -9,19 +9,39 @@ class UserContext:
 
     user_id: str
     email: str
-    accessible_accounts: list[str]
-    permissions: dict[
-        str, str
-    ]  # account_id -> role (deprecated, for backward compatibility)
     organization_permissions: dict[str, str]  # organization_id -> role
     account_permissions: dict[str, str] = field(
         default_factory=dict
-    )  # account_id -> edit|view (for view-role users only)
+    )  # account_id -> edit|view
 
     @property
     def is_super_admin(self) -> bool:
         """Check if user is a super admin (KEN-E support team member)."""
         return self.email.lower().endswith("@ken-e.ai")
+
+    @property
+    def accessible_accounts(self) -> list[str]:
+        """Get list of accessible account IDs.
+
+        Backward compatibility property that returns account IDs from account_permissions.
+        This replaces the deprecated accessible_accounts field.
+
+        **IMPORTANT LIMITATION:**
+        This property only returns accounts with EXPLICIT permissions in account_permissions.
+        It does NOT include accounts accessible via:
+        - Super admin status (@ken-e.ai emails)
+        - Organization admin role (implicit access to all org accounts)
+
+        For org admins and super admins, this will return an empty list even though they
+        have access to accounts. Callers should:
+        1. Check if user.is_super_admin or has org admin role first
+        2. If true, fetch accounts from Neo4j instead of using this property
+        3. See notifications_v2.py:147-182 for example implementation
+
+        Returns:
+            List of account IDs the user has explicit permissions for.
+        """
+        return list(self.account_permissions.keys())
 
     def has_account_access(
         self, account_id: str, required_roles: list[str] | None = None
@@ -32,7 +52,7 @@ class UserContext:
         Org admins have implicit edit access to all accounts.
         View-role users need explicit account permissions.
 
-        NOTE: This method checks if user has ANY org admin access for backward compatibility.
+        NOTE: This method checks if user has ANY org admin access.
         Use has_account_permission() for more precise checks when the account's organization is known.
 
         Args:
@@ -42,10 +62,6 @@ class UserContext:
         Returns:
             True if user has access, False otherwise
         """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         # Super admins always have edit access
         if self.is_super_admin:
             return True
@@ -58,50 +74,13 @@ class UserContext:
         if has_admin_access:
             return True
 
-        # Debug logging
-        logger.debug(f"[has_account_access] Checking account {account_id}")
-        logger.debug(
-            f"[has_account_access] self.account_permissions: {self.account_permissions}"
-        )
-        logger.debug(f"[has_account_access] self.permissions (old): {self.permissions}")
-        logger.debug(f"[has_account_access] required_roles: {required_roles}")
-
-        # Check explicit account permissions for view-role users
+        # Check explicit account permissions
         if account_id not in self.account_permissions:
-            logger.debug(
-                f"[has_account_access] Account {account_id} NOT in account_permissions"
-            )
-            # Backward compatibility: check old permissions dict
-            if account_id in self.permissions:
-                logger.debug(
-                    f"[has_account_access] Account {account_id} found in old permissions"
-                )
-                return True
-            # Check if account is in accessible_accounts (fallback for view-only users)
-            if account_id in self.accessible_accounts:
-                logger.debug(
-                    f"[has_account_access] Account {account_id} found in accessible_accounts"
-                )
-                # If no required roles specified, grant access
-                # If required roles specified, assume user has view access
-                if not required_roles or "view" in required_roles:
-                    return True
-            logger.warning(
-                f"[has_account_access] Account {account_id} not found in any permissions"
-            )
             return False
 
-        logger.debug(
-            f"[has_account_access] Account {account_id} found in account_permissions"
-        )
         if required_roles:
             user_role = self.account_permissions.get(account_id, "")
-            logger.debug(
-                f"[has_account_access] user_role: {user_role}, checking if in {required_roles}"
-            )
-            result = user_role in required_roles
-            logger.debug(f"[has_account_access] Result: {result}")
-            return result
+            return user_role in required_roles
 
         return True
 
@@ -131,9 +110,6 @@ class UserContext:
         # Check explicit account permissions
         account_perm = self.account_permissions.get(account_id)
         if not account_perm:
-            # Backward compatibility: check old permissions dict
-            if account_id in self.permissions:
-                return True
             return False
 
         # Check permission level

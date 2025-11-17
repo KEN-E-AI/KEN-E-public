@@ -33,8 +33,8 @@ const Products = () => {
     if (orgRole === "admin" || orgRole === "owner") return true;
 
     const accountPerm =
-      user?.permissions?.accounts?.[accountId] ||
-      user?.permissions?.[accountId];
+      user?.permissions?.account_permissions?.[accountId] ||
+      user?.permissions?.accounts?.[accountId]; // Fallback for backward compatibility
     return accountPerm === "edit" || accountPerm === "admin";
   }, [selectedOrgAccount, user, isSuperAdmin]);
 
