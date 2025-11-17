@@ -151,7 +151,42 @@ class PermissionMigrator:
             # it was populated during the brief window of the update
             cached_user_service.invalidate_user_context(user_id)
 
-            logger.info(f"✓ Successfully migrated user {user_id}")
+            # Post-migration validation: verify the structure is correct
+            migrated_user_doc = client.collection("users").document(user_id).get()
+            if not migrated_user_doc.exists:
+                raise ValueError(f"User {user_id} disappeared after migration")
+
+            migrated_data = migrated_user_doc.to_dict()
+            new_perms = migrated_data.get("permissions", {})
+
+            # Validation checks
+            if "account_permissions" not in new_perms:
+                raise ValueError(
+                    f"Migration failed: Missing account_permissions field for user {user_id}"
+                )
+
+            if has_old_field and "accounts" in new_perms:
+                raise ValueError(
+                    f"Migration failed: Old accounts field still present for user {user_id}"
+                )
+
+            if not isinstance(new_perms["account_permissions"], dict):
+                raise ValueError(
+                    f"Migration failed: account_permissions is not a dict for user {user_id}"
+                )
+
+            # Verify permissions were preserved
+            actual_perms = new_perms["account_permissions"]
+            if len(actual_perms) != len(merged_permissions):
+                logger.warning(
+                    f"Permission count mismatch for user {user_id}: "
+                    f"expected {len(merged_permissions)}, got {len(actual_perms)}"
+                )
+
+            logger.info(
+                f"✓ Successfully migrated and validated user {user_id} "
+                f"({len(actual_perms)} permissions)"
+            )
             return True
 
         except Exception as e:
