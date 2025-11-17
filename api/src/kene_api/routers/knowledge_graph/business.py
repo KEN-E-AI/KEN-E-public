@@ -347,18 +347,47 @@ async def list_value_propositions(
     """List all value propositions with optional pagination.
 
     Can filter by parent (Product, ProductCategory, or Account).
+    Special case: Filters out invalid parent_node_type values from service layer.
     """
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="ValueProposition",
-        response_model_class=ValuePropositionResponse,
-        list_response_class=ValuePropositionListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-        parent_filter_id=parent_node_id,
-    )
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        # Get total count
+        total_count = await service.count_nodes(
+            account_id, "ValueProposition", parent_node_id=parent_node_id
+        )
+
+        # Get paginated results
+        vps_data = await service.list_nodes(
+            account_id,
+            "ValueProposition",
+            parent_node_id=parent_node_id,
+            skip=skip,
+            limit=limit,
+        )
+
+        # Filter parent_node_type to valid values or set to None
+        # Service may return incorrect label (e.g., 'Strategy' instead of 'ProductCategory')
+        valid_parent_types = {"Product", "ProductCategory", "Account"}
+        value_propositions = []
+        for vp in vps_data:
+            parent_type = vp.get("parent_node_type")
+            if parent_type not in valid_parent_types:
+                # Remove invalid parent_node_type to avoid validation error
+                vp = {**vp, "parent_node_type": None, "parent_node_id": None}
+            value_propositions.append(ValuePropositionResponse(**vp))
+
+        return ValuePropositionListResponse(
+            value_propositions=value_propositions, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to list value propositions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list value propositions",
+        ) from e
 
 
 @router.get(
