@@ -6,7 +6,7 @@ through the entire API stack, catching missing node types early in development.
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 from src.kene_api.constants import NODE_TYPE_TO_PREFIX, VALID_NODE_TYPES
 from src.kene_api.main import app
 
@@ -18,7 +18,7 @@ TEST_USER_ID = "test_user_node_validation"
 @pytest_asyncio.fixture
 async def authenticated_client():
     """Create authenticated test client."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(app=app, base_url="http://test") as client:
         client.headers.update({"Authorization": "Bearer test_token"})
         yield client
 

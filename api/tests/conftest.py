@@ -9,31 +9,6 @@ import pytest
 from unittest.mock import patch
 
 
-def pytest_configure(config):
-    """
-    Pytest hook called before test collection.
-    Clear Prometheus registry to avoid duplicate metric registration.
-    """
-    try:
-        from prometheus_client import REGISTRY
-
-        # Clear all existing collectors before test collection
-        collectors_to_remove = []
-        for collector in list(REGISTRY._collector_to_names.keys()):
-            # Keep only default collectors
-            if collector.__class__.__name__ not in ['ProcessCollector', 'PlatformCollector', 'GCCollector']:
-                collectors_to_remove.append(collector)
-
-        for collector in collectors_to_remove:
-            try:
-                REGISTRY.unregister(collector)
-            except Exception:
-                pass
-    except ImportError:
-        # Prometheus not installed, skip
-        pass
-
-
 @pytest.fixture
 def mock_engine_ids() -> Generator[dict, None, None]:
     """
