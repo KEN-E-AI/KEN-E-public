@@ -6,8 +6,8 @@ Tests full CRUD flow with real Neo4j and Firestore instances.
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from kene_api.main import app
-from kene_api.models.graph_models import (
+from src.kene_api.main import app
+from src.kene_api.models.graph_models import (
     CompetitorCreate,
     CompetitorStrengthCreate,
     CompetitorTacticCreate,

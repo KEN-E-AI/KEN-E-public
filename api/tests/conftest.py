@@ -6,7 +6,7 @@ import os
 from typing import Generator
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -28,6 +28,25 @@ def initialize_prometheus_metrics():
 
     # Note: We don't unregister metrics because Prometheus REGISTRY is global
     # and attempting to unregister can cause issues with other tests
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_firebase_auth():
+    """
+    Mock Firebase authentication for all integration tests.
+
+    This fixture automatically mocks Firebase token verification to prevent
+    HTTP 401 errors when tests use Bearer tokens. The mock accepts any token
+    and returns a valid user context.
+    """
+    mock_decoded_token = {
+        "uid": "test-user-123",
+        "email": "test@example.com",
+        "email_verified": True,
+    }
+
+    with patch("firebase_admin.auth.verify_id_token", return_value=mock_decoded_token):
+        yield
 
 
 @pytest.fixture
