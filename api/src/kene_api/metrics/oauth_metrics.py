@@ -11,46 +11,76 @@ from typing import Any, Callable, Optional
 
 from prometheus_client import Counter, Histogram, Gauge, generate_latest
 
+
+# Helper to safely create metrics (handles duplicate registration in tests)
+def _create_metric(metric_class, *args, **kwargs):
+    """Create metric, catching duplicate registration errors."""
+    try:
+        return metric_class(*args, **kwargs)
+    except ValueError as e:
+        if "Duplicated timeseries" in str(e):
+            # Metric already registered - silently ignore in test environments
+            # Create a no-op version that has the same interface
+            class NoOpMetric:
+                def labels(self, **kwargs):
+                    return self
+                def inc(self, *args, **kwargs):
+                    pass
+                def observe(self, *args, **kwargs):
+                    pass
+                def set(self, *args, **kwargs):
+                    pass
+            return NoOpMetric()
+        raise
+
+
 # Authentication Metrics
-oauth_auth_attempts = Counter(
+oauth_auth_attempts = _create_metric(
+    Counter,
     'oauth_auth_attempts_total',
     'Total OAuth authorization attempts',
     ['integration_type']
 )
 
-oauth_auth_success = Counter(
+oauth_auth_success = _create_metric(
+    Counter,
     'oauth_auth_success_total',
     'Successful OAuth authorizations',
     ['integration_type']
 )
 
-oauth_callback_errors = Counter(
+oauth_callback_errors = _create_metric(
+    Counter,
     'oauth_callback_errors_total',
     'OAuth callback errors',
     ['integration_type', 'error_type']
 )
 
-token_refresh_success = Counter(
+token_refresh_success = _create_metric(
+    Counter,
     'token_refresh_success_total',
     'Successful token refreshes',
     ['integration_type']
 )
 
-token_refresh_failures = Counter(
+token_refresh_failures = _create_metric(
+    Counter,
     'token_refresh_failures_total',
     'Failed token refreshes',
     ['integration_type', 'error_reason']
 )
 
 # Performance Metrics
-oauth_flow_duration = Histogram(
+oauth_flow_duration = _create_metric(
+    Histogram,
     'oauth_flow_duration_seconds',
     'Time to complete OAuth flow',
     ['integration_type'],
     buckets=(0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 30.0)
 )
 
-encryption_operation_duration = Histogram(
+encryption_operation_duration = _create_metric(
+    Histogram,
     'encryption_duration_seconds',
     'Time to encrypt/decrypt credentials',
     ['operation'],
@@ -58,26 +88,30 @@ encryption_operation_duration = Histogram(
 )
 
 # State Metrics
-active_oauth_sessions = Gauge(
+active_oauth_sessions = _create_metric(
+    Gauge,
     'active_oauth_sessions',
     'Number of active OAuth sessions',
     ['integration_type']
 )
 
-oauth_state_transitions = Counter(
+oauth_state_transitions = _create_metric(
+    Counter,
     'oauth_state_transitions_total',
     'OAuth state transitions',
     ['integration_type', 'from_state', 'to_state']
 )
 
 # Token Expiration Metrics
-tokens_expiring_soon = Gauge(
+tokens_expiring_soon = _create_metric(
+    Gauge,
     'tokens_expiring_soon',
     'Number of tokens expiring within 1 hour',
     ['integration_type']
 )
 
-expired_tokens = Counter(
+expired_tokens = _create_metric(
+    Counter,
     'expired_tokens_total',
     'Total number of expired tokens detected',
     ['integration_type']
