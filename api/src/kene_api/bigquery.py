@@ -12,7 +12,7 @@ from google.oauth2 import service_account
 from .secret_manager import get_env_var_or_secret_json
 
 # Load environment variables
-load_dotenv()
+load_dotenv() 
 
 # Constants
 BIGQUERY_NOT_INITIALIZED = "BigQuery not initialized"
