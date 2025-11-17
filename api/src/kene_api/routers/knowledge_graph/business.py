@@ -197,6 +197,7 @@ async def create_product(
 @router.get("/{account_id}/products", response_model=ProductListResponse)
 async def list_products(
     account_id: str,
+    category_node_id: str | None = Query(None, description="Filter by category"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -204,17 +205,34 @@ async def list_products(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> ProductListResponse:
-    """List all products with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="Product",
-        response_model_class=ProductResponse,
-        list_response_class=ProductListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all products with optional pagination.
+
+    Special case: Uses optimized query to fetch category information
+    and avoid N+1 query problem.
+    """
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        # Use optimized method that fetches category information in single query
+        # Avoids N+1 query problem by using OPTIONAL MATCH
+        products_data, total_count = await service.list_products_with_categories(
+            account_id=account_id,
+            category_node_id=category_node_id,
+            skip=skip,
+            limit=limit,
+        )
+
+        products = [ProductResponse(**prod) for prod in products_data]
+
+        return ProductListResponse(products=products, total_count=total_count)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to list products: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list products",
+        ) from e
 
 
 @router.get("/{account_id}/products/{node_id}", response_model=ProductResponse)
@@ -224,11 +242,21 @@ async def get_product(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> ProductResponse:
-    """Get a specific product by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific product by node_id.
+
+    Special case: Fetches category relationship.
+    """
+    category_query = """
+    MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p:Product {node_id: $node_id})
+    RETURN cat.node_id as category_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="Product",
+        relationship_query=category_query,
+        relationship_field="category_node_id",
         response_model_class=ProductResponse,
         service=service,
         user=user,
