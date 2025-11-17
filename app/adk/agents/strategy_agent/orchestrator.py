@@ -11,7 +11,7 @@ import logging
 import os
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -370,9 +370,10 @@ def extract_document_sections(
     return extracted
 
 
+@weave.op(name="execute_single_strategy")
 def _execute_single_strategy(
     strategy_config: dict,
-    context: StrategyContext,
+    strategy_context: StrategyContext,
     firestore_client: FirestoreClient,
     google_search_agent: Any,
     neo4j_ops: Any,
@@ -388,7 +389,7 @@ def _execute_single_strategy(
 
     Args:
         strategy_config: Strategy configuration dict
-        context: StrategyContext with company information
+        strategy_context: StrategyContext with company information
         firestore_client: Firestore client for saving
         google_search_agent: Google search tool agent
         neo4j_ops: Neo4j operations instance
@@ -434,7 +435,7 @@ def _execute_single_strategy(
 
         session = session_service.create_session_sync(
             app_name=app_name,
-            user_id=context.user_id or "system",
+            user_id=strategy_context.user_id or "system",
             session_id=session_id,
             state={},
         )
@@ -444,19 +445,17 @@ def _execute_single_strategy(
         )
 
         # Build comprehensive research query
-        research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}\n\n"
-        research_query += f"Company: {context.company_name}\n"
-        if context.websites:
-            research_query += f"Website(s): {', '.join(context.websites)}\n"
-        research_query += f"Industry: {context.industry}\n"
-        if context.customer_regions:
+        research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {strategy_context.company_name}\n\n"
+        research_query += f"Company: {strategy_context.company_name}\n"
+        if strategy_context.websites:
+            research_query += f"Website(s): {', '.join(strategy_context.websites)}\n"
+        research_query += f"Industry: {strategy_context.industry}\n"
+        if strategy_context.customer_regions:
             research_query += (
-                f"Customer Regions: {', '.join(context.customer_regions)}\n"
+                f"Customer Regions: {', '.join(strategy_context.customer_regions)}\n"
             )
-        if context.annual_ad_budget:
-            research_query += (
-                f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
-            )
+        if strategy_context.annual_ad_budget:
+            research_query += f"Annual Advertising Budget: ${strategy_context.annual_ad_budget:,.0f}\n"
 
         # For marketing strategy, handle product categories
         if strategy_name == "marketing_strategy":
@@ -503,7 +502,7 @@ def _execute_single_strategy(
         def run_research():
             return list(
                 runner.run(
-                    user_id=context.user_id or "system",
+                    user_id=strategy_context.user_id or "system",
                     session_id=session_id,
                     new_message=Content(parts=[{"text": research_query}]),
                 )
@@ -596,10 +595,10 @@ def _execute_single_strategy(
         if not dry_run:
             logger.info("[SPLIT AGENT] Step 3: Saving to Firestore")
             save_result = firestore_client.save_strategy_document_sync(
-                account_id=context.account_id,
+                account_id=strategy_context.account_id,
                 doc_type=strategy_name,
                 content=doc_content,
-                user_id=context.user_id,
+                user_id=strategy_context.user_id,
             )
 
             if not save_result:
@@ -615,7 +614,9 @@ def _execute_single_strategy(
             graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
             build_method = getattr(graph_builder, strategy_config["graph_method"])
             graph_nodes = build_method(
-                formatted_data, context.account_id, context.user_id or "system"
+                formatted_data,
+                strategy_context.account_id,
+                strategy_context.user_id or "system",
             )
             logger.info("[SPLIT AGENT] ✅ Neo4j graph built successfully")
         elif dry_run:
@@ -626,7 +627,7 @@ def _execute_single_strategy(
             logger.info("[SPLIT AGENT] Step 5: Generating embeddings")
             try:
                 embedding_result = embedding_generator.generate_embeddings_for_account(
-                    context.account_id
+                    strategy_context.account_id
                 )
                 logger.info(
                     f"[SPLIT AGENT] ✅ Embeddings generated: {embedding_result.get('embeddings_created', 0)} nodes"
@@ -665,7 +666,7 @@ def _execute_single_strategy(
         raise  # Re-raise for fail-fast behavior
 
 
-@weave.op(name="execute_strategy_generation_direct")
+@weave.op(name="execute_all_strategies")
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
@@ -678,6 +679,10 @@ def execute_strategy_generation_direct(
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
+
+    This function orchestrates all 4 strategy executions (business first,
+    then 3 in parallel) and is traced to ensure proper parent-child
+    relationships in W&B Weave.
 
     New architecture:
     1. Runs researcher agent (with tools, no output_schema)
@@ -922,7 +927,7 @@ def execute_strategy_generation_direct(
         try:
             strategy_name, doc_content, _used_openai = _execute_single_strategy(
                 strategy_config=business_strategy_config,
-                context=context,
+                strategy_context=context,
                 firestore_client=firestore_client,
                 google_search_agent=google_search_agent,
                 neo4j_ops=neo4j_ops,
@@ -973,15 +978,24 @@ def execute_strategy_generation_direct(
             f"[PARALLEL] Strategies: {[s['name'] for s in remaining_strategies]}"
         )
 
-        # Use ThreadPoolExecutor for parallel execution
-        with ThreadPoolExecutor(max_workers=len(remaining_strategies)) as executor:
+        # Use Weave's ThreadPoolExecutor to maintain trace context across threads
+        # This ensures all parallel strategy executions nest under the parent trace
+        logger.info(
+            "[PARALLEL] Using weave.ThreadPoolExecutor for trace-aware parallel execution"
+        )
+
+        # Use weave.ThreadPoolExecutor for parallel execution with proper trace nesting
+        with weave.ThreadPoolExecutor(
+            max_workers=len(remaining_strategies)
+        ) as executor:
             # Submit all strategies for parallel execution
+            # Context propagation happens automatically in Python 3.12+
             future_to_strategy = {}
-            for strategy_config in remaining_strategies:
+            for strat_config in remaining_strategies:
                 future = executor.submit(
                     _execute_single_strategy,
-                    strategy_config=strategy_config,
-                    context=context,
+                    strategy_config=strat_config,
+                    strategy_context=context,
                     firestore_client=firestore_client,
                     google_search_agent=google_search_agent,
                     neo4j_ops=neo4j_ops,
@@ -992,7 +1006,7 @@ def execute_strategy_generation_direct(
                     product_category_names=product_category_names,
                     override_product_categories=override_product_categories,
                 )
-                future_to_strategy[future] = strategy_config["name"]
+                future_to_strategy[future] = strat_config["name"]
 
             # Process results as they complete (fail-fast on first error)
             for future in as_completed(future_to_strategy):
