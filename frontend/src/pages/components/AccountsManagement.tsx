@@ -515,9 +515,18 @@ const AccountsManagement = ({
 
     // Regular users only see accounts they have explicit permissions for
     return accounts.filter((account) => {
-      return user?.permissions?.accounts?.[account.account_id];
+      return (
+        user?.permissions?.account_permissions?.[account.account_id] ||
+        user?.permissions?.accounts?.[account.account_id] // Fallback for backward compatibility
+      );
     });
-  }, [accounts, user?.permissions?.accounts, isSuperAdmin, hasAdminAccess]);
+  }, [
+    accounts,
+    user?.permissions?.account_permissions,
+    user?.permissions?.accounts,
+    isSuperAdmin,
+    hasAdminAccess,
+  ]);
 
   // Check all accounts for their creation status on mount and when accounts change
   useEffect(() => {
@@ -1042,7 +1051,7 @@ const AccountsManagement = ({
           await axios.put(firestoreUrl, {
             update: {
               // This is a nested field path for dot-notation update
-              field: `permissions.accounts.${newAccountId}`,
+              field: `permissions.account_permissions.${newAccountId}`,
               operator: "set",
               value: userOrgPermission,
             },
@@ -1077,8 +1086,8 @@ const AccountsManagement = ({
       updateUser({
         permissions: {
           ...user?.permissions,
-          accounts: {
-            ...user?.permissions?.accounts,
+          account_permissions: {
+            ...user?.permissions?.account_permissions,
             [newAccountId]: userOrgPermission,
           },
         },

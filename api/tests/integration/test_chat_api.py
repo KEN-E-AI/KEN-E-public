@@ -73,9 +73,7 @@ def test_user():
     """Create a test user context."""
     return UserContext(
         user_id="test-user-123",
-        email="test@example.com",
-        accessible_accounts=[],
-        permissions={},
+        email="test@example.com",        permissions={},
         organization_permissions={},
     )
 
@@ -195,9 +193,7 @@ async def test_development_mode_without_agent():
         client = AgentEngineClient()
         test_user = UserContext(
             user_id="dev-user",
-            email="dev@example.com",
-            accessible_accounts=[],
-            permissions={},
+            email="dev@example.com",            permissions={},
             organization_permissions={},
         )
 

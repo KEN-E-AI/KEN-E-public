@@ -37,6 +37,19 @@ ken-e/
 
 ## Quick Start Commands
 
+### First Time Setup (Local Development)
+
+```bash
+# Run the setup script to configure GCP authentication and secrets
+./api/scripts/setup_local_dev.sh
+```
+
+This script will:
+- Authenticate you with Google Cloud
+- Verify Secret Manager access
+- Test email service configuration
+- Check Python environment
+
 ### API Service (Python/FastAPI)
 ```bash
 # Development server (recommended - avoids reload issues)
@@ -82,9 +95,13 @@ make backend  # Deploy to Agent Engine
 ## Key Environment Variables
 
 ### API
-- `GOOGLE_CLOUD_PROJECT_ID`: GCP project ID
+- `GOOGLE_CLOUD_PROJECT`: GCP project ID for Secret Manager (required for local dev)
+- `GOOGLE_CLOUD_PROJECT_ID`: GCP project ID for Firestore
 - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`: Graph database
 - `VERTEX_AI_LOCATION`, `VERTEX_AI_AGENT_ENGINE_ID`: Agent Engine config
+- `SENDGRID_API_KEY`: SendGrid API key (supports `sm://secret-name` format)
+- `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`: Email sender configuration
+- `APP_BASE_URL`: Frontend URL for generating invitation links
 - `ENVIRONMENT`: development|staging|production
 
 ### Frontend
@@ -324,15 +341,69 @@ types other than fix: and feat: are allowed, for example @commitlint/config-conv
 footers other than BREAKING CHANGE: <description> may be provided and follow a convention similar to git trailer format.
 ```
 
+## Email Service Setup (Local Development)
+
+The API uses SendGrid for sending invitation emails. To enable this locally:
+
+### Automatic Setup (Recommended)
+```bash
+./api/scripts/setup_local_dev.sh
+```
+
+### Manual Setup
+
+1. **Authenticate with Google Cloud:**
+   ```bash
+   gcloud auth application-default login
+   ```
+
+2. **Set your GCP project:**
+   ```bash
+   export GOOGLE_CLOUD_PROJECT=ken-e-dev
+   # Or add to api/.env: GOOGLE_CLOUD_PROJECT=ken-e-dev
+   ```
+
+3. **Verify Secret Manager access:**
+   ```bash
+   gcloud secrets versions access latest --secret="sendgrid-api-key" --project=ken-e-dev
+   ```
+
+4. **Test the setup:**
+   ```bash
+   python api/scripts/diagnose_email_service.py
+   ```
+
+   You should see: `✅ Email service appears to be configured correctly`
+
+### Alternative: Direct API Key (Without GCP Auth)
+
+If you prefer not to use Secret Manager locally:
+
+1. Get the SendGrid API key from Secret Manager or create a dev key at https://app.sendgrid.com/settings/api_keys
+
+2. Add to `api/.env`:
+   ```bash
+   SENDGRID_API_KEY=SG.your-actual-key-here  # NOT sm://
+   ```
+
+3. Restart the API server
+
+### Troubleshooting
+
+- **"SendGrid API key not found"**: Run `./api/scripts/setup_local_dev.sh` or set `GOOGLE_CLOUD_PROJECT`
+- **"Failed to fetch secret"**: Check that you're authenticated with `gcloud auth application-default login`
+- **"Permission denied"**: Ensure you have the `roles/secretmanager.secretAccessor` role
+
 ## Common Issues & Solutions
 
 1. **Port Conflicts**: Frontend runs on 8080, API on 8000
 2. **Database Connections**: Ensure Neo4j and Firestore credentials are set
 3. **Build Errors**: Check all environment variables are configured
 4. **Type Errors**: Some TypeScript strict checks are disabled in frontend
-5. **API Server Reload Loop**: 
+5. **API Server Reload Loop**:
    - Use `uv run` WITHOUT the `--active` flag (recommended)
    - Alternative: `cd api && python -m uvicorn src.kene_api.main:app --reload`
+6. **Invitation Emails Not Sending**: See "Email Service Setup" section above
 
 ## Vertex AI Agent Engine API Endpoints
 

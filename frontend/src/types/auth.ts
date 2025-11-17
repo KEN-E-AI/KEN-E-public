@@ -17,7 +17,8 @@ export interface UserProfile {
 // Firestore user permissions
 export interface UserPermissions {
   organizations: Record<string, unknown>;
-  accounts: Record<string, unknown>;
+  account_permissions: Record<string, unknown>; // New canonical structure
+  accounts?: Record<string, unknown>; // Deprecated - kept for backward compatibility during migration
 }
 
 // Firestore user preferences

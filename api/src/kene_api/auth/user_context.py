@@ -182,8 +182,8 @@ async def _get_or_create_user_document(
                 "email": email,
             },
             "permissions": {
-                "accounts": {},
                 "organizations": {},
+                "account_permissions": {},
             },
             "created_at": firestore.SERVER_TIMESTAMP,
         }
@@ -217,38 +217,15 @@ def _build_user_context_from_data(
     Returns:
         UserContext object
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     permissions = user_data.get("permissions", {})
-    account_permissions = permissions.get("accounts", {})
     organization_permissions = permissions.get("organizations", {})
-    account_level_permissions = permissions.get("account_permissions", {})
-
-    # Debug logging
-    logger.debug(f"[create_user_context] Creating context for user {email}")
-    logger.debug(f"[create_user_context] Raw permissions from Firestore: {permissions}")
-    logger.debug(
-        f"[create_user_context] account_permissions (old 'accounts'): {account_permissions}"
-    )
-    logger.debug(
-        f"[create_user_context] account_level_permissions (new 'account_permissions'): {account_level_permissions}"
-    )
-    logger.debug(
-        f"[create_user_context] organization_permissions: {organization_permissions}"
-    )
-
-    all_accessible_accounts = set(account_permissions.keys())
-    all_accessible_accounts.update(account_level_permissions.keys())
+    account_permissions = permissions.get("account_permissions", {})
 
     return UserContext(
         user_id=user_id,
         email=email,
-        accessible_accounts=list(all_accessible_accounts),
-        permissions=account_permissions,
         organization_permissions=organization_permissions,
-        account_permissions=account_level_permissions,
+        account_permissions=account_permissions,
     )
 
 

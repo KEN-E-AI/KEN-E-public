@@ -1,6 +1,5 @@
 """Tests for authentication models."""
 
-import pytest
 from src.kene_api.auth.models import UserContext
 
 
@@ -12,8 +11,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="admin@ken-e.ai",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -24,8 +21,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -36,8 +31,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="ADMIN@KEN-E.AI",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -48,8 +41,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="admin@ken-e.ai",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -61,8 +52,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org456": "admin"},
             account_permissions={},
         )
@@ -77,8 +66,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org456": "view"},
             account_permissions={"acc123": "edit", "acc456": "view"},
         )
@@ -91,25 +78,11 @@ class TestUserContext:
         # No access to acc789
         assert user.has_account_permission("acc789", "org456", "view") is False
 
-    def test_has_account_permission_backward_compatibility(self):
-        """Test backward compatibility with old permissions dict."""
-        user = UserContext(
-            user_id="123",
-            email="user@example.com",
-            accessible_accounts=[],
-            permissions={"acc123": "any_role"},  # Old format
-            organization_permissions={"org456": "view"},
-            account_permissions={},
-        )
-        assert user.has_account_permission("acc123", "org456", "view") is True
-
     def test_has_organization_permission_super_admin(self):
         """Test super admin has admin access to any organization."""
         user = UserContext(
             user_id="123",
             email="admin@ken-e.ai",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -122,8 +95,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org123": "admin", "org456": "view"},
             account_permissions={},
         )
@@ -141,8 +112,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org123": "admin", "org456": "view"},
             account_permissions={},
         )
@@ -156,8 +125,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org123": "view", "org456": "view"},
             account_permissions={},
         )
@@ -171,8 +138,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org123": "admin", "org456": "view"},
             account_permissions={},
         )
@@ -185,8 +150,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="admin@ken-e.ai",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -197,8 +160,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="user@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={"org123": "admin", "org456": "view"},
             account_permissions={"acc789": "edit", "acc012": "view"},
         )
@@ -215,8 +176,6 @@ class TestUserContext:
         user = UserContext(
             user_id="123",
             email="admin@ken-e.ai",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )

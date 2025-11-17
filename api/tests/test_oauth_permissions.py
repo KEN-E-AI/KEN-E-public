@@ -12,9 +12,7 @@ def super_admin_user():
     """Create super admin user (@ken-e.ai email)."""
     return UserContext(
         user_id="super123",
-        email="admin@ken-e.ai",
-        accessible_accounts=[],
-        permissions={},
+        email="admin@ken-e.ai",        permissions={},
         organization_permissions={},
         account_permissions={},
     )
@@ -25,9 +23,7 @@ def org_admin_user():
     """Create organization admin user (non-@ken-e.ai)."""
     return UserContext(
         user_id="orgadmin123",
-        email="admin@example.com",
-        accessible_accounts=["acc123"],
-        permissions={},
+        email="admin@example.com",        permissions={},
         organization_permissions={"org123": "admin"},
         account_permissions={},
     )
@@ -38,9 +34,7 @@ def account_editor_user():
     """Create user with explicit edit permission on account."""
     return UserContext(
         user_id="editor123",
-        email="editor@example.com",
-        accessible_accounts=["acc123"],
-        permissions={},
+        email="editor@example.com",        permissions={},
         organization_permissions={},
         account_permissions={"acc123": "edit"},
     )
@@ -51,9 +45,7 @@ def viewer_user():
     """Create user with only view permission."""
     return UserContext(
         user_id="viewer123",
-        email="viewer@example.com",
-        accessible_accounts=["acc123"],
-        permissions={},
+        email="viewer@example.com",        permissions={},
         organization_permissions={},
         account_permissions={"acc123": "view"},
     )
@@ -64,9 +56,7 @@ def no_access_user():
     """Create user with no permissions."""
     return UserContext(
         user_id="noone123",
-        email="noone@example.com",
-        accessible_accounts=[],
-        permissions={},
+        email="noone@example.com",        permissions={},
         organization_permissions={},
         account_permissions={},
     )
