@@ -1089,3 +1089,693 @@ class TestCompetitorLimits:
         await authenticated_client.delete(f"{base_url}/competitors/{new_competitor_id}")
         for competitor_id in competitor_ids[1:]:  # Skip the already deleted one
             await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+
+# ==================== Marketing Strategy Integration Tests ====================
+
+
+class TestMarketingStrategyDualParentArchitecture:
+    """Integration tests for dual-parent architecture of marketing strategies."""
+
+    @pytest.mark.asyncio
+    async def test_create_customer_profile_and_all_5_strategy_types(
+        self, authenticated_client
+    ):
+        """Test creating CustomerProfile + ProductCategory + all 5 strategy types."""
+        from src.kene_api.models.graph_models import (
+            BrandAwarenessStrategyCreate,
+            ConsiderationStrategyCreate,
+            ConversionStrategyCreate,
+            CustomerProfileCreate,
+            LoyaltyStrategyCreate,
+            ProblemAwarenessStrategyCreate,
+            ProductCategoryCreate,
+        )
+
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create ProductCategory
+        category_data = ProductCategoryCreate(
+            product_name="Marketing Automation Platform",
+            description="All-in-one marketing automation solution",
+        )
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories", json=category_data.model_dump()
+        )
+        assert cat_response.status_code == 200
+        category_id = cat_response.json()["node_id"]
+
+        # Create CustomerProfile
+        profile_data = CustomerProfileCreate(
+            display_name="Marketing Manager Mary",
+            narrative="Mid-level marketing manager at B2B SaaS company, focused on demand generation",
+            references=["https://example.com/persona-research"],
+        )
+        profile_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles", json=profile_data.model_dump()
+        )
+        assert profile_response.status_code == 200
+        profile_id = profile_response.json()["node_id"]
+
+        # Create ProblemAwarenessStrategy
+        problem_strategy = ProblemAwarenessStrategyCreate(
+            description="Educate on challenges of manual marketing processes and lack of attribution",
+            references=["https://example.com/problem-research"],
+            product_category_node_id=category_id,
+            customer_profile_node_id=profile_id,
+        )
+        prob_response = await authenticated_client.post(
+            f"{base_url}/problem-awareness-strategies",
+            json=problem_strategy.model_dump(),
+        )
+        assert prob_response.status_code == 200
+        prob_id = prob_response.json()["node_id"]
+
+        # Create BrandAwarenessStrategy
+        brand_strategy = BrandAwarenessStrategyCreate(
+            description="Showcase thought leadership through webinars and case studies",
+            references=["https://example.com/brand-research"],
+            product_category_node_id=category_id,
+            customer_profile_node_id=profile_id,
+        )
+        brand_response = await authenticated_client.post(
+            f"{base_url}/brand-awareness-strategies", json=brand_strategy.model_dump()
+        )
+        assert brand_response.status_code == 200
+        brand_id = brand_response.json()["node_id"]
+
+        # Create ConsiderationStrategy
+        consideration_strategy = ConsiderationStrategyCreate(
+            description="Provide ROI calculator and competitor comparison guides",
+            references=[],
+            product_category_node_id=category_id,
+            customer_profile_node_id=profile_id,
+        )
+        cons_response = await authenticated_client.post(
+            f"{base_url}/consideration-strategies",
+            json=consideration_strategy.model_dump(),
+        )
+        assert cons_response.status_code == 200
+        cons_id = cons_response.json()["node_id"]
+
+        # Create ConversionStrategy
+        conversion_strategy = ConversionStrategyCreate(
+            description="Offer 14-day free trial with onboarding specialist",
+            references=[],
+            product_category_node_id=category_id,
+            customer_profile_node_id=profile_id,
+        )
+        conv_response = await authenticated_client.post(
+            f"{base_url}/conversion-strategies", json=conversion_strategy.model_dump()
+        )
+        assert conv_response.status_code == 200
+        conv_id = conv_response.json()["node_id"]
+
+        # Create LoyaltyStrategy
+        loyalty_strategy = LoyaltyStrategyCreate(
+            description="VIP community access and quarterly product roadmap previews",
+            references=[],
+            product_category_node_id=category_id,
+            customer_profile_node_id=profile_id,
+        )
+        loy_response = await authenticated_client.post(
+            f"{base_url}/loyalty-strategies", json=loyalty_strategy.model_dump()
+        )
+        assert loy_response.status_code == 200
+        loy_id = loy_response.json()["node_id"]
+
+        # Verify all strategies were created successfully
+        assert prob_id.startswith("problemaware_")
+        assert brand_id.startswith("brandaware_")
+        assert cons_id.startswith("consideration_")
+        assert conv_id.startswith("conversion_")
+        assert loy_id.startswith("loyalty_")
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/problem-awareness-strategies/{prob_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/brand-awareness-strategies/{brand_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/consideration-strategies/{cons_id}"
+        )
+        await authenticated_client.delete(f"{base_url}/conversion-strategies/{conv_id}")
+        await authenticated_client.delete(f"{base_url}/loyalty-strategies/{loy_id}")
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_verify_dual_relationships_in_neo4j(self, authenticated_client):
+        """Test that strategies have correct dual relationships to both parents."""
+        from src.kene_api.models.graph_models import (
+            CustomerProfileCreate,
+            ProblemAwarenessStrategyCreate,
+            ProductCategoryCreate,
+        )
+
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create parents
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Test Category", "description": "Test"},
+        )
+        category_id = cat_response.json()["node_id"]
+
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Test Profile",
+                "narrative": "Test narrative",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create strategy
+        strategy_response = await authenticated_client.post(
+            f"{base_url}/problem-awareness-strategies",
+            json={
+                "description": "Test strategy",
+                "references": [],
+                "product_category_node_id": category_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy_id = strategy_response.json()["node_id"]
+
+        # Retrieve strategy and verify parent IDs are stored
+        get_response = await authenticated_client.get(
+            f"{base_url}/problem-awareness-strategies/{strategy_id}"
+        )
+        assert get_response.status_code == 200
+        strategy = get_response.json()
+        assert strategy["product_category_node_id"] == category_id
+        assert strategy["customer_profile_node_id"] == profile_id
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/problem-awareness-strategies/{strategy_id}"
+        )
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_strategies_filtered_by_customer_profile(
+        self, authenticated_client
+    ):
+        """Test filtering strategies by CustomerProfile."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 2 profiles, 1 category, and strategies for each profile
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "SaaS Platform", "description": "Test"},
+        )
+        category_id = cat_response.json()["node_id"]
+
+        prof1_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Profile One",
+                "narrative": "First profile",
+                "references": [],
+            },
+        )
+        profile1_id = prof1_response.json()["node_id"]
+
+        prof2_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Profile Two",
+                "narrative": "Second profile",
+                "references": [],
+            },
+        )
+        profile2_id = prof2_response.json()["node_id"]
+
+        # Create strategies for both profiles
+        strat1_response = await authenticated_client.post(
+            f"{base_url}/problem-awareness-strategies",
+            json={
+                "description": "Strategy for profile 1",
+                "references": [],
+                "product_category_node_id": category_id,
+                "customer_profile_node_id": profile1_id,
+            },
+        )
+        strategy1_id = strat1_response.json()["node_id"]
+
+        strat2_response = await authenticated_client.post(
+            f"{base_url}/problem-awareness-strategies",
+            json={
+                "description": "Strategy for profile 2",
+                "references": [],
+                "product_category_node_id": category_id,
+                "customer_profile_node_id": profile2_id,
+            },
+        )
+        strategy2_id = strat2_response.json()["node_id"]
+
+        # List strategies filtered by profile1
+        list_response = await authenticated_client.get(
+            f"{base_url}/problem-awareness-strategies?customer_profile_node_id={profile1_id}"
+        )
+        assert list_response.status_code == 200
+        strategies = list_response.json()
+
+        # Verify only strategy1 is returned
+        assert strategies["total_count"] == 1
+        assert strategies["strategies"][0]["node_id"] == strategy1_id
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/problem-awareness-strategies/{strategy1_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/problem-awareness-strategies/{strategy2_id}"
+        )
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile1_id}")
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile2_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_strategies_filtered_by_product_category(
+        self, authenticated_client
+    ):
+        """Test filtering strategies by ProductCategory."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 2 categories, 1 profile, strategies for each category
+        cat1_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Category A", "description": "Test"},
+        )
+        category1_id = cat1_response.json()["node_id"]
+
+        cat2_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Category B", "description": "Test"},
+        )
+        category2_id = cat2_response.json()["node_id"]
+
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Shared Profile",
+                "narrative": "Used by both categories",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create strategies for both categories
+        strat1_response = await authenticated_client.post(
+            f"{base_url}/brand-awareness-strategies",
+            json={
+                "description": "Strategy for category A",
+                "references": [],
+                "product_category_node_id": category1_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy1_id = strat1_response.json()["node_id"]
+
+        strat2_response = await authenticated_client.post(
+            f"{base_url}/brand-awareness-strategies",
+            json={
+                "description": "Strategy for category B",
+                "references": [],
+                "product_category_node_id": category2_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy2_id = strat2_response.json()["node_id"]
+
+        # List strategies filtered by category1
+        list_response = await authenticated_client.get(
+            f"{base_url}/brand-awareness-strategies?product_category_node_id={category1_id}"
+        )
+        assert list_response.status_code == 200
+        strategies = list_response.json()
+
+        # Verify only strategy1 is returned
+        assert strategies["total_count"] == 1
+        assert strategies["strategies"][0]["node_id"] == strategy1_id
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/brand-awareness-strategies/{strategy1_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/brand-awareness-strategies/{strategy2_id}"
+        )
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category1_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category2_id}"
+        )
+
+
+class TestCascadeDeletionCustomerProfile:
+    """Integration tests for cascade deletion when CustomerProfile is deleted."""
+
+    @pytest.mark.asyncio
+    async def test_delete_customer_profile_cascades_all_strategies(
+        self, authenticated_client
+    ):
+        """Test deleting CustomerProfile cascades to all 5 strategy types across multiple categories."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 2 categories
+        cat1_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Category 1", "description": "First category"},
+        )
+        category1_id = cat1_response.json()["node_id"]
+
+        cat2_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Category 2", "description": "Second category"},
+        )
+        category2_id = cat2_response.json()["node_id"]
+
+        # Create 1 profile
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Cascade Test Profile",
+                "narrative": "Profile to be deleted",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create strategies for category1 + profile
+        strategy_ids = []
+        for strategy_type, endpoint in [
+            ("problem-awareness", "problem-awareness-strategies"),
+            ("brand-awareness", "brand-awareness-strategies"),
+            ("consideration", "consideration-strategies"),
+            ("conversion", "conversion-strategies"),
+            ("loyalty", "loyalty-strategies"),
+        ]:
+            response = await authenticated_client.post(
+                f"{base_url}/{endpoint}",
+                json={
+                    "description": f"{strategy_type} for cat1",
+                    "references": [],
+                    "product_category_node_id": category1_id,
+                    "customer_profile_node_id": profile_id,
+                },
+            )
+            assert response.status_code == 200
+            strategy_ids.append((endpoint, response.json()["node_id"]))
+
+        # Create strategies for category2 + profile
+        for strategy_type, endpoint in [
+            ("problem-awareness", "problem-awareness-strategies"),
+            ("brand-awareness", "brand-awareness-strategies"),
+        ]:
+            response = await authenticated_client.post(
+                f"{base_url}/{endpoint}",
+                json={
+                    "description": f"{strategy_type} for cat2",
+                    "references": [],
+                    "product_category_node_id": category2_id,
+                    "customer_profile_node_id": profile_id,
+                },
+            )
+            assert response.status_code == 200
+            strategy_ids.append((endpoint, response.json()["node_id"]))
+
+        # Delete the CustomerProfile
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/customer-profiles/{profile_id}"
+        )
+        assert delete_response.status_code == 200
+
+        # Verify all strategies are deleted (cascade)
+        for endpoint, strategy_id in strategy_ids:
+            get_response = await authenticated_client.get(
+                f"{base_url}/{endpoint}/{strategy_id}"
+            )
+            assert get_response.status_code == 404
+
+        # Cleanup categories
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category1_id}"
+        )
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category2_id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_verify_neo4j_nodes_deleted_after_cascade(self, authenticated_client):
+        """Test that Neo4j nodes are actually deleted (query returns empty)."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create minimal setup
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Neo4j Test Cat", "description": "Test"},
+        )
+        category_id = cat_response.json()["node_id"]
+
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Neo4j Test Profile",
+                "narrative": "Test",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create one strategy
+        strat_response = await authenticated_client.post(
+            f"{base_url}/loyalty-strategies",
+            json={
+                "description": "Test loyalty",
+                "references": [],
+                "product_category_node_id": category_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy_id = strat_response.json()["node_id"]
+
+        # Delete profile (should cascade)
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+
+        # Query Neo4j - strategy should be gone
+        get_strategy_response = await authenticated_client.get(
+            f"{base_url}/loyalty-strategies/{strategy_id}"
+        )
+        assert get_strategy_response.status_code == 404
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
+
+
+class TestCascadeDeletionProductCategory:
+    """Integration tests for cascade deletion when ProductCategory is deleted."""
+
+    @pytest.mark.asyncio
+    async def test_delete_product_category_cascades_linked_strategies(
+        self, authenticated_client
+    ):
+        """Test deleting ProductCategory cascades to all linked strategies."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create category and profile
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Category to Delete", "description": "Test"},
+        )
+        category_id = cat_response.json()["node_id"]
+
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Profile for Cat Delete Test",
+                "narrative": "Test",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create 3 strategies
+        strategy_ids = []
+        for endpoint in [
+            "problem-awareness-strategies",
+            "consideration-strategies",
+            "conversion-strategies",
+        ]:
+            response = await authenticated_client.post(
+                f"{base_url}/{endpoint}",
+                json={
+                    "description": "Test strategy",
+                    "references": [],
+                    "product_category_node_id": category_id,
+                    "customer_profile_node_id": profile_id,
+                },
+            )
+            strategy_ids.append((endpoint, response.json()["node_id"]))
+
+        # Delete the ProductCategory
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
+        assert delete_response.status_code == 200
+
+        # Verify strategies are deleted
+        for endpoint, strategy_id in strategy_ids:
+            get_response = await authenticated_client.get(
+                f"{base_url}/{endpoint}/{strategy_id}"
+            )
+            assert get_response.status_code == 404
+
+        # Cleanup profile
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+
+    @pytest.mark.asyncio
+    async def test_verify_is_marketed_to_relationships_removed(
+        self, authenticated_client
+    ):
+        """Test that IS_MARKETED_TO relationships are removed after category deletion."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create category and profile
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Relationship Test Cat", "description": "Test"},
+        )
+        category_id = cat_response.json()["node_id"]
+
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Relationship Test Profile",
+                "narrative": "Test",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create strategy (which creates IS_MARKETED_TO relationship)
+        strat_response = await authenticated_client.post(
+            f"{base_url}/problem-awareness-strategies",
+            json={
+                "description": "Test",
+                "references": [],
+                "product_category_node_id": category_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy_id = strat_response.json()["node_id"]
+
+        # Delete category
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
+
+        # Strategy should be gone
+        get_response = await authenticated_client.get(
+            f"{base_url}/problem-awareness-strategies/{strategy_id}"
+        )
+        assert get_response.status_code == 404
+
+        # Cleanup
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+
+    @pytest.mark.asyncio
+    async def test_strategies_for_other_categories_remain_intact(
+        self, authenticated_client
+    ):
+        """Test that strategies for other categories remain after deleting one category."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create 2 categories and 1 profile
+        cat1_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Keep Category", "description": "Should remain"},
+        )
+        category1_id = cat1_response.json()["node_id"]
+
+        cat2_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Delete Category", "description": "Will be deleted"},
+        )
+        category2_id = cat2_response.json()["node_id"]
+
+        prof_response = await authenticated_client.post(
+            f"{base_url}/customer-profiles",
+            json={
+                "display_name": "Multi-Category Profile",
+                "narrative": "Used by both",
+                "references": [],
+            },
+        )
+        profile_id = prof_response.json()["node_id"]
+
+        # Create strategy for category1
+        strat1_response = await authenticated_client.post(
+            f"{base_url}/loyalty-strategies",
+            json={
+                "description": "Keep this strategy",
+                "references": [],
+                "product_category_node_id": category1_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy1_id = strat1_response.json()["node_id"]
+
+        # Create strategy for category2
+        strat2_response = await authenticated_client.post(
+            f"{base_url}/loyalty-strategies",
+            json={
+                "description": "Delete this strategy",
+                "references": [],
+                "product_category_node_id": category2_id,
+                "customer_profile_node_id": profile_id,
+            },
+        )
+        strategy2_id = strat2_response.json()["node_id"]
+
+        # Delete category2
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category2_id}"
+        )
+
+        # Strategy1 should still exist
+        get_strat1_response = await authenticated_client.get(
+            f"{base_url}/loyalty-strategies/{strategy1_id}"
+        )
+        assert get_strat1_response.status_code == 200
+
+        # Strategy2 should be deleted
+        get_strat2_response = await authenticated_client.get(
+            f"{base_url}/loyalty-strategies/{strategy2_id}"
+        )
+        assert get_strat2_response.status_code == 404
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/loyalty-strategies/{strategy1_id}"
+        )
+        await authenticated_client.delete(f"{base_url}/customer-profiles/{profile_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category1_id}"
+        )
