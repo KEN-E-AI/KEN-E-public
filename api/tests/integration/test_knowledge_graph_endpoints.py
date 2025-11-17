@@ -4,7 +4,7 @@ Tests full CRUD flow with real Neo4j and Firestore instances.
 """
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from kene_api.main import app
 from kene_api.models.graph_models import (
     CompetitorCreate,
@@ -31,7 +31,7 @@ async def authenticated_client():
     """Create authenticated test client."""
     # Note: In real integration tests, you'd set up proper auth
     # For now, we assume auth is mocked or bypassed in test environment
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Add auth headers if needed
         client.headers.update({"Authorization": "Bearer test_token"})
         yield client
