@@ -3335,6 +3335,16 @@ class GraphSyncService:
             self._sync_marketing_node_to_doc(
                 doc, node_id, node_type, node_data, operation
             )
+        elif node_type in [
+            "BrandIdentity",
+            "BrandPersonality",
+            "VoiceAndTone",
+            "ColorPalette",
+            "Typography",
+            "ImageStyle",
+            "MissionAndValues",
+        ]:
+            self._sync_brand_node_to_doc(doc, node_id, node_type, node_data, operation)
         else:
             raise ValueError(f"Unsupported node type for Firestore sync: {node_type}")
 
@@ -3392,6 +3402,19 @@ class GraphSyncService:
                 "created_at": datetime.now(),
                 "updated_at": datetime.now(),
             }
+        elif doc_type == "brand_guidelines":
+            return {
+                "account_id": account_id,
+                "brand_identity": None,
+                "brand_personality": None,
+                "voice_and_tone": None,
+                "color_palette": None,
+                "typography": None,
+                "image_style": None,
+                "mission_and_values": None,
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            }
         else:
             return {
                 "account_id": account_id,
@@ -3430,6 +3453,18 @@ class GraphSyncService:
     ) -> None:
         """Sync competitive strategy node to Firestore document structure.
 
+        Maintains denormalized view of Neo4j competitive nodes in Firestore.
+
+        Structure:
+        {
+            "competitive_environment": {...} or None,
+            "competitors": [...],
+            "competitor_tactics": [...],
+            "competitor_strengths": [...],
+            "competitor_weaknesses": [...],
+            "substitute_products": [...],
+        }
+
         Args:
             doc: Firestore document
             node_id: Node identifier
@@ -3437,12 +3472,70 @@ class GraphSyncService:
             node_data: Node data
             operation: "create", "update", or "delete"
         """
-        # Stub implementation - detailed sync logic would go here
-        # For now, we accept eventual consistency and focus on Neo4j as primary
-        # TODO: Implement full bidirectional sync when Firestore structure is finalized
-        logger.info(
-            f"Firestore sync stub (competitive): {operation} {node_type} {node_id}"
+        # Handle CompetitiveEnvironment separately (it's a singleton, not an array)
+        if node_type == "CompetitiveEnvironment":
+            if operation == "create" or operation == "update":
+                doc["competitive_environment"] = node_data
+                logger.info(
+                    f"Synced CompetitiveEnvironment {node_id} to Firestore ({operation})"
+                )
+            elif operation == "delete":
+                doc["competitive_environment"] = None
+                logger.info(
+                    f"Synced CompetitiveEnvironment {node_id} to Firestore (delete)"
+                )
+            return
+
+        # Map node types to document arrays
+        node_type_to_array = {
+            "Competitor": "competitors",
+            "CompetitorTactic": "competitor_tactics",
+            "CompetitorStrength": "competitor_strengths",
+            "CompetitorWeakness": "competitor_weaknesses",
+            "SubstituteProduct": "substitute_products",
+        }
+
+        array_name = node_type_to_array.get(node_type)
+        if not array_name:
+            logger.warning(f"Unknown competitive node type for sync: {node_type}")
+            return
+
+        # Ensure array exists in document
+        if array_name not in doc:
+            doc[array_name] = []
+
+        # Find existing node in array
+        existing_index = next(
+            (i for i, n in enumerate(doc[array_name]) if n.get("node_id") == node_id),
+            None,
         )
+
+        if operation == "create":
+            if existing_index is not None:
+                logger.warning(
+                    f"Node {node_id} already exists in Firestore, updating instead"
+                )
+                doc[array_name][existing_index] = node_data
+            else:
+                doc[array_name].append(node_data)
+            logger.info(f"Synced {node_type} {node_id} to Firestore (create)")
+
+        elif operation == "update":
+            if existing_index is not None:
+                doc[array_name][existing_index] = node_data
+                logger.info(f"Synced {node_type} {node_id} to Firestore (update)")
+            else:
+                logger.warning(
+                    f"Node {node_id} not found in Firestore for update, creating"
+                )
+                doc[array_name].append(node_data)
+
+        elif operation == "delete":
+            if existing_index is not None:
+                doc[array_name].pop(existing_index)
+                logger.info(f"Synced {node_type} {node_id} to Firestore (delete)")
+            else:
+                logger.warning(f"Node {node_id} not found in Firestore for deletion")
 
     def _sync_marketing_node_to_doc(
         self,
@@ -3454,6 +3547,18 @@ class GraphSyncService:
     ) -> None:
         """Sync marketing strategy node to Firestore document structure.
 
+        Maintains denormalized view of Neo4j nodes in Firestore for query performance.
+
+        Structure:
+        {
+            "customer_profiles": [...],  # Array of profile objects
+            "problem_awareness_strategies": [...],  # Flat array
+            "brand_awareness_strategies": [...],
+            "consideration_strategies": [...],
+            "conversion_strategies": [...],
+            "loyalty_strategies": [...],
+        }
+
         Args:
             doc: Firestore document
             node_id: Node identifier
@@ -3461,12 +3566,114 @@ class GraphSyncService:
             node_data: Node data
             operation: "create", "update", or "delete"
         """
-        # Stub implementation - detailed sync logic would go here
-        # For now, we accept eventual consistency and focus on Neo4j as primary
-        # TODO: Implement full bidirectional sync when Firestore structure is finalized
-        logger.info(
-            f"Firestore sync stub (marketing): {operation} {node_type} {node_id}"
+        # Map node types to document arrays
+        node_type_to_array = {
+            "CustomerProfile": "customer_profiles",
+            "ProblemAwarenessStrategy": "problem_awareness_strategies",
+            "BrandAwarenessStrategy": "brand_awareness_strategies",
+            "ConsiderationStrategy": "consideration_strategies",
+            "ConversionStrategy": "conversion_strategies",
+            "LoyaltyStrategy": "loyalty_strategies",
+        }
+
+        array_name = node_type_to_array.get(node_type)
+        if not array_name:
+            logger.warning(f"Unknown marketing node type for sync: {node_type}")
+            return
+
+        # Ensure array exists in document
+        if array_name not in doc:
+            doc[array_name] = []
+
+        # Find existing node in array
+        existing_index = next(
+            (i for i, n in enumerate(doc[array_name]) if n.get("node_id") == node_id),
+            None,
         )
+
+        if operation == "create":
+            # Add new node to array
+            if existing_index is not None:
+                logger.warning(
+                    f"Node {node_id} already exists in Firestore, updating instead"
+                )
+                doc[array_name][existing_index] = node_data
+            else:
+                doc[array_name].append(node_data)
+            logger.info(f"Synced {node_type} {node_id} to Firestore (create)")
+
+        elif operation == "update":
+            # Update existing node
+            if existing_index is not None:
+                doc[array_name][existing_index] = node_data
+                logger.info(f"Synced {node_type} {node_id} to Firestore (update)")
+            else:
+                logger.warning(
+                    f"Node {node_id} not found in Firestore for update, creating"
+                )
+                doc[array_name].append(node_data)
+
+        elif operation == "delete":
+            # Remove node from array
+            if existing_index is not None:
+                doc[array_name].pop(existing_index)
+                logger.info(f"Synced {node_type} {node_id} to Firestore (delete)")
+            else:
+                logger.warning(f"Node {node_id} not found in Firestore for deletion")
+
+    def _sync_brand_node_to_doc(
+        self,
+        doc: dict[str, Any],
+        node_id: str,
+        node_type: str,
+        node_data: dict[str, Any],
+        operation: str,
+    ) -> None:
+        """Sync brand guidelines node to Firestore document structure.
+
+        Brand nodes are singletons (one per account), not arrays. Similar to
+        CompetitiveEnvironment hub pattern.
+
+        Structure:
+        {
+            "brand_identity": {...} or None,
+            "brand_personality": {...} or None,
+            "voice_and_tone": {...} or None,
+            "color_palette": {...} or None,
+            "typography": {...} or None,
+            "image_style": {...} or None,
+            "mission_and_values": {...} or None,
+        }
+
+        Args:
+            doc: Firestore document
+            node_id: Node identifier
+            node_type: Node type
+            node_data: Node data
+            operation: "create", "update", or "delete"
+        """
+        # Map node types to document fields (all are singletons)
+        node_type_to_field = {
+            "BrandIdentity": "brand_identity",
+            "BrandPersonality": "brand_personality",
+            "VoiceAndTone": "voice_and_tone",
+            "ColorPalette": "color_palette",
+            "Typography": "typography",
+            "ImageStyle": "image_style",
+            "MissionAndValues": "mission_and_values",
+        }
+
+        field_name = node_type_to_field.get(node_type)
+        if not field_name:
+            logger.warning(f"Unknown brand node type for sync: {node_type}")
+            return
+
+        if operation == "create" or operation == "update":
+            doc[field_name] = node_data
+            logger.info(f"Synced {node_type} {node_id} to Firestore ({operation})")
+        elif operation == "delete":
+            doc[field_name] = None
+            logger.info(f"Synced {node_type} {node_id} to Firestore (delete)")
 
     def _convert_neo4j_value(self, value: Any) -> Any:
         """Convert Neo4j-specific types to Python-native types.
