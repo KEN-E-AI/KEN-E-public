@@ -2679,3 +2679,311 @@ class TestCustomerProfileEdgeCases:
 
         assert result.display_name == "marketing mary"
         assert result.display_name == result.display_name.lower()
+
+
+# ==================== Brand Strategy Tests ====================
+
+
+class TestBrandIdentityOperations:
+    """Tests for BrandIdentity hub operations."""
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_brand_identity_creates_new(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test get_or_create creates BrandIdentity hub when none exists."""
+        # Arrange
+        account_id = "acc_test123"
+        user_id = "user_test456"
+
+        # Mock no existing hub
+        mock_neo4j_service.execute_query.return_value = []
+
+        # Mock hub creation
+        hub_node_id = "brand_test123_abc"
+        hub_node = {
+            "node_id": hub_node_id,
+            "description": "Brand identity and guidelines hub",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": hub_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        # Act
+        result_node_id = await graph_sync_service.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        # Assert
+        assert result_node_id == hub_node_id
+        assert mock_neo4j_service.execute_write_query.called
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_brand_identity_reuses_existing(
+        self, graph_sync_service, mock_neo4j_service
+    ):
+        """Test get_or_create reuses existing BrandIdentity hub."""
+        # Arrange
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        existing_hub_id = "brand_test123_xyz"
+
+        # Mock existing hub
+        mock_neo4j_service.execute_query.return_value = [
+            {
+                "node": {
+                    "node_id": existing_hub_id,
+                    "description": "Existing hub",
+                    "references": [],
+                    "account_id": account_id,
+                },
+                "account_id": account_id,
+            }
+        ]
+
+        # Act
+        result_node_id = await graph_sync_service.get_or_create_brand_identity(
+            account_id, user_id
+        )
+
+        # Assert
+        assert result_node_id == existing_hub_id
+        # Should NOT create new hub
+        assert not mock_neo4j_service.execute_write_query.called
+
+
+class TestBrandPersonalityOperations:
+    """Tests for BrandPersonality CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_brand_personality_auto_creates_hub(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test creating brand personality auto-creates BrandIdentity hub if missing."""
+        # Arrange
+        from src.kene_api.models.graph_models import BrandPersonalityCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        personality_create = BrandPersonalityCreate(
+            description="Innovative, friendly, and approachable",
+            references=["https://example.com/brand-guide"],
+        )
+
+        # Mock no existing hub
+        mock_neo4j_service.execute_query.return_value = []
+
+        # Mock hub creation then personality creation
+        hub_node_id = "brand_test123_xyz"
+        hub_node = {
+            "node_id": hub_node_id,
+            "description": "Brand identity and guidelines hub",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        personality_node_id = "personality_test123_abc"
+        personality_node = {
+            "node_id": personality_node_id,
+            "description": "Innovative, friendly, and approachable",
+            "references": ["https://example.com/brand-guide"],
+            "brand_identity_node_id": hub_node_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        mock_neo4j_service.execute_write_query.side_effect = [
+            [{"node": hub_node}],  # Hub creation
+            [{"node": personality_node}],  # Personality creation
+        ]
+        mock_firestore_service.get_document.return_value = {}
+
+        # Act
+        result = await graph_sync_service.create_brand_personality(
+            account_id, personality_create, user_id
+        )
+
+        # Assert
+        assert result.node_id == personality_node_id
+        assert result.description == "Innovative, friendly, and approachable"
+        assert result.brand_identity_node_id == hub_node_id
+        # Verify hub was created first
+        assert mock_neo4j_service.execute_write_query.call_count == 2
+
+
+class TestColorPaletteOperations:
+    """Tests for ColorPalette CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_color_palette_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test successful color palette creation."""
+        # Arrange
+        from src.kene_api.models.graph_models import ColorPaletteCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        hub_node_id = "brand_test123_xyz"
+
+        palette_create = ColorPaletteCreate(
+            description="Primary: Navy Blue (#1A2B3C). Secondary: Sky Blue (#4A90E2)",
+            references=["https://example.com/colors"],
+        )
+
+        # Mock existing hub
+        mock_neo4j_service.execute_query.return_value = [
+            {
+                "node": {"node_id": hub_node_id},
+                "account_id": account_id,
+            }
+        ]
+
+        # Mock palette creation
+        palette_node_id = "colors_test123_abc"
+        palette_node = {
+            "node_id": palette_node_id,
+            "description": "Primary: Navy Blue (#1A2B3C). Secondary: Sky Blue (#4A90E2)",
+            "references": ["https://example.com/colors"],
+            "brand_identity_node_id": hub_node_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": palette_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        # Act
+        result = await graph_sync_service.create_color_palette(
+            account_id, palette_create, user_id
+        )
+
+        # Assert
+        assert result.node_id == palette_node_id
+        assert result.brand_identity_node_id == hub_node_id
+        assert "Navy Blue" in result.description
+
+
+class TestBrandStrategyIntegration:
+    """Integration tests for complete brand strategy workflows."""
+
+    @pytest.mark.asyncio
+    async def test_create_multiple_brand_children_share_hub(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test creating multiple brand children all link to same hub."""
+        # Arrange
+        from src.kene_api.models.graph_models import (
+            BrandPersonalityCreate,
+            VoiceAndToneCreate,
+        )
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        hub_node_id = "brand_test123_xyz"
+
+        # First creation: no hub exists, then hub exists for subsequent
+        mock_neo4j_service.execute_query.side_effect = [
+            [],  # No hub for first child
+            [
+                {"node": {"node_id": hub_node_id}, "account_id": account_id}
+            ],  # Hub exists
+        ]
+
+        hub_node = {
+            "node_id": hub_node_id,
+            "description": "Brand identity and guidelines hub",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        personality_node = {
+            "node_id": "personality_test123_abc",
+            "description": "Friendly",
+            "references": [],
+            "brand_identity_node_id": hub_node_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        voice_node = {
+            "node_id": "voicetone_test123_def",
+            "description": "Conversational",
+            "references": [],
+            "brand_identity_node_id": hub_node_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        mock_neo4j_service.execute_write_query.side_effect = [
+            [{"node": hub_node}],  # Create hub
+            [{"node": personality_node}],  # Create personality
+            [{"node": voice_node}],  # Create voice
+        ]
+        mock_firestore_service.get_document.return_value = {}
+
+        # Act
+        personality_create = BrandPersonalityCreate(
+            description="Friendly", references=[]
+        )
+        personality_result = await graph_sync_service.create_brand_personality(
+            account_id, personality_create, user_id
+        )
+
+        voice_create = VoiceAndToneCreate(description="Conversational", references=[])
+        voice_result = await graph_sync_service.create_voice_and_tone(
+            account_id, voice_create, user_id
+        )
+
+        # Assert
+        assert personality_result.brand_identity_node_id == hub_node_id
+        assert voice_result.brand_identity_node_id == hub_node_id
+        # Hub created once + two children
+        assert mock_neo4j_service.execute_write_query.call_count == 3

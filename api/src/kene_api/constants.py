@@ -32,9 +32,16 @@ VALID_NODE_TYPES = frozenset(
         "ConsiderationStrategy",
         "ConversionStrategy",
         "LoyaltyStrategy",
+        # Brand Strategy nodes (Steps 6 & 7)
+        "BrandIdentity",
+        "BrandPersonality",
+        "VoiceAndTone",
+        "ColorPalette",
+        "Typography",
+        "ImageStyle",
+        "MissionAndValues",
         # Core system nodes
         "Account",
-        # Future phases: Brand strategy nodes will be added here
     }
 )
 
@@ -65,6 +72,14 @@ NODE_TYPE_TO_PREFIX: dict[str, str] = {
     "ConsiderationStrategy": "consideration",
     "ConversionStrategy": "conversion",
     "LoyaltyStrategy": "loyalty",
+    # Brand Strategy
+    "BrandIdentity": "brand",
+    "BrandPersonality": "personality",
+    "VoiceAndTone": "voicetone",
+    "ColorPalette": "colors",
+    "Typography": "typography",
+    "ImageStyle": "imagestyle",
+    "MissionAndValues": "mission",
     # System
     "Account": "acc",
 }
