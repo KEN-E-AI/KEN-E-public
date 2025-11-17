@@ -9,6 +9,27 @@ import pytest
 from unittest.mock import patch
 
 
+@pytest.fixture(scope="session", autouse=True)
+def initialize_prometheus_metrics():
+    """
+    Initialize Prometheus metrics once per test session.
+
+    This fixture ensures that the oauth_metrics module is imported early
+    in the test session, preventing duplicate metric registration errors
+    when different tests import the module.
+    """
+    # Import the metrics module to register all metrics in the Prometheus registry
+    from src.kene_api.metrics import oauth_metrics
+
+    # Verify metrics are initialized
+    assert oauth_metrics.oauth_auth_attempts is not None
+
+    yield
+
+    # Note: We don't unregister metrics because Prometheus REGISTRY is global
+    # and attempting to unregister can cause issues with other tests
+
+
 @pytest.fixture
 def mock_engine_ids() -> Generator[dict, None, None]:
     """
