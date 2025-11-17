@@ -8,7 +8,7 @@ CRUD endpoints for 9 business strategy node types:
 
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
@@ -49,7 +49,7 @@ from ...models.graph_models import (
     WeaknessUpdate,
 )
 from ...services.graph_sync_service import GraphSyncService, get_graph_sync_service
-from .crud_factory import CRUDEndpoints
+from .crud_factory import CRUDEndpoints, check_graph_access
 
 logger = logging.getLogger(__name__)
 
@@ -629,6 +629,7 @@ async def create_opportunity(
 @router.get("/{account_id}/opportunities", response_model=OpportunityListResponse)
 async def list_opportunities(
     account_id: str,
+    strength_node_id: str | None = Query(None, description="Filter by parent strength"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -636,17 +637,55 @@ async def list_opportunities(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> OpportunityListResponse:
-    """List all opportunities with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="Opportunity",
-        response_model_class=OpportunityResponse,
-        list_response_class=OpportunityListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all opportunities with optional pagination.
+
+    Special case: Maps parent_node_id to strength_node_id for response model.
+    """
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        # Get total count
+        total_count = await service.count_nodes(
+            account_id,
+            "Opportunity",
+            parent_node_id=strength_node_id,
+            parent_node_type="Strength",
+        )
+
+        # Get paginated results
+        opportunities_data = await service.list_nodes(
+            account_id,
+            "Opportunity",
+            parent_node_id=strength_node_id,
+            parent_node_type="Strength",
+            skip=skip,
+            limit=limit,
+        )
+
+        # Map parent_node_id to strength_node_id for the response model
+        opportunities = [
+            OpportunityResponse(
+                **{
+                    **o,
+                    "strength_node_id": o.get(
+                        "parent_node_id", o.get("strength_node_id")
+                    ),
+                }
+            )
+            for o in opportunities_data
+        ]
+
+        return OpportunityListResponse(
+            opportunities=opportunities, total_count=total_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to list opportunities: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list opportunities",
+        ) from e
 
 
 @router.get("/{account_id}/opportunities/{node_id}", response_model=OpportunityResponse)
@@ -656,11 +695,21 @@ async def get_opportunity(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> OpportunityResponse:
-    """Get a specific opportunity by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific opportunity by node_id.
+
+    Special case: Fetches parent strength relationship.
+    """
+    strength_query = """
+    MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
+    RETURN s.node_id as strength_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="Opportunity",
+        relationship_query=strength_query,
+        relationship_field="strength_node_id",
         response_model_class=OpportunityResponse,
         service=service,
         user=user,
@@ -736,6 +785,7 @@ async def create_risk(
 @router.get("/{account_id}/risks", response_model=RiskListResponse)
 async def list_risks(
     account_id: str,
+    weakness_node_id: str | None = Query(None, description="Filter by parent weakness"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -743,17 +793,53 @@ async def list_risks(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> RiskListResponse:
-    """List all risks with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="Risk",
-        response_model_class=RiskResponse,
-        list_response_class=RiskListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all risks with optional pagination.
+
+    Special case: Maps parent_node_id to weakness_node_id for response model.
+    """
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        # Get total count
+        total_count = await service.count_nodes(
+            account_id,
+            "Risk",
+            parent_node_id=weakness_node_id,
+            parent_node_type="Weakness",
+        )
+
+        # Get paginated results
+        risks_data = await service.list_nodes(
+            account_id,
+            "Risk",
+            parent_node_id=weakness_node_id,
+            parent_node_type="Weakness",
+            skip=skip,
+            limit=limit,
+        )
+
+        # Map parent_node_id to weakness_node_id for the response model
+        risks = [
+            RiskResponse(
+                **{
+                    **r,
+                    "weakness_node_id": r.get(
+                        "parent_node_id", r.get("weakness_node_id")
+                    ),
+                }
+            )
+            for r in risks_data
+        ]
+
+        return RiskListResponse(risks=risks, total_count=total_count)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to list risks: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list risks",
+        ) from e
 
 
 @router.get("/{account_id}/risks/{node_id}", response_model=RiskResponse)
@@ -763,11 +849,21 @@ async def get_risk(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> RiskResponse:
-    """Get a specific risk by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific risk by node_id.
+
+    Special case: Fetches parent weakness relationship.
+    """
+    weakness_query = """
+    MATCH (w:Weakness)-[:CREATES]->(r:Risk {node_id: $node_id})
+    RETURN w.node_id as weakness_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="Risk",
+        relationship_query=weakness_query,
+        relationship_field="weakness_node_id",
         response_model_class=RiskResponse,
         service=service,
         user=user,
