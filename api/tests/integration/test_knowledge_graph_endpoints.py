@@ -4,6 +4,7 @@ Tests full CRUD flow with real Neo4j and Firestore instances.
 """
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from kene_api.main import app
 from kene_api.models.graph_models import (
@@ -26,7 +27,7 @@ TEST_ACCOUNT_ID = "test_account_integration_123"
 TEST_USER_ID = "test_user_integration_456"
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def authenticated_client():
     """Create authenticated test client."""
     # Note: In real integration tests, you'd set up proper auth
