@@ -73,8 +73,9 @@ def test_user():
     """Create a test user context."""
     return UserContext(
         user_id="test-user-123",
-        email="test@example.com",        permissions={},
+        email="test@example.com",
         organization_permissions={},
+        account_permissions={},
     )
 
 
