@@ -194,8 +194,9 @@ async def test_development_mode_without_agent():
         client = AgentEngineClient()
         test_user = UserContext(
             user_id="dev-user",
-            email="dev@example.com",            permissions={},
+            email="dev@example.com",
             organization_permissions={},
+            account_permissions={},
         )
 
         messages = [ChatMessage(role="user", content="Test in dev mode", timestamp="")]
