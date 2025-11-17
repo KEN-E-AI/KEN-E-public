@@ -306,6 +306,9 @@ async def create_value_proposition(
 )
 async def list_value_propositions(
     account_id: str,
+    parent_node_id: str | None = Query(
+        None, description="Filter by parent (Product, ProductCategory, Account)"
+    ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -313,7 +316,10 @@ async def list_value_propositions(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> ValuePropositionListResponse:
-    """List all value propositions with optional pagination."""
+    """List all value propositions with optional pagination.
+
+    Can filter by parent (Product, ProductCategory, or Account).
+    """
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ValueProposition",
@@ -323,6 +329,7 @@ async def list_value_propositions(
         limit=limit,
         service=service,
         user=user,
+        parent_filter_id=parent_node_id,
     )
 
 
