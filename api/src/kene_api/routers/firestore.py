@@ -2385,6 +2385,12 @@ async def invite_member_to_organization(
                 status_code=500, detail="User document missing ID field"
             )
 
+        # Invalidate cache BEFORE updating to prevent race condition
+        from ..auth.cached_user_context import get_cached_user_context_service
+
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user_id)
+
         # Update user's permissions to include this organization
         success = firestore.set_nested_field(
             collection="users",
@@ -2398,10 +2404,7 @@ async def invite_member_to_organization(
                 status_code=500, detail="Failed to update user permissions"
             )
 
-        # Invalidate user cache after granting organization permissions
-        from ..auth.cached_user_context import get_cached_user_context_service
-
-        cached_user_service = get_cached_user_context_service()
+        # Double invalidation for safety
         cached_user_service.invalidate_user_context(user_id)
         logger.info(
             f"Invalidated cache for user {user_id} after granting organization {organization_id} permissions"
@@ -2502,6 +2505,12 @@ async def update_member_access_level(
             organization_id
         )
 
+        # Invalidate cache BEFORE updating to prevent race condition
+        from ..auth.cached_user_context import get_cached_user_context_service
+
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(user_id)
+
         # Update user's permission level for this organization
         success = firestore.set_nested_field(
             collection="users",
@@ -2515,10 +2524,7 @@ async def update_member_access_level(
                 status_code=404, detail="User not found or update failed"
             )
 
-        # Invalidate user cache after updating organization permissions
-        from ..auth.cached_user_context import get_cached_user_context_service
-
-        cached_user_service = get_cached_user_context_service()
+        # Double invalidation for safety
         cached_user_service.invalidate_user_context(user_id)
         logger.info(
             f"Invalidated cache for user {user_id} after updating organization {organization_id} permissions"
@@ -2540,6 +2546,9 @@ async def update_member_access_level(
             if request.access_level == "admin" and account_permissions:
                 from google.cloud.firestore_v1 import DELETE_FIELD
 
+                # Invalidate cache before removing permissions
+                cached_user_service.invalidate_user_context(user_id)
+
                 updates = {}
                 for account_id in account_permissions:
                     updates[f"permissions.account_permissions.{account_id}"] = (
@@ -2548,11 +2557,8 @@ async def update_member_access_level(
                 if updates:
                     user_ref.update(updates)
 
-            # Invalidate user cache
-            from ..auth.cached_user_context import get_cached_user_context_service
-
-            cached_user_service = get_cached_user_context_service()
-            cached_user_service.invalidate_user_context(user_id)
+                # Double invalidation after removal
+                cached_user_service.invalidate_user_context(user_id)
 
         return SuccessResponse(
             success=True,
@@ -2987,6 +2993,12 @@ async def accept_invitation(
                 detail="Invitation has already been accepted",
             )
 
+        # Invalidate cache BEFORE updating to prevent race condition
+        from ..auth.cached_user_context import get_cached_user_context_service
+
+        cached_user_service = get_cached_user_context_service()
+        cached_user_service.invalidate_user_context(request.user_id)
+
         # Grant access to the organization
         success = firestore.set_nested_field(
             collection="users",
@@ -3001,10 +3013,7 @@ async def accept_invitation(
                 detail="Failed to grant organization access",
             )
 
-        # Invalidate user cache after granting organization access via invitation
-        from ..auth.cached_user_context import get_cached_user_context_service
-
-        cached_user_service = get_cached_user_context_service()
+        # Double invalidation for safety
         cached_user_service.invalidate_user_context(request.user_id)
         logger.info(
             f"Invalidated cache for user {request.user_id} after accepting invitation to organization {invitation['organization_id']}"

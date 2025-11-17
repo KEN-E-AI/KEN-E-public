@@ -125,8 +125,19 @@ class PermissionMigrator:
             logger.info(f"[DRY RUN] Would migrate user {user_id}")
             return True
 
-        # Update Firestore
+        # Update Firestore with cache invalidation to prevent race conditions
         try:
+            # Import cache service
+            from src.kene_api.auth.cached_user_context import (
+                get_cached_user_context_service,
+            )
+
+            cached_user_service = get_cached_user_context_service()
+
+            # Invalidate cache BEFORE update to prevent race condition
+            # If user authenticates between update and invalidation, they'd get old structure cached
+            cached_user_service.invalidate_user_context(user_id)
+
             client = self.firestore.get_client()
             update_data = {"permissions.account_permissions": merged_permissions}
 
@@ -135,6 +146,11 @@ class PermissionMigrator:
                 update_data["permissions.accounts"] = DELETE_FIELD
 
             client.collection("users").document(user_id).update(update_data)
+
+            # Double invalidation for safety - ensures cache is cleared even if
+            # it was populated during the brief window of the update
+            cached_user_service.invalidate_user_context(user_id)
+
             logger.info(f"✓ Successfully migrated user {user_id}")
             return True
 
