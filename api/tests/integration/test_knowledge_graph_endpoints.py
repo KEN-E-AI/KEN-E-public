@@ -1,8 +1,12 @@
 """Integration tests for knowledge graph endpoints.
 
 Tests full CRUD flow with real Neo4j and Firestore instances.
+
+These tests require real database connections and are skipped in CI
+unless DATABASE_INTEGRATION_TESTS environment variable is set to 'true'.
 """
 
+import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -25,6 +29,12 @@ from src.kene_api.models.graph_models import (
 # Test account and user fixtures
 TEST_ACCOUNT_ID = "test_account_integration_123"
 TEST_USER_ID = "test_user_integration_456"
+
+# Skip all tests in this module in CI unless DATABASE_INTEGRATION_TESTS is enabled
+pytestmark = pytest.mark.skipif(
+    os.getenv("DATABASE_INTEGRATION_TESTS") != "true",
+    reason="Requires real Neo4j and Firestore databases - set DATABASE_INTEGRATION_TESTS=true to run"
+)
 
 
 @pytest_asyncio.fixture
