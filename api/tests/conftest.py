@@ -6,7 +6,7 @@ import os
 from typing import Generator
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -28,6 +28,49 @@ def initialize_prometheus_metrics():
 
     # Note: We don't unregister metrics because Prometheus REGISTRY is global
     # and attempting to unregister can cause issues with other tests
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_firebase_auth():
+    """
+    Mock Firebase authentication and Firestore for all integration tests.
+
+    This fixture automatically mocks Firebase token verification and Firestore
+    to prevent HTTP 401 errors when tests use Bearer tokens.
+    """
+    mock_decoded_token = {
+        "uid": "test-user-123",
+        "email": "test@example.com",
+        "email_verified": True,
+    }
+
+    # Create mock Firestore service
+    mock_firestore = MagicMock()
+    mock_firestore_service = MagicMock()
+    mock_firestore_service.get_client.return_value = mock_firestore
+    mock_firestore_service._initialized = True
+
+    # Mock document operations to return test data
+    mock_doc = MagicMock()
+    mock_doc.exists = True
+    mock_doc.to_dict.return_value = {
+        "email": "test@example.com",
+        "organization_permissions": {},
+        "account_permissions": {"test_account": "edit"},
+    }
+    mock_firestore.collection.return_value.document.return_value.get.return_value = mock_doc
+
+    # Set required environment variables
+    test_env = {
+        "GOOGLE_CLOUD_PROJECT_ID": "test-project-id",
+        "GOOGLE_CLOUD_PROJECT": "test-project-id",
+    }
+
+    # Patch Firebase token verification, Firestore service, and environment
+    with patch.dict(os.environ, test_env), \
+         patch("src.kene_api.auth.firebase_admin.verify_id_token", return_value=mock_decoded_token), \
+         patch("src.kene_api.firestore.get_firestore_service", return_value=mock_firestore_service):
+        yield
 
 
 @pytest.fixture

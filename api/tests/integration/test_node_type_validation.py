@@ -2,11 +2,15 @@
 
 Tests that all node types in VALID_NODE_TYPES constant work correctly
 through the entire API stack, catching missing node types early in development.
+
+These tests require real database connections and are skipped in CI
+unless DATABASE_INTEGRATION_TESTS environment variable is set to 'true'.
 """
 
+import os
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from src.kene_api.constants import NODE_TYPE_TO_PREFIX, VALID_NODE_TYPES
 from src.kene_api.main import app
 
@@ -14,11 +18,17 @@ from src.kene_api.main import app
 TEST_ACCOUNT_ID = "test_account_node_validation"
 TEST_USER_ID = "test_user_node_validation"
 
+# Skip all tests in this module in CI unless DATABASE_INTEGRATION_TESTS is enabled
+pytestmark = pytest.mark.skipif(
+    os.getenv("DATABASE_INTEGRATION_TESTS") != "true",
+    reason="Requires real Neo4j and Firestore databases - set DATABASE_INTEGRATION_TESTS=true to run"
+)
+
 
 @pytest_asyncio.fixture
 async def authenticated_client():
     """Create authenticated test client."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         client.headers.update({"Authorization": "Bearer test_token"})
         yield client
 
