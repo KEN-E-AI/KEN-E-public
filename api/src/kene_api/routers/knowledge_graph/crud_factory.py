@@ -132,6 +132,9 @@ class CRUDEndpoints:
 
         try:
             result = await service_method(account_id, create_data, user.user_id)
+            # Handle both dict and Response object returns from service methods
+            if isinstance(result, BaseModel):
+                return result
             return response_model_class(**result)
         except ValidationException as e:
             raise HTTPException(
@@ -317,6 +320,9 @@ class CRUDEndpoints:
             result = await service_method(
                 account_id, node_id, update_data, user.user_id
             )
+            # Handle both dict and Response object returns from service methods
+            if isinstance(result, BaseModel):
+                return result
             return response_model_class(**result)
         except ValidationException as e:
             raise HTTPException(
