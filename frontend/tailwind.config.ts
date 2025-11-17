@@ -18,6 +18,18 @@ export default {
       },
     },
     extend: {
+      spacing: {
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
+      width: {
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
+      height: {
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
       colors: {
         border: "var(--border)",
         input: "var(--input)",
@@ -70,6 +82,7 @@ export default {
           "light-green": "#B8E2AF",
           "dark-green": "#3A7439",
           red: "#FF6B6B",
+          "light-red": "#FF9999",
           yellow: "#EAB946",
           "light-blue": "#8DC4F9",
         },

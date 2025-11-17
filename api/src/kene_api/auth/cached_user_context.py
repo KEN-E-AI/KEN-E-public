@@ -40,6 +40,13 @@ class CachedUserContextService:
 
         if cached_data:
             try:
+                # Check if cache has account_permissions field
+                # If missing, invalidate cache to force fresh load from Firestore
+                if "account_permissions" not in cached_data:
+                    logger.warning(f"Cache for user {user_id} missing account_permissions field, invalidating cache")
+                    self.invalidate_user_context(user_id)
+                    return None
+
                 return UserContext(
                     user_id=cached_data["user_id"],
                     email=cached_data["email"],

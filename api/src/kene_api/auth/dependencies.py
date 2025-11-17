@@ -1,7 +1,6 @@
 """Authentication dependencies for FastAPI."""
 
 import logging
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -19,9 +18,9 @@ security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     firestore_service: FirestoreService = Depends(get_firestore_service),
-) -> Optional[UserContext]:
+) -> UserContext | None:
     """
     Get current user from Bearer token (optional).
 
@@ -61,7 +60,18 @@ async def get_current_user_optional(
         if user_doc.exists:
             user_data = user_doc.to_dict()
             permissions = user_data.get("permissions", {})
-            user_context.account_permissions = permissions.get("accounts", {})
+
+            # Merge both old and new account permission structures
+            # OLD structure: permissions.accounts.{account_id}
+            # NEW structure: permissions.account_permissions.{account_id}
+            old_accounts = permissions.get("accounts", {})
+            new_account_permissions = permissions.get("account_permissions", {})
+            # New structure takes precedence if account exists in both
+            user_context.account_permissions = {
+                **old_accounts,
+                **new_account_permissions,
+            }
+
             user_context.organization_permissions = permissions.get("organizations", {})
 
         return user_context
@@ -105,7 +115,7 @@ async def get_current_user(
 def require_account_access(
     user: UserContext,
     account_id: str,
-    required_roles: Optional[list[str]] = None,
+    required_roles: list[str] | None = None,
 ) -> bool:
     """
     Check if user has access to an account.
@@ -141,7 +151,7 @@ def require_account_access(
 def require_organization_access(
     user: UserContext,
     organization_id: str,
-    required_roles: Optional[list[str]] = None,
+    required_roles: list[str] | None = None,
 ) -> bool:
     """
     Check if user has access to an organization.

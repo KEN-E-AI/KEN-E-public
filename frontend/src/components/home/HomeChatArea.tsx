@@ -43,7 +43,7 @@ const HomeChatArea = () => {
   }, [updateChatContext]);
 
   return (
-    <Card className="h-[calc(100vh-200px)] flex flex-col bg-white border border-dashboard-gray-200">
+    <Card className="h-full flex flex-col bg-white border border-dashboard-gray-200">
       {/* Chat Controls */}
       <div className="p-4 border-b border-dashboard-gray-200">
         <div className="flex flex-col sm:flex-row gap-3">

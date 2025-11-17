@@ -33,7 +33,8 @@ def validate_node_type(node_type: str) -> None:
     if node_type not in VALID_NODE_TYPES:
         valid_types = ", ".join(sorted(VALID_NODE_TYPES))
         raise ValidationException(
-            f"Invalid node type '{node_type}'. Must be one of: {valid_types}", field_name="node_type"
+            f"Invalid node type '{node_type}'. Must be one of: {valid_types}",
+            field_name="node_type",
         )
 
 
@@ -66,7 +67,7 @@ class GraphValidationService:
 
         Args:
             node_id: Node identifier
-            node_type: Type of node (e.g., "Product", "ProductCategory")
+            node_type: Type of node (e.g., "Product", "ProductCategory", "Account")
 
         Returns:
             True if node exists, False otherwise
@@ -77,14 +78,22 @@ class GraphValidationService:
         # Validate node_type to prevent Cypher injection
         validate_node_type(node_type)
 
-        query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
+        # Special handling for Account nodes which use account_id instead of node_id
+        if node_type == "Account":
+            query = f"MATCH (n:{node_type} {{account_id: $node_id}}) RETURN n LIMIT 1"
+        else:
+            query = f"MATCH (n:{node_type} {{node_id: $node_id}}) RETURN n LIMIT 1"
+
         result = await self.neo4j.execute_query(query, {"node_id": node_id})
         return len(result) > 0
 
-    async def validate_can_delete_product_category(self, node_id: str) -> tuple[bool, str]:
+    async def validate_can_delete_product_category(
+        self, node_id: str
+    ) -> tuple[bool, str]:
         """Validate that a product category can be deleted.
 
-        ProductCategory can only be deleted if it has no products.
+        ProductCategory deletion will cascade delete all products and their value propositions.
+        This is always allowed.
 
         Args:
             node_id: ProductCategory node_id
@@ -92,25 +101,14 @@ class GraphValidationService:
         Returns:
             (can_delete, reason) tuple
         """
-        query = """
-        MATCH (cat:ProductCategory {node_id: $node_id})-[:INCLUDES_PRODUCT]->(prod:Product)
-        RETURN count(prod) as product_count
-        """
-        result = await self.neo4j.execute_query(query, {"node_id": node_id})
-
-        if not result:
-            return False, "ProductCategory not found"
-
-        product_count = result[0]["product_count"]
-        if product_count > 0:
-            return False, f"Cannot delete ProductCategory with {product_count} existing products"
-
+        # No validation needed - cascade delete handles cleanup
         return True, ""
 
     async def validate_can_delete_product(self, node_id: str) -> tuple[bool, str]:
         """Validate that a product can be deleted.
 
-        Product can only be deleted if it has no value propositions.
+        Product deletion will cascade delete all its value propositions.
+        This is always allowed.
 
         Args:
             node_id: Product node_id
@@ -118,19 +116,7 @@ class GraphValidationService:
         Returns:
             (can_delete, reason) tuple
         """
-        query = """
-        MATCH (prod:Product {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
-        RETURN count(vp) as vp_count
-        """
-        result = await self.neo4j.execute_query(query, {"node_id": node_id})
-
-        if not result:
-            return False, "Product not found"
-
-        vp_count = result[0]["vp_count"]
-        if vp_count > 0:
-            return False, f"Cannot delete Product with {vp_count} existing value propositions"
-
+        # No validation needed - cascade delete handles cleanup
         return True, ""
 
     async def validate_can_delete_strength(self, node_id: str) -> tuple[bool, str]:
@@ -155,7 +141,10 @@ class GraphValidationService:
 
         opp_count = result[0]["opp_count"]
         if opp_count > 0:
-            return False, f"Cannot delete Strength with {opp_count} linked opportunities"
+            return (
+                False,
+                f"Cannot delete Strength with {opp_count} linked opportunities",
+            )
 
         return True, ""
 
@@ -238,7 +227,9 @@ class GraphValidationService:
         if not result:
             raise Exception("Failed to create SWOT Analysis hub")
 
-        logger.info(f"Created SWOT Analysis hub {swot_node_id} for account {account_id}")
+        logger.info(
+            f"Created SWOT Analysis hub {swot_node_id} for account {account_id}"
+        )
         return result[0]["node_id"]
 
     def validate_url_format(self, url: str) -> bool:
@@ -262,7 +253,9 @@ class GraphValidationService:
         # Allow common URL patterns
         return bool(URL_PATTERN.match(url.strip()))
 
-    def validate_non_empty_string(self, value: str, field_name: str) -> tuple[bool, str]:
+    def validate_non_empty_string(
+        self, value: str, field_name: str
+    ) -> tuple[bool, str]:
         """Validate that string is not empty after trimming whitespace.
 
         Args:
@@ -296,17 +289,29 @@ class GraphValidationService:
         RETURN count(cat) as count
         """
         result = await self.neo4j.execute_query(
-            query, {"account_id": account_id, "product_name": product_name, "exclude_node_id": exclude_node_id}
+            query,
+            {
+                "account_id": account_id,
+                "product_name": product_name,
+                "exclude_node_id": exclude_node_id,
+            },
         )
 
         count = result[0]["count"] if result else 0
         if count > 0:
-            return False, f"Product category with name '{product_name}' already exists in this account"
+            return (
+                False,
+                f"Product category with name '{product_name}' already exists in this account",
+            )
 
         return True, ""
 
     async def validate_unique_product_name(
-        self, account_id: str, product_name: str, category_node_id: str, exclude_node_id: str | None = None
+        self,
+        account_id: str,
+        product_name: str,
+        category_node_id: str,
+        exclude_node_id: str | None = None,
     ) -> tuple[bool, str]:
         """Check if product name is unique within category.
 
@@ -337,12 +342,19 @@ class GraphValidationService:
 
         count = result[0]["count"] if result else 0
         if count > 0:
-            return False, f"Product with name '{product_name}' already exists in this category"
+            return (
+                False,
+                f"Product with name '{product_name}' already exists in this category",
+            )
 
         return True, ""
 
     async def validate_unique_display_name(
-        self, account_id: str, node_type: str, display_name: str, exclude_node_id: str | None = None
+        self,
+        account_id: str,
+        node_type: str,
+        display_name: str,
+        exclude_node_id: str | None = None,
     ) -> tuple[bool, str]:
         """Check if display_name is unique for node type within account.
 
@@ -369,14 +381,272 @@ class GraphValidationService:
         RETURN count(n) as count
         """
         result = await self.neo4j.execute_query(
-            query, {"account_id": account_id, "display_name": display_name, "exclude_node_id": exclude_node_id}
+            query,
+            {
+                "account_id": account_id,
+                "display_name": display_name,
+                "exclude_node_id": exclude_node_id,
+            },
         )
 
         count = result[0]["count"] if result else 0
         if count > 0:
-            return False, f"{node_type} with display name '{display_name}' already exists in this account"
+            return (
+                False,
+                f"{node_type} with display name '{display_name}' already exists in this account",
+            )
 
         return True, ""
+
+    # ==================== COMPETITIVE STRATEGY VALIDATION ====================
+
+    async def validate_can_delete_competitor(self, node_id: str) -> tuple[bool, str]:
+        """Validate a competitor can be safely deleted.
+
+        Args:
+            node_id: Competitor node_id
+
+        Returns:
+            (can_delete, error_message) tuple
+        """
+        # Check for dependent tactics
+        query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:USES_TACTIC]->(ct:CompetitorTactic)
+        RETURN count(ct) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        tactic_count = result[0]["count"] if result else 0
+
+        if tactic_count > 0:
+            return (
+                False,
+                f"Cannot delete Competitor with {tactic_count} dependent tactics",
+            )
+
+        # Check for dependent strengths
+        query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_STRENGTH]->(cs:CompetitorStrength)
+        RETURN count(cs) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        strength_count = result[0]["count"] if result else 0
+
+        if strength_count > 0:
+            return (
+                False,
+                f"Cannot delete Competitor with {strength_count} dependent strengths",
+            )
+
+        # Check for dependent weaknesses
+        query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)
+        RETURN count(cw) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        weakness_count = result[0]["count"] if result else 0
+
+        if weakness_count > 0:
+            return (
+                False,
+                f"Cannot delete Competitor with {weakness_count} dependent weaknesses",
+            )
+
+        # Check for dependent substitute products
+        query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)
+        RETURN count(sp) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        product_count = result[0]["count"] if result else 0
+
+        if product_count > 0:
+            return (
+                False,
+                f"Cannot delete Competitor with {product_count} dependent substitute products",
+            )
+
+        # Check for dependent value propositions
+        query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN count(vp) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        vp_count = result[0]["count"] if result else 0
+
+        if vp_count > 0:
+            return (
+                False,
+                f"Cannot delete Competitor with {vp_count} dependent value propositions",
+            )
+
+        return True, ""
+
+    async def validate_can_delete_competitor_strength(
+        self, node_id: str
+    ) -> tuple[bool, str]:
+        """Validate a competitor strength can be safely deleted.
+
+        Args:
+            node_id: CompetitorStrength node_id
+
+        Returns:
+            (can_delete, error_message) tuple
+        """
+        query = """
+        MATCH (cs:CompetitorStrength {node_id: $node_id})-[:CREATES]->(r:Risk)
+        RETURN count(r) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        count = result[0]["count"] if result else 0
+
+        if count > 0:
+            return (
+                False,
+                f"Cannot delete CompetitorStrength with {count} dependent risks",
+            )
+
+        return True, ""
+
+    async def validate_can_delete_competitor_weakness(
+        self, node_id: str
+    ) -> tuple[bool, str]:
+        """Validate a competitor weakness can be safely deleted.
+
+        Args:
+            node_id: CompetitorWeakness node_id
+
+        Returns:
+            (can_delete, error_message) tuple
+        """
+        query = """
+        MATCH (cw:CompetitorWeakness {node_id: $node_id})-[:CREATES]->(o:Opportunity)
+        RETURN count(o) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        count = result[0]["count"] if result else 0
+
+        if count > 0:
+            return (
+                False,
+                f"Cannot delete CompetitorWeakness with {count} dependent opportunities",
+            )
+
+        return True, ""
+
+    async def validate_can_delete_substitute_product(
+        self, node_id: str
+    ) -> tuple[bool, str]:
+        """Validate a substitute product can be safely deleted.
+
+        Args:
+            node_id: SubstituteProduct node_id
+
+        Returns:
+            (can_delete, error_message) tuple
+        """
+        query = """
+        MATCH (sp:SubstituteProduct {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN count(vp) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        count = result[0]["count"] if result else 0
+
+        if count > 0:
+            return (
+                False,
+                f"Cannot delete SubstituteProduct with {count} dependent value propositions",
+            )
+
+        return True, ""
+
+    # ==================== MARKETING STRATEGY VALIDATION ====================
+
+    async def validate_unique_customer_profile_name(
+        self,
+        account_id: str,
+        display_name: str,
+        exclude_node_id: str | None = None,
+    ) -> tuple[bool, str]:
+        """Validate customer profile display_name is unique within account (case-insensitive).
+
+        Args:
+            account_id: Account identifier
+            display_name: Display name to check
+            exclude_node_id: Optional node_id to exclude (for updates)
+
+        Returns:
+            (is_unique, error_message) tuple
+        """
+        query = """
+        MATCH (cp:CustomerProfile)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        WHERE toLower(cp.display_name) = toLower($display_name)
+        AND ($exclude_node_id IS NULL OR cp.node_id <> $exclude_node_id)
+        RETURN count(cp) as count
+        """
+        result = await self.neo4j.execute_query(
+            query,
+            {
+                "account_id": account_id,
+                "display_name": display_name,
+                "exclude_node_id": exclude_node_id,
+            },
+        )
+
+        count = result[0]["count"] if result else 0
+        if count > 0:
+            return (
+                False,
+                f"CustomerProfile with display name '{display_name}' already exists in this account",
+            )
+
+        return True, ""
+
+    async def validate_can_delete_customer_profile(
+        self, node_id: str
+    ) -> tuple[bool, str]:
+        """Validate a customer profile can be safely deleted.
+
+        Note: This returns informational message about cascade deletions.
+        Deletion is always allowed but user should be informed about cascading effects.
+
+        Args:
+            node_id: CustomerProfile node_id
+
+        Returns:
+            (can_delete, info_message) tuple
+        """
+        # Count linked strategy nodes (will be cascade deleted)
+        strategy_types = [
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]
+
+        total_strategies = 0
+        for strategy_type in strategy_types:
+            query = f"""
+            MATCH (cp:CustomerProfile {{node_id: $node_id}})-[]->(s:{strategy_type})
+            RETURN count(s) as count
+            """
+            result = await self.neo4j.execute_query(query, {"node_id": node_id})
+            total_strategies += result[0]["count"] if result else 0
+
+        # Count IS_MARKETED_TO relationships
+        query = """
+        MATCH (cp:CustomerProfile {node_id: $node_id})<-[:IS_MARKETED_TO]-(pc:ProductCategory)
+        RETURN count(pc) as count
+        """
+        result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        category_count = result[0]["count"] if result else 0
+
+        # Always allow deletion, but inform user about cascade
+        if total_strategies > 0 or category_count > 0:
+            info = f"Will cascade delete {total_strategies} strategy node(s) and {category_count} category link(s)"
+            logger.info(f"CustomerProfile {node_id} deletion: {info}")
+
+        return True, ""  # Always allow
 
 
 async def get_graph_validation_service(

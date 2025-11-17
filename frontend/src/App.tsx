@@ -20,20 +20,19 @@ import "./App.css";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
+import Recommendations from "./pages/Recommendations";
 import Products from "./pages/Products";
-import Customers from "./pages/Customers";
 import Campaigns from "./pages/Campaigns";
-import Channels from "./pages/Channels";
 import Reports from "./pages/Reports";
 import Simulations from "./pages/Simulations";
 import AnalysisReport from "./pages/AnalysisReport";
 import Knowledge from "./pages/Knowledge";
-import KnowledgeProducts from "./pages/KnowledgeProducts";
 import KnowledgeMetrics from "./pages/KnowledgeMetrics";
 import KnowledgeActivities from "./pages/KnowledgeActivities";
 import KnowledgeAccount from "./pages/KnowledgeAccount";
 import KnowledgeCustomers from "./pages/KnowledgeCustomers";
 import KnowledgeCompetitors from "./pages/KnowledgeCompetitors";
+import KnowledgeBrand from "./pages/KnowledgeBrand";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
@@ -137,18 +136,10 @@ const App = () => (
                     }
                   />
                   <Route
-                    path="/products"
+                    path="/recommendations"
                     element={
                       <ProtectedRoute>
-                        <Products />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/customers"
-                    element={
-                      <ProtectedRoute>
-                        <Customers />
+                        <Recommendations />
                       </ProtectedRoute>
                     }
                   />
@@ -157,14 +148,6 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <Campaigns />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/channels"
-                    element={
-                      <ProtectedRoute>
-                        <Channels />
                       </ProtectedRoute>
                     }
                   />
@@ -220,7 +203,7 @@ const App = () => (
                     path="/knowledge/products"
                     element={
                       <ProtectedRoute>
-                        <KnowledgeProducts />
+                        <Products />
                       </ProtectedRoute>
                     }
                   />
@@ -269,6 +252,14 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <KnowledgeCompetitors />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/brand"
+                    element={
+                      <ProtectedRoute>
+                        <KnowledgeBrand />
                       </ProtectedRoute>
                     }
                   />
