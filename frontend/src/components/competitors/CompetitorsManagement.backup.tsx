@@ -592,48 +592,121 @@ export const CompetitorsManagement = ({
     }
   };
 
-  // React Flow node types (no competitor node, only child → grandchild)
+  // React Flow node types
   const nodeTypes = useMemo(() => {
     if (mode === "strengths") {
       return {
+        competitorNode: CompetitorNode,
         competitorStrengthNode: CompetitorStrengthNode,
         riskNode: RiskNode,
       };
     } else if (mode === "weaknesses") {
       return {
+        competitorNode: CompetitorNode,
         competitorWeaknessNode: CompetitorWeaknessNode,
         opportunityNode: OpportunityNode,
       };
     } else {
-      // Should not be used since substitute-products doesn't show React Flow
-      return {};
+      return {
+        competitorNode: CompetitorNode,
+        substituteProductNode: SubstituteProductNode,
+      };
     }
   }, [mode]);
 
-  // Generate nodes for React Flow (only 2 levels: child → grandchildren)
+  // Generate nodes for React Flow
   const generateNodes = (): Node[] => {
-    if (!selectedChild) return [];
+    if (!selectedCompetitor) return [];
 
     const nodes: Node[] = [];
+
+    // Competitor Node (top center)
+    nodes.push({
+      id: selectedCompetitor.node_id,
+      type: "competitorNode",
+      position: { x: 300, y: 50 },
+      data: {
+        label: selectedCompetitor.display_name,
+        isSelected:
+          selectedCompetitorId === selectedCompetitor.node_id &&
+          !selectedChildId &&
+          !selectedGrandchildId,
+        onAddChild: () => setIsCreateChildModalOpen(true),
+      },
+    });
+
+    // Child Nodes (second row)
+    const children =
+      mode === "strengths"
+        ? strengths
+        : mode === "weaknesses"
+          ? weaknesses
+          : substituteProducts;
+
+    const childWidth = 224;
     const gap = 36;
+    const totalWidth = children.length * (childWidth + gap) - gap;
+    const startX = 300 - totalWidth / 2;
 
-    // Only show child → grandchildren (not competitor)
-    if (mode === "strengths") {
-      const strength = selectedChild as CompetitorStrength;
+    children.forEach((child, index) => {
+      const isChildSelected = selectedChildId === child.node_id;
 
-      // Child Node (strength) - top center
-      nodes.push({
-        id: strength.node_id,
-        type: "competitorStrengthNode",
-        position: { x: 300, y: 50 },
-        data: {
-          label: strength.display_name,
-          isSelected: !selectedGrandchildId,
-          onAddRisk: () => setIsCreateGrandchildModalOpen(true),
-        },
-      });
+      if (mode === "strengths") {
+        const strength = child as CompetitorStrength;
+        nodes.push({
+          id: strength.node_id,
+          type: "competitorStrengthNode",
+          position: {
+            x: startX + index * (childWidth + gap),
+            y: 224,
+          },
+          data: {
+            label: strength.display_name,
+            isSelected: isChildSelected && !selectedGrandchildId,
+            onAddRisk: () => setIsCreateGrandchildModalOpen(true),
+          },
+        });
+      } else if (mode === "weaknesses") {
+        const weakness = child as CompetitorWeakness;
+        nodes.push({
+          id: weakness.node_id,
+          type: "competitorWeaknessNode",
+          position: {
+            x: startX + index * (childWidth + gap),
+            y: 224,
+          },
+          data: {
+            label: weakness.display_name,
+            isSelected: isChildSelected && !selectedGrandchildId,
+            onAddOpportunity: () => setIsCreateGrandchildModalOpen(true),
+          },
+        });
+      } else {
+        const substituteProduct = child as SubstituteProduct;
+        nodes.push({
+          id: substituteProduct.node_id,
+          type: "substituteProductNode",
+          position: {
+            x: startX + index * (childWidth + gap),
+            y: 224,
+          },
+          data: {
+            label: substituteProduct.product_name,
+            isSelected: isChildSelected,
+            showHandle: false,
+            onAddProduct: () => {
+              toast({
+                title: "Coming Soon",
+                description: "Link to our products feature coming soon",
+              });
+            },
+          },
+        });
+      }
+    });
 
-      // Grandchild nodes (risks) - second row
+    // Grandchild nodes (risks or opportunities) - third row
+    if (mode === "strengths" && selectedChildId) {
       const grandchildren = risks;
       const grandchildWidth = 224;
       const grandchildTotalWidth =
@@ -646,7 +719,7 @@ export const CompetitorsManagement = ({
           type: "riskNode",
           position: {
             x: grandchildStartX + index * (grandchildWidth + gap),
-            y: 224,
+            y: 448,
           },
           data: {
             label: risk.display_name,
@@ -656,22 +729,7 @@ export const CompetitorsManagement = ({
           },
         });
       });
-    } else if (mode === "weaknesses") {
-      const weakness = selectedChild as CompetitorWeakness;
-
-      // Child Node (weakness) - top center
-      nodes.push({
-        id: weakness.node_id,
-        type: "competitorWeaknessNode",
-        position: { x: 300, y: 50 },
-        data: {
-          label: weakness.display_name,
-          isSelected: !selectedGrandchildId,
-          onAddOpportunity: () => setIsCreateGrandchildModalOpen(true),
-        },
-      });
-
-      // Grandchild nodes (opportunities) - second row
+    } else if (mode === "weaknesses" && selectedChildId) {
       const grandchildren = opportunities;
       const grandchildWidth = 224;
       const grandchildTotalWidth =
@@ -684,7 +742,7 @@ export const CompetitorsManagement = ({
           type: "opportunityNode",
           position: {
             x: grandchildStartX + index * (grandchildWidth + gap),
-            y: 224,
+            y: 448,
           },
           data: {
             label: opportunity.display_name,
@@ -699,13 +757,36 @@ export const CompetitorsManagement = ({
     return nodes;
   };
 
-  // Generate edges for React Flow (only child → grandchildren edges)
+  // Generate edges for React Flow
   const generateEdges = (): Edge[] => {
-    if (!selectedChild) return [];
+    if (!selectedCompetitor) return [];
 
     const edges: Edge[] = [];
 
-    // Edges from child to grandchildren only
+    // Edges from competitor to children
+    const children =
+      mode === "strengths"
+        ? strengths
+        : mode === "weaknesses"
+          ? weaknesses
+          : substituteProducts;
+
+    children.forEach((child) => {
+      edges.push({
+        id: `${selectedCompetitor.node_id}-${child.node_id}`,
+        source: selectedCompetitor.node_id,
+        target: child.node_id,
+        type: "smoothstep",
+        style: {
+          stroke: "#000",
+          strokeWidth: 2,
+        },
+        sourceHandle: "bottom",
+        targetHandle: "top",
+      });
+    });
+
+    // Edges from child to grandchildren
     if (mode === "strengths" && selectedChildId) {
       risks.forEach((risk) => {
         edges.push({
@@ -752,21 +833,60 @@ export const CompetitorsManagement = ({
       return;
     }
 
-    // Child nodes (strength/weakness) - now at top level of diagram
+    // Competitor node
+    if (node.type === "competitorNode") {
+      setSelectedChildId(null);
+      setSelectedChild(null);
+      setSelectedGrandchildId(null);
+      setSelectedGrandchild(null);
+
+      setFormData({
+        display_name: selectedCompetitor?.display_name || "",
+        description: selectedCompetitor?.description || "",
+      });
+
+      setContextMenuType("competitor");
+      setIsContextMenuOpen(true);
+      return;
+    }
+
+    // Child nodes
     if (
       node.type === "competitorStrengthNode" ||
-      node.type === "competitorWeaknessNode"
+      node.type === "competitorWeaknessNode" ||
+      node.type === "substituteProductNode"
     ) {
-      // Just open the side sheet for the already-selected child
-      if (selectedChild) {
-        setFormData({
-          display_name: selectedChild.display_name,
-          description: selectedChild.description,
-        });
+      const children =
+        mode === "strengths"
+          ? strengths
+          : mode === "weaknesses"
+            ? weaknesses
+            : substituteProducts;
+      const child = children.find((c) => c.node_id === node.id);
+      if (!child) return;
 
-        setContextMenuType("child");
-        setIsContextMenuOpen(true);
+      setSelectedChildId(node.id);
+      setSelectedChild(child);
+      setSelectedGrandchildId(null);
+      setSelectedGrandchild(null);
+
+      if (mode === "substitute-products") {
+        const subProduct = child as SubstituteProduct;
+        setFormData({
+          display_name: "",
+          description: subProduct.description,
+          product_name: subProduct.product_name,
+          product_detail_page: subProduct.product_detail_page || "",
+        });
+      } else {
+        setFormData({
+          display_name: child.display_name,
+          description: child.description,
+        });
       }
+
+      setContextMenuType("child");
+      setIsContextMenuOpen(true);
       return;
     }
 
@@ -1463,37 +1583,38 @@ export const CompetitorsManagement = ({
   const grandchildLabel = mode === "strengths" ? "Risk" : "Opportunity";
   const grandchildrenLabel = mode === "strengths" ? "Risks" : "Opportunities";
 
-  // Derived values for children display
-  const children =
-    mode === "strengths"
-      ? strengths
-      : mode === "weaknesses"
-        ? weaknesses
-        : substituteProducts;
-
-  // Get display properties based on mode
-  const getChildIcon = () => {
-    if (mode === "strengths") return ThumbsUp;
-    if (mode === "weaknesses") return ThumbsDown;
-    return Package;
-  };
-
-  const getChildBgColor = () => {
-    if (mode === "strengths") return "bg-brand-success bg-opacity-30";
-    if (mode === "weaknesses") return "bg-brand-orange bg-opacity-30";
-    return "bg-brand-purple bg-opacity-30";
-  };
-
-  const getChildIconBgColor = () => {
-    if (mode === "strengths") return "bg-brand-success";
-    if (mode === "weaknesses") return "bg-brand-orange";
-    return "bg-brand-purple";
-  };
-
-  const ChildIcon = getChildIcon();
-
   return (
     <>
+      {/* Mode Switcher */}
+      <div className="flex mb-6">
+        <div className="inline-flex rounded-md border border-input bg-muted p-1 gap-1">
+          <Button
+            variant={mode === "strengths" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => handleModeSwitch("strengths")}
+            className="px-6"
+          >
+            Strengths
+          </Button>
+          <Button
+            variant={mode === "weaknesses" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => handleModeSwitch("weaknesses")}
+            className="px-6"
+          >
+            Weaknesses
+          </Button>
+          <Button
+            variant={mode === "substitute-products" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => handleModeSwitch("substitute-products")}
+            className="px-6"
+          >
+            Substitute Products
+          </Button>
+        </div>
+      </div>
+
       {/* Competitors Card */}
       <Card>
         <CardHeader>
@@ -1603,226 +1724,74 @@ export const CompetitorsManagement = ({
         </CardContent>
       </Card>
 
-      {/* Children Card (Strengths/Weaknesses/Substitutes) */}
-      {selectedCompetitorId && (
-        <div className="mt-6">
-          <Card>
+      {/* Diagram Card */}
+      <div className="mt-6">
+        {selectedCompetitorId ? (
+          <Card className="h-[600px]">
             <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-2">
-                  <ChildIcon className="h-5 w-5" />
-                  {childrenLabel}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 text-dashboard-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p>
-                          {mode === "strengths"
-                            ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
-                            : mode === "weaknesses"
-                              ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
-                              : "Substitute products offered by this competitor that compete with your products or services."}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {/* Mode Switcher integrated in header */}
-                  <div className="inline-flex rounded-md border border-input bg-muted p-1 gap-1">
-                    <Button
-                      variant={mode === "strengths" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => handleModeSwitch("strengths")}
-                      className="px-4"
-                    >
-                      Strengths
-                    </Button>
-                    <Button
-                      variant={mode === "weaknesses" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => handleModeSwitch("weaknesses")}
-                      className="px-4"
-                    >
-                      Weaknesses
-                    </Button>
-                    <Button
-                      variant={
-                        mode === "substitute-products" ? "default" : "ghost"
-                      }
-                      size="sm"
-                      onClick={() => handleModeSwitch("substitute-products")}
-                      className="px-4"
-                    >
-                      Substitutes
-                    </Button>
-                  </div>
-                  {hasEditAccess && (
-                    <Button
-                      onClick={() => setIsCreateChildModalOpen(true)}
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0"
-                    >
-                      <Plus className="h-5 w-5" />
-                    </Button>
-                  )}
-                </div>
-              </div>
+              <CardTitle className="flex items-center gap-2">
+                {mode === "strengths" ? (
+                  <ThumbsUp className="h-5 w-5" />
+                ) : mode === "weaknesses" ? (
+                  <ThumbsDown className="h-5 w-5" />
+                ) : (
+                  <Package className="h-5 w-5" />
+                )}
+                {childrenLabel}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-dashboard-gray-400" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>
+                        {mode === "strengths"
+                          ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
+                          : mode === "weaknesses"
+                            ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
+                            : "Substitute products offered by this competitor that compete with your products or services."}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="h-[520px]">
               {isLoadingChildren ? (
-                <div className="text-center py-8 text-dashboard-gray-500">
-                  Loading {childrenLabel.toLowerCase()}...
-                </div>
-              ) : children.length === 0 ? (
-                <div className="text-center py-8 text-dashboard-gray-500">
-                  No {childrenLabel.toLowerCase()} found.
-                  {hasEditAccess && " Click '+' to add one."}
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin" />
                 </div>
               ) : (
-                <div className="relative">
-                  <div className="flex gap-3 overflow-x-auto px-2 py-2">
-                    {children.map((child) => {
-                      const isSelected = selectedChildId === child.node_id;
-                      const displayName =
-                        mode === "substitute-products"
-                          ? (child as SubstituteProduct).product_name
-                          : child.display_name;
-
-                      return (
-                        <div
-                          key={child.node_id}
-                          className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
-                            isSelected
-                              ? "ring-2 ring-brand-medium-blue"
-                              : "hover:ring-2 hover:ring-gray-300"
-                          }`}
-                          onClick={() => {
-                            setSelectedChildId(child.node_id);
-                            setSelectedChild(child);
-                            setSelectedGrandchildId(null);
-                            setSelectedGrandchild(null);
-
-                            if (mode === "substitute-products") {
-                              const subProduct = child as SubstituteProduct;
-                              setFormData({
-                                display_name: "",
-                                description: subProduct.description,
-                                product_name: subProduct.product_name,
-                                product_detail_page:
-                                  subProduct.product_detail_page || "",
-                              });
-                            } else {
-                              setFormData({
-                                display_name: child.display_name,
-                                description: child.description,
-                              });
-                            }
-
-                            setContextMenuType("child");
-                            setIsContextMenuOpen(true);
-                          }}
-                        >
-                          <div className="flex items-center">
-                            <div
-                              className={`${getChildBgColor()} rounded-lg pl-4 pr-16 py-2`}
-                            >
-                              <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-                                {childLabel}
-                              </p>
-                              <p className="font-semibold text-dashboard-gray-900 leading-tight">
-                                {displayName}
-                              </p>
-                            </div>
-
-                            <div className="flex-shrink-0 -ml-12 relative z-10">
-                              <div
-                                className={`rounded-full ${getChildIconBgColor()} flex items-center justify-center`}
-                                style={{ width: "72px", height: "72px" }}
-                              >
-                                <ChildIcon
-                                  className="text-white"
-                                  style={{ width: "48px", height: "48px" }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <ReactFlow
+                  nodes={generateNodes()}
+                  edges={generateEdges()}
+                  nodeTypes={nodeTypes}
+                  onNodeClick={handleNodeClick}
+                  onNodeDoubleClick={handleNodeClick}
+                  defaultViewport={{ x: 250, y: 50, zoom: 1 }}
+                  minZoom={0.5}
+                  maxZoom={1.5}
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  elementsSelectable={true}
+                  panOnScroll={true}
+                  zoomOnScroll={false}
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
               )}
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {/* React Flow Card (only for strengths/weaknesses with selected child) */}
-      {selectedCompetitorId &&
-        selectedChildId &&
-        mode !== "substitute-products" && (
-          <div className="mt-6">
-            <Card className="h-[600px]">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  {mode === "strengths" ? (
-                    <ShieldAlert className="h-5 w-5" />
-                  ) : (
-                    <Star className="h-5 w-5" />
-                  )}
-                  {grandchildrenLabel}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 text-dashboard-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p>
-                          {mode === "strengths"
-                            ? "Risks created by this competitor strength."
-                            : "Opportunities created by this competitor weakness."}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-[520px]">
-                {isLoadingChildren ||
-                (mode === "strengths" && isLoadingRisks) ||
-                (mode === "weaknesses" && isLoadingOpportunities) ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
-                ) : (
-                  <ReactFlow
-                    nodes={generateNodes()}
-                    edges={generateEdges()}
-                    nodeTypes={nodeTypes}
-                    onNodeClick={handleNodeClick}
-                    onNodeDoubleClick={handleNodeClick}
-                    defaultViewport={{ x: 250, y: 50, zoom: 1 }}
-                    minZoom={0.5}
-                    maxZoom={1.5}
-                    nodesDraggable={false}
-                    nodesConnectable={false}
-                    elementsSelectable={true}
-                    panOnScroll={true}
-                    zoomOnScroll={false}
-                    proOptions={{ hideAttribution: true }}
-                  >
-                    <Background />
-                    <Controls />
-                  </ReactFlow>
-                )}
-              </CardContent>
-            </Card>
+        ) : (
+          <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200 h-[600px] flex items-center justify-center">
+            <p className="text-dashboard-gray-500 text-center">
+              Select a competitor to view {childrenLabel.toLowerCase()}.
+            </p>
           </div>
         )}
+      </div>
 
       {/* Create Competitor Modal */}
       <Dialog
