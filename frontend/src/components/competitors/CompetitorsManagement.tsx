@@ -1639,121 +1639,123 @@ export const CompetitorsManagement = ({
               </div>
             </div>
 
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-2">
-                  <ChildIcon className="h-5 w-5" />
-                  {childrenLabel}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 text-dashboard-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p>
-                          {mode === "strengths"
-                            ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
-                            : mode === "weaknesses"
-                              ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
-                              : "Substitute products offered by this competitor that compete with your products or services."}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </CardTitle>
-                {hasEditAccess && (
-                  <Button
-                    onClick={() => setIsCreateChildModalOpen(true)}
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0"
-                  >
-                    <Plus className="h-5 w-5" />
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
             <CardContent>
-              {/* Children horizontal scroll section */}
-              {isLoadingChildren ? (
-                <div className="text-center py-8 text-dashboard-gray-500">
-                  Loading {childrenLabel.toLowerCase()}...
+              {/* Strengths/Weaknesses/Substitutes section with border */}
+              <div className="rounded-lg border bg-card shadow-sm p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center gap-2">
+                    <ChildIcon className="h-5 w-5" />
+                    <h3 className="text-lg font-semibold">{childrenLabel}</h3>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-dashboard-gray-400" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>
+                            {mode === "strengths"
+                              ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
+                              : mode === "weaknesses"
+                                ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
+                                : "Substitute products offered by this competitor that compete with your products or services."}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {hasEditAccess && (
+                    <Button
+                      onClick={() => setIsCreateChildModalOpen(true)}
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+                  )}
                 </div>
-              ) : children.length === 0 ? (
-                <div className="text-center py-8 text-dashboard-gray-500">
-                  No {childrenLabel.toLowerCase()} found.
-                  {hasEditAccess && " Click '+' to add one."}
-                </div>
-              ) : (
-                <div className="relative">
-                  <div className="flex gap-3 overflow-x-auto px-2 py-2">
-                    {children.map((child) => {
-                      const isSelected = selectedChildId === child.node_id;
-                      const displayName =
-                        mode === "substitute-products"
-                          ? (child as SubstituteProduct).product_name
-                          : child.display_name;
 
-                      return (
-                        <div
-                          key={child.node_id}
-                          className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
-                            isSelected
-                              ? "ring-2 ring-brand-medium-blue"
-                              : "hover:ring-2 hover:ring-gray-300"
-                          }`}
-                          onClick={() => {
-                            setSelectedChildId(child.node_id);
-                            setSelectedChild(child);
-                            setSelectedGrandchildId(null);
-                            setSelectedGrandchild(null);
+                {/* Children horizontal scroll */}
+                {isLoadingChildren ? (
+                  <div className="text-center py-8 text-dashboard-gray-500">
+                    Loading {childrenLabel.toLowerCase()}...
+                  </div>
+                ) : children.length === 0 ? (
+                  <div className="text-center py-8 text-dashboard-gray-500">
+                    No {childrenLabel.toLowerCase()} found.
+                    {hasEditAccess && " Click '+' to add one."}
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="flex gap-3 overflow-x-auto px-2 py-2">
+                      {children.map((child) => {
+                        const isSelected = selectedChildId === child.node_id;
+                        const displayName =
+                          mode === "substitute-products"
+                            ? (child as SubstituteProduct).product_name
+                            : child.display_name;
 
-                            // For substitute products (no React Flow), open side sheet directly
-                            // For strengths/weaknesses, side sheet opens when clicking React Flow nodes
-                            if (mode === "substitute-products") {
-                              const subProduct = child as SubstituteProduct;
-                              setFormData({
-                                display_name: "",
-                                description: subProduct.description,
-                                product_name: subProduct.product_name,
-                                product_detail_page:
-                                  subProduct.product_detail_page || "",
-                              });
-                              setContextMenuType("child");
-                              setIsContextMenuOpen(true);
-                            }
-                          }}
-                        >
-                          <div className="flex items-center">
-                            <div
-                              className={`${getChildBgColor()} rounded-lg pl-4 pr-16 py-2`}
-                            >
-                              <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-                                {childLabel}
-                              </p>
-                              <p className="font-semibold text-dashboard-gray-900 leading-tight">
-                                {displayName}
-                              </p>
-                            </div>
+                        return (
+                          <div
+                            key={child.node_id}
+                            className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
+                              isSelected
+                                ? "ring-2 ring-brand-medium-blue"
+                                : "hover:ring-2 hover:ring-gray-300"
+                            }`}
+                            onClick={() => {
+                              setSelectedChildId(child.node_id);
+                              setSelectedChild(child);
+                              setSelectedGrandchildId(null);
+                              setSelectedGrandchild(null);
 
-                            <div className="flex-shrink-0 -ml-12 relative z-10">
+                              // For substitute products (no React Flow), open side sheet directly
+                              // For strengths/weaknesses, side sheet opens when clicking React Flow nodes
+                              if (mode === "substitute-products") {
+                                const subProduct = child as SubstituteProduct;
+                                setFormData({
+                                  display_name: "",
+                                  description: subProduct.description,
+                                  product_name: subProduct.product_name,
+                                  product_detail_page:
+                                    subProduct.product_detail_page || "",
+                                });
+                                setContextMenuType("child");
+                                setIsContextMenuOpen(true);
+                              }
+                            }}
+                          >
+                            <div className="flex items-center">
                               <div
-                                className={`rounded-full ${getChildIconBgColor()} flex items-center justify-center`}
-                                style={{ width: "72px", height: "72px" }}
+                                className={`${getChildBgColor()} rounded-lg pl-4 pr-16 py-2`}
                               >
-                                <ChildIcon
-                                  className="text-white"
-                                  style={{ width: "48px", height: "48px" }}
-                                />
+                                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                                  {childLabel}
+                                </p>
+                                <p className="font-semibold text-dashboard-gray-900 leading-tight">
+                                  {displayName}
+                                </p>
+                              </div>
+
+                              <div className="flex-shrink-0 -ml-12 relative z-10">
+                                <div
+                                  className={`rounded-full ${getChildIconBgColor()} flex items-center justify-center`}
+                                  style={{ width: "72px", height: "72px" }}
+                                >
+                                  <ChildIcon
+                                    className="text-white"
+                                    style={{ width: "48px", height: "48px" }}
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* React Flow section (only if child selected and not substitutes mode) */}
               {selectedChildId && mode !== "substitute-products" && (
