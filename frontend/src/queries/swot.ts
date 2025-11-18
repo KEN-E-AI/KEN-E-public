@@ -164,18 +164,27 @@ export const useDeleteWeakness = () => {
 
 export const useOpportunities = (
   accountId: AccountId | null,
-  strengthId: string | null,
+  parentId: string | null, // Can be Strength or CompetitorWeakness node_id
+  parentType?: "strength" | "weakness", // Hint for which parent type
 ) => {
   return useQuery({
     queryKey: accountId
-      ? swotKeys.opportunities(accountId, strengthId || undefined)
+      ? [
+          ...swotKeys.opportunities(accountId, parentId || undefined),
+          parentType,
+        ]
       : (["swot", "opportunities", "none"] as const),
     queryFn: async () => {
-      if (!accountId || !strengthId)
-        return { opportunities: [], total_count: 0 };
-      return opportunityService.list(accountId, strengthId);
+      if (!accountId || !parentId) return { opportunities: [], total_count: 0 };
+
+      // Pass to correct parameter based on parent type
+      if (parentType === "weakness") {
+        return opportunityService.list(accountId, undefined, parentId);
+      } else {
+        return opportunityService.list(accountId, parentId);
+      }
     },
-    enabled: !!accountId && !!strengthId,
+    enabled: !!accountId && !!parentId,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     refetchOnMount: false,

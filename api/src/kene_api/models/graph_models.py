@@ -5,7 +5,7 @@ All models for Business, Competitive, Marketing, and Brand strategy nodes.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ==================== BASE MODELS ====================
 
@@ -347,7 +347,12 @@ class WeaknessListResponse(BaseModel):
 
 
 class OpportunityCreate(BaseModel):
-    """Request model for creating an opportunity."""
+    """Request model for creating an opportunity.
+
+    Opportunities can be created from either:
+    - Strength nodes (business SWOT analysis)
+    - CompetitorWeakness nodes (competitive analysis)
+    """
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -373,9 +378,30 @@ class OpportunityCreate(BaseModel):
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
     )
-    strength_node_id: str = Field(
-        ..., description="Parent Strength node_id that creates this opportunity"
+    strength_node_id: str | None = Field(
+        None, description="Parent Strength node_id (for business SWOT opportunities)"
     )
+    weakness_node_id: str | None = Field(
+        None,
+        description="Parent CompetitorWeakness node_id (for competitive opportunities)",
+    )
+
+    @model_validator(mode="after")
+    def validate_exactly_one_parent(self) -> "OpportunityCreate":
+        """Ensure exactly one parent is provided."""
+        has_strength = self.strength_node_id is not None
+        has_weakness = self.weakness_node_id is not None
+
+        if not has_strength and not has_weakness:
+            raise ValueError(
+                "Either strength_node_id or weakness_node_id must be provided"
+            )
+        if has_strength and has_weakness:
+            raise ValueError(
+                "Only one of strength_node_id or weakness_node_id can be provided"
+            )
+
+        return self
 
 
 class OpportunityUpdate(BaseModel):
@@ -392,7 +418,8 @@ class OpportunityResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
-    strength_node_id: str
+    strength_node_id: str | None = None  # For business SWOT opportunities
+    weakness_node_id: str | None = None  # For competitive opportunities
 
 
 class OpportunityListResponse(BaseModel):

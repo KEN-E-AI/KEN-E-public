@@ -140,6 +140,7 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
     useOpportunities(
       mode === "strengths" ? selectedOrgAccount?.accountId || null : null,
       mode === "strengths" ? selectedParentId : null,
+      "strength", // SWOT Strengths create Opportunities
     );
   const opportunities = opportunitiesData?.opportunities || [];
 

@@ -677,7 +677,10 @@ async def create_opportunity(
 @router.get("/{account_id}/opportunities", response_model=OpportunityListResponse)
 async def list_opportunities(
     account_id: str,
-    strength_node_id: str | None = Query(None, description="Filter by parent strength"),
+    strength_node_id: str | None = Query(None, description="Filter by parent Strength"),
+    weakness_node_id: str | None = Query(
+        None, description="Filter by parent CompetitorWeakness"
+    ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -687,41 +690,74 @@ async def list_opportunities(
 ) -> OpportunityListResponse:
     """List all opportunities with optional pagination.
 
-    Special case: Maps parent_node_id to strength_node_id for response model.
+    Can filter by either Strength or CompetitorWeakness parent.
     """
     await check_graph_access(account_id, user, "view")
+
+    # Determine parent filter
+    if strength_node_id and weakness_node_id:
+        raise ValueError("Cannot filter by both strength_node_id and weakness_node_id")
+
+    parent_node_id = strength_node_id or weakness_node_id
+    parent_node_type = (
+        "Strength"
+        if strength_node_id
+        else "CompetitorWeakness"
+        if weakness_node_id
+        else None
+    )
 
     try:
         # Get total count
         total_count = await service.count_nodes(
             account_id,
             "Opportunity",
-            parent_node_id=strength_node_id,
-            parent_node_type="Strength",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
         )
 
         # Get paginated results
         opportunities_data = await service.list_nodes(
             account_id,
             "Opportunity",
-            parent_node_id=strength_node_id,
-            parent_node_type="Strength",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
             skip=skip,
             limit=limit,
         )
 
-        # Map parent_node_id to strength_node_id for the response model
-        opportunities = [
-            OpportunityResponse(
-                **{
-                    **o,
-                    "strength_node_id": o.get(
-                        "parent_node_id", o.get("strength_node_id")
-                    ),
-                }
-            )
-            for o in opportunities_data
-        ]
+        # Map parent_node_id to appropriate field based on parent type
+        opportunities = []
+        for o in opportunities_data:
+            # Start with all node data
+            response_data = dict(o)
+
+            # Determine which parent field to populate based on parent_node_type in the data
+            parent_type = o.get("parent_node_type")
+            parent_id = o.get("parent_node_id")
+
+            if parent_type == "Strength" or (not parent_type and strength_node_id):
+                response_data["strength_node_id"] = parent_id or o.get(
+                    "strength_node_id"
+                )
+                response_data["weakness_node_id"] = None
+            elif parent_type == "CompetitorWeakness" or (
+                not parent_type and weakness_node_id
+            ):
+                response_data["weakness_node_id"] = parent_id or o.get(
+                    "weakness_node_id"
+                )
+                response_data["strength_node_id"] = None
+            else:
+                # Default case - set both to None if no parent info
+                response_data.setdefault("strength_node_id", None)
+                response_data.setdefault("weakness_node_id", None)
+
+            # Remove internal fields before creating response
+            response_data.pop("parent_node_id", None)
+            response_data.pop("parent_node_type", None)
+
+            opportunities.append(OpportunityResponse(**response_data))
 
         return OpportunityListResponse(
             opportunities=opportunities, total_count=total_count

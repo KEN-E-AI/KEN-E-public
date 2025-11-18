@@ -260,6 +260,7 @@ export const CompetitorsManagement = ({
       mode === "weaknesses" && selectedWeakness?.node_id
         ? selectedWeakness.node_id
         : null,
+      "weakness", // Indicate this is a CompetitorWeakness parent
     );
   const opportunities = opportunitiesData?.opportunities || [];
 
@@ -1027,14 +1028,12 @@ export const CompetitorsManagement = ({
           } as RiskCreate,
         });
       } else {
-        // KNOWN ISSUE: Creating opportunities from competitor weaknesses
-        // The API expects strength_node_id (OUR strengths), but we're passing
-        // a CompetitorWeakness node_id. This needs backend API support.
+        // Competitor weakness creates opportunity (linked to the competitor weakness)
         await createOpportunityMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           opportunity: {
             ...grandchildFormData,
-            strength_node_id: selectedChild.node_id, // BUG: This is a CompetitorWeakness, not a Strength
+            weakness_node_id: selectedChild.node_id, // CompetitorWeakness node_id
           } as OpportunityCreate,
         });
       }

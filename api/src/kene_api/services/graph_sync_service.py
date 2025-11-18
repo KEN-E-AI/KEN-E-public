@@ -543,9 +543,9 @@ class GraphSyncService:
                 "account_id": record["account_id"],
             }
             # Add parent information if it exists in the query result
-            if "parent_node_id" in record and record["parent_node_id"]:
+            if record.get("parent_node_id"):
                 node_dict["parent_node_id"] = record["parent_node_id"]
-            if "parent_node_type" in record and record["parent_node_type"]:
+            if record.get("parent_node_type"):
                 node_dict["parent_node_type"] = record["parent_node_type"]
             nodes.append(node_dict)
 
@@ -1473,21 +1473,33 @@ class GraphSyncService:
                 "Opportunity", "display_name", opportunity.display_name, account_id
             )
 
+        # Determine parent node and type (Strength or CompetitorWeakness)
+        if opportunity.strength_node_id:
+            parent_node_id = opportunity.strength_node_id
+            parent_node_type = "Strength"
+            parent_field_name = "strength_node_id"
+        else:
+            parent_node_id = opportunity.weakness_node_id
+            parent_node_type = "CompetitorWeakness"
+            parent_field_name = "weakness_node_id"
+
         node_data = {
             "display_name": opportunity.display_name.strip(),
             "description": opportunity.description.strip(),
             "references": opportunity.references,
-            "strength_node_id": opportunity.strength_node_id,
+            parent_field_name: parent_node_id,
         }
 
         result = await self.create_node(
             account_id=account_id,
             node_type="Opportunity",
             node_data=node_data,
-            parent_node_id=opportunity.strength_node_id,
-            parent_node_type="Strength",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
             user_id=user_id,
-            firestore_doc_type="business_strategy",
+            firestore_doc_type="business_strategy"
+            if opportunity.strength_node_id
+            else "competitive_strategy",
         )
 
         return OpportunityResponse(**result)
@@ -1521,17 +1533,24 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
-        # Fetch the parent strength relationship
-        strength_query = """
-        MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
-        RETURN s.node_id as strength_node_id
+        # Fetch the parent relationship (could be Strength or CompetitorWeakness)
+        parent_query = """
+        MATCH (parent)-[:CREATES]->(o:Opportunity {node_id: $node_id})
+        WHERE parent:Strength OR parent:CompetitorWeakness
+        RETURN parent.node_id as parent_node_id, labels(parent) as parent_labels
         LIMIT 1
         """
-        strength_result = await self.neo4j.execute_query(
-            strength_query, {"node_id": node_id}
+        parent_result = await self.neo4j.execute_query(
+            parent_query, {"node_id": node_id}
         )
-        if strength_result and strength_result[0]:
-            result["strength_node_id"] = strength_result[0]["strength_node_id"]
+        if parent_result and parent_result[0]:
+            parent_labels = parent_result[0]["parent_labels"]
+            if "Strength" in parent_labels:
+                result["strength_node_id"] = parent_result[0]["parent_node_id"]
+                result["weakness_node_id"] = None
+            elif "CompetitorWeakness" in parent_labels:
+                result["weakness_node_id"] = parent_result[0]["parent_node_id"]
+                result["strength_node_id"] = None
 
         return OpportunityResponse(**result)
 
