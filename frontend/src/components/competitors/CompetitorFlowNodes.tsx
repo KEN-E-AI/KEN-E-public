@@ -4,8 +4,8 @@ import type { NodeProps } from "reactflow";
 import {
   Plus,
   Users,
-  ThumbsUp,
-  ThumbsDown,
+  Dumbbell,
+  Unlink,
   Package,
   Box,
   ShieldAlert,
@@ -90,7 +90,7 @@ export const CompetitorStrengthNode = memo(
     return (
       <div className="relative">
         <div className="flex items-center">
-          <div className="bg-green-100 bg-opacity-80 rounded-lg pl-4 pr-16 py-2">
+          <div className="bg-brand-light-red bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
             <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
               Strength
             </p>
@@ -101,16 +101,16 @@ export const CompetitorStrengthNode = memo(
 
           <div className="flex-shrink-0 -ml-12 relative z-10">
             <div
-              className="rounded-full bg-green-500 flex items-center justify-center"
+              className="rounded-full bg-brand-light-red flex items-center justify-center"
               style={{
                 width: "72px",
                 height: "72px",
                 boxShadow: data.isSelected
-                  ? "0 0 0 3px rgba(34, 197, 94, 0.4)"
+                  ? "0 0 0 3px rgba(255, 153, 153, 0.4)"
                   : "none",
               }}
             >
-              <ThumbsUp
+              <Dumbbell
                 className="text-white"
                 style={{ width: "48px", height: "48px" }}
               />
@@ -139,7 +139,7 @@ export const CompetitorStrengthNode = memo(
             e.stopPropagation();
             data.onAddRisk();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-green-500 flex items-center justify-center z-20"
+          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -163,7 +163,7 @@ export const CompetitorWeaknessNode = memo(
     return (
       <div className="relative">
         <div className="flex items-center">
-          <div className="bg-orange-100 bg-opacity-80 rounded-lg pl-4 pr-16 py-2">
+          <div className="bg-brand-light-green bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
             <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
               Weakness
             </p>
@@ -174,16 +174,16 @@ export const CompetitorWeaknessNode = memo(
 
           <div className="flex-shrink-0 -ml-12 relative z-10">
             <div
-              className="rounded-full bg-orange-500 flex items-center justify-center"
+              className="rounded-full bg-brand-light-green flex items-center justify-center"
               style={{
                 width: "72px",
                 height: "72px",
                 boxShadow: data.isSelected
-                  ? "0 0 0 3px rgba(249, 115, 22, 0.4)"
+                  ? "0 0 0 3px rgba(184, 226, 175, 0.4)"
                   : "none",
               }}
             >
-              <ThumbsDown
+              <Unlink
                 className="text-white"
                 style={{ width: "48px", height: "48px" }}
               />
@@ -212,7 +212,7 @@ export const CompetitorWeaknessNode = memo(
             e.stopPropagation();
             data.onAddOpportunity();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center z-20"
+          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -238,7 +238,7 @@ export const SubstituteProductNode = memo(
       <div className="relative">
         <div className="flex items-center">
           <div
-            className="bg-purple-100 bg-opacity-80 rounded-lg pl-4 pr-16 py-2"
+            className="bg-brand-yellow bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
             style={{ width: "200px" }}
           >
             <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
@@ -251,12 +251,12 @@ export const SubstituteProductNode = memo(
 
           <div className="flex-shrink-0 -ml-12 relative z-10">
             <div
-              className="rounded-full bg-purple-500 flex items-center justify-center"
+              className="rounded-full bg-brand-yellow flex items-center justify-center"
               style={{
                 width: "72px",
                 height: "72px",
                 boxShadow: data.isSelected
-                  ? "0 0 0 3px rgba(168, 85, 247, 0.4)"
+                  ? "0 0 0 3px rgba(234, 185, 70, 0.4)"
                   : "none",
               }}
             >
@@ -291,7 +291,7 @@ export const SubstituteProductNode = memo(
                 e.stopPropagation();
                 data.onAddProduct();
               }}
-              className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-purple-500 flex items-center justify-center z-20"
+              className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-yellow flex items-center justify-center z-20"
             >
               <Plus className="h-4 w-4 text-white" />
             </button>

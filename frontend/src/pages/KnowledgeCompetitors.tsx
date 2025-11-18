@@ -20,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowLeft, Target, Info, Pencil, Loader2 } from "lucide-react";
+import { ArrowLeft, Target, Info, Pencil, Loader2, Swords } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -130,7 +130,7 @@ export default function KnowledgeCompetitors() {
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
+                <Swords className="h-5 w-5" />
                 Competitive Environment
                 <TooltipProvider>
                   <Tooltip>
@@ -196,7 +196,7 @@ export default function KnowledgeCompetitors() {
           <SheetContent side="right" className="w-[400px] flex flex-col">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
+                <Swords className="h-5 w-5" />
                 Edit Competitive Environment
               </SheetTitle>
             </SheetHeader>

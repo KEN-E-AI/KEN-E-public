@@ -15,6 +15,7 @@ import {
   Star,
   Dumbbell,
   Unlink,
+  Swords,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
@@ -1494,9 +1495,9 @@ export const CompetitorsManagement = ({
 
   const childrenLabel =
     mode === "strengths"
-      ? "Strengths"
+      ? "Competitor Strengths"
       : mode === "weaknesses"
-        ? "Weaknesses"
+        ? "Competitor Weaknesses"
         : "Substitute Products";
 
   const grandchildLabel = mode === "strengths" ? "Risk" : "Opportunity";
@@ -1518,15 +1519,15 @@ export const CompetitorsManagement = ({
   };
 
   const getChildBgColor = () => {
-    if (mode === "strengths") return "bg-brand-light-green bg-opacity-30";
-    if (mode === "weaknesses") return "bg-brand-light-red bg-opacity-30";
-    return "bg-purple-100 bg-opacity-80";
+    if (mode === "strengths") return "bg-brand-light-red bg-opacity-30";
+    if (mode === "weaknesses") return "bg-brand-light-green bg-opacity-30";
+    return "bg-brand-yellow bg-opacity-30";
   };
 
   const getChildIconBgColor = () => {
-    if (mode === "strengths") return "bg-brand-light-green";
-    if (mode === "weaknesses") return "bg-brand-light-red";
-    return "bg-purple-500";
+    if (mode === "strengths") return "bg-brand-light-red";
+    if (mode === "weaknesses") return "bg-brand-light-green";
+    return "bg-brand-yellow";
   };
 
   const ChildIcon = getChildIcon();
@@ -1561,7 +1562,7 @@ export const CompetitorsManagement = ({
         <CardContent className="pt-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
+              <Swords className="h-5 w-5" />
               <h3 className="text-lg font-semibold">Competitors</h3>
             </div>
             {hasEditAccess && (
@@ -1587,7 +1588,7 @@ export const CompetitorsManagement = ({
               <HorizontalScrollItem
                 label={competitor.display_name}
                 sublabel="Competitor"
-                icon={Users}
+                icon={Swords}
                 bgColor="bg-brand-light-blue bg-opacity-30"
                 iconBgColor="bg-brand-light-blue"
                 isSelected={isSelected}
