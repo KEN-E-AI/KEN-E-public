@@ -194,6 +194,9 @@ async def create_product(
 async def list_products(
     account_id: str,
     category_node_id: str | None = Query(None, description="Filter by category"),
+    substitute_product_node_id: str | None = Query(
+        None, description="Filter by substitute product (MAY_BE_SUBSTITUTED_FOR relationship)"
+    ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -203,10 +206,19 @@ async def list_products(
 ) -> ProductListResponse:
     """List all products with optional pagination.
 
+    Can filter by category_node_id OR substitute_product_node_id (not both).
+
     Special case: Uses optimized query to fetch category information
     and avoid N+1 query problem.
     """
     await check_graph_access(account_id, user, "view")
+
+    # Validate: cannot filter by both
+    if category_node_id and substitute_product_node_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot filter by both category_node_id and substitute_product_node_id"
+        )
 
     try:
         # Use optimized method that fetches category information in single query
@@ -214,6 +226,7 @@ async def list_products(
         products_data, total_count = await service.list_products_with_categories(
             account_id=account_id,
             category_node_id=category_node_id,
+            substitute_product_node_id=substitute_product_node_id,
             skip=skip,
             limit=limit,
         )

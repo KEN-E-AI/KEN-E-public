@@ -7,7 +7,7 @@ CRUD endpoints for 6 competitive strategy node types:
 
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
@@ -786,6 +786,87 @@ async def delete_substitute_product(
         service=service,
         user=user,
     )
+
+
+# ==================== PRODUCT-SUBSTITUTE RELATIONSHIP ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/substitute-products/{substitute_id}/link-product",
+    response_model=dict,
+)
+async def link_product_to_substitute(
+    account_id: str,
+    substitute_id: str,
+    product_node_id: str = Body(..., embed=True),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Create MAY_BE_SUBSTITUTED_FOR relationship between Product and SubstituteProduct.
+
+    Requires edit permission for the account.
+    """
+    from .crud_factory import check_graph_access
+    from fastapi import HTTPException, status
+
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.link_product_to_substitute(
+            account_id=account_id,
+            product_node_id=product_node_id,
+            substitute_product_node_id=substitute_id,
+        )
+        return {
+            "message": "Product linked to substitute product successfully",
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_id,
+        }
+    except Exception as e:
+        logger.exception(f"Failed to link product to substitute: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to link product to substitute product",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/substitute-products/{substitute_id}/unlink-product/{product_node_id}",
+    response_model=dict,
+)
+async def unlink_product_from_substitute(
+    account_id: str,
+    substitute_id: str,
+    product_node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Remove MAY_BE_SUBSTITUTED_FOR relationship.
+
+    Requires edit permission for the account.
+    """
+    from .crud_factory import check_graph_access
+    from fastapi import HTTPException, status
+
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.unlink_product_from_substitute(
+            account_id=account_id,
+            product_node_id=product_node_id,
+            substitute_product_node_id=substitute_id,
+        )
+        return {
+            "message": "Product unlinked from substitute product successfully",
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_id,
+        }
+    except Exception as e:
+        logger.exception(f"Failed to unlink product from substitute: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unlink product from substitute product",
+        ) from e
 
 
 # ==================== COMPETITIVE ENVIRONMENT ENDPOINTS ====================

@@ -991,6 +991,7 @@ class GraphSyncService:
         self,
         account_id: str,
         category_node_id: str | None = None,
+        substitute_product_node_id: str | None = None,
         skip: int = 0,
         limit: int | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -1002,6 +1003,7 @@ class GraphSyncService:
         Args:
             account_id: Account identifier
             category_node_id: Optional filter by specific category
+            substitute_product_node_id: Optional filter by substitute product (MAY_BE_SUBSTITUTED_FOR)
             skip: Number of products to skip (default: 0)
             limit: Maximum number of products to return (default: None = all)
 
@@ -1012,7 +1014,26 @@ class GraphSyncService:
         Raises:
             ValidationException: If validation fails
         """
-        if category_node_id:
+        if substitute_product_node_id:
+            # Query products that MAY_BE_SUBSTITUTED_FOR this substitute product
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (sub:SubstituteProduct {node_id: $substitute_product_node_id})
+                  <-[:MAY_BE_SUBSTITUTED_FOR]-(p:Product)-[:BELONGS_TO]->(acc)
+            OPTIONAL MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            count_query = """
+            MATCH (sub:SubstituteProduct {node_id: $substitute_product_node_id})
+                  <-[:MAY_BE_SUBSTITUTED_FOR]-(p:Product)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+            RETURN count(p) as total
+            """
+            count_params = {
+                "account_id": account_id,
+                "substitute_product_node_id": substitute_product_node_id,
+            }
+        elif category_node_id:
             # Query products filtered by specific category
             query = """
             MATCH (acc:Account {account_id: $account_id})
@@ -2400,6 +2421,77 @@ class GraphSyncService:
             firestore_doc_type="competitive_strategy",
             check_dependencies=True,
         )
+
+    async def link_product_to_substitute(
+        self,
+        account_id: str,
+        product_node_id: str,
+        substitute_product_node_id: str,
+    ) -> None:
+        """Create MAY_BE_SUBSTITUTED_FOR relationship between Product and SubstituteProduct.
+
+        Args:
+            account_id: Account identifier
+            product_node_id: Node ID of the Product
+            substitute_product_node_id: Node ID of the SubstituteProduct
+
+        Raises:
+            ValidationException: If validation fails
+        """
+        query = """
+        MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MATCH (s:SubstituteProduct {node_id: $substitute_product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MERGE (p)-[:MAY_BE_SUBSTITUTED_FOR]->(s)
+        RETURN p, s
+        """
+        params = {
+            "account_id": account_id,
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_product_node_id,
+        }
+
+        result = await self.neo4j.execute_query(query, params)
+        if not result:
+            raise ValidationException(
+                "Product or SubstituteProduct not found",
+                "product_node_id or substitute_product_node_id"
+            )
+
+    async def unlink_product_from_substitute(
+        self,
+        account_id: str,
+        product_node_id: str,
+        substitute_product_node_id: str,
+    ) -> None:
+        """Remove MAY_BE_SUBSTITUTED_FOR relationship between Product and SubstituteProduct.
+
+        Args:
+            account_id: Account identifier
+            product_node_id: Node ID of the Product
+            substitute_product_node_id: Node ID of the SubstituteProduct
+
+        Raises:
+            ValidationException: If validation fails
+        """
+        query = """
+        MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MATCH (s:SubstituteProduct {node_id: $substitute_product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MATCH (p)-[r:MAY_BE_SUBSTITUTED_FOR]->(s)
+        DELETE r
+        RETURN p, s
+        """
+        params = {
+            "account_id": account_id,
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_product_node_id,
+        }
+
+        result = await self.neo4j.execute_query(query, params)
+        if not result:
+            raise ValidationException(
+                "Relationship not found or nodes do not exist",
+                "product_node_id or substitute_product_node_id"
+            )
 
     # ==================== CONVENIENCE WRAPPERS FOR MARKETING STRATEGY ====================
     # Steps 4 & 5 Implementation

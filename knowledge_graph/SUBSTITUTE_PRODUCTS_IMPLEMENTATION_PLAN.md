@@ -820,8 +820,794 @@ const grandchildrenLabel =
 
 ---
 
-## Ready for Implementation
+## SESSION 1 COMPLETION STATUS ✅
 
-All design questions answered. Plan is complete and ready for multi-session implementation.
+### Completed Work (2025-11-18)
 
-**Start with Session 1: Backend Foundation** when ready.
+#### Backend (Phases 1-2) ✅
+- [x] Updated `list_products` endpoint with `substitute_product_node_id` filter
+- [x] Added validation to prevent filtering by both `category_node_id` and `substitute_product_node_id`
+- [x] Updated `list_products_with_categories` service method with substitute product branch
+- [x] Created `link_product_to_substitute` endpoint in `competitive.py`
+- [x] Created `unlink_product_from_substitute` endpoint in `competitive.py`
+- [x] Added `link_product_to_substitute` method to GraphSyncService
+- [x] Added `unlink_product_from_substitute` method to GraphSyncService
+- [x] Used `MERGE` for link (idempotent) and proper validation
+
+**Files Modified:**
+- `api/src/kene_api/routers/knowledge_graph/business.py` (lines 193-244)
+- `api/src/kene_api/routers/knowledge_graph/competitive.py` (lines 10, 791-870)
+- `api/src/kene_api/services/graph_sync_service.py` (lines 990-1095, 2425-2494)
+
+#### Frontend Services & Hooks (Phase 3) ✅
+- [x] Updated `productService.list()` to accept `substituteProductNodeId` parameter
+- [x] Added `linkProduct` method to `substituteProductService`
+- [x] Added `unlinkProduct` method to `substituteProductService`
+- [x] Updated `productKeys` query key factory for substitute product filtering
+- [x] Updated `useProducts` hook with substitute product logic
+- [x] Created `useLinkProductToSubstitute` mutation hook
+- [x] Created `useUnlinkProductFromSubstitute` mutation hook
+
+**Files Modified:**
+- `frontend/src/services/productService.ts` (lines 39-55)
+- `frontend/src/services/substituteProductService.ts` (lines 82-101)
+- `frontend/src/queries/products.ts` (lines 23-85)
+- `frontend/src/queries/competitors.ts` (lines 464-518)
+
+---
+
+## SESSION 2: PHASE 4 - UI INTEGRATION (PENDING)
+
+### Overview
+This phase integrates Products into the CompetitorsManagement React Flow diagram when a SubstituteProduct is selected, replacing the current ValueProposition visualization.
+
+### Key Design Decisions Recap
+1. **Products shown in React Flow** (not ValuePropositions)
+2. **ValuePropositions moved to SubstituteProduct side sheet** (nested list)
+3. **Product nodes are read-only** with unlink functionality
+4. **Link dialog** allows selecting from existing products (no creation)
+5. **Edge direction**: `Product → SubstituteProduct` (matches `MAY_BE_SUBSTITUTED_FOR`)
+
+---
+
+## DETAILED IMPLEMENTATION GUIDE - PHASE 4
+
+### File: `frontend/src/components/competitors/CompetitorsManagement.tsx`
+
+---
+
+### Step 1: Add Missing Imports
+
+**Location**: Top of file (after line 88)
+
+**Add:**
+```typescript
+import {
+  useProducts,
+  // ... other existing imports from @/queries/products
+} from "@/queries/products";
+import {
+  useLinkProductToSubstitute,
+  useUnlinkProductFromSubstitute,
+  // ... other existing imports from @/queries/competitors
+} from "@/queries/competitors";
+import type { Product } from "@/services/productService";
+```
+
+**Check**: Verify these aren't already imported. The file already imports from these paths around lines 73-88.
+
+---
+
+### Step 2: Load Linked Products Data
+
+**Location**: After line 341 (after `const valuePropositions = ...`)
+
+**Add:**
+```typescript
+// Products linked to selected SubstituteProduct (for React Flow)
+const { data: linkedProductsData, isLoading: isLoadingLinkedProducts } =
+  useProducts(
+    mode === "substitute-products" && selectedChildId
+      ? selectedOrgAccount?.accountId || null
+      : null,
+    null, // No category filter
+    mode === "substitute-products" && selectedChildId
+      ? selectedChildId // SubstituteProduct node_id
+      : null,
+  );
+const linkedProducts = linkedProductsData?.products || [];
+
+// ALL products in account (for link dialog)
+const { data: allProductsData, isLoading: isLoadingAllProducts } =
+  useProducts(
+    selectedOrgAccount?.accountId || null,
+    null, // Will return empty - we need to modify this
+    null,
+  );
+```
+
+**Note**: The `useProducts` hook currently returns empty when both filters are null. We'll need to handle this by loading products differently for the link dialog. For now, we can work around this by loading products when the dialog opens.
+
+---
+
+### Step 3: Add Link/Unlink Mutation Hooks
+
+**Location**: After the products data (after Step 2)
+
+**Add:**
+```typescript
+// Link/Unlink mutations
+const linkProductMutation = useLinkProductToSubstitute();
+const unlinkProductMutation = useUnlinkProductFromSubstitute();
+```
+
+---
+
+### Step 4: Add State for Link Dialog
+
+**Location**: After line 346 (after VP form state)
+
+**Add:**
+```typescript
+// Link product dialog state
+const [isLinkProductDialogOpen, setIsLinkProductDialogOpen] = useState(false);
+const [selectedProductToLink, setSelectedProductToLink] = useState<Product | null>(null);
+const [linkDialogProducts, setLinkDialogProducts] = useState<Product[]>([]);
+const [isLoadingLinkDialogProducts, setIsLoadingLinkDialogProducts] = useState(false);
+```
+
+---
+
+### Step 5: Update `generateNodes()` Function
+
+**Location**: Lines 678-717 (the `substitute-products` branch)
+
+**Replace:**
+```typescript
+} else if (mode === "substitute-products") {
+  const substituteProduct = selectedChild as SubstituteProduct;
+
+  nodes.push({
+    id: substituteProduct.node_id,
+    type: "substituteProductNode",
+    position: {
+      x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+      y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+    },
+    data: {
+      label: substituteProduct.product_name,
+      isSelected: !selectedGrandchildId,
+      onAddValueProp: () => setIsCreateGrandchildModalOpen(true),
+    },
+  });
+
+  const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
+  const grandchildTotalWidth =
+    valuePropositions.length * grandchildWidth - gap;
+  const grandchildStartX =
+    DIAGRAM_LAYOUT.PARENT_NODE_X - grandchildTotalWidth / 2;
+
+  valuePropositions.forEach((vp, index) => {
+    nodes.push({
+      id: vp.node_id,
+      type: "opportunityNode", // Reuse opportunity node styling for now
+      position: {
+        x: grandchildStartX + index * grandchildWidth,
+        y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+      },
+      data: {
+        label: vp.display_name,
+        showHandle: false,
+        isSelected: selectedGrandchildId === vp.node_id,
+        onAddSubstitute: () => {},
+      },
+    });
+  });
+}
+```
+
+**With:**
+```typescript
+} else if (mode === "substitute-products") {
+  const substituteProduct = selectedChild as SubstituteProduct;
+
+  nodes.push({
+    id: substituteProduct.node_id,
+    type: "substituteProductNode",
+    position: {
+      x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+      y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+    },
+    data: {
+      label: substituteProduct.product_name,
+      isSelected: !selectedGrandchildId,
+      onAddProduct: () => handleOpenLinkDialog(), // NEW: Open link dialog
+    },
+  });
+
+  const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
+  const grandchildTotalWidth = linkedProducts.length * grandchildWidth - gap;
+  const grandchildStartX = DIAGRAM_LAYOUT.PARENT_NODE_X - grandchildTotalWidth / 2;
+
+  linkedProducts.forEach((product, index) => {
+    nodes.push({
+      id: product.node_id,
+      type: "ourProductNode", // NEW: Use product node type
+      position: {
+        x: grandchildStartX + index * grandchildWidth,
+        y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+      },
+      data: {
+        label: product.product_name,
+        showHandle: false,
+        isSelected: selectedGrandchildId === product.node_id,
+      },
+    });
+  });
+}
+```
+
+**Key Changes:**
+- Changed `onAddValueProp` to `onAddProduct` with new handler
+- Changed from `valuePropositions` to `linkedProducts`
+- Changed node type to `"ourProductNode"`
+- Changed label to `product.product_name`
+
+---
+
+### Step 6: Update `generateEdges()` Function
+
+**Location**: Lines 752-764 (the `substitute-products` branch)
+
+**Replace:**
+```typescript
+} else if (mode === "substitute-products" && selectedChildId) {
+  valuePropositions.forEach((vp) => {
+    edges.push({
+      id: `${selectedChildId}-${vp.node_id}`,
+      source: selectedChildId,
+      target: vp.node_id,
+      type: "smoothstep",
+      style: DEFAULT_EDGE_STYLE,
+      sourceHandle: "bottom",
+      targetHandle: "top",
+    });
+  });
+}
+```
+
+**With:**
+```typescript
+} else if (mode === "substitute-products" && selectedChildId) {
+  linkedProducts.forEach((product) => {
+    edges.push({
+      id: `${product.node_id}-${selectedChildId}`,
+      source: product.node_id,
+      target: selectedChildId,
+      type: "smoothstep",
+      style: DEFAULT_EDGE_STYLE,
+      sourceHandle: "bottom",
+      targetHandle: "top",
+    });
+  });
+}
+```
+
+**Key Changes:**
+- Changed from `valuePropositions` to `linkedProducts`
+- **Reversed edge direction**: `Product → SubstituteProduct` (source is now product)
+- Updated edge ID to match new direction
+
+---
+
+### Step 7: Update `handleNodeClick()` Function
+
+**Location**: After line 814 (inside handleNodeClick function)
+
+**Add (before the closing brace of handleNodeClick):**
+```typescript
+// Product nodes (in substitute-products mode)
+if (node.type === "ourProductNode" && mode === "substitute-products") {
+  const product = linkedProducts.find((p) => p.node_id === node.id);
+  if (product) {
+    setSelectedGrandchild(product as any); // Cast needed for type compatibility
+    setSelectedGrandchildId(product.node_id);
+    // Open side sheet to allow unlinking
+    setContextMenuType("grandchild");
+    setIsContextMenuOpen(true);
+  }
+  return;
+}
+
+// SubstituteProduct node (parent in diagram)
+if (node.type === "substituteProductNode" && mode === "substitute-products") {
+  // Open side sheet for substitute product (shows VPs)
+  if (selectedChild) {
+    const subProduct = selectedChild as SubstituteProduct;
+    setFormData({
+      display_name: subProduct.product_name,
+      description: subProduct.description,
+      product_name: subProduct.product_name,
+      product_detail_page: subProduct.product_detail_page || "",
+    } as any);
+    setContextMenuType("child");
+    setIsContextMenuOpen(true);
+  }
+  return;
+}
+```
+
+---
+
+### Step 8: Add Link Dialog Handler
+
+**Location**: After handleNodeClick function (around line 820)
+
+**Add:**
+```typescript
+// Handle opening link product dialog
+const handleOpenLinkDialog = async () => {
+  if (!selectedOrgAccount?.accountId) return;
+
+  setIsLinkProductDialogOpen(true);
+  setIsLoadingLinkDialogProducts(true);
+
+  try {
+    // Load ALL products in the account
+    // We need to call the service directly since useProducts requires a filter
+    const response = await productService.list(
+      selectedOrgAccount.accountId,
+      undefined, // No category filter
+      undefined, // No substitute filter
+      0,
+      1000
+    );
+
+    // Filter out already linked products
+    const linkedProductIds = new Set(linkedProducts.map(p => p.node_id));
+    const availableProducts = response.products.filter(
+      p => !linkedProductIds.has(p.node_id)
+    );
+
+    setLinkDialogProducts(availableProducts);
+  } catch (error) {
+    console.error("Failed to load products:", error);
+    toast({
+      title: "Error",
+      description: "Failed to load products",
+      variant: "destructive",
+    });
+  } finally {
+    setIsLoadingLinkDialogProducts(false);
+  }
+};
+
+// Handle linking product
+const handleLinkProduct = async () => {
+  if (!selectedOrgAccount?.accountId || !selectedChild || !selectedProductToLink) return;
+
+  try {
+    startOperation("Linking product...");
+
+    await linkProductMutation.mutateAsync({
+      accountId: selectedOrgAccount.accountId,
+      substituteProductId: selectedChild.node_id,
+      productNodeId: selectedProductToLink.node_id,
+    });
+
+    toast({
+      title: "Success",
+      description: "Product linked successfully",
+    });
+
+    setIsLinkProductDialogOpen(false);
+    setSelectedProductToLink(null);
+  } catch (error) {
+    console.error("Failed to link product:", error);
+    toast({
+      title: "Error",
+      description: "Failed to link product",
+      variant: "destructive",
+    });
+  } finally {
+    endOperation();
+  }
+};
+
+// Handle unlinking product
+const handleUnlinkProduct = async () => {
+  if (!selectedOrgAccount?.accountId || !selectedChild || !selectedGrandchild) return;
+
+  try {
+    startOperation("Unlinking product...");
+
+    await unlinkProductMutation.mutateAsync({
+      accountId: selectedOrgAccount.accountId,
+      substituteProductId: selectedChild.node_id,
+      productNodeId: selectedGrandchild.node_id,
+    });
+
+    toast({
+      title: "Success",
+      description: "Product unlinked successfully",
+    });
+
+    setIsContextMenuOpen(false);
+    setSelectedGrandchild(null);
+    setSelectedGrandchildId(null);
+  } catch (error) {
+    console.error("Failed to unlink product:", error);
+    toast({
+      title: "Error",
+      description: "Failed to unlink product",
+      variant: "destructive",
+    });
+  } finally {
+    endOperation();
+  }
+};
+```
+
+**Note**: You'll need to import `productService` at the top:
+```typescript
+import { productService } from "@/services/productService";
+```
+
+---
+
+### Step 9: Update useMemo Dependencies
+
+**Location**: Around line 1536-1544
+
+**Find:**
+```typescript
+const nodes = useMemo(
+  () => generateNodes(),
+  [
+    selectedChild,
+    mode,
+    risks,
+    opportunities,
+    valuePropositions,
+    selectedGrandchildId,
+  ],
+);
+```
+
+**Replace with:**
+```typescript
+const nodes = useMemo(
+  () => generateNodes(),
+  [
+    selectedChild,
+    mode,
+    risks,
+    opportunities,
+    linkedProducts, // CHANGED: from valuePropositions
+    selectedGrandchildId,
+  ],
+);
+```
+
+**And find:**
+```typescript
+const edges = useMemo(
+  () => generateEdges(),
+  [selectedChild, selectedChildId, mode, risks, opportunities, valuePropositions],
+);
+```
+
+**Replace with:**
+```typescript
+const edges = useMemo(
+  () => generateEdges(),
+  [selectedChild, selectedChildId, mode, risks, opportunities, linkedProducts], // CHANGED
+);
+```
+
+---
+
+### Step 10: Add Link Product Dialog Component
+
+**Location**: In the JSX return section, after the existing modals (search for "Delete Grandchild Dialog" around line 2400+)
+
+**Add:**
+```tsx
+{/* Link Product Dialog */}
+<Dialog open={isLinkProductDialogOpen} onOpenChange={setIsLinkProductDialogOpen}>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle>Link Product to Substitute</DialogTitle>
+      <DialogDescription>
+        Select which of your products may be substituted by this competitor's offering.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-4">
+      {isLoadingLinkDialogProducts ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : linkDialogProducts.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4 text-center">
+          No available products to link. All products are already linked or you have no products yet.
+        </p>
+      ) : (
+        <>
+          <Label>Select Product</Label>
+          <select
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={selectedProductToLink?.node_id || ""}
+            onChange={(e) => {
+              const product = linkDialogProducts.find(p => p.node_id === e.target.value);
+              setSelectedProductToLink(product || null);
+            }}
+          >
+            <option value="">-- Select Product --</option>
+            {linkDialogProducts.map(product => (
+              <option key={product.node_id} value={product.node_id}>
+                {product.product_name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </div>
+
+    <DialogFooter>
+      <Button
+        variant="outline"
+        onClick={() => {
+          setIsLinkProductDialogOpen(false);
+          setSelectedProductToLink(null);
+        }}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={handleLinkProduct}
+        disabled={!selectedProductToLink || linkProductMutation.isPending}
+      >
+        {linkProductMutation.isPending ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Linking...
+          </>
+        ) : (
+          "Link Product"
+        )}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+---
+
+### Step 11: Update Product (Grandchild) Side Sheet for Substitute Mode
+
+**Location**: Find the grandchild side sheet section (search for `contextMenuType === "grandchild"` around line 2200+)
+
+**Find the section that handles grandchild side sheet and add a conditional for substitute-products mode:**
+
+```tsx
+{/* Grandchild Side Sheet - Products in Substitute Mode */}
+{contextMenuType === "grandchild" && mode === "substitute-products" && (
+  <KnowledgeGraphSideSheet
+    open={isContextMenuOpen && contextMenuType === "grandchild"}
+    onOpenChange={setIsContextMenuOpen}
+    title={(selectedGrandchild as Product)?.product_name || "Product"}
+    icon={Package}
+    isEditing={false}
+    hasEditAccess={hasEditAccess}
+    onDelete={handleUnlinkProduct}
+    deleteButtonLabel="Unlink"
+  >
+    <div className="space-y-4">
+      <div>
+        <Label>Product Name</Label>
+        <p className="text-sm text-muted-foreground mt-1">
+          {(selectedGrandchild as Product)?.product_name}
+        </p>
+      </div>
+      <div>
+        <Label>Description</Label>
+        <p className="text-sm text-muted-foreground mt-1">
+          {(selectedGrandchild as Product)?.description}
+        </p>
+      </div>
+      {(selectedGrandchild as Product)?.product_detail_page && (
+        <div>
+          <Label>Product Page</Label>
+          <a
+            href={(selectedGrandchild as Product).product_detail_page}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-600 hover:underline mt-1 block"
+          >
+            {(selectedGrandchild as Product).product_detail_page}
+          </a>
+        </div>
+      )}
+      <div className="rounded-md bg-muted p-3 mt-4">
+        <p className="text-xs text-muted-foreground">
+          This product may be substituted by the selected competitor offering.
+          Click "Unlink" to remove this relationship.
+        </p>
+      </div>
+    </div>
+  </KnowledgeGraphSideSheet>
+)}
+```
+
+---
+
+### Step 12: Add ValuePropositions to SubstituteProduct Side Sheet
+
+**Location**: Find the SubstituteProduct (child) side sheet (search for `mode === "substitute-products" && contextMenuType === "child"`)
+
+**After the existing form fields in the side sheet, add:**
+
+```tsx
+{/* Value Propositions Nested List */}
+{contextMenuType === "child" && mode === "substitute-products" && !isEditing && (
+  <div className="mt-6 pt-6 border-t">
+    <SideSheetNestedList
+      title="Value Propositions"
+      tooltip="Reasons why customers might choose this substitute product over your offerings."
+      items={valuePropositions}
+      isLoading={isLoadingVPs}
+      onAdd={() => setIsCreateVPModalOpen(true)}
+      onEdit={(vp) => {
+        setSelectedValueProposition(vp);
+        setValuePropositionFormData({
+          display_name: vp.display_name,
+          description: vp.description,
+          parent_node_id: selectedChildId || "",
+        });
+        setIsEditVPModalOpen(true);
+      }}
+      onDelete={(vp) => {
+        setSelectedValueProposition(vp);
+        setIsDeleteVPDialogOpen(true);
+      }}
+      hasEditAccess={hasEditAccess}
+      isEditingParent={isEditing}
+    />
+  </div>
+)}
+```
+
+**Note**: Check if `SideSheetNestedList` component exists. If not, you may need to create it or use an alternative pattern. Look at the products page for reference.
+
+---
+
+### Step 13: Update grandchildrenLabel Logic
+
+**Location**: Search for `grandchildrenLabel` (around line 1500+)
+
+**Find:**
+```typescript
+const grandchildrenLabel =
+  mode === "strengths"
+    ? "Risks"
+    : mode === "weaknesses"
+      ? "Opportunities"
+      : "Value Propositions";
+```
+
+**Replace with:**
+```typescript
+const grandchildrenLabel =
+  mode === "strengths"
+    ? "Risks"
+    : mode === "weaknesses"
+      ? "Opportunities"
+      : "Products"; // CHANGED: from "Value Propositions"
+```
+
+---
+
+## TESTING CHECKLIST
+
+After implementing all changes:
+
+### Backend Tests
+- [ ] Test `GET /products?substitute_product_node_id=...` returns correct products
+- [ ] Test filtering by both category and substitute returns 400 error
+- [ ] Test `POST /substitute-products/{id}/link-product` creates relationship
+- [ ] Test `DELETE /substitute-products/{id}/unlink-product/{product_id}` removes relationship
+- [ ] Test linking same product twice is idempotent (no duplicate relationships)
+
+### Frontend Tests (Manual)
+- [ ] Select a SubstituteProduct - should show Product nodes in React Flow (not VPs)
+- [ ] Click SubstituteProduct node - should open side sheet with Value Propositions nested list
+- [ ] Click Product node - should open side sheet with unlink option
+- [ ] Click "+" on SubstituteProduct node - should open link dialog
+- [ ] Link dialog shows all available products (excluding already linked)
+- [ ] Link dialog shows "No available products" when all are linked
+- [ ] Linking a product adds node to React Flow immediately
+- [ ] Unlinking a product removes node from React Flow immediately
+- [ ] Value Propositions CRUD works in SubstituteProduct side sheet
+- [ ] Edge direction is correct: Product → SubstituteProduct
+- [ ] React Flow title shows "Products" (not "Value Propositions")
+- [ ] Product node styling matches existing OurProductNode component
+
+### Integration Tests
+- [ ] Create SubstituteProduct → Link Product → Verify in database
+- [ ] Link multiple products to same substitute
+- [ ] Unlink product → Verify relationship removed in database
+- [ ] Switch between competitors → Correct products shown
+- [ ] Switch between substitute products → Correct products shown
+
+---
+
+## KNOWN ISSUES & WORKAROUNDS
+
+### Issue 1: useProducts Hook Returns Empty Without Filters
+
+**Problem**: The current `useProducts` hook returns empty when both `categoryId` and `substituteProductId` are null.
+
+**Workaround**: In `handleOpenLinkDialog`, we call `productService.list()` directly instead of using the hook.
+
+**Future Fix**: Consider adding an `allProducts` mode to the hook or creating a separate `useAllProducts` hook.
+
+### Issue 2: Type Compatibility for selectedGrandchild
+
+**Problem**: `selectedGrandchild` is typed as `Risk | Opportunity | null` but we're using `Product` in substitute mode.
+
+**Workaround**: Use type casting `(selectedGrandchild as Product)` when in substitute mode.
+
+**Future Fix**: Update the type definition to include `Product`:
+```typescript
+const [selectedGrandchild, setSelectedGrandchild] =
+  useState<Risk | Opportunity | Product | null>(null);
+```
+
+### Issue 3: OurProductNode Component
+
+**Assumption**: The implementation assumes an `ourProductNode` node type exists in `CompetitorFlowNodes.tsx`.
+
+**Verification Needed**: Check if this component exists. If not, you may need to:
+1. Create the component, OR
+2. Reuse an existing node component (e.g., `opportunityNode` with different styling)
+
+---
+
+## FILE CHANGE SUMMARY
+
+### Modified Files
+1. `frontend/src/components/competitors/CompetitorsManagement.tsx` (Major changes)
+   - Add imports
+   - Add state for linked products and link dialog
+   - Update `generateNodes()` function
+   - Update `generateEdges()` function
+   - Update `handleNodeClick()` function
+   - Add link/unlink handlers
+   - Add link dialog component
+   - Update Product side sheet
+   - Add VP nested list to SubstituteProduct side sheet
+   - Update useMemo dependencies
+   - Update grandchildrenLabel
+
+### Estimated Lines Changed
+- ~200-300 lines added/modified in CompetitorsManagement.tsx
+
+---
+
+## NEXT SESSION PREP
+
+Before starting Session 2:
+1. Review this implementation plan thoroughly
+2. Ensure backend changes from Session 1 are deployed/tested
+3. Have the CompetitorsManagement.tsx file open
+4. Consider running type checking after each major step
+5. Test incrementally - don't wait until all changes are done
+
+**Recommended Approach**: Implement steps 1-7 first (data + React Flow), test, then add steps 8-13 (dialogs + side sheets).
+
+---
+
+## Ready for Session 2
+
+All Session 1 work complete. Phase 4 implementation guide ready for next session.

@@ -460,3 +460,59 @@ export function useDeleteSubstituteProduct() {
     },
   });
 }
+
+// ==================== PRODUCT-SUBSTITUTE RELATIONSHIP MUTATIONS ====================
+
+export function useLinkProductToSubstitute() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      accountId,
+      substituteProductId,
+      productNodeId,
+    }: {
+      accountId: string;
+      substituteProductId: string;
+      productNodeId: string;
+    }) =>
+      substituteProductService.linkProduct(
+        accountId,
+        substituteProductId,
+        productNodeId,
+      ),
+    onSuccess: (_, variables) => {
+      // Invalidate products list for this substitute
+      queryClient.invalidateQueries({
+        queryKey: ["products", "list", variables.accountId],
+      });
+    },
+  });
+}
+
+export function useUnlinkProductFromSubstitute() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      accountId,
+      substituteProductId,
+      productNodeId,
+    }: {
+      accountId: string;
+      substituteProductId: string;
+      productNodeId: string;
+    }) =>
+      substituteProductService.unlinkProduct(
+        accountId,
+        substituteProductId,
+        productNodeId,
+      ),
+    onSuccess: (_, variables) => {
+      // Invalidate products list for this substitute
+      queryClient.invalidateQueries({
+        queryKey: ["products", "list", variables.accountId],
+      });
+    },
+  });
+}

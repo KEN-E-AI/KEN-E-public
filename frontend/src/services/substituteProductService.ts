@@ -78,6 +78,27 @@ class SubstituteProductService {
       `/api/v1/knowledge-graph/${accountId}/substitute-products/${nodeId}`,
     );
   }
+
+  async linkProduct(
+    accountId: AccountId,
+    substituteProductId: string,
+    productNodeId: string,
+  ): Promise<void> {
+    await api.post(
+      `/api/v1/knowledge-graph/${accountId}/substitute-products/${substituteProductId}/link-product`,
+      { product_node_id: productNodeId },
+    );
+  }
+
+  async unlinkProduct(
+    accountId: AccountId,
+    substituteProductId: string,
+    productNodeId: string,
+  ): Promise<void> {
+    await api.delete(
+      `/api/v1/knowledge-graph/${accountId}/substitute-products/${substituteProductId}/unlink-product/${productNodeId}`,
+    );
+  }
 }
 
 export const substituteProductService = new SubstituteProductService();
