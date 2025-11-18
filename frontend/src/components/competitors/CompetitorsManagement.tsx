@@ -185,6 +185,20 @@ export const CompetitorsManagement = ({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Child node state (strength, weakness, or substitute product) - MUST be before queries
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [selectedChild, setSelectedChild] = useState<
+    CompetitorStrength | CompetitorWeakness | SubstituteProduct | null
+  >(null);
+
+  // Grandchild state (risk or opportunity)
+  const [selectedGrandchildId, setSelectedGrandchildId] = useState<
+    string | null
+  >(null);
+  const [selectedGrandchild, setSelectedGrandchild] = useState<
+    Risk | Opportunity | null
+  >(null);
+
   // Fetch children based on mode and selected competitor
   const { data: strengthsData, isLoading: isLoadingStrengths } =
     useCompetitorStrengths(
@@ -241,20 +255,6 @@ export const CompetitorsManagement = ({
         : null,
     );
   const opportunities = opportunitiesData?.opportunities || [];
-
-  // Child node state (strength, weakness, or substitute product)
-  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  const [selectedChild, setSelectedChild] = useState<
-    CompetitorStrength | CompetitorWeakness | SubstituteProduct | null
-  >(null);
-
-  // Grandchild state (risk or opportunity)
-  const [selectedGrandchildId, setSelectedGrandchildId] = useState<
-    string | null
-  >(null);
-  const [selectedGrandchild, setSelectedGrandchild] = useState<
-    Risk | Opportunity | null
-  >(null);
 
   // Context menu state
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
