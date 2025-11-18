@@ -1762,7 +1762,7 @@ export const CompetitorsManagement = ({
 
               {/* React Flow section (only if child selected and not substitutes mode) */}
               {selectedChildId && mode !== "substitute-products" && (
-                <div className="mt-6">
+                <div className="mt-6 rounded-lg border bg-card shadow-sm p-6">
                   <div className="flex items-center gap-2 mb-4">
                     {mode === "strengths" ? (
                       <ShieldAlert className="h-5 w-5" />
