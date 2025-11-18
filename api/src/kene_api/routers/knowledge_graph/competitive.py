@@ -176,6 +176,7 @@ async def create_competitor_tactic(
 )
 async def list_competitor_tactics(
     account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -183,17 +184,53 @@ async def list_competitor_tactics(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorTacticListResponse:
-    """List all competitor tactics with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="CompetitorTactic",
-        response_model_class=CompetitorTacticResponse,
-        list_response_class=CompetitorTacticListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all competitor tactics with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        # Get total count
+        total_count = await service.count_nodes(
+            account_id,
+            "CompetitorTactic",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        # Get paginated results
+        tactics_data = await service.list_nodes(
+            account_id,
+            "CompetitorTactic",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        # Map parent_node_id to competitor_node_id for response model
+        tactics = [
+            CompetitorTacticResponse(
+                **{
+                    **t,
+                    "competitor_node_id": t.get("parent_node_id", ""),
+                }
+            )
+            for t in tactics_data
+        ]
+
+        return CompetitorTacticListResponse(tactics=tactics, total_count=total_count)
+    except Exception as e:
+        logger.exception(f"Failed to list competitor tactics: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list competitor tactics",
+        ) from e
 
 
 @router.get(
@@ -206,11 +243,22 @@ async def get_competitor_tactic(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorTacticResponse:
-    """Get a specific competitor tactic by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific competitor tactic by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:USES_TACTIC]->(t:CompetitorTactic {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="CompetitorTactic",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=CompetitorTacticResponse,
         service=service,
         user=user,
     )
@@ -290,6 +338,7 @@ async def create_competitor_strength(
 )
 async def list_competitor_strengths(
     account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -297,17 +346,52 @@ async def list_competitor_strengths(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorStrengthListResponse:
-    """List all competitor strengths with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="CompetitorStrength",
-        response_model_class=CompetitorStrengthResponse,
-        list_response_class=CompetitorStrengthListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all competitor strengths with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(
+            account_id,
+            "CompetitorStrength",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        strengths_data = await service.list_nodes(
+            account_id,
+            "CompetitorStrength",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        strengths = [
+            CompetitorStrengthResponse(
+                **{
+                    **s,
+                    "competitor_node_id": s.get("parent_node_id", ""),
+                }
+            )
+            for s in strengths_data
+        ]
+
+        return CompetitorStrengthListResponse(
+            strengths=strengths, total_count=total_count
+        )
+    except Exception as e:
+        logger.exception(f"Failed to list competitor strengths: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list competitor strengths",
+        ) from e
 
 
 @router.get(
@@ -320,11 +404,22 @@ async def get_competitor_strength(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorStrengthResponse:
-    """Get a specific competitor strength by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific competitor strength by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:HAS_STRENGTH]->(s:CompetitorStrength {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="CompetitorStrength",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=CompetitorStrengthResponse,
         service=service,
         user=user,
     )
@@ -404,6 +499,7 @@ async def create_competitor_weakness(
 )
 async def list_competitor_weaknesses(
     account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -411,17 +507,52 @@ async def list_competitor_weaknesses(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorWeaknessListResponse:
-    """List all competitor weaknesses with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="CompetitorWeakness",
-        response_model_class=CompetitorWeaknessResponse,
-        list_response_class=CompetitorWeaknessListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all competitor weaknesses with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(
+            account_id,
+            "CompetitorWeakness",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        weaknesses_data = await service.list_nodes(
+            account_id,
+            "CompetitorWeakness",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        weaknesses = [
+            CompetitorWeaknessResponse(
+                **{
+                    **w,
+                    "competitor_node_id": w.get("parent_node_id", ""),
+                }
+            )
+            for w in weaknesses_data
+        ]
+
+        return CompetitorWeaknessListResponse(
+            weaknesses=weaknesses, total_count=total_count
+        )
+    except Exception as e:
+        logger.exception(f"Failed to list competitor weaknesses: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list competitor weaknesses",
+        ) from e
 
 
 @router.get(
@@ -434,11 +565,22 @@ async def get_competitor_weakness(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorWeaknessResponse:
-    """Get a specific competitor weakness by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific competitor weakness by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:HAS_WEAKNESS]->(w:CompetitorWeakness {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="CompetitorWeakness",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=CompetitorWeaknessResponse,
         service=service,
         user=user,
     )
@@ -518,6 +660,7 @@ async def create_substitute_product(
 )
 async def list_substitute_products(
     account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -525,17 +668,50 @@ async def list_substitute_products(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> SubstituteProductListResponse:
-    """List all substitute products with optional pagination."""
-    return await CRUDEndpoints.list_nodes(
-        account_id=account_id,
-        node_type="SubstituteProduct",
-        response_model_class=SubstituteProductResponse,
-        list_response_class=SubstituteProductListResponse,
-        skip=skip,
-        limit=limit,
-        service=service,
-        user=user,
-    )
+    """List all substitute products with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(
+            account_id,
+            "SubstituteProduct",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        products_data = await service.list_nodes(
+            account_id,
+            "SubstituteProduct",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        products = [
+            SubstituteProductResponse(
+                **{
+                    **p,
+                    "competitor_node_id": p.get("parent_node_id", ""),
+                }
+            )
+            for p in products_data
+        ]
+
+        return SubstituteProductListResponse(products=products, total_count=total_count)
+    except Exception as e:
+        logger.exception(f"Failed to list substitute products: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list substitute products",
+        ) from e
 
 
 @router.get(
@@ -548,11 +724,22 @@ async def get_substitute_product(
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> SubstituteProductResponse:
-    """Get a specific substitute product by node_id."""
-    return await CRUDEndpoints.get_node(
+    """Get a specific substitute product by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:OFFERS_PRODUCT]->(p:SubstituteProduct {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
         account_id=account_id,
         node_id=node_id,
         node_type="SubstituteProduct",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=SubstituteProductResponse,
         service=service,
         user=user,
     )
