@@ -1,10 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { ReactFlow, Controls, Background } from "reactflow";
 import type { Node, Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import {
   Plus,
   Trash2,
   Users,
+  ChevronLeft,
+  ChevronRight,
   Pencil,
   ThumbsUp,
   ThumbsDown,
@@ -13,6 +16,7 @@ import {
   Info,
   ShieldAlert,
   Star,
+  Megaphone,
   Dumbbell,
   Unlink,
 } from "lucide-react";
@@ -97,7 +101,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -116,26 +120,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
-
-// Import knowledge graph components
-import {
-  ModeSelector,
-  KnowledgeGraphCard,
-  HorizontalScrollList,
-  HorizontalScrollItem,
-  GraphVisualization,
-  GraphVisualizationCard,
-  KnowledgeGraphSideSheet,
-  SideSheetNestedList,
-  BorderedSection,
-  SectionHeader,
-  DIAGRAM_LAYOUT,
-  DEFAULT_EDGE_STYLE,
-  CARD_HEIGHTS,
-} from "@/components/knowledge-graph";
-import type { ModeConfig } from "@/components/knowledge-graph";
 
 type CompetitorMode = "strengths" | "weaknesses" | "substitute-products";
 
@@ -149,12 +147,6 @@ interface FormDataState {
   product_name?: string;
   product_detail_page?: string;
 }
-
-const COMPETITOR_MODES: readonly ModeConfig<CompetitorMode>[] = [
-  { value: "strengths", label: "Strengths" },
-  { value: "weaknesses", label: "Weaknesses" },
-  { value: "substitute-products", label: "Substitutes" },
-] as const;
 
 export const CompetitorsManagement = ({
   hasEditAccess,
@@ -190,7 +182,10 @@ export const CompetitorsManagement = ({
       references: [],
     });
 
-  // Scroll state - now handled by HorizontalScrollList component
+  // Scroll state
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Child node state (strength, weakness, or substitute product) - MUST be before queries
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
@@ -383,6 +378,32 @@ export const CompetitorsManagement = ({
   const updateVPMutation = useUpdateValueProposition();
   const deleteVPMutation = useDeleteValueProposition();
 
+  // Scroll position check
+  const checkScrollPosition = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    setCanScrollLeft(container.scrollLeft > 0);
+    setCanScrollRight(
+      container.scrollLeft < container.scrollWidth - container.clientWidth - 1,
+    );
+  };
+
+  const scrollLeft = () => {
+    scrollContainerRef.current?.scrollBy({ left: -300, behavior: "smooth" });
+  };
+
+  const scrollRight = () => {
+    scrollContainerRef.current?.scrollBy({ left: 300, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    checkScrollPosition();
+    const handleResize = () => checkScrollPosition();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [competitors]);
+
   // Mode switch handler
   const handleModeSwitch = (newMode: CompetitorMode) => {
     if (isEditing) {
@@ -573,7 +594,7 @@ export const CompetitorsManagement = ({
     }
   };
 
-  // React Flow node types
+  // React Flow node types (no competitor node, only child → grandchild)
   const nodeTypes = useMemo(() => {
     if (mode === "strengths") {
       return {
@@ -585,8 +606,10 @@ export const CompetitorsManagement = ({
         competitorWeaknessNode: CompetitorWeaknessNode,
         opportunityNode: OpportunityNode,
       };
+    } else {
+      // Should not be used since substitute-products doesn't show React Flow
+      return {};
     }
-    return {};
   }, [mode]);
 
   // Generate nodes for React Flow (only 2 levels: child → grandchildren)
@@ -594,18 +617,17 @@ export const CompetitorsManagement = ({
     if (!selectedChild) return [];
 
     const nodes: Node[] = [];
-    const gap = DIAGRAM_LAYOUT.HORIZONTAL_GAP;
+    const gap = 36;
 
+    // Only show child → grandchildren (not competitor)
     if (mode === "strengths") {
       const strength = selectedChild as CompetitorStrength;
 
+      // Child Node (strength) - top center
       nodes.push({
         id: strength.node_id,
         type: "competitorStrengthNode",
-        position: {
-          x: DIAGRAM_LAYOUT.PARENT_NODE_X,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
-        },
+        position: { x: 300, y: 50 },
         data: {
           label: strength.display_name,
           isSelected: !selectedGrandchildId,
@@ -613,18 +635,20 @@ export const CompetitorsManagement = ({
         },
       });
 
-      const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
-      const grandchildTotalWidth = risks.length * grandchildWidth - gap;
-      const grandchildStartX =
-        DIAGRAM_LAYOUT.PARENT_NODE_X - grandchildTotalWidth / 2;
+      // Grandchild nodes (risks) - second row
+      const grandchildren = risks;
+      const grandchildWidth = 224;
+      const grandchildTotalWidth =
+        grandchildren.length * (grandchildWidth + gap) - gap;
+      const grandchildStartX = 300 - grandchildTotalWidth / 2;
 
-      risks.forEach((risk, index) => {
+      grandchildren.forEach((risk, index) => {
         nodes.push({
           id: risk.node_id,
           type: "riskNode",
           position: {
-            x: grandchildStartX + index * grandchildWidth,
-            y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+            x: grandchildStartX + index * (grandchildWidth + gap),
+            y: 224,
           },
           data: {
             label: risk.display_name,
@@ -637,13 +661,11 @@ export const CompetitorsManagement = ({
     } else if (mode === "weaknesses") {
       const weakness = selectedChild as CompetitorWeakness;
 
+      // Child Node (weakness) - top center
       nodes.push({
         id: weakness.node_id,
         type: "competitorWeaknessNode",
-        position: {
-          x: DIAGRAM_LAYOUT.PARENT_NODE_X,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
-        },
+        position: { x: 300, y: 50 },
         data: {
           label: weakness.display_name,
           isSelected: !selectedGrandchildId,
@@ -651,18 +673,20 @@ export const CompetitorsManagement = ({
         },
       });
 
-      const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
-      const grandchildTotalWidth = opportunities.length * grandchildWidth - gap;
-      const grandchildStartX =
-        DIAGRAM_LAYOUT.PARENT_NODE_X - grandchildTotalWidth / 2;
+      // Grandchild nodes (opportunities) - second row
+      const grandchildren = opportunities;
+      const grandchildWidth = 224;
+      const grandchildTotalWidth =
+        grandchildren.length * (grandchildWidth + gap) - gap;
+      const grandchildStartX = 300 - grandchildTotalWidth / 2;
 
-      opportunities.forEach((opportunity, index) => {
+      grandchildren.forEach((opportunity, index) => {
         nodes.push({
           id: opportunity.node_id,
           type: "opportunityNode",
           position: {
-            x: grandchildStartX + index * grandchildWidth,
-            y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+            x: grandchildStartX + index * (grandchildWidth + gap),
+            y: 224,
           },
           data: {
             label: opportunity.display_name,
@@ -683,6 +707,7 @@ export const CompetitorsManagement = ({
 
     const edges: Edge[] = [];
 
+    // Edges from child to grandchildren only
     if (mode === "strengths" && selectedChildId) {
       risks.forEach((risk) => {
         edges.push({
@@ -690,7 +715,10 @@ export const CompetitorsManagement = ({
           source: selectedChildId,
           target: risk.node_id,
           type: "smoothstep",
-          style: DEFAULT_EDGE_STYLE,
+          style: {
+            stroke: "#000",
+            strokeWidth: 2,
+          },
           sourceHandle: "bottom",
           targetHandle: "top",
         });
@@ -702,7 +730,10 @@ export const CompetitorsManagement = ({
           source: selectedChildId,
           target: opportunity.node_id,
           type: "smoothstep",
-          style: DEFAULT_EDGE_STYLE,
+          style: {
+            stroke: "#000",
+            strokeWidth: 2,
+          },
           sourceHandle: "bottom",
           targetHandle: "top",
         });
@@ -1018,7 +1049,6 @@ export const CompetitorsManagement = ({
       setIsCreateGrandchildModalOpen(false);
 
       if (mode === "strengths") {
-        // Competitor strength creates risk (linked to the competitor strength)
         await createRiskMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           risk: {
@@ -1027,14 +1057,11 @@ export const CompetitorsManagement = ({
           } as RiskCreate,
         });
       } else {
-        // KNOWN ISSUE: Creating opportunities from competitor weaknesses
-        // The API expects strength_node_id (OUR strengths), but we're passing
-        // a CompetitorWeakness node_id. This needs backend API support.
         await createOpportunityMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           opportunity: {
             ...grandchildFormData,
-            strength_node_id: selectedChild.node_id, // BUG: This is a CompetitorWeakness, not a Strength
+            strength_node_id: selectedChild.node_id,
           } as OpportunityCreate,
         });
       }
@@ -1467,177 +1494,330 @@ export const CompetitorsManagement = ({
 
   const ChildIcon = getChildIcon();
 
-  const nodes = useMemo(
-    () => generateNodes(),
-    [selectedChild, mode, risks, opportunities, selectedGrandchildId],
-  );
-  const edges = useMemo(
-    () => generateEdges(),
-    [selectedChild, selectedChildId, mode, risks, opportunities],
-  );
-
   return (
     <>
       {/* Competitors Card */}
-      <KnowledgeGraphCard
-        title="Competitors"
-        icon={Users}
-        tooltip="Identify key competitors who offer products or services that could be viewed as substitutes by your target customers."
-        actions={
-          hasEditAccess ? (
-            <Button
-              onClick={() => setIsCreateCompetitorModalOpen(true)}
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 p-0"
-            >
-              <Plus className="h-5 w-5" />
-            </Button>
-          ) : undefined
-        }
-      >
-        <HorizontalScrollList
-          items={competitors}
-          selectedId={selectedCompetitorId}
-          onItemClick={handleCompetitorClick}
-          isLoading={isLoadingCompetitors}
-          emptyMessage="No competitors found."
-          emptyMessageWithAction="Click '+' to add one."
-          hasEditAccess={hasEditAccess}
-          renderItem={(competitor, isSelected) => (
-            <HorizontalScrollItem
-              label={competitor.display_name}
-              sublabel="Competitor"
-              icon={Users}
-              bgColor="bg-brand-light-blue bg-opacity-30"
-              iconBgColor="bg-brand-light-blue"
-              isSelected={isSelected}
-              onClick={() => {}}
-            />
-          )}
-        />
-      </KnowledgeGraphCard>
-
-      {/* Mode Selector - Outside card, matches Account page pattern */}
-      <ModeSelector
-        modes={COMPETITOR_MODES}
-        value={mode}
-        onChange={handleModeSwitch}
-        className="mt-6 mb-6"
-      />
-
-      {/* Children Card (Strengths/Weaknesses/Substitutes) - Always rendered */}
-      {!selectedCompetitorId ? (
-        <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200 h-[600px] flex items-center justify-center">
-          <p className="text-dashboard-gray-500 text-center">
-            Select a competitor to view{" "}
-            {mode === "strengths"
-              ? "strengths"
-              : mode === "weaknesses"
-                ? "weaknesses"
-                : "substitute products"}
-            .
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* Children Section (Strengths/Weaknesses/Substitutes) */}
-          <KnowledgeGraphCard
-            title={childrenLabel}
-            icon={ChildIcon}
-            tooltip={
-              mode === "strengths"
-                ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
-                : mode === "weaknesses"
-                  ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
-                  : "Substitute products offered by this competitor that compete with your products or services."
-            }
-            actions={
-              hasEditAccess ? (
-                <Button
-                  onClick={() => setIsCreateChildModalOpen(true)}
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Competitors
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-dashboard-gray-400" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>
+                      Identify key competitors who offer products or services
+                      that could be viewed as substitutes by your target
+                      customers.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </CardTitle>
+            {hasEditAccess && (
+              <Button
+                onClick={() => setIsCreateCompetitorModalOpen(true)}
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingCompetitors ? (
+            <div className="text-center py-8 text-dashboard-gray-500">
+              Loading competitors...
+            </div>
+          ) : competitors.length === 0 ? (
+            <div className="text-center py-8 text-dashboard-gray-500">
+              No competitors found.
+              {hasEditAccess && " Click '+' to add one."}
+            </div>
+          ) : (
+            <div className="relative">
+              {canScrollLeft && (
+                <button
+                  className="absolute left-0 top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity"
+                  onClick={scrollLeft}
                 >
-                  <Plus className="h-5 w-5" />
-                </Button>
-              ) : undefined
-            }
-          >
-            <HorizontalScrollList
-              items={children}
-              selectedId={selectedChildId}
-              onItemClick={(child) => {
-                setSelectedChildId(child.node_id);
-                setSelectedChild(child);
-                setSelectedGrandchildId(null);
-                setSelectedGrandchild(null);
+                  <ChevronLeft className="h-6 w-6 text-white" />
+                </button>
+              )}
 
-                if (mode === "substitute-products") {
-                  const subProduct = child as SubstituteProduct;
-                  setFormData({
-                    display_name: "",
-                    description: subProduct.description,
-                    product_name: subProduct.product_name,
-                    product_detail_page: subProduct.product_detail_page || "",
-                  });
-                  setContextMenuType("child");
-                  setIsContextMenuOpen(true);
-                }
-              }}
-              isLoading={isLoadingChildren}
-              emptyMessage={`No ${childrenLabel.toLowerCase()} found.`}
-              emptyMessageWithAction="Click '+' to add one."
-              hasEditAccess={hasEditAccess}
-              renderItem={(child, isSelected) => {
-                const displayName =
-                  mode === "substitute-products"
-                    ? (child as SubstituteProduct).product_name
-                    : child.display_name;
+              <div
+                ref={scrollContainerRef}
+                className="flex gap-3 overflow-x-auto px-2 py-2"
+                onScroll={checkScrollPosition}
+              >
+                {competitors.map((competitor) => (
+                  <div
+                    key={competitor.node_id}
+                    className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
+                      selectedCompetitorId === competitor.node_id
+                        ? "ring-2 ring-brand-medium-blue"
+                        : "hover:ring-2 hover:ring-gray-300"
+                    }`}
+                    onClick={() => handleCompetitorClick(competitor)}
+                  >
+                    <div className="flex items-center">
+                      <div className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
+                        <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                          Competitor
+                        </p>
+                        <p className="font-semibold text-dashboard-gray-900 leading-tight">
+                          {competitor.display_name}
+                        </p>
+                      </div>
 
-                return (
-                  <HorizontalScrollItem
-                    label={displayName}
-                    sublabel={childLabel}
-                    icon={ChildIcon}
-                    bgColor={getChildBgColor()}
-                    iconBgColor={getChildIconBgColor()}
-                    isSelected={isSelected}
-                    onClick={() => {}}
-                  />
-                );
-              }}
-            />
-          </KnowledgeGraphCard>
+                      <div className="flex-shrink-0 -ml-12 relative z-10">
+                        <div
+                          className="rounded-full bg-brand-light-blue flex items-center justify-center"
+                          style={{ width: "72px", height: "72px" }}
+                        >
+                          <Users
+                            className="text-white"
+                            style={{ width: "48px", height: "48px" }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-          {/* React Flow Visualization - Separate card, only for strengths/weaknesses */}
-          {mode !== "substitute-products" && (
-            <div className="mt-6">
-              <GraphVisualizationCard
-                title={grandchildrenLabel}
-                icon={mode === "strengths" ? ShieldAlert : Star}
-                tooltip={
-                  mode === "strengths"
-                    ? "Risks created by this competitor strength."
-                    : "Opportunities created by this competitor weakness."
-                }
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                onNodeClick={handleNodeClick}
-                onNodeDoubleClick={handleNodeClick}
-                isLoading={
-                  isLoadingChildren ||
-                  (mode === "strengths" && isLoadingRisks) ||
-                  (mode === "weaknesses" && isLoadingOpportunities)
-                }
-                showEmpty={!selectedChildId}
-                emptyMessage={`Select a ${mode === "strengths" ? "strength" : "weakness"} to view ${grandchildrenLabel.toLowerCase()}.`}
-              />
+              {canScrollRight && (
+                <button
+                  className="absolute right-0 top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity"
+                  onClick={scrollRight}
+                >
+                  <ChevronRight className="h-6 w-6 text-white" />
+                </button>
+              )}
             </div>
           )}
-        </>
+        </CardContent>
+      </Card>
+
+      {/* Children Card (Strengths/Weaknesses/Substitutes) */}
+      {selectedCompetitorId && (
+        <div className="mt-6">
+          <Card className="h-[600px]">
+            {/* Mode Switcher - Left justified inside card, above header */}
+            <div className="flex p-6 pb-0">
+              <div className="inline-flex rounded-md border border-input bg-muted p-1 gap-1">
+                <Button
+                  variant={mode === "strengths" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => handleModeSwitch("strengths")}
+                  className="px-6"
+                >
+                  Strengths
+                </Button>
+                <Button
+                  variant={mode === "weaknesses" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => handleModeSwitch("weaknesses")}
+                  className="px-6"
+                >
+                  Weaknesses
+                </Button>
+                <Button
+                  variant={mode === "substitute-products" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => handleModeSwitch("substitute-products")}
+                  className="px-6"
+                >
+                  Substitutes
+                </Button>
+              </div>
+            </div>
+
+            <CardContent>
+              {/* Strengths/Weaknesses/Substitutes section with border */}
+              <div className="rounded-lg border bg-card shadow-sm p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center gap-2">
+                    <ChildIcon className="h-5 w-5" />
+                    <h3 className="text-lg font-semibold">{childrenLabel}</h3>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-dashboard-gray-400" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>
+                            {mode === "strengths"
+                              ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
+                              : mode === "weaknesses"
+                                ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
+                                : "Substitute products offered by this competitor that compete with your products or services."}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {hasEditAccess && (
+                    <Button
+                      onClick={() => setIsCreateChildModalOpen(true)}
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+                  )}
+                </div>
+
+                {/* Children horizontal scroll */}
+                {isLoadingChildren ? (
+                  <div className="text-center py-8 text-dashboard-gray-500">
+                    Loading {childrenLabel.toLowerCase()}...
+                  </div>
+                ) : children.length === 0 ? (
+                  <div className="text-center py-8 text-dashboard-gray-500">
+                    No {childrenLabel.toLowerCase()} found.
+                    {hasEditAccess && " Click '+' to add one."}
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="flex gap-3 overflow-x-auto px-2 py-2">
+                      {children.map((child) => {
+                        const isSelected = selectedChildId === child.node_id;
+                        const displayName =
+                          mode === "substitute-products"
+                            ? (child as SubstituteProduct).product_name
+                            : child.display_name;
+
+                        return (
+                          <div
+                            key={child.node_id}
+                            className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
+                              isSelected
+                                ? "ring-2 ring-brand-medium-blue"
+                                : "hover:ring-2 hover:ring-gray-300"
+                            }`}
+                            onClick={() => {
+                              setSelectedChildId(child.node_id);
+                              setSelectedChild(child);
+                              setSelectedGrandchildId(null);
+                              setSelectedGrandchild(null);
+
+                              // For substitute products (no React Flow), open side sheet directly
+                              // For strengths/weaknesses, side sheet opens when clicking React Flow nodes
+                              if (mode === "substitute-products") {
+                                const subProduct = child as SubstituteProduct;
+                                setFormData({
+                                  display_name: "",
+                                  description: subProduct.description,
+                                  product_name: subProduct.product_name,
+                                  product_detail_page:
+                                    subProduct.product_detail_page || "",
+                                });
+                                setContextMenuType("child");
+                                setIsContextMenuOpen(true);
+                              }
+                            }}
+                          >
+                            <div className="flex items-center">
+                              <div
+                                className={`${getChildBgColor()} rounded-lg pl-4 pr-16 py-2`}
+                              >
+                                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                                  {childLabel}
+                                </p>
+                                <p className="font-semibold text-dashboard-gray-900 leading-tight">
+                                  {displayName}
+                                </p>
+                              </div>
+
+                              <div className="flex-shrink-0 -ml-12 relative z-10">
+                                <div
+                                  className={`rounded-full ${getChildIconBgColor()} flex items-center justify-center`}
+                                  style={{ width: "72px", height: "72px" }}
+                                >
+                                  <ChildIcon
+                                    className="text-white"
+                                    style={{ width: "48px", height: "48px" }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* React Flow section (only if child selected and not substitutes mode) */}
+              {selectedChildId && mode !== "substitute-products" && (
+                <div className="mt-6 rounded-lg border bg-card shadow-sm p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    {mode === "strengths" ? (
+                      <ShieldAlert className="h-5 w-5" />
+                    ) : (
+                      <Star className="h-5 w-5" />
+                    )}
+                    <h3 className="text-lg font-semibold">
+                      {grandchildrenLabel}
+                    </h3>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-dashboard-gray-400" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>
+                            {mode === "strengths"
+                              ? "Risks created by this competitor strength."
+                              : "Opportunities created by this competitor weakness."}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="h-[520px]">
+                    {isLoadingChildren ||
+                    (mode === "strengths" && isLoadingRisks) ||
+                    (mode === "weaknesses" && isLoadingOpportunities) ? (
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                      </div>
+                    ) : (
+                      <ReactFlow
+                        nodes={generateNodes()}
+                        edges={generateEdges()}
+                        nodeTypes={nodeTypes}
+                        onNodeClick={handleNodeClick}
+                        onNodeDoubleClick={handleNodeClick}
+                        defaultViewport={{ x: 250, y: 50, zoom: 1 }}
+                        minZoom={0.5}
+                        maxZoom={1.5}
+                        nodesDraggable={false}
+                        nodesConnectable={false}
+                        elementsSelectable={true}
+                        panOnScroll={true}
+                        zoomOnScroll={false}
+                        proOptions={{ hideAttribution: true }}
+                      >
+                        <Background />
+                        <Controls />
+                      </ReactFlow>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Create Competitor Modal */}
@@ -2204,7 +2384,7 @@ export const CompetitorsManagement = ({
       </AlertDialog>
 
       {/* Context Menu Side Sheet */}
-      <KnowledgeGraphSideSheet
+      <Sheet
         open={isContextMenuOpen}
         modal={false}
         onOpenChange={(open) => {
@@ -2232,298 +2412,464 @@ export const CompetitorsManagement = ({
             setIsEditing(false);
           }
         }}
-        title={
-          contextMenuType === "competitor"
-            ? "Competitor"
-            : contextMenuType === "child"
-              ? childLabel
-              : grandchildLabel
-        }
-        icon={
-          contextMenuType === "competitor"
-            ? Users
-            : contextMenuType === "child"
-              ? mode === "strengths"
-                ? ThumbsUp
-                : mode === "weaknesses"
-                  ? ThumbsDown
-                  : Package
-              : mode === "strengths"
-                ? ShieldAlert
-                : Star
-        }
-        isEditing={isEditing}
-        onEdit={() => setIsEditing(true)}
-        onSave={
-          contextMenuType === "competitor"
-            ? handleUpdateCompetitor
-            : contextMenuType === "child"
-              ? handleUpdateChild
-              : handleUpdateGrandchild
-        }
-        onCancel={() => {
-          setIsEditing(false);
-          if (contextMenuType === "competitor" && selectedCompetitor) {
-            setFormData({
-              display_name: selectedCompetitor.display_name,
-              description: selectedCompetitor.description,
-            });
-          } else if (contextMenuType === "child" && selectedChild) {
-            if (mode === "substitute-products") {
-              const subProduct = selectedChild as SubstituteProduct;
-              setFormData({
-                display_name: "",
-                description: subProduct.description,
-                product_name: subProduct.product_name,
-                product_detail_page: subProduct.product_detail_page || "",
-              });
-            } else {
-              setFormData({
-                display_name: selectedChild.display_name,
-                description: selectedChild.description,
-              });
-            }
-          } else if (contextMenuType === "grandchild" && selectedGrandchild) {
-            setFormData({
-              display_name: selectedGrandchild.display_name,
-              description: selectedGrandchild.description,
-            });
-          }
-        }}
-        onDelete={() => {
-          setIsContextMenuOpen(false);
-          if (contextMenuType === "competitor") {
-            setIsDeleteCompetitorDialogOpen(true);
-          } else if (contextMenuType === "child") {
-            setIsDeleteChildDialogOpen(true);
-          } else {
-            setIsDeleteGrandchildDialogOpen(true);
-          }
-        }}
-        hasEditAccess={hasEditAccess}
-        preventClose={isEditing}
       >
-        {isEditing ? (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="context-edit-name">
-                {mode === "substitute-products" && contextMenuType === "child"
-                  ? "Product Name:"
-                  : "Name:"}
-              </Label>
-              <Input
-                id="context-edit-name"
-                value={
-                  mode === "substitute-products" && contextMenuType === "child"
-                    ? formData.product_name || ""
-                    : formData.display_name
-                }
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    ...(mode === "substitute-products" &&
+        <SheetContent side="right" className="w-[400px] flex flex-col">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              {contextMenuType === "competitor" ? (
+                <Users className="h-5 w-5" />
+              ) : contextMenuType === "child" ? (
+                mode === "strengths" ? (
+                  <ThumbsUp className="h-5 w-5" />
+                ) : mode === "weaknesses" ? (
+                  <ThumbsDown className="h-5 w-5" />
+                ) : (
+                  <Package className="h-5 w-5" />
+                )
+              ) : mode === "strengths" ? (
+                <ShieldAlert className="h-5 w-5" />
+              ) : (
+                <Star className="h-5 w-5" />
+              )}
+              {contextMenuType === "competitor"
+                ? "Competitor"
+                : contextMenuType === "child"
+                  ? childLabel
+                  : grandchildLabel}
+            </SheetTitle>
+          </SheetHeader>
+
+          <div className="flex-1 mt-6 overflow-y-auto">
+            {isEditing ? (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="context-edit-name">
+                    {mode === "substitute-products" &&
                     contextMenuType === "child"
-                      ? { product_name: e.target.value }
-                      : { display_name: e.target.value }),
-                  })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="context-edit-description">Description:</Label>
-              <Textarea
-                id="context-edit-description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    description: e.target.value,
-                  })
-                }
-                rows={4}
-              />
-            </div>
-            {mode === "substitute-products" && contextMenuType === "child" && (
-              <div>
-                <Label htmlFor="context-edit-product-page">
-                  Product Detail Page (Optional):
-                </Label>
-                <Input
-                  id="context-edit-product-page"
-                  type="url"
-                  value={formData.product_detail_page || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      product_detail_page: e.target.value,
-                    })
-                  }
-                  placeholder="https://..."
-                />
+                      ? "Product Name:"
+                      : "Name:"}
+                  </Label>
+                  <Input
+                    id="context-edit-name"
+                    value={
+                      mode === "substitute-products" &&
+                      contextMenuType === "child"
+                        ? formData.product_name || ""
+                        : formData.display_name
+                    }
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        ...(mode === "substitute-products" &&
+                        contextMenuType === "child"
+                          ? { product_name: e.target.value }
+                          : { display_name: e.target.value }),
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="context-edit-description">Description:</Label>
+                  <Textarea
+                    id="context-edit-description"
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        description: e.target.value,
+                      })
+                    }
+                    rows={4}
+                  />
+                </div>
+                {mode === "substitute-products" &&
+                  contextMenuType === "child" && (
+                    <div>
+                      <Label htmlFor="context-edit-product-page">
+                        Product Detail Page (Optional):
+                      </Label>
+                      <Input
+                        id="context-edit-product-page"
+                        type="url"
+                        value={formData.product_detail_page || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            product_detail_page: e.target.value,
+                          })
+                        }
+                        placeholder="https://..."
+                      />
+                    </div>
+                  )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <p className="font-semibold">
+                    {mode === "substitute-products" &&
+                    contextMenuType === "child"
+                      ? "Product Name:"
+                      : "Name:"}
+                  </p>
+                  <p>
+                    {contextMenuType === "competitor"
+                      ? selectedCompetitor?.display_name
+                      : contextMenuType === "child"
+                        ? mode === "substitute-products"
+                          ? (selectedChild as SubstituteProduct)?.product_name
+                          : selectedChild?.display_name
+                        : selectedGrandchild?.display_name}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-semibold">Description:</p>
+                  <p className="text-sm text-dashboard-gray-600">
+                    {contextMenuType === "competitor"
+                      ? selectedCompetitor?.description
+                      : contextMenuType === "child"
+                        ? selectedChild?.description
+                        : selectedGrandchild?.description}
+                  </p>
+                </div>
+                {mode === "substitute-products" &&
+                  contextMenuType === "child" &&
+                  (selectedChild as SubstituteProduct)?.product_detail_page && (
+                    <div>
+                      <p className="font-semibold">Product Detail Page:</p>
+                      <a
+                        href={
+                          (selectedChild as SubstituteProduct)
+                            .product_detail_page
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:text-blue-800 underline break-all"
+                      >
+                        {
+                          (selectedChild as SubstituteProduct)
+                            .product_detail_page
+                        }
+                      </a>
+                    </div>
+                  )}
               </div>
             )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <p className="font-semibold">
-                {mode === "substitute-products" && contextMenuType === "child"
-                  ? "Product Name:"
-                  : "Name:"}
-              </p>
-              <p>
-                {contextMenuType === "competitor"
-                  ? selectedCompetitor?.display_name
-                  : contextMenuType === "child"
-                    ? mode === "substitute-products"
-                      ? (selectedChild as SubstituteProduct)?.product_name
-                      : selectedChild?.display_name
-                    : selectedGrandchild?.display_name}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold">Description:</p>
-              <p className="text-sm text-dashboard-gray-600">
-                {contextMenuType === "competitor"
-                  ? selectedCompetitor?.description
-                  : contextMenuType === "child"
-                    ? selectedChild?.description
-                    : selectedGrandchild?.description}
-              </p>
-            </div>
+
+            {/* Tactics Section (for competitor context menu) */}
+            {contextMenuType === "competitor" && !isEditing && (
+              <div className="mt-6 pt-6 border-t">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold">Marketing Tactics</p>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-dashboard-gray-400" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-sm">
+                          <p>
+                            Specific tactics this competitor uses to bring
+                            products to market, such as social media campaigns,
+                            events, or advertising strategies.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {hasEditAccess && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setTacticFormData({
+                          display_name: "",
+                          description: "",
+                          competitor_node_id: selectedCompetitor?.node_id || "",
+                          references: [],
+                        });
+                        setIsCreateTacticModalOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add
+                    </Button>
+                  )}
+                </div>
+
+                {isLoadingTactics ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : tactics.length === 0 ? (
+                  <p className="text-sm text-dashboard-gray-500 italic">
+                    No tactics yet
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {tactics.map((tactic) => (
+                      <div
+                        key={tactic.node_id}
+                        className="p-3 rounded-md border border-dashboard-gray-200
+                                 bg-dashboard-gray-50 hover:bg-dashboard-gray-100
+                                 transition-colors"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">
+                              {tactic.display_name}
+                            </p>
+                            <p className="text-xs text-dashboard-gray-600 mt-1">
+                              {tactic.description}
+                            </p>
+                          </div>
+                          {hasEditAccess && (
+                            <div className="flex gap-1 ml-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedTactic(tactic);
+                                  setTacticFormData({
+                                    display_name: tactic.display_name,
+                                    description: tactic.description,
+                                    competitor_node_id:
+                                      selectedCompetitor?.node_id || "",
+                                    references: tactic.references || [],
+                                  });
+                                  setIsCreateTacticModalOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setSelectedTactic(tactic);
+                                  setIsDeleteTacticDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Value Propositions Section (for substitute products) */}
             {mode === "substitute-products" &&
               contextMenuType === "child" &&
-              (selectedChild as SubstituteProduct)?.product_detail_page && (
-                <div>
-                  <p className="font-semibold">Product Detail Page:</p>
-                  <a
-                    href={
-                      (selectedChild as SubstituteProduct).product_detail_page
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-800 underline break-all"
-                  >
-                    {(selectedChild as SubstituteProduct).product_detail_page}
-                  </a>
+              !isEditing && (
+                <div className="mt-6 pt-6 border-t">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold">Value Propositions</p>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-dashboard-gray-400" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-sm">
+                            <p>
+                              Key reasons why customers might choose this
+                              substitute product over your offerings.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    {hasEditAccess && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setValuePropositionFormData({
+                            display_name: "",
+                            description: "",
+                            parent_node_id: selectedChild?.node_id || "",
+                            parent_node_type: "SubstituteProduct",
+                            references: [],
+                          });
+                          setIsCreateVPModalOpen(true);
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </Button>
+                    )}
+                  </div>
+
+                  {isLoadingVPs ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : valuePropositions.length === 0 ? (
+                    <p className="text-sm text-dashboard-gray-500 italic">
+                      No value propositions yet
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {valuePropositions.map((vp) => (
+                        <div
+                          key={vp.node_id}
+                          className="p-3 rounded-md border border-dashboard-gray-200
+                                   bg-dashboard-gray-50 hover:bg-dashboard-gray-100
+                                   transition-colors"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">
+                                {vp.display_name}
+                              </p>
+                              <p className="text-xs text-dashboard-gray-600 mt-1">
+                                {vp.description}
+                              </p>
+                            </div>
+                            {hasEditAccess && (
+                              <div className="flex gap-1 ml-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSelectedValueProposition(vp);
+                                    setValuePropositionFormData({
+                                      display_name: vp.display_name,
+                                      description: vp.description,
+                                      parent_node_id:
+                                        selectedChild?.node_id || "",
+                                      parent_node_type: "SubstituteProduct",
+                                      references: vp.references || [],
+                                    });
+                                    setIsCreateVPModalOpen(true);
+                                  }}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setSelectedValueProposition(vp);
+                                    setValuePropositionFormData({
+                                      ...valuePropositionFormData,
+                                      parent_node_id:
+                                        selectedChild?.node_id || "",
+                                    });
+                                    setIsDeleteVPDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
           </div>
-        )}
 
-        {/* Tactics Section (for competitor context menu) */}
-        {contextMenuType === "competitor" && !isEditing && (
-          <SideSheetNestedList
-            title="Marketing Tactics"
-            tooltip="Specific tactics this competitor uses to bring products to market, such as social media campaigns, events, or advertising strategies."
-            items={tactics}
-            isLoading={isLoadingTactics}
-            onAdd={() => {
-              setTacticFormData({
-                display_name: "",
-                description: "",
-                competitor_node_id: selectedCompetitor?.node_id || "",
-                references: [],
-              });
-              setIsCreateTacticModalOpen(true);
-            }}
-            onEdit={(tactic) => {
-              setSelectedTactic(tactic);
-              setTacticFormData({
-                display_name: tactic.display_name,
-                description: tactic.description,
-                competitor_node_id: selectedCompetitor?.node_id || "",
-                references: tactic.references || [],
-              });
-              setIsCreateTacticModalOpen(true);
-            }}
-            onDelete={(tactic) => {
-              setSelectedTactic(tactic);
-              setIsDeleteTacticDialogOpen(true);
-            }}
-            hasEditAccess={hasEditAccess}
-            isEditingParent={isEditing}
-          />
-        )}
-
-        {/* Tactics Section (for competitor context menu) */}
-        {contextMenuType === "competitor" && !isEditing && (
-          <SideSheetNestedList
-            title="Marketing Tactics"
-            tooltip="Specific tactics this competitor uses to bring products to market, such as social media campaigns, events, or advertising strategies."
-            items={tactics}
-            isLoading={isLoadingTactics}
-            onAdd={() => {
-              setTacticFormData({
-                display_name: "",
-                description: "",
-                competitor_node_id: selectedCompetitor?.node_id || "",
-                references: [],
-              });
-              setIsCreateTacticModalOpen(true);
-            }}
-            onEdit={(tactic) => {
-              setSelectedTactic(tactic);
-              setTacticFormData({
-                display_name: tactic.display_name,
-                description: tactic.description,
-                competitor_node_id: selectedCompetitor?.node_id || "",
-                references: tactic.references || [],
-              });
-              setIsCreateTacticModalOpen(true);
-            }}
-            onDelete={(tactic) => {
-              setSelectedTactic(tactic);
-              setIsDeleteTacticDialogOpen(true);
-            }}
-            hasEditAccess={hasEditAccess}
-            isEditingParent={isEditing}
-          />
-        )}
-
-        {/* Value Propositions Section (for substitute products) */}
-        {mode === "substitute-products" &&
-          contextMenuType === "child" &&
-          !isEditing && (
-            <SideSheetNestedList
-              title="Value Propositions"
-              tooltip="Key reasons why customers might choose this substitute product over your offerings."
-              items={valuePropositions}
-              isLoading={isLoadingVPs}
-              onAdd={() => {
-                setValuePropositionFormData({
-                  display_name: "",
-                  description: "",
-                  parent_node_id: selectedChild?.node_id || "",
-                  parent_node_type: "SubstituteProduct",
-                  references: [],
-                });
-                setIsCreateVPModalOpen(true);
-              }}
-              onEdit={(vp) => {
-                setSelectedValueProposition(vp);
-                setValuePropositionFormData({
-                  display_name: vp.display_name,
-                  description: vp.description,
-                  parent_node_id: selectedChild?.node_id || "",
-                  parent_node_type: "SubstituteProduct",
-                  references: vp.references || [],
-                });
-                setIsCreateVPModalOpen(true);
-              }}
-              onDelete={(vp) => {
-                setSelectedValueProposition(vp);
-                setValuePropositionFormData({
-                  ...valuePropositionFormData,
-                  parent_node_id: selectedChild?.node_id || "",
-                });
-                setIsDeleteVPDialogOpen(true);
-              }}
-              hasEditAccess={hasEditAccess}
-              isEditingParent={isEditing}
-            />
+          {/* Action Buttons */}
+          {hasEditAccess && (
+            <div className="flex gap-2 pt-4 border-t">
+              {isEditing ? (
+                <>
+                  <Button
+                    onClick={() => {
+                      setIsEditing(false);
+                      if (
+                        contextMenuType === "competitor" &&
+                        selectedCompetitor
+                      ) {
+                        setFormData({
+                          display_name: selectedCompetitor.display_name,
+                          description: selectedCompetitor.description,
+                        });
+                      } else if (contextMenuType === "child" && selectedChild) {
+                        if (mode === "substitute-products") {
+                          const subProduct = selectedChild as SubstituteProduct;
+                          setFormData({
+                            display_name: "",
+                            description: subProduct.description,
+                            product_name: subProduct.product_name,
+                            product_detail_page:
+                              subProduct.product_detail_page || "",
+                          });
+                        } else {
+                          setFormData({
+                            display_name: selectedChild.display_name,
+                            description: selectedChild.description,
+                          });
+                        }
+                      } else if (
+                        contextMenuType === "grandchild" &&
+                        selectedGrandchild
+                      ) {
+                        setFormData({
+                          display_name: selectedGrandchild.display_name,
+                          description: selectedGrandchild.description,
+                        });
+                      }
+                    }}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={
+                      contextMenuType === "competitor"
+                        ? handleUpdateCompetitor
+                        : contextMenuType === "child"
+                          ? handleUpdateChild
+                          : handleUpdateGrandchild
+                    }
+                    className="flex-1"
+                  >
+                    Save Changes
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={() => setIsEditing(true)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setIsContextMenuOpen(false);
+                      if (contextMenuType === "competitor") {
+                        setIsDeleteCompetitorDialogOpen(true);
+                      } else if (contextMenuType === "child") {
+                        setIsDeleteChildDialogOpen(true);
+                      } else {
+                        setIsDeleteGrandchildDialogOpen(true);
+                      }
+                    }}
+                    variant="destructive"
+                    className="flex-1"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </>
+              )}
+            </div>
           )}
-      </KnowledgeGraphSideSheet>
+        </SheetContent>
+      </Sheet>
     </>
   );
 };
