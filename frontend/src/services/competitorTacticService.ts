@@ -38,22 +38,22 @@ class CompetitorTacticService {
     accountId: AccountId,
     competitorId?: string,
     skip = 0,
-    limit = 1000
+    limit = 1000,
   ): Promise<CompetitorTacticListResponse> {
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/competitor-tactics`,
-      { params: { competitor_node_id: competitorId, skip, limit } }
+      { params: { competitor_node_id: competitorId, skip, limit } },
     );
     return response.data;
   }
 
   async create(
     accountId: AccountId,
-    data: CompetitorTacticCreate
+    data: CompetitorTacticCreate,
   ): Promise<CompetitorTactic> {
     const response = await api.post(
       `/api/v1/knowledge-graph/${accountId}/competitor-tactics`,
-      data
+      data,
     );
     return response.data;
   }
@@ -61,18 +61,18 @@ class CompetitorTacticService {
   async update(
     accountId: AccountId,
     nodeId: string,
-    data: CompetitorTacticUpdate
+    data: CompetitorTacticUpdate,
   ): Promise<CompetitorTactic> {
     const response = await api.patch(
       `/api/v1/knowledge-graph/${accountId}/competitor-tactics/${nodeId}`,
-      data
+      data,
     );
     return response.data;
   }
 
   async delete(accountId: AccountId, nodeId: string): Promise<void> {
     await api.delete(
-      `/api/v1/knowledge-graph/${accountId}/competitor-tactics/${nodeId}`
+      `/api/v1/knowledge-graph/${accountId}/competitor-tactics/${nodeId}`,
     );
   }
 }

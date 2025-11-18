@@ -41,22 +41,22 @@ class SubstituteProductService {
     accountId: AccountId,
     competitorId?: string,
     skip = 0,
-    limit = 1000
+    limit = 1000,
   ): Promise<SubstituteProductListResponse> {
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/substitute-products`,
-      { params: { competitor_node_id: competitorId, skip, limit } }
+      { params: { competitor_node_id: competitorId, skip, limit } },
     );
     return response.data;
   }
 
   async create(
     accountId: AccountId,
-    data: SubstituteProductCreate
+    data: SubstituteProductCreate,
   ): Promise<SubstituteProduct> {
     const response = await api.post(
       `/api/v1/knowledge-graph/${accountId}/substitute-products`,
-      data
+      data,
     );
     return response.data;
   }
@@ -64,18 +64,18 @@ class SubstituteProductService {
   async update(
     accountId: AccountId,
     nodeId: string,
-    data: SubstituteProductUpdate
+    data: SubstituteProductUpdate,
   ): Promise<SubstituteProduct> {
     const response = await api.patch(
       `/api/v1/knowledge-graph/${accountId}/substitute-products/${nodeId}`,
-      data
+      data,
     );
     return response.data;
   }
 
   async delete(accountId: AccountId, nodeId: string): Promise<void> {
     await api.delete(
-      `/api/v1/knowledge-graph/${accountId}/substitute-products/${nodeId}`
+      `/api/v1/knowledge-graph/${accountId}/substitute-products/${nodeId}`,
     );
   }
 }

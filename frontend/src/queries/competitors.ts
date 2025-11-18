@@ -74,7 +74,11 @@ export function useUpdateCompetitiveEnvironment() {
 
 // ==================== COMPETITORS ====================
 
-export function useCompetitors(accountId: string | null, skip = 0, limit = 1000) {
+export function useCompetitors(
+  accountId: string | null,
+  skip = 0,
+  limit = 1000,
+) {
   return useQuery({
     queryKey: ["competitors", accountId, skip, limit],
     queryFn: () => competitorService.list(accountId!, skip, limit),
@@ -134,8 +138,13 @@ export function useUpdateCompetitor() {
 export function useDeleteCompetitor() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, nodeId }: { accountId: string; nodeId: string }) =>
-      competitorService.delete(accountId, nodeId),
+    mutationFn: ({
+      accountId,
+      nodeId,
+    }: {
+      accountId: string;
+      nodeId: string;
+    }) => competitorService.delete(accountId, nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitors", variables.accountId],
@@ -150,12 +159,17 @@ export function useCompetitorTactics(
   accountId: string | null,
   competitorId: string | null,
   skip = 0,
-  limit = 1000
+  limit = 1000,
 ) {
   return useQuery({
     queryKey: ["competitor-tactics", accountId, competitorId, skip, limit],
     queryFn: () =>
-      competitorTacticService.list(accountId!, competitorId || undefined, skip, limit),
+      competitorTacticService.list(
+        accountId!,
+        competitorId || undefined,
+        skip,
+        limit,
+      ),
     enabled: !!accountId,
   });
 }
@@ -201,8 +215,13 @@ export function useUpdateCompetitorTactic() {
 export function useDeleteCompetitorTactic() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, nodeId }: { accountId: string; nodeId: string }) =>
-      competitorTacticService.delete(accountId, nodeId),
+    mutationFn: ({
+      accountId,
+      nodeId,
+    }: {
+      accountId: string;
+      nodeId: string;
+    }) => competitorTacticService.delete(accountId, nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-tactics", variables.accountId],
@@ -217,12 +236,17 @@ export function useCompetitorStrengths(
   accountId: string | null,
   competitorId: string | null,
   skip = 0,
-  limit = 1000
+  limit = 1000,
 ) {
   return useQuery({
     queryKey: ["competitor-strengths", accountId, competitorId, skip, limit],
     queryFn: () =>
-      competitorStrengthService.list(accountId!, competitorId || undefined, skip, limit),
+      competitorStrengthService.list(
+        accountId!,
+        competitorId || undefined,
+        skip,
+        limit,
+      ),
     enabled: !!accountId,
   });
 }
@@ -268,8 +292,13 @@ export function useUpdateCompetitorStrength() {
 export function useDeleteCompetitorStrength() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, nodeId }: { accountId: string; nodeId: string }) =>
-      competitorStrengthService.delete(accountId, nodeId),
+    mutationFn: ({
+      accountId,
+      nodeId,
+    }: {
+      accountId: string;
+      nodeId: string;
+    }) => competitorStrengthService.delete(accountId, nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-strengths", variables.accountId],
@@ -284,12 +313,17 @@ export function useCompetitorWeaknesses(
   accountId: string | null,
   competitorId: string | null,
   skip = 0,
-  limit = 1000
+  limit = 1000,
 ) {
   return useQuery({
     queryKey: ["competitor-weaknesses", accountId, competitorId, skip, limit],
     queryFn: () =>
-      competitorWeaknessService.list(accountId!, competitorId || undefined, skip, limit),
+      competitorWeaknessService.list(
+        accountId!,
+        competitorId || undefined,
+        skip,
+        limit,
+      ),
     enabled: !!accountId,
   });
 }
@@ -335,8 +369,13 @@ export function useUpdateCompetitorWeakness() {
 export function useDeleteCompetitorWeakness() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, nodeId }: { accountId: string; nodeId: string }) =>
-      competitorWeaknessService.delete(accountId, nodeId),
+    mutationFn: ({
+      accountId,
+      nodeId,
+    }: {
+      accountId: string;
+      nodeId: string;
+    }) => competitorWeaknessService.delete(accountId, nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-weaknesses", variables.accountId],
@@ -351,12 +390,17 @@ export function useSubstituteProducts(
   accountId: string | null,
   competitorId: string | null,
   skip = 0,
-  limit = 1000
+  limit = 1000,
 ) {
   return useQuery({
     queryKey: ["substitute-products", accountId, competitorId, skip, limit],
     queryFn: () =>
-      substituteProductService.list(accountId!, competitorId || undefined, skip, limit),
+      substituteProductService.list(
+        accountId!,
+        competitorId || undefined,
+        skip,
+        limit,
+      ),
     enabled: !!accountId,
   });
 }
@@ -402,8 +446,13 @@ export function useUpdateSubstituteProduct() {
 export function useDeleteSubstituteProduct() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ accountId, nodeId }: { accountId: string; nodeId: string }) =>
-      substituteProductService.delete(accountId, nodeId),
+    mutationFn: ({
+      accountId,
+      nodeId,
+    }: {
+      accountId: string;
+      nodeId: string;
+    }) => substituteProductService.delete(accountId, nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["substitute-products", variables.accountId],

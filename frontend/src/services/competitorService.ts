@@ -35,26 +35,29 @@ class CompetitorService {
   async list(
     accountId: AccountId,
     skip = 0,
-    limit = 1000
+    limit = 1000,
   ): Promise<CompetitorListResponse> {
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/competitors`,
-      { params: { skip, limit } }
+      { params: { skip, limit } },
     );
     return response.data;
   }
 
   async get(accountId: AccountId, nodeId: string): Promise<Competitor> {
     const response = await api.get(
-      `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}`
+      `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}`,
     );
     return response.data;
   }
 
-  async create(accountId: AccountId, data: CompetitorCreate): Promise<Competitor> {
+  async create(
+    accountId: AccountId,
+    data: CompetitorCreate,
+  ): Promise<Competitor> {
     const response = await api.post(
       `/api/v1/knowledge-graph/${accountId}/competitors`,
-      data
+      data,
     );
     return response.data;
   }
@@ -62,18 +65,18 @@ class CompetitorService {
   async update(
     accountId: AccountId,
     nodeId: string,
-    data: CompetitorUpdate
+    data: CompetitorUpdate,
   ): Promise<Competitor> {
     const response = await api.patch(
       `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}`,
-      data
+      data,
     );
     return response.data;
   }
 
   async delete(accountId: AccountId, nodeId: string): Promise<void> {
     await api.delete(
-      `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}`
+      `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}`,
     );
   }
 }

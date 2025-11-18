@@ -19,18 +19,18 @@ export interface CompetitiveEnvironmentUpdate {
 class CompetitiveEnvironmentService {
   async get(accountId: AccountId): Promise<CompetitiveEnvironment> {
     const response = await api.get(
-      `/api/v1/knowledge-graph/${accountId}/competitive-environment`
+      `/api/v1/knowledge-graph/${accountId}/competitive-environment`,
     );
     return response.data;
   }
 
   async update(
     accountId: AccountId,
-    data: CompetitiveEnvironmentUpdate
+    data: CompetitiveEnvironmentUpdate,
   ): Promise<CompetitiveEnvironment> {
     const response = await api.patch(
       `/api/v1/knowledge-graph/${accountId}/competitive-environment`,
-      data
+      data,
     );
     return response.data;
   }

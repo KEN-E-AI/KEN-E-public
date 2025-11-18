@@ -38,22 +38,22 @@ class CompetitorWeaknessService {
     accountId: AccountId,
     competitorId?: string,
     skip = 0,
-    limit = 1000
+    limit = 1000,
   ): Promise<CompetitorWeaknessListResponse> {
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/competitor-weaknesses`,
-      { params: { competitor_node_id: competitorId, skip, limit } }
+      { params: { competitor_node_id: competitorId, skip, limit } },
     );
     return response.data;
   }
 
   async create(
     accountId: AccountId,
-    data: CompetitorWeaknessCreate
+    data: CompetitorWeaknessCreate,
   ): Promise<CompetitorWeakness> {
     const response = await api.post(
       `/api/v1/knowledge-graph/${accountId}/competitor-weaknesses`,
-      data
+      data,
     );
     return response.data;
   }
@@ -61,18 +61,18 @@ class CompetitorWeaknessService {
   async update(
     accountId: AccountId,
     nodeId: string,
-    data: CompetitorWeaknessUpdate
+    data: CompetitorWeaknessUpdate,
   ): Promise<CompetitorWeakness> {
     const response = await api.patch(
       `/api/v1/knowledge-graph/${accountId}/competitor-weaknesses/${nodeId}`,
-      data
+      data,
     );
     return response.data;
   }
 
   async delete(accountId: AccountId, nodeId: string): Promise<void> {
     await api.delete(
-      `/api/v1/knowledge-graph/${accountId}/competitor-weaknesses/${nodeId}`
+      `/api/v1/knowledge-graph/${accountId}/competitor-weaknesses/${nodeId}`,
     );
   }
 }
