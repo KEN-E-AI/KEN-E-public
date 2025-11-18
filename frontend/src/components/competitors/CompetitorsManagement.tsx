@@ -153,7 +153,7 @@ interface FormDataState {
 const COMPETITOR_MODES: readonly ModeConfig<CompetitorMode>[] = [
   { value: "strengths", label: "Strengths" },
   { value: "weaknesses", label: "Weaknesses" },
-  { value: "substitute-products", label: "Substitutes" },
+  { value: "substitute-products", label: "Substitute Products" },
 ] as const;
 
 export const CompetitorsManagement = ({
@@ -674,6 +674,45 @@ export const CompetitorsManagement = ({
           },
         });
       });
+    } else if (mode === "substitute-products") {
+      const substituteProduct = selectedChild as SubstituteProduct;
+
+      nodes.push({
+        id: substituteProduct.node_id,
+        type: "substituteProductNode",
+        position: {
+          x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+          y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+        },
+        data: {
+          label: substituteProduct.product_name,
+          isSelected: !selectedGrandchildId,
+          onAddValueProp: () => setIsCreateGrandchildModalOpen(true),
+        },
+      });
+
+      const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
+      const grandchildTotalWidth =
+        valuePropositions.length * grandchildWidth - gap;
+      const grandchildStartX =
+        DIAGRAM_LAYOUT.PARENT_NODE_X - grandchildTotalWidth / 2;
+
+      valuePropositions.forEach((vp, index) => {
+        nodes.push({
+          id: vp.node_id,
+          type: "opportunityNode", // Reuse opportunity node styling for now
+          position: {
+            x: grandchildStartX + index * grandchildWidth,
+            y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+          },
+          data: {
+            label: vp.display_name,
+            showHandle: false,
+            isSelected: selectedGrandchildId === vp.node_id,
+            onAddSubstitute: () => {},
+          },
+        });
+      });
     }
 
     return nodes;
@@ -703,6 +742,18 @@ export const CompetitorsManagement = ({
           id: `${selectedChildId}-${opportunity.node_id}`,
           source: selectedChildId,
           target: opportunity.node_id,
+          type: "smoothstep",
+          style: DEFAULT_EDGE_STYLE,
+          sourceHandle: "bottom",
+          targetHandle: "top",
+        });
+      });
+    } else if (mode === "substitute-products" && selectedChildId) {
+      valuePropositions.forEach((vp) => {
+        edges.push({
+          id: `${selectedChildId}-${vp.node_id}`,
+          source: selectedChildId,
+          target: vp.node_id,
           type: "smoothstep",
           style: DEFAULT_EDGE_STYLE,
           sourceHandle: "bottom",
@@ -1482,11 +1533,25 @@ export const CompetitorsManagement = ({
 
   const nodes = useMemo(
     () => generateNodes(),
-    [selectedChild, mode, risks, opportunities, selectedGrandchildId],
+    [
+      selectedChild,
+      mode,
+      risks,
+      opportunities,
+      valuePropositions,
+      selectedGrandchildId,
+    ],
   );
   const edges = useMemo(
     () => generateEdges(),
-    [selectedChild, selectedChildId, mode, risks, opportunities],
+    [
+      selectedChild,
+      selectedChildId,
+      mode,
+      risks,
+      opportunities,
+      valuePropositions,
+    ],
   );
 
   return (
@@ -1587,18 +1652,8 @@ export const CompetitorsManagement = ({
                   setSelectedChild(child);
                   setSelectedGrandchildId(null);
                   setSelectedGrandchild(null);
-
-                  if (mode === "substitute-products") {
-                    const subProduct = child as SubstituteProduct;
-                    setFormData({
-                      display_name: "",
-                      description: subProduct.description,
-                      product_name: subProduct.product_name,
-                      product_detail_page: subProduct.product_detail_page || "",
-                    });
-                    setContextMenuType("child");
-                    setIsContextMenuOpen(true);
-                  }
+                  // Don't auto-open side sheet for substitute products
+                  // User must click on a node in React Flow to view/edit
                 }}
                 isLoading={isLoadingChildren}
                 emptyMessage={`No ${childrenLabel.toLowerCase()} found.`}
@@ -1625,30 +1680,37 @@ export const CompetitorsManagement = ({
               />
             </KnowledgeGraphCard>
 
-            {/* React Flow Visualization - Only for strengths/weaknesses */}
-            {mode !== "substitute-products" && (
-              <GraphVisualizationCard
-                title={grandchildrenLabel}
-                icon={mode === "strengths" ? ShieldAlert : Star}
-                tooltip={
-                  mode === "strengths"
-                    ? "Risks created by this competitor strength."
-                    : "Opportunities created by this competitor weakness."
-                }
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                onNodeClick={handleNodeClick}
-                onNodeDoubleClick={handleNodeClick}
-                isLoading={
-                  isLoadingChildren ||
-                  (mode === "strengths" && isLoadingRisks) ||
-                  (mode === "weaknesses" && isLoadingOpportunities)
-                }
-                showEmpty={!selectedChildId}
-                emptyMessage={`Select a ${mode === "strengths" ? "strength" : "weakness"} to view ${grandchildrenLabel.toLowerCase()}.`}
-              />
-            )}
+            {/* React Flow Visualization */}
+            <GraphVisualizationCard
+              title={grandchildrenLabel}
+              icon={
+                mode === "strengths"
+                  ? ShieldAlert
+                  : mode === "weaknesses"
+                    ? Star
+                    : Package
+              }
+              tooltip={
+                mode === "strengths"
+                  ? "Risks created by this competitor strength."
+                  : mode === "weaknesses"
+                    ? "Opportunities created by this competitor weakness."
+                    : "Value propositions offered by this substitute product."
+              }
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              onNodeClick={handleNodeClick}
+              onNodeDoubleClick={handleNodeClick}
+              isLoading={
+                isLoadingChildren ||
+                (mode === "strengths" && isLoadingRisks) ||
+                (mode === "weaknesses" && isLoadingOpportunities) ||
+                (mode === "substitute-products" && isLoadingVPs)
+              }
+              showEmpty={!selectedChildId}
+              emptyMessage={`Select a ${mode === "strengths" ? "strength" : mode === "weaknesses" ? "weakness" : "substitute product"} to view ${grandchildrenLabel.toLowerCase()}.`}
+            />
           </CardContent>
         </Card>
       )}
