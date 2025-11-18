@@ -1491,55 +1491,49 @@ export const CompetitorsManagement = ({
 
   return (
     <>
-      {/* Competitors Card */}
-      <KnowledgeGraphCard
-        title="Competitors"
-        icon={Users}
-        tooltip="Identify key competitors who offer products or services that could be viewed as substitutes by your target customers."
-        actions={
-          hasEditAccess ? (
-            <Button
-              onClick={() => setIsCreateCompetitorModalOpen(true)}
-              size="sm"
-              variant="ghost"
-              className="h-8 w-8 p-0"
-            >
-              <Plus className="h-5 w-5" />
-            </Button>
-          ) : undefined
-        }
-      >
-        <HorizontalScrollList
-          items={competitors}
-          selectedId={selectedCompetitorId}
-          onItemClick={handleCompetitorClick}
-          isLoading={isLoadingCompetitors}
-          emptyMessage="No competitors found."
-          emptyMessageWithAction="Click '+' to add one."
-          hasEditAccess={hasEditAccess}
-          renderItem={(competitor, isSelected) => (
-            <HorizontalScrollItem
-              label={competitor.display_name}
-              sublabel="Competitor"
-              icon={Users}
-              bgColor="bg-brand-light-blue bg-opacity-30"
-              iconBgColor="bg-brand-light-blue"
-              isSelected={isSelected}
-              onClick={() => {}}
-            />
-          )}
-        />
-      </KnowledgeGraphCard>
+      {/* Card 1: Competitors horizontal scroll */}
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              <h3 className="text-lg font-semibold">Competitors</h3>
+            </div>
+            {hasEditAccess && (
+              <Button
+                onClick={() => setIsCreateCompetitorModalOpen(true)}
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+              >
+                <Plus className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
+          <HorizontalScrollList
+            items={competitors}
+            selectedId={selectedCompetitorId}
+            onItemClick={handleCompetitorClick}
+            isLoading={isLoadingCompetitors}
+            emptyMessage="No competitors found."
+            emptyMessageWithAction="Click '+' to add one."
+            hasEditAccess={hasEditAccess}
+            renderItem={(competitor, isSelected) => (
+              <HorizontalScrollItem
+                label={competitor.display_name}
+                sublabel="Competitor"
+                icon={Users}
+                bgColor="bg-brand-light-blue bg-opacity-30"
+                iconBgColor="bg-brand-light-blue"
+                isSelected={isSelected}
+                onClick={() => {}}
+              />
+            )}
+          />
+        </CardContent>
+      </Card>
 
-      {/* Mode Selector - Outside card, matches Account page pattern */}
-      <ModeSelector
-        modes={COMPETITOR_MODES}
-        value={mode}
-        onChange={handleModeSwitch}
-        className="mt-6 mb-6"
-      />
-
-      {/* Children Card (Strengths/Weaknesses/Substitutes) - Always rendered */}
+      {/* Card 2: Mode Selector + Children + React Flow */}
       {!selectedCompetitorId ? (
         <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200 h-[600px] flex items-center justify-center">
           <p className="text-dashboard-gray-500 text-center">
@@ -1553,80 +1547,86 @@ export const CompetitorsManagement = ({
           </p>
         </div>
       ) : (
-        <>
-          {/* Children Section (Strengths/Weaknesses/Substitutes) */}
-          <KnowledgeGraphCard
-            title={childrenLabel}
-            icon={ChildIcon}
-            tooltip={
-              mode === "strengths"
-                ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
-                : mode === "weaknesses"
-                  ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
-                  : "Substitute products offered by this competitor that compete with your products or services."
-            }
-            actions={
-              hasEditAccess ? (
-                <Button
-                  onClick={() => setIsCreateChildModalOpen(true)}
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
-                >
-                  <Plus className="h-5 w-5" />
-                </Button>
-              ) : undefined
-            }
-          >
-            <HorizontalScrollList
-              items={children}
-              selectedId={selectedChildId}
-              onItemClick={(child) => {
-                setSelectedChildId(child.node_id);
-                setSelectedChild(child);
-                setSelectedGrandchildId(null);
-                setSelectedGrandchild(null);
-
-                if (mode === "substitute-products") {
-                  const subProduct = child as SubstituteProduct;
-                  setFormData({
-                    display_name: "",
-                    description: subProduct.description,
-                    product_name: subProduct.product_name,
-                    product_detail_page: subProduct.product_detail_page || "",
-                  });
-                  setContextMenuType("child");
-                  setIsContextMenuOpen(true);
-                }
-              }}
-              isLoading={isLoadingChildren}
-              emptyMessage={`No ${childrenLabel.toLowerCase()} found.`}
-              emptyMessageWithAction="Click '+' to add one."
-              hasEditAccess={hasEditAccess}
-              renderItem={(child, isSelected) => {
-                const displayName =
-                  mode === "substitute-products"
-                    ? (child as SubstituteProduct).product_name
-                    : child.display_name;
-
-                return (
-                  <HorizontalScrollItem
-                    label={displayName}
-                    sublabel={childLabel}
-                    icon={ChildIcon}
-                    bgColor={getChildBgColor()}
-                    iconBgColor={getChildIconBgColor()}
-                    isSelected={isSelected}
-                    onClick={() => {}}
-                  />
-                );
-              }}
+        <Card>
+          <CardContent className="pt-6 space-y-6">
+            {/* Mode Selector - Inside card */}
+            <ModeSelector
+              modes={COMPETITOR_MODES}
+              value={mode}
+              onChange={handleModeSwitch}
             />
-          </KnowledgeGraphCard>
+            {/* Children Section (Strengths/Weaknesses/Substitutes) */}
+            <KnowledgeGraphCard
+              title={childrenLabel}
+              icon={ChildIcon}
+              tooltip={
+                mode === "strengths"
+                  ? "Competitor strengths create risks for your business. Identify their advantages and the threats they pose."
+                  : mode === "weaknesses"
+                    ? "Competitor weaknesses create opportunities for your business. Identify their disadvantages and how you can capitalize."
+                    : "Substitute products offered by this competitor that compete with your products or services."
+              }
+              actions={
+                hasEditAccess ? (
+                  <Button
+                    onClick={() => setIsCreateChildModalOpen(true)}
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                ) : undefined
+              }
+            >
+              <HorizontalScrollList
+                items={children}
+                selectedId={selectedChildId}
+                onItemClick={(child) => {
+                  setSelectedChildId(child.node_id);
+                  setSelectedChild(child);
+                  setSelectedGrandchildId(null);
+                  setSelectedGrandchild(null);
 
-          {/* React Flow Visualization - Separate card, only for strengths/weaknesses */}
-          {mode !== "substitute-products" && (
-            <div className="mt-6">
+                  if (mode === "substitute-products") {
+                    const subProduct = child as SubstituteProduct;
+                    setFormData({
+                      display_name: "",
+                      description: subProduct.description,
+                      product_name: subProduct.product_name,
+                      product_detail_page: subProduct.product_detail_page || "",
+                    });
+                    setContextMenuType("child");
+                    setIsContextMenuOpen(true);
+                  }
+                }}
+                isLoading={isLoadingChildren}
+                emptyMessage={`No ${childrenLabel.toLowerCase()} found.`}
+                emptyMessageWithAction="Click '+' to add one."
+                hasEditAccess={hasEditAccess}
+                renderItem={(child, isSelected) => {
+                  const displayName =
+                    mode === "substitute-products"
+                      ? (child as SubstituteProduct).product_name
+                      : child.display_name;
+
+                  return (
+                    <HorizontalScrollItem
+                      label={displayName}
+                      sublabel={childLabel}
+                      icon={ChildIcon}
+                      bgColor={getChildBgColor()}
+                      iconBgColor={getChildIconBgColor()}
+                      isSelected={isSelected}
+                      onClick={() => {}}
+                    />
+                  );
+                }}
+              />
+            </KnowledgeGraphCard>
+
+            {/* React Flow Visualization - Only for strengths/weaknesses */}
+            {mode !== "substitute-products" && (
               <GraphVisualizationCard
                 title={grandchildrenLabel}
                 icon={mode === "strengths" ? ShieldAlert : Star}
@@ -1648,9 +1648,9 @@ export const CompetitorsManagement = ({
                 showEmpty={!selectedChildId}
                 emptyMessage={`Select a ${mode === "strengths" ? "strength" : "weakness"} to view ${grandchildrenLabel.toLowerCase()}.`}
               />
-            </div>
-          )}
-        </>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Create Competitor Modal */}

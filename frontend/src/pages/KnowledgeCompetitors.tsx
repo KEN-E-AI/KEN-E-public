@@ -189,11 +189,7 @@ export default function KnowledgeCompetitors() {
         </Card>
 
         {/* Competitors Management */}
-        <Card>
-          <CardContent className="pt-6">
-            <CompetitorsManagement hasEditAccess={hasEditAccess} />
-          </CardContent>
-        </Card>
+        <CompetitorsManagement hasEditAccess={hasEditAccess} />
 
         {/* Edit Sheet */}
         <Sheet open={isEditing} modal={false} onOpenChange={setIsEditing}>
