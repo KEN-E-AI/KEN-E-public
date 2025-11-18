@@ -1709,6 +1709,8 @@ export const CompetitorsManagement = ({
                             setSelectedGrandchildId(null);
                             setSelectedGrandchild(null);
 
+                            // For substitute products (no React Flow), open side sheet directly
+                            // For strengths/weaknesses, side sheet opens when clicking React Flow nodes
                             if (mode === "substitute-products") {
                               const subProduct = child as SubstituteProduct;
                               setFormData({
@@ -1718,15 +1720,9 @@ export const CompetitorsManagement = ({
                                 product_detail_page:
                                   subProduct.product_detail_page || "",
                               });
-                            } else {
-                              setFormData({
-                                display_name: child.display_name,
-                                description: child.description,
-                              });
+                              setContextMenuType("child");
+                              setIsContextMenuOpen(true);
                             }
-
-                            setContextMenuType("child");
-                            setIsContextMenuOpen(true);
                           }}
                         >
                           <div className="flex items-center">
