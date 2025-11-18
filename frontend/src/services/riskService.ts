@@ -7,7 +7,8 @@ export interface Risk {
   display_name: string;
   description: string;
   references: string[];
-  weakness_node_id: string;
+  weakness_node_id?: string; // For business SWOT
+  strength_node_id?: string; // For competitive (CompetitorStrength)
   created_time: string;
   last_modified: string;
   created_by?: string;
@@ -17,7 +18,8 @@ export interface Risk {
 export interface RiskCreate {
   display_name: string;
   description: string;
-  weakness_node_id: string;
+  weakness_node_id?: string; // For business SWOT
+  strength_node_id?: string; // For competitive (CompetitorStrength)
   references?: string[];
 }
 
@@ -36,12 +38,17 @@ class RiskService {
   async list(
     accountId: AccountId,
     weaknessNodeId?: string,
+    strengthNodeId?: string,
     skip = 0,
     limit = 1000,
   ): Promise<RiskListResponse> {
+    const params: Record<string, any> = { skip, limit };
+    if (weaknessNodeId) params.weakness_node_id = weaknessNodeId;
+    if (strengthNodeId) params.strength_node_id = strengthNodeId;
+
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/risks`,
-      { params: { weakness_node_id: weaknessNodeId, skip, limit } },
+      { params },
     );
     return response.data;
   }

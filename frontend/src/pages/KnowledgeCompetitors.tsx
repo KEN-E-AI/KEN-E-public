@@ -177,9 +177,7 @@ export default function KnowledgeCompetitors() {
         {/* Competitor Keywords Card */}
         <Card>
           <CardHeader>
-            <CardTitle>
-              <h3 className="text-lg font-semibold">Competitor Keywords</h3>
-            </CardTitle>
+            <CardTitle>Competitor Keywords</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">

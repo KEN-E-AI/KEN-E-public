@@ -249,6 +249,7 @@ export const CompetitorsManagement = ({
     mode === "strengths" && selectedStrength?.node_id
       ? selectedStrength.node_id
       : null,
+    "strength", // Indicate this is a CompetitorStrength parent
   );
   const risks = risksData?.risks || [];
 
@@ -1023,8 +1024,10 @@ export const CompetitorsManagement = ({
         await createRiskMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           risk: {
-            ...grandchildFormData,
-            weakness_node_id: selectedChild.node_id,
+            display_name: grandchildFormData.display_name,
+            description: grandchildFormData.description,
+            references: grandchildFormData.references || [],
+            strength_node_id: selectedChild.node_id, // CompetitorStrength node_id
           } as RiskCreate,
         });
       } else {
@@ -1032,7 +1035,9 @@ export const CompetitorsManagement = ({
         await createOpportunityMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           opportunity: {
-            ...grandchildFormData,
+            display_name: grandchildFormData.display_name,
+            description: grandchildFormData.description,
+            references: grandchildFormData.references || [],
             weakness_node_id: selectedChild.node_id, // CompetitorWeakness node_id
           } as OpportunityCreate,
         });
@@ -1054,7 +1059,16 @@ export const CompetitorsManagement = ({
       console.error("Failed to create grandchild:", error);
 
       if (axios.isAxiosError(error)) {
-        const message = error.response?.data?.detail || "Failed to create";
+        const detail = error.response?.data?.detail;
+        let message = "Failed to create";
+
+        // Handle Pydantic validation errors (422)
+        if (Array.isArray(detail)) {
+          message = detail.map((err: any) => err.msg).join(", ");
+        } else if (typeof detail === "string") {
+          message = detail;
+        }
+
         toast({
           title: "Error",
           description: message,
@@ -1095,14 +1109,14 @@ export const CompetitorsManagement = ({
           accountId: selectedOrgAccount.accountId,
           nodeId: selectedGrandchild.node_id,
           updates: updateData,
-          weaknessId: selectedChild.node_id,
+          strengthId: selectedChild.node_id, // CompetitorStrength node_id
         });
       } else {
         await updateOpportunityMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           nodeId: selectedGrandchild.node_id,
           updates: updateData,
-          strengthId: selectedChild.node_id,
+          weaknessId: selectedChild.node_id, // CompetitorWeakness node_id
         });
       }
 
@@ -1140,13 +1154,13 @@ export const CompetitorsManagement = ({
         await deleteRiskMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           nodeId: selectedGrandchild.node_id,
-          weaknessId: selectedChild.node_id,
+          strengthId: selectedChild.node_id, // CompetitorStrength node_id
         });
       } else {
         await deleteOpportunityMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           nodeId: selectedGrandchild.node_id,
-          strengthId: selectedChild.node_id,
+          weaknessId: selectedChild.node_id, // CompetitorWeakness node_id
         });
       }
 

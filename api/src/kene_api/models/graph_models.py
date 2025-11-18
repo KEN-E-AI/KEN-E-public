@@ -454,9 +454,29 @@ class RiskCreate(BaseModel):
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
     )
-    weakness_node_id: str = Field(
-        ..., description="Parent Weakness node_id that creates this risk"
+    weakness_node_id: str | None = Field(
+        None, description="Parent Weakness node_id (business SWOT)"
     )
+    strength_node_id: str | None = Field(
+        None, description="Parent CompetitorStrength node_id (competitive analysis)"
+    )
+
+    @model_validator(mode="after")
+    def validate_exactly_one_parent(self):
+        """Ensure exactly one parent is provided."""
+        has_weakness = self.weakness_node_id is not None
+        has_strength = self.strength_node_id is not None
+
+        if not has_weakness and not has_strength:
+            raise ValueError(
+                "Either weakness_node_id or strength_node_id must be provided"
+            )
+        if has_weakness and has_strength:
+            raise ValueError(
+                "Only one of weakness_node_id or strength_node_id can be provided"
+            )
+
+        return self
 
 
 class RiskUpdate(BaseModel):
@@ -473,7 +493,8 @@ class RiskResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
-    weakness_node_id: str
+    weakness_node_id: str | None = None  # For business SWOT risks
+    strength_node_id: str | None = None  # For competitive risks (from CompetitorStrength)
 
 
 class RiskListResponse(BaseModel):

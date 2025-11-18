@@ -729,33 +729,45 @@ async def list_opportunities(
         # Map parent_node_id to appropriate field based on parent type
         opportunities = []
         for o in opportunities_data:
-            # Start with all node data
-            response_data = dict(o)
-
             # Determine which parent field to populate based on parent_node_type in the data
             parent_type = o.get("parent_node_type")
             parent_id = o.get("parent_node_id")
 
+            # Build response data preserving all original fields
             if parent_type == "Strength" or (not parent_type and strength_node_id):
-                response_data["strength_node_id"] = parent_id or o.get(
-                    "strength_node_id"
-                )
-                response_data["weakness_node_id"] = None
+                strength_id = parent_id or o.get("strength_node_id")
+                weakness_id = None
             elif parent_type == "CompetitorWeakness" or (
                 not parent_type and weakness_node_id
             ):
-                response_data["weakness_node_id"] = parent_id or o.get(
-                    "weakness_node_id"
-                )
-                response_data["strength_node_id"] = None
+                weakness_id = parent_id or o.get("weakness_node_id")
+                strength_id = None
             else:
                 # Default case - set both to None if no parent info
-                response_data.setdefault("strength_node_id", None)
-                response_data.setdefault("weakness_node_id", None)
+                strength_id = o.get("strength_node_id")
+                weakness_id = o.get("weakness_node_id")
+
+            # Create response dict with all fields from original data plus parent fields
+            response_data = {
+                **o,  # Spread all original fields
+                "strength_node_id": strength_id,
+                "weakness_node_id": weakness_id,
+            }
+
+            # Handle legacy data: map opportunity_id to node_id if needed
+            # TODO: Remove this compatibility layer after Neo4j data migration (opportunity_id → node_id)
+            if "node_id" not in response_data and "opportunity_id" in response_data:
+                response_data["node_id"] = response_data["opportunity_id"]
+
+            # Safety check: ensure node_id is always present
+            if "node_id" not in response_data:
+                logger.error(f"Opportunity node missing both node_id and opportunity_id fields. Keys: {list(o.keys())}")
+                raise ValueError("Opportunity node must have either node_id or opportunity_id field")
 
             # Remove internal fields before creating response
             response_data.pop("parent_node_id", None)
             response_data.pop("parent_node_type", None)
+            response_data.pop("opportunity_id", None)  # Remove legacy field after migration
 
             opportunities.append(OpportunityResponse(**response_data))
 
@@ -866,7 +878,12 @@ async def create_risk(
 @router.get("/{account_id}/risks", response_model=RiskListResponse)
 async def list_risks(
     account_id: str,
-    weakness_node_id: str | None = Query(None, description="Filter by parent weakness"),
+    weakness_node_id: str | None = Query(
+        None, description="Filter by parent Weakness (business SWOT)"
+    ),
+    strength_node_id: str | None = Query(
+        None, description="Filter by parent CompetitorStrength (competitive)"
+    ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -876,41 +893,78 @@ async def list_risks(
 ) -> RiskListResponse:
     """List all risks with optional pagination.
 
-    Special case: Maps parent_node_id to weakness_node_id for response model.
+    Can filter by either Weakness or CompetitorStrength parent.
     """
     await check_graph_access(account_id, user, "view")
+
+    # Determine parent filter
+    if weakness_node_id and strength_node_id:
+        raise ValueError("Cannot filter by both weakness_node_id and strength_node_id")
+
+    parent_node_id = weakness_node_id or strength_node_id
+    parent_node_type = (
+        "Weakness"
+        if weakness_node_id
+        else "CompetitorStrength"
+        if strength_node_id
+        else None
+    )
 
     try:
         # Get total count
         total_count = await service.count_nodes(
             account_id,
             "Risk",
-            parent_node_id=weakness_node_id,
-            parent_node_type="Weakness",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
         )
 
         # Get paginated results
         risks_data = await service.list_nodes(
             account_id,
             "Risk",
-            parent_node_id=weakness_node_id,
-            parent_node_type="Weakness",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
             skip=skip,
             limit=limit,
         )
 
-        # Map parent_node_id to weakness_node_id for the response model
-        risks = [
-            RiskResponse(
-                **{
-                    **r,
-                    "weakness_node_id": r.get(
-                        "parent_node_id", r.get("weakness_node_id")
-                    ),
-                }
-            )
-            for r in risks_data
-        ]
+        # Map parent_node_id to appropriate field based on parent type
+        risks = []
+        for r in risks_data:
+            parent_type = r.get("parent_node_type")
+            parent_id = r.get("parent_node_id")
+
+            # Determine which parent field to populate
+            if parent_type == "Weakness" or (not parent_type and weakness_node_id):
+                weakness_id = parent_id or r.get("weakness_node_id")
+                strength_id = None
+            elif parent_type == "CompetitorStrength" or (
+                not parent_type and strength_node_id
+            ):
+                strength_id = parent_id or r.get("strength_node_id")
+                weakness_id = None
+            else:
+                weakness_id = r.get("weakness_node_id")
+                strength_id = r.get("strength_node_id")
+
+            risk_dict = {
+                **r,
+                "weakness_node_id": weakness_id,
+                "strength_node_id": strength_id,
+            }
+
+            # Handle legacy data: map risk_id to node_id if needed
+            # TODO: Remove this compatibility layer after Neo4j data migration (risk_id → node_id)
+            if "node_id" not in risk_dict and "risk_id" in risk_dict:
+                risk_dict["node_id"] = risk_dict["risk_id"]
+
+            # Remove legacy field and internal fields
+            risk_dict.pop("parent_node_id", None)
+            risk_dict.pop("parent_node_type", None)
+            risk_dict.pop("risk_id", None)
+
+            risks.append(RiskResponse(**risk_dict))
 
         return RiskListResponse(risks=risks, total_count=total_count)
     except HTTPException:

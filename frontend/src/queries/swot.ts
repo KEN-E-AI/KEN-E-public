@@ -200,11 +200,13 @@ export const useCreateOpportunity = () => {
       opportunity: OpportunityCreate;
     }) => opportunityService.create(data.accountId, data.opportunity),
     onSuccess: (newOpportunity, variables) => {
+      // Invalidate queries for both strength and weakness parents
+      const parentId =
+        variables.opportunity.strength_node_id ||
+        variables.opportunity.weakness_node_id;
+
       queryClient.invalidateQueries({
-        queryKey: swotKeys.opportunities(
-          variables.accountId,
-          variables.opportunity.strength_node_id,
-        ),
+        queryKey: swotKeys.opportunities(variables.accountId, parentId),
       });
     },
   });
@@ -218,14 +220,13 @@ export const useUpdateOpportunity = () => {
       accountId: AccountId;
       nodeId: string;
       updates: OpportunityUpdate;
-      strengthId: string;
+      strengthId?: string; // Optional: for business SWOT
+      weaknessId?: string; // Optional: for competitive
     }) => opportunityService.update(data.accountId, data.nodeId, data.updates),
     onSuccess: (_, variables) => {
+      const parentId = variables.strengthId || variables.weaknessId;
       queryClient.invalidateQueries({
-        queryKey: swotKeys.opportunities(
-          variables.accountId,
-          variables.strengthId,
-        ),
+        queryKey: swotKeys.opportunities(variables.accountId, parentId),
       });
     },
   });
@@ -238,14 +239,13 @@ export const useDeleteOpportunity = () => {
     mutationFn: (data: {
       accountId: AccountId;
       nodeId: string;
-      strengthId: string;
+      strengthId?: string; // Optional: for business SWOT
+      weaknessId?: string; // Optional: for competitive
     }) => opportunityService.delete(data.accountId, data.nodeId),
     onSuccess: (_, variables) => {
+      const parentId = variables.strengthId || variables.weaknessId;
       queryClient.invalidateQueries({
-        queryKey: swotKeys.opportunities(
-          variables.accountId,
-          variables.strengthId,
-        ),
+        queryKey: swotKeys.opportunities(variables.accountId, parentId),
       });
     },
   });
@@ -255,17 +255,24 @@ export const useDeleteOpportunity = () => {
 
 export const useRisks = (
   accountId: AccountId | null,
-  weaknessId: string | null,
+  parentId: string | null, // Can be Weakness or CompetitorStrength node_id
+  parentType?: "weakness" | "strength", // Hint for which parent type
 ) => {
   return useQuery({
     queryKey: accountId
-      ? swotKeys.risks(accountId, weaknessId || undefined)
+      ? [...swotKeys.risks(accountId, parentId || undefined), parentType]
       : (["swot", "risks", "none"] as const),
     queryFn: async () => {
-      if (!accountId || !weaknessId) return { risks: [], total_count: 0 };
-      return riskService.list(accountId, weaknessId);
+      if (!accountId || !parentId) return { risks: [], total_count: 0 };
+
+      // Pass to correct parameter based on parent type
+      if (parentType === "strength") {
+        return riskService.list(accountId, undefined, parentId);
+      } else {
+        return riskService.list(accountId, parentId);
+      }
     },
-    enabled: !!accountId && !!weaknessId,
+    enabled: !!accountId && !!parentId,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
@@ -279,11 +286,12 @@ export const useCreateRisk = () => {
     mutationFn: (data: { accountId: AccountId; risk: RiskCreate }) =>
       riskService.create(data.accountId, data.risk),
     onSuccess: (newRisk, variables) => {
+      // Invalidate queries for both weakness and strength parents
+      const parentId =
+        variables.risk.weakness_node_id || variables.risk.strength_node_id;
+
       queryClient.invalidateQueries({
-        queryKey: swotKeys.risks(
-          variables.accountId,
-          variables.risk.weakness_node_id,
-        ),
+        queryKey: swotKeys.risks(variables.accountId, parentId),
       });
     },
   });
@@ -297,11 +305,13 @@ export const useUpdateRisk = () => {
       accountId: AccountId;
       nodeId: string;
       updates: RiskUpdate;
-      weaknessId: string;
+      weaknessId?: string; // For business SWOT
+      strengthId?: string; // For competitive
     }) => riskService.update(data.accountId, data.nodeId, data.updates),
     onSuccess: (_, variables) => {
+      const parentId = variables.weaknessId || variables.strengthId;
       queryClient.invalidateQueries({
-        queryKey: swotKeys.risks(variables.accountId, variables.weaknessId),
+        queryKey: swotKeys.risks(variables.accountId, parentId),
       });
     },
   });
@@ -314,11 +324,13 @@ export const useDeleteRisk = () => {
     mutationFn: (data: {
       accountId: AccountId;
       nodeId: string;
-      weaknessId: string;
+      weaknessId?: string; // For business SWOT
+      strengthId?: string; // For competitive
     }) => riskService.delete(data.accountId, data.nodeId),
     onSuccess: (_, variables) => {
+      const parentId = variables.weaknessId || variables.strengthId;
       queryClient.invalidateQueries({
-        queryKey: swotKeys.risks(variables.accountId, variables.weaknessId),
+        queryKey: swotKeys.risks(variables.accountId, parentId),
       });
     },
   });
