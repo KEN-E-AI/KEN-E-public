@@ -69,6 +69,8 @@ import {
   useCreateCompetitorTactic,
   useUpdateCompetitorTactic,
   useDeleteCompetitorTactic,
+  useLinkProductToSubstitute,
+  useUnlinkProductFromSubstitute,
 } from "@/queries/competitors";
 import {
   useRisks,
@@ -81,11 +83,14 @@ import {
   useDeleteOpportunity,
 } from "@/queries/swot";
 import {
+  useProducts,
   useValuePropositions,
   useCreateValueProposition,
   useUpdateValueProposition,
   useDeleteValueProposition,
 } from "@/queries/products";
+import { productService } from "@/services/productService";
+import type { Product } from "@/services/productService";
 import {
   CompetitorNode,
   CompetitorStrengthNode,
@@ -93,6 +98,7 @@ import {
   SubstituteProductNode,
   RiskNode,
   OpportunityNode,
+  OurProductNode,
 } from "./CompetitorFlowNodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -340,6 +346,19 @@ export const CompetitorsManagement = ({
     );
   const valuePropositions = valuePropositionsData?.value_propositions || [];
 
+  // Products linked to selected SubstituteProduct (for React Flow)
+  const { data: linkedProductsData, isLoading: isLoadingLinkedProducts } =
+    useProducts(
+      mode === "substitute-products" && selectedChildId
+        ? selectedOrgAccount?.accountId || null
+        : null,
+      null, // No category filter
+      mode === "substitute-products" && selectedChildId
+        ? selectedChildId // SubstituteProduct node_id
+        : null,
+    );
+  const linkedProducts = linkedProductsData?.products || [];
+
   const [selectedValueProposition, setSelectedValueProposition] =
     useState<ValueProposition | null>(null);
   const [isCreateVPModalOpen, setIsCreateVPModalOpen] = useState(false);
@@ -352,6 +371,14 @@ export const CompetitorsManagement = ({
       parent_node_type: "SubstituteProduct",
       references: [],
     });
+
+  // Link product dialog state
+  const [isLinkProductDialogOpen, setIsLinkProductDialogOpen] = useState(false);
+  const [selectedProductToLink, setSelectedProductToLink] =
+    useState<Product | null>(null);
+  const [linkDialogProducts, setLinkDialogProducts] = useState<Product[]>([]);
+  const [isLoadingLinkDialogProducts, setIsLoadingLinkDialogProducts] =
+    useState(false);
 
   // Mutations
   const createCompetitorMutation = useCreateCompetitor();
@@ -385,6 +412,10 @@ export const CompetitorsManagement = ({
   const createVPMutation = useCreateValueProposition();
   const updateVPMutation = useUpdateValueProposition();
   const deleteVPMutation = useDeleteValueProposition();
+
+  // Link/Unlink mutations
+  const linkProductMutation = useLinkProductToSubstitute();
+  const unlinkProductMutation = useUnlinkProductFromSubstitute();
 
   // Mode switch handler
   const handleModeSwitch = (newMode: CompetitorMode) => {
@@ -588,6 +619,11 @@ export const CompetitorsManagement = ({
         competitorWeaknessNode: CompetitorWeaknessNode,
         opportunityNode: OpportunityNode,
       };
+    } else if (mode === "substitute-products") {
+      return {
+        substituteProductNode: SubstituteProductNode,
+        ourProductNode: OurProductNode,
+      };
     }
     return {};
   }, [mode]);
@@ -688,29 +724,28 @@ export const CompetitorsManagement = ({
         data: {
           label: substituteProduct.product_name,
           isSelected: !selectedGrandchildId,
-          onAddValueProp: () => setIsCreateGrandchildModalOpen(true),
+          onAddProduct: () => handleOpenLinkDialog(), // NEW: Open link dialog
         },
       });
 
       const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
       const grandchildTotalWidth =
-        valuePropositions.length * grandchildWidth - gap;
+        linkedProducts.length * grandchildWidth - gap;
       const grandchildStartX =
         DIAGRAM_LAYOUT.PARENT_NODE_X - grandchildTotalWidth / 2;
 
-      valuePropositions.forEach((vp, index) => {
+      linkedProducts.forEach((product, index) => {
         nodes.push({
-          id: vp.node_id,
-          type: "opportunityNode", // Reuse opportunity node styling for now
+          id: product.node_id,
+          type: "ourProductNode", // NEW: Use product node type
           position: {
             x: grandchildStartX + index * grandchildWidth,
             y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
           },
           data: {
-            label: vp.display_name,
+            label: product.product_name,
             showHandle: false,
-            isSelected: selectedGrandchildId === vp.node_id,
-            onAddSubstitute: () => {},
+            isSelected: selectedGrandchildId === product.node_id,
           },
         });
       });
@@ -750,11 +785,11 @@ export const CompetitorsManagement = ({
         });
       });
     } else if (mode === "substitute-products" && selectedChildId) {
-      valuePropositions.forEach((vp) => {
+      linkedProducts.forEach((product) => {
         edges.push({
-          id: `${selectedChildId}-${vp.node_id}`,
-          source: selectedChildId,
-          target: vp.node_id,
+          id: `${product.node_id}-${selectedChildId}`,
+          source: product.node_id,
+          target: selectedChildId,
           type: "smoothstep",
           style: DEFAULT_EDGE_STYLE,
           sourceHandle: "bottom",
@@ -767,7 +802,10 @@ export const CompetitorsManagement = ({
   };
 
   // Handle node clicks in React Flow
-  const handleNodeClick = (_event: React.MouseEvent, node: Node) => {
+  const handleNodeClick = (event: React.MouseEvent, node: Node) => {
+    // Prevent event from bubbling to pane click which would close the sheet
+    event.stopPropagation();
+
     if (isEditing) {
       toast({
         title: "Unsaved Changes",
@@ -811,6 +849,147 @@ export const CompetitorsManagement = ({
 
       setContextMenuType("grandchild");
       setIsContextMenuOpen(true);
+    }
+
+    // Product nodes (in substitute-products mode)
+    if (node.type === "ourProductNode" && mode === "substitute-products") {
+      const product = linkedProducts.find((p) => p.node_id === node.id);
+      if (product) {
+        setSelectedGrandchild(product as any); // Cast needed for type compatibility
+        setSelectedGrandchildId(product.node_id);
+        // Open side sheet to allow unlinking
+        setContextMenuType("grandchild");
+        setIsContextMenuOpen(true);
+      }
+      return;
+    }
+
+    // SubstituteProduct node (parent in diagram)
+    if (
+      node.type === "substituteProductNode" &&
+      mode === "substitute-products"
+    ) {
+      // Open side sheet for substitute product (shows VPs)
+      if (selectedChild) {
+        const subProduct = selectedChild as SubstituteProduct;
+        setFormData({
+          display_name: subProduct.product_name,
+          description: subProduct.description,
+          product_name: subProduct.product_name,
+          product_detail_page: subProduct.product_detail_page || "",
+        } as any);
+        setContextMenuType("child");
+        setIsContextMenuOpen(true);
+      }
+      return;
+    }
+  };
+
+  // Handle opening link product dialog
+  const handleOpenLinkDialog = async () => {
+    if (!selectedOrgAccount?.accountId) return;
+
+    setIsLinkProductDialogOpen(true);
+    setIsLoadingLinkDialogProducts(true);
+
+    try {
+      // Load ALL products in the account
+      // We need to call the service directly since useProducts requires a filter
+      const response = await productService.list(
+        selectedOrgAccount.accountId,
+        undefined, // No category filter
+        undefined, // No substitute filter
+        0,
+        1000,
+      );
+
+      // Filter out already linked products
+      const linkedProductIds = new Set(linkedProducts.map((p) => p.node_id));
+      const availableProducts = response.products.filter(
+        (p) => !linkedProductIds.has(p.node_id),
+      );
+
+      setLinkDialogProducts(availableProducts);
+    } catch (error) {
+      console.error("Failed to load products:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load products",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingLinkDialogProducts(false);
+    }
+  };
+
+  // Handle linking product
+  const handleLinkProduct = async () => {
+    if (
+      !selectedOrgAccount?.accountId ||
+      !selectedChild ||
+      !selectedProductToLink
+    )
+      return;
+
+    try {
+      startOperation("Linking product...");
+
+      await linkProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        substituteProductId: selectedChild.node_id,
+        productNodeId: selectedProductToLink.node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Product linked successfully",
+      });
+
+      setIsLinkProductDialogOpen(false);
+      setSelectedProductToLink(null);
+    } catch (error) {
+      console.error("Failed to link product:", error);
+      toast({
+        title: "Error",
+        description: "Failed to link product",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
+    }
+  };
+
+  // Handle unlinking product
+  const handleUnlinkProduct = async () => {
+    if (!selectedOrgAccount?.accountId || !selectedChild || !selectedGrandchild)
+      return;
+
+    try {
+      startOperation("Unlinking product...");
+
+      await unlinkProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        substituteProductId: selectedChild.node_id,
+        productNodeId: selectedGrandchild.node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Product unlinked successfully",
+      });
+
+      setIsContextMenuOpen(false);
+      setSelectedGrandchild(null);
+      setSelectedGrandchildId(null);
+    } catch (error) {
+      console.error("Failed to unlink product:", error);
+      toast({
+        title: "Error",
+        description: "Failed to unlink product",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
     }
   };
 
@@ -1500,8 +1679,18 @@ export const CompetitorsManagement = ({
         ? "Competitor Weaknesses"
         : "Substitute Products";
 
-  const grandchildLabel = mode === "strengths" ? "Risk" : "Opportunity";
-  const grandchildrenLabel = mode === "strengths" ? "Risks" : "Opportunities";
+  const grandchildLabel =
+    mode === "strengths"
+      ? "Risk"
+      : mode === "weaknesses"
+        ? "Opportunity"
+        : "Product";
+  const grandchildrenLabel =
+    mode === "strengths"
+      ? "Risks"
+      : mode === "weaknesses"
+        ? "Opportunities"
+        : "Products"; // CHANGED: from "Value Propositions"
 
   // Derived values for children display
   const children =
@@ -1539,7 +1728,7 @@ export const CompetitorsManagement = ({
       mode,
       risks,
       opportunities,
-      valuePropositions,
+      linkedProducts, // CHANGED: from valuePropositions
       selectedGrandchildId,
     ],
   );
@@ -1551,7 +1740,7 @@ export const CompetitorsManagement = ({
       mode,
       risks,
       opportunities,
-      valuePropositions,
+      linkedProducts, // CHANGED: from valuePropositions
     ],
   );
 
@@ -2279,6 +2468,81 @@ export const CompetitorsManagement = ({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Link Product Dialog */}
+      <Dialog
+        open={isLinkProductDialogOpen}
+        onOpenChange={setIsLinkProductDialogOpen}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link Product to Substitute</DialogTitle>
+            <DialogDescription>
+              Select which of your products may be substituted by this
+              competitor's offering.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {isLoadingLinkDialogProducts ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : linkDialogProducts.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No available products to link. All products are already linked
+                or you have no products yet.
+              </p>
+            ) : (
+              <>
+                <Label>Select Product</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedProductToLink?.node_id || ""}
+                  onChange={(e) => {
+                    const product = linkDialogProducts.find(
+                      (p) => p.node_id === e.target.value,
+                    );
+                    setSelectedProductToLink(product || null);
+                  }}
+                >
+                  <option value="">-- Select Product --</option>
+                  {linkDialogProducts.map((product) => (
+                    <option key={product.node_id} value={product.node_id}>
+                      {product.product_name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsLinkProductDialogOpen(false);
+                setSelectedProductToLink(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLinkProduct}
+              disabled={!selectedProductToLink || linkProductMutation.isPending}
+            >
+              {linkProductMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Linking...
+                </>
+              ) : (
+                "Link Product"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Context Menu Side Sheet */}
       <KnowledgeGraphSideSheet
         open={isContextMenuOpen}
@@ -2556,50 +2820,382 @@ export const CompetitorsManagement = ({
             isEditingParent={isEditing}
           />
         )}
+      </KnowledgeGraphSideSheet>
 
-        {/* Value Propositions Section (for substitute products) */}
-        {mode === "substitute-products" &&
-          contextMenuType === "child" &&
-          !isEditing && (
+      {/* Grandchild Side Sheet - Products in Substitute Mode */}
+      {contextMenuType === "grandchild" && mode === "substitute-products" && (
+        <KnowledgeGraphSideSheet
+          open={isContextMenuOpen && contextMenuType === "grandchild"}
+          onOpenChange={setIsContextMenuOpen}
+          title={(selectedGrandchild as Product)?.product_name || "Product"}
+          icon={Package}
+          isEditing={false}
+          hasEditAccess={hasEditAccess}
+          onDelete={handleUnlinkProduct}
+          deleteButtonLabel="Unlink"
+        >
+          <div className="space-y-4">
+            <div>
+              <Label>Product Name</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                {(selectedGrandchild as Product)?.product_name}
+              </p>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                {(selectedGrandchild as Product)?.description}
+              </p>
+            </div>
+            {(selectedGrandchild as Product)?.product_detail_page && (
+              <div>
+                <Label>Product Page</Label>
+                <a
+                  href={(selectedGrandchild as Product).product_detail_page}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline mt-1 block"
+                >
+                  {(selectedGrandchild as Product).product_detail_page}
+                </a>
+              </div>
+            )}
+            <div className="rounded-md bg-muted p-3 mt-4">
+              <p className="text-xs text-muted-foreground">
+                This product may be substituted by the selected competitor
+                offering. Click "Unlink" to remove this relationship.
+              </p>
+            </div>
+          </div>
+        </KnowledgeGraphSideSheet>
+      )}
+
+      {/* Main Context Menu Side Sheet - Exclude product grandchild in substitute mode */}
+      {!(
+        contextMenuType === "grandchild" && mode === "substitute-products"
+      ) && (
+        <KnowledgeGraphSideSheet
+          open={isContextMenuOpen}
+          onOpenChange={(open) => {
+            if (
+              !open &&
+              (isCreateTacticModalOpen ||
+                isDeleteTacticDialogOpen ||
+                isCreateVPModalOpen ||
+                isDeleteVPDialogOpen)
+            ) {
+              return;
+            }
+
+            if (!open && isEditing) {
+              toast({
+                title: "Unsaved Changes",
+                description: "Please save or cancel your changes first",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            setIsContextMenuOpen(open);
+            if (!open) {
+              setIsEditing(false);
+            }
+          }}
+          title={
+            contextMenuType === "competitor"
+              ? "Competitor"
+              : contextMenuType === "child"
+                ? childLabel
+                : grandchildLabel
+          }
+          icon={
+            contextMenuType === "competitor"
+              ? Users
+              : contextMenuType === "child"
+                ? mode === "strengths"
+                  ? ThumbsUp
+                  : mode === "weaknesses"
+                    ? ThumbsDown
+                    : Package
+                : mode === "strengths"
+                  ? ShieldAlert
+                  : Star
+          }
+          isEditing={isEditing}
+          onEdit={() => setIsEditing(true)}
+          onSave={
+            contextMenuType === "competitor"
+              ? handleUpdateCompetitor
+              : contextMenuType === "child"
+                ? handleUpdateChild
+                : handleUpdateGrandchild
+          }
+          onCancel={() => {
+            setIsEditing(false);
+            if (contextMenuType === "competitor" && selectedCompetitor) {
+              setFormData({
+                display_name: selectedCompetitor.display_name,
+                description: selectedCompetitor.description,
+              });
+            } else if (contextMenuType === "child" && selectedChild) {
+              if (mode === "substitute-products") {
+                const subProduct = selectedChild as SubstituteProduct;
+                setFormData({
+                  display_name: "",
+                  description: subProduct.description,
+                  product_name: subProduct.product_name,
+                  product_detail_page: subProduct.product_detail_page || "",
+                });
+              } else {
+                setFormData({
+                  display_name: selectedChild.display_name,
+                  description: selectedChild.description,
+                });
+              }
+            } else if (contextMenuType === "grandchild" && selectedGrandchild) {
+              setFormData({
+                display_name: selectedGrandchild.display_name,
+                description: selectedGrandchild.description,
+              });
+            }
+          }}
+          onDelete={() => {
+            setIsContextMenuOpen(false);
+            if (contextMenuType === "competitor") {
+              setIsDeleteCompetitorDialogOpen(true);
+            } else if (contextMenuType === "child") {
+              setIsDeleteChildDialogOpen(true);
+            } else {
+              setIsDeleteGrandchildDialogOpen(true);
+            }
+          }}
+          hasEditAccess={hasEditAccess}
+          preventClose={isEditing}
+        >
+          {isEditing ? (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="context-edit-name">
+                  {mode === "substitute-products" && contextMenuType === "child"
+                    ? "Product Name:"
+                    : "Name:"}
+                </Label>
+                <Input
+                  id="context-edit-name"
+                  value={
+                    mode === "substitute-products" &&
+                    contextMenuType === "child"
+                      ? formData.product_name || ""
+                      : formData.display_name
+                  }
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      ...(mode === "substitute-products" &&
+                      contextMenuType === "child"
+                        ? { product_name: e.target.value }
+                        : { display_name: e.target.value }),
+                    })
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="context-edit-description">Description:</Label>
+                <Textarea
+                  id="context-edit-description"
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      description: e.target.value,
+                    })
+                  }
+                  rows={4}
+                />
+              </div>
+              {mode === "substitute-products" &&
+                contextMenuType === "child" && (
+                  <div>
+                    <Label htmlFor="context-edit-product-page">
+                      Product Detail Page (Optional):
+                    </Label>
+                    <Input
+                      id="context-edit-product-page"
+                      type="url"
+                      value={formData.product_detail_page || ""}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          product_detail_page: e.target.value,
+                        })
+                      }
+                      placeholder="https://..."
+                    />
+                  </div>
+                )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <p className="font-semibold">
+                  {mode === "substitute-products" && contextMenuType === "child"
+                    ? "Product Name:"
+                    : "Name:"}
+                </p>
+                <p>
+                  {contextMenuType === "competitor"
+                    ? selectedCompetitor?.display_name
+                    : contextMenuType === "child"
+                      ? mode === "substitute-products"
+                        ? (selectedChild as SubstituteProduct)?.product_name
+                        : selectedChild?.display_name
+                      : selectedGrandchild?.display_name}
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold">Description:</p>
+                <p className="text-sm text-dashboard-gray-600">
+                  {contextMenuType === "competitor"
+                    ? selectedCompetitor?.description
+                    : contextMenuType === "child"
+                      ? selectedChild?.description
+                      : selectedGrandchild?.description}
+                </p>
+              </div>
+              {mode === "substitute-products" &&
+                contextMenuType === "child" &&
+                (selectedChild as SubstituteProduct)?.product_detail_page && (
+                  <div>
+                    <p className="font-semibold">Product Detail Page:</p>
+                    <a
+                      href={
+                        (selectedChild as SubstituteProduct).product_detail_page
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-800 underline break-all"
+                    >
+                      {(selectedChild as SubstituteProduct).product_detail_page}
+                    </a>
+                  </div>
+                )}
+            </div>
+          )}
+
+          {/* Tactics Section (for competitor context menu) */}
+          {contextMenuType === "competitor" && !isEditing && (
             <SideSheetNestedList
-              title="Value Propositions"
-              tooltip="Key reasons why customers might choose this substitute product over your offerings."
-              items={valuePropositions}
-              isLoading={isLoadingVPs}
+              title="Marketing Tactics"
+              tooltip="Specific tactics this competitor uses to bring products to market, such as social media campaigns, events, or advertising strategies."
+              items={tactics}
+              isLoading={isLoadingTactics}
               onAdd={() => {
-                setValuePropositionFormData({
+                setTacticFormData({
                   display_name: "",
                   description: "",
-                  parent_node_id: selectedChild?.node_id || "",
-                  parent_node_type: "SubstituteProduct",
+                  competitor_node_id: selectedCompetitor?.node_id || "",
                   references: [],
                 });
-                setIsCreateVPModalOpen(true);
+                setIsCreateTacticModalOpen(true);
               }}
-              onEdit={(vp) => {
-                setSelectedValueProposition(vp);
-                setValuePropositionFormData({
-                  display_name: vp.display_name,
-                  description: vp.description,
-                  parent_node_id: selectedChild?.node_id || "",
-                  parent_node_type: "SubstituteProduct",
-                  references: vp.references || [],
+              onEdit={(tactic) => {
+                setSelectedTactic(tactic);
+                setTacticFormData({
+                  display_name: tactic.display_name,
+                  description: tactic.description,
+                  competitor_node_id: selectedCompetitor?.node_id || "",
+                  references: tactic.references || [],
                 });
-                setIsCreateVPModalOpen(true);
+                setIsCreateTacticModalOpen(true);
               }}
-              onDelete={(vp) => {
-                setSelectedValueProposition(vp);
-                setValuePropositionFormData({
-                  ...valuePropositionFormData,
-                  parent_node_id: selectedChild?.node_id || "",
-                });
-                setIsDeleteVPDialogOpen(true);
+              onDelete={(tactic) => {
+                setSelectedTactic(tactic);
+                setIsDeleteTacticDialogOpen(true);
               }}
               hasEditAccess={hasEditAccess}
               isEditingParent={isEditing}
             />
           )}
-      </KnowledgeGraphSideSheet>
+
+          {/* Tactics Section (for competitor context menu) */}
+          {contextMenuType === "competitor" && !isEditing && (
+            <SideSheetNestedList
+              title="Marketing Tactics"
+              tooltip="Specific tactics this competitor uses to bring products to market, such as social media campaigns, events, or advertising strategies."
+              items={tactics}
+              isLoading={isLoadingTactics}
+              onAdd={() => {
+                setTacticFormData({
+                  display_name: "",
+                  description: "",
+                  competitor_node_id: selectedCompetitor?.node_id || "",
+                  references: [],
+                });
+                setIsCreateTacticModalOpen(true);
+              }}
+              onEdit={(tactic) => {
+                setSelectedTactic(tactic);
+                setTacticFormData({
+                  display_name: tactic.display_name,
+                  description: tactic.description,
+                  competitor_node_id: selectedCompetitor?.node_id || "",
+                  references: tactic.references || [],
+                });
+                setIsCreateTacticModalOpen(true);
+              }}
+              onDelete={(tactic) => {
+                setSelectedTactic(tactic);
+                setIsDeleteTacticDialogOpen(true);
+              }}
+              hasEditAccess={hasEditAccess}
+              isEditingParent={isEditing}
+            />
+          )}
+
+          {/* Value Propositions Section (for substitute products) */}
+          {mode === "substitute-products" &&
+            contextMenuType === "child" &&
+            !isEditing && (
+              <SideSheetNestedList
+                title="Value Propositions"
+                tooltip="Key reasons why customers might choose this substitute product over your offerings."
+                items={valuePropositions}
+                isLoading={isLoadingVPs}
+                onAdd={() => {
+                  setValuePropositionFormData({
+                    display_name: "",
+                    description: "",
+                    parent_node_id: selectedChild?.node_id || "",
+                    parent_node_type: "SubstituteProduct",
+                    references: [],
+                  });
+                  setIsCreateVPModalOpen(true);
+                }}
+                onEdit={(vp) => {
+                  setSelectedValueProposition(vp);
+                  setValuePropositionFormData({
+                    display_name: vp.display_name,
+                    description: vp.description,
+                    parent_node_id: selectedChild?.node_id || "",
+                    parent_node_type: "SubstituteProduct",
+                    references: vp.references || [],
+                  });
+                  setIsCreateVPModalOpen(true);
+                }}
+                onDelete={(vp) => {
+                  setSelectedValueProposition(vp);
+                  setValuePropositionFormData({
+                    ...valuePropositionFormData,
+                    parent_node_id: selectedChild?.node_id || "",
+                  });
+                  setIsDeleteVPDialogOpen(true);
+                }}
+                hasEditAccess={hasEditAccess}
+                isEditingParent={isEditing}
+              />
+            )}
+        </KnowledgeGraphSideSheet>
+      )}
     </>
   );
 };

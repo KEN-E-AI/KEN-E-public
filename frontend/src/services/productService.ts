@@ -45,7 +45,8 @@ class ProductService {
   ): Promise<ProductListResponse> {
     const params: Record<string, any> = { skip, limit };
     if (categoryNodeId) params.category_node_id = categoryNodeId;
-    if (substituteProductNodeId) params.substitute_product_node_id = substituteProductNodeId;
+    if (substituteProductNodeId)
+      params.substitute_product_node_id = substituteProductNodeId;
 
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/products`,

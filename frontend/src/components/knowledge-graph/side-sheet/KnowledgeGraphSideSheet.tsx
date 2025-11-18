@@ -54,7 +54,14 @@ export function KnowledgeGraphSideSheet({
 
   return (
     <Sheet open={open} modal={modal} onOpenChange={handleOpenChange}>
-      <SheetContent side="right" className="w-[400px] flex flex-col">
+      <SheetContent
+        side="right"
+        className="w-[400px] flex flex-col"
+        onInteractOutside={(e) => {
+          // Prevent closing when clicking on React Flow canvas
+          e.preventDefault();
+        }}
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             {Icon && <Icon className="h-5 w-5" />}

@@ -26,8 +26,18 @@ export const productKeys = {
     [...productKeys.all, "categories", accountId] as const,
   categoryList: (accountId: AccountId) =>
     [...productKeys.categories(accountId), "list"] as const,
-  products: (accountId: AccountId, categoryId?: string, substituteProductId?: string) =>
-    [...productKeys.all, "list", accountId, categoryId || "all", substituteProductId || "none"] as const,
+  products: (
+    accountId: AccountId,
+    categoryId?: string,
+    substituteProductId?: string,
+  ) =>
+    [
+      ...productKeys.all,
+      "list",
+      accountId,
+      categoryId || "all",
+      substituteProductId || "none",
+    ] as const,
   valuePropositions: (accountId: AccountId, parentNodeId?: string) =>
     [
       ...productKeys.all,
@@ -62,7 +72,11 @@ export const useProducts = (
 ) => {
   return useQuery({
     queryKey: accountId
-      ? productKeys.products(accountId, categoryId || undefined, substituteProductId || undefined)
+      ? productKeys.products(
+          accountId,
+          categoryId || undefined,
+          substituteProductId || undefined,
+        )
       : (["products", "list", "none"] as const),
     queryFn: async () => {
       if (!accountId) return { products: [], total_count: 0 };
