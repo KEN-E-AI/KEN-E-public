@@ -104,7 +104,6 @@ class CRUDEndpoints:
         account_id: str,
         node_type: str,
         create_data: CreateModel,
-        response_model_class: type[ResponseModel],
         service_method: Callable,
         service: GraphSyncService,
         user: UserContext,
@@ -115,13 +114,12 @@ class CRUDEndpoints:
             account_id: Account identifier
             node_type: Node type from NODE_TYPE_REGISTRY
             create_data: Pydantic create model instance
-            response_model_class: Response model class for instantiation
             service_method: Service method to call (e.g., service.create_goal)
             service: GraphSyncService instance
             user: Authenticated user context
 
         Returns:
-            Response model instance
+            Response model instance (returned directly from service)
 
         Raises:
             HTTPException: With appropriate status codes
@@ -131,11 +129,8 @@ class CRUDEndpoints:
         config = NODE_TYPE_REGISTRY[node_type]
 
         try:
-            result = await service_method(account_id, create_data, user.user_id)
-            # Handle both dict and Response object returns from service methods
-            if isinstance(result, BaseModel):
-                return result
-            return response_model_class(**result)
+            # Service methods always return Response objects (verified in all 28 node types)
+            return await service_method(account_id, create_data, user.user_id)
         except ValidationException as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
@@ -289,7 +284,6 @@ class CRUDEndpoints:
         node_id: str,
         node_type: str,
         update_data: UpdateModel,
-        response_model_class: type[ResponseModel],
         service_method: Callable,
         service: GraphSyncService,
         user: UserContext,
@@ -301,13 +295,12 @@ class CRUDEndpoints:
             node_id: Node identifier
             node_type: Node type from NODE_TYPE_REGISTRY
             update_data: Pydantic update model instance
-            response_model_class: Response model class
             service_method: Service method to call (e.g., service.update_goal)
             service: GraphSyncService instance
             user: Authenticated user context
 
         Returns:
-            Response model instance
+            Response model instance (returned directly from service)
 
         Raises:
             HTTPException: With appropriate status codes
@@ -317,13 +310,8 @@ class CRUDEndpoints:
         config = NODE_TYPE_REGISTRY[node_type]
 
         try:
-            result = await service_method(
-                account_id, node_id, update_data, user.user_id
-            )
-            # Handle both dict and Response object returns from service methods
-            if isinstance(result, BaseModel):
-                return result
-            return response_model_class(**result)
+            # Service methods always return Response objects (verified in all 28 node types)
+            return await service_method(account_id, node_id, update_data, user.user_id)
         except ValidationException as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)

@@ -4,6 +4,7 @@ Read-only endpoints that combine multiple node types into unified strategy views
 These endpoints provide complete strategy snapshots for each domain.
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -65,15 +66,28 @@ async def get_business_strategy(
     await check_graph_access(account_id, user, "view")
 
     try:
-        # Fetch all node types in parallel
-        categories_data = await service.list_nodes(account_id, "ProductCategory")
-        products_data = await service.list_nodes(account_id, "Product")
-        vps_data = await service.list_nodes(account_id, "ValueProposition")
-        strengths_data = await service.list_nodes(account_id, "Strength")
-        weaknesses_data = await service.list_nodes(account_id, "Weakness")
-        opportunities_data = await service.list_nodes(account_id, "Opportunity")
-        risks_data = await service.list_nodes(account_id, "Risk")
-        goals_data = await service.list_nodes(account_id, "Goal")
+        # Fetch all node types in parallel using asyncio.gather
+        (
+            categories_data,
+            products_data,
+            vps_data,
+            strengths_data,
+            weaknesses_data,
+            opportunities_data,
+            risks_data,
+            goals_data,
+            swot_data,
+        ) = await asyncio.gather(
+            service.list_nodes(account_id, "ProductCategory"),
+            service.list_nodes(account_id, "Product"),
+            service.list_nodes(account_id, "ValueProposition"),
+            service.list_nodes(account_id, "Strength"),
+            service.list_nodes(account_id, "Weakness"),
+            service.list_nodes(account_id, "Opportunity"),
+            service.list_nodes(account_id, "Risk"),
+            service.list_nodes(account_id, "Goal"),
+            service.list_nodes(account_id, "SWOTAnalysis"),
+        )
 
         # Get account info
         account_query = "MATCH (acc:Account {account_id: $account_id}) RETURN acc"
@@ -87,9 +101,6 @@ async def get_business_strategy(
             )
 
         account = account_result[0]["acc"]
-
-        # Try to get SWOT hub
-        swot_data = await service.list_nodes(account_id, "SWOTAnalysis")
         swot_analysis = swot_data[0] if swot_data else None
 
         return BusinessStrategyResponse(
@@ -144,18 +155,23 @@ async def get_competitive_strategy(
     await check_graph_access(account_id, user, "view")
 
     try:
-        # Get competitive environment
-        env_data = await service.list_nodes(
-            account_id, "CompetitiveEnvironment", skip=0, limit=1
+        # Get all competitive nodes in parallel using asyncio.gather
+        (
+            env_data,
+            competitors_data,
+            tactics_data,
+            strengths_data,
+            weaknesses_data,
+            products_data,
+        ) = await asyncio.gather(
+            service.list_nodes(account_id, "CompetitiveEnvironment", skip=0, limit=1),
+            service.list_nodes(account_id, "Competitor"),
+            service.list_nodes(account_id, "CompetitorTactic"),
+            service.list_nodes(account_id, "CompetitorStrength"),
+            service.list_nodes(account_id, "CompetitorWeakness"),
+            service.list_nodes(account_id, "SubstituteProduct"),
         )
         comp_env = CompetitiveEnvironmentResponse(**env_data[0]) if env_data else None
-
-        # Get all competitive nodes
-        competitors_data = await service.list_nodes(account_id, "Competitor")
-        tactics_data = await service.list_nodes(account_id, "CompetitorTactic")
-        strengths_data = await service.list_nodes(account_id, "CompetitorStrength")
-        weaknesses_data = await service.list_nodes(account_id, "CompetitorWeakness")
-        products_data = await service.list_nodes(account_id, "SubstituteProduct")
 
         return CompetitiveStrategyResponse(
             account_id=account_id,
@@ -192,14 +208,22 @@ async def get_marketing_strategy(
     await check_graph_access(account_id, user, "view")
 
     try:
-        profiles_data = await service.list_nodes(account_id, "CustomerProfile")
-        problem_data = await service.list_nodes(account_id, "ProblemAwarenessStrategy")
-        brand_data = await service.list_nodes(account_id, "BrandAwarenessStrategy")
-        consideration_data = await service.list_nodes(
-            account_id, "ConsiderationStrategy"
+        # Get all marketing nodes in parallel using asyncio.gather
+        (
+            profiles_data,
+            problem_data,
+            brand_data,
+            consideration_data,
+            conversion_data,
+            loyalty_data,
+        ) = await asyncio.gather(
+            service.list_nodes(account_id, "CustomerProfile"),
+            service.list_nodes(account_id, "ProblemAwarenessStrategy"),
+            service.list_nodes(account_id, "BrandAwarenessStrategy"),
+            service.list_nodes(account_id, "ConsiderationStrategy"),
+            service.list_nodes(account_id, "ConversionStrategy"),
+            service.list_nodes(account_id, "LoyaltyStrategy"),
         )
-        conversion_data = await service.list_nodes(account_id, "ConversionStrategy")
-        loyalty_data = await service.list_nodes(account_id, "LoyaltyStrategy")
 
         return MarketingStrategyResponse(
             account_id=account_id,
@@ -238,13 +262,24 @@ async def get_brand_strategy(
     await check_graph_access(account_id, user, "view")
 
     try:
-        identity = await service.get_brand_identity(account_id)
-        personalities_data = await service.list_nodes(account_id, "BrandPersonality")
-        voice_tones_data = await service.list_nodes(account_id, "VoiceAndTone")
-        palettes_data = await service.list_nodes(account_id, "ColorPalette")
-        typographies_data = await service.list_nodes(account_id, "Typography")
-        styles_data = await service.list_nodes(account_id, "ImageStyle")
-        mission_data = await service.list_nodes(account_id, "MissionAndValues")
+        # Get all brand nodes in parallel using asyncio.gather
+        (
+            identity,
+            personalities_data,
+            voice_tones_data,
+            palettes_data,
+            typographies_data,
+            styles_data,
+            mission_data,
+        ) = await asyncio.gather(
+            service.get_brand_identity(account_id),
+            service.list_nodes(account_id, "BrandPersonality"),
+            service.list_nodes(account_id, "VoiceAndTone"),
+            service.list_nodes(account_id, "ColorPalette"),
+            service.list_nodes(account_id, "Typography"),
+            service.list_nodes(account_id, "ImageStyle"),
+            service.list_nodes(account_id, "MissionAndValues"),
+        )
 
         return BrandStrategyResponse(
             account_id=account_id,
