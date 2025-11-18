@@ -1608,7 +1608,37 @@ export const CompetitorsManagement = ({
       {/* Children Card (Strengths/Weaknesses/Substitutes) */}
       {selectedCompetitorId && (
         <div className="mt-6">
-          <Card>
+          {/* Mode Switcher - Left justified above card */}
+          <div className="flex mb-6">
+            <div className="inline-flex rounded-md border border-input bg-muted p-1 gap-1">
+              <Button
+                variant={mode === "strengths" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => handleModeSwitch("strengths")}
+                className="px-6"
+              >
+                Strengths
+              </Button>
+              <Button
+                variant={mode === "weaknesses" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => handleModeSwitch("weaknesses")}
+                className="px-6"
+              >
+                Weaknesses
+              </Button>
+              <Button
+                variant={mode === "substitute-products" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => handleModeSwitch("substitute-products")}
+                className="px-6"
+              >
+                Substitutes
+              </Button>
+            </div>
+          </div>
+
+          <Card className="h-[600px]">
             <CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle className="flex items-center gap-2">
@@ -1631,47 +1661,16 @@ export const CompetitorsManagement = ({
                     </Tooltip>
                   </TooltipProvider>
                 </CardTitle>
-                <div className="flex items-center gap-2">
-                  {/* Mode Switcher integrated in header */}
-                  <div className="inline-flex rounded-md border border-input bg-muted p-1 gap-1">
-                    <Button
-                      variant={mode === "strengths" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => handleModeSwitch("strengths")}
-                      className="px-4"
-                    >
-                      Strengths
-                    </Button>
-                    <Button
-                      variant={mode === "weaknesses" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => handleModeSwitch("weaknesses")}
-                      className="px-4"
-                    >
-                      Weaknesses
-                    </Button>
-                    <Button
-                      variant={
-                        mode === "substitute-products" ? "default" : "ghost"
-                      }
-                      size="sm"
-                      onClick={() => handleModeSwitch("substitute-products")}
-                      className="px-4"
-                    >
-                      Substitutes
-                    </Button>
-                  </div>
-                  {hasEditAccess && (
-                    <Button
-                      onClick={() => setIsCreateChildModalOpen(true)}
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0"
-                    >
-                      <Plus className="h-5 w-5" />
-                    </Button>
-                  )}
-                </div>
+                {hasEditAccess && (
+                  <Button
+                    onClick={() => setIsCreateChildModalOpen(true)}
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
