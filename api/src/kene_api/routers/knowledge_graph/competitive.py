@@ -81,6 +81,7 @@ async def list_competitors(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="Competitor",
+        response_model_class=CompetitorResponse,
         list_response_class=CompetitorListResponse,
         skip=skip,
         limit=limit,
@@ -186,6 +187,7 @@ async def list_competitor_tactics(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="CompetitorTactic",
+        response_model_class=CompetitorTacticResponse,
         list_response_class=CompetitorTacticListResponse,
         skip=skip,
         limit=limit,
@@ -299,6 +301,7 @@ async def list_competitor_strengths(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="CompetitorStrength",
+        response_model_class=CompetitorStrengthResponse,
         list_response_class=CompetitorStrengthListResponse,
         skip=skip,
         limit=limit,
@@ -412,6 +415,7 @@ async def list_competitor_weaknesses(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="CompetitorWeakness",
+        response_model_class=CompetitorWeaknessResponse,
         list_response_class=CompetitorWeaknessListResponse,
         skip=skip,
         limit=limit,
@@ -525,6 +529,7 @@ async def list_substitute_products(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="SubstituteProduct",
+        response_model_class=SubstituteProductResponse,
         list_response_class=SubstituteProductListResponse,
         skip=skip,
         limit=limit,

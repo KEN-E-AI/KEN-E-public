@@ -96,6 +96,7 @@ async def list_product_categories(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ProductCategory",
+        response_model_class=ProductCategoryResponse,
         list_response_class=ProductCategoryListResponse,
         skip=skip,
         limit=limit,
@@ -483,6 +484,7 @@ async def list_strengths(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="Strength",
+        response_model_class=StrengthResponse,
         list_response_class=StrengthListResponse,
         skip=skip,
         limit=limit,
@@ -584,6 +586,7 @@ async def list_weaknesses(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="Weakness",
+        response_model_class=WeaknessResponse,
         list_response_class=WeaknessListResponse,
         skip=skip,
         limit=limit,
@@ -987,6 +990,7 @@ async def list_goals(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="Goal",
+        response_model_class=GoalResponse,
         list_response_class=GoalListResponse,
         skip=skip,
         limit=limit,
