@@ -724,6 +724,7 @@ export const CompetitorsManagement = ({
         data: {
           label: substituteProduct.product_name,
           isSelected: !selectedGrandchildId,
+          showHandle: true, // Show "+" button to link products
           onAddProduct: () => handleOpenLinkDialog(), // NEW: Open link dialog
         },
       });

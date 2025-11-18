@@ -2450,7 +2450,7 @@ class GraphSyncService:
             "substitute_product_node_id": substitute_product_node_id,
         }
 
-        result = await self.neo4j.execute_query(query, params)
+        result = await self.neo4j.execute_write_query(query, params)
         if not result:
             raise ValidationException(
                 "Product or SubstituteProduct not found",
@@ -2486,7 +2486,7 @@ class GraphSyncService:
             "substitute_product_node_id": substitute_product_node_id,
         }
 
-        result = await self.neo4j.execute_query(query, params)
+        result = await self.neo4j.execute_write_query(query, params)
         if not result:
             raise ValidationException(
                 "Relationship not found or nodes do not exist",
