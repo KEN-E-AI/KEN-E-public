@@ -17,6 +17,8 @@ import {
   ShieldAlert,
   Star,
   Megaphone,
+  Dumbbell,
+  Unlink,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
@@ -1473,21 +1475,21 @@ export const CompetitorsManagement = ({
 
   // Get display properties based on mode
   const getChildIcon = () => {
-    if (mode === "strengths") return ThumbsUp;
-    if (mode === "weaknesses") return ThumbsDown;
+    if (mode === "strengths") return Dumbbell;
+    if (mode === "weaknesses") return Unlink;
     return Package;
   };
 
   const getChildBgColor = () => {
-    if (mode === "strengths") return "bg-brand-success bg-opacity-30";
-    if (mode === "weaknesses") return "bg-brand-orange bg-opacity-30";
-    return "bg-brand-purple bg-opacity-30";
+    if (mode === "strengths") return "bg-brand-light-green bg-opacity-30";
+    if (mode === "weaknesses") return "bg-brand-light-red bg-opacity-30";
+    return "bg-purple-100 bg-opacity-80";
   };
 
   const getChildIconBgColor = () => {
-    if (mode === "strengths") return "bg-brand-success";
-    if (mode === "weaknesses") return "bg-brand-orange";
-    return "bg-brand-purple";
+    if (mode === "strengths") return "bg-brand-light-green";
+    if (mode === "weaknesses") return "bg-brand-light-red";
+    return "bg-purple-500";
   };
 
   const ChildIcon = getChildIcon();
@@ -1673,6 +1675,7 @@ export const CompetitorsManagement = ({
               </div>
             </CardHeader>
             <CardContent>
+              {/* Children horizontal scroll section */}
               {isLoadingChildren ? (
                 <div className="text-center py-8 text-dashboard-gray-500">
                   Loading {childrenLabel.toLowerCase()}...
@@ -1756,73 +1759,69 @@ export const CompetitorsManagement = ({
                   </div>
                 </div>
               )}
+
+              {/* React Flow section (only if child selected and not substitutes mode) */}
+              {selectedChildId && mode !== "substitute-products" && (
+                <div className="mt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    {mode === "strengths" ? (
+                      <ShieldAlert className="h-5 w-5" />
+                    ) : (
+                      <Star className="h-5 w-5" />
+                    )}
+                    <h3 className="text-lg font-semibold">
+                      {grandchildrenLabel}
+                    </h3>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-dashboard-gray-400" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p>
+                            {mode === "strengths"
+                              ? "Risks created by this competitor strength."
+                              : "Opportunities created by this competitor weakness."}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <div className="h-[520px]">
+                    {isLoadingChildren ||
+                    (mode === "strengths" && isLoadingRisks) ||
+                    (mode === "weaknesses" && isLoadingOpportunities) ? (
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                      </div>
+                    ) : (
+                      <ReactFlow
+                        nodes={generateNodes()}
+                        edges={generateEdges()}
+                        nodeTypes={nodeTypes}
+                        onNodeClick={handleNodeClick}
+                        onNodeDoubleClick={handleNodeClick}
+                        defaultViewport={{ x: 250, y: 50, zoom: 1 }}
+                        minZoom={0.5}
+                        maxZoom={1.5}
+                        nodesDraggable={false}
+                        nodesConnectable={false}
+                        elementsSelectable={true}
+                        panOnScroll={true}
+                        zoomOnScroll={false}
+                        proOptions={{ hideAttribution: true }}
+                      >
+                        <Background />
+                        <Controls />
+                      </ReactFlow>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       )}
-
-      {/* React Flow Card (only for strengths/weaknesses with selected child) */}
-      {selectedCompetitorId &&
-        selectedChildId &&
-        mode !== "substitute-products" && (
-          <div className="mt-6">
-            <Card className="h-[600px]">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  {mode === "strengths" ? (
-                    <ShieldAlert className="h-5 w-5" />
-                  ) : (
-                    <Star className="h-5 w-5" />
-                  )}
-                  {grandchildrenLabel}
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 text-dashboard-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p>
-                          {mode === "strengths"
-                            ? "Risks created by this competitor strength."
-                            : "Opportunities created by this competitor weakness."}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="h-[520px]">
-                {isLoadingChildren ||
-                (mode === "strengths" && isLoadingRisks) ||
-                (mode === "weaknesses" && isLoadingOpportunities) ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
-                ) : (
-                  <ReactFlow
-                    nodes={generateNodes()}
-                    edges={generateEdges()}
-                    nodeTypes={nodeTypes}
-                    onNodeClick={handleNodeClick}
-                    onNodeDoubleClick={handleNodeClick}
-                    defaultViewport={{ x: 250, y: 50, zoom: 1 }}
-                    minZoom={0.5}
-                    maxZoom={1.5}
-                    nodesDraggable={false}
-                    nodesConnectable={false}
-                    elementsSelectable={true}
-                    panOnScroll={true}
-                    zoomOnScroll={false}
-                    proOptions={{ hideAttribution: true }}
-                  >
-                    <Background />
-                    <Controls />
-                  </ReactFlow>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
 
       {/* Create Competitor Modal */}
       <Dialog
