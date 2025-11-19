@@ -238,6 +238,7 @@ export const CompetitorsManagement = ({
       ? selectedOrgAccount?.accountId || null
       : null,
     mode === "substitute-products" ? selectedCompetitorId : null,
+    null, // No product filter on Competitors page
   );
   const substituteProducts = substituteProductsData?.products || [];
 

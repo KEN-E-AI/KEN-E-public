@@ -661,6 +661,9 @@ async def create_substitute_product(
 async def list_substitute_products(
     account_id: str,
     competitor_node_id: str | None = Query(None, description="Filter by competitor"),
+    product_node_id: str | None = Query(
+        None, description="Filter by product (MAY_BE_SUBSTITUTED_FOR relationship)"
+    ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
         None, ge=1, le=1000, description="Maximum number of items to return"
@@ -670,28 +673,67 @@ async def list_substitute_products(
 ) -> SubstituteProductListResponse:
     """List all substitute products with optional pagination.
 
+    Can filter by competitor_node_id OR product_node_id (not both).
     Special case: Fetches parent competitor_node_id from relationship.
     """
     from .crud_factory import check_graph_access
 
     await check_graph_access(account_id, user, "view")
 
-    try:
-        total_count = await service.count_nodes(
-            account_id,
-            "SubstituteProduct",
-            parent_node_id=competitor_node_id,
-            parent_node_type="Competitor" if competitor_node_id else None,
+    # Validate: cannot filter by both
+    if competitor_node_id and product_node_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot filter by both competitor_node_id and product_node_id",
         )
 
-        products_data = await service.list_nodes(
-            account_id,
-            "SubstituteProduct",
-            parent_node_id=competitor_node_id,
-            parent_node_type="Competitor" if competitor_node_id else None,
-            skip=skip,
-            limit=limit,
-        )
+    try:
+        if product_node_id:
+            # Filter by Product (reverse MAY_BE_SUBSTITUTED_FOR relationship)
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(acc)
+            MATCH (p)-[:MAY_BE_SUBSTITUTED_FOR]->(sub:SubstituteProduct)-[:BELONGS_TO]->(acc)
+            MATCH (comp:Competitor)-[:OFFERS_PRODUCT]->(sub)
+            RETURN sub as node, comp.node_id as parent_node_id
+            ORDER BY sub.product_name
+            SKIP $skip
+            """
+            count_query = """
+            MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+            MATCH (p)-[:MAY_BE_SUBSTITUTED_FOR]->(sub:SubstituteProduct)
+            RETURN count(sub) as total
+            """
+            params = {"account_id": account_id, "product_node_id": product_node_id, "skip": skip}
+            if limit:
+                query += " LIMIT $limit"
+                params["limit"] = limit
+
+            total_result = await service.neo4j.execute_query(count_query, {"account_id": account_id, "product_node_id": product_node_id})
+            total_count = total_result[0]["total"] if total_result else 0
+
+            results = await service.neo4j.execute_query(query, params)
+            products_data = [
+                {**r["node"], "parent_node_id": r["parent_node_id"]}
+                for r in results
+            ]
+        else:
+            # Filter by Competitor (original logic)
+            total_count = await service.count_nodes(
+                account_id,
+                "SubstituteProduct",
+                parent_node_id=competitor_node_id,
+                parent_node_type="Competitor" if competitor_node_id else None,
+            )
+
+            products_data = await service.list_nodes(
+                account_id,
+                "SubstituteProduct",
+                parent_node_id=competitor_node_id,
+                parent_node_type="Competitor" if competitor_node_id else None,
+                skip=skip,
+                limit=limit,
+            )
 
         products = [
             SubstituteProductResponse(

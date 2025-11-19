@@ -40,12 +40,17 @@ class SubstituteProductService {
   async list(
     accountId: AccountId,
     competitorId?: string,
+    productNodeId?: string,
     skip = 0,
     limit = 1000,
   ): Promise<SubstituteProductListResponse> {
+    const params: Record<string, any> = { skip, limit };
+    if (competitorId) params.competitor_node_id = competitorId;
+    if (productNodeId) params.product_node_id = productNodeId;
+
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/substitute-products`,
-      { params: { competitor_node_id: competitorId, skip, limit } },
+      { params },
     );
     return response.data;
   }

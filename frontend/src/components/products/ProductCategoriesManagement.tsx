@@ -28,7 +28,14 @@ import {
   useUpdateValueProposition,
   useDeleteValueProposition,
 } from "@/queries/products";
+import {
+  useSubstituteProducts,
+  useLinkProductToSubstitute,
+  useUnlinkProductFromSubstitute,
+} from "@/queries/competitors";
+import type { SubstituteProduct } from "@/services/substituteProductService";
 import { CategoryNode, ProductNode } from "./ProductFlowNodes";
+import { SubstituteProductNode } from "../competitors/CompetitorFlowNodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -180,9 +187,28 @@ export const ProductCategoriesManagement = ({
     );
   const valuePropositions = valuePropositionsData?.value_propositions || [];
 
+  // Substitute Products linked to selected Product (for React Flow third row)
+  const { data: substituteProductsData, isLoading: isLoadingSubstituteProducts } =
+    useSubstituteProducts(
+      selectedProductId ? selectedOrgAccount?.accountId || null : null,
+      null, // No competitor filter on Products page
+      selectedProductId, // Filter by Product
+    );
+  const substituteProducts = substituteProductsData?.products || [];
+
+  // Track selected substitute product (third level)
+  const [selectedSubstituteProduct, setSelectedSubstituteProduct] =
+    useState<SubstituteProduct | null>(null);
+  const [selectedSubstituteProductId, setSelectedSubstituteProductId] =
+    useState<string | null>(null);
+
   const createVPMutation = useCreateValueProposition();
   const updateVPMutation = useUpdateValueProposition();
   const deleteVPMutation = useDeleteValueProposition();
+
+  // Link/Unlink mutations for substitute products
+  const linkProductMutation = useLinkProductToSubstitute();
+  const unlinkProductMutation = useUnlinkProductFromSubstitute();
 
   // Unsaved changes detection
   const originalData =
@@ -434,6 +460,7 @@ export const ProductCategoriesManagement = ({
   const nodeTypes = {
     categoryNode: CategoryNode,
     productNode: ProductNode,
+    substituteProductNode: SubstituteProductNode,
   };
 
   // Generate nodes for React Flow

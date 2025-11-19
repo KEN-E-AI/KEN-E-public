@@ -389,19 +389,21 @@ export function useDeleteCompetitorWeakness() {
 export function useSubstituteProducts(
   accountId: string | null,
   competitorId: string | null,
+  productNodeId?: string | null,
   skip = 0,
   limit = 1000,
 ) {
   return useQuery({
-    queryKey: ["substitute-products", accountId, competitorId, skip, limit],
+    queryKey: ["substitute-products", accountId, competitorId, productNodeId, skip, limit],
     queryFn: () =>
       substituteProductService.list(
         accountId!,
         competitorId || undefined,
+        productNodeId || undefined,
         skip,
         limit,
       ),
-    enabled: !!accountId,
+    enabled: !!accountId && (!!competitorId || !!productNodeId),
   });
 }
 
