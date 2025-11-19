@@ -90,6 +90,7 @@ async def list_brand_personalities(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="BrandPersonality",
+        response_model_class=BrandPersonalityResponse,
         list_response_class=BrandPersonalityListResponse,
         skip=skip,
         limit=limit,
@@ -199,6 +200,7 @@ async def list_voice_and_tone(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="VoiceAndTone",
+        response_model_class=VoiceAndToneResponse,
         list_response_class=VoiceAndToneListResponse,
         skip=skip,
         limit=limit,
@@ -304,6 +306,7 @@ async def list_color_palettes(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ColorPalette",
+        response_model_class=ColorPaletteResponse,
         list_response_class=ColorPaletteListResponse,
         skip=skip,
         limit=limit,
@@ -409,6 +412,7 @@ async def list_typography(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="Typography",
+        response_model_class=TypographyResponse,
         list_response_class=TypographyListResponse,
         skip=skip,
         limit=limit,
@@ -510,6 +514,7 @@ async def list_image_styles(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ImageStyle",
+        response_model_class=ImageStyleResponse,
         list_response_class=ImageStyleListResponse,
         skip=skip,
         limit=limit,
@@ -615,6 +620,7 @@ async def list_mission_and_values(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="MissionAndValues",
+        response_model_class=MissionAndValuesResponse,
         list_response_class=MissionAndValuesListResponse,
         skip=skip,
         limit=limit,

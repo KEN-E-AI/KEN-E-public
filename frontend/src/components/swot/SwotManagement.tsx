@@ -1,13 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import { ReactFlow, Controls, Background } from "reactflow";
+import { useState, useMemo } from "react";
 import type { Node, Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import {
   Plus,
   Trash2,
   Star,
-  ChevronLeft,
-  ChevronRight,
   Pencil,
   Dumbbell,
   Unlink,
@@ -53,7 +50,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -72,20 +68,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import axios from "axios";
+
+// Import knowledge graph components
+import {
+  ModeSelector,
+  KnowledgeGraphCard,
+  HorizontalScrollList,
+  HorizontalScrollItem,
+  GraphVisualizationCard,
+  KnowledgeGraphSideSheet,
+  DIAGRAM_LAYOUT,
+  DEFAULT_EDGE_STYLE,
+} from "@/components/knowledge-graph";
+import type { ModeConfig } from "@/components/knowledge-graph";
 
 type SwotMode = "strengths" | "weaknesses";
 
@@ -98,6 +95,11 @@ interface FormDataState {
   description: string;
 }
 
+const SWOT_MODES: readonly ModeConfig<SwotMode>[] = [
+  { value: "strengths", label: "Strengths" },
+  { value: "weaknesses", label: "Weaknesses" },
+] as const;
+
 export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
@@ -106,7 +108,7 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
   // Mode state
   const [mode, setMode] = useState<SwotMode>("strengths");
 
-  // Fetch data for both modes (conditional based on mode)
+  // Fetch data for both modes
   const { data: strengthsData, isLoading: isLoadingStrengths } = useStrengths(
     mode === "strengths" ? selectedOrgAccount?.accountId || null : null,
   );
@@ -132,15 +134,13 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
     display_name: "",
     description: "",
   });
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch children based on mode
   const { data: opportunitiesData, isLoading: isLoadingOpportunities } =
     useOpportunities(
       mode === "strengths" ? selectedOrgAccount?.accountId || null : null,
       mode === "strengths" ? selectedParentId : null,
+      "strength", // SWOT Strengths create Opportunities
     );
   const opportunities = opportunitiesData?.opportunities || [];
 
@@ -208,34 +208,8 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
   const isLoadingChildren =
     mode === "strengths" ? isLoadingOpportunities : isLoadingRisks;
 
-  const checkScrollPosition = () => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    setCanScrollLeft(container.scrollLeft > 0);
-    setCanScrollRight(
-      container.scrollLeft < container.scrollWidth - container.clientWidth - 1,
-    );
-  };
-
-  const scrollLeft = () => {
-    scrollContainerRef.current?.scrollBy({ left: -300, behavior: "smooth" });
-  };
-
-  const scrollRight = () => {
-    scrollContainerRef.current?.scrollBy({ left: 300, behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    checkScrollPosition();
-    const handleResize = () => checkScrollPosition();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [items]);
-
   // Mode switch handler - clears all selections
   const handleModeSwitch = (newMode: SwotMode) => {
-    // Warn if unsaved changes
     if (isEditing) {
       const hasChanges =
         (selectedParent &&
@@ -258,7 +232,6 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
       }
     }
 
-    // Clear all selections and switch mode
     setMode(newMode);
     setSelectedParentId(null);
     setSelectedParent(null);
@@ -481,11 +454,13 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
     const parentType = mode === "strengths" ? "strengthNode" : "weaknessNode";
     const childType = mode === "strengths" ? "opportunityNode" : "riskNode";
 
-    // Parent Node (top center)
     nodes.push({
       id: selectedParent.node_id,
       type: parentType,
-      position: { x: 300, y: 50 },
+      position: {
+        x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+        y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+      },
       data: {
         label: selectedParent.display_name,
         isSelected:
@@ -496,19 +471,18 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
       },
     });
 
-    // Child Nodes (row below, horizontally spaced)
-    const childWidth = 224;
-    const gap = 36;
-    const totalWidth = children.length * (childWidth + gap) - gap;
-    const startX = 300 - totalWidth / 2;
+    const childWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
+    const gap = DIAGRAM_LAYOUT.HORIZONTAL_GAP;
+    const totalWidth = children.length * childWidth - gap;
+    const startX = DIAGRAM_LAYOUT.PARENT_NODE_X - totalWidth / 2;
 
     children.forEach((child, index) => {
       nodes.push({
         id: child.node_id,
         type: childType,
         position: {
-          x: startX + index * (childWidth + gap),
-          y: 224,
+          x: startX + index * childWidth,
+          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
         },
         data: {
           label: child.display_name,
@@ -531,24 +505,15 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
   const generateEdges = (): Edge[] => {
     if (!selectedParent) return [];
 
-    const edges: Edge[] = [];
-
-    children.forEach((child) => {
-      edges.push({
-        id: `${selectedParent.node_id}-${child.node_id}`,
-        source: selectedParent.node_id,
-        target: child.node_id,
-        type: "smoothstep",
-        style: {
-          stroke: "#000",
-          strokeWidth: 2,
-        },
-        sourceHandle: "bottom",
-        targetHandle: "top",
-      });
-    });
-
-    return edges;
+    return children.map((child) => ({
+      id: `${selectedParent.node_id}-${child.node_id}`,
+      source: selectedParent.node_id,
+      target: child.node_id,
+      type: "smoothstep",
+      style: DEFAULT_EDGE_STYLE,
+      sourceHandle: "bottom",
+      targetHandle: "top",
+    }));
   };
 
   // Handle node clicks in React Flow
@@ -715,7 +680,6 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
       setContextMenuType("child");
       setIsContextMenuOpen(true);
 
-      // Reset form with empty state
       setChildFormData({
         display_name: "",
         description: "",
@@ -918,216 +882,93 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
   const childLabel = mode === "strengths" ? "Opportunity" : "Risk";
   const childrenLabel = mode === "strengths" ? "Opportunities" : "Risks";
 
+  const nodes = useMemo(
+    () => generateNodes(),
+    [selectedParent, children, selectedChildId],
+  );
+  const edges = useMemo(() => generateEdges(), [selectedParent, children]);
+
   return (
     <>
-      {/* Segmented Control */}
-      <div className="flex mb-6">
-        <div className="inline-flex rounded-md border border-input bg-muted p-1 gap-1">
-          <Button
-            variant={mode === "strengths" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => handleModeSwitch("strengths")}
-            className="px-6"
-          >
-            Strengths
-          </Button>
-          <Button
-            variant={mode === "weaknesses" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => handleModeSwitch("weaknesses")}
-            className="px-6"
-          >
-            Weaknesses
-          </Button>
-        </div>
-      </div>
+      {/* Mode Selector - Outside card */}
+      <ModeSelector
+        modes={SWOT_MODES}
+        value={mode}
+        onChange={handleModeSwitch}
+        className="mb-6"
+      />
 
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle className="flex items-center gap-2">
-              {mode === "strengths" ? (
-                <Dumbbell className="h-5 w-5" />
-              ) : (
-                <Unlink className="h-5 w-5" />
-              )}
-              {mode === "strengths" ? "Strengths" : "Weaknesses"}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-dashboard-gray-400" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <p>
-                      {mode === "strengths"
-                        ? "Identify your business strengths to help KEN-E understand what your company excels at and how to leverage these advantages."
-                        : "Identify areas where your business needs improvement to help KEN-E understand potential vulnerabilities."}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </CardTitle>
-            {hasEditAccess && (
-              <Button
-                onClick={handleCreateClick}
-                size="sm"
-                variant="ghost"
-                className="h-8 w-8 p-0"
-              >
-                <Plus className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoadingItems ? (
-            <div className="text-center py-8 text-dashboard-gray-500">
-              Loading {mode}...
-            </div>
-          ) : items.length === 0 ? (
-            <div className="text-center py-8 text-dashboard-gray-500">
-              No {mode} found.
-              {hasEditAccess && " Click '+' to add one."}
-            </div>
-          ) : (
-            <div className="relative">
-              {canScrollLeft && (
-                <button
-                  className="absolute left-0 top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity"
-                  onClick={scrollLeft}
-                >
-                  <ChevronLeft className="h-6 w-6 text-white" />
-                </button>
-              )}
+      {/* Parent Items Card (Strengths or Weaknesses) */}
+      <KnowledgeGraphCard
+        title={mode === "strengths" ? "Strengths" : "Weaknesses"}
+        icon={parentIcon}
+        tooltip={
+          mode === "strengths"
+            ? "Identify your business strengths to help KEN-E understand what your company excels at and how to leverage these advantages."
+            : "Identify areas where your business needs improvement to help KEN-E understand potential vulnerabilities."
+        }
+        actions={
+          hasEditAccess ? (
+            <Button
+              onClick={handleCreateClick}
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0"
+            >
+              <Plus className="h-5 w-5" />
+            </Button>
+          ) : undefined
+        }
+      >
+        <HorizontalScrollList
+          items={items}
+          selectedId={selectedParentId}
+          onItemClick={handleParentClick}
+          isLoading={isLoadingItems}
+          emptyMessage={`No ${mode} found.`}
+          emptyMessageWithAction="Click '+' to add one."
+          hasEditAccess={hasEditAccess}
+          renderItem={(item, isSelected) => {
+            const ItemIcon = mode === "strengths" ? Dumbbell : Unlink;
+            const bgColor =
+              mode === "strengths"
+                ? "bg-brand-light-green"
+                : "bg-brand-light-red";
 
-              <div
-                ref={scrollContainerRef}
-                className="flex gap-3 overflow-x-auto px-2 py-2"
-                onScroll={checkScrollPosition}
-              >
-                {items.map((item) => {
-                  const ItemIcon = mode === "strengths" ? Dumbbell : Unlink;
-                  const bgColor =
-                    mode === "strengths"
-                      ? "bg-brand-light-green"
-                      : "bg-brand-light-red";
+            return (
+              <HorizontalScrollItem
+                label={item.display_name}
+                sublabel={parentLabel}
+                icon={ItemIcon}
+                bgColor={`${bgColor} bg-opacity-30`}
+                iconBgColor={bgColor}
+                isSelected={isSelected}
+                onClick={() => {}}
+              />
+            );
+          }}
+        />
+      </KnowledgeGraphCard>
 
-                  return (
-                    <div
-                      key={item.node_id}
-                      className={`flex-shrink-0 p-4 rounded-lg transition-colors cursor-pointer ${
-                        selectedParentId === item.node_id
-                          ? "ring-2 ring-brand-medium-blue"
-                          : "hover:ring-2 hover:ring-gray-300"
-                      }`}
-                      onClick={() => handleParentClick(item)}
-                    >
-                      <div className="flex items-center">
-                        <div
-                          className={`${bgColor} bg-opacity-30 rounded-lg pl-4 pr-16 py-2`}
-                        >
-                          <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-                            {parentLabel}
-                          </p>
-                          <p className="font-semibold text-dashboard-gray-900 leading-tight">
-                            {item.display_name}
-                          </p>
-                        </div>
-
-                        <div className="flex-shrink-0 -ml-12 relative z-10">
-                          <div
-                            className={`rounded-full ${bgColor} flex items-center justify-center`}
-                            style={{ width: "72px", height: "72px" }}
-                          >
-                            <ItemIcon
-                              className="text-white"
-                              style={{ width: "48px", height: "48px" }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {canScrollRight && (
-                <button
-                  className="absolute right-0 top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity"
-                  onClick={scrollRight}
-                >
-                  <ChevronRight className="h-6 w-6 text-white" />
-                </button>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Children Card */}
+      {/* Children Visualization Card (Opportunities or Risks) */}
       <div className="mt-6">
-        {selectedParentId ? (
-          <Card className="h-[600px]">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                {mode === "strengths" ? (
-                  <Star className="h-5 w-5" />
-                ) : (
-                  <ShieldAlert className="h-5 w-5" />
-                )}
-                {childrenLabel}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-dashboard-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p>
-                        {mode === "strengths"
-                          ? "Identify opportunities that arise from the selected strength. These are potential areas for growth and strategic advantage."
-                          : "Identify risks that arise from the selected weakness. These are potential threats that need mitigation."}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="h-[520px]">
-              {isLoadingChildren ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
-              ) : (
-                <ReactFlow
-                  nodes={generateNodes()}
-                  edges={generateEdges()}
-                  nodeTypes={nodeTypes}
-                  onNodeClick={handleNodeClick}
-                  onNodeDoubleClick={handleNodeClick}
-                  defaultViewport={{ x: 250, y: 50, zoom: 1 }}
-                  minZoom={0.5}
-                  maxZoom={1.5}
-                  nodesDraggable={false}
-                  nodesConnectable={false}
-                  elementsSelectable={true}
-                  panOnScroll={true}
-                  zoomOnScroll={false}
-                  proOptions={{ hideAttribution: true }}
-                >
-                  <Background />
-                  <Controls />
-                </ReactFlow>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200 h-[600px] flex items-center justify-center">
-            <p className="text-dashboard-gray-500 text-center">
-              Select a {mode === "strengths" ? "strength" : "weakness"} to view{" "}
-              {mode === "strengths" ? "opportunities" : "risks"}.
-            </p>
-          </div>
-        )}
+        <GraphVisualizationCard
+          title={childrenLabel}
+          icon={childIcon}
+          tooltip={
+            mode === "strengths"
+              ? "Identify opportunities that arise from the selected strength. These are potential areas for growth and strategic advantage."
+              : "Identify risks that arise from the selected weakness. These are potential threats that need mitigation."
+          }
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodeClick={handleNodeClick}
+          onNodeDoubleClick={handleNodeClick}
+          isLoading={isLoadingChildren}
+          showEmpty={!selectedParentId}
+          emptyMessage={`Select a ${mode === "strengths" ? "strength" : "weakness"} to view ${mode === "strengths" ? "opportunities" : "risks"}.`}
+        />
       </div>
 
       {/* Create Parent Modal */}
@@ -1348,8 +1189,8 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
         </DialogContent>
       </Dialog>
 
-      {/* Node Context Menu */}
-      <Sheet
+      {/* Node Context Menu Side Sheet */}
+      <KnowledgeGraphSideSheet
         open={isContextMenuOpen}
         modal={false}
         onOpenChange={(open) => {
@@ -1375,145 +1216,96 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
             setIsEditing(false);
           }
         }}
+        title={contextMenuType === "parent" ? parentLabel : childLabel}
+        icon={
+          contextMenuType === "parent"
+            ? mode === "strengths"
+              ? Dumbbell
+              : Unlink
+            : mode === "strengths"
+              ? Star
+              : ShieldAlert
+        }
+        isEditing={isEditing}
+        onEdit={() => setIsEditing(true)}
+        onSave={contextMenuType === "parent" ? handleSave : handleChildSave}
+        onCancel={() => {
+          setIsEditing(false);
+          if (selectedParent && contextMenuType === "parent") {
+            setFormData({
+              display_name: selectedParent.display_name,
+              description: selectedParent.description,
+            });
+          } else if (selectedChild && contextMenuType === "child") {
+            setFormData({
+              display_name: selectedChild.display_name,
+              description: selectedChild.description,
+            });
+          }
+        }}
+        onDelete={() => {
+          if (contextMenuType === "parent" && selectedParent) {
+            setIsContextMenuOpen(false);
+            handleDeleteClick(selectedParent);
+          } else if (contextMenuType === "child" && selectedChild) {
+            setIsContextMenuOpen(false);
+            setIsDeleteChildDialogOpen(true);
+          }
+        }}
+        hasEditAccess={hasEditAccess}
+        preventClose={isEditing}
       >
-        <SheetContent side="right" className="w-[400px] flex flex-col">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              {contextMenuType === "parent" ? (
-                mode === "strengths" ? (
-                  <Dumbbell className="h-5 w-5" />
-                ) : (
-                  <Unlink className="h-5 w-5" />
-                )
-              ) : mode === "strengths" ? (
-                <Star className="h-5 w-5" />
-              ) : (
-                <ShieldAlert className="h-5 w-5" />
-              )}
-              {contextMenuType === "parent" ? parentLabel : childLabel}
-            </SheetTitle>
-          </SheetHeader>
-
-          <div className="flex-1 mt-6 overflow-y-auto">
-            {isEditing ? (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="context-edit-name">Name:</Label>
-                  <Input
-                    id="context-edit-name"
-                    value={formData.display_name}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        display_name: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="context-edit-description">Description:</Label>
-                  <Textarea
-                    id="context-edit-description"
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        description: e.target.value,
-                      })
-                    }
-                    rows={4}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <p className="font-semibold">Name:</p>
-                  <p>
-                    {contextMenuType === "parent"
-                      ? selectedParent?.display_name
-                      : selectedChild?.display_name}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-semibold">Description:</p>
-                  <p className="text-sm text-dashboard-gray-600">
-                    {contextMenuType === "parent"
-                      ? selectedParent?.description
-                      : selectedChild?.description}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {hasEditAccess && (
-            <div className="flex gap-2 pt-4 border-t">
-              {isEditing ? (
-                <>
-                  <Button
-                    onClick={() => {
-                      setIsEditing(false);
-                      if (selectedParent && contextMenuType === "parent") {
-                        setFormData({
-                          display_name: selectedParent.display_name,
-                          description: selectedParent.description,
-                        });
-                      } else if (selectedChild && contextMenuType === "child") {
-                        setFormData({
-                          display_name: selectedChild.display_name,
-                          description: selectedChild.description,
-                        });
-                      }
-                    }}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={
-                      contextMenuType === "parent"
-                        ? handleSave
-                        : handleChildSave
-                    }
-                    className="flex-1"
-                  >
-                    Save Changes
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    onClick={() => setIsEditing(true)}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      if (contextMenuType === "parent" && selectedParent) {
-                        setIsContextMenuOpen(false);
-                        handleDeleteClick(selectedParent);
-                      } else if (contextMenuType === "child" && selectedChild) {
-                        setIsContextMenuOpen(false);
-                        setIsDeleteChildDialogOpen(true);
-                      }
-                    }}
-                    variant="destructive"
-                    className="flex-1"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </>
-              )}
+        {isEditing ? (
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="context-edit-name">Name:</Label>
+              <Input
+                id="context-edit-name"
+                value={formData.display_name}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    display_name: e.target.value,
+                  })
+                }
+              />
             </div>
-          )}
-        </SheetContent>
-      </Sheet>
+            <div>
+              <Label htmlFor="context-edit-description">Description:</Label>
+              <Textarea
+                id="context-edit-description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    description: e.target.value,
+                  })
+                }
+                rows={4}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <p className="font-semibold">Name:</p>
+              <p>
+                {contextMenuType === "parent"
+                  ? selectedParent?.display_name
+                  : selectedChild?.display_name}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold">Description:</p>
+              <p className="text-sm text-dashboard-gray-600">
+                {contextMenuType === "parent"
+                  ? selectedParent?.description
+                  : selectedChild?.description}
+              </p>
+            </div>
+          </div>
+        )}
+      </KnowledgeGraphSideSheet>
     </>
   );
 };

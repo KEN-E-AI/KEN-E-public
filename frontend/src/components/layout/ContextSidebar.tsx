@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -48,6 +48,11 @@ import { useChat } from "@/contexts/ChatContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import type { NotificationCategory } from "@/types/notification.types";
+import {
+  getOrganizationById,
+  getAccountsByOrganizationId,
+} from "@/data/organizationApi";
+import { toOrganizationId, toAccountId } from "@/lib/branded-types";
 
 // Notification category icon mapping matching NotificationPreferences.tsx
 const NOTIFICATION_CATEGORY_ICONS: Record<
@@ -83,11 +88,13 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     selectedOrgAccount,
     setSelectedOrgAccount,
     setCurrentOrganization,
+    setOrgMetadata,
     isSuperAdmin,
   } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isHomePage = location.pathname === "/";
+  const hasSyncedOrgs = useRef(false);
 
   // Chat state and functions from ChatContext
   const {
@@ -109,6 +116,94 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
       updateChatContext(selectedTab);
     }
   }, [selectedTab, isHomePage, updateChatContext]);
+
+  // Clean up stale organization metadata and fetch missing ones (run once per session)
+  useEffect(() => {
+    // Skip if already synced or no user
+    if (!user?.permissions?.organizations || hasSyncedOrgs.current) {
+      return;
+    }
+
+    const accessibleOrgIds = Object.keys(user.permissions.organizations);
+    if (accessibleOrgIds.length === 0) {
+      return;
+    }
+
+    const currentOrgIds = Object.keys(orgMetadata);
+
+    // Check for stale orgs (in metadata but not in permissions)
+    const staleOrgIds = currentOrgIds.filter(
+      (id) => !accessibleOrgIds.includes(id),
+    );
+
+    // Check for missing orgs (in permissions but not in metadata)
+    const missingOrgIds = accessibleOrgIds.filter((id) => !orgMetadata[id]);
+
+    // If nothing needs syncing, mark as synced and exit
+    if (staleOrgIds.length === 0 && missingOrgIds.length === 0) {
+      hasSyncedOrgs.current = true;
+      return;
+    }
+
+    // Mark as synced BEFORE starting async work to prevent re-runs
+    hasSyncedOrgs.current = true;
+
+    // Run sync asynchronously without blocking
+    (async () => {
+      try {
+        const newOrgData: Record<string, any> = {};
+
+        // Only keep organizations that the user has permissions for
+        for (const orgId of accessibleOrgIds) {
+          if (orgMetadata[orgId]) {
+            // Keep existing metadata but update accounts from accountMetadata if available
+            const orgAccounts = Object.values(accountMetadata).filter(
+              (account: any) => account.organization_id === orgId,
+            );
+            newOrgData[orgId] = {
+              ...orgMetadata[orgId],
+              accounts:
+                orgAccounts.length > 0
+                  ? orgAccounts
+                  : orgMetadata[orgId].accounts || [],
+            };
+          } else {
+            // Fetch missing organization
+            try {
+              const org = await getOrganizationById(orgId);
+
+              // Try to get accounts from API, fallback to accountMetadata
+              let accounts: any[] = [];
+              try {
+                accounts = await getAccountsByOrganizationId(orgId);
+              } catch (accountError) {
+                // Fallback to local account data if API fails
+                accounts = Object.values(accountMetadata).filter(
+                  (account: any) => account.organization_id === orgId,
+                );
+              }
+
+              if (org) {
+                newOrgData[orgId] = { ...org, accounts };
+              }
+            } catch (error: any) {
+              // Silently handle deleted organizations - they'll be removed from metadata
+              if (error.response?.status !== 404) {
+                console.error(`Failed to load organization ${orgId}:`, error);
+              }
+            }
+          }
+        }
+
+        // Only update if we got at least one valid org
+        if (Object.keys(newOrgData).length > 0) {
+          setOrgMetadata(newOrgData);
+        }
+      } catch (error) {
+        console.error("Failed to sync organizations:", error);
+      }
+    })();
+  }, [user?.permissions?.organizations]);
 
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
@@ -177,7 +272,10 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   }> = accessibleOrgIds
     .flatMap((orgId) => {
       const organization = orgMetadata[orgId];
-      if (!organization) return [];
+      if (!organization) {
+        // Organization metadata not yet loaded or organization was deleted
+        return [];
+      }
 
       const orgAccounts = organization.accounts || [];
 
@@ -250,8 +348,8 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     }
 
     const selection: SelectedOrgAccount = {
-      orgId,
-      accountId,
+      orgId: toOrganizationId(orgId),
+      accountId: toAccountId(accountId),
       metadata: {
         organization_name: organization.organization_name,
         account_name: account.account_name,
@@ -263,7 +361,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     };
 
     setSelectedOrgAccount(selection);
-    setCurrentOrganization(orgId);
+    setCurrentOrganization(toOrganizationId(orgId));
   };
 
   return (
@@ -289,7 +387,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
       ) : (
         <div className="h-16 flex items-center justify-between px-3 border-b border-dashboard-gray-200">
           {/* Organization/Account Selector */}
-          {combinedOptions.length > 0 && (
+          {combinedOptions.length > 0 ? (
             <div className="flex-1 mr-2 my-2">
               <Select
                 value={currentValue}
@@ -354,6 +452,10 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                   )}
                 </SelectContent>
               </Select>
+            </div>
+          ) : (
+            <div className="flex-1 mr-2 my-2 text-sm text-gray-500">
+              No accounts available
             </div>
           )}
           <Button

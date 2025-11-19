@@ -86,6 +86,7 @@ async def list_customer_profiles(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="CustomerProfile",
+        response_model_class=CustomerProfileResponse,
         list_response_class=CustomerProfileListResponse,
         skip=skip,
         limit=limit,
@@ -201,6 +202,7 @@ async def list_problem_awareness_strategies(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ProblemAwarenessStrategy",
+        response_model_class=ProblemAwarenessStrategyResponse,
         list_response_class=ProblemAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -317,6 +319,7 @@ async def list_brand_awareness_strategies(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="BrandAwarenessStrategy",
+        response_model_class=BrandAwarenessStrategyResponse,
         list_response_class=BrandAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -432,6 +435,7 @@ async def list_consideration_strategies(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ConsiderationStrategy",
+        response_model_class=ConsiderationStrategyResponse,
         list_response_class=ConsiderationStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -547,6 +551,7 @@ async def list_conversion_strategies(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="ConversionStrategy",
+        response_model_class=ConversionStrategyResponse,
         list_response_class=ConversionStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -662,6 +667,7 @@ async def list_loyalty_strategies(
     return await CRUDEndpoints.list_nodes(
         account_id=account_id,
         node_type="LoyaltyStrategy",
+        response_model_class=LoyaltyStrategyResponse,
         list_response_class=LoyaltyStrategyListResponse,
         skip=skip,
         limit=limit,

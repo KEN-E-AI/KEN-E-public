@@ -543,9 +543,9 @@ class GraphSyncService:
                 "account_id": record["account_id"],
             }
             # Add parent information if it exists in the query result
-            if "parent_node_id" in record and record["parent_node_id"]:
+            if record.get("parent_node_id"):
                 node_dict["parent_node_id"] = record["parent_node_id"]
-            if "parent_node_type" in record and record["parent_node_type"]:
+            if record.get("parent_node_type"):
                 node_dict["parent_node_type"] = record["parent_node_type"]
             nodes.append(node_dict)
 
@@ -573,11 +573,29 @@ class GraphSyncService:
         # Validate node_type to prevent Cypher injection
         validate_node_type(node_type)
 
-        query = f"""
-        MATCH (node:{node_type} {{node_id: $node_id}})
-        WHERE node.account_id = $account_id OR (node)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
-        RETURN node, $account_id as account_id
-        """
+        # Handle legacy field names for nodes that might use type-specific IDs
+        # TODO: Remove this compatibility layer after Neo4j data migration
+        legacy_field_map = {
+            "Risk": "risk_id",
+            "Opportunity": "opportunity_id",
+        }
+        legacy_field = legacy_field_map.get(node_type)
+
+        # Try node_id first, then fall back to legacy field if applicable
+        if legacy_field:
+            query = f"""
+            MATCH (node:{node_type})
+            WHERE (node.node_id = $node_id OR node.{legacy_field} = $node_id)
+              AND (node.account_id = $account_id OR (node)-[:BELONGS_TO]->(:Account {{account_id: $account_id}}))
+            RETURN node, $account_id as account_id
+            LIMIT 1
+            """
+        else:
+            query = f"""
+            MATCH (node:{node_type} {{node_id: $node_id}})
+            WHERE node.account_id = $account_id OR (node)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
+            RETURN node, $account_id as account_id
+            """
 
         result = await self.neo4j.execute_query(
             query, {"node_id": node_id, "account_id": account_id}
@@ -586,8 +604,14 @@ class GraphSyncService:
         if not result:
             return None
 
+        node_dict = self._neo4j_node_to_dict(result[0]["node"])
+
+        # Normalize legacy field to node_id if needed
+        if legacy_field and "node_id" not in node_dict and legacy_field in node_dict:
+            node_dict["node_id"] = node_dict[legacy_field]
+
         return {
-            **self._neo4j_node_to_dict(result[0]["node"]),
+            **node_dict,
             "account_id": result[0]["account_id"],
         }
 
@@ -967,6 +991,7 @@ class GraphSyncService:
         self,
         account_id: str,
         category_node_id: str | None = None,
+        substitute_product_node_id: str | None = None,
         skip: int = 0,
         limit: int | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -978,6 +1003,7 @@ class GraphSyncService:
         Args:
             account_id: Account identifier
             category_node_id: Optional filter by specific category
+            substitute_product_node_id: Optional filter by substitute product (MAY_BE_SUBSTITUTED_FOR)
             skip: Number of products to skip (default: 0)
             limit: Maximum number of products to return (default: None = all)
 
@@ -988,7 +1014,26 @@ class GraphSyncService:
         Raises:
             ValidationException: If validation fails
         """
-        if category_node_id:
+        if substitute_product_node_id:
+            # Query products that MAY_BE_SUBSTITUTED_FOR this substitute product
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (sub:SubstituteProduct {node_id: $substitute_product_node_id})
+                  <-[:MAY_BE_SUBSTITUTED_FOR]-(p:Product)-[:BELONGS_TO]->(acc)
+            OPTIONAL MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p)
+            RETURN p as node, acc.account_id as account_id, cat.node_id as category_node_id
+            ORDER BY p.product_name
+            """
+            count_query = """
+            MATCH (sub:SubstituteProduct {node_id: $substitute_product_node_id})
+                  <-[:MAY_BE_SUBSTITUTED_FOR]-(p:Product)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+            RETURN count(p) as total
+            """
+            count_params = {
+                "account_id": account_id,
+                "substitute_product_node_id": substitute_product_node_id,
+            }
+        elif category_node_id:
             # Query products filtered by specific category
             query = """
             MATCH (acc:Account {account_id: $account_id})
@@ -1473,21 +1518,33 @@ class GraphSyncService:
                 "Opportunity", "display_name", opportunity.display_name, account_id
             )
 
+        # Determine parent node and type (Strength or CompetitorWeakness)
+        if opportunity.strength_node_id:
+            parent_node_id = opportunity.strength_node_id
+            parent_node_type = "Strength"
+            parent_field_name = "strength_node_id"
+        else:
+            parent_node_id = opportunity.weakness_node_id
+            parent_node_type = "CompetitorWeakness"
+            parent_field_name = "weakness_node_id"
+
         node_data = {
             "display_name": opportunity.display_name.strip(),
             "description": opportunity.description.strip(),
             "references": opportunity.references,
-            "strength_node_id": opportunity.strength_node_id,
+            parent_field_name: parent_node_id,
         }
 
         result = await self.create_node(
             account_id=account_id,
             node_type="Opportunity",
             node_data=node_data,
-            parent_node_id=opportunity.strength_node_id,
-            parent_node_type="Strength",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
             user_id=user_id,
-            firestore_doc_type="business_strategy",
+            firestore_doc_type="business_strategy"
+            if opportunity.strength_node_id
+            else "competitive_strategy",
         )
 
         return OpportunityResponse(**result)
@@ -1521,17 +1578,30 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
-        # Fetch the parent strength relationship
-        strength_query = """
-        MATCH (s:Strength)-[:CREATES]->(o:Opportunity {node_id: $node_id})
-        RETURN s.node_id as strength_node_id
+        # Handle legacy data: map opportunity_id to node_id if needed
+        if "node_id" not in result and "opportunity_id" in result:
+            result["node_id"] = result["opportunity_id"]
+
+        # Fetch the parent relationship (could be Strength or CompetitorWeakness)
+        # Handle both node_id and legacy opportunity_id field
+        parent_query = """
+        MATCH (parent)-[:CREATES]->(o:Opportunity)
+        WHERE (o.node_id = $node_id OR o.opportunity_id = $node_id)
+          AND (parent:Strength OR parent:CompetitorWeakness)
+        RETURN parent.node_id as parent_node_id, labels(parent) as parent_labels
         LIMIT 1
         """
-        strength_result = await self.neo4j.execute_query(
-            strength_query, {"node_id": node_id}
+        parent_result = await self.neo4j.execute_query(
+            parent_query, {"node_id": node_id}
         )
-        if strength_result and strength_result[0]:
-            result["strength_node_id"] = strength_result[0]["strength_node_id"]
+        if parent_result and parent_result[0]:
+            parent_labels = parent_result[0]["parent_labels"]
+            if "Strength" in parent_labels:
+                result["strength_node_id"] = parent_result[0]["parent_node_id"]
+                result["weakness_node_id"] = None
+            elif "CompetitorWeakness" in parent_labels:
+                result["weakness_node_id"] = parent_result[0]["parent_node_id"]
+                result["strength_node_id"] = None
 
         return OpportunityResponse(**result)
 
@@ -1607,19 +1677,29 @@ class GraphSyncService:
                 "Risk", "display_name", risk.display_name, account_id
             )
 
+        # Determine parent node and type (Weakness or CompetitorStrength)
+        if risk.weakness_node_id:
+            parent_node_id = risk.weakness_node_id
+            parent_node_type = "Weakness"
+            parent_field_name = "weakness_node_id"
+        else:
+            parent_node_id = risk.strength_node_id
+            parent_node_type = "CompetitorStrength"
+            parent_field_name = "strength_node_id"
+
         node_data = {
             "display_name": risk.display_name.strip(),
             "description": risk.description.strip(),
             "references": risk.references,
-            "weakness_node_id": risk.weakness_node_id,
+            parent_field_name: parent_node_id,
         }
 
         result = await self.create_node(
             account_id=account_id,
             node_type="Risk",
             node_data=node_data,
-            parent_node_id=risk.weakness_node_id,
-            parent_node_type="Weakness",
+            parent_node_id=parent_node_id,
+            parent_node_type=parent_node_type,
             user_id=user_id,
             firestore_doc_type="business_strategy",
         )
@@ -1655,17 +1735,33 @@ class GraphSyncService:
             firestore_doc_type="business_strategy",
         )
 
-        # Fetch the parent weakness relationship
-        weakness_query = """
-        MATCH (w:Weakness)-[:CREATES]->(r:Risk {node_id: $node_id})
-        RETURN w.node_id as weakness_node_id
+        # Handle legacy data: map risk_id to node_id if needed
+        if "node_id" not in result and "risk_id" in result:
+            result["node_id"] = result["risk_id"]
+
+        # Fetch the parent relationship (either Weakness or CompetitorStrength)
+        # Risks can be created by:
+        # - Weakness nodes (business SWOT)
+        # - CompetitorStrength nodes (competitive analysis)
+        # Handle both node_id and legacy risk_id field
+        parent_query = """
+        MATCH (parent)-[:CREATES]->(r:Risk)
+        WHERE (r.node_id = $node_id OR r.risk_id = $node_id)
+          AND (parent:Weakness OR parent:CompetitorStrength)
+        RETURN parent.node_id as parent_node_id, labels(parent) as parent_labels
         LIMIT 1
         """
-        weakness_result = await self.neo4j.execute_query(
-            weakness_query, {"node_id": node_id}
+        parent_result = await self.neo4j.execute_query(
+            parent_query, {"node_id": node_id}
         )
-        if weakness_result and weakness_result[0]:
-            result["weakness_node_id"] = weakness_result[0]["weakness_node_id"]
+        if parent_result and parent_result[0]:
+            parent_labels = parent_result[0]["parent_labels"]
+            if "Weakness" in parent_labels:
+                result["weakness_node_id"] = parent_result[0]["parent_node_id"]
+                result["strength_node_id"] = None
+            elif "CompetitorStrength" in parent_labels:
+                result["strength_node_id"] = parent_result[0]["parent_node_id"]
+                result["weakness_node_id"] = None
 
         return RiskResponse(**result)
 
@@ -2325,6 +2421,77 @@ class GraphSyncService:
             firestore_doc_type="competitive_strategy",
             check_dependencies=True,
         )
+
+    async def link_product_to_substitute(
+        self,
+        account_id: str,
+        product_node_id: str,
+        substitute_product_node_id: str,
+    ) -> None:
+        """Create MAY_BE_SUBSTITUTED_FOR relationship between Product and SubstituteProduct.
+
+        Args:
+            account_id: Account identifier
+            product_node_id: Node ID of the Product
+            substitute_product_node_id: Node ID of the SubstituteProduct
+
+        Raises:
+            ValidationException: If validation fails
+        """
+        query = """
+        MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MATCH (s:SubstituteProduct {node_id: $substitute_product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MERGE (p)-[:MAY_BE_SUBSTITUTED_FOR]->(s)
+        RETURN p, s
+        """
+        params = {
+            "account_id": account_id,
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_product_node_id,
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+        if not result:
+            raise ValidationException(
+                "Product or SubstituteProduct not found",
+                "product_node_id or substitute_product_node_id"
+            )
+
+    async def unlink_product_from_substitute(
+        self,
+        account_id: str,
+        product_node_id: str,
+        substitute_product_node_id: str,
+    ) -> None:
+        """Remove MAY_BE_SUBSTITUTED_FOR relationship between Product and SubstituteProduct.
+
+        Args:
+            account_id: Account identifier
+            product_node_id: Node ID of the Product
+            substitute_product_node_id: Node ID of the SubstituteProduct
+
+        Raises:
+            ValidationException: If validation fails
+        """
+        query = """
+        MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MATCH (s:SubstituteProduct {node_id: $substitute_product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MATCH (p)-[r:MAY_BE_SUBSTITUTED_FOR]->(s)
+        DELETE r
+        RETURN p, s
+        """
+        params = {
+            "account_id": account_id,
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_product_node_id,
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+        if not result:
+            raise ValidationException(
+                "Relationship not found or nodes do not exist",
+                "product_node_id or substitute_product_node_id"
+            )
 
     # ==================== CONVENIENCE WRAPPERS FOR MARKETING STRATEGY ====================
     # Steps 4 & 5 Implementation
@@ -3201,13 +3368,32 @@ class GraphSyncService:
         Returns:
             Updated node as dictionary
         """
-        query = f"""
-        MATCH (node:{node_type} {{node_id: $node_id}})
-        SET node += $updates,
-            node.last_modified = datetime(),
-            node.last_modified_by = $user_id
-        RETURN node
-        """
+        # Handle legacy field names for nodes that might use type-specific IDs
+        # TODO: Remove this compatibility layer after Neo4j data migration
+        legacy_field_map = {
+            "Risk": "risk_id",
+            "Opportunity": "opportunity_id",
+        }
+        legacy_field = legacy_field_map.get(node_type)
+
+        # Match on either node_id or legacy field
+        if legacy_field:
+            query = f"""
+            MATCH (node:{node_type})
+            WHERE node.node_id = $node_id OR node.{legacy_field} = $node_id
+            SET node += $updates,
+                node.last_modified = datetime(),
+                node.last_modified_by = $user_id
+            RETURN node
+            """
+        else:
+            query = f"""
+            MATCH (node:{node_type} {{node_id: $node_id}})
+            SET node += $updates,
+                node.last_modified = datetime(),
+                node.last_modified_by = $user_id
+            RETURN node
+            """
 
         result = await self.neo4j.execute_write_query(
             query, {"node_id": node_id, "updates": updates, "user_id": user_id}
@@ -3216,7 +3402,13 @@ class GraphSyncService:
         if not result:
             raise Exception(f"Failed to update {node_type} {node_id} in Neo4j")
 
-        return self._neo4j_node_to_dict(result[0]["node"])
+        node_dict = self._neo4j_node_to_dict(result[0]["node"])
+
+        # Normalize legacy field to node_id if needed
+        if legacy_field and "node_id" not in node_dict and legacy_field in node_dict:
+            node_dict["node_id"] = node_dict[legacy_field]
+
+        return node_dict
 
     async def _delete_node_neo4j(self, node_id: str) -> None:
         """Delete a node and its relationships from Neo4j.

@@ -1102,6 +1102,326 @@ class TestCompetitorLimits:
             await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
 
 
+class TestCompetitorStrengthEndpoints:
+    """Integration tests for CompetitorStrength CRUD endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_create_list_get_update_delete_competitor_strength(
+        self, authenticated_client
+    ):
+        """Test complete CRUD flow for competitor strength."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create parent competitor
+        competitor_data = CompetitorCreate(
+            display_name="Strength Test Competitor",
+            description="Test competitor for strengths",
+            references=[],
+        )
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert comp_response.status_code == 200
+        competitor_id = comp_response.json()["node_id"]
+
+        # 1. CREATE - Create a new competitor strength
+        strength_data = CompetitorStrengthCreate(
+            display_name="Strong Brand Recognition",
+            description="Well-known brand in the market",
+            references=["https://example.com/brand-study"],
+            competitor_node_id=competitor_id,
+        )
+        create_response = await authenticated_client.post(
+            f"{base_url}/competitor-strengths", json=strength_data.model_dump()
+        )
+        assert create_response.status_code == 200
+        created_strength = create_response.json()
+        assert created_strength["display_name"] == "Strong Brand Recognition"
+        assert created_strength["competitor_node_id"] == competitor_id
+        assert "node_id" in created_strength
+        strength_id = created_strength["node_id"]
+
+        # 2. LIST - Verify strength appears in list
+        list_response = await authenticated_client.get(
+            f"{base_url}/competitor-strengths?competitor_node_id={competitor_id}"
+        )
+        assert list_response.status_code == 200
+        strengths = list_response.json()
+        assert strengths["total_count"] == 1
+        assert strengths["strengths"][0]["node_id"] == strength_id
+
+        # 3. GET - Retrieve specific strength
+        get_response = await authenticated_client.get(
+            f"{base_url}/competitor-strengths/{strength_id}"
+        )
+        assert get_response.status_code == 200
+        retrieved_strength = get_response.json()
+        assert retrieved_strength["node_id"] == strength_id
+        assert retrieved_strength["display_name"] == "Strong Brand Recognition"
+        assert retrieved_strength["competitor_node_id"] == competitor_id
+
+        # 4. UPDATE - Update strength
+        update_response = await authenticated_client.patch(
+            f"{base_url}/competitor-strengths/{strength_id}",
+            json={"description": "Very strong brand recognition worldwide"},
+        )
+        assert update_response.status_code == 200
+        updated_strength = update_response.json()
+        assert "worldwide" in updated_strength["description"]
+
+        # 5. DELETE - Delete strength
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/competitor-strengths/{strength_id}"
+        )
+        assert delete_response.status_code == 200
+        assert delete_response.json()["success"] is True
+
+        # Verify deletion
+        get_after_delete = await authenticated_client.get(
+            f"{base_url}/competitor-strengths/{strength_id}"
+        )
+        assert get_after_delete.status_code == 404
+
+        # Cleanup
+        await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+
+class TestCompetitorWeaknessEndpoints:
+    """Integration tests for CompetitorWeakness CRUD endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_create_list_get_update_delete_competitor_weakness(
+        self, authenticated_client
+    ):
+        """Test complete CRUD flow for competitor weakness."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create parent competitor
+        competitor_data = CompetitorCreate(
+            display_name="Weakness Test Competitor",
+            description="Test competitor for weaknesses",
+            references=[],
+        )
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert comp_response.status_code == 200
+        competitor_id = comp_response.json()["node_id"]
+
+        # 1. CREATE - Create a new competitor weakness
+        weakness_data = CompetitorWeaknessCreate(
+            display_name="Limited Distribution Channels",
+            description="Only available in select markets",
+            references=["https://example.com/distribution-report"],
+            competitor_node_id=competitor_id,
+        )
+        create_response = await authenticated_client.post(
+            f"{base_url}/competitor-weaknesses", json=weakness_data.model_dump()
+        )
+        assert create_response.status_code == 200
+        created_weakness = create_response.json()
+        assert created_weakness["display_name"] == "Limited Distribution Channels"
+        assert created_weakness["competitor_node_id"] == competitor_id
+        weakness_id = created_weakness["node_id"]
+
+        # 2. LIST - Verify weakness appears in list
+        list_response = await authenticated_client.get(
+            f"{base_url}/competitor-weaknesses?competitor_node_id={competitor_id}"
+        )
+        assert list_response.status_code == 200
+        weaknesses = list_response.json()
+        assert weaknesses["total_count"] == 1
+        assert weaknesses["weaknesses"][0]["node_id"] == weakness_id
+
+        # 3. GET - Retrieve specific weakness
+        get_response = await authenticated_client.get(
+            f"{base_url}/competitor-weaknesses/{weakness_id}"
+        )
+        assert get_response.status_code == 200
+        retrieved_weakness = get_response.json()
+        assert retrieved_weakness["node_id"] == weakness_id
+        assert retrieved_weakness["competitor_node_id"] == competitor_id
+
+        # 4. UPDATE - Update weakness
+        update_response = await authenticated_client.patch(
+            f"{base_url}/competitor-weaknesses/{weakness_id}",
+            json={"description": "Very limited distribution, only 3 countries"},
+        )
+        assert update_response.status_code == 200
+        updated_weakness = update_response.json()
+        assert "only 3 countries" in updated_weakness["description"]
+
+        # 5. DELETE - Delete weakness
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/competitor-weaknesses/{weakness_id}"
+        )
+        assert delete_response.status_code == 200
+        assert delete_response.json()["success"] is True
+
+        # Cleanup
+        await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+
+class TestSubstituteProductEndpoints:
+    """Integration tests for SubstituteProduct CRUD endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_create_list_get_update_delete_substitute_product(
+        self, authenticated_client
+    ):
+        """Test complete CRUD flow for substitute product."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create parent competitor
+        competitor_data = CompetitorCreate(
+            display_name="Substitute Test Competitor",
+            description="Test competitor for substitute products",
+            references=[],
+        )
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors", json=competitor_data.model_dump()
+        )
+        assert comp_response.status_code == 200
+        competitor_id = comp_response.json()["node_id"]
+
+        # 1. CREATE - Create a new substitute product
+        substitute_data = SubstituteProductCreate(
+            product_name="Alternative Solution X",
+            description="Competitor's alternative offering",
+            references=["https://example.com/product"],
+            product_detail_page="https://competitor.com/product-x",
+            competitor_node_id=competitor_id,
+        )
+        create_response = await authenticated_client.post(
+            f"{base_url}/substitute-products", json=substitute_data.model_dump()
+        )
+        assert create_response.status_code == 200
+        created_substitute = create_response.json()
+        assert created_substitute["product_name"] == "Alternative Solution X"
+        assert created_substitute["competitor_node_id"] == competitor_id
+        substitute_id = created_substitute["node_id"]
+
+        # 2. LIST - Verify substitute appears in list
+        list_response = await authenticated_client.get(
+            f"{base_url}/substitute-products?competitor_node_id={competitor_id}"
+        )
+        assert list_response.status_code == 200
+        substitutes = list_response.json()
+        assert substitutes["total_count"] == 1
+        assert substitutes["products"][0]["node_id"] == substitute_id
+
+        # 3. GET - Retrieve specific substitute
+        get_response = await authenticated_client.get(
+            f"{base_url}/substitute-products/{substitute_id}"
+        )
+        assert get_response.status_code == 200
+        retrieved_substitute = get_response.json()
+        assert retrieved_substitute["node_id"] == substitute_id
+        assert retrieved_substitute["competitor_node_id"] == competitor_id
+
+        # 4. UPDATE - Update substitute
+        update_response = await authenticated_client.patch(
+            f"{base_url}/substitute-products/{substitute_id}",
+            json={"product_name": "Alternative Solution X Pro"},
+        )
+        assert update_response.status_code == 200
+        updated_substitute = update_response.json()
+        assert updated_substitute["product_name"] == "Alternative Solution X Pro"
+
+        # 5. DELETE - Delete substitute
+        delete_response = await authenticated_client.delete(
+            f"{base_url}/substitute-products/{substitute_id}"
+        )
+        assert delete_response.status_code == 200
+        assert delete_response.json()["success"] is True
+
+        # Cleanup
+        await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+
+    @pytest.mark.asyncio
+    async def test_link_and_unlink_product_to_substitute(self, authenticated_client):
+        """Test linking and unlinking our product to competitor's substitute product."""
+        base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
+
+        # Create our product category and product
+        cat_response = await authenticated_client.post(
+            f"{base_url}/product-categories",
+            json={"product_name": "Our Product Line", "description": "Our products"},
+        )
+        category_id = cat_response.json()["node_id"]
+
+        prod_response = await authenticated_client.post(
+            f"{base_url}/products",
+            json={
+                "product_name": "Our Product",
+                "description": "Our main product",
+                "category_node_id": category_id,
+            },
+        )
+        product_id = prod_response.json()["node_id"]
+
+        # Create competitor and substitute product
+        comp_response = await authenticated_client.post(
+            f"{base_url}/competitors",
+            json={
+                "display_name": "Link Test Competitor",
+                "description": "Test",
+                "references": [],
+            },
+        )
+        competitor_id = comp_response.json()["node_id"]
+
+        substitute_response = await authenticated_client.post(
+            f"{base_url}/substitute-products",
+            json={
+                "product_name": "Competitor Product",
+                "description": "Competes with our product",
+                "competitor_node_id": competitor_id,
+            },
+        )
+        substitute_id = substitute_response.json()["node_id"]
+
+        # LINK - Create MAY_BE_SUBSTITUTED_FOR relationship
+        link_response = await authenticated_client.post(
+            f"{base_url}/substitute-products/{substitute_id}/link-product",
+            json={"product_node_id": product_id},
+        )
+        assert link_response.status_code == 200
+        link_data = link_response.json()
+        assert link_data["product_node_id"] == product_id
+        assert link_data["substitute_product_node_id"] == substitute_id
+
+        # Verify link by listing substitutes filtered by product
+        list_by_product = await authenticated_client.get(
+            f"{base_url}/substitute-products?product_node_id={product_id}"
+        )
+        assert list_by_product.status_code == 200
+        substitutes = list_by_product.json()
+        assert substitutes["total_count"] == 1
+        assert substitutes["products"][0]["node_id"] == substitute_id
+
+        # UNLINK - Remove relationship
+        unlink_response = await authenticated_client.delete(
+            f"{base_url}/substitute-products/{substitute_id}/unlink-product/{product_id}"
+        )
+        assert unlink_response.status_code == 200
+
+        # Verify unlink
+        list_after_unlink = await authenticated_client.get(
+            f"{base_url}/substitute-products?product_node_id={product_id}"
+        )
+        assert list_after_unlink.status_code == 200
+        assert list_after_unlink.json()["total_count"] == 0
+
+        # Cleanup
+        await authenticated_client.delete(
+            f"{base_url}/substitute-products/{substitute_id}"
+        )
+        await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
+        await authenticated_client.delete(f"{base_url}/products/{product_id}")
+        await authenticated_client.delete(f"{base_url}/product-categories/{category_id}")
+
+
 # ==================== Marketing Strategy Integration Tests ====================
 
 
