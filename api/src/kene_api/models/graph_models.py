@@ -168,10 +168,10 @@ class ValuePropositionCreate(BaseModel):
         default_factory=list, description="Source URLs or references"
     )
     parent_node_id: str = Field(
-        ..., description="Parent node ID (Product, ProductCategory, or Account)"
+        ..., description="Parent node ID (Product, ProductCategory, Account, SubstituteProduct, or Competitor)"
     )
     parent_node_type: str = Field(
-        ..., description="Type of parent: Product, ProductCategory, or Account"
+        ..., description="Type of parent: Product, ProductCategory, Account, SubstituteProduct, or Competitor"
     )
 
 
@@ -190,7 +190,7 @@ class ValuePropositionResponse(NodeBase):
     - Some GET operations don't include parent relationship data in queries
     - Backward compatibility with existing API responses
     - When present, both fields must be populated together (validated)
-    - Valid parent types: Product, ProductCategory, Account
+    - Valid parent types: Product, ProductCategory, Account, SubstituteProduct, Competitor
 
     Semantic note: ValuePropositions SHOULD always have a parent in the database,
     but the response model is flexible to accommodate various query patterns.
@@ -211,7 +211,7 @@ class ValuePropositionResponse(NodeBase):
         """
         if v is not None:
             # Validate it's a known parent type
-            valid_parent_types = {"Product", "ProductCategory", "Account"}
+            valid_parent_types = {"Product", "ProductCategory", "Account", "SubstituteProduct", "Competitor"}
             if v not in valid_parent_types:
                 raise ValueError(
                     f"parent_node_type must be one of {valid_parent_types}, got: {v}"
