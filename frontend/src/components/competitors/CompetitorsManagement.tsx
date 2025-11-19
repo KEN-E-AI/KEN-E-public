@@ -144,6 +144,24 @@ import {
   CARD_HEIGHTS,
 } from "@/components/knowledge-graph";
 import type { ModeConfig } from "@/components/knowledge-graph";
+import {
+  CompetitorModal,
+  DeleteCompetitorDialog,
+  StrengthModal,
+  DeleteStrengthDialog,
+  WeaknessModal,
+  DeleteWeaknessDialog,
+  TacticModal,
+  DeleteTacticDialog,
+  SubstituteProductModal,
+  DeleteSubstituteProductDialog,
+  RiskModal,
+  DeleteRiskDialog,
+  OpportunityModal,
+  DeleteOpportunityDialog,
+  ValuePropositionModal,
+  DeleteValuePropositionDialog,
+} from "./modals";
 
 type CompetitorMode = "strengths" | "weaknesses" | "substitute-products";
 
@@ -525,9 +543,12 @@ export const CompetitorsManagement = ({
     setSelectedGrandchild(null);
   };
 
-  const handleCreateCompetitor = async () => {
+  const handleCreateCompetitor = async (data?: CompetitorCreate) => {
     if (!selectedOrgAccount?.accountId) return;
-    if (!competitorFormData.display_name.trim()) {
+
+    const competitorData = data || competitorFormData;
+
+    if (!competitorData.display_name.trim()) {
       toast({
         title: "Validation Error",
         description: "Competitor name is required",
@@ -542,7 +563,7 @@ export const CompetitorsManagement = ({
 
       await createCompetitorMutation.mutateAsync({
         accountId: selectedOrgAccount.accountId,
-        competitor: competitorFormData,
+        competitor: competitorData,
       });
 
       toast({
@@ -1209,13 +1230,17 @@ export const CompetitorsManagement = ({
   };
 
   // Create child (strength, weakness, or substitute product)
-  const handleCreateChild = async () => {
+  const handleCreateChild = async (
+    data?:
+      | CompetitorStrengthCreate
+      | CompetitorWeaknessCreate
+      | SubstituteProductCreate,
+  ) => {
     if (!selectedOrgAccount?.accountId || !selectedCompetitor) return;
 
-    if (
-      !childFormData.display_name.trim() ||
-      !childFormData.description.trim()
-    ) {
+    const childData = data || childFormData;
+
+    if (!childData.display_name.trim() || !childData.description.trim()) {
       toast({
         title: "Validation Error",
         description: "Name and description are required",
@@ -1238,7 +1263,7 @@ export const CompetitorsManagement = ({
         await createStrengthMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           strength: {
-            ...childFormData,
+            ...childData,
             competitor_node_id: selectedCompetitor.node_id,
           } as CompetitorStrengthCreate,
         });
@@ -1246,16 +1271,17 @@ export const CompetitorsManagement = ({
         await createWeaknessMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           weakness: {
-            ...childFormData,
+            ...childData,
             competitor_node_id: selectedCompetitor.node_id,
           } as CompetitorWeaknessCreate,
         });
       } else {
-        const subProductData = childFormData as SubstituteProductCreate;
+        const subProductData = childData as SubstituteProductCreate;
         await createSubstituteProductMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           product: {
-            product_name: subProductData.display_name,
+            product_name:
+              subProductData.display_name || subProductData.product_name,
             description: subProductData.description,
             competitor_node_id: selectedCompetitor.node_id,
             references: subProductData.references || [],
@@ -1445,12 +1471,16 @@ export const CompetitorsManagement = ({
   };
 
   // Create grandchild (risk or opportunity)
-  const handleCreateGrandchild = async () => {
+  const handleCreateGrandchild = async (
+    data?: RiskCreate | OpportunityCreate,
+  ) => {
     if (!selectedOrgAccount?.accountId || !selectedChild) return;
 
+    const grandchildData = data || grandchildFormData;
+
     if (
-      !grandchildFormData.display_name.trim() ||
-      !grandchildFormData.description.trim()
+      !grandchildData.display_name.trim() ||
+      !grandchildData.description.trim()
     ) {
       toast({
         title: "Validation Error",
@@ -1470,9 +1500,9 @@ export const CompetitorsManagement = ({
         await createRiskMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           risk: {
-            display_name: grandchildFormData.display_name,
-            description: grandchildFormData.description,
-            references: grandchildFormData.references || [],
+            display_name: grandchildData.display_name,
+            description: grandchildData.description,
+            references: grandchildData.references || [],
             strength_node_id: selectedChild.node_id, // CompetitorStrength node_id
           } as RiskCreate,
         });
@@ -1481,9 +1511,9 @@ export const CompetitorsManagement = ({
         await createOpportunityMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           opportunity: {
-            display_name: grandchildFormData.display_name,
-            description: grandchildFormData.description,
-            references: grandchildFormData.references || [],
+            display_name: grandchildData.display_name,
+            description: grandchildData.description,
+            references: grandchildData.references || [],
             weakness_node_id: selectedChild.node_id, // CompetitorWeakness node_id
           } as OpportunityCreate,
         });
@@ -1635,13 +1665,12 @@ export const CompetitorsManagement = ({
   };
 
   // Tactic handlers
-  const handleCreateTactic = async () => {
+  const handleCreateTactic = async (data?: CompetitorTacticCreate) => {
     if (!selectedOrgAccount?.accountId || !selectedCompetitor) return;
 
-    if (
-      !tacticFormData.display_name.trim() ||
-      !tacticFormData.description.trim()
-    ) {
+    const tacticData = data || tacticFormData;
+
+    if (!tacticData.display_name.trim() || !tacticData.description.trim()) {
       toast({
         title: "Validation Error",
         description: "Tactic name and description are required",
@@ -1656,7 +1685,7 @@ export const CompetitorsManagement = ({
       await createTacticMutation.mutateAsync({
         accountId: selectedOrgAccount.accountId,
         tactic: {
-          ...tacticFormData,
+          ...tacticData,
           competitor_node_id: selectedCompetitor.node_id,
         },
       });
@@ -1688,8 +1717,10 @@ export const CompetitorsManagement = ({
     }
   };
 
-  const handleUpdateTactic = async () => {
+  const handleUpdateTactic = async (data?: CompetitorTacticCreate) => {
     if (!selectedOrgAccount || !selectedTactic) return;
+
+    const tacticData = data || tacticFormData;
 
     try {
       startOperation("Updating tactic...");
@@ -1698,9 +1729,9 @@ export const CompetitorsManagement = ({
         accountId: selectedOrgAccount.accountId,
         nodeId: selectedTactic.node_id,
         updates: {
-          display_name: tacticFormData.display_name,
-          description: tacticFormData.description,
-          references: tacticFormData.references,
+          display_name: tacticData.display_name,
+          description: tacticData.description,
+          references: tacticData.references,
         },
       });
 
@@ -1760,15 +1791,19 @@ export const CompetitorsManagement = ({
   };
 
   // Value Proposition handlers (for substitute products)
-  const handleCreateValueProposition = async () => {
+  const handleCreateValueProposition = async (
+    data?: ValuePropositionCreate,
+  ) => {
     if (!selectedOrgAccount) return;
+
+    const vpData = data || valuePropositionFormData;
 
     try {
       startOperation("Creating value proposition...");
 
       await createVPMutation.mutateAsync({
         accountId: selectedOrgAccount.accountId,
-        valueProposition: valuePropositionFormData,
+        valueProposition: vpData,
       });
 
       toast({
@@ -1799,8 +1834,12 @@ export const CompetitorsManagement = ({
     }
   };
 
-  const handleUpdateValueProposition = async () => {
+  const handleUpdateValueProposition = async (
+    data?: ValuePropositionCreate,
+  ) => {
     if (!selectedOrgAccount || !selectedValueProposition) return;
+
+    const vpData = data || valuePropositionFormData;
 
     try {
       startOperation("Updating value proposition...");
@@ -1809,11 +1848,11 @@ export const CompetitorsManagement = ({
         accountId: selectedOrgAccount.accountId,
         nodeId: selectedValueProposition.node_id,
         updates: {
-          display_name: valuePropositionFormData.display_name,
-          description: valuePropositionFormData.description,
-          references: valuePropositionFormData.references,
+          display_name: vpData.display_name,
+          description: vpData.description,
+          references: vpData.references,
         },
-        parentNodeId: valuePropositionFormData.parent_node_id,
+        parentNodeId: vpData.parent_node_id,
       });
 
       toast({
@@ -2128,567 +2167,242 @@ export const CompetitorsManagement = ({
       )}
 
       {/* Create Competitor Modal */}
-      <Dialog
-        open={isCreateCompetitorModalOpen}
-        onOpenChange={setIsCreateCompetitorModalOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Competitor</DialogTitle>
-            <DialogDescription>
-              Add a new competitor to track in your competitive analysis.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label htmlFor="create-competitor-name">Competitor Name *</Label>
-              <Input
-                id="create-competitor-name"
-                value={competitorFormData.display_name}
-                onChange={(e) =>
-                  setCompetitorFormData({
-                    ...competitorFormData,
-                    display_name: e.target.value,
-                  })
-                }
-                placeholder="e.g., Acme Corp"
-                maxLength={200}
-              />
-            </div>
-            <div>
-              <Label htmlFor="create-competitor-description">
-                Description *
-              </Label>
-              <Textarea
-                id="create-competitor-description"
-                value={competitorFormData.description}
-                onChange={(e) =>
-                  setCompetitorFormData({
-                    ...competitorFormData,
-                    description: e.target.value,
-                  })
-                }
-                placeholder="Describe this competitor's business, positioning, and market presence..."
-                rows={4}
-                maxLength={4000}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateCompetitorModalOpen(false);
-                setCompetitorFormData({
-                  display_name: "",
-                  description: "",
-                  references: [],
-                });
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateCompetitor}
-              disabled={
-                !competitorFormData.display_name.trim() ||
-                !competitorFormData.description.trim()
-              }
-            >
-              Create Competitor
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CompetitorModal
+        isOpen={isCreateCompetitorModalOpen}
+        onClose={() => {
+          setIsCreateCompetitorModalOpen(false);
+          setCompetitorFormData({
+            display_name: "",
+            description: "",
+            references: [],
+          });
+        }}
+        onSubmit={async (data) => {
+          await handleCreateCompetitor(data);
+        }}
+        mode="create"
+      />
 
       {/* Delete Competitor Dialog */}
-      <AlertDialog
-        open={isDeleteCompetitorDialogOpen}
-        onOpenChange={setIsDeleteCompetitorDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Competitor</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "
-              {selectedCompetitor?.display_name}
-              "? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteCompetitor}
-              className="bg-brand-red hover:bg-brand-red/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteCompetitorDialog
+        isOpen={isDeleteCompetitorDialogOpen}
+        onClose={() => setIsDeleteCompetitorDialogOpen(false)}
+        onConfirm={handleDeleteCompetitor}
+        competitorName={selectedCompetitor?.display_name || ""}
+      />
 
-      {/* Create Child Modal (Strength, Weakness, or Substitute Product) */}
-      <Dialog
-        open={isCreateChildModalOpen}
-        onOpenChange={setIsCreateChildModalOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create {childLabel}</DialogTitle>
-            <DialogDescription>
-              Add a new {childLabel.toLowerCase()} to{" "}
-              {selectedCompetitor?.display_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label htmlFor="create-child-name">
-                {mode === "substitute-products" ? "Product Name" : "Name"} *
-              </Label>
-              <Input
-                id="create-child-name"
-                value={childFormData.display_name}
-                onChange={(e) =>
-                  setChildFormData({
-                    ...childFormData,
-                    display_name: e.target.value,
-                  })
-                }
-                placeholder={
-                  mode === "strengths"
-                    ? "e.g., Strong Brand Recognition"
-                    : mode === "weaknesses"
-                      ? "e.g., Limited Distribution Network"
-                      : "e.g., Premium Air Purifier Pro"
-                }
-                maxLength={200}
-              />
-            </div>
-            <div>
-              <Label htmlFor="create-child-description">Description *</Label>
-              <Textarea
-                id="create-child-description"
-                value={childFormData.description}
-                onChange={(e) =>
-                  setChildFormData({
-                    ...childFormData,
-                    description: e.target.value,
-                  })
-                }
-                placeholder={`Describe this ${childLabel.toLowerCase()}...`}
-                rows={4}
-                maxLength={4000}
-              />
-            </div>
-            {mode === "substitute-products" && (
-              <div>
-                <Label htmlFor="create-child-product-page">
-                  Product Detail Page (Optional)
-                </Label>
-                <Input
-                  id="create-child-product-page"
-                  type="url"
-                  value={(childFormData as any).product_detail_page || ""}
-                  onChange={(e) =>
-                    setChildFormData({
-                      ...childFormData,
-                      product_detail_page: e.target.value,
-                    } as any)
-                  }
-                  placeholder="https://..."
-                />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateChildModalOpen(false);
-                setChildFormData({
-                  display_name: "",
-                  description: "",
-                  competitor_node_id: "",
-                  references: [],
-                });
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateChild}
-              disabled={
-                !childFormData.display_name.trim() ||
-                !childFormData.description.trim()
-              }
-            >
-              Create {childLabel}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Create Child Modals (Strength, Weakness, or Substitute Product) */}
+      {mode === "strengths" && (
+        <>
+          <StrengthModal
+            isOpen={isCreateChildModalOpen}
+            onClose={() => {
+              setIsCreateChildModalOpen(false);
+              setChildFormData({
+                display_name: "",
+                description: "",
+                competitor_node_id: "",
+                references: [],
+              });
+            }}
+            onSubmit={async (data) => {
+              await handleCreateChild(data);
+            }}
+            competitorId={selectedCompetitor?.node_id || ""}
+            competitorName={selectedCompetitor?.display_name || ""}
+            mode="create"
+          />
+          <DeleteStrengthDialog
+            isOpen={isDeleteChildDialogOpen}
+            onClose={() => setIsDeleteChildDialogOpen(false)}
+            onConfirm={handleDeleteChild}
+            strengthName={selectedChild?.display_name || ""}
+          />
+        </>
+      )}
+      {mode === "weaknesses" && (
+        <>
+          <WeaknessModal
+            isOpen={isCreateChildModalOpen}
+            onClose={() => {
+              setIsCreateChildModalOpen(false);
+              setChildFormData({
+                display_name: "",
+                description: "",
+                competitor_node_id: "",
+                references: [],
+              });
+            }}
+            onSubmit={async (data) => {
+              await handleCreateChild(data);
+            }}
+            competitorId={selectedCompetitor?.node_id || ""}
+            competitorName={selectedCompetitor?.display_name || ""}
+            mode="create"
+          />
+          <DeleteWeaknessDialog
+            isOpen={isDeleteChildDialogOpen}
+            onClose={() => setIsDeleteChildDialogOpen(false)}
+            onConfirm={handleDeleteChild}
+            weaknessName={selectedChild?.display_name || ""}
+          />
+        </>
+      )}
+      {mode === "substitute-products" && (
+        <>
+          <SubstituteProductModal
+            isOpen={isCreateChildModalOpen}
+            onClose={() => {
+              setIsCreateChildModalOpen(false);
+              setChildFormData({
+                display_name: "",
+                description: "",
+                competitor_node_id: "",
+                references: [],
+              });
+            }}
+            onSubmit={async (data) => {
+              await handleCreateChild(data);
+            }}
+            competitorId={selectedCompetitor?.node_id || ""}
+            competitorName={selectedCompetitor?.display_name || ""}
+            mode="create"
+          />
+          <DeleteSubstituteProductDialog
+            isOpen={isDeleteChildDialogOpen}
+            onClose={() => setIsDeleteChildDialogOpen(false)}
+            onConfirm={handleDeleteChild}
+            productName={
+              (selectedChild as SubstituteProduct)?.product_name || ""
+            }
+          />
+        </>
+      )}
 
-      {/* Delete Child Dialog */}
-      <AlertDialog
-        open={isDeleteChildDialogOpen}
-        onOpenChange={setIsDeleteChildDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {childLabel}</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "
-              {mode === "substitute-products"
-                ? (selectedChild as SubstituteProduct)?.product_name
-                : selectedChild?.display_name}
-              "? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteChild}
-              className="bg-brand-red hover:bg-brand-red/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Create Grandchild Modal (Risk or Opportunity) */}
-      <Dialog
-        open={isCreateGrandchildModalOpen}
-        onOpenChange={setIsCreateGrandchildModalOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create {grandchildLabel}</DialogTitle>
-            <DialogDescription>
-              Add a {grandchildLabel.toLowerCase()} created by{" "}
-              {selectedChild?.display_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label htmlFor="create-grandchild-name">Name *</Label>
-              <Input
-                id="create-grandchild-name"
-                value={grandchildFormData.display_name}
-                onChange={(e) =>
-                  setGrandchildFormData({
-                    ...grandchildFormData,
-                    display_name: e.target.value,
-                  })
-                }
-                placeholder={
-                  mode === "strengths"
-                    ? "e.g., Market share erosion"
-                    : "e.g., Expand into underserved segments"
-                }
-                maxLength={200}
-              />
-            </div>
-            <div>
-              <Label htmlFor="create-grandchild-description">
-                Description *
-              </Label>
-              <Textarea
-                id="create-grandchild-description"
-                value={grandchildFormData.description}
-                onChange={(e) =>
-                  setGrandchildFormData({
-                    ...grandchildFormData,
-                    description: e.target.value,
-                  })
-                }
-                placeholder={`Describe this ${grandchildLabel.toLowerCase()}...`}
-                rows={4}
-                maxLength={4000}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateGrandchildModalOpen(false);
-                setGrandchildFormData({
-                  display_name: "",
-                  description: "",
-                  weakness_node_id: "",
-                  strength_node_id: "",
-                  references: [],
-                } as RiskCreate | OpportunityCreate);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateGrandchild}
-              disabled={
-                !grandchildFormData.display_name.trim() ||
-                !grandchildFormData.description.trim()
-              }
-            >
-              Create {grandchildLabel}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Grandchild Dialog */}
-      <AlertDialog
-        open={isDeleteGrandchildDialogOpen}
-        onOpenChange={setIsDeleteGrandchildDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {grandchildLabel}</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "
-              {selectedGrandchild?.display_name}"? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteGrandchild}
-              className="bg-brand-red hover:bg-brand-red/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Create Grandchild Modals (Risk or Opportunity) */}
+      {mode === "strengths" && (
+        <>
+          <RiskModal
+            isOpen={isCreateGrandchildModalOpen}
+            onClose={() => {
+              setIsCreateGrandchildModalOpen(false);
+              setGrandchildFormData({
+                display_name: "",
+                description: "",
+                strength_node_id: "",
+                references: [],
+              });
+            }}
+            onSubmit={async (data) => {
+              await handleCreateGrandchild(data);
+            }}
+            strengthId={selectedChild?.node_id || ""}
+            strengthName={selectedChild?.display_name || ""}
+            mode="create"
+          />
+          <DeleteRiskDialog
+            isOpen={isDeleteGrandchildDialogOpen}
+            onClose={() => setIsDeleteGrandchildDialogOpen(false)}
+            onConfirm={handleDeleteGrandchild}
+            riskName={selectedGrandchild?.display_name || ""}
+          />
+        </>
+      )}
+      {mode === "weaknesses" && (
+        <>
+          <OpportunityModal
+            isOpen={isCreateGrandchildModalOpen}
+            onClose={() => {
+              setIsCreateGrandchildModalOpen(false);
+              setGrandchildFormData({
+                display_name: "",
+                description: "",
+                weakness_node_id: "",
+                references: [],
+              });
+            }}
+            onSubmit={async (data) => {
+              await handleCreateGrandchild(data);
+            }}
+            weaknessId={selectedChild?.node_id || ""}
+            weaknessName={selectedChild?.display_name || ""}
+            mode="create"
+          />
+          <DeleteOpportunityDialog
+            isOpen={isDeleteGrandchildDialogOpen}
+            onClose={() => setIsDeleteGrandchildDialogOpen(false)}
+            onConfirm={handleDeleteGrandchild}
+            opportunityName={selectedGrandchild?.display_name || ""}
+          />
+        </>
+      )}
 
       {/* Create/Edit Tactic Modal */}
-      <Dialog
-        open={isCreateTacticModalOpen}
-        onOpenChange={(open) => {
-          setIsCreateTacticModalOpen(open);
-          if (!open) {
-            setSelectedTactic(null);
+      <TacticModal
+        isOpen={isCreateTacticModalOpen}
+        onClose={() => {
+          setIsCreateTacticModalOpen(false);
+          setSelectedTactic(null);
+        }}
+        onSubmit={async (data) => {
+          if (selectedTactic) {
+            await handleUpdateTactic(data);
+          } else {
+            await handleCreateTactic(data);
           }
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {selectedTactic ? "Edit" : "Create"} Marketing Tactic
-            </DialogTitle>
-            <DialogDescription>
-              {selectedTactic
-                ? "Update the tactic details"
-                : `Add a marketing tactic used by ${selectedCompetitor?.display_name}`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label htmlFor="tactic-display-name">Tactic Name *</Label>
-              <Input
-                id="tactic-display-name"
-                value={tacticFormData.display_name}
-                onChange={(e) =>
-                  setTacticFormData({
-                    ...tacticFormData,
-                    display_name: e.target.value,
-                  })
-                }
-                placeholder="e.g., Annual Industry Conference"
-                maxLength={200}
-              />
-            </div>
-            <div>
-              <Label htmlFor="tactic-description">Description *</Label>
-              <Textarea
-                id="tactic-description"
-                value={tacticFormData.description}
-                onChange={(e) =>
-                  setTacticFormData({
-                    ...tacticFormData,
-                    description: e.target.value,
-                  })
-                }
-                placeholder="Describe how this tactic is used to bring products to market..."
-                rows={4}
-                maxLength={4000}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateTacticModalOpen(false);
-                setSelectedTactic(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={selectedTactic ? handleUpdateTactic : handleCreateTactic}
-              disabled={
-                !tacticFormData.display_name.trim() ||
-                !tacticFormData.description.trim()
-              }
-            >
-              {selectedTactic ? "Save Changes" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        competitorId={selectedCompetitor?.node_id || ""}
+        competitorName={selectedCompetitor?.display_name || ""}
+        initialData={selectedTactic || undefined}
+        mode={selectedTactic ? "edit" : "create"}
+      />
 
       {/* Delete Tactic Dialog */}
-      <AlertDialog
-        open={isDeleteTacticDialogOpen}
-        onOpenChange={(open) => {
-          setIsDeleteTacticDialogOpen(open);
-          if (!open) {
-            setSelectedTactic(null);
-          }
+      <DeleteTacticDialog
+        isOpen={isDeleteTacticDialogOpen}
+        onClose={() => {
+          setIsDeleteTacticDialogOpen(false);
+          setSelectedTactic(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Tactic</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{selectedTactic?.display_name}"?
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setSelectedTactic(null)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteTactic}
-              className="bg-brand-red hover:bg-brand-red/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onConfirm={handleDeleteTactic}
+        tacticName={selectedTactic?.display_name || ""}
+      />
 
-      {/* Create/Edit Value Proposition Modal (for substitute products) */}
-      <Dialog
-        open={isCreateVPModalOpen}
-        onOpenChange={(open) => {
-          setIsCreateVPModalOpen(open);
-          if (!open) {
-            setSelectedValueProposition(null);
+      {/* Create/Edit Value Proposition Modal (for substitute products and competitors) */}
+      <ValuePropositionModal
+        isOpen={isCreateVPModalOpen}
+        onClose={() => {
+          setIsCreateVPModalOpen(false);
+          setSelectedValueProposition(null);
+        }}
+        onSubmit={async (data) => {
+          if (selectedValueProposition) {
+            await handleUpdateValueProposition(data);
+          } else {
+            await handleCreateValueProposition(data);
           }
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {selectedValueProposition ? "Edit" : "Create"} Value Proposition
-            </DialogTitle>
-            <DialogDescription>
-              {selectedValueProposition
-                ? "Update the value proposition details"
-                : `Add a value proposition for ${(selectedChild as SubstituteProduct)?.product_name}`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <div>
-              <Label htmlFor="vp-display-name">Display Name *</Label>
-              <Input
-                id="vp-display-name"
-                value={valuePropositionFormData.display_name}
-                onChange={(e) =>
-                  setValuePropositionFormData({
-                    ...valuePropositionFormData,
-                    display_name: e.target.value,
-                  })
-                }
-                placeholder="e.g., Advanced HEPA Filtration"
-                maxLength={60}
-              />
-              <p className="text-xs text-dashboard-gray-500 mt-1">
-                Short, descriptive name (max 60 characters)
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="vp-description">Description *</Label>
-              <Textarea
-                id="vp-description"
-                value={valuePropositionFormData.description}
-                onChange={(e) =>
-                  setValuePropositionFormData({
-                    ...valuePropositionFormData,
-                    description: e.target.value,
-                  })
-                }
-                placeholder="Describe the value this provides to customers..."
-                rows={4}
-                maxLength={4000}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateVPModalOpen(false);
-                setSelectedValueProposition(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={
-                selectedValueProposition
-                  ? handleUpdateValueProposition
-                  : handleCreateValueProposition
-              }
-              disabled={
-                !valuePropositionFormData.display_name.trim() ||
-                !valuePropositionFormData.description.trim()
-              }
-            >
-              {selectedValueProposition ? "Save Changes" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        parentNodeId={valuePropositionFormData.parent_node_id}
+        parentNodeType={valuePropositionFormData.parent_node_type}
+        parentDisplayName={
+          contextMenuType === "competitor"
+            ? selectedCompetitor?.display_name || ""
+            : (selectedChild as SubstituteProduct)?.product_name || ""
+        }
+        initialData={selectedValueProposition || undefined}
+        mode={selectedValueProposition ? "edit" : "create"}
+      />
 
       {/* Delete Value Proposition Dialog */}
-      <AlertDialog
-        open={isDeleteVPDialogOpen}
-        onOpenChange={(open) => {
-          setIsDeleteVPDialogOpen(open);
-          if (!open) {
-            setSelectedValueProposition(null);
-          }
+      <DeleteValuePropositionDialog
+        isOpen={isDeleteVPDialogOpen}
+        onClose={() => {
+          setIsDeleteVPDialogOpen(false);
+          setSelectedValueProposition(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Value Proposition</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "
-              {selectedValueProposition?.display_name}"? This action cannot be
-              undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setSelectedValueProposition(null)}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteValueProposition}
-              className="bg-brand-red hover:bg-brand-red/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onConfirm={handleDeleteValueProposition}
+        valuePropositionName={selectedValueProposition?.display_name || ""}
+      />
 
       {/* Link Product Dialog */}
       <Dialog

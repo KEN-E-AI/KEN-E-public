@@ -13,6 +13,7 @@ from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
 from ...models.graph_models import (
     CompetitiveEnvironmentResponse,
+    CompetitiveEnvironmentUpdate,
     CompetitorCreate,
     CompetitorListResponse,
     CompetitorResponse,
@@ -885,8 +886,9 @@ async def link_product_to_substitute(
 
     Requires edit permission for the account.
     """
-    from .crud_factory import check_graph_access
     from fastapi import HTTPException, status
+
+    from .crud_factory import check_graph_access
 
     await check_graph_access(account_id, user, "edit")
 
@@ -924,8 +926,9 @@ async def unlink_product_from_substitute(
 
     Requires edit permission for the account.
     """
-    from .crud_factory import check_graph_access
     from fastapi import HTTPException, status
+
+    from .crud_factory import check_graph_access
 
     await check_graph_access(account_id, user, "edit")
 
@@ -999,7 +1002,7 @@ async def get_competitive_environment(
 )
 async def update_competitive_environment(
     account_id: str,
-    updates: dict,
+    updates: CompetitiveEnvironmentUpdate,
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitiveEnvironmentResponse:
@@ -1027,12 +1030,12 @@ async def update_competitive_environment(
         node_id = nodes_data[0]["node_id"]
 
         # Update using the service method
-        updated_node = await service.update_competitive_environment(
+        return await service.update_competitive_environment(
             account_id=account_id,
             node_id=node_id,
             updates=updates,
+            user_id=user.user_id,
         )
-        return CompetitiveEnvironmentResponse(**updated_node)
     except Exception as e:
         logger.exception(f"Failed to update competitive environment: {e}")
         from fastapi import HTTPException, status
