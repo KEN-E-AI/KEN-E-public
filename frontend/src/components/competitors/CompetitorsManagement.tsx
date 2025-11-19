@@ -2889,9 +2889,10 @@ export const CompetitorsManagement = ({
       {/* Main Context Menu Side Sheet - Exclude product grandchild in substitute mode */}
       {!(
         contextMenuType === "grandchild" && mode === "substitute-products"
-      ) && (
-        <KnowledgeGraphSideSheet
-          open={isContextMenuOpen}
+      ) &&
+        isContextMenuOpen && (
+          <KnowledgeGraphSideSheet
+            open={true}
           onOpenChange={(open) => {
             if (
               !open &&
