@@ -12,6 +12,11 @@ import {
 } from "@/queries/monitoringTopics";
 import type { CompetitorEntry } from "@/types/monitoring";
 
+// Validation constants (matching backend validators)
+const MAX_KEYWORDS = 20;
+const MAX_KEYWORD_LENGTH = 50;
+const MIN_KEYWORD_LENGTH = 2;
+
 interface CompetitorKeywordsSectionProps {
   competitorName: string;
   hasEditAccess: boolean;
@@ -45,23 +50,63 @@ export function CompetitorKeywordsSection({
   );
 
   useEffect(() => {
-    // Only sync from server data if we don't have unsaved changes and not currently editing
-    if (!hasUnsavedChanges && !isEditing) {
-      if (competitorEntry) {
-        setKeywords(competitorEntry.keywords || []);
-      } else {
-        setKeywords([]);
-      }
+    // Only sync when competitor changes, not on every render
+    if (competitorEntry && !isEditing && !hasUnsavedChanges) {
+      setKeywords(competitorEntry.keywords || []);
     }
-  }, [competitorEntry, hasUnsavedChanges, isEditing]);
+    // Reset when switching to a different competitor
+    if (!competitorEntry && !isEditing) {
+      setKeywords([]);
+    }
+  }, [competitorEntry?.name]); // Only when competitor changes
 
   const handleAddKeyword = () => {
     const trimmedKeyword = keywordInput.trim().toLowerCase();
-    if (trimmedKeyword && !keywords.includes(trimmedKeyword)) {
-      setKeywords([...keywords, trimmedKeyword]);
-      setKeywordInput("");
-      setHasUnsavedChanges(true);
+
+    // Validation
+    if (!trimmedKeyword) {
+      return;
     }
+
+    if (trimmedKeyword.length < MIN_KEYWORD_LENGTH) {
+      toast({
+        title: "Keyword too short",
+        description: `Keywords must be at least ${MIN_KEYWORD_LENGTH} characters`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (trimmedKeyword.length > MAX_KEYWORD_LENGTH) {
+      toast({
+        title: "Keyword too long",
+        description: `Keywords must be ${MAX_KEYWORD_LENGTH} characters or less`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (keywords.length >= MAX_KEYWORDS) {
+      toast({
+        title: "Maximum keywords reached",
+        description: `You can only have up to ${MAX_KEYWORDS} keywords`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (keywords.includes(trimmedKeyword)) {
+      toast({
+        title: "Duplicate keyword",
+        description: "This keyword already exists",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setKeywords([...keywords, trimmedKeyword]);
+    setKeywordInput("");
+    setHasUnsavedChanges(true);
   };
 
   const handleRemoveKeyword = (keyword: string) => {
@@ -80,8 +125,11 @@ export function CompetitorKeywordsSection({
     }
 
     try {
-      // If competitor doesn't exist in monitoring topics, create it
-      if (competitorIndex === undefined || competitorIndex === -1) {
+      // Check if competitor exists in monitoring topics
+      const competitorExists = (competitorIndex ?? -1) >= 0;
+
+      if (!competitorExists) {
+        // Create new competitor entry
         await addMutation.mutateAsync({
           accountId,
           data: {
@@ -90,7 +138,7 @@ export function CompetitorKeywordsSection({
           },
         });
       } else {
-        // Otherwise update existing entry
+        // Update existing entry
         await updateMutation.mutateAsync({
           accountId,
           competitorIndex,

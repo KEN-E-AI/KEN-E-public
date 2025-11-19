@@ -31,9 +31,6 @@ export function useAddCompetitorKeywords() {
       await queryClient.invalidateQueries({
         queryKey: ["monitoring-topics", variables.accountId],
       });
-      await queryClient.refetchQueries({
-        queryKey: ["monitoring-topics", variables.accountId],
-      });
     },
   });
 }
@@ -59,9 +56,6 @@ export function useUpdateCompetitorKeywords() {
     },
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({
-        queryKey: ["monitoring-topics", variables.accountId],
-      });
-      await queryClient.refetchQueries({
         queryKey: ["monitoring-topics", variables.accountId],
       });
     },
