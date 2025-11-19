@@ -35,6 +35,7 @@ import {
 } from "@/queries/competitors";
 import type { SubstituteProduct } from "@/services/substituteProductService";
 import { substituteProductService } from "@/services/substituteProductService";
+import { competitorService } from "@/services/competitorService";
 import { CategoryNode, ProductNode } from "./ProductFlowNodes";
 import { SubstituteProductNode } from "../competitors/CompetitorFlowNodes";
 import { Button } from "@/components/ui/button";
@@ -221,6 +222,9 @@ export const ProductCategoriesManagement = ({
   const [linkDialogSubstitutes, setLinkDialogSubstitutes] = useState<
     SubstituteProduct[]
   >([]);
+  const [linkDialogCompetitorMap, setLinkDialogCompetitorMap] = useState<
+    Map<string, string>
+  >(new Map());
   const [isLoadingLinkDialogSubstitutes, setIsLoadingLinkDialogSubstitutes] =
     useState(false);
 
@@ -977,24 +981,42 @@ export const ProductCategoriesManagement = ({
     setIsLoadingLinkDialogSubstitutes(true);
 
     try {
-      // Load ALL substitute products in the account (no filters)
-      const response = await substituteProductService.list(
-        selectedOrgAccount.accountId,
-        undefined, // No competitor filter
-        undefined, // No product filter
-        0,
-        1000,
+      // Load ALL substitute products and competitors in parallel
+      const [substitutesResponse, competitorsResponse] = await Promise.all([
+        substituteProductService.list(
+          selectedOrgAccount.accountId,
+          undefined, // No competitor filter
+          undefined, // No product filter
+          0,
+          1000,
+        ),
+        competitorService.list(selectedOrgAccount.accountId, 0, 1000),
+      ]);
+
+      // Create competitor name lookup map
+      const competitorMap = new Map(
+        competitorsResponse.competitors.map((c) => [c.node_id, c.display_name]),
       );
 
       // Filter out already linked substitutes
       const linkedSubstituteIds = new Set(
         substituteProducts.map((s) => s.node_id),
       );
-      const availableSubstitutes = response.products.filter(
+      const availableSubstitutes = substitutesResponse.products.filter(
         (s) => !linkedSubstituteIds.has(s.node_id),
       );
 
-      setLinkDialogSubstitutes(availableSubstitutes);
+      // Sort by competitor name, then by product name
+      const sorted = availableSubstitutes.sort((a, b) => {
+        const compA = competitorMap.get(a.competitor_node_id) || "";
+        const compB = competitorMap.get(b.competitor_node_id) || "";
+        const compCompare = compA.localeCompare(compB);
+        if (compCompare !== 0) return compCompare;
+        return a.product_name.localeCompare(b.product_name);
+      });
+
+      setLinkDialogSubstitutes(sorted);
+      setLinkDialogCompetitorMap(competitorMap);
     } catch (error) {
       console.error("Failed to load substitute products:", error);
       toast({
@@ -1397,11 +1419,20 @@ export const ProductCategoriesManagement = ({
                   }}
                 >
                   <option value="">-- Select Substitute Product --</option>
-                  {linkDialogSubstitutes.map((substitute) => (
-                    <option key={substitute.node_id} value={substitute.node_id}>
-                      {substitute.product_name}
-                    </option>
-                  ))}
+                  {linkDialogSubstitutes.map((substitute) => {
+                    const competitorName =
+                      linkDialogCompetitorMap.get(
+                        substitute.competitor_node_id,
+                      ) || "Unknown Competitor";
+                    return (
+                      <option
+                        key={substitute.node_id}
+                        value={substitute.node_id}
+                      >
+                        {competitorName}: {substitute.product_name}
+                      </option>
+                    );
+                  })}
                 </select>
               </>
             )}

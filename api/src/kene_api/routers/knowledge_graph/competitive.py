@@ -722,22 +722,55 @@ async def list_substitute_products(
                 for r in results
             ]
         else:
-            # Filter by Competitor (original logic)
-            total_count = await service.count_nodes(
-                account_id,
-                "SubstituteProduct",
-                parent_node_id=competitor_node_id,
-                parent_node_type="Competitor" if competitor_node_id else None,
-            )
+            # Filter by Competitor (or no filter - fetch all with competitor relationship)
+            if competitor_node_id:
+                # Use optimized list_nodes for single competitor
+                total_count = await service.count_nodes(
+                    account_id,
+                    "SubstituteProduct",
+                    parent_node_id=competitor_node_id,
+                    parent_node_type="Competitor",
+                )
 
-            products_data = await service.list_nodes(
-                account_id,
-                "SubstituteProduct",
-                parent_node_id=competitor_node_id,
-                parent_node_type="Competitor" if competitor_node_id else None,
-                skip=skip,
-                limit=limit,
-            )
+                products_data = await service.list_nodes(
+                    account_id,
+                    "SubstituteProduct",
+                    parent_node_id=competitor_node_id,
+                    parent_node_type="Competitor",
+                    skip=skip,
+                    limit=limit,
+                )
+            else:
+                # No filter - fetch ALL substitute products with competitor relationship
+                query = """
+                MATCH (acc:Account {account_id: $account_id})
+                MATCH (sub:SubstituteProduct)-[:BELONGS_TO]->(acc)
+                MATCH (comp:Competitor)-[:OFFERS_PRODUCT]->(sub)
+                RETURN sub as node, comp.node_id as parent_node_id, acc.account_id as account_id
+                ORDER BY sub.product_name
+                SKIP $skip
+                """
+                count_query = """
+                MATCH (sub:SubstituteProduct)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+                RETURN count(sub) as total
+                """
+                params = {"account_id": account_id, "skip": skip}
+                if limit:
+                    query += " LIMIT $limit"
+                    params["limit"] = limit
+
+                total_result = await service.neo4j.execute_query(count_query, {"account_id": account_id})
+                total_count = total_result[0]["total"] if total_result else 0
+
+                results = await service.neo4j.execute_query(query, params)
+                products_data = [
+                    {
+                        **service._neo4j_node_to_dict(r["node"]),
+                        "account_id": r["account_id"],
+                        "parent_node_id": r["parent_node_id"],
+                    }
+                    for r in results
+                ]
 
         products = [
             SubstituteProductResponse(
