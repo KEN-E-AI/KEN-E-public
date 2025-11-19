@@ -2846,6 +2846,7 @@ export const CompetitorsManagement = ({
           hasEditAccess={true}
           onEdit={handleNavigateToProductEdit}
           onDelete={handleUnlinkProduct}
+          deleteButtonLabel="Unlink"
         >
           <div className="space-y-4">
             <div>
