@@ -2082,15 +2082,212 @@ class GraphSyncService:
         account_id: str,
         node_id: str,
         user_id: str,
+        cascade: bool = False,
     ) -> None:
-        """Delete a competitor (validates no dependent nodes exist)."""
+        """Delete a competitor.
+
+        Args:
+            account_id: Account identifier
+            node_id: Competitor node_id
+            user_id: User performing deletion
+            cascade: If True, cascade delete all dependent entities
+        """
+        if cascade:
+            await self.delete_competitor_cascade(account_id, node_id, user_id)
+        else:
+            # Existing behavior - fail if dependencies exist
+            await self.delete_node(
+                account_id=account_id,
+                node_id=node_id,
+                node_type="Competitor",
+                user_id=user_id,
+                firestore_doc_type="competitive_strategy",
+                check_dependencies=True,
+            )
+
+    async def delete_competitor_cascade(
+        self,
+        account_id: str,
+        node_id: str,
+        user_id: str,
+    ) -> None:
+        """Delete a competitor and cascade delete all dependent entities.
+
+        Deletes in this order:
+        1. Risks (from CompetitorStrengths)
+        2. CompetitorStrengths
+        3. Opportunities (from CompetitorWeaknesses)
+        4. CompetitorWeaknesses
+        5. ValuePropositions (from SubstituteProducts)
+        6. SubstituteProducts (unlinks Products)
+        7. CompetitorTactics
+        8. ValuePropositions directly linked to Competitor
+        9. Competitor node itself
+        """
+        # 1. Delete all risks (from strengths) first
+        risk_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_STRENGTH]->(cs:CompetitorStrength)-[:CREATES]->(r:Risk)
+        RETURN r.node_id as risk_node_id
+        """
+        risk_results = await self.neo4j.execute_query(risk_query, {"node_id": node_id})
+
+        for record in risk_results:
+            risk_node_id = record["risk_node_id"]
+            if risk_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting risk {risk_node_id} from competitor {node_id}"
+                )
+                await self.delete_risk(account_id, risk_node_id, user_id)
+
+        # 2. Delete all strengths (now that risks are gone)
+        strength_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_STRENGTH]->(cs:CompetitorStrength)
+        RETURN cs.node_id as strength_node_id
+        """
+        strength_results = await self.neo4j.execute_query(
+            strength_query, {"node_id": node_id}
+        )
+
+        for record in strength_results:
+            strength_node_id = record["strength_node_id"]
+            if strength_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting strength {strength_node_id} from competitor {node_id}"
+                )
+                # Use delete_node directly with check_dependencies=False since we already deleted risks
+                await self.delete_node(
+                    account_id=account_id,
+                    node_id=strength_node_id,
+                    node_type="CompetitorStrength",
+                    user_id=user_id,
+                    firestore_doc_type="competitive_strategy",
+                    check_dependencies=False,
+                )
+
+        # 3. Delete all opportunities (from weaknesses) first
+        opportunity_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)-[:CREATES]->(o:Opportunity)
+        RETURN o.node_id as opportunity_node_id
+        """
+        opportunity_results = await self.neo4j.execute_query(
+            opportunity_query, {"node_id": node_id}
+        )
+
+        for record in opportunity_results:
+            opportunity_node_id = record["opportunity_node_id"]
+            if opportunity_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting opportunity {opportunity_node_id} from competitor {node_id}"
+                )
+                await self.delete_opportunity(account_id, opportunity_node_id, user_id)
+
+        # 4. Delete all weaknesses (now that opportunities are gone)
+        weakness_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)
+        RETURN cw.node_id as weakness_node_id
+        """
+        weakness_results = await self.neo4j.execute_query(
+            weakness_query, {"node_id": node_id}
+        )
+
+        for record in weakness_results:
+            weakness_node_id = record["weakness_node_id"]
+            if weakness_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting weakness {weakness_node_id} from competitor {node_id}"
+                )
+                # Use delete_node directly with check_dependencies=False since we already deleted opportunities
+                await self.delete_node(
+                    account_id=account_id,
+                    node_id=weakness_node_id,
+                    node_type="CompetitorWeakness",
+                    user_id=user_id,
+                    firestore_doc_type="competitive_strategy",
+                    check_dependencies=False,
+                )
+
+        # 5. Delete all value propositions from substitute products first
+        sub_vp_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN vp.node_id as vp_node_id
+        """
+        sub_vp_results = await self.neo4j.execute_query(
+            sub_vp_query, {"node_id": node_id}
+        )
+
+        for record in sub_vp_results:
+            vp_node_id = record["vp_node_id"]
+            if vp_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting value proposition {vp_node_id} from substitute product"
+                )
+                await self.delete_value_proposition(account_id, vp_node_id, user_id)
+
+        # 6. Delete all substitute products (now that their VPs are gone, unlink products)
+        substitute_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)
+        RETURN sp.node_id as substitute_node_id
+        """
+        substitute_results = await self.neo4j.execute_query(
+            substitute_query, {"node_id": node_id}
+        )
+
+        for record in substitute_results:
+            substitute_node_id = record["substitute_node_id"]
+            if substitute_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting substitute product {substitute_node_id} from competitor {node_id}"
+                )
+                # Use delete_node directly with check_dependencies=False since we already deleted VPs
+                await self.delete_node(
+                    account_id=account_id,
+                    node_id=substitute_node_id,
+                    node_type="SubstituteProduct",
+                    user_id=user_id,
+                    firestore_doc_type="competitive_strategy",
+                    check_dependencies=False,
+                )
+
+        # 7. Delete all tactics
+        tactic_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:USES_TACTIC]->(ct:CompetitorTactic)
+        RETURN ct.node_id as tactic_node_id
+        """
+        tactic_results = await self.neo4j.execute_query(
+            tactic_query, {"node_id": node_id}
+        )
+
+        for record in tactic_results:
+            tactic_node_id = record["tactic_node_id"]
+            if tactic_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting tactic {tactic_node_id} from competitor {node_id}"
+                )
+                await self.delete_competitor_tactic(account_id, tactic_node_id, user_id)
+
+        # 8. Delete value propositions directly linked to competitor
+        vp_query = """
+        MATCH (c:Competitor {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        RETURN vp.node_id as vp_node_id
+        """
+        vp_results = await self.neo4j.execute_query(vp_query, {"node_id": node_id})
+
+        for record in vp_results:
+            vp_node_id = record["vp_node_id"]
+            if vp_node_id:  # Skip None values
+                logger.info(
+                    f"Cascade deleting value proposition {vp_node_id} from competitor {node_id}"
+                )
+                await self.delete_value_proposition(account_id, vp_node_id, user_id)
+
+        # 9. Finally, delete the competitor itself (no dependency check needed)
         await self.delete_node(
             account_id=account_id,
             node_id=node_id,
             node_type="Competitor",
             user_id=user_id,
             firestore_doc_type="competitive_strategy",
-            check_dependencies=True,
+            check_dependencies=False,  # We already cascaded the dependencies
         )
 
     async def create_competitor_tactic(

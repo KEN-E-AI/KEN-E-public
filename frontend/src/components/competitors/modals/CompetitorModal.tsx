@@ -34,11 +34,23 @@ export interface CompetitorModalProps {
   mode: "create" | "edit";
 }
 
+export interface CompetitorDependentCounts {
+  strengths: number;
+  weaknesses: number;
+  tactics: number;
+  substituteProducts: number;
+  valuePropositions: number;
+  risks: number;
+  opportunities: number;
+}
+
 export interface DeleteCompetitorDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
   competitorName: string;
+  dependentCounts?: CompetitorDependentCounts;
+  isLoadingCounts?: boolean;
 }
 
 export const CompetitorModal = ({
@@ -147,15 +159,78 @@ export const DeleteCompetitorDialog = ({
   onClose,
   onConfirm,
   competitorName,
+  dependentCounts,
+  isLoadingCounts,
 }: DeleteCompetitorDialogProps) => {
+  const totalDependents = dependentCounts
+    ? dependentCounts.strengths +
+      dependentCounts.weaknesses +
+      dependentCounts.tactics +
+      dependentCounts.substituteProducts +
+      dependentCounts.valuePropositions +
+      dependentCounts.risks +
+      dependentCounts.opportunities
+    : 0;
+
   return (
     <AlertDialog open={isOpen} onOpenChange={onClose}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete Competitor</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to delete "{competitorName}"? This action
-            cannot be undone.
+          <AlertDialogDescription asChild>
+            <div className="space-y-3">
+              <p>
+                Are you sure you want to delete "{competitorName}"? This action
+                cannot be undone.
+              </p>
+              {isLoadingCounts ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Loading dependent entities...
+                </div>
+              ) : dependentCounts && totalDependents > 0 ? (
+                <div className="rounded-md bg-brand-red/10 p-3 space-y-2">
+                  <p className="font-semibold text-brand-red text-sm">
+                    Warning: This will also delete:
+                  </p>
+                  <ul className="text-sm space-y-1 text-dashboard-gray-700">
+                    {dependentCounts.strengths > 0 && (
+                      <li>• {dependentCounts.strengths} strength(s)</li>
+                    )}
+                    {dependentCounts.weaknesses > 0 && (
+                      <li>• {dependentCounts.weaknesses} weakness(es)</li>
+                    )}
+                    {dependentCounts.tactics > 0 && (
+                      <li>• {dependentCounts.tactics} tactic(s)</li>
+                    )}
+                    {dependentCounts.substituteProducts > 0 && (
+                      <li>
+                        • {dependentCounts.substituteProducts} substitute
+                        product(s)
+                      </li>
+                    )}
+                    {dependentCounts.risks > 0 && (
+                      <li>• {dependentCounts.risks} risk(s)</li>
+                    )}
+                    {dependentCounts.opportunities > 0 && (
+                      <li>
+                        • {dependentCounts.opportunities} opportunit(y/ies)
+                      </li>
+                    )}
+                    {dependentCounts.valuePropositions > 0 && (
+                      <li>
+                        • {dependentCounts.valuePropositions} value
+                        proposition(s)
+                      </li>
+                    )}
+                  </ul>
+                  <p className="text-xs text-dashboard-gray-600 mt-2">
+                    Total: {totalDependents} related entities will be
+                    permanently removed.
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -163,8 +238,9 @@ export const DeleteCompetitorDialog = ({
           <AlertDialogAction
             onClick={onConfirm}
             className="bg-brand-red hover:bg-brand-red/90"
+            disabled={isLoadingCounts}
           >
-            Delete
+            Delete {totalDependents > 0 ? "All" : "Competitor"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

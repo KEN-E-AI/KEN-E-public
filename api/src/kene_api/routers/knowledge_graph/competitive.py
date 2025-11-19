@@ -128,19 +128,91 @@ async def update_competitor(
     )
 
 
-@router.delete("/{account_id}/competitors/{node_id}", response_model=DeleteResponse)
-async def delete_competitor(
+@router.get(
+    "/{account_id}/competitors/{node_id}/dependent-counts",
+    response_model=dict,
+)
+async def get_competitor_dependent_counts(
     account_id: str,
     node_id: str,
     service: GraphSyncService = Depends(get_graph_sync_service),
     user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Get counts of all entities that will be deleted with this competitor.
+
+    Returns counts for:
+    - Strengths (and their nested Risks)
+    - Weaknesses (and their nested Opportunities)
+    - Tactics
+    - Substitute Products (and their nested Value Propositions)
+    - Value Propositions linked directly to Competitor
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    # Query to count all dependent entities
+    query = """
+    MATCH (c:Competitor {node_id: $node_id})
+    OPTIONAL MATCH (c)-[:HAS_STRENGTH]->(cs:CompetitorStrength)
+    OPTIONAL MATCH (cs)-[:CREATES]->(r:Risk)
+    OPTIONAL MATCH (c)-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)
+    OPTIONAL MATCH (cw)-[:CREATES]->(o:Opportunity)
+    OPTIONAL MATCH (c)-[:USES_TACTIC]->(ct:CompetitorTactic)
+    OPTIONAL MATCH (c)-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)
+    OPTIONAL MATCH (sp)-[:HAS_VALUE_PROPOSITION]->(spvp:ValueProposition)
+    OPTIONAL MATCH (c)-[:HAS_VALUE_PROPOSITION]->(cvp:ValueProposition)
+    RETURN
+      count(DISTINCT cs) as strengths,
+      count(DISTINCT cw) as weaknesses,
+      count(DISTINCT ct) as tactics,
+      count(DISTINCT sp) as substituteProducts,
+      count(DISTINCT r) as risks,
+      count(DISTINCT o) as opportunities,
+      count(DISTINCT spvp) + count(DISTINCT cvp) as valuePropositions
+    """
+
+    result = await service.neo4j.execute_query(query, {"node_id": node_id})
+
+    if not result:
+        return {
+            "strengths": 0,
+            "weaknesses": 0,
+            "tactics": 0,
+            "substituteProducts": 0,
+            "risks": 0,
+            "opportunities": 0,
+            "valuePropositions": 0,
+        }
+
+    return dict(result[0])
+
+
+@router.delete("/{account_id}/competitors/{node_id}", response_model=DeleteResponse)
+async def delete_competitor(
+    account_id: str,
+    node_id: str,
+    cascade: bool = Query(
+        False, description="Cascade delete all dependent entities"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
 ) -> DeleteResponse:
-    """Delete a competitor."""
+    """Delete a competitor.
+
+    Args:
+        account_id: Account ID
+        node_id: Competitor node ID
+        cascade: If True, cascade delete all dependent entities (strengths, weaknesses, etc.)
+                 If False, fail if dependencies exist (current behavior)
+    """
     return await CRUDEndpoints.delete_node(
         account_id=account_id,
         node_id=node_id,
         node_type="Competitor",
-        service_method=service.delete_competitor,
+        service_method=lambda a, n, u: service.delete_competitor(
+            a, n, u, cascade=cascade
+        ),
         service=service,
         user=user,
     )

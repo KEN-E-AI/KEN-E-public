@@ -141,10 +141,12 @@ export function useDeleteCompetitor() {
     mutationFn: ({
       accountId,
       nodeId,
+      cascade,
     }: {
       accountId: string;
       nodeId: string;
-    }) => competitorService.delete(accountId, nodeId),
+      cascade?: boolean;
+    }) => competitorService.delete(accountId, nodeId, cascade),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitors", variables.accountId],

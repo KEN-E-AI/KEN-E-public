@@ -23,7 +23,9 @@ import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import type {
   Competitor,
   CompetitorCreate,
+  CompetitorDependentCounts,
 } from "@/services/competitorService";
+import { competitorService } from "@/services/competitorService";
 import type {
   CompetitorStrength,
   CompetitorStrengthCreate,
@@ -218,6 +220,10 @@ export const CompetitorsManagement = ({
       description: "",
       references: [],
     });
+  const [competitorDependentCounts, setCompetitorDependentCounts] =
+    useState<CompetitorDependentCounts | null>(null);
+  const [isLoadingDependentCounts, setIsLoadingDependentCounts] =
+    useState(false);
 
   // Scroll state - now handled by HorizontalScrollList component
 
@@ -656,6 +662,31 @@ export const CompetitorsManagement = ({
     }
   };
 
+  const handleInitiateDeleteCompetitor = async () => {
+    if (!selectedOrgAccount?.accountId || !selectedCompetitor) return;
+
+    // Fetch dependent counts
+    setIsDeleteCompetitorDialogOpen(true);
+    setIsLoadingDependentCounts(true);
+
+    try {
+      const counts = await competitorService.getDependentCounts(
+        selectedOrgAccount.accountId,
+        selectedCompetitor.node_id,
+      );
+      setCompetitorDependentCounts(counts);
+    } catch (error) {
+      console.error("Failed to fetch dependent counts:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load deletion preview",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingDependentCounts(false);
+    }
+  };
+
   const handleDeleteCompetitor = async () => {
     if (!selectedOrgAccount?.accountId || !selectedCompetitor) return;
 
@@ -666,6 +697,7 @@ export const CompetitorsManagement = ({
       await deleteCompetitorMutation.mutateAsync({
         accountId: selectedOrgAccount.accountId,
         nodeId: selectedCompetitor.node_id,
+        cascade: true,
       });
 
       setSelectedCompetitorId(null);
@@ -673,33 +705,23 @@ export const CompetitorsManagement = ({
       setSelectedChildId(null);
       setSelectedChild(null);
       setIsContextMenuOpen(false);
+      setCompetitorDependentCounts(null);
 
       toast({
         title: "Success",
-        description: "Competitor deleted successfully",
+        description: "Competitor and all related data deleted successfully",
       });
     } catch (error) {
       console.error("Failed to delete competitor:", error);
 
       if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
         const message =
           error.response?.data?.detail || "Failed to delete competitor";
-
-        if (status === 400 && message.includes("dependencies")) {
-          toast({
-            title: "Cannot Delete",
-            description:
-              "This competitor has linked data. Remove strengths, weaknesses, and products first.",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Error",
-            description: message,
-            variant: "destructive",
-          });
-        }
+        toast({
+          title: "Error",
+          description: message,
+          variant: "destructive",
+        });
       }
     } finally {
       endOperation();
@@ -2060,9 +2082,21 @@ export const CompetitorsManagement = ({
           <CardContent className="pt-6 space-y-6">
             {/* Selected Competitor Heading */}
             {selectedCompetitor && (
-              <h2 className="text-2xl font-semibold text-dashboard-gray-900">
-                {selectedCompetitor.display_name}
-              </h2>
+              <div className="flex items-start justify-between">
+                <h2 className="text-2xl font-semibold text-dashboard-gray-900">
+                  {selectedCompetitor.display_name}
+                </h2>
+                {hasEditAccess && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleInitiateDeleteCompetitor}
+                    className="text-brand-red hover:text-brand-red hover:bg-brand-red/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             )}
 
             {/* Mode Selector - Inside card */}
@@ -2186,9 +2220,14 @@ export const CompetitorsManagement = ({
       {/* Delete Competitor Dialog */}
       <DeleteCompetitorDialog
         isOpen={isDeleteCompetitorDialogOpen}
-        onClose={() => setIsDeleteCompetitorDialogOpen(false)}
+        onClose={() => {
+          setIsDeleteCompetitorDialogOpen(false);
+          setCompetitorDependentCounts(null);
+        }}
         onConfirm={handleDeleteCompetitor}
         competitorName={selectedCompetitor?.display_name || ""}
+        dependentCounts={competitorDependentCounts || undefined}
+        isLoadingCounts={isLoadingDependentCounts}
       />
 
       {/* Create Child Modals (Strength, Weakness, or Substitute Product) */}

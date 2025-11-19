@@ -26,6 +26,16 @@ export interface CompetitorUpdate {
   references?: string[];
 }
 
+export interface CompetitorDependentCounts {
+  strengths: number;
+  weaknesses: number;
+  tactics: number;
+  substituteProducts: number;
+  valuePropositions: number;
+  risks: number;
+  opportunities: number;
+}
+
 interface CompetitorListResponse {
   competitors: Competitor[];
   total_count: number;
@@ -74,9 +84,24 @@ class CompetitorService {
     return response.data;
   }
 
-  async delete(accountId: AccountId, nodeId: string): Promise<void> {
+  async getDependentCounts(
+    accountId: AccountId,
+    nodeId: string,
+  ): Promise<CompetitorDependentCounts> {
+    const response = await api.get(
+      `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}/dependent-counts`,
+    );
+    return response.data;
+  }
+
+  async delete(
+    accountId: AccountId,
+    nodeId: string,
+    cascade = false,
+  ): Promise<void> {
     await api.delete(
       `/api/v1/knowledge-graph/${accountId}/competitors/${nodeId}`,
+      { params: { cascade } },
     );
   }
 }
