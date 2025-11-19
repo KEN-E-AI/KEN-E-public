@@ -89,18 +89,22 @@ export function KnowledgeGraphSideSheet({
               </>
             ) : (
               <>
-                <Button onClick={onEdit} variant="outline" className="flex-1">
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
-                <Button
-                  onClick={onDelete}
-                  variant="destructive"
-                  className="flex-1"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
+                {onEdit && (
+                  <Button onClick={onEdit} variant="outline" className="flex-1">
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    onClick={onDelete}
+                    variant="destructive"
+                    className="flex-1"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                )}
               </>
             )}
           </div>

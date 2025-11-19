@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import {
@@ -169,6 +170,7 @@ export const CompetitorsManagement = ({
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Mode state
   const [mode, setMode] = useState<CompetitorMode>("strengths");
@@ -992,6 +994,16 @@ export const CompetitorsManagement = ({
     } finally {
       endOperation();
     }
+  };
+
+  // Handle navigating to Products page to edit a product
+  const handleNavigateToProductEdit = () => {
+    if (!selectedGrandchild) return;
+    const product = selectedGrandchild as Product;
+    // Navigate to Products page with selected product
+    navigate("/knowledge/products", {
+      state: { selectedProductId: product.node_id },
+    });
   };
 
   // Create child (strength, weakness, or substitute product)
@@ -2823,7 +2835,7 @@ export const CompetitorsManagement = ({
         )}
       </KnowledgeGraphSideSheet>
 
-      {/* Grandchild Side Sheet - Products in Substitute Mode */}
+      {/* Grandchild Side Sheet - Products in Substitute Mode (Read-Only) */}
       {contextMenuType === "grandchild" && mode === "substitute-products" && (
         <KnowledgeGraphSideSheet
           open={isContextMenuOpen && contextMenuType === "grandchild"}
@@ -2831,9 +2843,9 @@ export const CompetitorsManagement = ({
           title={(selectedGrandchild as Product)?.product_name || "Product"}
           icon={Package}
           isEditing={false}
-          hasEditAccess={hasEditAccess}
+          hasEditAccess={true}
+          onEdit={handleNavigateToProductEdit}
           onDelete={handleUnlinkProduct}
-          deleteButtonLabel="Unlink"
         >
           <div className="space-y-4">
             <div>
