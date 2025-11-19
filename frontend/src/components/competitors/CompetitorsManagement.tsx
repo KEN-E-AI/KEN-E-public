@@ -2082,18 +2082,17 @@ export const CompetitorsManagement = ({
           <CardContent className="pt-6 space-y-6">
             {/* Selected Competitor Heading */}
             {selectedCompetitor && (
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-4">
                 <h2 className="text-2xl font-semibold text-dashboard-gray-900">
                   {selectedCompetitor.display_name}
                 </h2>
                 {hasEditAccess && (
                   <Button
-                    variant="ghost"
+                    variant="destructive"
                     size="sm"
                     onClick={handleInitiateDeleteCompetitor}
-                    className="text-brand-red hover:text-brand-red hover:bg-brand-red/10"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    Delete Competitor
                   </Button>
                 )}
               </div>
