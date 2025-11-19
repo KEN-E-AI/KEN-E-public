@@ -6,11 +6,13 @@ CRUD endpoints for 6 competitive strategy node types:
 """
 
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
+from ...firestore import FirestoreService, get_firestore_service
 from ...models.graph_models import (
     CompetitiveEnvironmentResponse,
     CompetitiveEnvironmentUpdate,
@@ -36,12 +38,15 @@ from ...models.graph_models import (
     SubstituteProductResponse,
     SubstituteProductUpdate,
 )
+from ...models.monitoring_models import CompetitorEntry, MonitoringTopics
 from ...services.graph_sync_service import GraphSyncService, get_graph_sync_service
 from .crud_factory import CRUDEndpoints
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+MONITORING_TOPICS_COLLECTION = "monitoring_topics"
 
 
 # ==================== COMPETITOR ENDPOINTS ====================
@@ -52,13 +57,16 @@ async def create_competitor(
     account_id: str,
     competitor: CompetitorCreate,
     service: GraphSyncService = Depends(get_graph_sync_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorResponse:
     """Create a new competitor.
 
     Requires edit permission for the account.
+    If keywords or website are provided, also creates a monitoring entry in Firestore.
     """
-    return await CRUDEndpoints.create_node(
+    # Create the competitor in Neo4j
+    created_competitor = await CRUDEndpoints.create_node(
         account_id=account_id,
         node_type="Competitor",
         create_data=competitor,
@@ -66,6 +74,69 @@ async def create_competitor(
         service=service,
         user=user,
     )
+
+    # If keywords or website are provided, add to monitoring topics
+    if competitor.keywords or competitor.website:
+        try:
+            # Get existing monitoring topics document
+            doc = firestore.get_document(
+                collection=MONITORING_TOPICS_COLLECTION,
+                document_id=account_id,
+            )
+
+            if doc:
+                monitoring_topics = MonitoringTopics(**doc)
+            else:
+                # Create new monitoring topics document
+                now = datetime.utcnow().isoformat()
+                monitoring_topics = MonitoringTopics(
+                    account_id=account_id,
+                    organization_id="",
+                    industry_keywords=[],
+                    company_keywords=[],
+                    customer_keywords=[],
+                    competitor_entries=[],
+                    created_at=now,
+                    updated_at=now,
+                )
+
+            # Create competitor entry for monitoring
+            keywords = competitor.keywords or [competitor.display_name.lower()]
+            competitor_entry = CompetitorEntry(
+                name=competitor.display_name,
+                website=competitor.website,
+                keywords=keywords,
+            )
+
+            # Add to competitor entries
+            monitoring_topics.competitor_entries.append(competitor_entry)
+            monitoring_topics.updated_at = datetime.utcnow().isoformat()
+
+            # Save back to Firestore
+            if doc:
+                firestore.update_document(
+                    collection=MONITORING_TOPICS_COLLECTION,
+                    document_id=account_id,
+                    data=monitoring_topics.model_dump(),
+                )
+            else:
+                firestore.create_document(
+                    collection=MONITORING_TOPICS_COLLECTION,
+                    document_id=account_id,
+                    data=monitoring_topics.model_dump(),
+                )
+
+            logger.info(
+                f"Added competitor {competitor.display_name} to monitoring topics for account {account_id}"
+            )
+        except Exception as e:
+            # Log the error but don't fail the request
+            logger.error(
+                f"Failed to add competitor to monitoring topics: {e}",
+                exc_info=True,
+            )
+
+    return created_competitor
 
 
 @router.get("/{account_id}/competitors", response_model=CompetitorListResponse)
@@ -196,6 +267,7 @@ async def delete_competitor(
         False, description="Cascade delete all dependent entities"
     ),
     service: GraphSyncService = Depends(get_graph_sync_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
     user: UserContext = Depends(get_current_user),
 ) -> DeleteResponse:
     """Delete a competitor.
@@ -205,8 +277,26 @@ async def delete_competitor(
         node_id: Competitor node ID
         cascade: If True, cascade delete all dependent entities (strengths, weaknesses, etc.)
                  If False, fail if dependencies exist (current behavior)
+
+    Also deletes the corresponding monitoring entry from Firestore if it exists.
     """
-    return await CRUDEndpoints.delete_node(
+    # Get competitor details before deletion
+    try:
+        competitor = await CRUDEndpoints.get_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Competitor",
+            response_class=CompetitorResponse,
+            service=service,
+            user=user,
+        )
+        competitor_name = competitor.display_name
+    except Exception as e:
+        logger.warning(f"Could not fetch competitor before deletion: {e}")
+        competitor_name = None
+
+    # Delete from Neo4j
+    result = await CRUDEndpoints.delete_node(
         account_id=account_id,
         node_id=node_id,
         node_type="Competitor",
@@ -216,6 +306,43 @@ async def delete_competitor(
         service=service,
         user=user,
     )
+
+    # Delete from Firestore monitoring topics if we have the competitor name
+    if competitor_name:
+        try:
+            doc = firestore.get_document(
+                collection=MONITORING_TOPICS_COLLECTION,
+                document_id=account_id,
+            )
+
+            if doc:
+                monitoring_topics = MonitoringTopics(**doc)
+                # Find and remove the competitor entry by name
+                original_count = len(monitoring_topics.competitor_entries)
+                monitoring_topics.competitor_entries = [
+                    entry
+                    for entry in monitoring_topics.competitor_entries
+                    if entry.name != competitor_name
+                ]
+
+                if len(monitoring_topics.competitor_entries) < original_count:
+                    monitoring_topics.updated_at = datetime.utcnow().isoformat()
+                    firestore.update_document(
+                        collection=MONITORING_TOPICS_COLLECTION,
+                        document_id=account_id,
+                        data=monitoring_topics.model_dump(),
+                    )
+                    logger.info(
+                        f"Removed competitor {competitor_name} from monitoring topics for account {account_id}"
+                    )
+        except Exception as e:
+            # Log the error but don't fail the request
+            logger.error(
+                f"Failed to remove competitor from monitoring topics: {e}",
+                exc_info=True,
+            )
+
+    return result
 
 
 # ==================== COMPETITOR TACTIC ENDPOINTS ====================

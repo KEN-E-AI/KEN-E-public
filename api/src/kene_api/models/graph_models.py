@@ -655,6 +655,8 @@ class CompetitorCreate(BaseModel):
                         "https://molekule.com/about",
                         "https://crunchbase.com/organization/molekule",
                     ],
+                    "website": "https://molekule.com",
+                    "keywords": ["molekule", "peco technology", "air purifier"],
                 }
             ]
         }
@@ -666,6 +668,13 @@ class CompetitorCreate(BaseModel):
     )
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
+    )
+    website: str | None = Field(
+        None, description="Competitor website URL for news monitoring"
+    )
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Keywords for news monitoring system (auto-populated with competitor name if empty)",
     )
 
 
@@ -683,6 +692,7 @@ class CompetitorResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
+    website: str | None = None
 
 
 class CompetitorListResponse(BaseModel):

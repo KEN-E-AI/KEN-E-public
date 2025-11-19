@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import CompetitorsConfiguration from "@/components/configuration/CompetitorsConfiguration";
 import { CompetitorsManagement } from "@/components/competitors/CompetitorsManagement";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ArrowLeft, Target, Info, Pencil, Loader2, Swords } from "lucide-react";
+import { ArrowLeft, Info, Pencil, Loader2, Swords } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -171,20 +170,6 @@ export default function KnowledgeCompetitors() {
                   "No competitive environment description yet. Click the pencil icon to add one."}
               </p>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Competitor Keywords Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Competitor Keywords</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              Track your competitors' mentions and activities in news and social
-              media.
-            </p>
-            <CompetitorsConfiguration />
           </CardContent>
         </Card>
 

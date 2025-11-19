@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Plus, X } from "lucide-react";
 
 export interface CompetitorModalProps {
   isOpen: boolean;
@@ -64,7 +66,10 @@ export const CompetitorModal = ({
     display_name: initialData?.display_name || "",
     description: initialData?.description || "",
     references: initialData?.references || [],
+    website: initialData?.website || "",
+    keywords: [],
   });
+  const [keywordInput, setKeywordInput] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -72,12 +77,44 @@ export const CompetitorModal = ({
         display_name: initialData?.display_name || "",
         description: initialData?.description || "",
         references: initialData?.references || [],
+        website: initialData?.website || "",
+        keywords:
+          mode === "create" && initialData?.display_name
+            ? [initialData.display_name.toLowerCase()]
+            : [],
       });
+      setKeywordInput("");
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, mode]);
+
+  const handleAddKeyword = () => {
+    const trimmedKeyword = keywordInput.trim().toLowerCase();
+    if (trimmedKeyword && !formData.keywords?.includes(trimmedKeyword)) {
+      setFormData({
+        ...formData,
+        keywords: [...(formData.keywords || []), trimmedKeyword],
+      });
+      setKeywordInput("");
+    }
+  };
+
+  const handleRemoveKeyword = (keyword: string) => {
+    setFormData({
+      ...formData,
+      keywords: formData.keywords?.filter((k) => k !== keyword) || [],
+    });
+  };
 
   const handleSubmit = async () => {
-    await onSubmit(formData);
+    // Auto-populate keywords with competitor name if empty
+    const finalData = {
+      ...formData,
+      keywords:
+        formData.keywords && formData.keywords.length > 0
+          ? formData.keywords
+          : [formData.display_name.toLowerCase()],
+    };
+    await onSubmit(finalData);
     handleClose();
   };
 
@@ -86,7 +123,10 @@ export const CompetitorModal = ({
       display_name: "",
       description: "",
       references: [],
+      website: "",
+      keywords: [],
     });
+    setKeywordInput("");
     onClose();
   };
 
@@ -134,6 +174,73 @@ export const CompetitorModal = ({
               rows={4}
               maxLength={4000}
             />
+          </div>
+          <div>
+            <Label htmlFor="competitor-website">Website (Optional)</Label>
+            <Input
+              id="competitor-website"
+              type="url"
+              value={formData.website || ""}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  website: e.target.value,
+                })
+              }
+              placeholder="e.g., https://acmecorp.com"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Used for news monitoring
+            </p>
+          </div>
+          <div>
+            <Label>Keywords for News Monitoring (Optional)</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add a keyword"
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddKeyword();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                onClick={handleAddKeyword}
+                disabled={!keywordInput.trim()}
+                size="icon"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            {formData.keywords && formData.keywords.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {formData.keywords.map((keyword) => (
+                  <Badge
+                    key={keyword}
+                    variant="secondary"
+                    className="pl-3 pr-1 py-1 text-sm"
+                  >
+                    {keyword}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-1 h-4 w-4 p-0 hover:bg-transparent"
+                      onClick={() => handleRemoveKeyword(keyword)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              If no keywords are specified, the competitor name will be used as
+              a keyword
+            </p>
           </div>
         </div>
         <DialogFooter>
