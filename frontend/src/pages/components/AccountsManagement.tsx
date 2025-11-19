@@ -528,53 +528,8 @@ const AccountsManagement = ({
     hasAdminAccess,
   ]);
 
-  // Check all accounts for their creation status on mount and when accounts change
-  useEffect(() => {
-    const checkAccountStatuses = async () => {
-      if (!organizationAccounts || organizationAccounts.length === 0) return;
-
-      const setupAccounts = new Set<string>();
-
-      // Check each account's creation status
-      for (const account of organizationAccounts) {
-        try {
-          const response = await api.get(
-            `/api/v1/accounts/${account.account_id}/creation-status`,
-          );
-
-          if (
-            response.data &&
-            (response.data.status === "pending" ||
-              response.data.status === "processing")
-          ) {
-            console.log(
-              `[AccountsManagement] Account ${account.account_id} is still being set up`,
-            );
-            setupAccounts.add(account.account_id);
-          }
-        } catch (error) {
-          // Account might not have a creation status, which is fine
-          console.debug(
-            `[AccountsManagement] No creation status for account ${account.account_id}`,
-          );
-        }
-      }
-
-      setAccountsInSetup(setupAccounts);
-    };
-
-    // Check immediately
-    checkAccountStatuses();
-
-    // Check periodically while there are accounts in setup
-    const intervalId = setInterval(() => {
-      if (accountsInSetup.size > 0) {
-        checkAccountStatuses();
-      }
-    }, 30000); // Check every 30 seconds
-
-    return () => clearInterval(intervalId);
-  }, [organizationAccounts.length, accountsInSetup.size]); // Re-run when accounts change
+  // Note: Account creation status polling is handled by useAccountCreationProgress hook
+  // for the account currently being created. We don't need to poll all accounts on mount.
 
   // Region management helpers
   const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
