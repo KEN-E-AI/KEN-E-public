@@ -788,21 +788,40 @@ export const CompetitorsManagement = ({
     } else if (mode === "substitute-products") {
       const substituteProduct = selectedChild as SubstituteProduct;
 
+      // Row 1: Competitor node
+      if (selectedCompetitor) {
+        nodes.push({
+          id: selectedCompetitor.node_id,
+          type: "competitorNode",
+          position: {
+            x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+            y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+          },
+          data: {
+            label: selectedCompetitor.display_name,
+            isSelected: false, // Competitor is not the focus in this view
+            onAddChild: () => {}, // No add functionality from this view
+          },
+        });
+      }
+
+      // Row 2: SubstituteProduct node
       nodes.push({
         id: substituteProduct.node_id,
         type: "substituteProductNode",
         position: {
           x: DIAGRAM_LAYOUT.PARENT_NODE_X,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
         },
         data: {
           label: substituteProduct.product_name,
           isSelected: !selectedGrandchildId,
           showHandle: true, // Show "+" button to link products
-          onAddProduct: () => handleOpenLinkDialog(), // NEW: Open link dialog
+          onAddProduct: () => handleOpenLinkDialog(),
         },
       });
 
+      // Row 3: Linked Products
       const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
       const grandchildTotalWidth =
         linkedProducts.length * grandchildWidth - gap;
@@ -812,10 +831,12 @@ export const CompetitorsManagement = ({
       linkedProducts.forEach((product, index) => {
         nodes.push({
           id: product.node_id,
-          type: "ourProductNode", // NEW: Use product node type
+          type: "ourProductNode",
           position: {
             x: grandchildStartX + index * grandchildWidth,
-            y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+            y:
+              DIAGRAM_LAYOUT.PARENT_NODE_Y +
+              DIAGRAM_LAYOUT.VERTICAL_SPACING * 2,
           },
           data: {
             label: product.product_name,
@@ -859,7 +880,23 @@ export const CompetitorsManagement = ({
           targetHandle: "top",
         });
       });
-    } else if (mode === "substitute-products" && selectedChildId) {
+    } else if (
+      mode === "substitute-products" &&
+      selectedChildId &&
+      selectedCompetitor
+    ) {
+      // Competitor → SubstituteProduct edge
+      edges.push({
+        id: `${selectedCompetitor.node_id}-${selectedChildId}`,
+        source: selectedCompetitor.node_id,
+        target: selectedChildId,
+        type: "smoothstep",
+        style: DEFAULT_EDGE_STYLE,
+        sourceHandle: "bottom",
+        targetHandle: "top",
+      });
+
+      // SubstituteProduct → Products edges
       linkedProducts.forEach((product) => {
         edges.push({
           id: `${selectedChildId}-${product.node_id}`,
@@ -1779,7 +1816,7 @@ export const CompetitorsManagement = ({
       ? "Risks"
       : mode === "weaknesses"
         ? "Opportunities"
-        : "Products"; // CHANGED: from "Value Propositions"
+        : "Linked Products";
 
   // Derived values for children display
   const children =
