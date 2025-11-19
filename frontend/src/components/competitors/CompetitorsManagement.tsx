@@ -2836,18 +2836,20 @@ export const CompetitorsManagement = ({
       </KnowledgeGraphSideSheet>
 
       {/* Grandchild Side Sheet - Products in Substitute Mode (Read-Only) */}
-      {contextMenuType === "grandchild" && mode === "substitute-products" && (
-        <KnowledgeGraphSideSheet
-          open={isContextMenuOpen && contextMenuType === "grandchild"}
-          onOpenChange={setIsContextMenuOpen}
-          title={(selectedGrandchild as Product)?.product_name || "Product"}
-          icon={Package}
-          isEditing={false}
-          hasEditAccess={true}
-          onEdit={handleNavigateToProductEdit}
-          onDelete={handleUnlinkProduct}
-          deleteButtonLabel="Unlink"
-        >
+      {contextMenuType === "grandchild" &&
+        mode === "substitute-products" &&
+        isContextMenuOpen && (
+          <KnowledgeGraphSideSheet
+            open={true}
+            onOpenChange={setIsContextMenuOpen}
+            title={(selectedGrandchild as Product)?.product_name || "Product"}
+            icon={Package}
+            isEditing={false}
+            hasEditAccess={true}
+            onEdit={handleNavigateToProductEdit}
+            onDelete={handleUnlinkProduct}
+            deleteButtonLabel="Unlink"
+          >
           <div className="space-y-4">
             <div>
               <Label>Product Name</Label>
