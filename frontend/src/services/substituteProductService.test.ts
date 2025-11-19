@@ -1,3 +1,10 @@
+/**
+ * Unit tests for SubstituteProductService
+ *
+ * Tests the unique link/unlink functionality for substitute products.
+ * Basic CRUD operations are covered by integration tests.
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { substituteProductService } from "./substituteProductService";
 import type { AccountId } from "@/lib/branded-types";
@@ -100,6 +107,35 @@ describe("SubstituteProductService", () => {
       );
     });
 
+    it("should include both competitor_node_id and product_node_id filters", async () => {
+      const mockResponse = {
+        data: {
+          products: [],
+          total_count: 0,
+        },
+      };
+
+      vi.mocked(api.get).mockResolvedValue(mockResponse);
+
+      await substituteProductService.list(
+        ACCOUNT_ID,
+        COMPETITOR_NODE_ID,
+        PRODUCT_NODE_ID,
+      );
+
+      expect(api.get).toHaveBeenCalledWith(
+        `/api/v1/knowledge-graph/${ACCOUNT_ID}/substitute-products`,
+        {
+          params: {
+            skip: 0,
+            limit: 1000,
+            competitor_node_id: COMPETITOR_NODE_ID,
+            product_node_id: PRODUCT_NODE_ID,
+          },
+        },
+      );
+    });
+
     it("should fetch substitutes with custom pagination", async () => {
       const MOCK_RESPONSE = {
         products: [MOCK_SUBSTITUTE],
@@ -108,7 +144,7 @@ describe("SubstituteProductService", () => {
 
       vi.mocked(api.get).mockResolvedValue({ data: MOCK_RESPONSE });
 
-      const result = await substituteProductService.list(
+      await substituteProductService.list(
         ACCOUNT_ID,
         COMPETITOR_NODE_ID,
         undefined,
@@ -140,6 +176,29 @@ describe("SubstituteProductService", () => {
 
       expect(result.products).toEqual([]);
       expect(result.total_count).toBe(0);
+    });
+
+    it("should handle optional filter parameters", async () => {
+      const mockResponse = {
+        data: {
+          products: [],
+          total_count: 0,
+        },
+      };
+
+      vi.mocked(api.get).mockResolvedValue(mockResponse);
+
+      await substituteProductService.list(ACCOUNT_ID);
+
+      expect(api.get).toHaveBeenCalledWith(
+        `/api/v1/knowledge-graph/${ACCOUNT_ID}/substitute-products`,
+        {
+          params: {
+            skip: 0,
+            limit: 1000,
+          },
+        },
+      );
     });
   });
 
@@ -259,6 +318,18 @@ describe("SubstituteProductService", () => {
         { product_node_id: PRODUCT_NODE_ID },
       );
     });
+
+    it("should handle API errors gracefully", async () => {
+      vi.mocked(api.post).mockRejectedValue(new Error("Product not found"));
+
+      await expect(
+        substituteProductService.linkProduct(
+          ACCOUNT_ID,
+          SUBSTITUTE_NODE_ID,
+          PRODUCT_NODE_ID,
+        ),
+      ).rejects.toThrow("Product not found");
+    });
   });
 
   describe("unlinkProduct", () => {
@@ -278,6 +349,20 @@ describe("SubstituteProductService", () => {
       expect(api.delete).toHaveBeenCalledWith(
         `/api/v1/knowledge-graph/${ACCOUNT_ID}/substitute-products/${SUBSTITUTE_NODE_ID}/unlink-product/${PRODUCT_NODE_ID}`,
       );
+    });
+
+    it("should handle unlinking non-existent relationship", async () => {
+      vi.mocked(api.delete).mockRejectedValue(
+        new Error("Relationship not found"),
+      );
+
+      await expect(
+        substituteProductService.unlinkProduct(
+          ACCOUNT_ID,
+          SUBSTITUTE_NODE_ID,
+          PRODUCT_NODE_ID,
+        ),
+      ).rejects.toThrow("Relationship not found");
     });
   });
 });
