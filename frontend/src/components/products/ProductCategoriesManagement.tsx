@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
 import { Plus, Trash2, Blocks, Pencil, Package } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -82,6 +83,9 @@ export const ProductCategoriesManagement = ({
   const { selectedOrgAccount } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
   const { toast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const hasProcessedNavigation = useRef(false);
 
   // Fetch categories
   const { data: categoriesData, isLoading } = useProductCategories(
@@ -188,6 +192,62 @@ export const ProductCategoriesManagement = ({
     formData,
     isEditing,
   );
+
+  // Handle navigation from other pages (e.g., Competitors page)
+  useEffect(() => {
+    const navState = location.state as {
+      selectedProductId?: string;
+      autoEdit?: boolean;
+    } | null;
+
+    if (
+      navState?.selectedProductId &&
+      navState?.autoEdit &&
+      !hasProcessedNavigation.current &&
+      products.length > 0
+    ) {
+      hasProcessedNavigation.current = true;
+
+      // Find the product in the loaded products
+      const product = products.find(
+        (p) => p.node_id === navState.selectedProductId,
+      );
+
+      if (product) {
+        // Product found in current category - select it and enter edit mode
+        setSelectedProduct(product);
+        setSelectedProductId(product.node_id);
+        setFormData({
+          product_name: product.product_name,
+          description: product.description,
+          product_detail_page: product.product_detail_page || "",
+        });
+        setContextMenuType("product");
+        setIsContextMenuOpen(true);
+        setIsEditing(true);
+
+        // Clear navigation state
+        navigate(location.pathname, { replace: true, state: {} });
+      } else if (categories.length > 0 && !selectedCategoryId) {
+        // Product not found - search through all categories
+        for (const category of categories) {
+          // We need to trigger loading products for this category
+          // The simplest approach: set the category and let the next render find the product
+          setSelectedCategoryId(category.node_id);
+          setSelectedCategory(category);
+          hasProcessedNavigation.current = false; // Allow retry when products load
+          break;
+        }
+      }
+    }
+  }, [
+    location.state,
+    products,
+    categories,
+    selectedCategoryId,
+    navigate,
+    location.pathname,
+  ]);
 
   const handleCreateClick = () => {
     setFormData({ product_name: "", description: "", product_detail_page: "" });
