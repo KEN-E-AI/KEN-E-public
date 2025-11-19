@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import {
@@ -171,6 +171,8 @@ export const CompetitorsManagement = ({
   const { startOperation, endOperation } = useAccountOperations();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const hasProcessedNavigation = useRef(false);
 
   // Mode state
   const [mode, setMode] = useState<CompetitorMode>("strengths");
@@ -439,6 +441,75 @@ export const CompetitorsManagement = ({
     setSelectedGrandchild(null);
     setIsContextMenuOpen(false);
   };
+
+  // Handle navigation from other pages (e.g., Products page)
+  useEffect(() => {
+    const navState = location.state as {
+      selectedSubstituteProductId?: string;
+      competitorNodeId?: string;
+      autoEdit?: boolean;
+    } | null;
+
+    if (
+      navState?.selectedSubstituteProductId &&
+      navState?.competitorNodeId &&
+      navState?.autoEdit &&
+      !hasProcessedNavigation.current
+    ) {
+      // Step 1: Select the competitor if not already selected
+      if (navState.competitorNodeId !== selectedCompetitorId) {
+        const competitor = competitors.find(
+          (c) => c.node_id === navState.competitorNodeId,
+        );
+        if (competitor) {
+          setSelectedCompetitorId(competitor.node_id);
+          setSelectedCompetitor(competitor);
+          setMode("substitute-products");
+          // Don't mark as processed yet - wait for substitute products to load
+          return;
+        }
+      }
+
+      // Step 2: Once competitor is selected and substitute products loaded, select the substitute
+      if (
+        selectedCompetitorId &&
+        mode === "substitute-products" &&
+        substituteProducts.length > 0
+      ) {
+        const substitute = substituteProducts.find(
+          (s) => s.node_id === navState.selectedSubstituteProductId,
+        );
+
+        if (substitute) {
+          // Substitute found - select it and enter edit mode
+          hasProcessedNavigation.current = true;
+
+          setSelectedChildId(substitute.node_id);
+          setSelectedChild(substitute);
+          setFormData({
+            display_name: substitute.product_name,
+            description: substitute.description,
+            product_name: substitute.product_name,
+            product_detail_page: substitute.product_detail_page || "",
+          });
+          setContextMenuType("child");
+          setIsContextMenuOpen(true);
+          setIsEditing(true);
+
+          // Clear navigation state
+          navigate(location.pathname, { replace: true, state: {} });
+        }
+      }
+    }
+  }, [
+    location.state,
+    competitors,
+    selectedCompetitorId,
+    mode,
+    substituteProducts,
+    navigate,
+    location.pathname,
+  ]);
 
   // Competitor handlers
   const handleCompetitorClick = (competitor: Competitor) => {
