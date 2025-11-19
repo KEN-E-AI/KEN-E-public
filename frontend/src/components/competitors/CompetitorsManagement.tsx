@@ -2019,6 +2019,13 @@ export const CompetitorsManagement = ({
       ) : (
         <Card>
           <CardContent className="pt-6 space-y-6">
+            {/* Selected Competitor Heading */}
+            {selectedCompetitor && (
+              <h2 className="text-2xl font-semibold text-dashboard-gray-900">
+                {selectedCompetitor.display_name}
+              </h2>
+            )}
+
             {/* Mode Selector - Inside card */}
             <ModeSelector
               modes={COMPETITOR_MODES}
