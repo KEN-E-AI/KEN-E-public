@@ -197,46 +197,51 @@ export const ProductCategoriesManagement = ({
   useEffect(() => {
     const navState = location.state as {
       selectedProductId?: string;
+      categoryNodeId?: string;
       autoEdit?: boolean;
     } | null;
 
     if (
       navState?.selectedProductId &&
       navState?.autoEdit &&
-      !hasProcessedNavigation.current &&
-      products.length > 0
+      !hasProcessedNavigation.current
     ) {
-      hasProcessedNavigation.current = true;
-
-      // Find the product in the loaded products
-      const product = products.find(
-        (p) => p.node_id === navState.selectedProductId,
-      );
-
-      if (product) {
-        // Product found in current category - select it and enter edit mode
-        setSelectedProduct(product);
-        setSelectedProductId(product.node_id);
-        setFormData({
-          product_name: product.product_name,
-          description: product.description,
-          product_detail_page: product.product_detail_page || "",
-        });
-        setContextMenuType("product");
-        setIsContextMenuOpen(true);
-        setIsEditing(true);
-
-        // Clear navigation state
-        navigate(location.pathname, { replace: true, state: {} });
-      } else if (categories.length > 0 && !selectedCategoryId) {
-        // Product not found - search through all categories
-        for (const category of categories) {
-          // We need to trigger loading products for this category
-          // The simplest approach: set the category and let the next render find the product
+      // Step 1: Select the category if provided and not already selected
+      if (navState.categoryNodeId && navState.categoryNodeId !== selectedCategoryId) {
+        const category = categories.find(
+          (c) => c.node_id === navState.categoryNodeId,
+        );
+        if (category) {
           setSelectedCategoryId(category.node_id);
           setSelectedCategory(category);
-          hasProcessedNavigation.current = false; // Allow retry when products load
-          break;
+          // Don't mark as processed yet - wait for products to load
+          return;
+        }
+      }
+
+      // Step 2: Once category is selected and products loaded, find and select the product
+      if (selectedCategoryId && products.length > 0) {
+        const product = products.find(
+          (p) => p.node_id === navState.selectedProductId,
+        );
+
+        if (product) {
+          // Product found - select it and enter edit mode
+          hasProcessedNavigation.current = true;
+
+          setSelectedProduct(product);
+          setSelectedProductId(product.node_id);
+          setFormData({
+            product_name: product.product_name,
+            description: product.description,
+            product_detail_page: product.product_detail_page || "",
+          });
+          setContextMenuType("product");
+          setIsContextMenuOpen(true);
+          setIsEditing(true);
+
+          // Clear navigation state
+          navigate(location.pathname, { replace: true, state: {} });
         }
       }
     }

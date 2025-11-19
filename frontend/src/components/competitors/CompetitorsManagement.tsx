@@ -1000,9 +1000,13 @@ export const CompetitorsManagement = ({
   const handleNavigateToProductEdit = () => {
     if (!selectedGrandchild) return;
     const product = selectedGrandchild as Product;
-    // Navigate to Products page with selected product and auto-edit mode
+    // Navigate to Products page with selected product, category, and auto-edit mode
     navigate("/knowledge/products", {
-      state: { selectedProductId: product.node_id, autoEdit: true },
+      state: {
+        selectedProductId: product.node_id,
+        categoryNodeId: product.category_node_id,
+        autoEdit: true,
+      },
     });
   };
 
