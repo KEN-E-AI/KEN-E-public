@@ -788,9 +788,9 @@ export const CompetitorsManagement = ({
     } else if (mode === "substitute-products" && selectedChildId) {
       linkedProducts.forEach((product) => {
         edges.push({
-          id: `${product.node_id}-${selectedChildId}`,
-          source: product.node_id,
-          target: selectedChildId,
+          id: `${selectedChildId}-${product.node_id}`,
+          source: selectedChildId,
+          target: product.node_id,
           type: "smoothstep",
           style: DEFAULT_EDGE_STYLE,
           sourceHandle: "bottom",
