@@ -695,7 +695,7 @@ async def list_substitute_products(
             MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(acc)
             MATCH (p)-[:MAY_BE_SUBSTITUTED_FOR]->(sub:SubstituteProduct)-[:BELONGS_TO]->(acc)
             MATCH (comp:Competitor)-[:OFFERS_PRODUCT]->(sub)
-            RETURN sub as node, comp.node_id as parent_node_id
+            RETURN sub as node, comp.node_id as parent_node_id, acc.account_id as account_id
             ORDER BY sub.product_name
             SKIP $skip
             """
@@ -714,7 +714,11 @@ async def list_substitute_products(
 
             results = await service.neo4j.execute_query(query, params)
             products_data = [
-                {**r["node"], "parent_node_id": r["parent_node_id"]}
+                {
+                    **service._neo4j_node_to_dict(r["node"]),
+                    "account_id": r["account_id"],
+                    "parent_node_id": r["parent_node_id"],
+                }
                 for r in results
             ]
         else:

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
-import { Plus, Trash2, Blocks, Pencil, Package } from "lucide-react";
+import { Plus, Trash2, Blocks, Pencil, Package, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import type { ProductCategory } from "@/services/productCategoryService";
@@ -34,6 +34,7 @@ import {
   useUnlinkProductFromSubstitute,
 } from "@/queries/competitors";
 import type { SubstituteProduct } from "@/services/substituteProductService";
+import { substituteProductService } from "@/services/substituteProductService";
 import { CategoryNode, ProductNode } from "./ProductFlowNodes";
 import { SubstituteProductNode } from "../competitors/CompetitorFlowNodes";
 import { Button } from "@/components/ui/button";
@@ -139,7 +140,7 @@ export const ProductCategoriesManagement = ({
   // Context menu state
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
   const [contextMenuType, setContextMenuType] = useState<
-    "category" | "product" | null
+    "category" | "product" | "substitute" | null
   >(null);
   const [isUnsavedChangesDialogOpen, setIsUnsavedChangesDialogOpen] =
     useState(false);
@@ -188,12 +189,14 @@ export const ProductCategoriesManagement = ({
   const valuePropositions = valuePropositionsData?.value_propositions || [];
 
   // Substitute Products linked to selected Product (for React Flow third row)
-  const { data: substituteProductsData, isLoading: isLoadingSubstituteProducts } =
-    useSubstituteProducts(
-      selectedProductId ? selectedOrgAccount?.accountId || null : null,
-      null, // No competitor filter on Products page
-      selectedProductId, // Filter by Product
-    );
+  const {
+    data: substituteProductsData,
+    isLoading: isLoadingSubstituteProducts,
+  } = useSubstituteProducts(
+    selectedProductId ? selectedOrgAccount?.accountId || null : null,
+    null, // No competitor filter on Products page
+    selectedProductId, // Filter by Product
+  );
   const substituteProducts = substituteProductsData?.products || [];
 
   // Track selected substitute product (third level)
@@ -209,6 +212,17 @@ export const ProductCategoriesManagement = ({
   // Link/Unlink mutations for substitute products
   const linkProductMutation = useLinkProductToSubstitute();
   const unlinkProductMutation = useUnlinkProductFromSubstitute();
+
+  // Link substitute dialog state
+  const [isLinkSubstituteDialogOpen, setIsLinkSubstituteDialogOpen] =
+    useState(false);
+  const [selectedSubstituteToLink, setSelectedSubstituteToLink] =
+    useState<SubstituteProduct | null>(null);
+  const [linkDialogSubstitutes, setLinkDialogSubstitutes] = useState<
+    SubstituteProduct[]
+  >([]);
+  const [isLoadingLinkDialogSubstitutes, setIsLoadingLinkDialogSubstitutes] =
+    useState(false);
 
   // Unsaved changes detection
   const originalData =
@@ -233,7 +247,10 @@ export const ProductCategoriesManagement = ({
       !hasProcessedNavigation.current
     ) {
       // Step 1: Select the category if provided and not already selected
-      if (navState.categoryNodeId && navState.categoryNodeId !== selectedCategoryId) {
+      if (
+        navState.categoryNodeId &&
+        navState.categoryNodeId !== selectedCategoryId
+      ) {
         const category = categories.find(
           (c) => c.node_id === navState.categoryNodeId,
         );
@@ -468,6 +485,7 @@ export const ProductCategoriesManagement = ({
     if (!selectedCategory) return [];
 
     const nodes: Node[] = [];
+    const gap = DIAGRAM_LAYOUT.HORIZONTAL_GAP;
 
     nodes.push({
       id: selectedCategory.node_id,
@@ -501,15 +519,38 @@ export const ProductCategoriesManagement = ({
           label: product.product_name,
           showHandle: selectedProductId === product.node_id,
           isSelected: selectedProductId === product.node_id,
-          onAddSubstitute: () => {
-            toast({
-              title: "Coming Soon",
-              description: "Substitute products API not yet available",
-            });
-          },
+          onAddSubstitute: () => handleOpenLinkSubstituteDialog(),
         },
       });
     });
+
+    // Add third row for SubstituteProducts when a Product is selected
+    if (selectedProductId && substituteProducts.length > 0) {
+      const substituteWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
+      const substituteTotalWidth =
+        substituteProducts.length * substituteWidth - gap;
+      const substituteStartX =
+        DIAGRAM_LAYOUT.PARENT_NODE_X - substituteTotalWidth / 2;
+      const substituteY =
+        DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING * 2;
+
+      substituteProducts.forEach((sub, index) => {
+        nodes.push({
+          id: sub.node_id,
+          type: "substituteProductNode",
+          position: {
+            x: substituteStartX + index * substituteWidth,
+            y: substituteY,
+          },
+          data: {
+            label: sub.product_name,
+            showHandle: false,
+            isSelected: selectedSubstituteProductId === sub.node_id,
+            onAddProduct: () => {}, // No add functionality from Products page
+          },
+        });
+      });
+    }
 
     return nodes;
   };
@@ -531,6 +572,21 @@ export const ProductCategoriesManagement = ({
         targetHandle: "top",
       });
     });
+
+    // Add Product → SubstituteProduct edges
+    if (selectedProductId && selectedProduct) {
+      substituteProducts.forEach((sub) => {
+        edges.push({
+          id: `${selectedProductId}-${sub.node_id}`,
+          source: selectedProductId,
+          target: sub.node_id,
+          type: "smoothstep",
+          style: DEFAULT_EDGE_STYLE,
+          sourceHandle: "bottom",
+          targetHandle: "top",
+        });
+      });
+    }
 
     return edges;
   };
@@ -571,6 +627,15 @@ export const ProductCategoriesManagement = ({
 
       setContextMenuType("product");
       setIsContextMenuOpen(true);
+    } else if (node.type === "substituteProductNode") {
+      const sub = substituteProducts.find((s) => s.node_id === node.id);
+      if (sub) {
+        setSelectedSubstituteProduct(sub);
+        setSelectedSubstituteProductId(sub.node_id);
+        setContextMenuType("substitute");
+        setIsContextMenuOpen(true);
+      }
+      return;
     } else if (node.type === "categoryNode") {
       const category = categories.find((c) => c.node_id === node.id);
       if (!category) return;
@@ -853,6 +918,132 @@ export const ProductCategoriesManagement = ({
     }
   };
 
+  // Handle navigating to Competitors page to edit a substitute product
+  const handleNavigateToSubstituteEdit = () => {
+    if (!selectedSubstituteProduct) return;
+    // Navigate to Competitors page with selected substitute product and auto-edit mode
+    navigate("/knowledge/competitors", {
+      state: {
+        selectedSubstituteProductId: selectedSubstituteProduct.node_id,
+        competitorNodeId: selectedSubstituteProduct.competitor_node_id,
+        autoEdit: true,
+      },
+    });
+  };
+
+  // Handle unlinking substitute product from product
+  const handleUnlinkSubstituteProduct = async () => {
+    if (
+      !selectedOrgAccount?.accountId ||
+      !selectedProduct ||
+      !selectedSubstituteProduct
+    )
+      return;
+
+    try {
+      startOperation("Unlinking substitute product...");
+
+      await unlinkProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        substituteProductId: selectedSubstituteProduct.node_id,
+        productNodeId: selectedProduct.node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Substitute product unlinked successfully",
+      });
+
+      setIsContextMenuOpen(false);
+      setSelectedSubstituteProduct(null);
+      setSelectedSubstituteProductId(null);
+    } catch (error) {
+      console.error("Failed to unlink substitute product:", error);
+      toast({
+        title: "Error",
+        description: "Failed to unlink substitute product",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
+    }
+  };
+
+  // Handle opening link substitute dialog
+  const handleOpenLinkSubstituteDialog = async () => {
+    if (!selectedOrgAccount?.accountId) return;
+
+    setIsLinkSubstituteDialogOpen(true);
+    setIsLoadingLinkDialogSubstitutes(true);
+
+    try {
+      // Load ALL substitute products in the account (no filters)
+      const response = await substituteProductService.list(
+        selectedOrgAccount.accountId,
+        undefined, // No competitor filter
+        undefined, // No product filter
+        0,
+        1000,
+      );
+
+      // Filter out already linked substitutes
+      const linkedSubstituteIds = new Set(
+        substituteProducts.map((s) => s.node_id),
+      );
+      const availableSubstitutes = response.products.filter(
+        (s) => !linkedSubstituteIds.has(s.node_id),
+      );
+
+      setLinkDialogSubstitutes(availableSubstitutes);
+    } catch (error) {
+      console.error("Failed to load substitute products:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load substitute products",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingLinkDialogSubstitutes(false);
+    }
+  };
+
+  // Handle linking substitute product
+  const handleLinkSubstituteProduct = async () => {
+    if (
+      !selectedOrgAccount?.accountId ||
+      !selectedProduct ||
+      !selectedSubstituteToLink
+    )
+      return;
+
+    try {
+      startOperation("Linking substitute product...");
+
+      await linkProductMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        substituteProductId: selectedSubstituteToLink.node_id,
+        productNodeId: selectedProduct.node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Substitute product linked successfully",
+      });
+
+      setIsLinkSubstituteDialogOpen(false);
+      setSelectedSubstituteToLink(null);
+    } catch (error) {
+      console.error("Failed to link substitute product:", error);
+      toast({
+        title: "Error",
+        description: "Failed to link substitute product",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
+    }
+  };
+
   // Value Proposition handlers
   const handleCreateValueProposition = async () => {
     if (!selectedOrgAccount) return;
@@ -984,9 +1175,25 @@ export const ProductCategoriesManagement = ({
 
   const nodes = useMemo(
     () => generateNodes(),
-    [selectedCategory, products, selectedProductId],
+    [
+      selectedCategory,
+      products,
+      selectedProductId,
+      substituteProducts,
+      selectedSubstituteProductId,
+    ],
   );
-  const edges = useMemo(() => generateEdges(), [selectedCategory, products]);
+  const edges = useMemo(
+    () => generateEdges(),
+    [
+      selectedCategory,
+      selectedCategoryId,
+      products,
+      selectedProductId,
+      selectedProduct,
+      substituteProducts,
+    ],
+  );
 
   return (
     <>
@@ -1152,6 +1359,82 @@ export const ProductCategoriesManagement = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Link Substitute Product Dialog */}
+      <Dialog
+        open={isLinkSubstituteDialogOpen}
+        onOpenChange={setIsLinkSubstituteDialogOpen}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link Substitute Product</DialogTitle>
+            <DialogDescription>
+              Select which competitor offering may substitute this product.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {isLoadingLinkDialogSubstitutes ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : linkDialogSubstitutes.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No available substitute products to link. All substitutes are
+                already linked or you have no substitute products yet.
+              </p>
+            ) : (
+              <>
+                <Label>Select Substitute Product</Label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedSubstituteToLink?.node_id || ""}
+                  onChange={(e) => {
+                    const substitute = linkDialogSubstitutes.find(
+                      (s) => s.node_id === e.target.value,
+                    );
+                    setSelectedSubstituteToLink(substitute || null);
+                  }}
+                >
+                  <option value="">-- Select Substitute Product --</option>
+                  {linkDialogSubstitutes.map((substitute) => (
+                    <option key={substitute.node_id} value={substitute.node_id}>
+                      {substitute.product_name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsLinkSubstituteDialogOpen(false);
+                setSelectedSubstituteToLink(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLinkSubstituteProduct}
+              disabled={
+                !selectedSubstituteToLink || linkProductMutation.isPending
+              }
+            >
+              {linkProductMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Linking...
+                </>
+              ) : (
+                "Link Substitute"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Value Proposition Confirmation */}
       <AlertDialog
@@ -1407,10 +1690,31 @@ export const ProductCategoriesManagement = ({
             setIsEditing(false);
           }
         }}
-        title={contextMenuType === "category" ? "Product Category" : "Product"}
-        icon={contextMenuType === "category" ? Blocks : Package}
+        title={
+          contextMenuType === "category"
+            ? "Product Category"
+            : contextMenuType === "product"
+              ? selectedProduct?.product_name || "Product"
+              : contextMenuType === "substitute"
+                ? selectedSubstituteProduct?.product_name ||
+                  "Substitute Product"
+                : ""
+        }
+        icon={
+          contextMenuType === "category"
+            ? Blocks
+            : contextMenuType === "product"
+              ? Package
+              : contextMenuType === "substitute"
+                ? Package
+                : Package
+        }
         isEditing={isEditing}
-        onEdit={() => setIsEditing(true)}
+        onEdit={
+          contextMenuType === "substitute"
+            ? handleNavigateToSubstituteEdit
+            : () => setIsEditing(true)
+        }
         onSave={contextMenuType === "category" ? handleSave : handleProductSave}
         onCancel={() => {
           setIsEditing(false);
@@ -1428,14 +1732,21 @@ export const ProductCategoriesManagement = ({
             });
           }
         }}
-        onDelete={() => {
-          setIsContextMenuOpen(false);
-          if (contextMenuType === "category" && selectedCategory) {
-            handleDeleteClick(selectedCategory);
-          } else if (contextMenuType === "product" && selectedProduct) {
-            setIsDeleteProductDialogOpen(true);
-          }
-        }}
+        onDelete={
+          contextMenuType === "substitute"
+            ? handleUnlinkSubstituteProduct
+            : () => {
+                setIsContextMenuOpen(false);
+                if (contextMenuType === "category" && selectedCategory) {
+                  handleDeleteClick(selectedCategory);
+                } else if (contextMenuType === "product" && selectedProduct) {
+                  setIsDeleteProductDialogOpen(true);
+                }
+              }
+        }
+        deleteButtonLabel={
+          contextMenuType === "substitute" ? "Unlink" : undefined
+        }
         hasEditAccess={hasEditAccess}
         preventClose={isEditing && hasUnsavedChanges}
         modal={false}
@@ -1488,6 +1799,42 @@ export const ProductCategoriesManagement = ({
                 />
               </div>
             )}
+          </div>
+        ) : contextMenuType === "substitute" ? (
+          // SubstituteProduct view (read-only with navigation to edit)
+          <div className="space-y-4">
+            <div>
+              <Label>Product Name</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                {selectedSubstituteProduct?.product_name}
+              </p>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <p className="text-sm text-muted-foreground mt-1">
+                {selectedSubstituteProduct?.description}
+              </p>
+            </div>
+            {selectedSubstituteProduct?.product_detail_page && (
+              <div>
+                <Label>Product Page</Label>
+                <a
+                  href={selectedSubstituteProduct.product_detail_page}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline mt-1 block"
+                >
+                  {selectedSubstituteProduct.product_detail_page}
+                </a>
+              </div>
+            )}
+            <div className="rounded-md bg-muted p-3 mt-4">
+              <p className="text-xs text-muted-foreground">
+                This competitor offering may substitute your product. Click
+                "Unlink" to remove this relationship. Click "Edit" to manage
+                details on the Competitors page.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">

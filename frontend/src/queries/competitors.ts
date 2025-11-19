@@ -394,7 +394,14 @@ export function useSubstituteProducts(
   limit = 1000,
 ) {
   return useQuery({
-    queryKey: ["substitute-products", accountId, competitorId, productNodeId, skip, limit],
+    queryKey: [
+      "substitute-products",
+      accountId,
+      competitorId,
+      productNodeId,
+      skip,
+      limit,
+    ],
     queryFn: () =>
       substituteProductService.list(
         accountId!,
@@ -484,9 +491,12 @@ export function useLinkProductToSubstitute() {
         productNodeId,
       ),
     onSuccess: (_, variables) => {
-      // Invalidate products list for this substitute
+      // Invalidate both products and substitute-products queries
       queryClient.invalidateQueries({
         queryKey: ["products", "list", variables.accountId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["substitute-products", variables.accountId],
       });
     },
   });
@@ -511,9 +521,12 @@ export function useUnlinkProductFromSubstitute() {
         productNodeId,
       ),
     onSuccess: (_, variables) => {
-      // Invalidate products list for this substitute
+      // Invalidate both products and substitute-products queries
       queryClient.invalidateQueries({
         queryKey: ["products", "list", variables.accountId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["substitute-products", variables.accountId],
       });
     },
   });
