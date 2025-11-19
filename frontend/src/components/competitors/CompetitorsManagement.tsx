@@ -2835,64 +2835,10 @@ export const CompetitorsManagement = ({
         )}
       </KnowledgeGraphSideSheet>
 
-      {/* Grandchild Side Sheet - Products in Substitute Mode (Read-Only) */}
-      {contextMenuType === "grandchild" &&
-        mode === "substitute-products" &&
-        isContextMenuOpen && (
-          <KnowledgeGraphSideSheet
-            open={true}
-            onOpenChange={setIsContextMenuOpen}
-            title={(selectedGrandchild as Product)?.product_name || "Product"}
-            icon={Package}
-            isEditing={false}
-            hasEditAccess={true}
-            onEdit={handleNavigateToProductEdit}
-            onDelete={handleUnlinkProduct}
-            deleteButtonLabel="Unlink"
-          >
-          <div className="space-y-4">
-            <div>
-              <Label>Product Name</Label>
-              <p className="text-sm text-muted-foreground mt-1">
-                {(selectedGrandchild as Product)?.product_name}
-              </p>
-            </div>
-            <div>
-              <Label>Description</Label>
-              <p className="text-sm text-muted-foreground mt-1">
-                {(selectedGrandchild as Product)?.description}
-              </p>
-            </div>
-            {(selectedGrandchild as Product)?.product_detail_page && (
-              <div>
-                <Label>Product Page</Label>
-                <a
-                  href={(selectedGrandchild as Product).product_detail_page}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:underline mt-1 block"
-                >
-                  {(selectedGrandchild as Product).product_detail_page}
-                </a>
-              </div>
-            )}
-            <div className="rounded-md bg-muted p-3 mt-4">
-              <p className="text-xs text-muted-foreground">
-                This product may be substituted by the selected competitor
-                offering. Click "Unlink" to remove this relationship.
-              </p>
-            </div>
-          </div>
-        </KnowledgeGraphSideSheet>
-      )}
-
-      {/* Main Context Menu Side Sheet - Exclude product grandchild in substitute mode */}
-      {!(
-        contextMenuType === "grandchild" && mode === "substitute-products"
-      ) &&
-        isContextMenuOpen && (
-          <KnowledgeGraphSideSheet
-            open={true}
+      {/* Context Menu Side Sheet - Single unified sheet */}
+      {isContextMenuOpen && (
+        <KnowledgeGraphSideSheet
+          open={true}
           onOpenChange={(open) => {
             if (
               !open &&
@@ -2976,16 +2922,30 @@ export const CompetitorsManagement = ({
               });
             }
           }}
-          onDelete={() => {
-            setIsContextMenuOpen(false);
-            if (contextMenuType === "competitor") {
-              setIsDeleteCompetitorDialogOpen(true);
-            } else if (contextMenuType === "child") {
-              setIsDeleteChildDialogOpen(true);
-            } else {
-              setIsDeleteGrandchildDialogOpen(true);
-            }
-          }}
+          onEdit={
+            contextMenuType === "grandchild" && mode === "substitute-products"
+              ? handleNavigateToProductEdit
+              : () => setIsEditing(true)
+          }
+          onDelete={
+            contextMenuType === "grandchild" && mode === "substitute-products"
+              ? handleUnlinkProduct
+              : () => {
+                  setIsContextMenuOpen(false);
+                  if (contextMenuType === "competitor") {
+                    setIsDeleteCompetitorDialogOpen(true);
+                  } else if (contextMenuType === "child") {
+                    setIsDeleteChildDialogOpen(true);
+                  } else {
+                    setIsDeleteGrandchildDialogOpen(true);
+                  }
+                }
+          }
+          deleteButtonLabel={
+            contextMenuType === "grandchild" && mode === "substitute-products"
+              ? "Unlink"
+              : undefined
+          }
           hasEditAccess={hasEditAccess}
           preventClose={isEditing}
         >
@@ -3050,6 +3010,43 @@ export const CompetitorsManagement = ({
                     />
                   </div>
                 )}
+            </div>
+          ) : contextMenuType === "grandchild" &&
+            mode === "substitute-products" ? (
+            // Product view in substitute mode (read-only with navigation to edit)
+            <div className="space-y-4">
+              <div>
+                <Label>Product Name</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {(selectedGrandchild as Product)?.product_name}
+                </p>
+              </div>
+              <div>
+                <Label>Description</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {(selectedGrandchild as Product)?.description}
+                </p>
+              </div>
+              {(selectedGrandchild as Product)?.product_detail_page && (
+                <div>
+                  <Label>Product Page</Label>
+                  <a
+                    href={(selectedGrandchild as Product).product_detail_page}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline mt-1 block"
+                  >
+                    {(selectedGrandchild as Product).product_detail_page}
+                  </a>
+                </div>
+              )}
+              <div className="rounded-md bg-muted p-3 mt-4">
+                <p className="text-xs text-muted-foreground">
+                  This product may be substituted by the selected competitor
+                  offering. Click "Unlink" to remove this relationship. Click
+                  "Edit" to manage product details on the Products page.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
