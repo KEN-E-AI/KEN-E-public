@@ -339,15 +339,19 @@ export const CompetitorsManagement = ({
     references: [],
   });
 
-  // Value Propositions state (for substitute products)
+  // Value Propositions state (for substitute products and competitors)
+  // Query VPs for either: Competitor (when viewing competitor) or SubstituteProduct (when viewing substitute)
+  const vpParentNodeId =
+    contextMenuType === "competitor"
+      ? selectedCompetitor?.node_id
+      : mode === "substitute-products" && selectedChildId
+        ? selectedChildId
+        : null;
+
   const { data: valuePropositionsData, isLoading: isLoadingVPs } =
     useValuePropositions(
-      mode === "substitute-products" && selectedChildId
-        ? selectedOrgAccount?.accountId || null
-        : null,
-      mode === "substitute-products" && selectedChildId
-        ? selectedChildId
-        : null,
+      vpParentNodeId ? selectedOrgAccount?.accountId || null : null,
+      vpParentNodeId,
     );
   const valuePropositions = valuePropositionsData?.value_propositions || [];
 
@@ -685,16 +689,19 @@ export const CompetitorsManagement = ({
   const nodeTypes = useMemo(() => {
     if (mode === "strengths") {
       return {
+        competitorNode: CompetitorNode,
         competitorStrengthNode: CompetitorStrengthNode,
         riskNode: RiskNode,
       };
     } else if (mode === "weaknesses") {
       return {
+        competitorNode: CompetitorNode,
         competitorWeaknessNode: CompetitorWeaknessNode,
         opportunityNode: OpportunityNode,
       };
     } else if (mode === "substitute-products") {
       return {
+        competitorNode: CompetitorNode,
         substituteProductNode: SubstituteProductNode,
         ourProductNode: OurProductNode,
       };
@@ -712,12 +719,31 @@ export const CompetitorsManagement = ({
     if (mode === "strengths") {
       const strength = selectedChild as CompetitorStrength;
 
+      // Row 1: Competitor node
+      if (selectedCompetitor) {
+        nodes.push({
+          id: selectedCompetitor.node_id,
+          type: "competitorNode",
+          position: {
+            x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+            y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+          },
+          data: {
+            label: selectedCompetitor.display_name,
+            isSelected: false,
+            showHandle: false, // Hide "+" button in detail view
+            onAddChild: () => {},
+          },
+        });
+      }
+
+      // Row 2: Strength node
       nodes.push({
         id: strength.node_id,
         type: "competitorStrengthNode",
         position: {
           x: DIAGRAM_LAYOUT.PARENT_NODE_X,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
         },
         data: {
           label: strength.display_name,
@@ -726,6 +752,7 @@ export const CompetitorsManagement = ({
         },
       });
 
+      // Row 3: Risks
       const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
       const grandchildTotalWidth = risks.length * grandchildWidth - gap;
       const grandchildStartX =
@@ -737,7 +764,9 @@ export const CompetitorsManagement = ({
           type: "riskNode",
           position: {
             x: grandchildStartX + index * grandchildWidth,
-            y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+            y:
+              DIAGRAM_LAYOUT.PARENT_NODE_Y +
+              DIAGRAM_LAYOUT.VERTICAL_SPACING * 2,
           },
           data: {
             label: risk.display_name,
@@ -750,12 +779,31 @@ export const CompetitorsManagement = ({
     } else if (mode === "weaknesses") {
       const weakness = selectedChild as CompetitorWeakness;
 
+      // Row 1: Competitor node
+      if (selectedCompetitor) {
+        nodes.push({
+          id: selectedCompetitor.node_id,
+          type: "competitorNode",
+          position: {
+            x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+            y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+          },
+          data: {
+            label: selectedCompetitor.display_name,
+            isSelected: false,
+            showHandle: false, // Hide "+" button in detail view
+            onAddChild: () => {},
+          },
+        });
+      }
+
+      // Row 2: Weakness node
       nodes.push({
         id: weakness.node_id,
         type: "competitorWeaknessNode",
         position: {
           x: DIAGRAM_LAYOUT.PARENT_NODE_X,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y,
+          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
         },
         data: {
           label: weakness.display_name,
@@ -764,6 +812,7 @@ export const CompetitorsManagement = ({
         },
       });
 
+      // Row 3: Opportunities
       const grandchildWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
       const grandchildTotalWidth = opportunities.length * grandchildWidth - gap;
       const grandchildStartX =
@@ -775,7 +824,9 @@ export const CompetitorsManagement = ({
           type: "opportunityNode",
           position: {
             x: grandchildStartX + index * grandchildWidth,
-            y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+            y:
+              DIAGRAM_LAYOUT.PARENT_NODE_Y +
+              DIAGRAM_LAYOUT.VERTICAL_SPACING * 2,
           },
           data: {
             label: opportunity.display_name,
@@ -799,8 +850,9 @@ export const CompetitorsManagement = ({
           },
           data: {
             label: selectedCompetitor.display_name,
-            isSelected: false, // Competitor is not the focus in this view
-            onAddChild: () => {}, // No add functionality from this view
+            isSelected: false,
+            showHandle: false, // Hide "+" button in detail view
+            onAddChild: () => {},
           },
         });
       }
@@ -850,13 +902,25 @@ export const CompetitorsManagement = ({
     return nodes;
   };
 
-  // Generate edges for React Flow (only child → grandchildren edges)
+  // Generate edges for React Flow
   const generateEdges = (): Edge[] => {
     if (!selectedChild) return [];
 
     const edges: Edge[] = [];
 
-    if (mode === "strengths" && selectedChildId) {
+    if (mode === "strengths" && selectedChildId && selectedCompetitor) {
+      // Competitor → Strength edge
+      edges.push({
+        id: `${selectedCompetitor.node_id}-${selectedChildId}`,
+        source: selectedCompetitor.node_id,
+        target: selectedChildId,
+        type: "smoothstep",
+        style: DEFAULT_EDGE_STYLE,
+        sourceHandle: "bottom",
+        targetHandle: "top",
+      });
+
+      // Strength → Risks edges
       risks.forEach((risk) => {
         edges.push({
           id: `${selectedChildId}-${risk.node_id}`,
@@ -868,7 +932,19 @@ export const CompetitorsManagement = ({
           targetHandle: "top",
         });
       });
-    } else if (mode === "weaknesses" && selectedChildId) {
+    } else if (mode === "weaknesses" && selectedChildId && selectedCompetitor) {
+      // Competitor → Weakness edge
+      edges.push({
+        id: `${selectedCompetitor.node_id}-${selectedChildId}`,
+        source: selectedCompetitor.node_id,
+        target: selectedChildId,
+        type: "smoothstep",
+        style: DEFAULT_EDGE_STYLE,
+        sourceHandle: "bottom",
+        targetHandle: "top",
+      });
+
+      // Weakness → Opportunities edges
       opportunities.forEach((opportunity) => {
         edges.push({
           id: `${selectedChildId}-${opportunity.node_id}`,
@@ -927,7 +1003,20 @@ export const CompetitorsManagement = ({
       return;
     }
 
-    // Child nodes (strength/weakness) - now at top level of diagram
+    // Competitor node click
+    if (node.type === "competitorNode") {
+      if (selectedCompetitor) {
+        setFormData({
+          display_name: selectedCompetitor.display_name,
+          description: selectedCompetitor.description,
+        });
+        setContextMenuType("competitor");
+        setIsContextMenuOpen(true);
+      }
+      return;
+    }
+
+    // Child nodes (strength/weakness) - now at second row of diagram
     if (
       node.type === "competitorStrengthNode" ||
       node.type === "competitorWeaknessNode"
@@ -2968,35 +3057,42 @@ export const CompetitorsManagement = ({
             />
           )}
 
-          {/* Tactics Section (for competitor context menu) */}
+          {/* Value Propositions Section (for competitor context menu) */}
           {contextMenuType === "competitor" && !isEditing && (
             <SideSheetNestedList
-              title="Marketing Tactics"
-              tooltip="Specific tactics this competitor uses to bring products to market, such as social media campaigns, events, or advertising strategies."
-              items={tactics}
-              isLoading={isLoadingTactics}
+              title="Value Propositions"
+              tooltip="Key reasons why customers might choose this competitor's offerings over yours."
+              items={valuePropositions}
+              isLoading={isLoadingVPs}
               onAdd={() => {
-                setTacticFormData({
+                setValuePropositionFormData({
                   display_name: "",
                   description: "",
-                  competitor_node_id: selectedCompetitor?.node_id || "",
+                  parent_node_id: selectedCompetitor?.node_id || "",
+                  parent_node_type: "Competitor",
                   references: [],
                 });
-                setIsCreateTacticModalOpen(true);
+                setIsCreateVPModalOpen(true);
               }}
-              onEdit={(tactic) => {
-                setSelectedTactic(tactic);
-                setTacticFormData({
-                  display_name: tactic.display_name,
-                  description: tactic.description,
-                  competitor_node_id: selectedCompetitor?.node_id || "",
-                  references: tactic.references || [],
+              onEdit={(vp) => {
+                setSelectedValueProposition(vp);
+                setValuePropositionFormData({
+                  display_name: vp.display_name,
+                  description: vp.description,
+                  parent_node_id: selectedCompetitor?.node_id || "",
+                  parent_node_type: "Competitor",
+                  references: vp.references || [],
                 });
-                setIsCreateTacticModalOpen(true);
+                setIsCreateVPModalOpen(true);
               }}
-              onDelete={(tactic) => {
-                setSelectedTactic(tactic);
-                setIsDeleteTacticDialogOpen(true);
+              onDelete={(vp) => {
+                setSelectedValueProposition(vp);
+                setValuePropositionFormData({
+                  ...valuePropositionFormData,
+                  parent_node_id: selectedCompetitor?.node_id || "",
+                  parent_node_type: "Competitor",
+                });
+                setIsDeleteVPDialogOpen(true);
               }}
               hasEditAccess={hasEditAccess}
               isEditingParent={isEditing}

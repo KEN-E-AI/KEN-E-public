@@ -10,6 +10,7 @@ import {
   Box,
   ShieldAlert,
   Star,
+  Swords,
 } from "lucide-react";
 
 // ==================== COMPETITOR NODE ====================
@@ -17,11 +18,14 @@ import {
 interface CompetitorNodeData {
   label: string;
   isSelected: boolean;
+  showHandle?: boolean;
   onAddChild: () => void;
 }
 
 export const CompetitorNode = memo(
   ({ data }: NodeProps<CompetitorNodeData>) => {
+    const showButton = data.showHandle !== false; // Default to true if not specified
+
     return (
       <div className="relative">
         <div className="flex items-center">
@@ -45,7 +49,7 @@ export const CompetitorNode = memo(
                   : "none",
               }}
             >
-              <Users
+              <Swords
                 className="text-white"
                 style={{ width: "48px", height: "48px" }}
               />
@@ -61,15 +65,17 @@ export const CompetitorNode = memo(
           style={{ right: "30px", left: "auto" }}
         />
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            data.onAddChild();
-          }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
-        >
-          <Plus className="h-4 w-4 text-white" />
-        </button>
+        {showButton && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onAddChild();
+            }}
+            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
+          >
+            <Plus className="h-4 w-4 text-white" />
+          </button>
+        )}
       </div>
     );
   },
