@@ -7,6 +7,24 @@ from typing import Generator
 
 import pytest
 from unittest.mock import patch
+from prometheus_client import REGISTRY
+
+
+def pytest_configure(config):
+    """
+    Pytest hook that runs once before test collection.
+
+    Clears the Prometheus REGISTRY to prevent duplicate metric registration errors
+    when modules are imported multiple times during test collection.
+    """
+    # Unregister all existing collectors to prevent duplicate registration errors
+    collectors = list(REGISTRY._collector_to_names.keys())
+    for collector in collectors:
+        try:
+            REGISTRY.unregister(collector)
+        except Exception:
+            # Ignore errors when unregistering, as some collectors may be built-in
+            pass
 
 
 @pytest.fixture

@@ -6,21 +6,40 @@ through the entire API stack, catching missing node types early in development.
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from src.kene_api.constants import NODE_TYPE_TO_PREFIX, VALID_NODE_TYPES
 from src.kene_api.main import app
+from src.kene_api.auth.dependencies import get_current_user
+from src.kene_api.auth.models import UserContext
 
 # Test account and user
 TEST_ACCOUNT_ID = "test_account_node_validation"
 TEST_USER_ID = "test_user_node_validation"
 
 
+def mock_get_current_user() -> UserContext:
+    """Mock authenticated user for testing."""
+    return UserContext(
+        user_id=TEST_USER_ID,
+        email="test@example.com",
+        organization_permissions={},
+        account_permissions={TEST_ACCOUNT_ID: "edit"}
+    )
+
+
 @pytest_asyncio.fixture
 async def authenticated_client():
     """Create authenticated test client."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    # Override auth dependency
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         client.headers.update({"Authorization": "Bearer test_token"})
         yield client
+
+    # Clear overrides after test
+    app.dependency_overrides.clear()
 
 
 class TestNodeTypeWhitelistCoverage:
