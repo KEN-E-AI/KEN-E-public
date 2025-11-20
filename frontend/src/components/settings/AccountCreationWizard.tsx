@@ -98,10 +98,14 @@ export const AccountCreationWizard = ({
     region: ["US"],
   });
 
+  const STRATEGY_STEP = 4;
+  const CONFIRMATION_STEP = 5;
+
   const totalSteps = isSuperAdmin ? 5 : 4; // Hide strategy selection step for non-super-admins
 
   // For non-super-admins, map step 5 to display as step 4
-  const displayStep = !isSuperAdmin && currentStep === 5 ? 4 : currentStep;
+  const displayStep =
+    !isSuperAdmin && currentStep === CONFIRMATION_STEP ? 4 : currentStep;
   const progress = (displayStep / totalSteps) * 100;
 
   // Reset wizard state when modal opens
@@ -140,21 +144,26 @@ export const AccountCreationWizard = ({
 
   const handleNext = () => {
     let nextStep = currentStep + 1;
-    // Skip step 4 (Strategy Selection) if not super admin
-    if (!isSuperAdmin && nextStep === 4) {
-      nextStep = 5;
+
+    // Skip strategy selection step for non-super-admins
+    if (!isSuperAdmin && nextStep === STRATEGY_STEP) {
+      nextStep = CONFIRMATION_STEP;
     }
-    if (nextStep <= totalSteps + (isSuperAdmin ? 0 : 1)) {
+
+    const maxStep = CONFIRMATION_STEP;
+    if (nextStep <= maxStep) {
       setCurrentStep(nextStep);
     }
   };
 
   const handlePrevious = () => {
     let prevStep = currentStep - 1;
-    // Skip step 4 (Strategy Selection) when going back if not super admin
-    if (!isSuperAdmin && prevStep === 4) {
+
+    // Skip strategy selection step when going back if not super admin
+    if (!isSuperAdmin && prevStep === STRATEGY_STEP) {
       prevStep = 3;
     }
+
     if (prevStep >= 1) {
       setCurrentStep(prevStep);
     }
@@ -264,24 +273,20 @@ export const AccountCreationWizard = ({
       case 3:
         return true; // Product integrations are optional
       case 4:
-        // For non-super-admins, this is the confirmation step (skip strategy validation)
-        if (!isSuperAdmin) {
-          // Final step - check all validations
-          const hasBlockingErrors = stepValidations.some(
-            (v) => !v.result.isValid && v.isRequired !== false,
-          );
-          return !hasBlockingErrors;
+        // Strategy selection step (super-admin only)
+        if (isSuperAdmin) {
+          const hasStrategy = formData.enabled_strategies.length > 0;
+          // If marketing without business, require product categories
+          const needsCategories =
+            formData.enabled_strategies.includes("marketing_strategy") &&
+            !formData.enabled_strategies.includes("business_strategy");
+          const hasCategories = formData.override_product_categories.length > 0;
+          return hasStrategy && (!needsCategories || hasCategories);
         }
-        // For super admins: Strategy selection - require at least one strategy
-        const hasStrategy = formData.enabled_strategies.length > 0;
-        // If marketing without business, require product categories
-        const needsCategories =
-          formData.enabled_strategies.includes("marketing_strategy") &&
-          !formData.enabled_strategies.includes("business_strategy");
-        const hasCategories = formData.override_product_categories.length > 0;
-        return hasStrategy && (!needsCategories || hasCategories);
+        // Non-admins should never reach this step
+        return false;
       case 5:
-        // Final step - check all validations
+        // Confirmation step - validate everything
         const hasBlockingErrors = stepValidations.some(
           (v) => !v.result.isValid && v.isRequired !== false,
         );
@@ -366,7 +371,7 @@ export const AccountCreationWizard = ({
                 />
               )}
 
-              {currentStep === 4 && isSuperAdmin && (
+              {currentStep === STRATEGY_STEP && isSuperAdmin && (
                 <WizardStep4StrategySelection
                   enabled_strategies={formData.enabled_strategies}
                   override_product_categories={
@@ -376,7 +381,7 @@ export const AccountCreationWizard = ({
                 />
               )}
 
-              {(currentStep === 5 || (currentStep === 4 && !isSuperAdmin)) && (
+              {currentStep === CONFIRMATION_STEP && (
                 <WizardStep5ConfirmImproved
                   formData={formData}
                   selectedTemplate={loadedTemplate}

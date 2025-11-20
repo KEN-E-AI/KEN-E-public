@@ -63,10 +63,12 @@ describe("CompetitorKeywordsSection", () => {
     } as any);
 
     // Default mocks for mutations
-    vi.mocked(monitoringTopicsQueries.useAddCompetitorKeywords).mockReturnValue({
-      mutateAsync: vi.fn().mockResolvedValue({}),
-      isPending: false,
-    } as any);
+    vi.mocked(monitoringTopicsQueries.useAddCompetitorKeywords).mockReturnValue(
+      {
+        mutateAsync: vi.fn().mockResolvedValue({}),
+        isPending: false,
+      } as any,
+    );
 
     vi.mocked(
       monitoringTopicsQueries.useUpdateCompetitorKeywords,
@@ -181,7 +183,9 @@ describe("CompetitorKeywordsSection", () => {
         await user.click(editButton);
 
         await waitFor(() => {
-          expect(screen.getByPlaceholderText("Add a keyword")).toBeInTheDocument();
+          expect(
+            screen.getByPlaceholderText("Add a keyword"),
+          ).toBeInTheDocument();
           expect(screen.getByText("Save")).toBeInTheDocument();
           expect(screen.getByText("Cancel")).toBeInTheDocument();
         });
