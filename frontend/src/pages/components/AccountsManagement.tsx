@@ -387,22 +387,33 @@ const AccountsManagement = ({
     return null;
   };
 
-  const transformWizardData = (data: AccountCreationData, orgId: string) => ({
-    accountName: data.account_name,
-    organizationId: orgId,
-    industry: data.industry,
-    status: "Active" as const,
-    websites: data.websites || [],
-    timezone: data.timezone,
-    dataRegion: data.data_region,
-    region: data.region,
-    estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
-    businessStrategyDocuments: data.business_strategy_documents || [],
-    marketing_channels: data.marketing_channels || [],
-    product_integrations: data.product_integrations || [],
-    enabled_strategies: data.enabled_strategies,
-    override_product_categories: data.override_product_categories,
-  });
+  const transformWizardData = (data: AccountCreationData, orgId: string) => {
+    const baseData = {
+      accountName: data.account_name,
+      organizationId: orgId,
+      industry: data.industry,
+      status: "Active" as const,
+      websites: data.websites || [],
+      timezone: data.timezone,
+      dataRegion: data.data_region,
+      region: data.region,
+      estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
+      businessStrategyDocuments: data.business_strategy_documents || [],
+      marketing_channels: data.marketing_channels || [],
+      product_integrations: data.product_integrations || [],
+    };
+
+    // Only include strategy fields if user is super admin
+    if (isSuperAdmin) {
+      return {
+        ...baseData,
+        enabled_strategies: data.enabled_strategies,
+        override_product_categories: data.override_product_categories,
+      };
+    }
+
+    return baseData;
+  };
 
   const updateContextsAfterCreation = (account: any, orgId: string) => {
     // Update account metadata for easy lookup

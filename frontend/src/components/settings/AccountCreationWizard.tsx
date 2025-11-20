@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   AlertTriangle,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { WizardStep1BasicInfo } from "./wizard/WizardStep1BasicInfo";
 import { WizardStep2MarketingChannelsImproved } from "./wizard/WizardStep2MarketingChannelsImproved";
 import { WizardStep3ProductIntegrationsImproved } from "./wizard/WizardStep3ProductIntegrationsImproved";
@@ -63,6 +64,7 @@ export const AccountCreationWizard = ({
   onClose,
   onComplete,
 }: AccountCreationWizardProps) => {
+  const { isSuperAdmin } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -96,8 +98,15 @@ export const AccountCreationWizard = ({
     region: ["US"],
   });
 
-  const totalSteps = 5; // Added strategy selection step
-  const progress = (currentStep / totalSteps) * 100;
+  const STRATEGY_STEP = 4;
+  const CONFIRMATION_STEP = 5;
+
+  const totalSteps = isSuperAdmin ? 5 : 4; // Hide strategy selection step for non-super-admins
+
+  // For non-super-admins, map step 5 to display as step 4
+  const displayStep =
+    !isSuperAdmin && currentStep === CONFIRMATION_STEP ? 4 : currentStep;
+  const progress = (displayStep / totalSteps) * 100;
 
   // Reset wizard state when modal opens
   useEffect(() => {
@@ -134,14 +143,29 @@ export const AccountCreationWizard = ({
   }, [isOpen]);
 
   const handleNext = () => {
-    if (currentStep < totalSteps) {
-      setCurrentStep(currentStep + 1);
+    let nextStep = currentStep + 1;
+
+    // Skip strategy selection step for non-super-admins
+    if (!isSuperAdmin && nextStep === STRATEGY_STEP) {
+      nextStep = CONFIRMATION_STEP;
+    }
+
+    const maxStep = CONFIRMATION_STEP;
+    if (nextStep <= maxStep) {
+      setCurrentStep(nextStep);
     }
   };
 
   const handlePrevious = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+    let prevStep = currentStep - 1;
+
+    // Skip strategy selection step when going back if not super admin
+    if (!isSuperAdmin && prevStep === STRATEGY_STEP) {
+      prevStep = 3;
+    }
+
+    if (prevStep >= 1) {
+      setCurrentStep(prevStep);
     }
   };
 
@@ -249,16 +273,20 @@ export const AccountCreationWizard = ({
       case 3:
         return true; // Product integrations are optional
       case 4:
-        // Strategy selection - require at least one strategy
-        const hasStrategy = formData.enabled_strategies.length > 0;
-        // If marketing without business, require product categories
-        const needsCategories =
-          formData.enabled_strategies.includes("marketing_strategy") &&
-          !formData.enabled_strategies.includes("business_strategy");
-        const hasCategories = formData.override_product_categories.length > 0;
-        return hasStrategy && (!needsCategories || hasCategories);
+        // Strategy selection step (super-admin only)
+        if (isSuperAdmin) {
+          const hasStrategy = formData.enabled_strategies.length > 0;
+          // If marketing without business, require product categories
+          const needsCategories =
+            formData.enabled_strategies.includes("marketing_strategy") &&
+            !formData.enabled_strategies.includes("business_strategy");
+          const hasCategories = formData.override_product_categories.length > 0;
+          return hasStrategy && (!needsCategories || hasCategories);
+        }
+        // Non-admins should never reach this step
+        return false;
       case 5:
-        // Final step - check all validations
+        // Confirmation step - validate everything
         const hasBlockingErrors = stepValidations.some(
           (v) => !v.result.isValid && v.isRequired !== false,
         );
@@ -282,7 +310,7 @@ export const AccountCreationWizard = ({
                   Create New Account
                 </h2>
                 <p className="text-dashboard-gray-600 mt-1">
-                  Step {currentStep} of {totalSteps}
+                  Step {displayStep} of {totalSteps}
                 </p>
               </div>
               <Button variant="outline" onClick={onClose}>
@@ -295,22 +323,22 @@ export const AccountCreationWizard = ({
               <Progress value={progress} className="w-full" />
               <div className="flex justify-between mt-2 text-sm text-dashboard-gray-600">
                 <span
-                  className={currentStep >= 1 ? "text-brand-medium-blue" : ""}
+                  className={displayStep >= 1 ? "text-brand-medium-blue" : ""}
                 >
                   Basic Info
                 </span>
                 <span
-                  className={currentStep >= 2 ? "text-brand-medium-blue" : ""}
+                  className={displayStep >= 2 ? "text-brand-medium-blue" : ""}
                 >
                   Channels
                 </span>
                 <span
-                  className={currentStep >= 3 ? "text-brand-medium-blue" : ""}
+                  className={displayStep >= 3 ? "text-brand-medium-blue" : ""}
                 >
                   Integrations
                 </span>
                 <span
-                  className={currentStep >= 4 ? "text-brand-medium-blue" : ""}
+                  className={displayStep >= 4 ? "text-brand-medium-blue" : ""}
                 >
                   Confirm
                 </span>
@@ -343,7 +371,7 @@ export const AccountCreationWizard = ({
                 />
               )}
 
-              {currentStep === 4 && (
+              {currentStep === STRATEGY_STEP && isSuperAdmin && (
                 <WizardStep4StrategySelection
                   enabled_strategies={formData.enabled_strategies}
                   override_product_categories={
@@ -353,7 +381,7 @@ export const AccountCreationWizard = ({
                 />
               )}
 
-              {currentStep === 5 && (
+              {currentStep === CONFIRMATION_STEP && (
                 <WizardStep5ConfirmImproved
                   formData={formData}
                   selectedTemplate={loadedTemplate}
