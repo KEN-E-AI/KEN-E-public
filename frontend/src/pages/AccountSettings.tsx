@@ -7,6 +7,7 @@ import {
   createOrganization,
   updateOrganization,
   getOrganizationById,
+  getOrganizationsBatch,
   getAccountsByOrganizationId,
 } from "@/data/organizationApi";
 import { getDefaultPlan } from "@/data/subscriptionPlansApi";
@@ -338,38 +339,6 @@ const AccountSettings = () => {
     return data;
   }, [currentOrgId, orgMetadata]);
 
-  // Load organization data if not in metadata
-  useEffect(() => {
-    const loadOrganizationData = async () => {
-      if (currentOrgId && !orgMetadata[currentOrgId] && !isCreatingNew) {
-        console.log(
-          `[AccountSettings] Loading organization data for ${currentOrgId}`,
-        );
-        setIsLoadingOrgData(true);
-        try {
-          const orgData = await getOrganizationById(currentOrgId);
-          if (orgData) {
-            setOrgMetadata({
-              ...orgMetadata,
-              [currentOrgId]: orgData,
-            });
-          }
-        } catch (error) {
-          console.error("[AccountSettings] Error loading organization:", error);
-          toast({
-            title: "Error loading organization",
-            description: "Failed to load organization data. Please try again.",
-            variant: "destructive",
-          });
-        } finally {
-          setIsLoadingOrgData(false);
-        }
-      }
-    };
-
-    loadOrganizationData();
-  }, [currentOrgId, isCreatingNew]);
-
   // Form state
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
     organization_name: "",
@@ -387,37 +356,34 @@ const AccountSettings = () => {
   const [isCreatingOrganization, setIsCreatingOrganization] = useState(false);
   const [isLoadingOrgData, setIsLoadingOrgData] = useState(false);
 
-  // Load organization metadata if not already loaded
+  // Consolidated effect to load organization metadata using batch endpoint
   useEffect(() => {
     const loadOrganizationMetadata = async () => {
-      if (currentOrgId && !orgMetadata[currentOrgId]) {
+      if (currentOrgId && !orgMetadata[currentOrgId] && !isCreatingNew) {
+        console.log(
+          `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
+        );
+        console.log(
+          `[AccountSettings] Current orgMetadata:`,
+          Object.keys(orgMetadata),
+        );
+        setIsLoadingOrgData(true);
+
         try {
-          console.log(
-            `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
-          );
-          console.log(
-            `[AccountSettings] Current orgMetadata:`,
-            Object.keys(orgMetadata),
-          );
+          // Use batch endpoint to fetch org with accounts in single request
+          const batchResult = await getOrganizationsBatch([currentOrgId], true);
+          const orgWithAccounts = batchResult[currentOrgId];
 
-          // Fetch organization details
-          const org = await getOrganizationById(currentOrgId);
-          console.log(`[AccountSettings] Organization API response:`, org);
+          console.log(`[AccountSettings] Batch API response:`, orgWithAccounts);
 
-          // Fetch accounts for this organization
-          const accounts = await getAccountsByOrganizationId(currentOrgId);
-          console.log(`[AccountSettings] Accounts API response:`, accounts);
-
-          if (org) {
-            const orgWithAccounts = { ...org, accounts };
+          if (orgWithAccounts) {
             setOrgMetadata((prev) => ({
               ...prev,
               [currentOrgId]: orgWithAccounts,
             }));
 
             console.log(
-              `[AccountSettings] Organization metadata loaded for ${currentOrgId}:`,
-              orgWithAccounts,
+              `[AccountSettings] Organization metadata loaded for ${currentOrgId}`,
             );
           } else {
             console.warn(
@@ -429,6 +395,13 @@ const AccountSettings = () => {
             `[AccountSettings] Failed to load org metadata for ${currentOrgId}`,
             err,
           );
+          toast({
+            title: "Error loading organization",
+            description: "Failed to load organization data. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsLoadingOrgData(false);
         }
       } else if (currentOrgId && orgMetadata[currentOrgId]) {
         console.log(

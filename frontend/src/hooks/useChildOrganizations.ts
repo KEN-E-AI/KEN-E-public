@@ -1,8 +1,5 @@
 import { useState, useCallback } from "react";
-import {
-  getChildOrganizations,
-  getAccountsByOrganizationId,
-} from "@/data/organizationApi";
+import { getChildOrganizationsWithAccounts } from "@/data/organizationApi";
 
 interface UseChildOrganizationsReturn {
   childOrganizations: Record<string, any>[];
@@ -13,7 +10,9 @@ interface UseChildOrganizationsReturn {
 }
 
 /**
- * Custom hook for managing child organizations state and operations
+ * Custom hook for managing child organizations state and operations.
+ * Uses the optimized batch endpoint to fetch child organizations with their accounts
+ * in a single request, avoiding the N+1 query problem.
  */
 export function useChildOrganizations(): UseChildOrganizationsReturn {
   const [childOrganizations, setChildOrganizations] = useState<
@@ -27,17 +26,10 @@ export function useChildOrganizations(): UseChildOrganizationsReturn {
     setError(null);
 
     try {
-      const childOrgs = await getChildOrganizations(parentOrgId);
-      const childOrgMetadata = await Promise.all(
-        childOrgs.map(async (childOrg) => {
-          const accounts = await getAccountsByOrganizationId(
-            childOrg.organization_id,
-          );
-          return {
-            ...childOrg,
-            accounts,
-          };
-        }),
+      // Use the new batch endpoint that fetches children with accounts in one request
+      const childOrgMetadata = await getChildOrganizationsWithAccounts(
+        parentOrgId,
+        true,
       );
       setChildOrganizations(childOrgMetadata);
     } catch (err) {
