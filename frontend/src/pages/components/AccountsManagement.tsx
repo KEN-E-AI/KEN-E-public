@@ -387,22 +387,33 @@ const AccountsManagement = ({
     return null;
   };
 
-  const transformWizardData = (data: AccountCreationData, orgId: string) => ({
-    accountName: data.account_name,
-    organizationId: orgId,
-    industry: data.industry,
-    status: "Active" as const,
-    websites: data.websites || [],
-    timezone: data.timezone,
-    dataRegion: data.data_region,
-    region: data.region,
-    estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
-    businessStrategyDocuments: data.business_strategy_documents || [],
-    marketing_channels: data.marketing_channels || [],
-    product_integrations: data.product_integrations || [],
-    enabled_strategies: data.enabled_strategies,
-    override_product_categories: data.override_product_categories,
-  });
+  const transformWizardData = (data: AccountCreationData, orgId: string) => {
+    const baseData = {
+      accountName: data.account_name,
+      organizationId: orgId,
+      industry: data.industry,
+      status: "Active" as const,
+      websites: data.websites || [],
+      timezone: data.timezone,
+      dataRegion: data.data_region,
+      region: data.region,
+      estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
+      businessStrategyDocuments: data.business_strategy_documents || [],
+      marketing_channels: data.marketing_channels || [],
+      product_integrations: data.product_integrations || [],
+    };
+
+    // Only include strategy fields if user is super admin
+    if (isSuperAdmin) {
+      return {
+        ...baseData,
+        enabled_strategies: data.enabled_strategies,
+        override_product_categories: data.override_product_categories,
+      };
+    }
+
+    return baseData;
+  };
 
   const updateContextsAfterCreation = (account: any, orgId: string) => {
     // Update account metadata for easy lookup
@@ -926,7 +937,7 @@ const AccountsManagement = ({
       setIsCreateAccountModalOpen(false);
 
       // Create account in Neo4j (source of truth) with pre-generated ID
-      const newAccount = await createAccountMutation.mutateAsync({
+      const accountPayload: any = {
         accountId: newAccountId,
         accountName: wizardData.account_name,
         organizationId: currentOrgId,
@@ -940,9 +951,17 @@ const AccountsManagement = ({
         product_integrations: wizardData.product_integrations,
         estimatedAnnualAdBudget: wizardData.estimated_annual_ad_budget,
         businessStrategyDocuments: wizardData.business_strategy_documents,
-        enabled_strategies: wizardData.enabled_strategies,
-        override_product_categories: wizardData.override_product_categories,
-      });
+      };
+
+      // Only include strategy fields if user is super admin
+      if (isSuperAdmin) {
+        accountPayload.enabled_strategies = wizardData.enabled_strategies;
+        accountPayload.override_product_categories =
+          wizardData.override_product_categories;
+      }
+
+      const newAccount =
+        await createAccountMutation.mutateAsync(accountPayload);
 
       console.log(
         "[AccountsManagement] Account created successfully:",
