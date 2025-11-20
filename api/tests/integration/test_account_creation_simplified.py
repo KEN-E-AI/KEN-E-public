@@ -294,9 +294,7 @@ async def test_account_creation_status_endpoint_responses():
     # Create mock user context
     mock_user = UserContext(
         user_id="test_user",
-        email="test@example.com",
-        accessible_accounts=["test_account"],
-        permissions={"test_account": "admin"},
+        email="test@example.com",        permissions={"test_account": "admin"},
         organization_permissions={"test_org": "admin"},
         account_permissions={},
     )

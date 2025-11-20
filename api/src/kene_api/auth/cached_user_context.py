@@ -45,13 +45,21 @@ class CachedUserContextService:
         if cached_data:
             logger.info(f"[CACHE HIT] Found cached user context for {user_id}")
             try:
+                # Defensive check: invalidate cache if missing new structure
+                # TODO: Remove this check after all environments (dev/staging/prod) are verified migrated
+                if "account_permissions" not in cached_data:
+                    logger.warning(
+                        f"Cache for user {user_id} missing account_permissions field, "
+                        "invalidating cache to force refresh from Firestore"
+                    )
+                    self.invalidate_user_context(user_id)
+                    return None
+
                 return UserContext(
                     user_id=cached_data["user_id"],
                     email=cached_data["email"],
-                    accessible_accounts=cached_data["accessible_accounts"],
-                    permissions=cached_data["permissions"],
                     organization_permissions=cached_data["organization_permissions"],
-                    account_permissions=cached_data.get("account_permissions", {}),
+                    account_permissions=cached_data["account_permissions"],
                 )
             except Exception as e:
                 logger.error(f"Failed to deserialize cached user context: {e}")
@@ -76,8 +84,6 @@ class CachedUserContextService:
         context_data = {
             "user_id": user_context.user_id,
             "email": user_context.email,
-            "accessible_accounts": user_context.accessible_accounts,
-            "permissions": user_context.permissions,
             "organization_permissions": user_context.organization_permissions,
             "account_permissions": user_context.account_permissions,
         }

@@ -11,7 +11,7 @@ interface GlobalHeaderProps {
 }
 
 const GlobalHeader = ({
-  pageTitle = "Measurement Strategy",
+  pageTitle = "Marketing Strategies",
 }: GlobalHeaderProps) => {
   return (
     <h1 className="text-2xl font-semibold text-dashboard-gray-900 mb-6">

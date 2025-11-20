@@ -5,14 +5,26 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/use-toast";
-import { Loader2, Plus, X } from "lucide-react";
+import { Loader2, Plus, X, Building, Info } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 import type { MonitoringTopics } from "@/types/monitoring";
 import api from "@/lib/api";
 import CompanyKeywordsConfigurationSkeleton from "./CompanyKeywordsConfigurationSkeleton";
 import { KeywordValidation } from "@/utils/validation";
 
-export default function CompanyKeywordsConfiguration() {
+interface CompanyKeywordsConfigurationProps {
+  hasEditAccess?: boolean;
+}
+
+export default function CompanyKeywordsConfiguration({
+  hasEditAccess = true,
+}: CompanyKeywordsConfigurationProps) {
   const { selectedOrgAccount } = useAuth();
   const queryClient = useQueryClient();
   const [newKeyword, setNewKeyword] = useState("");
@@ -130,29 +142,47 @@ export default function CompanyKeywordsConfiguration() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Account Concepts</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Building className="h-5 w-5" />
+          Company Keywords
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-dashboard-gray-400" />
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                <p>
+                  Add keywords that KEN-E can use to track updates about your
+                  company or products in the news.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Input
-            placeholder="Add a keyword (e.g., your company name, product names)"
-            value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
-            onKeyPress={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAddKeyword();
-              }
-            }}
-          />
-          <Button
-            onClick={handleAddKeyword}
-            disabled={!newKeyword.trim()}
-            size="icon"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
+        {hasEditAccess && (
+          <div className="flex gap-2">
+            <Input
+              placeholder="Add a keyword (e.g., your company name, product names)"
+              value={newKeyword}
+              onChange={(e) => setNewKeyword(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAddKeyword();
+                }
+              }}
+            />
+            <Button
+              onClick={handleAddKeyword}
+              disabled={!newKeyword.trim()}
+              size="icon"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {keywords.map((keyword) => (
@@ -162,14 +192,16 @@ export default function CompanyKeywordsConfiguration() {
               className="pl-3 pr-1 py-1 text-sm"
             >
               {keyword}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-1 h-4 w-4 p-0 hover:bg-transparent"
-                onClick={() => handleRemoveKeyword(keyword)}
-              >
-                <X className="h-3 w-3" />
-              </Button>
+              {hasEditAccess && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-1 h-4 w-4 p-0 hover:bg-transparent"
+                  onClick={() => handleRemoveKeyword(keyword)}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
             </Badge>
           ))}
           {keywords.length === 0 && (
@@ -179,7 +211,7 @@ export default function CompanyKeywordsConfiguration() {
           )}
         </div>
 
-        {hasChanges && (
+        {hasEditAccess && hasChanges && (
           <div className="flex justify-end">
             <Button
               onClick={handleSaveKeywords}

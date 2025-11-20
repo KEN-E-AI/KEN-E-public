@@ -1,7 +1,6 @@
 """Authentication dependencies for FastAPI."""
 
 import logging
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -19,9 +18,9 @@ security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     firestore_service: FirestoreService = Depends(get_firestore_service),
-) -> Optional[UserContext]:
+) -> UserContext | None:
     """
     Get current user from Bearer token (optional).
 
@@ -52,16 +51,30 @@ async def get_current_user_optional(
         user_context = UserContext(
             user_id=decoded_token["uid"],
             email=decoded_token.get("email", ""),
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
+            account_permissions={},
         )
 
         # Add permissions from user document if it exists
         if user_doc.exists:
             user_data = user_doc.to_dict()
             permissions = user_data.get("permissions", {})
-            user_context.account_permissions = permissions.get("accounts", {})
+
+            # Runtime validation: detect old structure post-migration
+            # TODO: After all environments migrated and verified, change warning to error
+            if "accounts" in permissions:
+                error_msg = (
+                    f"User {decoded_token['uid']} still has deprecated 'permissions.accounts' field. "
+                    "Migration script must be run before deploying this code."
+                )
+                logger.error(error_msg)
+                logger.warning(
+                    "Using new 'account_permissions' structure only, old 'accounts' structure ignored"
+                )
+
+            user_context.account_permissions = permissions.get(
+                "account_permissions", {}
+            )
             user_context.organization_permissions = permissions.get("organizations", {})
 
         return user_context
@@ -105,7 +118,7 @@ async def get_current_user(
 def require_account_access(
     user: UserContext,
     account_id: str,
-    required_roles: Optional[list[str]] = None,
+    required_roles: list[str] | None = None,
 ) -> bool:
     """
     Check if user has access to an account.
@@ -141,7 +154,7 @@ def require_account_access(
 def require_organization_access(
     user: UserContext,
     organization_id: str,
-    required_roles: Optional[list[str]] = None,
+    required_roles: list[str] | None = None,
 ) -> bool:
     """
     Check if user has access to an organization.

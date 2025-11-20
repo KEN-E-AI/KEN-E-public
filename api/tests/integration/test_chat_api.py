@@ -74,9 +74,8 @@ def test_user():
     return UserContext(
         user_id="test-user-123",
         email="test@example.com",
-        accessible_accounts=[],
-        permissions={},
         organization_permissions={},
+        account_permissions={},
     )
 
 
@@ -196,9 +195,8 @@ async def test_development_mode_without_agent():
         test_user = UserContext(
             user_id="dev-user",
             email="dev@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
+            account_permissions={},
         )
 
         messages = [ChatMessage(role="user", content="Test in dev mode", timestamp="")]

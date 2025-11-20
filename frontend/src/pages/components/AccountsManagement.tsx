@@ -494,17 +494,6 @@ const AccountsManagement = ({
     region: [] as string[],
   });
 
-  const [createAccountFormData, setCreateAccountFormData] = useState({
-    account_name: "",
-    industry: "",
-    status: "Active",
-    websites: [""],
-    timezone: "America/New_York",
-    data_region: "US",
-    region: ["US"] as string[],
-    estimated_annual_ad_budget: null as number | null,
-    business_strategy_documents: [] as File[],
-  });
 
   // Filter accounts based on user permissions
   const organizationAccounts = useMemo(() => {
@@ -515,119 +504,31 @@ const AccountsManagement = ({
 
     // Regular users only see accounts they have explicit permissions for
     return accounts.filter((account) => {
-      return user?.permissions?.accounts?.[account.account_id];
+      return (
+        user?.permissions?.account_permissions?.[account.account_id] ||
+        user?.permissions?.accounts?.[account.account_id] // Fallback for backward compatibility
+      );
     });
-  }, [accounts, user?.permissions?.accounts, isSuperAdmin, hasAdminAccess]);
+  }, [
+    accounts,
+    user?.permissions?.account_permissions,
+    user?.permissions?.accounts,
+    isSuperAdmin,
+    hasAdminAccess,
+  ]);
 
-  // Check accounts for their creation status - only on mount, not on every change
-  useEffect(() => {
-    let isMounted = true;
-    let intervalId: NodeJS.Timeout | null = null;
-    const knownCompletedAccounts = new Set<string>();
-
-    const checkAccountStatuses = async () => {
-      if (
-        !isMounted ||
-        !organizationAccounts ||
-        organizationAccounts.length === 0
-      )
-        return;
-
-      const setupAccounts = new Set<string>();
-
-      // Only check accounts that aren't known to be completed
-      const accountsToCheck = organizationAccounts.filter(
-        (acc) => !knownCompletedAccounts.has(acc.account_id),
-      );
-
-      if (accountsToCheck.length === 0) {
-        setAccountsInSetup(setupAccounts);
-        return;
-      }
-
-      console.log(
-        `[AccountsManagement] Checking status of ${accountsToCheck.length} accounts (${knownCompletedAccounts.size} already completed)`,
-      );
-
-      // Limit concurrent checks to avoid overwhelming Neo4j connection pool
-      const CONCURRENT_LIMIT = 5;
-      const accountBatches = [];
-      for (let i = 0; i < accountsToCheck.length; i += CONCURRENT_LIMIT) {
-        accountBatches.push(accountsToCheck.slice(i, i + CONCURRENT_LIMIT));
-      }
-
-      // Process batches sequentially, accounts within batch concurrently
-      for (const batch of accountBatches) {
-        if (!isMounted) break;
-
-        await Promise.all(
-          batch.map(async (account) => {
-            try {
-              const response = await api.get(
-                `/api/v1/accounts/${account.account_id}/creation-status`,
-              );
-
-              if (!isMounted) return;
-
-              if (response.data) {
-                if (
-                  response.data.status === "pending" ||
-                  response.data.status === "processing"
-                ) {
-                  setupAccounts.add(account.account_id);
-                } else if (
-                  response.data.status === "completed" ||
-                  response.data.status === "failed"
-                ) {
-                  // Mark as completed so we don't check again
-                  knownCompletedAccounts.add(account.account_id);
-                }
-              }
-            } catch (error) {
-              // Account might not have a creation status - assume it's complete
-              if (isMounted) {
-                knownCompletedAccounts.add(account.account_id);
-              }
-            }
-          }),
-        );
-      }
-
-      if (isMounted) {
-        setAccountsInSetup(setupAccounts);
-      }
-    };
-
-    // Check immediately on mount
-    checkAccountStatuses();
-
-    // Poll every 60 seconds (increased from 30s) while there are accounts in setup
-    intervalId = setInterval(() => {
-      if (accountsInSetup.size > 0) {
-        checkAccountStatuses();
-      }
-    }, 60000); // Check every 60 seconds
-
-    return () => {
-      isMounted = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, []); // Only run on mount, not when accounts change
+  // Note: Account creation status polling is handled by useAccountCreationProgress hook
+  // for the account currently being created. We don't need to poll all accounts on mount.
 
   // Region management helpers
-  const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
-    const formData = isEdit ? editFormData : createAccountFormData;
-    const setFormData = isEdit ? setEditFormData : setCreateAccountFormData;
-
-    const currentRegions = formData.region;
+  const toggleRegion = (regionValue: string) => {
+    const currentRegions = editFormData.region;
     const newRegions = currentRegions.includes(regionValue)
       ? currentRegions.filter((r) => r !== regionValue)
       : [...currentRegions, regionValue];
 
-    setFormData({
-      ...formData,
+    setEditFormData({
+      ...editFormData,
       region: newRegions,
     });
   };
@@ -960,251 +861,6 @@ const AccountsManagement = ({
     }
   };
 
-  const handleCreateAccount = async () => {
-    console.log("[AccountsManagement] handleCreateAccount called");
-    console.log("[AccountsManagement] Current org ID:", currentOrgId);
-    console.log("[AccountsManagement] Form data:", createAccountFormData);
-
-    if (!currentOrgId) {
-      toast({
-        title: "Error",
-        description:
-          "No organization selected. Please select an organization first.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (
-      !createAccountFormData.account_name ||
-      !createAccountFormData.industry
-    ) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      // Start the loading overlay
-      // Generate account ID upfront for progress tracking
-      const newAccountId = generateAccountId();
-
-      // Start tracking progress immediately
-      console.log(
-        "[AccountsManagement] Setting creatingAccountId to:",
-        newAccountId,
-      );
-      setCreatingAccountId(newAccountId);
-
-      // Add to accounts in setup
-      setAccountsInSetup((prev) => new Set(prev).add(newAccountId));
-
-      startOperation(
-        "Creating account...",
-        "Conducting research on your business to configure your account. This may take 15-20 minutes.",
-      );
-
-      // Close the modal immediately to prevent duplicate clicks
-      setIsCreateAccountModalOpen(false);
-
-      // Create account in Neo4j (source of truth) with pre-generated ID
-      const newAccount = await createAccountMutation.mutateAsync({
-        accountId: newAccountId,
-        accountName: wizardData.account_name,
-        organizationId: currentOrgId,
-        industry: wizardData.industry,
-        status: "Active",
-        websites: wizardData.websites,
-        timezone: wizardData.timezone,
-        dataRegion: wizardData.data_region,
-        region: wizardData.region,
-        marketing_channels: wizardData.marketing_channels,
-        product_integrations: wizardData.product_integrations,
-        estimatedAnnualAdBudget: wizardData.estimated_annual_ad_budget,
-        businessStrategyDocuments: wizardData.business_strategy_documents,
-        enabled_strategies: wizardData.enabled_strategies,
-        override_product_categories: wizardData.override_product_categories,
-      });
-
-      console.log(
-        "[AccountsManagement] Account created successfully:",
-        newAccount,
-      );
-
-      // Update loading message (progress will be handled by the hook)
-      updateOperationMessage(
-        "Setting up account features...",
-        "Syncing holiday activities",
-      );
-
-      // If the new account has a region, sync holiday activity logs
-      if (
-        createAccountFormData.region &&
-        createAccountFormData.region.length > 0
-      ) {
-        try {
-          await syncHolidayMutation.mutateAsync(newAccountId);
-          console.log(
-            "[AccountsManagement] Holiday activities synced for new account",
-          );
-        } catch (syncError) {
-          console.error(
-            "Error syncing holiday activities for new account:",
-            syncError,
-          );
-          // Don't block account creation due to sync failure
-        }
-      }
-
-      // Update loading message
-      updateOperationMessage("Finalizing setup...", "Updating permissions");
-
-      // Get user's permission level for the organization to apply same level to new account
-      console.log("[AccountsManagement] User object:", user);
-      console.log("[AccountsManagement] User permissions:", user?.permissions);
-      const userOrgPermission =
-        user?.permissions?.organizations?.[currentOrgId] || "view";
-      console.log(
-        "[AccountsManagement] User org permission:",
-        userOrgPermission,
-      );
-
-      // Add the new account to user's permissions with same level as organization
-      console.log("[AccountsManagement] Updating Firestore permissions...");
-
-      let firestoreUpdateFailed = false;
-
-      // Skip Firestore update if no user ID
-      if (!user?.id) {
-        console.warn(
-          "[AccountsManagement] No user ID, skipping Firestore permission update",
-        );
-        firestoreUpdateFailed = true;
-      } else {
-        const firestoreUrl = `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${user.id}?account_id=${user.id}`;
-        console.log("[AccountsManagement] Firestore URL:", firestoreUrl);
-
-        try {
-          await axios.put(firestoreUrl, {
-            update: {
-              // This is a nested field path for dot-notation update
-              field: `permissions.accounts.${newAccountId}`,
-              operator: "set",
-              value: userOrgPermission,
-            },
-          });
-          console.log(
-            "[AccountsManagement] Firestore permissions updated successfully",
-          );
-        } catch (firestoreError: any) {
-          console.error(
-            "[AccountsManagement] Firestore update error:",
-            firestoreError,
-          );
-          console.error(
-            "[AccountsManagement] Firestore error response:",
-            firestoreError.response?.data,
-          );
-          // Continue even if Firestore update fails - account was created in Neo4j
-          console.warn(
-            "[AccountsManagement] Continuing despite Firestore error - account was created in Neo4j",
-          );
-          firestoreUpdateFailed = true;
-        }
-      }
-
-      // 🧠 Update local context
-      setAccountMetadata({
-        ...accountMetadata,
-        [newAccountId]: newAccount,
-      });
-
-      // Update user's local permissions state
-      updateUser({
-        permissions: {
-          ...user?.permissions,
-          accounts: {
-            ...user?.permissions?.accounts,
-            [newAccountId]: userOrgPermission,
-          },
-        },
-      });
-
-      // Update orgMetadata to include the new account
-      setOrgMetadata((prev) => ({
-        ...prev,
-        [currentOrgId]: {
-          ...prev[currentOrgId],
-          accounts: [...(prev[currentOrgId]?.accounts || []), newAccount],
-        },
-      }));
-
-      setIsCreateAccountModalOpen(false);
-      setCreateAccountFormData({
-        account_name: "",
-        industry: "",
-        status: "Active",
-        websites: [""],
-        timezone: "America/New_York",
-        data_region: "US",
-        region: ["US"],
-      });
-
-      // Set the newly created account as selected in auth context
-      console.log(
-        "[AccountsManagement] Setting selected account and redirecting...",
-      );
-
-      // Update auth context with the new selected account
-      const selectedOrgAccount = {
-        orgId: currentOrgId,
-        accountId: newAccountId,
-        metadata: {
-          organization_name: orgData.organization_name,
-          account_name: newAccount.account_name,
-          industry: newAccount.industry,
-          status: newAccount.status,
-          timezone: newAccount.timezone,
-          plan: orgData.plan,
-        },
-      };
-
-      // Set the selected account in auth context
-      setSelectedOrgAccount(selectedOrgAccount);
-
-      // Don't end operation or navigate yet - wait for progress to complete
-      // The progress tracking will handle closing the modal and navigation
-      console.log(
-        "[AccountsManagement] Account created, waiting for strategy generation to complete...",
-      );
-    } catch (error: any) {
-      // Make sure to end the loading state on error
-      endOperation();
-      setCreatingAccountId(null);
-
-      console.error("[AccountsManagement] Error creating account:", error);
-      console.error("[AccountsManagement] Error details:", {
-        message: error.message,
-        response: error.response,
-        stack: error.stack,
-      });
-
-      // Show more detailed error message
-      const errorMessage =
-        error.response?.data?.detail ||
-        error.message ||
-        "Failed to create account";
-      toast({
-        title: "Error",
-        description: `Error: ${errorMessage}`,
-        variant: "destructive",
-      });
-    }
-  };
-
   // organizationAccounts is already synced with accounts through useMemo
   // No need for a separate useEffect to update it
 
@@ -1521,32 +1177,6 @@ const AccountsManagement = ({
     });
   };
 
-  // Create account website management
-  const addCreateWebsiteField = () => {
-    setCreateAccountFormData({
-      ...createAccountFormData,
-      websites: [...createAccountFormData.websites, ""],
-    });
-  };
-
-  const removeCreateWebsiteField = (index: number) => {
-    const newWebsites = createAccountFormData.websites.filter(
-      (_, i) => i !== index,
-    );
-    setCreateAccountFormData({
-      ...createAccountFormData,
-      websites: newWebsites.length > 0 ? newWebsites : [""],
-    });
-  };
-
-  const updateCreateWebsiteField = (index: number, value: string) => {
-    const newWebsites = [...createAccountFormData.websites];
-    newWebsites[index] = value;
-    setCreateAccountFormData({
-      ...createAccountFormData,
-      websites: newWebsites,
-    });
-  };
 
   return (
     <TooltipProvider>
@@ -1943,7 +1573,7 @@ const AccountsManagement = ({
                           className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
                           onClick={() => {
                             if (!editFormData.region.includes(option.value)) {
-                              toggleRegion(option.value, true);
+                              toggleRegion(option.value);
                               setIsEditRegionPopoverOpen(false);
                             }
                           }}
@@ -1970,7 +1600,7 @@ const AccountsManagement = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => toggleRegion(regionValue, true)}
+                      onClick={() => toggleRegion(regionValue)}
                       className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
                     >
                       <X className="h-4 w-4" />

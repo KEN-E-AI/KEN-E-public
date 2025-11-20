@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..validators import CompetitorValidators, ConceptValidators, KeywordValidators
+from ..validators import CompetitorValidators, KeywordValidators, URLValidators
 from .kene_models import BaseRequest
 
 
@@ -36,7 +36,7 @@ class ConceptReference(BaseModel):
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Validate the reference URL."""
-        return ConceptValidators.validate_reference_url(v)
+        return URLValidators.validate_website_url(v) or v
 
     @field_validator("description")
     @classmethod
@@ -93,7 +93,7 @@ class CompetitorEntry(BaseModel):
     @classmethod
     def validate_website(cls, v: str | None) -> str | None:
         """Validate competitor website."""
-        return CompetitorValidators.validate_website(v)
+        return URLValidators.validate_website_url(v)
 
     @field_validator("keywords")
     @classmethod
@@ -216,7 +216,7 @@ class AddCompetitorRequest(BaseRequest):
     @classmethod
     def validate_website(cls, v: str | None) -> str | None:
         """Validate competitor website."""
-        return CompetitorValidators.validate_website(v)
+        return URLValidators.validate_website_url(v)
 
     @field_validator("keywords")
     @classmethod

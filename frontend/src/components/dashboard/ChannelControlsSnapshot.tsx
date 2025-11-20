@@ -891,10 +891,10 @@ const ChannelControlsSnapshot = () => {
     <div className="bg-white rounded-lg border border-dashboard-gray-200 p-6">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-dashboard-gray-900 mb-2">
-          Measurement Strategy Snapshot
+          Marketing Strategies Snapshot
         </h3>
         <p className="text-sm text-dashboard-gray-600">
-          Frozen view of the measurement strategy at the time this report was
+          Frozen view of the marketing strategies at the time this report was
           generated.
         </p>
       </div>

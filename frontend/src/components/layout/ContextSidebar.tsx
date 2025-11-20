@@ -1,15 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Menu,
   Home,
-  BarChart3,
-  Package,
-  Search,
-  BookOpen,
-  Settings,
   Building,
   Check,
   Archive,
@@ -22,7 +16,6 @@ import {
   FileText,
   TrendingUp,
   Sparkles,
-  Send,
   Mic,
   AudioWaveform,
   Wrench,
@@ -31,9 +24,6 @@ import {
   Share2,
   Plus,
   User,
-  Megaphone,
-  Network,
-  Glasses,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,15 +46,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
 import { useChat } from "@/contexts/ChatContext";
 import { useLocation, useNavigate } from "react-router-dom";
-import { iconMap } from "@/lib/iconMap";
 import api from "@/lib/api";
 import type { NotificationCategory } from "@/types/notification.types";
-
-interface SubMenuItem {
-  id: string;
-  label: string;
-  route: string;
-}
+import {
+  getOrganizationById,
+  getAccountsByOrganizationId,
+} from "@/data/organizationApi";
+import { toOrganizationId, toAccountId } from "@/lib/branded-types";
 
 // Notification category icon mapping matching NotificationPreferences.tsx
 const NOTIFICATION_CATEGORY_ICONS: Record<
@@ -78,91 +66,6 @@ const NOTIFICATION_CATEGORY_ICONS: Record<
   "Scheduled Report Status": FileText,
   "KPI Performance": TrendingUp,
   "New Features": Sparkles,
-};
-
-interface MenuSection {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  items: SubMenuItem[];
-}
-
-const menuConfigurations: Record<string, MenuSection> = {
-  "/performance": {
-    title: "Performance",
-    icon: BarChart3,
-    items: [
-      { id: "overview", label: "Overview", route: "/performance" },
-      {
-        id: "channel",
-        label: "Channel Performance",
-        route: "/performance/channels",
-      },
-    ],
-  },
-  "/products": {
-    title: "Products",
-    icon: Package,
-    items: [{ id: "overview", label: "Overview", route: "/products" }],
-  },
-  "/customers": {
-    title: "Customers",
-    icon: Users,
-    items: [{ id: "overview", label: "Overview", route: "/customers" }],
-  },
-  "/campaigns": {
-    title: "Campaigns",
-    icon: Megaphone,
-    items: [{ id: "overview", label: "Overview", route: "/campaigns" }],
-  },
-  "/channels": {
-    title: "Channels",
-    icon: Network,
-    items: [{ id: "overview", label: "Overview", route: "/channels" }],
-  },
-  "/reports": {
-    title: "Reports",
-    icon: FileText,
-    items: [{ id: "overview", label: "Overview", route: "/reports" }],
-  },
-  "/simulations": {
-    title: "Simulations",
-    icon: Glasses,
-    items: [{ id: "overview", label: "Overview", route: "/simulations" }],
-  },
-  "/knowledge": {
-    title: "Knowledge Base",
-    icon: BookOpen,
-    items: [
-      { id: "products", label: "Products", route: "/knowledge/products" },
-      { id: "metrics", label: "Metrics", route: "/knowledge/metrics" },
-      { id: "activities", label: "Activities", route: "/knowledge/activities" },
-      { id: "insights", label: "Insights", route: "/knowledge/insights" },
-      {
-        id: "strategy",
-        label: "Measurement Strategy",
-        route: "/knowledge/strategy",
-      },
-      { id: "account", label: "Account Overview", route: "/knowledge/account" },
-      { id: "customers", label: "Customers", route: "/knowledge/customers" },
-      {
-        id: "competitors",
-        label: "Competitors",
-        route: "/knowledge/competitors",
-      },
-    ],
-  },
-  "/settings": {
-    title: "Settings",
-    icon: Settings,
-    items: [
-      {
-        id: "organization",
-        label: "Organization",
-        route: "/settings/organization",
-      },
-      { id: "user", label: "User", route: "/settings/user" },
-    ],
-  },
 };
 
 interface ContextSidebarProps {
@@ -185,11 +88,13 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     selectedOrgAccount,
     setSelectedOrgAccount,
     setCurrentOrganization,
+    setOrgMetadata,
     isSuperAdmin,
   } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isHomePage = location.pathname === "/";
+  const hasSyncedOrgs = useRef(false);
 
   // Chat state and functions from ChatContext
   const {
@@ -211,6 +116,94 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
       updateChatContext(selectedTab);
     }
   }, [selectedTab, isHomePage, updateChatContext]);
+
+  // Clean up stale organization metadata and fetch missing ones (run once per session)
+  useEffect(() => {
+    // Skip if already synced or no user
+    if (!user?.permissions?.organizations || hasSyncedOrgs.current) {
+      return;
+    }
+
+    const accessibleOrgIds = Object.keys(user.permissions.organizations);
+    if (accessibleOrgIds.length === 0) {
+      return;
+    }
+
+    const currentOrgIds = Object.keys(orgMetadata);
+
+    // Check for stale orgs (in metadata but not in permissions)
+    const staleOrgIds = currentOrgIds.filter(
+      (id) => !accessibleOrgIds.includes(id),
+    );
+
+    // Check for missing orgs (in permissions but not in metadata)
+    const missingOrgIds = accessibleOrgIds.filter((id) => !orgMetadata[id]);
+
+    // If nothing needs syncing, mark as synced and exit
+    if (staleOrgIds.length === 0 && missingOrgIds.length === 0) {
+      hasSyncedOrgs.current = true;
+      return;
+    }
+
+    // Mark as synced BEFORE starting async work to prevent re-runs
+    hasSyncedOrgs.current = true;
+
+    // Run sync asynchronously without blocking
+    (async () => {
+      try {
+        const newOrgData: Record<string, any> = {};
+
+        // Only keep organizations that the user has permissions for
+        for (const orgId of accessibleOrgIds) {
+          if (orgMetadata[orgId]) {
+            // Keep existing metadata but update accounts from accountMetadata if available
+            const orgAccounts = Object.values(accountMetadata).filter(
+              (account: any) => account.organization_id === orgId,
+            );
+            newOrgData[orgId] = {
+              ...orgMetadata[orgId],
+              accounts:
+                orgAccounts.length > 0
+                  ? orgAccounts
+                  : orgMetadata[orgId].accounts || [],
+            };
+          } else {
+            // Fetch missing organization
+            try {
+              const org = await getOrganizationById(orgId);
+
+              // Try to get accounts from API, fallback to accountMetadata
+              let accounts: any[] = [];
+              try {
+                accounts = await getAccountsByOrganizationId(orgId);
+              } catch (accountError) {
+                // Fallback to local account data if API fails
+                accounts = Object.values(accountMetadata).filter(
+                  (account: any) => account.organization_id === orgId,
+                );
+              }
+
+              if (org) {
+                newOrgData[orgId] = { ...org, accounts };
+              }
+            } catch (error: any) {
+              // Silently handle deleted organizations - they'll be removed from metadata
+              if (error.response?.status !== 404) {
+                console.error(`Failed to load organization ${orgId}:`, error);
+              }
+            }
+          }
+        }
+
+        // Only update if we got at least one valid org
+        if (Object.keys(newOrgData).length > 0) {
+          setOrgMetadata(newOrgData);
+        }
+      } catch (error) {
+        console.error("Failed to sync organizations:", error);
+      }
+    })();
+  }, [user?.permissions?.organizations]);
 
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
@@ -265,36 +258,6 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     }
   };
 
-  // Determine which menu to show based on current route
-  const getActiveMenu = () => {
-    const path = location.pathname;
-
-    // Check each menu configuration to see if the current path starts with it
-    for (const [menuPath, config] of Object.entries(menuConfigurations)) {
-      if (path.startsWith(menuPath)) {
-        // Add admin link to settings menu for super admins
-        if (menuPath === "/settings" && isSuperAdmin) {
-          return {
-            path: menuPath,
-            config: {
-              ...config,
-              items: [
-                ...config.items,
-                { id: "admin", label: "Admin", route: "/settings/admin" },
-              ],
-            },
-          };
-        }
-        return { path: menuPath, config };
-      }
-    }
-
-    // Default to home/notifications
-    return null;
-  };
-
-  const activeMenu = getActiveMenu();
-
   // Organization dropdown logic
   const accessibleOrgIds = isSuperAdmin
     ? Object.keys(orgMetadata) // For super admins, show all organizations
@@ -309,7 +272,10 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
   }> = accessibleOrgIds
     .flatMap((orgId) => {
       const organization = orgMetadata[orgId];
-      if (!organization) return [];
+      if (!organization) {
+        // Organization metadata not yet loaded or organization was deleted
+        return [];
+      }
 
       const orgAccounts = organization.accounts || [];
 
@@ -382,8 +348,8 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     }
 
     const selection: SelectedOrgAccount = {
-      orgId,
-      accountId,
+      orgId: toOrganizationId(orgId),
+      accountId: toAccountId(accountId),
       metadata: {
         organization_name: organization.organization_name,
         account_name: account.account_name,
@@ -395,7 +361,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     };
 
     setSelectedOrgAccount(selection);
-    setCurrentOrganization(orgId);
+    setCurrentOrganization(toOrganizationId(orgId));
   };
 
   return (
@@ -407,7 +373,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
     >
       {/* Header */}
       {isCollapsed ? (
-        <div className="h-12 flex items-center justify-center border-b border-dashboard-gray-200">
+        <div className="h-16 flex items-center justify-center border-b border-dashboard-gray-200">
           <Button
             variant="ghost"
             size="sm"
@@ -419,17 +385,16 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
           </Button>
         </div>
       ) : (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-dashboard-gray-200">
+        <div className="h-16 flex items-center justify-between px-3 border-b border-dashboard-gray-200">
           {/* Organization/Account Selector */}
-          {combinedOptions.length > 0 && (
-            <div className="flex-1 mr-2">
+          {combinedOptions.length > 0 ? (
+            <div className="flex-1 mr-2 my-2">
               <Select
                 value={currentValue}
                 onValueChange={handleOrgAccountChange}
               >
-                <SelectTrigger className="w-full h-auto py-2 text-sm border-0 bg-transparent hover:bg-gray-50 focus:ring-1 focus:ring-brand-medium-blue [&>svg]:hidden">
+                <SelectTrigger className="w-full h-auto py-1.5 text-sm border border-gray-300 rounded-md bg-transparent hover:bg-gray-50 focus:ring-1 focus:ring-brand-medium-blue [&>svg]:hidden">
                   <div className="flex items-start gap-2 text-left w-full">
-                    <ChevronDown className="h-4 w-4 mt-0.5 flex-shrink-0 text-gray-500" />
                     <SelectValue placeholder="Select Account">
                       {currentValue &&
                         (() => {
@@ -487,6 +452,10 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
                   )}
                 </SelectContent>
               </Select>
+            </div>
+          ) : (
+            <div className="flex-1 mr-2 my-2 text-sm text-gray-500">
+              No accounts available
             </div>
           )}
           <Button

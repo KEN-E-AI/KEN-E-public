@@ -318,9 +318,7 @@ class TestGetUserContextWithLimiter:
         mock_firestore = MagicMock()
         cached_context = UserContext(
             user_id="user123",
-            email="test@example.com",
-            accessible_accounts=["acc1"],
-            permissions={"acc1": "admin"},
+            email="test@example.com",            permissions={"acc1": "admin"},
             organization_permissions={},
         )
 
