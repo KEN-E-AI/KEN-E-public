@@ -7,10 +7,11 @@ CRUD endpoints for 6 competitive strategy node types:
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
+from ...firestore import FirestoreService, get_firestore_service
 from ...models.graph_models import (
     CompetitiveEnvironmentResponse,
     CompetitiveEnvironmentUpdate,
@@ -37,6 +38,7 @@ from ...models.graph_models import (
     SubstituteProductUpdate,
 )
 from ...services.graph_sync_service import GraphSyncService, get_graph_sync_service
+from ...services.monitoring_sync_service import MonitoringSyncService
 from .crud_factory import CRUDEndpoints
 
 logger = logging.getLogger(__name__)
@@ -52,13 +54,16 @@ async def create_competitor(
     account_id: str,
     competitor: CompetitorCreate,
     service: GraphSyncService = Depends(get_graph_sync_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
     user: UserContext = Depends(get_current_user),
 ) -> CompetitorResponse:
-    """Create a new competitor.
+    """Create a new competitor with optional monitoring sync.
 
     Requires edit permission for the account.
+    If keywords or website are provided, also creates a monitoring entry in Firestore.
     """
-    return await CRUDEndpoints.create_node(
+    # Create competitor in Neo4j
+    created_competitor = await CRUDEndpoints.create_node(
         account_id=account_id,
         node_type="Competitor",
         create_data=competitor,
@@ -66,6 +71,19 @@ async def create_competitor(
         service=service,
         user=user,
     )
+
+    # Sync to monitoring topics if keywords or website provided
+    if competitor.keywords or competitor.website:
+        await MonitoringSyncService.sync_competitor_to_monitoring(
+            firestore=firestore,
+            account_id=account_id,
+            competitor_name=competitor.display_name,
+            website=competitor.website,
+            keywords=competitor.keywords,
+            operation="add",
+        )
+
+    return created_competitor
 
 
 @router.get("/{account_id}/competitors", response_model=CompetitorListResponse)
@@ -196,17 +214,36 @@ async def delete_competitor(
         False, description="Cascade delete all dependent entities"
     ),
     service: GraphSyncService = Depends(get_graph_sync_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
     user: UserContext = Depends(get_current_user),
 ) -> DeleteResponse:
-    """Delete a competitor.
+    """Delete a competitor with monitoring cleanup.
 
     Args:
         account_id: Account ID
         node_id: Competitor node ID
         cascade: If True, cascade delete all dependent entities (strengths, weaknesses, etc.)
                  If False, fail if dependencies exist (current behavior)
+
+    Also deletes the corresponding monitoring entry from Firestore if it exists.
     """
-    return await CRUDEndpoints.delete_node(
+    # Get competitor name before deletion
+    try:
+        competitor = await CRUDEndpoints.get_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Competitor",
+            response_class=CompetitorResponse,
+            service=service,
+            user=user,
+        )
+        competitor_name = competitor.display_name
+    except Exception as e:
+        logger.warning(f"Could not fetch competitor before deletion: {e}")
+        competitor_name = None
+
+    # Delete from Neo4j
+    result = await CRUDEndpoints.delete_node(
         account_id=account_id,
         node_id=node_id,
         node_type="Competitor",
@@ -216,6 +253,19 @@ async def delete_competitor(
         service=service,
         user=user,
     )
+
+    # Cleanup monitoring topics
+    if competitor_name:
+        await MonitoringSyncService.sync_competitor_to_monitoring(
+            firestore=firestore,
+            account_id=account_id,
+            competitor_name=competitor_name,
+            website=None,
+            keywords=[],
+            operation="remove",
+        )
+
+    return result
 
 
 # ==================== COMPETITOR TACTIC ENDPOINTS ====================

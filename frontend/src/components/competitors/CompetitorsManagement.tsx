@@ -164,6 +164,7 @@ import {
   ValuePropositionModal,
   DeleteValuePropositionDialog,
 } from "./modals";
+import { CompetitorKeywordsSection } from "./CompetitorKeywordsSection";
 
 type CompetitorMode = "strengths" | "weaknesses" | "substitute-products";
 
@@ -2857,6 +2858,16 @@ export const CompetitorsManagement = ({
               isEditingParent={isEditing}
             />
           )}
+
+          {/* Keywords Section (for competitor context menu) */}
+          {contextMenuType === "competitor" &&
+            selectedCompetitor &&
+            !isEditing && (
+              <CompetitorKeywordsSection
+                competitorName={selectedCompetitor.display_name}
+                hasEditAccess={hasEditAccess}
+              />
+            )}
 
           {/* Value Propositions Section (for substitute products) */}
           {mode === "substitute-products" &&

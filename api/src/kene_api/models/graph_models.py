@@ -7,6 +7,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..validators import CompetitorValidators, KeywordValidators, URLValidators
+
 # ==================== BASE MODELS ====================
 
 
@@ -655,6 +657,8 @@ class CompetitorCreate(BaseModel):
                         "https://molekule.com/about",
                         "https://crunchbase.com/organization/molekule",
                     ],
+                    "website": "https://molekule.com",
+                    "keywords": ["molekule", "peco technology", "air purifier"],
                 }
             ]
         }
@@ -667,6 +671,31 @@ class CompetitorCreate(BaseModel):
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
     )
+    website: str | None = Field(
+        default=None, description="Competitor website URL for news monitoring"
+    )
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Keywords for news monitoring system (auto-populated with competitor name if empty)",
+    )
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate competitor name."""
+        return CompetitorValidators.validate_competitor_name(v)
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: str | None) -> str | None:
+        """Validate competitor website URL."""
+        return URLValidators.validate_website_url(v)
+
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class CompetitorUpdate(BaseModel):
@@ -683,6 +712,7 @@ class CompetitorResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
+    website: str | None = None
 
 
 class CompetitorListResponse(BaseModel):

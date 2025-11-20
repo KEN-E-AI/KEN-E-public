@@ -7,6 +7,7 @@ export interface Competitor {
   display_name: string;
   description: string;
   references: string[];
+  website?: string;
   created_time: string;
   last_modified: string;
   created_by: string;
@@ -18,6 +19,8 @@ export interface CompetitorCreate {
   display_name: string;
   description: string;
   references?: string[];
+  website?: string;
+  keywords?: string[];
 }
 
 export interface CompetitorUpdate {
