@@ -37,6 +37,39 @@ async def create_initial_activity_logs(
     return 0
 
 
+async def _rollback_account_creation(
+    neo4j_service: Neo4jService, account_id: str
+) -> None:
+    """
+    Rollback account creation by deleting the Neo4j account node.
+
+    Called when critical failures occur during account setup after Neo4j creation.
+    All subsequent operations (Firestore, GCS, permissions) are considered recoverable,
+    but if something catastrophic happens, we clean up the Neo4j account to prevent orphans.
+
+    Args:
+        neo4j_service: Neo4j database service
+        account_id: Account ID to delete
+
+    Returns:
+        None
+    """
+    try:
+        delete_query = """
+        MATCH (acc:Account {account_id: $account_id})
+        DETACH DELETE acc
+        """
+        await neo4j_service.execute_write_query(delete_query, {"account_id": account_id})
+        logger.info(
+            f"[ROLLBACK] Successfully deleted account {account_id} from Neo4j"
+        )
+    except Exception as rollback_error:
+        logger.error(
+            f"[ROLLBACK] Failed to delete account {account_id} during rollback: {rollback_error}"
+        )
+        # Log but don't re-raise - original error is more important
+
+
 async def create_account_internal(
     request: AccountRequest,
     uploaded_document_urls: list[str],
@@ -265,112 +298,130 @@ async def create_account_internal(
         # Log database setup continuing (progress tracking simplified)
         logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
 
-        # Create initial activities from Firestore templates
+        # Wrap remaining setup in try/except to enable rollback on critical failures
         try:
-            from ..routers.accounts import _create_initial_activities
-
-            activities_count = await _create_initial_activities(
-                db=neo4j_service, firestore=firestore, account_id=account_id
-            )
-            logger.info(
-                f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
-            )
-        except Exception as e:
-            logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
-            # Don't fail account creation if initial activities fail
-
-        # Create initial activity logs if BigQuery service is available
-        if bigquery_service:
+            # Create initial activities from Firestore templates
+            # Note: Activities are recoverable - log but continue on failure
             try:
-                created_count = await create_initial_activity_logs(
-                    account_id=account_id, industry=request.industry, db=bigquery_service
+                from ..routers.accounts import _create_initial_activities
+
+                activities_count = await _create_initial_activities(
+                    db=neo4j_service, firestore=firestore, account_id=account_id
                 )
                 logger.info(
-                    f"[ACCOUNT_CREATION] Created {created_count} initial activity logs"
+                    f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
                 )
             except Exception as e:
-                logger.error(f"[ACCOUNT_CREATION] Failed to create activity logs: {e}")
-                # Don't fail account creation if activity logs fail
+                logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
+                # Don't fail account creation if initial activities fail (recoverable)
 
-        # Log database setup continuing (progress tracking simplified)
-        logger.info(f"[ACCOUNT_CREATION] Configuring data streams for {account_id}")
+            # Create initial activity logs if BigQuery service is available
+            # Note: Activity logs are recoverable - log but continue on failure
+            if bigquery_service:
+                try:
+                    created_count = await create_initial_activity_logs(
+                        account_id=account_id, industry=request.industry, db=bigquery_service
+                    )
+                    logger.info(
+                        f"[ACCOUNT_CREATION] Created {created_count} initial activity logs"
+                    )
+                except Exception as e:
+                    logger.error(f"[ACCOUNT_CREATION] Failed to create activity logs: {e}")
+                    # Don't fail account creation if activity logs fail (recoverable)
 
-    # Ensure GCS bucket and folder exist for the account (skip for dry-run)
-    if not request.dry_run:
-        try:
-            data_region = request.data_region or "US"
-            bucket_name, location = await storage.ensure_bucket_exists(data_region)
-            logger.info(
-                f"Ensured GCS bucket {bucket_name} exists in {location} for account {account_id}"
-            )
+            # Log database setup continuing (progress tracking simplified)
+            logger.info(f"[ACCOUNT_CREATION] Configuring data streams for {account_id}")
 
-            # Create account folder
-            folder_created = await storage.ensure_account_folder(account_id, data_region)
-            if folder_created:
+            # Ensure GCS bucket and folder exist for the account
+            # Note: GCS is recoverable - log but continue on failure
+            try:
+                data_region = request.data_region or "US"
+                bucket_name, location = await storage.ensure_bucket_exists(data_region)
                 logger.info(
-                    f"Created GCS folder for account {account_id} in region {data_region}"
+                    f"Ensured GCS bucket {bucket_name} exists in {location} for account {account_id}"
                 )
-        except Exception as e:
-            logger.error(f"Failed to ensure GCS storage for account {account_id}: {e}")
-            # Don't fail account creation if storage setup fails
 
-        # Create Firestore collection for strategy documents
-        try:
-            collection_name = f"strategy_docs_{account_id}"
-            initial_doc_data = {
-                "account_id": account_id,
-                "created_at": datetime.utcnow().isoformat(),
-                "created_by": user.user_id,
-                "type": "placeholder",
-                "description": "Initial placeholder document - collection ready for business strategy documents",
-                "organization_id": request.organization_id,
-            }
-            doc_id = firestore.create_document(
-                collection_name, "_placeholder", initial_doc_data
-            )
-            logger.info(
-                f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Failed to create Firestore collection for account {account_id}: {e}"
-            )
-            # Don't fail account creation if collection creation fails
+                # Create account folder
+                folder_created = await storage.ensure_account_folder(account_id, data_region)
+                if folder_created:
+                    logger.info(
+                        f"Created GCS folder for account {account_id} in region {data_region}"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to ensure GCS storage for account {account_id}: {e}")
+                # Don't fail account creation if storage setup fails (recoverable)
 
-        # Grant the creating user admin permissions on the new account
-        try:
-            success = firestore.set_nested_field(
-                collection="users",
-                document_id=user.user_id,
-                field_path=f"permissions.account_permissions.{account_id}",
-                value="admin",
-            )
-            if success:
+            # Create Firestore collection for strategy documents
+            # Note: Firestore collection is recoverable - log but continue on failure
+            try:
+                collection_name = f"strategy_docs_{account_id}"
+                initial_doc_data = {
+                    "account_id": account_id,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "created_by": user.user_id,
+                    "type": "placeholder",
+                    "description": "Initial placeholder document - collection ready for business strategy documents",
+                    "organization_id": request.organization_id,
+                }
+                doc_id = firestore.create_document(
+                    collection_name, "_placeholder", initial_doc_data
+                )
                 logger.info(
-                    f"Granted admin permissions to user {user.user_id} for account {account_id}"
+                    f"Created Firestore collection '{collection_name}' with placeholder document: {doc_id}"
                 )
-            else:
-                logger.warning(
-                    f"Failed to grant permissions to user {user.user_id} for account {account_id}"
+            except Exception as e:
+                logger.error(
+                    f"Failed to create Firestore collection for account {account_id}: {e}"
                 )
+                # Don't fail account creation if collection creation fails (recoverable)
+
+            # Grant the creating user admin permissions on the new account
+            # Note: Permissions are recoverable - log but continue on failure
+            try:
+                success = firestore.set_nested_field(
+                    collection="users",
+                    document_id=user.user_id,
+                    field_path=f"permissions.account_permissions.{account_id}",
+                    value="admin",
+                )
+                if success:
+                    logger.info(
+                        f"Granted admin permissions to user {user.user_id} for account {account_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to grant permissions to user {user.user_id} for account {account_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Error granting permissions to user {user.user_id} for account {account_id}: {e}"
+                )
+                # Don't fail account creation if permission grant fails (recoverable)
+
+            # Invalidate the user's cache to ensure their context includes the new account
+            # Note: Cache invalidation is recoverable - log but continue on failure
+            try:
+                from ..auth.cached_user_context import get_cached_user_context_service
+
+                cached_user_service = get_cached_user_context_service()
+                cached_user_service.invalidate_user_context(user.user_id)
+                logger.info(
+                    f"Invalidated cache for user {user.user_id} after creating account {account_id}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to invalidate user cache: {e}")
+                # Don't fail account creation if cache invalidation fails (recoverable)
+
         except Exception as e:
+            # Critical failure during account setup - rollback Neo4j account
             logger.error(
-                f"Error granting permissions to user {user.user_id} for account {account_id}: {e}"
+                f"[ACCOUNT_CREATION] Critical failure during account setup, rolling back Neo4j account: {e}"
             )
-            # Don't fail account creation if permission grant fails
-
-        # Invalidate the user's cache to ensure their context includes the new account
-        try:
-            from ..auth.cached_user_context import get_cached_user_context_service
-
-            cached_user_service = get_cached_user_context_service()
-            cached_user_service.invalidate_user_context(user.user_id)
-            logger.info(
-                f"Invalidated cache for user {user.user_id} after creating account {account_id}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to invalidate user cache: {e}")
-            # Don't fail account creation if cache invalidation fails
+            await _rollback_account_creation(neo4j_service, account_id)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Account creation failed and was rolled back: {e!s}"
+            ) from e
     else:
         logger.info(
             f"[ACCOUNT_CREATION] DRY-RUN MODE: Skipped all database and storage setup for {account_id}"
