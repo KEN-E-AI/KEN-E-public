@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, User, ArrowRight } from "lucide-react";
+import { Building2, User, ArrowRight, Shield } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { TestNotificationSection } from "@/components/settings/TestNotificationSection";
 
@@ -40,6 +40,10 @@ const Settings = () => {
 
   const handleUserSettingsClick = () => {
     navigate("/settings/user");
+  };
+
+  const handleAdminSettingsClick = () => {
+    navigate("/settings/admin");
   };
 
   return (
@@ -83,6 +87,33 @@ const Settings = () => {
               </div>
             </CardHeader>
           </Card>
+
+          {/* Admin Settings - Only visible to super admins */}
+          {isSuperAdmin && (
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow group"
+              onClick={handleAdminSettingsClick}
+            >
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-brand-light-blue/20 rounded-lg flex items-center justify-center">
+                      <Shield className="h-5 w-5 text-brand-medium-blue" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-dashboard-gray-900">
+                        Admin Settings
+                      </h3>
+                      <p className="text-sm text-dashboard-gray-600">
+                        Manage platform configuration and agent settings
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-dashboard-gray-400 group-hover:text-dashboard-gray-600 transition-colors" />
+                </div>
+              </CardHeader>
+            </Card>
+          )}
         </div>
       </div>
 

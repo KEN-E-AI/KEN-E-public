@@ -387,23 +387,34 @@ const AccountsManagement = ({
     return null;
   };
 
-  const transformWizardData = (data: AccountCreationData, orgId: string) => ({
-    accountName: data.account_name,
-    organizationId: orgId,
-    industry: data.industry,
-    status: "Active" as const,
-    websites: data.websites || [],
-    timezone: data.timezone,
-    dataRegion: data.data_region,
-    region: data.region,
-    estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
-    businessStrategyDocuments: data.business_strategy_documents || [],
-    marketing_channels: data.marketing_channels || [],
-    product_integrations: data.product_integrations || [],
-    enabled_strategies: data.enabled_strategies,
-    override_product_categories: data.override_product_categories,
-    dry_run: data.dry_run ?? false,
-  });
+  const transformWizardData = (data: AccountCreationData, orgId: string) => {
+    const baseData = {
+      accountName: data.account_name,
+      organizationId: orgId,
+      industry: data.industry,
+      status: "Active" as const,
+      websites: data.websites || [],
+      timezone: data.timezone,
+      dataRegion: data.data_region,
+      region: data.region,
+      estimatedAnnualAdBudget: data.estimated_annual_ad_budget || null,
+      businessStrategyDocuments: data.business_strategy_documents || [],
+      marketing_channels: data.marketing_channels || [],
+      product_integrations: data.product_integrations || [],
+      dry_run: data.dry_run ?? false,
+    };
+
+    // Only include strategy fields if user is super admin
+    if (isSuperAdmin) {
+      return {
+        ...baseData,
+        enabled_strategies: data.enabled_strategies,
+        override_product_categories: data.override_product_categories,
+      };
+    }
+
+    return baseData;
+  };
 
   const updateContextsAfterCreation = (account: any, orgId: string) => {
     // Update account metadata for easy lookup
@@ -495,17 +506,6 @@ const AccountsManagement = ({
     region: [] as string[],
   });
 
-  const [createAccountFormData, setCreateAccountFormData] = useState({
-    account_name: "",
-    industry: "",
-    status: "Active",
-    websites: [""],
-    timezone: "America/New_York",
-    data_region: "US",
-    region: ["US"] as string[],
-    estimated_annual_ad_budget: null as number | null,
-    business_strategy_documents: [] as File[],
-  });
 
   // Filter accounts based on user permissions
   const organizationAccounts = useMemo(() => {
@@ -529,66 +529,18 @@ const AccountsManagement = ({
     hasAdminAccess,
   ]);
 
-  // Check all accounts for their creation status on mount and when accounts change
-  useEffect(() => {
-    const checkAccountStatuses = async () => {
-      if (!organizationAccounts || organizationAccounts.length === 0) return;
-
-      const setupAccounts = new Set<string>();
-
-      // Check each account's creation status
-      for (const account of organizationAccounts) {
-        try {
-          const response = await api.get(
-            `/api/v1/accounts/${account.account_id}/creation-status`,
-          );
-
-          if (
-            response.data &&
-            (response.data.status === "pending" ||
-              response.data.status === "processing")
-          ) {
-            console.log(
-              `[AccountsManagement] Account ${account.account_id} is still being set up`,
-            );
-            setupAccounts.add(account.account_id);
-          }
-        } catch (error) {
-          // Account might not have a creation status, which is fine
-          console.debug(
-            `[AccountsManagement] No creation status for account ${account.account_id}`,
-          );
-        }
-      }
-
-      setAccountsInSetup(setupAccounts);
-    };
-
-    // Check immediately
-    checkAccountStatuses();
-
-    // Check periodically while there are accounts in setup
-    const intervalId = setInterval(() => {
-      if (accountsInSetup.size > 0) {
-        checkAccountStatuses();
-      }
-    }, 30000); // Check every 30 seconds
-
-    return () => clearInterval(intervalId);
-  }, [organizationAccounts.length, accountsInSetup.size]); // Re-run when accounts change
+  // Note: Account creation status polling is handled by useAccountCreationProgress hook
+  // for the account currently being created. We don't need to poll all accounts on mount.
 
   // Region management helpers
-  const toggleRegion = (regionValue: string, isEdit: boolean = true) => {
-    const formData = isEdit ? editFormData : createAccountFormData;
-    const setFormData = isEdit ? setEditFormData : setCreateAccountFormData;
-
-    const currentRegions = formData.region;
+  const toggleRegion = (regionValue: string) => {
+    const currentRegions = editFormData.region;
     const newRegions = currentRegions.includes(regionValue)
       ? currentRegions.filter((r) => r !== regionValue)
       : [...currentRegions, regionValue];
 
-    setFormData({
-      ...formData,
+    setEditFormData({
+      ...editFormData,
       region: newRegions,
     });
   };
@@ -1483,32 +1435,6 @@ const AccountsManagement = ({
     });
   };
 
-  // Create account website management
-  const addCreateWebsiteField = () => {
-    setCreateAccountFormData({
-      ...createAccountFormData,
-      websites: [...createAccountFormData.websites, ""],
-    });
-  };
-
-  const removeCreateWebsiteField = (index: number) => {
-    const newWebsites = createAccountFormData.websites.filter(
-      (_, i) => i !== index,
-    );
-    setCreateAccountFormData({
-      ...createAccountFormData,
-      websites: newWebsites.length > 0 ? newWebsites : [""],
-    });
-  };
-
-  const updateCreateWebsiteField = (index: number, value: string) => {
-    const newWebsites = [...createAccountFormData.websites];
-    newWebsites[index] = value;
-    setCreateAccountFormData({
-      ...createAccountFormData,
-      websites: newWebsites,
-    });
-  };
 
   return (
     <TooltipProvider>
@@ -1905,7 +1831,7 @@ const AccountsManagement = ({
                           className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
                           onClick={() => {
                             if (!editFormData.region.includes(option.value)) {
-                              toggleRegion(option.value, true);
+                              toggleRegion(option.value);
                               setIsEditRegionPopoverOpen(false);
                             }
                           }}
@@ -1932,7 +1858,7 @@ const AccountsManagement = ({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => toggleRegion(regionValue, true)}
+                      onClick={() => toggleRegion(regionValue)}
                       className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
                     >
                       <X className="h-4 w-4" />
@@ -2333,7 +2259,14 @@ const AccountsManagement = ({
       {/* Account Creation Wizard */}
       <AccountCreationWizard
         isOpen={isCreateAccountModalOpen}
-        onClose={() => setIsCreateAccountModalOpen(false)}
+        onClose={() => {
+          setIsCreateAccountModalOpen(false);
+          // Clean up operation state when wizard closes
+          if (isOperationInProgress) {
+            endOperation();
+          }
+          setCreatingAccountId(null);
+        }}
         onComplete={handleWizardComplete}
       />
 

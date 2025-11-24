@@ -7,7 +7,8 @@ export interface Opportunity {
   display_name: string;
   description: string;
   references: string[];
-  strength_node_id: string;
+  strength_node_id?: string | null; // For business SWOT opportunities
+  weakness_node_id?: string | null; // For competitive opportunities
   created_time: string;
   last_modified: string;
   created_by?: string;
@@ -17,7 +18,8 @@ export interface Opportunity {
 export interface OpportunityCreate {
   display_name: string;
   description: string;
-  strength_node_id: string;
+  strength_node_id?: string; // For business SWOT opportunities
+  weakness_node_id?: string; // For competitive opportunities
   references?: string[];
 }
 
@@ -36,12 +38,17 @@ class OpportunityService {
   async list(
     accountId: AccountId,
     strengthNodeId?: string,
+    weaknessNodeId?: string,
     skip = 0,
     limit = 1000,
   ): Promise<OpportunityListResponse> {
+    const params: Record<string, any> = { skip, limit };
+    if (strengthNodeId) params.strength_node_id = strengthNodeId;
+    if (weaknessNodeId) params.weakness_node_id = weaknessNodeId;
+
     const response = await api.get(
       `/api/v1/knowledge-graph/${accountId}/opportunities`,
-      { params: { strength_node_id: strengthNodeId, skip, limit } },
+      { params },
     );
     return response.data;
   }

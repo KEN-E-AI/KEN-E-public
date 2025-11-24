@@ -93,7 +93,8 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     };
 
     loadConversations();
-  }, [sessionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount, not when sessionId changes
 
   // Create a new chat conversation
   const createNewChat = useCallback(async () => {

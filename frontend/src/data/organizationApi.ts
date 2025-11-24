@@ -99,6 +99,10 @@ export async function getOrganizations(): Promise<Organization[]> {
 export async function getOrganizationById(
   organizationId: string,
 ): Promise<Organization | undefined> {
+  console.warn(
+    `[PERFORMANCE] getOrganizationById called individually for ${organizationId}. Consider using getOrganizationsBatch instead.`,
+    new Error().stack,
+  );
   try {
     const organization = await apiCall<Organization>(
       `/api/v1/organizations/${organizationId}`,
@@ -196,6 +200,10 @@ export async function getAllAccounts(): Promise<Account[]> {
 export async function getAccountsByOrganizationId(
   organizationId: string,
 ): Promise<Account[]> {
+  console.warn(
+    `[PERFORMANCE] getAccountsByOrganizationId called individually for ${organizationId}. Consider using getOrganizationsBatch with include_accounts=true instead.`,
+    new Error().stack,
+  );
   return getAccounts(organizationId);
 }
 
@@ -464,6 +472,74 @@ export async function createNewAccount(accountData: {
 }
 
 // Function to fetch child organizations for agency organizations
+/**
+ * Fetch multiple organizations with their accounts in a single batch request.
+ * This is much more efficient than making individual calls for each organization.
+ */
+export async function getOrganizationsBatch(
+  organizationIds: string[],
+  includeAccounts: boolean = true,
+): Promise<Record<string, Organization & { accounts: Account[] }>> {
+  console.log(
+    `[BATCH API] getOrganizationsBatch called with ${organizationIds.length} orgs:`,
+    organizationIds,
+  );
+  if (organizationIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const idsParam = organizationIds.join(",");
+    console.log(
+      `[BATCH API] Calling /api/v1/organizations/batch?ids=${idsParam}`,
+    );
+    const data = await apiCall<
+      Record<string, Organization & { accounts: Account[] }>
+    >(`/api/v1/organizations/batch`, {
+      params: {
+        ids: idsParam,
+        include_accounts: includeAccounts,
+      },
+    });
+    console.log(
+      `[BATCH API] Batch request successful, got ${Object.keys(data).length} orgs`,
+    );
+    return data;
+  } catch (error) {
+    console.error("[BATCH API] Failed to fetch organizations batch:", error);
+    return {};
+  }
+}
+
+/**
+ * Fetch child organizations with their accounts in a single request.
+ * This replaces the N+1 pattern of fetching each child individually.
+ */
+export async function getChildOrganizationsWithAccounts(
+  parentOrgId: string,
+  includeAccounts: boolean = true,
+): Promise<Array<Organization & { accounts: Account[] }>> {
+  try {
+    const data = await apiCall<{
+      children: Array<Organization & { accounts: Account[] }>;
+    }>(`/api/v1/organizations/${parentOrgId}/children`, {
+      params: {
+        include_accounts: includeAccounts,
+      },
+    });
+    return data.children;
+  } catch (error) {
+    console.error(
+      `Failed to fetch child organizations for ${parentOrgId}:`,
+      error,
+    );
+    return [];
+  }
+}
+
+/**
+ * @deprecated Use getChildOrganizationsWithAccounts instead for better performance
+ */
 export async function getChildOrganizations(
   parentOrgId: string,
 ): Promise<Organization[]> {

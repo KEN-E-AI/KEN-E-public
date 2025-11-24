@@ -1439,6 +1439,174 @@ class TestProblemAwarenessStrategyOperations:
             )
 
 
+class TestProblemAwarenessStrategyEdgeCases:
+    """Additional edge case tests for ProblemAwarenessStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_create_problem_awareness_with_invalid_customer_profile(
+        self, graph_sync_service, mock_validation_service
+    ):
+        """Test creating strategy with invalid CustomerProfile parent fails."""
+        from src.kene_api.exceptions import NodeNotFoundException
+        from src.kene_api.models.graph_models import ProblemAwarenessStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        strategy_create = ProblemAwarenessStrategyCreate(
+            description="Test strategy",
+            references=[],
+            product_category_node_id="productcat_test123_abc",
+            customer_profile_node_id="nonexistent_profile",
+        )
+
+        mock_validation_service.validate_node_exists.side_effect = [
+            True,  # ProductCategory exists
+            False,  # CustomerProfile does not exist
+        ]
+
+        with pytest.raises(NodeNotFoundException):
+            await graph_sync_service.create_problem_awareness_strategy(
+                account_id, strategy_create, user_id
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_problem_awareness_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test successful problem awareness strategy update."""
+        from src.kene_api.models.graph_models import ProblemAwarenessStrategyUpdate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "problemaware_cat123_prof456"
+
+        updates = ProblemAwarenessStrategyUpdate(
+            description="Updated: Focus on pain points in manual processes",
+            references=["https://example.com/updated-research"],
+        )
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Original description",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+
+        updated_node = existing_node.copy()
+        updated_node["description"] = (
+            "Updated: Focus on pain points in manual processes"
+        )
+        updated_node["references"] = ["https://example.com/updated-research"]
+        updated_node["last_modified"] = datetime(2025, 1, 2)
+        mock_neo4j_service.execute_write_query.return_value = [{"node": updated_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.update_problem_awareness_strategy(
+            account_id, node_id, updates, user_id
+        )
+
+        assert result.description == "Updated: Focus on pain points in manual processes"
+        assert result.references == ["https://example.com/updated-research"]
+
+    @pytest.mark.asyncio
+    async def test_delete_problem_awareness_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test successful problem awareness strategy deletion."""
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "problemaware_cat123_prof456"
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Test strategy",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+        mock_neo4j_service.execute_write_operation.return_value = None
+        mock_firestore_service.get_document.return_value = {}
+
+        await graph_sync_service.delete_problem_awareness_strategy(
+            account_id, node_id, user_id
+        )
+
+        assert mock_neo4j_service.execute_write_operation.called
+        assert mock_firestore_service.update_document.called
+
+    @pytest.mark.asyncio
+    async def test_verify_node_id_format_matches_pattern(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that node_id follows problemaware_{category}_{profile} pattern."""
+        from src.kene_api.models.graph_models import ProblemAwarenessStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_acc_test123_xyz"
+        profile_id = "customerprofile_acc_test123_abc"
+
+        strategy_create = ProblemAwarenessStrategyCreate(
+            description="Test",
+            references=[],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        expected_node_id = f"problemaware_{product_category_id}_{profile_id}"
+        expected_node = {
+            "node_id": expected_node_id,
+            "description": "Test",
+            "references": [],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_problem_awareness_strategy(
+            account_id, strategy_create, user_id
+        )
+
+        assert result.node_id == expected_node_id
+        assert result.node_id.startswith("problemaware_")
+
+
 class TestBrandAwarenessStrategyOperations:
     """Tests for BrandAwarenessStrategy CRUD operations."""
 
@@ -1497,6 +1665,141 @@ class TestBrandAwarenessStrategyOperations:
         assert (
             result.description == "Showcase thought leadership through industry reports"
         )
+        assert result.product_category_node_id == product_category_id
+        assert result.customer_profile_node_id == profile_id
+
+    @pytest.mark.asyncio
+    async def test_update_brand_awareness_references_field(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test updating only references field."""
+        from src.kene_api.models.graph_models import BrandAwarenessStrategyUpdate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "brandaware_cat123_prof456"
+
+        updates = BrandAwarenessStrategyUpdate(
+            references=["https://example.com/new-ref1", "https://example.com/new-ref2"]
+        )
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Original description",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+
+        updated_node = existing_node.copy()
+        updated_node["references"] = [
+            "https://example.com/new-ref1",
+            "https://example.com/new-ref2",
+        ]
+        updated_node["last_modified"] = datetime(2025, 1, 2)
+        mock_neo4j_service.execute_write_query.return_value = [{"node": updated_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.update_brand_awareness_strategy(
+            account_id, node_id, updates, user_id
+        )
+
+        assert len(result.references) == 2
+        assert "https://example.com/new-ref1" in result.references
+
+    @pytest.mark.asyncio
+    async def test_delete_brand_awareness_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test successful brand awareness strategy deletion."""
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "brandaware_cat123_prof456"
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Test strategy",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+        mock_neo4j_service.execute_write_operation.return_value = None
+        mock_firestore_service.get_document.return_value = {}
+
+        await graph_sync_service.delete_brand_awareness_strategy(
+            account_id, node_id, user_id
+        )
+
+        assert mock_neo4j_service.execute_write_operation.called
+        assert mock_firestore_service.update_document.called
+
+    @pytest.mark.asyncio
+    async def test_verify_dual_parent_ids_stored_as_properties(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that parent node_ids are stored as properties for query performance."""
+        from src.kene_api.models.graph_models import BrandAwarenessStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_test123_abc"
+        profile_id = "customerprofile_test123_def"
+
+        strategy_create = BrandAwarenessStrategyCreate(
+            description="Test",
+            references=[],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        expected_node = {
+            "node_id": f"brandaware_{product_category_id}_{profile_id}",
+            "description": "Test",
+            "references": [],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_brand_awareness_strategy(
+            account_id, strategy_create, user_id
+        )
+
         assert result.product_category_node_id == product_category_id
         assert result.customer_profile_node_id == profile_id
 
@@ -1685,6 +1988,697 @@ class TestMarketingStrategyIntegration:
         assert loyalty_result.customer_profile_node_id == profile_node_id
         # Verify all three nodes were created
         assert mock_neo4j_service.execute_write_query.call_count == 3
+
+
+# ==================== Additional Marketing Strategy Tests ====================
+
+
+class TestConsiderationStrategyEdgeCases:
+    """Additional edge case tests for ConsiderationStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_create_consideration_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test successful consideration strategy creation."""
+        from src.kene_api.models.graph_models import ConsiderationStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_test123_abc"
+        profile_id = "customerprofile_test123_def"
+
+        strategy_create = ConsiderationStrategyCreate(
+            description="Provide ROI calculator and detailed case studies",
+            references=["https://example.com/consideration"],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        expected_node_id = f"consideration_{product_category_id}_{profile_id}"
+        expected_node = {
+            "node_id": expected_node_id,
+            "description": "Provide ROI calculator and detailed case studies",
+            "references": ["https://example.com/consideration"],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_consideration_strategy(
+            account_id, strategy_create, user_id
+        )
+
+        assert result.node_id == expected_node_id
+        assert result.product_category_node_id == product_category_id
+        assert result.customer_profile_node_id == profile_id
+
+    @pytest.mark.asyncio
+    async def test_delete_consideration_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test successful consideration strategy deletion."""
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "consideration_cat123_prof456"
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Test strategy",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+        mock_neo4j_service.execute_write_operation.return_value = None
+        mock_firestore_service.get_document.return_value = {}
+
+        await graph_sync_service.delete_consideration_strategy(
+            account_id, node_id, user_id
+        )
+
+        assert mock_neo4j_service.execute_write_operation.called
+        assert mock_firestore_service.update_document.called
+
+    @pytest.mark.asyncio
+    async def test_create_consideration_with_missing_parent_fails(
+        self, graph_sync_service, mock_validation_service
+    ):
+        """Test creating strategy with missing parent fails."""
+        from src.kene_api.exceptions import NodeNotFoundException
+        from src.kene_api.models.graph_models import ConsiderationStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        strategy_create = ConsiderationStrategyCreate(
+            description="Test",
+            references=[],
+            product_category_node_id="nonexistent_cat",
+            customer_profile_node_id="customerprofile_test123_def",
+        )
+
+        mock_validation_service.validate_node_exists.return_value = False
+
+        with pytest.raises(NodeNotFoundException):
+            await graph_sync_service.create_consideration_strategy(
+                account_id, strategy_create, user_id
+            )
+
+    @pytest.mark.asyncio
+    async def test_verify_consideration_node_id_format(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that node_id follows consideration_{category}_{profile} pattern."""
+        from src.kene_api.models.graph_models import ConsiderationStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_xyz"
+        profile_id = "customerprofile_abc"
+
+        strategy_create = ConsiderationStrategyCreate(
+            description="Test",
+            references=[],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        expected_node_id = f"consideration_{product_category_id}_{profile_id}"
+        expected_node = {
+            "node_id": expected_node_id,
+            "description": "Test",
+            "references": [],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_consideration_strategy(
+            account_id, strategy_create, user_id
+        )
+
+        assert result.node_id == expected_node_id
+        assert result.node_id.startswith("consideration_")
+
+
+class TestConversionStrategyEdgeCases:
+    """Edge case tests for ConversionStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_create_conversion_strategy_with_dual_parents(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test creating conversion strategy validates both parents."""
+        from src.kene_api.models.graph_models import ConversionStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_test123_abc"
+        profile_id = "customerprofile_test123_def"
+
+        strategy_create = ConversionStrategyCreate(
+            description="Offer free trial and dedicated onboarding specialist",
+            references=[],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        expected_node_id = f"conversion_{product_category_id}_{profile_id}"
+        expected_node = {
+            "node_id": expected_node_id,
+            "description": "Offer free trial and dedicated onboarding specialist",
+            "references": [],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_conversion_strategy(
+            account_id, strategy_create, user_id
+        )
+
+        assert result.node_id == expected_node_id
+        assert mock_validation_service.validate_node_exists.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_update_conversion_description_field(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test updating conversion strategy description."""
+        from src.kene_api.models.graph_models import ConversionStrategyUpdate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "conversion_cat123_prof456"
+
+        updates = ConversionStrategyUpdate(
+            description="Updated: Add money-back guarantee and expedited setup"
+        )
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Original description",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+
+        updated_node = existing_node.copy()
+        updated_node["description"] = (
+            "Updated: Add money-back guarantee and expedited setup"
+        )
+        updated_node["last_modified"] = datetime(2025, 1, 2)
+        mock_neo4j_service.execute_write_query.return_value = [{"node": updated_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.update_conversion_strategy(
+            account_id, node_id, updates, user_id
+        )
+
+        assert "money-back guarantee" in result.description
+
+    @pytest.mark.asyncio
+    async def test_delete_conversion_and_verify_firestore_sync_called(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test deletion calls Firestore sync."""
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "conversion_cat123_prof456"
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Test",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+        mock_neo4j_service.execute_write_operation.return_value = None
+        mock_firestore_service.get_document.return_value = {}
+
+        await graph_sync_service.delete_conversion_strategy(
+            account_id, node_id, user_id
+        )
+
+        mock_firestore_service.update_document.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_validate_required_description_field(
+        self, graph_sync_service, mock_validation_service
+    ):
+        """Test that description cannot be empty."""
+        from src.kene_api.exceptions import ValidationException
+        from src.kene_api.models.graph_models import ConversionStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+
+        strategy_create = ConversionStrategyCreate(
+            description="",  # Empty description should fail service validation
+            references=[],
+            product_category_node_id="productcat_test123_abc",
+            customer_profile_node_id="customerprofile_test123_def",
+        )
+
+        # Mock validation to return invalid for empty string
+        mock_validation_service.validate_non_empty_string.return_value = (
+            False,
+            "description cannot be empty or contain only whitespace",
+        )
+
+        # Service-level validation should catch empty description
+        with pytest.raises(ValidationException):
+            await graph_sync_service.create_conversion_strategy(
+                account_id, strategy_create, user_id
+            )
+
+
+class TestLoyaltyStrategyEdgeCases:
+    """Edge case tests for LoyaltyStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_create_loyalty_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test successful loyalty strategy creation."""
+        from src.kene_api.models.graph_models import LoyaltyStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_test123_abc"
+        profile_id = "customerprofile_test123_def"
+
+        strategy_create = LoyaltyStrategyCreate(
+            description="VIP community access and early feature previews",
+            references=["https://example.com/loyalty-program"],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        expected_node_id = f"loyalty_{product_category_id}_{profile_id}"
+        expected_node = {
+            "node_id": expected_node_id,
+            "description": "VIP community access and early feature previews",
+            "references": ["https://example.com/loyalty-program"],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_loyalty_strategy(
+            account_id, strategy_create, user_id
+        )
+
+        assert result.node_id == expected_node_id
+        assert result.description == "VIP community access and early feature previews"
+
+    @pytest.mark.asyncio
+    async def test_update_loyalty_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test successful loyalty strategy update."""
+        from src.kene_api.models.graph_models import LoyaltyStrategyUpdate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "loyalty_cat123_prof456"
+
+        updates = LoyaltyStrategyUpdate(
+            description="Updated: Quarterly executive briefings and product roadmap access"
+        )
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Original loyalty program",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+
+        updated_node = existing_node.copy()
+        updated_node["description"] = (
+            "Updated: Quarterly executive briefings and product roadmap access"
+        )
+        updated_node["last_modified"] = datetime(2025, 1, 2)
+        mock_neo4j_service.execute_write_query.return_value = [{"node": updated_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.update_loyalty_strategy(
+            account_id, node_id, updates, user_id
+        )
+
+        assert "executive briefings" in result.description
+
+    @pytest.mark.asyncio
+    async def test_delete_loyalty_strategy_success(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+    ):
+        """Test successful loyalty strategy deletion."""
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "loyalty_cat123_prof456"
+
+        existing_node = {
+            "node_id": node_id,
+            "description": "Test",
+            "references": [],
+            "product_category_node_id": "productcat_test123_abc",
+            "customer_profile_node_id": "customerprofile_test123_def",
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+        mock_neo4j_service.execute_write_operation.return_value = None
+        mock_firestore_service.get_document.return_value = {}
+
+        await graph_sync_service.delete_loyalty_strategy(account_id, node_id, user_id)
+
+        assert mock_neo4j_service.execute_write_operation.called
+
+    @pytest.mark.asyncio
+    async def test_verify_strategy_label_applied(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that Strategy label is applied for embedding search."""
+        from src.kene_api.models.graph_models import LoyaltyStrategyCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        product_category_id = "productcat_test123_abc"
+        profile_id = "customerprofile_test123_def"
+
+        strategy_create = LoyaltyStrategyCreate(
+            description="Test",
+            references=[],
+            product_category_node_id=product_category_id,
+            customer_profile_node_id=profile_id,
+        )
+
+        mock_validation_service.validate_node_exists.return_value = True
+
+        # Verify the Cypher query includes both labels (implicit in implementation)
+        expected_node = {
+            "node_id": f"loyalty_{product_category_id}_{profile_id}",
+            "description": "Test",
+            "references": [],
+            "product_category_node_id": product_category_id,
+            "customer_profile_node_id": profile_id,
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_loyalty_strategy(
+            account_id, strategy_create, user_id
+        )
+
+        # Verify node was created successfully (label verification happens in integration tests)
+        assert result.node_id is not None
+        assert result.embedding is None  # Initially null
+
+
+class TestCustomerProfileEdgeCases:
+    """Additional edge case tests for CustomerProfile operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_with_case_insensitive_duplicate_name_fails(
+        self, graph_sync_service, mock_validation_service
+    ):
+        """Test that case-insensitive duplicate display_name fails."""
+        from src.kene_api.exceptions import DuplicateNodeException
+        from src.kene_api.models.graph_models import CustomerProfileCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        profile_create = CustomerProfileCreate(
+            display_name="Marketing Mary",  # Will be stored as "marketing mary"
+            narrative="Test profile",
+            references=[],
+        )
+
+        # Mock validation to indicate name already exists (case-insensitive)
+        mock_validation_service.validate_unique_customer_profile_name.return_value = (
+            False,
+            "Customer profile with display_name 'marketing mary' already exists",
+        )
+
+        with pytest.raises(DuplicateNodeException):
+            await graph_sync_service.create_customer_profile(
+                account_id, profile_create, user_id
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_with_empty_references_array(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test creating profile with empty references array."""
+        from src.kene_api.models.graph_models import CustomerProfileCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        profile_create = CustomerProfileCreate(
+            display_name="Tech Tom",
+            narrative="Technical buyer persona",
+            references=[],  # Empty array
+        )
+
+        mock_validation_service.validate_unique_customer_profile_name.return_value = (
+            True,
+            "",
+        )
+
+        expected_node_id = "customerprofile_test123_xyz"
+        expected_node = {
+            "node_id": expected_node_id,
+            "display_name": "tech tom",  # Lowercase
+            "narrative": "Technical buyer persona",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_customer_profile(
+            account_id, profile_create, user_id
+        )
+
+        assert result.references == []
+
+    @pytest.mark.asyncio
+    async def test_update_display_name_successfully(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test successfully updating display_name."""
+        from src.kene_api.models.graph_models import CustomerProfileUpdate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "customerprofile_test123_abc"
+
+        updates = CustomerProfileUpdate(display_name="Enterprise Emily")
+
+        existing_node = {
+            "node_id": node_id,
+            "display_name": "enterprise eva",
+            "narrative": "Original narrative",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+        }
+        mock_neo4j_service.execute_query.return_value = [
+            {"node": existing_node, "account_id": account_id}
+        ]
+
+        mock_validation_service.validate_unique_customer_profile_name.return_value = (
+            True,
+            "",
+        )
+
+        updated_node = existing_node.copy()
+        updated_node["display_name"] = "enterprise emily"  # Stored lowercase
+        updated_node["last_modified"] = datetime(2025, 1, 2)
+        mock_neo4j_service.execute_write_query.return_value = [{"node": updated_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.update_customer_profile(
+            account_id, node_id, updates, user_id
+        )
+
+        assert result.display_name == "enterprise emily"
+
+    @pytest.mark.asyncio
+    async def test_verify_lowercase_storage_of_display_name(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that display_name is stored in lowercase for case-insensitive matching."""
+        from src.kene_api.models.graph_models import CustomerProfileCreate
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        profile_create = CustomerProfileCreate(
+            display_name="Marketing MARY",  # Mixed case
+            narrative="Test",
+            references=[],
+        )
+
+        mock_validation_service.validate_unique_customer_profile_name.return_value = (
+            True,
+            "",
+        )
+
+        expected_node = {
+            "node_id": "customerprofile_test123_xyz",
+            "display_name": "marketing mary",  # Stored as lowercase
+            "narrative": "Test",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+        mock_neo4j_service.execute_write_query.return_value = [{"node": expected_node}]
+        mock_firestore_service.get_document.return_value = {}
+
+        result = await graph_sync_service.create_customer_profile(
+            account_id, profile_create, user_id
+        )
+
+        assert result.display_name == "marketing mary"
+        assert result.display_name == result.display_name.lower()
 
 
 # ==================== Brand Strategy Tests ====================

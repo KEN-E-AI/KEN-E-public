@@ -5,7 +5,9 @@ All models for Business, Competitive, Marketing, and Brand strategy nodes.
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from ..validators import CompetitorValidators, KeywordValidators, URLValidators
 
 # ==================== BASE MODELS ====================
 
@@ -168,10 +170,10 @@ class ValuePropositionCreate(BaseModel):
         default_factory=list, description="Source URLs or references"
     )
     parent_node_id: str = Field(
-        ..., description="Parent node ID (Product, ProductCategory, or Account)"
+        ..., description="Parent node ID (Product, ProductCategory, Account, SubstituteProduct, or Competitor)"
     )
     parent_node_type: str = Field(
-        ..., description="Type of parent: Product, ProductCategory, or Account"
+        ..., description="Type of parent: Product, ProductCategory, Account, SubstituteProduct, or Competitor"
     )
 
 
@@ -190,7 +192,7 @@ class ValuePropositionResponse(NodeBase):
     - Some GET operations don't include parent relationship data in queries
     - Backward compatibility with existing API responses
     - When present, both fields must be populated together (validated)
-    - Valid parent types: Product, ProductCategory, Account
+    - Valid parent types: Product, ProductCategory, Account, SubstituteProduct, Competitor
 
     Semantic note: ValuePropositions SHOULD always have a parent in the database,
     but the response model is flexible to accommodate various query patterns.
@@ -211,7 +213,7 @@ class ValuePropositionResponse(NodeBase):
         """
         if v is not None:
             # Validate it's a known parent type
-            valid_parent_types = {"Product", "ProductCategory", "Account"}
+            valid_parent_types = {"Product", "ProductCategory", "Account", "SubstituteProduct", "Competitor"}
             if v not in valid_parent_types:
                 raise ValueError(
                     f"parent_node_type must be one of {valid_parent_types}, got: {v}"
@@ -347,7 +349,12 @@ class WeaknessListResponse(BaseModel):
 
 
 class OpportunityCreate(BaseModel):
-    """Request model for creating an opportunity."""
+    """Request model for creating an opportunity.
+
+    Opportunities can be created from either:
+    - Strength nodes (business SWOT analysis)
+    - CompetitorWeakness nodes (competitive analysis)
+    """
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -373,9 +380,30 @@ class OpportunityCreate(BaseModel):
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
     )
-    strength_node_id: str = Field(
-        ..., description="Parent Strength node_id that creates this opportunity"
+    strength_node_id: str | None = Field(
+        None, description="Parent Strength node_id (for business SWOT opportunities)"
     )
+    weakness_node_id: str | None = Field(
+        None,
+        description="Parent CompetitorWeakness node_id (for competitive opportunities)",
+    )
+
+    @model_validator(mode="after")
+    def validate_exactly_one_parent(self) -> "OpportunityCreate":
+        """Ensure exactly one parent is provided."""
+        has_strength = self.strength_node_id is not None
+        has_weakness = self.weakness_node_id is not None
+
+        if not has_strength and not has_weakness:
+            raise ValueError(
+                "Either strength_node_id or weakness_node_id must be provided"
+            )
+        if has_strength and has_weakness:
+            raise ValueError(
+                "Only one of strength_node_id or weakness_node_id can be provided"
+            )
+
+        return self
 
 
 class OpportunityUpdate(BaseModel):
@@ -392,7 +420,8 @@ class OpportunityResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
-    strength_node_id: str
+    strength_node_id: str | None = None  # For business SWOT opportunities
+    weakness_node_id: str | None = None  # For competitive opportunities
 
 
 class OpportunityListResponse(BaseModel):
@@ -427,9 +456,29 @@ class RiskCreate(BaseModel):
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
     )
-    weakness_node_id: str = Field(
-        ..., description="Parent Weakness node_id that creates this risk"
+    weakness_node_id: str | None = Field(
+        None, description="Parent Weakness node_id (business SWOT)"
     )
+    strength_node_id: str | None = Field(
+        None, description="Parent CompetitorStrength node_id (competitive analysis)"
+    )
+
+    @model_validator(mode="after")
+    def validate_exactly_one_parent(self):
+        """Ensure exactly one parent is provided."""
+        has_weakness = self.weakness_node_id is not None
+        has_strength = self.strength_node_id is not None
+
+        if not has_weakness and not has_strength:
+            raise ValueError(
+                "Either weakness_node_id or strength_node_id must be provided"
+            )
+        if has_weakness and has_strength:
+            raise ValueError(
+                "Only one of weakness_node_id or strength_node_id can be provided"
+            )
+
+        return self
 
 
 class RiskUpdate(BaseModel):
@@ -446,7 +495,8 @@ class RiskResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
-    weakness_node_id: str
+    weakness_node_id: str | None = None  # For business SWOT risks
+    strength_node_id: str | None = None  # For competitive risks (from CompetitorStrength)
 
 
 class RiskListResponse(BaseModel):
@@ -607,6 +657,8 @@ class CompetitorCreate(BaseModel):
                         "https://molekule.com/about",
                         "https://crunchbase.com/organization/molekule",
                     ],
+                    "website": "https://molekule.com",
+                    "keywords": ["molekule", "peco technology", "air purifier"],
                 }
             ]
         }
@@ -619,6 +671,31 @@ class CompetitorCreate(BaseModel):
     references: list[str] = Field(
         default_factory=list, description="Source URLs or references"
     )
+    website: str | None = Field(
+        default=None, description="Competitor website URL for news monitoring"
+    )
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Keywords for news monitoring system (auto-populated with competitor name if empty)",
+    )
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate competitor name."""
+        return CompetitorValidators.validate_competitor_name(v)
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: str | None) -> str | None:
+        """Validate competitor website URL."""
+        return URLValidators.validate_website_url(v)
+
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
 
 
 class CompetitorUpdate(BaseModel):
@@ -635,6 +712,7 @@ class CompetitorResponse(NodeBase):
     display_name: str
     description: str
     references: list[str]
+    website: str | None = None
 
 
 class CompetitorListResponse(BaseModel):

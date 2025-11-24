@@ -220,7 +220,8 @@ class PermissionMigrator:
 
             # Process each user
             for idx, user_data in enumerate(users, 1):
-                user_id = user_data.get("uid")
+                # Use uid if available, fallback to document id (added by list_documents)
+                user_id = user_data.get("uid") or user_data.get("id")
                 if not user_id:
                     # Collect detailed info for reporting
                     users_without_uid.append(
@@ -231,7 +232,7 @@ class PermissionMigrator:
                         }
                     )
                     logger.warning(
-                        f"Skipping user at index {idx}: Missing uid field. "
+                        f"Skipping user at index {idx}: Missing both uid and id fields. "
                         f"Email: {user_data.get('email', 'N/A')}, "
                         f"Available keys: {list(user_data.keys())}"
                     )

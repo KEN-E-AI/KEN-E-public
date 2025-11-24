@@ -2,8 +2,12 @@
 
 Tests that all node types in VALID_NODE_TYPES constant work correctly
 through the entire API stack, catching missing node types early in development.
+
+These tests require real database connections and are skipped in CI
+unless DATABASE_INTEGRATION_TESTS environment variable is set to 'true'.
 """
 
+import os
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -15,6 +19,12 @@ from src.kene_api.auth.models import UserContext
 # Test account and user
 TEST_ACCOUNT_ID = "test_account_node_validation"
 TEST_USER_ID = "test_user_node_validation"
+
+# Skip all tests in this module in CI unless DATABASE_INTEGRATION_TESTS is enabled
+pytestmark = pytest.mark.skipif(
+    os.getenv("DATABASE_INTEGRATION_TESTS") != "true",
+    reason="Requires real Neo4j and Firestore databases - set DATABASE_INTEGRATION_TESTS=true to run"
+)
 
 
 def mock_get_current_user() -> UserContext:

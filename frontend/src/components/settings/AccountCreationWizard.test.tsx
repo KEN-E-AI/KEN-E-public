@@ -2,9 +2,35 @@ import { describe, test, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AccountCreationWizard } from "./AccountCreationWizard";
+import { AuthContext } from "@/contexts/AuthContext";
 
 const mockOnClose = vi.fn();
 const mockOnComplete = vi.fn();
+
+// Mock auth context value
+const mockAuthContext = {
+  user: { uid: "test-user", email: "test@example.com" },
+  isSuperAdmin: false,
+  loading: false,
+  signOut: vi.fn(),
+  signInWithEmailAndPassword: vi.fn(),
+  sendPasswordResetEmail: vi.fn(),
+  confirmPasswordReset: vi.fn(),
+  verifyPasswordResetCode: vi.fn(),
+  applyActionCode: vi.fn(),
+  createUserWithEmailAndPassword: vi.fn(),
+};
+
+// Helper to render with auth context
+const renderWithAuth = (
+  ui: React.ReactElement,
+  { isSuperAdmin = false } = {},
+) => {
+  const contextValue = { ...mockAuthContext, isSuperAdmin };
+  return render(
+    <AuthContext.Provider value={contextValue}>{ui}</AuthContext.Provider>,
+  );
+};
 
 describe("AccountCreationWizard", () => {
   beforeEach(() => {
@@ -13,7 +39,7 @@ describe("AccountCreationWizard", () => {
   });
 
   test("renders wizard when isOpen is true", () => {
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -27,7 +53,7 @@ describe("AccountCreationWizard", () => {
   });
 
   test("does not render wizard when isOpen is false", () => {
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={false}
         onClose={mockOnClose}
@@ -40,7 +66,7 @@ describe("AccountCreationWizard", () => {
 
   test("calls onClose when cancel button is clicked", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -53,7 +79,7 @@ describe("AccountCreationWizard", () => {
   });
 
   test("disables Next button when required fields are empty", () => {
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -67,7 +93,7 @@ describe("AccountCreationWizard", () => {
 
   test("enables Next button when required fields are filled", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -88,7 +114,7 @@ describe("AccountCreationWizard", () => {
 
   test("progresses through wizard steps", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -111,7 +137,7 @@ describe("AccountCreationWizard", () => {
 
   test("navigates back to previous step", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -135,7 +161,7 @@ describe("AccountCreationWizard", () => {
 
   test("selects template and updates form data", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -162,7 +188,7 @@ describe("AccountCreationWizard", () => {
 
   test("validates template selection before proceeding", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -185,7 +211,7 @@ describe("AccountCreationWizard", () => {
 
   test("filters templates by category", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -212,7 +238,7 @@ describe("AccountCreationWizard", () => {
 
   test("shows configuration step with selected template data", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -241,7 +267,7 @@ describe("AccountCreationWizard", () => {
 
   test("validates configuration step before proceeding", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -276,7 +302,7 @@ describe("AccountCreationWizard", () => {
 
   test("shows final step with settings and summary", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -305,7 +331,7 @@ describe("AccountCreationWizard", () => {
 
   test("completes wizard and calls onComplete", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}
@@ -340,7 +366,7 @@ describe("AccountCreationWizard", () => {
 
   test("updates progress bar correctly", async () => {
     const user = userEvent.setup();
-    render(
+    renderWithAuth(
       <AccountCreationWizard
         isOpen={true}
         onClose={mockOnClose}

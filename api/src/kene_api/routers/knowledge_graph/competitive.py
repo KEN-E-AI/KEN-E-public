@@ -1,0 +1,1168 @@
+"""Competitive strategy node endpoints.
+
+CRUD endpoints for 6 competitive strategy node types:
+- Competitor, CompetitorTactic, CompetitorStrength, CompetitorWeakness
+- SubstituteProduct, CompetitiveEnvironment (hub)
+"""
+
+import logging
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+
+from ...auth.dependencies import get_current_user
+from ...auth.models import UserContext
+from ...firestore import FirestoreService, get_firestore_service
+from ...models.graph_models import (
+    CompetitiveEnvironmentResponse,
+    CompetitiveEnvironmentUpdate,
+    CompetitorCreate,
+    CompetitorListResponse,
+    CompetitorResponse,
+    CompetitorStrengthCreate,
+    CompetitorStrengthListResponse,
+    CompetitorStrengthResponse,
+    CompetitorStrengthUpdate,
+    CompetitorTacticCreate,
+    CompetitorTacticListResponse,
+    CompetitorTacticResponse,
+    CompetitorTacticUpdate,
+    CompetitorUpdate,
+    CompetitorWeaknessCreate,
+    CompetitorWeaknessListResponse,
+    CompetitorWeaknessResponse,
+    CompetitorWeaknessUpdate,
+    DeleteResponse,
+    SubstituteProductCreate,
+    SubstituteProductListResponse,
+    SubstituteProductResponse,
+    SubstituteProductUpdate,
+)
+from ...services.graph_sync_service import GraphSyncService, get_graph_sync_service
+from ...services.monitoring_sync_service import MonitoringSyncService
+from .crud_factory import CRUDEndpoints
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ==================== COMPETITOR ENDPOINTS ====================
+
+
+@router.post("/{account_id}/competitors", response_model=CompetitorResponse)
+async def create_competitor(
+    account_id: str,
+    competitor: CompetitorCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorResponse:
+    """Create a new competitor with optional monitoring sync.
+
+    Requires edit permission for the account.
+    If keywords or website are provided, also creates a monitoring entry in Firestore.
+    """
+    # Create competitor in Neo4j
+    created_competitor = await CRUDEndpoints.create_node(
+        account_id=account_id,
+        node_type="Competitor",
+        create_data=competitor,
+        service_method=service.create_competitor,
+        service=service,
+        user=user,
+    )
+
+    # Sync to monitoring topics if keywords or website provided
+    if competitor.keywords or competitor.website:
+        await MonitoringSyncService.sync_competitor_to_monitoring(
+            firestore=firestore,
+            account_id=account_id,
+            competitor_name=competitor.display_name,
+            website=competitor.website,
+            keywords=competitor.keywords,
+            operation="add",
+        )
+
+    return created_competitor
+
+
+@router.get("/{account_id}/competitors", response_model=CompetitorListResponse)
+async def list_competitors(
+    account_id: str,
+    skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
+    limit: int | None = Query(
+        None, ge=1, le=1000, description="Maximum number of items to return"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorListResponse:
+    """List all competitors with optional pagination."""
+    return await CRUDEndpoints.list_nodes(
+        account_id=account_id,
+        node_type="Competitor",
+        response_model_class=CompetitorResponse,
+        list_response_class=CompetitorListResponse,
+        skip=skip,
+        limit=limit,
+        service=service,
+        user=user,
+    )
+
+
+@router.get("/{account_id}/competitors/{node_id}", response_model=CompetitorResponse)
+async def get_competitor(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorResponse:
+    """Get a specific competitor by node_id."""
+    return await CRUDEndpoints.get_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="Competitor",
+        service=service,
+        user=user,
+    )
+
+
+@router.patch("/{account_id}/competitors/{node_id}", response_model=CompetitorResponse)
+async def update_competitor(
+    account_id: str,
+    node_id: str,
+    updates: CompetitorUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorResponse:
+    """Update a competitor."""
+    return await CRUDEndpoints.update_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="Competitor",
+        update_data=updates,
+        service_method=service.update_competitor,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/competitors/{node_id}/dependent-counts",
+    response_model=dict,
+)
+async def get_competitor_dependent_counts(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Get counts of all entities that will be deleted with this competitor.
+
+    Returns counts for:
+    - Strengths (and their nested Risks)
+    - Weaknesses (and their nested Opportunities)
+    - Tactics
+    - Substitute Products (and their nested Value Propositions)
+    - Value Propositions linked directly to Competitor
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    # Query to count all dependent entities
+    query = """
+    MATCH (c:Competitor {node_id: $node_id})
+    OPTIONAL MATCH (c)-[:HAS_STRENGTH]->(cs:CompetitorStrength)
+    OPTIONAL MATCH (cs)-[:CREATES]->(r:Risk)
+    OPTIONAL MATCH (c)-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)
+    OPTIONAL MATCH (cw)-[:CREATES]->(o:Opportunity)
+    OPTIONAL MATCH (c)-[:USES_TACTIC]->(ct:CompetitorTactic)
+    OPTIONAL MATCH (c)-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)
+    OPTIONAL MATCH (sp)-[:HAS_VALUE_PROPOSITION]->(spvp:ValueProposition)
+    OPTIONAL MATCH (c)-[:HAS_VALUE_PROPOSITION]->(cvp:ValueProposition)
+    RETURN
+      count(DISTINCT cs) as strengths,
+      count(DISTINCT cw) as weaknesses,
+      count(DISTINCT ct) as tactics,
+      count(DISTINCT sp) as substituteProducts,
+      count(DISTINCT r) as risks,
+      count(DISTINCT o) as opportunities,
+      count(DISTINCT spvp) + count(DISTINCT cvp) as valuePropositions
+    """
+
+    result = await service.neo4j.execute_query(query, {"node_id": node_id})
+
+    if not result:
+        return {
+            "strengths": 0,
+            "weaknesses": 0,
+            "tactics": 0,
+            "substituteProducts": 0,
+            "risks": 0,
+            "opportunities": 0,
+            "valuePropositions": 0,
+        }
+
+    return dict(result[0])
+
+
+@router.delete("/{account_id}/competitors/{node_id}", response_model=DeleteResponse)
+async def delete_competitor(
+    account_id: str,
+    node_id: str,
+    cascade: bool = Query(
+        False, description="Cascade delete all dependent entities"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a competitor with monitoring cleanup.
+
+    Args:
+        account_id: Account ID
+        node_id: Competitor node ID
+        cascade: If True, cascade delete all dependent entities (strengths, weaknesses, etc.)
+                 If False, fail if dependencies exist (current behavior)
+
+    Also deletes the corresponding monitoring entry from Firestore if it exists.
+    """
+    # Get competitor name before deletion
+    try:
+        competitor = await CRUDEndpoints.get_node(
+            account_id=account_id,
+            node_id=node_id,
+            node_type="Competitor",
+            response_class=CompetitorResponse,
+            service=service,
+            user=user,
+        )
+        competitor_name = competitor.display_name
+    except Exception as e:
+        logger.warning(f"Could not fetch competitor before deletion: {e}")
+        competitor_name = None
+
+    # Delete from Neo4j
+    result = await CRUDEndpoints.delete_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="Competitor",
+        service_method=lambda a, n, u: service.delete_competitor(
+            a, n, u, cascade=cascade
+        ),
+        service=service,
+        user=user,
+    )
+
+    # Cleanup monitoring topics
+    if competitor_name:
+        await MonitoringSyncService.sync_competitor_to_monitoring(
+            firestore=firestore,
+            account_id=account_id,
+            competitor_name=competitor_name,
+            website=None,
+            keywords=[],
+            operation="remove",
+        )
+
+    return result
+
+
+# ==================== COMPETITOR TACTIC ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/competitor-tactics", response_model=CompetitorTacticResponse
+)
+async def create_competitor_tactic(
+    account_id: str,
+    competitor_tactic: CompetitorTacticCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorTacticResponse:
+    """Create a new competitor tactic.
+
+    Requires edit permission for the account.
+    """
+    return await CRUDEndpoints.create_node(
+        account_id=account_id,
+        node_type="CompetitorTactic",
+        create_data=competitor_tactic,
+        service_method=service.create_competitor_tactic,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/competitor-tactics", response_model=CompetitorTacticListResponse
+)
+async def list_competitor_tactics(
+    account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
+    skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
+    limit: int | None = Query(
+        None, ge=1, le=1000, description="Maximum number of items to return"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorTacticListResponse:
+    """List all competitor tactics with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        # Get total count
+        total_count = await service.count_nodes(
+            account_id,
+            "CompetitorTactic",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        # Get paginated results
+        tactics_data = await service.list_nodes(
+            account_id,
+            "CompetitorTactic",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        # Map parent_node_id to competitor_node_id for response model
+        tactics = [
+            CompetitorTacticResponse(
+                **{
+                    **t,
+                    "competitor_node_id": t.get("parent_node_id", ""),
+                }
+            )
+            for t in tactics_data
+        ]
+
+        return CompetitorTacticListResponse(tactics=tactics, total_count=total_count)
+    except Exception as e:
+        logger.exception(f"Failed to list competitor tactics: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list competitor tactics",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/competitor-tactics/{node_id}",
+    response_model=CompetitorTacticResponse,
+)
+async def get_competitor_tactic(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorTacticResponse:
+    """Get a specific competitor tactic by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:USES_TACTIC]->(t:CompetitorTactic {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorTactic",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=CompetitorTacticResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.patch(
+    "/{account_id}/competitor-tactics/{node_id}",
+    response_model=CompetitorTacticResponse,
+)
+async def update_competitor_tactic(
+    account_id: str,
+    node_id: str,
+    updates: CompetitorTacticUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorTacticResponse:
+    """Update a competitor tactic."""
+    return await CRUDEndpoints.update_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorTactic",
+        update_data=updates,
+        service_method=service.update_competitor_tactic,
+        service=service,
+        user=user,
+    )
+
+
+@router.delete(
+    "/{account_id}/competitor-tactics/{node_id}", response_model=DeleteResponse
+)
+async def delete_competitor_tactic(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a competitor tactic."""
+    return await CRUDEndpoints.delete_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorTactic",
+        service_method=service.delete_competitor_tactic,
+        service=service,
+        user=user,
+    )
+
+
+# ==================== COMPETITOR STRENGTH ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/competitor-strengths", response_model=CompetitorStrengthResponse
+)
+async def create_competitor_strength(
+    account_id: str,
+    competitor_strength: CompetitorStrengthCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorStrengthResponse:
+    """Create a new competitor strength.
+
+    Requires edit permission for the account.
+    """
+    return await CRUDEndpoints.create_node(
+        account_id=account_id,
+        node_type="CompetitorStrength",
+        create_data=competitor_strength,
+        service_method=service.create_competitor_strength,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/competitor-strengths", response_model=CompetitorStrengthListResponse
+)
+async def list_competitor_strengths(
+    account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
+    skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
+    limit: int | None = Query(
+        None, ge=1, le=1000, description="Maximum number of items to return"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorStrengthListResponse:
+    """List all competitor strengths with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(
+            account_id,
+            "CompetitorStrength",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        strengths_data = await service.list_nodes(
+            account_id,
+            "CompetitorStrength",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        strengths = [
+            CompetitorStrengthResponse(
+                **{
+                    **s,
+                    "competitor_node_id": s.get("parent_node_id", ""),
+                }
+            )
+            for s in strengths_data
+        ]
+
+        return CompetitorStrengthListResponse(
+            strengths=strengths, total_count=total_count
+        )
+    except Exception as e:
+        logger.exception(f"Failed to list competitor strengths: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list competitor strengths",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/competitor-strengths/{node_id}",
+    response_model=CompetitorStrengthResponse,
+)
+async def get_competitor_strength(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorStrengthResponse:
+    """Get a specific competitor strength by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:HAS_STRENGTH]->(s:CompetitorStrength {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorStrength",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=CompetitorStrengthResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.patch(
+    "/{account_id}/competitor-strengths/{node_id}",
+    response_model=CompetitorStrengthResponse,
+)
+async def update_competitor_strength(
+    account_id: str,
+    node_id: str,
+    updates: CompetitorStrengthUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorStrengthResponse:
+    """Update a competitor strength."""
+    return await CRUDEndpoints.update_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorStrength",
+        update_data=updates,
+        service_method=service.update_competitor_strength,
+        service=service,
+        user=user,
+    )
+
+
+@router.delete(
+    "/{account_id}/competitor-strengths/{node_id}", response_model=DeleteResponse
+)
+async def delete_competitor_strength(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a competitor strength."""
+    return await CRUDEndpoints.delete_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorStrength",
+        service_method=service.delete_competitor_strength,
+        service=service,
+        user=user,
+    )
+
+
+# ==================== COMPETITOR WEAKNESS ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/competitor-weaknesses", response_model=CompetitorWeaknessResponse
+)
+async def create_competitor_weakness(
+    account_id: str,
+    competitor_weakness: CompetitorWeaknessCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorWeaknessResponse:
+    """Create a new competitor weakness.
+
+    Requires edit permission for the account.
+    """
+    return await CRUDEndpoints.create_node(
+        account_id=account_id,
+        node_type="CompetitorWeakness",
+        create_data=competitor_weakness,
+        service_method=service.create_competitor_weakness,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/competitor-weaknesses", response_model=CompetitorWeaknessListResponse
+)
+async def list_competitor_weaknesses(
+    account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
+    skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
+    limit: int | None = Query(
+        None, ge=1, le=1000, description="Maximum number of items to return"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorWeaknessListResponse:
+    """List all competitor weaknesses with optional pagination.
+
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        total_count = await service.count_nodes(
+            account_id,
+            "CompetitorWeakness",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+        )
+
+        weaknesses_data = await service.list_nodes(
+            account_id,
+            "CompetitorWeakness",
+            parent_node_id=competitor_node_id,
+            parent_node_type="Competitor" if competitor_node_id else None,
+            skip=skip,
+            limit=limit,
+        )
+
+        weaknesses = [
+            CompetitorWeaknessResponse(
+                **{
+                    **w,
+                    "competitor_node_id": w.get("parent_node_id", ""),
+                }
+            )
+            for w in weaknesses_data
+        ]
+
+        return CompetitorWeaknessListResponse(
+            weaknesses=weaknesses, total_count=total_count
+        )
+    except Exception as e:
+        logger.exception(f"Failed to list competitor weaknesses: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list competitor weaknesses",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/competitor-weaknesses/{node_id}",
+    response_model=CompetitorWeaknessResponse,
+)
+async def get_competitor_weakness(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorWeaknessResponse:
+    """Get a specific competitor weakness by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:HAS_WEAKNESS]->(w:CompetitorWeakness {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorWeakness",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=CompetitorWeaknessResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.patch(
+    "/{account_id}/competitor-weaknesses/{node_id}",
+    response_model=CompetitorWeaknessResponse,
+)
+async def update_competitor_weakness(
+    account_id: str,
+    node_id: str,
+    updates: CompetitorWeaknessUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitorWeaknessResponse:
+    """Update a competitor weakness."""
+    return await CRUDEndpoints.update_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorWeakness",
+        update_data=updates,
+        service_method=service.update_competitor_weakness,
+        service=service,
+        user=user,
+    )
+
+
+@router.delete(
+    "/{account_id}/competitor-weaknesses/{node_id}", response_model=DeleteResponse
+)
+async def delete_competitor_weakness(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a competitor weakness."""
+    return await CRUDEndpoints.delete_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="CompetitorWeakness",
+        service_method=service.delete_competitor_weakness,
+        service=service,
+        user=user,
+    )
+
+
+# ==================== SUBSTITUTE PRODUCT ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/substitute-products", response_model=SubstituteProductResponse
+)
+async def create_substitute_product(
+    account_id: str,
+    substitute_product: SubstituteProductCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> SubstituteProductResponse:
+    """Create a new substitute product.
+
+    Requires edit permission for the account.
+    """
+    return await CRUDEndpoints.create_node(
+        account_id=account_id,
+        node_type="SubstituteProduct",
+        create_data=substitute_product,
+        service_method=service.create_substitute_product,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/substitute-products", response_model=SubstituteProductListResponse
+)
+async def list_substitute_products(
+    account_id: str,
+    competitor_node_id: str | None = Query(None, description="Filter by competitor"),
+    product_node_id: str | None = Query(
+        None, description="Filter by product (MAY_BE_SUBSTITUTED_FOR relationship)"
+    ),
+    skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
+    limit: int | None = Query(
+        None, ge=1, le=1000, description="Maximum number of items to return"
+    ),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> SubstituteProductListResponse:
+    """List all substitute products with optional pagination.
+
+    Can filter by competitor_node_id OR product_node_id (not both).
+    Special case: Fetches parent competitor_node_id from relationship.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    # Validate: cannot filter by both
+    if competitor_node_id and product_node_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot filter by both competitor_node_id and product_node_id",
+        )
+
+    try:
+        if product_node_id:
+            # Filter by Product (reverse MAY_BE_SUBSTITUTED_FOR relationship)
+            query = """
+            MATCH (acc:Account {account_id: $account_id})
+            MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(acc)
+            MATCH (p)-[:MAY_BE_SUBSTITUTED_FOR]->(sub:SubstituteProduct)-[:BELONGS_TO]->(acc)
+            MATCH (comp:Competitor)-[:OFFERS_PRODUCT]->(sub)
+            RETURN sub as node, comp.node_id as parent_node_id, acc.account_id as account_id
+            ORDER BY sub.product_name
+            SKIP $skip
+            """
+            count_query = """
+            MATCH (p:Product {node_id: $product_node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+            MATCH (p)-[:MAY_BE_SUBSTITUTED_FOR]->(sub:SubstituteProduct)
+            RETURN count(sub) as total
+            """
+            params = {"account_id": account_id, "product_node_id": product_node_id, "skip": skip}
+            if limit:
+                query += " LIMIT $limit"
+                params["limit"] = limit
+
+            total_result = await service.neo4j.execute_query(count_query, {"account_id": account_id, "product_node_id": product_node_id})
+            total_count = total_result[0]["total"] if total_result else 0
+
+            results = await service.neo4j.execute_query(query, params)
+            products_data = [
+                {
+                    **service._neo4j_node_to_dict(r["node"]),
+                    "account_id": r["account_id"],
+                    "parent_node_id": r["parent_node_id"],
+                }
+                for r in results
+            ]
+        else:
+            # Filter by Competitor (or no filter - fetch all with competitor relationship)
+            if competitor_node_id:
+                # Use optimized list_nodes for single competitor
+                total_count = await service.count_nodes(
+                    account_id,
+                    "SubstituteProduct",
+                    parent_node_id=competitor_node_id,
+                    parent_node_type="Competitor",
+                )
+
+                products_data = await service.list_nodes(
+                    account_id,
+                    "SubstituteProduct",
+                    parent_node_id=competitor_node_id,
+                    parent_node_type="Competitor",
+                    skip=skip,
+                    limit=limit,
+                )
+            else:
+                # No filter - fetch ALL substitute products with competitor relationship
+                query = """
+                MATCH (acc:Account {account_id: $account_id})
+                MATCH (sub:SubstituteProduct)-[:BELONGS_TO]->(acc)
+                MATCH (comp:Competitor)-[:OFFERS_PRODUCT]->(sub)
+                RETURN sub as node, comp.node_id as parent_node_id, acc.account_id as account_id
+                ORDER BY sub.product_name
+                SKIP $skip
+                """
+                count_query = """
+                MATCH (sub:SubstituteProduct)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+                RETURN count(sub) as total
+                """
+                params = {"account_id": account_id, "skip": skip}
+                if limit:
+                    query += " LIMIT $limit"
+                    params["limit"] = limit
+
+                total_result = await service.neo4j.execute_query(count_query, {"account_id": account_id})
+                total_count = total_result[0]["total"] if total_result else 0
+
+                results = await service.neo4j.execute_query(query, params)
+                products_data = [
+                    {
+                        **service._neo4j_node_to_dict(r["node"]),
+                        "account_id": r["account_id"],
+                        "parent_node_id": r["parent_node_id"],
+                    }
+                    for r in results
+                ]
+
+        products = [
+            SubstituteProductResponse(
+                **{
+                    **p,
+                    "competitor_node_id": p.get("parent_node_id", ""),
+                }
+            )
+            for p in products_data
+        ]
+
+        return SubstituteProductListResponse(products=products, total_count=total_count)
+    except Exception as e:
+        logger.exception(f"Failed to list substitute products: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list substitute products",
+        ) from e
+
+
+@router.get(
+    "/{account_id}/substitute-products/{node_id}",
+    response_model=SubstituteProductResponse,
+)
+async def get_substitute_product(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> SubstituteProductResponse:
+    """Get a specific substitute product by node_id.
+
+    Special case: Fetches parent competitor relationship.
+    """
+    competitor_query = """
+    MATCH (c:Competitor)-[:OFFERS_PRODUCT]->(p:SubstituteProduct {node_id: $node_id})
+    RETURN c.node_id as competitor_node_id
+    LIMIT 1
+    """
+    return await CRUDEndpoints.get_node_with_relationship(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="SubstituteProduct",
+        relationship_query=competitor_query,
+        relationship_field="competitor_node_id",
+        response_model_class=SubstituteProductResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.patch(
+    "/{account_id}/substitute-products/{node_id}",
+    response_model=SubstituteProductResponse,
+)
+async def update_substitute_product(
+    account_id: str,
+    node_id: str,
+    updates: SubstituteProductUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> SubstituteProductResponse:
+    """Update a substitute product."""
+    return await CRUDEndpoints.update_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="SubstituteProduct",
+        update_data=updates,
+        service_method=service.update_substitute_product,
+        service=service,
+        user=user,
+    )
+
+
+@router.delete(
+    "/{account_id}/substitute-products/{node_id}", response_model=DeleteResponse
+)
+async def delete_substitute_product(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """Delete a substitute product."""
+    return await CRUDEndpoints.delete_node(
+        account_id=account_id,
+        node_id=node_id,
+        node_type="SubstituteProduct",
+        service_method=service.delete_substitute_product,
+        service=service,
+        user=user,
+    )
+
+
+# ==================== PRODUCT-SUBSTITUTE RELATIONSHIP ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/substitute-products/{substitute_id}/link-product",
+    response_model=dict,
+)
+async def link_product_to_substitute(
+    account_id: str,
+    substitute_id: str,
+    product_node_id: str = Body(..., embed=True),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Create MAY_BE_SUBSTITUTED_FOR relationship between Product and SubstituteProduct.
+
+    Requires edit permission for the account.
+    """
+    from fastapi import HTTPException, status
+
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.link_product_to_substitute(
+            account_id=account_id,
+            product_node_id=product_node_id,
+            substitute_product_node_id=substitute_id,
+        )
+        return {
+            "message": "Product linked to substitute product successfully",
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_id,
+        }
+    except Exception as e:
+        logger.exception(f"Failed to link product to substitute: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to link product to substitute product",
+        ) from e
+
+
+@router.delete(
+    "/{account_id}/substitute-products/{substitute_id}/unlink-product/{product_node_id}",
+    response_model=dict,
+)
+async def unlink_product_from_substitute(
+    account_id: str,
+    substitute_id: str,
+    product_node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Remove MAY_BE_SUBSTITUTED_FOR relationship.
+
+    Requires edit permission for the account.
+    """
+    from fastapi import HTTPException, status
+
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        await service.unlink_product_from_substitute(
+            account_id=account_id,
+            product_node_id=product_node_id,
+            substitute_product_node_id=substitute_id,
+        )
+        return {
+            "message": "Product unlinked from substitute product successfully",
+            "product_node_id": product_node_id,
+            "substitute_product_node_id": substitute_id,
+        }
+    except Exception as e:
+        logger.exception(f"Failed to unlink product from substitute: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unlink product from substitute product",
+        ) from e
+
+
+# ==================== COMPETITIVE ENVIRONMENT ENDPOINTS ====================
+# Note: CompetitiveEnvironment is a hub node.
+# Only GET and PATCH operations are supported (no CREATE/DELETE service methods).
+
+
+@router.get(
+    "/{account_id}/competitive-environment",
+    response_model=CompetitiveEnvironmentResponse,
+)
+async def get_competitive_environment(
+    account_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitiveEnvironmentResponse:
+    """Get the competitive environment hub node.
+
+    Note: There should only be one competitive environment node per account.
+    It auto-creates when the first competitor is added.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "view")
+
+    try:
+        nodes_data = await service.list_nodes(
+            account_id, "CompetitiveEnvironment", skip=0, limit=1
+        )
+        if not nodes_data:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Competitive environment not found",
+            )
+        return CompetitiveEnvironmentResponse(**nodes_data[0])
+    except Exception as e:
+        logger.exception(f"Failed to get competitive environment: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get competitive environment",
+        ) from e
+
+
+@router.patch(
+    "/{account_id}/competitive-environment",
+    response_model=CompetitiveEnvironmentResponse,
+)
+async def update_competitive_environment(
+    account_id: str,
+    updates: CompetitiveEnvironmentUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CompetitiveEnvironmentResponse:
+    """Update the competitive environment hub node.
+
+    Note: Fetches the existing node first, then updates it.
+    """
+    from .crud_factory import check_graph_access
+
+    await check_graph_access(account_id, user, "edit")
+
+    try:
+        # Fetch the existing competitive environment node
+        nodes_data = await service.list_nodes(
+            account_id, "CompetitiveEnvironment", skip=0, limit=1
+        )
+        if not nodes_data:
+            from fastapi import HTTPException, status
+
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Competitive environment not found",
+            )
+
+        node_id = nodes_data[0]["node_id"]
+
+        # Update using the service method
+        return await service.update_competitive_environment(
+            account_id=account_id,
+            node_id=node_id,
+            updates=updates,
+            user_id=user.user_id,
+        )
+    except Exception as e:
+        logger.exception(f"Failed to update competitive environment: {e}")
+        from fastapi import HTTPException, status
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update competitive environment",
+        ) from e

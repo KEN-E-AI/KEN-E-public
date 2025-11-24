@@ -26,8 +26,18 @@ export const productKeys = {
     [...productKeys.all, "categories", accountId] as const,
   categoryList: (accountId: AccountId) =>
     [...productKeys.categories(accountId), "list"] as const,
-  products: (accountId: AccountId, categoryId?: string) =>
-    [...productKeys.all, "list", accountId, categoryId || "all"] as const,
+  products: (
+    accountId: AccountId,
+    categoryId?: string,
+    substituteProductId?: string,
+  ) =>
+    [
+      ...productKeys.all,
+      "list",
+      accountId,
+      categoryId || "all",
+      substituteProductId || "none",
+    ] as const,
   valuePropositions: (accountId: AccountId, parentNodeId?: string) =>
     [
       ...productKeys.all,
@@ -54,20 +64,34 @@ export const useProductCategories = (accountId: AccountId | null) => {
   });
 };
 
-// Products query with per-category caching
+// Products query with per-category or per-substitute-product caching
 export const useProducts = (
   accountId: AccountId | null,
   categoryId: string | null,
+  substituteProductId?: string | null,
 ) => {
   return useQuery({
     queryKey: accountId
-      ? productKeys.products(accountId, categoryId || undefined)
+      ? productKeys.products(
+          accountId,
+          categoryId || undefined,
+          substituteProductId || undefined,
+        )
       : (["products", "list", "none"] as const),
     queryFn: async () => {
-      if (!accountId || !categoryId) return { products: [], total_count: 0 };
-      return productService.list(accountId, categoryId);
+      if (!accountId) return { products: [], total_count: 0 };
+      // When filtering by substituteProductId, categoryId should be undefined
+      if (substituteProductId) {
+        return productService.list(accountId, undefined, substituteProductId);
+      }
+      // When filtering by categoryId (products page)
+      if (categoryId) {
+        return productService.list(accountId, categoryId);
+      }
+      // No filter - return empty
+      return { products: [], total_count: 0 };
     },
-    enabled: !!accountId && !!categoryId,
+    enabled: !!accountId && (!!categoryId || !!substituteProductId),
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
     refetchOnWindowFocus: false,
     refetchOnMount: false,

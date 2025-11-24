@@ -18,15 +18,18 @@ class TokenRevocationService:
     def __init__(self):
         """Initialize the token revocation service."""
         self.collection_name = "revoked_tokens"
-        self._redis = None  # Lazy initialization to avoid Redis connection at import time
+        self._redis = (
+            None  # Lazy initialization to avoid Redis connection at import time
+        )
         # Cache revoked tokens for 1 hour
         self.cache_ttl = 3600
-    
+
     @property
     def redis(self):
         """Lazy-load Redis service to avoid initialization at module import."""
         if self._redis is None:
             from ..redis_client import get_redis_service
+
             self._redis = get_redis_service()
         return self._redis
 
