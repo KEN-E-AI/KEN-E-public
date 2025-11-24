@@ -121,8 +121,22 @@ class ProductCategory(BaseModel):
         description="The name of the product category (e.g., 'Cloud Services', 'Consumer Electronics')",
     )
     description: str = Field(
-        ..., 
-        description="The characteristics of products or services that have been included in this category."
+        ...,
+        description="""A detailed description of this product category (200-1000 characters).
+
+MUST list or name the SPECIFIC products/services included in this category - not just generic phrases.
+
+GOOD examples:
+- 'Includes checking accounts, savings accounts, credit cards, and personal loans'
+- 'Retirement accounts such as Traditional IRAs, Roth IRAs, and 401(k)s'
+- 'Real estate investment products including rental properties, REITs, and land investments'
+
+BAD examples (too vague):
+- 'Comprehensive suite of financial products' (WHAT products?)
+- 'Range of banking services' (no specifics)
+- 'Products and services to help customers' (generic)
+
+Target length: 200-1000 characters. Be specific about what products/services are in this category.""",
     )
     value_propositions: list[ValueProposition] = Field(
         ...,
@@ -257,7 +271,19 @@ class StructuredBusinessStrategy(BaseModel):
     )
     company_overview_summary: str = Field(
         ...,
-        description="A comprehensive narrative that introduces the company's identity and background",
+        description="""A comprehensive narrative (800-4000 characters) that introduces the company.
+
+MUST include all of the following:
+1. Founding date or company age (e.g., 'Founded in 1959', 'Established over 60 years ago')
+2. Specific products/services offered - name actual products, not just generic categories (e.g., 'checking accounts, mortgages, credit cards' NOT just 'financial services')
+3. Company mission, vision, or purpose beyond profit (e.g., 'Our mission is to...', 'We aim to...')
+4. Brand elements (tagline, logo, visual identity) OR explicitly state 'Brand elements require additional research' if not found
+5. Target customers with specific characteristics or demographics (e.g., 'small business owners', 'tech-savvy millennials' NOT just 'consumers and businesses')
+6. Problems the company solves for its customers
+
+Use only complete, self-contained thoughts. Avoid phrases like 'as mentioned above' or references requiring external context.
+
+Target length: 800-4000 characters (roughly 3-5 substantial paragraphs).""",
     )
     business_value_propositions: list[ValueProposition] = Field(
         ...,

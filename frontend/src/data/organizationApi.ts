@@ -236,6 +236,7 @@ export async function createAccount(
     business_strategy_documents?: File[];
     enabled_strategies?: string[];
     override_product_categories?: string[];
+    dry_run?: boolean;
   },
   options?: {
     idempotencyKey?: string;
@@ -283,7 +284,10 @@ export async function createAccount(
     .append(
       "override_product_categories",
       accountData.override_product_categories,
-    );
+    )
+    .append("dry_run", accountData.dry_run ?? false);
+
+  console.log("[CREATE_ACCOUNT] accountData.dry_run:", accountData.dry_run);
 
   // Add files if they exist
   if (

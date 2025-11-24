@@ -6,7 +6,25 @@ import os
 from typing import Generator
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+from prometheus_client import REGISTRY
+
+
+def pytest_configure(config):
+    """
+    Pytest hook that runs once before test collection.
+
+    Clears the Prometheus REGISTRY to prevent duplicate metric registration errors
+    when modules are imported multiple times during test collection.
+    """
+    # Unregister all existing collectors to prevent duplicate registration errors
+    collectors = list(REGISTRY._collector_to_names.keys())
+    for collector in collectors:
+        try:
+            REGISTRY.unregister(collector)
+        except Exception:
+            # Ignore errors when unregistering, as some collectors may be built-in
+            pass
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -58,7 +76,9 @@ def mock_firebase_auth():
         "organization_permissions": {},
         "account_permissions": {"test_account": "edit"},
     }
-    mock_firestore.collection.return_value.document.return_value.get.return_value = mock_doc
+    mock_firestore.collection.return_value.document.return_value.get.return_value = (
+        mock_doc
+    )
 
     # Set required environment variables
     test_env = {
@@ -67,9 +87,17 @@ def mock_firebase_auth():
     }
 
     # Patch Firebase token verification, Firestore service, and environment
-    with patch.dict(os.environ, test_env), \
-         patch("src.kene_api.auth.firebase_admin.verify_id_token", return_value=mock_decoded_token), \
-         patch("src.kene_api.firestore.get_firestore_service", return_value=mock_firestore_service):
+    with (
+        patch.dict(os.environ, test_env),
+        patch(
+            "src.kene_api.auth.firebase_admin.verify_id_token",
+            return_value=mock_decoded_token,
+        ),
+        patch(
+            "src.kene_api.firestore.get_firestore_service",
+            return_value=mock_firestore_service,
+        ),
+    ):
         yield
 
 

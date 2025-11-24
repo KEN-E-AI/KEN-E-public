@@ -23,10 +23,12 @@ import {
 export interface WizardStep4StrategySelectionProps {
   enabled_strategies: string[];
   override_product_categories: string[];
+  dry_run?: boolean;
   onUpdate: (
     data: Partial<{
       enabled_strategies: string[];
       override_product_categories: string[];
+      dry_run?: boolean;
     }>,
   ) => void;
 }
@@ -34,6 +36,7 @@ export interface WizardStep4StrategySelectionProps {
 export const WizardStep4StrategySelection = ({
   enabled_strategies,
   override_product_categories,
+  dry_run = false,
   onUpdate,
 }: WizardStep4StrategySelectionProps) => {
   const [newCategory, setNewCategory] = useState("");
@@ -197,6 +200,41 @@ export const WizardStep4StrategySelection = ({
           </AlertDescription>
         </Alert>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Evaluation Mode</CardTitle>
+          <CardDescription>
+            For @ken-e.ai users: Enable dry-run mode to skip database storage
+            (for testing/evaluation)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-accent/50 transition-colors">
+            <Checkbox
+              id="dry_run"
+              checked={dry_run}
+              onCheckedChange={(checked) => {
+                console.log("[DRY_RUN] Checkbox changed to:", checked);
+                onUpdate({ dry_run: checked as boolean });
+              }}
+            />
+            <div className="flex-1 space-y-1">
+              <Label
+                htmlFor="dry_run"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Dry-run mode (Skip storage)
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                When enabled, strategies will be generated and traced in W&B
+                Weave, but NOT saved to Firestore or Neo4j. Use this for
+                evaluation runs without polluting production data.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {enabled_strategies.length === 0 && (
         <Alert variant="destructive">

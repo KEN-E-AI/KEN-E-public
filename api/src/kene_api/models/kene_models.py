@@ -1040,6 +1040,10 @@ class AccountRequest(BaseModel):
         "when business strategy is not run. Only used if marketing_strategy is in "
         "enabled_strategies but business_strategy is not.",
     )
+    dry_run: bool = Field(
+        False,
+        description="If True, skip Firestore/Neo4j/embedding storage for evaluation runs.",
+    )
     company_overview: str | None = Field(
         None,
         description="Comprehensive description of the company including founding story, mission, products, brand identity and target customers",

@@ -557,6 +557,7 @@ async def create_account(
     estimated_annual_ad_budget: int | None = Form(None),
     enabled_strategies: str | None = Form(None),  # JSON string of array
     override_product_categories: str | None = Form(None),  # JSON string of array
+    dry_run: bool = Form(False),
     files: list[UploadFile] | None = File(None),
     user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
@@ -607,7 +608,7 @@ async def create_account(
       -F "files=@strategy.pdf"
     ```
 
-    **Note:** 
+    **Note:**
     - Only regular organizations (agency=false) can create accounts. Agency organizations are restricted.
     - Array fields must be JSON-encoded strings (e.g., '["item1", "item2"]')
     - Files are optional and can be used to upload business strategy documents
@@ -645,10 +646,11 @@ async def create_account(
             estimated_annual_ad_budget=estimated_annual_ad_budget,
             enabled_strategies=enabled_strategies,
             override_product_categories=override_product_categories,
+            dry_run=dry_run,
         )
     except ValueError as e:
         logger.error(f"[ACCOUNT_CREATION] Form parsing error: {e}")
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     # Upload files if provided
     uploaded_document_urls = []
@@ -1832,7 +1834,7 @@ async def get_account_creation_status(
     # Check if account exists and user has access
     account_query = """
     MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
-    RETURN acc.setup_status as setup_status, 
+    RETURN acc.setup_status as setup_status,
            acc.setup_completed_at as setup_completed_at,
            org.organization_id as organization_id
     """
