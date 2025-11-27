@@ -229,3 +229,50 @@ class TestCreateAccountInternal:
 
         assert exc_info.value.status_code == 500
         assert "Failed to create account" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_notification_created_on_account_creation(
+        self, mock_dependencies, sample_request
+    ):
+        """Test that a welcome notification is created when account is created."""
+        # Mock firestore client for notification repository
+        mock_firestore_client = MagicMock()
+        mock_dependencies["firestore"].get_client.return_value = mock_firestore_client
+
+        with patch("src.kene_api.tasks.strategy_tasks.trigger_strategy_generation"):
+            with patch(
+                "src.kene_api.services.notification_service_v2.NotificationService"
+            ) as mock_notification_service:
+                with patch("src.kene_api.repositories.FirestoreNotificationRepository"):
+                    # Setup mock notification service
+                    mock_service_instance = AsyncMock()
+                    mock_service_instance.create_notification.return_value = (
+                        "notif_test_123"
+                    )
+                    mock_notification_service.return_value = mock_service_instance
+
+                    # Also mock batch_create_user_statuses
+                    mock_repo_instance = AsyncMock()
+                    mock_repo_instance.batch_create_user_statuses = AsyncMock()
+
+                    result = await create_account_internal(
+                        request=sample_request,
+                        uploaded_document_urls=[],
+                        background_tasks=mock_dependencies["background_tasks"],
+                        user=mock_dependencies["user"],
+                        firestore=mock_dependencies["firestore"],
+                        storage=mock_dependencies["storage"],
+                        neo4j_service=mock_dependencies["neo4j"],
+                        bigquery_service=None,
+                    )
+
+                    # Verify notification was created
+                    mock_service_instance.create_notification.assert_called_once()
+                    call_kwargs = (
+                        mock_service_instance.create_notification.call_args.kwargs
+                    )
+
+                    assert call_kwargs["account_id"] == result.account_id
+                    assert call_kwargs["description"] == "Configure your new account"
+                    assert "account_name" in call_kwargs["data"]
+                    assert call_kwargs["data"]["account_name"] == "Test Account"

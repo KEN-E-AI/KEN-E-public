@@ -295,6 +295,7 @@ Please execute strategy generation with these parameters:
                         )
 
                     response = stream_query_with_retry()
+                    print(f"[AGENT_ENGINE] stream_query call initiated successfully")
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
 
@@ -315,6 +316,7 @@ Please execute strategy generation with these parameters:
                 # Collect response with timeout
                 response_parts = []
                 chunk_count = 0
+                print(f"[AGENT_ENGINE] Starting to collect response chunks...")
                 logger.info("Starting to collect response chunks...")
 
                 # Set a timeout for collecting chunks (25 minutes max for agent response)
@@ -331,7 +333,13 @@ Please execute strategy generation with these parameters:
                         # Add a flag to track if we got any response
                         got_response = False
 
+                        print(f"[AGENT_ENGINE] Starting chunk iteration...")
+                        logger.info("Starting chunk iteration...")
                         for chunk in response:
+                            print(f"[AGENT_ENGINE] Received chunk #{chunk_count + 1}")
+                            logger.info(
+                                f"Received chunk from agent (chunk #{chunk_count + 1})"
+                            )
                             got_response = True
                             # Check if we've exceeded the timeout
                             elapsed = time.time() - start_time
@@ -401,7 +409,9 @@ Please execute strategy generation with these parameters:
                                                     )
                                                 # Handle function_call parts (likely contains strategy documents)
                                                 elif "function_call" in part:
-                                                    function_call = part["function_call"]
+                                                    function_call = part[
+                                                        "function_call"
+                                                    ]
                                                     logger.info(
                                                         f"  Found function_call in chunk {chunk_count}: {type(function_call)}"
                                                     )
@@ -426,14 +436,22 @@ Please execute strategy generation with these parameters:
                                                             )
                                                         elif "output" in function_call:
                                                             response_parts.append(
-                                                                str(function_call["output"])
+                                                                str(
+                                                                    function_call[
+                                                                        "output"
+                                                                    ]
+                                                                )
                                                             )
                                                             logger.info(
                                                                 f"    Added function output: {len(str(function_call['output']))} chars"
                                                             )
                                                         elif "args" in function_call:
                                                             response_parts.append(
-                                                                str(function_call["args"])
+                                                                str(
+                                                                    function_call[
+                                                                        "args"
+                                                                    ]
+                                                                )
                                                             )
                                                             logger.info(
                                                                 f"    Added function args: {len(str(function_call['args']))} chars"
@@ -547,6 +565,9 @@ Please execute strategy generation with these parameters:
 
                 # Only proceed with document verification if we got a valid response
                 if result and got_response:
+                    print(
+                        f"[AGENT_ENGINE] Agent completed, starting document verification for {account_id}"
+                    )
                     # Wait for all documents to be fully created before marking as complete
                     # Poll for document completion with timeout
                     max_wait_time = 1800  # 30 minutes max wait for documents
@@ -554,6 +575,9 @@ Please execute strategy generation with these parameters:
                     elapsed_time = 0
                     all_docs_complete = False
 
+                    print(
+                        f"[STRATEGY_DOCS] Waiting for all strategy documents to be complete for account {account_id}..."
+                    )
                     logger.info(
                         f"Waiting for all strategy documents to be complete for account {account_id}..."
                     )
@@ -565,6 +589,9 @@ Please execute strategy generation with these parameters:
                         )
 
                         if all_docs_complete:
+                            print(
+                                f"[STRATEGY_DOCS] ✅ All strategy documents are complete for account {account_id}"
+                            )
                             logger.info(
                                 f"✅ All strategy documents are complete for account {account_id}"
                             )
@@ -624,12 +651,17 @@ Please execute strategy generation with these parameters:
             return  # Exit early without marking as completed
 
         # Only reach here if everything succeeded
+        print(
+            f"[STRATEGY_COMPLETE] ✅ Successfully completed strategy generation for account {account_id}"
+        )
         logger.info(
             f"✅ Successfully completed strategy generation for account {account_id}"
         )
 
         # Update account status to completed
+        print(f"[STRATEGY_COMPLETE] Marking account {account_id} as completed")
         await update_account_setup_status(account_id, "completed", completed=True)
+        print(f"[STRATEGY_COMPLETE] Account {account_id} status updated to completed")
 
         # Send email notification
         try:
@@ -665,10 +697,22 @@ Please execute strategy generation with these parameters:
 
     except Exception as e:
         logger.error(
-            f"Failed to generate strategy documents for account {account_id}: {e}"
+            f"Failed to generate strategy documents for account {account_id}: {e}",
+            exc_info=True,
         )
-        # Don't update status to ready if generation failed
-        # Keep it in processing so it can be retried
+        # Mark account as failed so the UI can show an error
+        try:
+            await update_account_setup_status(
+                account_id,
+                "failed",
+                completed=False,
+                error_message=f"Strategy generation error: {str(e)[:200]}",
+            )
+            logger.error(
+                f"Account {account_id} marked as failed due to unhandled exception"
+            )
+        except Exception as status_error:
+            logger.error(f"Failed to update account status after error: {status_error}")
 
 
 async def update_account_setup_status(
@@ -786,10 +830,14 @@ async def verify_strategy_documents_created(
                     content_size = len(json.dumps(content))
                     has_keys = len(content.keys())
 
-                    # Consider document complete based primarily on content size and structure
+                    # Consider document complete based on structure rather than size
+                    # A document with a valid dict structure and at least one key is considered complete
+                    # This allows for sparse documents where data isn't available (e.g., brand guidelines)
                     # Status field is optional - many docs don't have it
                     # Note: Different models have different field counts (competitive=3, marketing=1)
-                    is_complete = content_size > 1000 and has_keys >= 1
+                    is_complete = (
+                        has_keys >= 1 and content_size > 50
+                    )  # Lowered from 1000 to 50 bytes (minimal valid JSON)
 
                     # If status field exists and indicates not ready, override
                     if status and status.lower() in [

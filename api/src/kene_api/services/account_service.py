@@ -262,9 +262,7 @@ async def create_account_internal(
         activities_count = await _create_initial_activities(
             db=neo4j_service, firestore=firestore, account_id=account_id
         )
-        logger.info(
-            f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
-        )
+        logger.info(f"[ACCOUNT_CREATION] Created {activities_count} initial activities")
     except Exception as e:
         logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
         # Don't fail account creation if initial activities fail
@@ -360,6 +358,52 @@ async def create_account_internal(
     except Exception as e:
         logger.error(f"Failed to invalidate user cache: {e}")
         # Don't fail account creation if cache invalidation fails
+
+    # Create welcome notification for the new account
+    try:
+        from ..models.kene_models import NotificationCategory, NotificationStatus
+        from ..repositories import FirestoreNotificationRepository
+        from ..services.notification_service_v2 import NotificationService
+
+        notification_repository = FirestoreNotificationRepository(
+            firestore.get_client()
+        )
+        notification_service = NotificationService(notification_repository)
+
+        notification_id = await notification_service.create_notification(
+            account_id=account_id,
+            category=NotificationCategory.NEW_FEATURES,
+            description="Configure your new account",
+            data={
+                "account_name": request.account_name,
+                "created_by": user.user_id,
+                "created_at": datetime.utcnow().isoformat(),
+            },
+        )
+        logger.info(
+            f"[ACCOUNT_CREATION] Created welcome notification {notification_id} for account {account_id}"
+        )
+
+        # Create notification status for the creating user
+        await notification_repository.batch_create_user_statuses(
+            [
+                {
+                    "user_id": user.user_id,
+                    "notification_id": notification_id,
+                    "status": NotificationStatus.UNREAD.value,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            ]
+        )
+        logger.info(
+            f"[ACCOUNT_CREATION] Created notification status for user {user.user_id}"
+        )
+
+    except Exception as e:
+        logger.error(
+            f"[ACCOUNT_CREATION] Failed to create welcome notification for account {account_id}: {e}"
+        )
+        # Don't fail account creation if notification creation fails
 
     # Log database setup complete (progress tracking simplified)
     # Don't mark as fully complete yet - the strategy generation task will do that
