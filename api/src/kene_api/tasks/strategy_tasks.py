@@ -56,7 +56,6 @@ async def trigger_strategy_generation(
             marketing strategy when business strategy is not run.
     """
     try:
-        print(f"[STRATEGY_GENERATION] Starting for account {account_id}")
         logger.info(f"Starting strategy generation for account {account_id}")
 
         # Log strategy generation is starting (progress tracking simplified)
@@ -264,7 +263,6 @@ Please execute strategy generation with these parameters:
                 agent_engine = agent_engines.get(agent_engine_id)
 
                 # Call the agent directly
-                print(f"[AGENT_ENGINE] Calling with message: {len(message)} chars")
                 logger.info(
                     f"Calling agent engine with message length: {len(message)} chars"
                 )
@@ -295,7 +293,6 @@ Please execute strategy generation with these parameters:
                         )
 
                     response = stream_query_with_retry()
-                    print(f"[AGENT_ENGINE] stream_query call initiated successfully")
                     logger.info("stream_query call initiated successfully")
                     logger.info(f"Response type: {type(response)}")
 
@@ -316,7 +313,6 @@ Please execute strategy generation with these parameters:
                 # Collect response with timeout
                 response_parts = []
                 chunk_count = 0
-                print(f"[AGENT_ENGINE] Starting to collect response chunks...")
                 logger.info("Starting to collect response chunks...")
 
                 # Set a timeout for collecting chunks (25 minutes max for agent response)
@@ -333,13 +329,8 @@ Please execute strategy generation with these parameters:
                         # Add a flag to track if we got any response
                         got_response = False
 
-                        print(f"[AGENT_ENGINE] Starting chunk iteration...")
                         logger.info("Starting chunk iteration...")
                         for chunk in response:
-                            print(f"[AGENT_ENGINE] Received chunk #{chunk_count + 1}")
-                            logger.info(
-                                f"Received chunk from agent (chunk #{chunk_count + 1})"
-                            )
                             got_response = True
                             # Check if we've exceeded the timeout
                             elapsed = time.time() - start_time
@@ -565,9 +556,6 @@ Please execute strategy generation with these parameters:
 
                 # Only proceed with document verification if we got a valid response
                 if result and got_response:
-                    print(
-                        f"[AGENT_ENGINE] Agent completed, starting document verification for {account_id}"
-                    )
                     # Wait for all documents to be fully created before marking as complete
                     # Poll for document completion with timeout
                     max_wait_time = 1800  # 30 minutes max wait for documents
@@ -575,9 +563,6 @@ Please execute strategy generation with these parameters:
                     elapsed_time = 0
                     all_docs_complete = False
 
-                    print(
-                        f"[STRATEGY_DOCS] Waiting for all strategy documents to be complete for account {account_id}..."
-                    )
                     logger.info(
                         f"Waiting for all strategy documents to be complete for account {account_id}..."
                     )
@@ -589,9 +574,6 @@ Please execute strategy generation with these parameters:
                         )
 
                         if all_docs_complete:
-                            print(
-                                f"[STRATEGY_DOCS] ✅ All strategy documents are complete for account {account_id}"
-                            )
                             logger.info(
                                 f"✅ All strategy documents are complete for account {account_id}"
                             )
@@ -651,17 +633,12 @@ Please execute strategy generation with these parameters:
             return  # Exit early without marking as completed
 
         # Only reach here if everything succeeded
-        print(
-            f"[STRATEGY_COMPLETE] ✅ Successfully completed strategy generation for account {account_id}"
-        )
         logger.info(
             f"✅ Successfully completed strategy generation for account {account_id}"
         )
 
         # Update account status to completed
-        print(f"[STRATEGY_COMPLETE] Marking account {account_id} as completed")
         await update_account_setup_status(account_id, "completed", completed=True)
-        print(f"[STRATEGY_COMPLETE] Account {account_id} status updated to completed")
 
         # Send email notification
         try:
