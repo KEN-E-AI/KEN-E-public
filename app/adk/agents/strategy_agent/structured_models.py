@@ -124,19 +124,32 @@ class ProductCategory(BaseModel):
         ...,
         description="""A detailed description of this product category (200-1000 characters).
 
-MUST list or name the SPECIFIC products/services included in this category - not just generic phrases.
+MUST include all of the following elements:
 
-GOOD examples:
-- 'Includes checking accounts, savings accounts, credit cards, and personal loans'
-- 'Retirement accounts such as Traditional IRAs, Roth IRAs, and 401(k)s'
-- 'Real estate investment products including rental properties, REITs, and land investments'
+1. List SPECIFIC products/services in this category (not generic phrases)
+   - Name actual products (e.g., 'checking accounts, savings accounts, credit cards')
+   - Be concrete and specific
+
+2. What this category helps customers accomplish
+   - How it helps manage/solve customer needs
+   - The functional purpose
+
+3. Specific problems this category addresses
+   - List concrete problems solved
+   - Customer pain points addressed
+
+4. Summary statement (optional)
+   - Brief synthesis of category value
+
+GOOD example (657 chars):
+'This category comprises core consumer-facing banking services including deposit accounts (checking, savings, money market, IRAs), everyday credit and debit cards, mobile and online banking access, bill pay and peer-to-peer payments, and other transactional tools. It helps customers manage their day-to-day finances in a secure, convenient and accessible way. Specifically, it addresses problems such as: needing a safe place to store money, making frequent payments or money transfers, tracking spending, accessing accounts digitally 24/7, and obtaining credit or debit access to funds. In short: simplifying money management, increasing liquidity and providing digital convenience.'
 
 BAD examples (too vague):
-- 'Comprehensive suite of financial products' (WHAT products?)
-- 'Range of banking services' (no specifics)
-- 'Products and services to help customers' (generic)
+- 'Comprehensive suite of financial products' (WHAT products? What problems?)
+- 'Range of banking services' (no specifics, no problems addressed)
+- 'Products and services to help customers' (generic, no details)
 
-Target length: 200-1000 characters. Be specific about what products/services are in this category.""",
+Target length: 200-1000 characters. Include products, customer accomplishments, and problems solved.""",
     )
     value_propositions: list[ValueProposition] = Field(
         ...,

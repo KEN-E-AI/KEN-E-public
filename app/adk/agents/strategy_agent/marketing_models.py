@@ -112,7 +112,7 @@ class IdealCustomerProfile(BaseModel):
         ...,
         description="""A comprehensive narrative (2000-6000 characters) describing this customer persona.
 
-MUST include ALL of the following as bulleted lists or clearly structured sections:
+MUST include ALL of the following sections with specific formatting:
 
 1. Demographics (as bulleted list):
    - Age range
@@ -131,26 +131,89 @@ MUST include ALL of the following as bulleted lists or clearly structured sectio
    - Opinions and attitudes
    - Hobbies
 
-3. Pain Points (as bulleted list):
+3. Needs / Jobs-to-be-done (as bulleted list):
+   - What they require to solve their problems
+   - Key functional and emotional needs
+
+4. Pain Points (as bulleted list):
    - Specific problems that are PAINFUL for this persona
    - Frustrations they experience
+   - Current obstacles
 
-4. Purchase Motivations:
+5. Goals (as bulleted list):
+   - What they want to achieve
+   - Short-term and long-term objectives
+
+6. Motivations (as bulleted list):
    - What drives them to make a purchase to solve these problems
-   - Goals they want to achieve
+   - Why they take action and make decisions
 
-5. Communication Channels (as bulleted list):
+7. Buying Behaviors (paragraph format):
+   - Purchase frequency, research depth, price sensitivity
+   - Brand loyalty patterns
+   - Preferred purchase methods (online, in-store, etc.)
+   - Decision-making process
+
+8. Communication Channels (as bulleted list):
    - Effective channels for reaching this persona
    - Preferred methods of communication
+   - Specific platforms and media
 
-Use only complete, self-contained thoughts. Avoid references requiring external context.
+9. Exclusion Criteria (as bulleted list):
+   - Who does NOT fit this profile
+   - Demographic, behavioral, or attitudinal exclusions
 
-Target length: 2000-6000 characters. This narrative is product-agnostic and describes the persona holistically.""",
+FORMATTING REQUIREMENTS:
+- Use clear section headers (e.g., "Demographics:", "Psychographics:")
+- Use bullet points with "-" character for list sections
+- Use only complete, self-contained thoughts (no "as mentioned above" references)
+
+Target length: 2000-6000 characters total across all sections. This narrative is product-agnostic and describes the persona holistically.""",
     )
     references: list[str] = Field(
         default=[],
         description="Source URLs where information about this customer profile was found during research",
     )
+
+    @field_validator("narrative")
+    @classmethod
+    def validate_narrative_structure(cls, v: str) -> str:
+        """
+        Validate that the narrative contains all required sections and meets length requirements.
+
+        Ensures the narrative is comprehensive and structured according to the field requirements.
+        """
+        # Check minimum length
+        if len(v) < 2000:
+            raise ValueError(
+                f"Narrative must be at least 2000 characters (got {len(v)})"
+            )
+
+        # Check maximum length
+        if len(v) > 6000:
+            raise ValueError(
+                f"Narrative must be at most 6000 characters (got {len(v)})"
+            )
+
+        # Check required sections
+        required_sections = [
+            "Demographics:",
+            "Psychographics:",
+            "Needs / Jobs-to-be-done:",
+            "Pain Points:",
+            "Goals:",
+            "Motivations:",
+            "Buying Behaviors:",
+            "Communication Channels:",
+            "Exclusion Criteria:",
+        ]
+        missing = [s for s in required_sections if s not in v]
+        if missing:
+            raise ValueError(
+                f"Narrative missing required sections: {', '.join(missing)}"
+            )
+
+        return v
 
 
 class ProductCategoryMapping(BaseModel):
