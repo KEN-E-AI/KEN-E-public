@@ -19,6 +19,71 @@ from ..marketing_models import (
 )
 
 
+def create_valid_test_narrative(name: str = "Test") -> str:
+    """Create a minimal valid narrative for testing (meets 2000 char minimum)."""
+    base_narrative = f"""Demographics:
+- Age: 30-45 years old
+- Gender: All genders
+- Education: Bachelor's degree or higher
+- Location: Urban and suburban areas
+- Household income: $75,000-$150,000 annually
+- Cultural background: Diverse professionals
+
+Psychographics:
+- Values efficiency and innovation
+- Adopts technology to improve productivity
+- Seeks professional development opportunities
+- Interested in sustainable practices
+- Prefers data-driven decision making
+
+Needs / Jobs-to-be-done:
+- Streamline complex workflows
+- Access real-time data for informed decisions
+- Collaborate effectively with teams
+- Maintain security and compliance
+
+Pain Points:
+- Frustrated by fragmented tools
+- Struggles with manual data entry
+- Limited visibility into progress
+- Difficulty justifying ROI
+- Concerned about data security
+
+Goals:
+- Increase productivity by 30%
+- Reduce operational costs
+- Improve collaboration
+- Achieve measurable outcomes
+- Build scalable infrastructure
+
+Motivations:
+- Driven by career advancement
+- Motivated to solve problems
+- Seeks solutions with clear ROI
+- Values ongoing support
+
+Buying Behaviors:
+{name} researches extensively before purchasing. Price-sensitive but willing to pay for proven solutions. Prefers annual subscriptions. Makes collaborative decisions. Relies on peer reviews and demos.
+
+Communication Channels:
+- LinkedIn for professional content
+- Industry webinars and conferences
+- Email newsletters
+- Podcasts during commute
+- Professional forums
+
+Exclusion Criteria:
+- Companies with less than 50 employees
+- Those without budget authority
+- Price-sensitive buyers prioritizing cost over functionality
+- Organizations unwilling to adopt cloud solutions
+"""
+    # Pad to meet 2000 character minimum if needed
+    if len(base_narrative) < 2000:
+        base_narrative += "\n" + "Additional context: " + "x" * (2000 - len(base_narrative) - 20)
+    return base_narrative
+
+
 class TestMarketingStrategy:
     """Test MarketingStrategy model validation."""
 
@@ -113,21 +178,113 @@ class TestIdealCustomerProfile:
 
     def test_valid_profile_creation(self):
         """Test creating a valid ideal customer profile WITHOUT strategies."""
+        valid_narrative = """
+Demographics:
+- Age: 35-40 years old
+- Gender: All genders
+- Education: Bachelor's degree in Marketing or Business
+- Location: Urban areas, primarily United States
+- Household income: $80,000-$120,000 annually
+
+Psychographics:
+- Values data-driven decision making
+- Results-oriented and goal-focused
+- Interested in continuous learning and professional development
+- Prefers collaborative team environments
+
+Needs / Jobs-to-be-done:
+- Generate qualified leads and improve conversion rates
+- Measure and optimize marketing campaign performance
+- Manage marketing budgets effectively
+- Coordinate cross-functional marketing initiatives
+
+Pain Points:
+- Difficulty proving ROI on marketing spend to executives
+- Struggles with fragmented marketing tools and data silos
+- Limited time for strategic planning due to tactical demands
+- Challenge of staying current with rapidly evolving marketing channels
+
+Goals:
+- Increase qualified lead generation by 25% year-over-year
+- Improve marketing attribution and campaign tracking
+- Build a more cohesive brand presence across channels
+- Develop more efficient workflows to reclaim strategic time
+
+Motivations:
+- Career advancement and recognition from leadership
+- Driven to demonstrate measurable business impact
+- Motivated by solving complex marketing challenges
+- Values solutions that save time and improve team productivity
+
+Buying Behaviors:
+Mary researches extensively before purchasing, typically spending 4-6 weeks evaluating options. She's moderately price-sensitive and seeks solutions that offer clear ROI. Prefers SaaS subscriptions with monthly or annual billing. Makes decisions after consulting with her team and reviewing case studies from similar companies. Values free trials and proof-of-concept opportunities.
+
+Communication Channels:
+- LinkedIn for professional networking and industry insights
+- Marketing-focused podcasts during commute
+- Industry conferences and virtual webinars
+- Email newsletters from marketing thought leaders
+- Slack communities for B2B marketers
+
+Exclusion Criteria:
+- Marketing professionals in B2C consumer goods companies
+- Individuals without budget authority or purchasing influence
+- Those in companies with less than 25 employees
+- Marketing coordinators or specialists without management responsibility
+"""
         profile = IdealCustomerProfile(
             display_name="Marketing Manager Mary",
-            narrative="Mary is a 35-year-old marketing manager at a mid-sized B2B company...",
+            narrative=valid_narrative,
             references=["https://example.com/research"],
         )
 
         assert profile.display_name == "Marketing Manager Mary"
-        assert "Mary" in profile.narrative
+        assert "Demographics:" in profile.narrative
         assert len(profile.references) == 1
 
     def test_profile_has_no_strategy_fields(self):
         """Test that profiles do NOT contain strategy fields."""
+        minimal_valid_narrative = """Demographics:
+- Age: 30-45
+- Gender: All
+- Education: Bachelor's
+- Location: Urban
+- Income: $50k+
+
+Psychographics:
+- Values quality
+- Tech-savvy
+
+Needs / Jobs-to-be-done:
+- Solve daily problems
+- Improve efficiency
+
+Pain Points:
+- Time constraints
+- Budget limitations
+
+Goals:
+- Achieve success
+- Grow professionally
+
+Motivations:
+- Career growth
+- Recognition
+
+Buying Behaviors:
+Researches before buying. Price-conscious but values quality. Prefers annual subscriptions.
+
+Communication Channels:
+- LinkedIn
+- Email
+
+Exclusion Criteria:
+- Non-target demographics
+""" + "x" * (2000 - 500)
+
         profile = IdealCustomerProfile(
             display_name="Test Profile",
-            narrative="Test narrative",
+            narrative=minimal_valid_narrative,
             references=[],
         )
 
@@ -147,6 +304,244 @@ class TestIdealCustomerProfile:
         required_fields = {"display_name", "narrative"}
         missing_fields = {error["loc"][0] for error in errors}
         assert required_fields.issubset(missing_fields)
+
+    def test_narrative_with_all_required_sections(self):
+        """Narrative with all 9 required sections should pass validation."""
+        valid_narrative = """
+Demographics:
+- Age: 30-45 years old
+- Gender: All genders
+- Education: Bachelor's degree or higher
+- Location: Urban and suburban areas across North America
+- Household income: $75,000-$150,000 annually
+- Cultural background: Diverse, tech-savvy professionals
+
+Psychographics:
+- Values efficiency, innovation, and work-life balance
+- Adopts technology early to improve productivity
+- Actively seeks professional development opportunities
+- Interested in sustainable and ethical business practices
+- Prefers data-driven decision making
+
+Needs / Jobs-to-be-done:
+- Streamline complex workflows and reduce manual tasks
+- Access real-time data and analytics for informed decisions
+- Collaborate effectively with distributed teams
+- Maintain security and compliance in digital operations
+
+Pain Points:
+- Frustrated by fragmented tools requiring multiple logins
+- Struggles with manual data entry and reconciliation
+- Limited visibility into project status and team progress
+- Difficulty justifying ROI on technology investments
+- Concerned about data security and privacy compliance
+
+Goals:
+- Increase team productivity by 30% within the next year
+- Reduce operational costs through automation
+- Improve collaboration across departments
+- Achieve measurable business outcomes from technology investments
+- Build a scalable infrastructure for future growth
+
+Motivations:
+- Driven by career advancement and professional recognition
+- Motivated to solve problems that directly impact business results
+- Seeks solutions that demonstrate clear ROI and efficiency gains
+- Values vendors who provide ongoing support and education
+
+Buying Behaviors:
+Researches extensively before purchasing, typically spending 2-3 months evaluating options. Highly price-sensitive but willing to pay premium for proven solutions with strong support. Prefers annual subscriptions with flexibility to scale. Makes decisions collaboratively with input from technical teams and finance. Relies heavily on peer reviews, case studies, and product demos before committing.
+
+Communication Channels:
+- LinkedIn for professional content and peer recommendations
+- Industry-specific webinars and virtual conferences
+- Email newsletters from trusted industry sources
+- Podcasts during commute time
+- Slack communities and professional forums
+
+Exclusion Criteria:
+- Individuals in companies with less than 50 employees
+- Those without budget authority or purchasing influence
+- Professionals in highly regulated industries requiring custom solutions
+- Price-sensitive buyers prioritizing cost over functionality
+- Organizations unwilling to adopt cloud-based solutions
+"""
+        profile = IdealCustomerProfile(
+            display_name="Tech-Savvy Manager",
+            narrative=valid_narrative,
+            references=["https://example.com/research"],
+        )
+
+        assert profile.narrative == valid_narrative
+        assert len(profile.narrative) >= 2000
+        assert len(profile.narrative) <= 6000
+
+    def test_narrative_too_short_fails_validation(self):
+        """Narrative under 2000 characters should fail validation."""
+        short_narrative = "x" * 1999
+
+        with pytest.raises(ValidationError) as exc_info:
+            IdealCustomerProfile(
+                display_name="Test Profile",
+                narrative=short_narrative,
+                references=[],
+            )
+
+        errors = exc_info.value.errors()
+        assert any("at least 2000 characters" in str(error) for error in errors)
+
+    def test_narrative_too_long_fails_validation(self):
+        """Narrative over 6000 characters should fail validation."""
+        long_narrative = "x" * 6001
+
+        with pytest.raises(ValidationError) as exc_info:
+            IdealCustomerProfile(
+                display_name="Test Profile",
+                narrative=long_narrative,
+                references=[],
+            )
+
+        errors = exc_info.value.errors()
+        assert any("at most 6000 characters" in str(error) for error in errors)
+
+    def test_narrative_exactly_2000_characters_passes(self):
+        """Narrative with exactly 2000 characters should pass validation."""
+        # Create a narrative with all sections and exactly 2000 chars
+        narrative_base = """Demographics:
+- Age: 30-45
+- Gender: All
+- Education: Bachelor's
+- Location: Urban areas
+- Income: $75k-$150k
+
+Psychographics:
+- Values efficiency
+- Tech-savvy
+- Career-focused
+
+Needs / Jobs-to-be-done:
+- Streamline workflows
+- Access real-time data
+
+Pain Points:
+- Frustrated by fragmented tools
+- Manual data entry issues
+
+Goals:
+- Increase productivity by 30%
+- Reduce operational costs
+
+Motivations:
+- Career advancement
+- Solve business problems
+
+Buying Behaviors:
+Researches extensively for 2-3 months. Price-sensitive but willing to pay for quality.
+
+Communication Channels:
+- LinkedIn
+- Industry webinars
+
+Exclusion Criteria:
+- Companies under 50 employees
+"""
+        # Pad to exactly 2000 characters
+        narrative = narrative_base + "x" * (2000 - len(narrative_base))
+
+        profile = IdealCustomerProfile(
+            display_name="Test Profile",
+            narrative=narrative,
+            references=[],
+        )
+
+        assert len(profile.narrative) == 2000
+
+    def test_narrative_exactly_6000_characters_passes(self):
+        """Narrative with exactly 6000 characters should pass validation."""
+        narrative_base = """Demographics:
+- Age: 30-45
+- Gender: All
+- Education: Bachelor's
+- Location: Urban areas
+- Income: $75k-$150k
+
+Psychographics:
+- Values efficiency
+- Tech-savvy
+- Career-focused
+
+Needs / Jobs-to-be-done:
+- Streamline workflows
+- Access real-time data
+
+Pain Points:
+- Frustrated by fragmented tools
+- Manual data entry issues
+
+Goals:
+- Increase productivity by 30%
+- Reduce operational costs
+
+Motivations:
+- Career advancement
+- Solve business problems
+
+Buying Behaviors:
+Researches extensively for 2-3 months. Price-sensitive but willing to pay for quality.
+
+Communication Channels:
+- LinkedIn
+- Industry webinars
+
+Exclusion Criteria:
+- Companies under 50 employees
+"""
+        # Pad to exactly 6000 characters
+        narrative = narrative_base + "x" * (6000 - len(narrative_base))
+
+        profile = IdealCustomerProfile(
+            display_name="Test Profile",
+            narrative=narrative,
+            references=[],
+        )
+
+        assert len(profile.narrative) == 6000
+
+    def test_narrative_missing_demographics_fails(self):
+        """Narrative missing Demographics section should fail validation."""
+        narrative_missing_demographics = "x" * 2000  # No sections at all
+
+        with pytest.raises(ValidationError) as exc_info:
+            IdealCustomerProfile(
+                display_name="Test Profile",
+                narrative=narrative_missing_demographics,
+                references=[],
+            )
+
+        errors = exc_info.value.errors()
+        assert any("Demographics:" in str(error) for error in errors)
+
+    def test_narrative_missing_multiple_sections_fails(self):
+        """Narrative missing multiple sections should list all missing sections."""
+        narrative_partial = """Demographics:
+- Age: 30-45
+
+Psychographics:
+- Values efficiency
+""" + "x" * 2000
+
+        with pytest.raises(ValidationError) as exc_info:
+            IdealCustomerProfile(
+                display_name="Test Profile",
+                narrative=narrative_partial,
+                references=[],
+            )
+
+        errors = exc_info.value.errors()
+        # Should mention missing sections
+        assert any(
+            "missing required sections" in str(error).lower() for error in errors
+        )
 
 
 class TestProductCategoryMapping:
@@ -229,12 +624,12 @@ class TestMarketingResearchReport:
         profiles = [
             IdealCustomerProfile(
                 display_name="Marketing Manager Mary",
-                narrative="Mary manages marketing for B2B companies...",
+                narrative=create_valid_test_narrative("Mary"),
                 references=["https://example.com/mary-research"],
             ),
             IdealCustomerProfile(
                 display_name="Technical Director Tom",
-                narrative="Tom evaluates technical solutions...",
+                narrative=create_valid_test_narrative("Tom"),
                 references=["https://example.com/tom-research"],
             ),
         ]
@@ -296,7 +691,7 @@ class TestMarketingResearchReport:
         """Test that at least 2 master profiles are required."""
         profile = IdealCustomerProfile(
             display_name="Only One",
-            narrative="Test narrative",
+            narrative=create_valid_test_narrative("Only One"),
             references=[],
         )
 
@@ -329,7 +724,7 @@ class TestMarketingResearchReport:
         profiles = [
             IdealCustomerProfile(
                 display_name=f"Profile {i}",
-                narrative=f"Narrative {i}",
+                narrative=create_valid_test_narrative(f"Profile {i}"),
                 references=[],
             )
             for i in range(6)
@@ -364,12 +759,12 @@ class TestMarketingResearchReport:
         profiles = [
             IdealCustomerProfile(
                 display_name="Existing Profile",
-                narrative="Test narrative",
+                narrative=create_valid_test_narrative("Existing Profile"),
                 references=[],
             ),
             IdealCustomerProfile(
                 display_name="Another Profile",
-                narrative="Test narrative 2",
+                narrative=create_valid_test_narrative("Another Profile"),
                 references=[],
             ),
         ]
@@ -414,12 +809,12 @@ class TestProfileReusageAcrossCategories:
         profiles = [
             IdealCustomerProfile(
                 display_name="Enterprise Buyer",
-                narrative="Purchases for large organizations...",
+                narrative=create_valid_test_narrative("Enterprise Buyer"),
                 references=[],
             ),
             IdealCustomerProfile(
                 display_name="Small Business Owner",
-                narrative="Runs small businesses...",
+                narrative=create_valid_test_narrative("Small Business Owner"),
                 references=[],
             ),
         ]

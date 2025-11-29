@@ -50,6 +50,7 @@ def parse_account_form_data(
     estimated_annual_ad_budget: int | None = None,
     enabled_strategies: str | None = None,
     override_product_categories: str | None = None,
+    dry_run: bool = False,
 ) -> AccountRequest:
     """
     Parse multipart form data into AccountRequest model.
@@ -106,4 +107,5 @@ def parse_account_form_data(
         estimated_annual_ad_budget=estimated_annual_ad_budget,
         enabled_strategies=enabled_strategies_list,
         override_product_categories=override_product_categories_list,
+        dry_run=dry_run,
     )

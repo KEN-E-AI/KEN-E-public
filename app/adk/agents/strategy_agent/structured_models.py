@@ -121,8 +121,35 @@ class ProductCategory(BaseModel):
         description="The name of the product category (e.g., 'Cloud Services', 'Consumer Electronics')",
     )
     description: str = Field(
-        ..., 
-        description="The characteristics of products or services that have been included in this category."
+        ...,
+        description="""A detailed description of this product category (200-1000 characters).
+
+MUST include all of the following elements:
+
+1. List SPECIFIC products/services in this category (not generic phrases)
+   - Name actual products (e.g., 'checking accounts, savings accounts, credit cards')
+   - Be concrete and specific
+
+2. What this category helps customers accomplish
+   - How it helps manage/solve customer needs
+   - The functional purpose
+
+3. Specific problems this category addresses
+   - List concrete problems solved
+   - Customer pain points addressed
+
+4. Summary statement (optional)
+   - Brief synthesis of category value
+
+GOOD example (657 chars):
+'This category comprises core consumer-facing banking services including deposit accounts (checking, savings, money market, IRAs), everyday credit and debit cards, mobile and online banking access, bill pay and peer-to-peer payments, and other transactional tools. It helps customers manage their day-to-day finances in a secure, convenient and accessible way. Specifically, it addresses problems such as: needing a safe place to store money, making frequent payments or money transfers, tracking spending, accessing accounts digitally 24/7, and obtaining credit or debit access to funds. In short: simplifying money management, increasing liquidity and providing digital convenience.'
+
+BAD examples (too vague):
+- 'Comprehensive suite of financial products' (WHAT products? What problems?)
+- 'Range of banking services' (no specifics, no problems addressed)
+- 'Products and services to help customers' (generic, no details)
+
+Target length: 200-1000 characters. Include products, customer accomplishments, and problems solved.""",
     )
     value_propositions: list[ValueProposition] = Field(
         ...,
@@ -257,7 +284,19 @@ class StructuredBusinessStrategy(BaseModel):
     )
     company_overview_summary: str = Field(
         ...,
-        description="A comprehensive narrative that introduces the company's identity and background",
+        description="""A comprehensive narrative (800-4000 characters) that introduces the company.
+
+MUST include all of the following:
+1. Founding date or company age (e.g., 'Founded in 1959', 'Established over 60 years ago')
+2. Specific products/services offered - name actual products, not just generic categories (e.g., 'checking accounts, mortgages, credit cards' NOT just 'financial services')
+3. Company mission, vision, or purpose beyond profit (e.g., 'Our mission is to...', 'We aim to...')
+4. Brand elements (tagline, logo, visual identity) OR explicitly state 'Brand elements require additional research' if not found
+5. Target customers with specific characteristics or demographics (e.g., 'small business owners', 'tech-savvy millennials' NOT just 'consumers and businesses')
+6. Problems the company solves for its customers
+
+Use only complete, self-contained thoughts. Avoid phrases like 'as mentioned above' or references requiring external context.
+
+Target length: 800-4000 characters (roughly 3-5 substantial paragraphs).""",
     )
     business_value_propositions: list[ValueProposition] = Field(
         ...,

@@ -117,6 +117,7 @@ export const useCreateAccount = () => {
       businessStrategyDocuments?: File[];
       enabled_strategies?: string[];
       override_product_categories?: string[];
+      dry_run?: boolean;
     }) => {
       // Generate idempotency key for retry safety
       const idempotencyKey = `account_create_${accountData.organizationId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -150,6 +151,7 @@ export const useCreateAccount = () => {
           )
             ? accountData.override_product_categories
             : undefined,
+          dry_run: accountData.dry_run ?? false,
         };
 
         const result = await createAccountApi(apiPayload, { idempotencyKey });

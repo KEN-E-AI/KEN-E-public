@@ -1,13 +1,12 @@
 """Unit tests for account service."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
-from fastapi import BackgroundTasks, HTTPException
 
-from src.kene_api.services.account_service import create_account_internal
-from src.kene_api.models.kene_models import AccountRequest, Account
+import pytest
+from fastapi import BackgroundTasks, HTTPException
 from src.kene_api.auth import UserContext
+from src.kene_api.models.kene_models import Account, AccountRequest
+from src.kene_api.services.account_service import create_account_internal
 
 
 class TestCreateAccountInternal:
@@ -201,8 +200,8 @@ class TestCreateAccountInternal:
             kwargs = call_args[1]
             assert kwargs["uploaded_document_urls"] == uploaded_urls
             assert (
-                kwargs["company_name"] == "Test Organization"
-            )  # Now uses organization_name
+                kwargs["company_name"] == "Test Account"
+            )  # Uses account_name from the request
             assert kwargs["industry"] == "Technology"
 
     @pytest.mark.asyncio

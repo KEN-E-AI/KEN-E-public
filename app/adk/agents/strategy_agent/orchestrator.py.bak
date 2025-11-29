@@ -11,7 +11,7 @@ import logging
 import os
 import time
 import uuid
-from concurrent.futures import as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -57,7 +57,7 @@ except ImportError:
     )
     from .analytics_service import AnalyticsService
     from .artifact_utils import load_uploaded_documents_as_artifacts
-    from .constants import VALID_STRATEGY_TYPES
+    from .constants import DEFAULT_PRODUCT_CATEGORIES, VALID_STRATEGY_TYPES
     from .firestore import FirestoreClient
     from .models import StrategyContext
     from .performance_profiler import PerformanceProfiler
@@ -370,26 +370,25 @@ def extract_document_sections(
     return extracted
 
 
-@weave.op(name="execute_single_strategy")
 def _execute_single_strategy(
     strategy_config: dict,
-    strategy_context: StrategyContext,
+    context: StrategyContext,
     firestore_client: FirestoreClient,
     google_search_agent: Any,
     neo4j_ops: Any,
     embedding_generator: Any,
-    performance_profiler: Any | None,
-    analytics_service: Any | None,
+    performance_profiler: Optional[Any],
+    analytics_service: Optional[Any],
     dry_run: bool,
-    product_category_names: list[str] | None = None,
-    override_product_categories: list[str] | None = None,
+    product_category_names: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
 ) -> tuple[str, dict, bool]:
     """
     Execute a single strategy (research + format + save).
 
     Args:
         strategy_config: Strategy configuration dict
-        strategy_context: StrategyContext with company information
+        context: StrategyContext with company information
         firestore_client: Firestore client for saving
         google_search_agent: Google search tool agent
         neo4j_ops: Neo4j operations instance
@@ -435,7 +434,7 @@ def _execute_single_strategy(
 
         session = session_service.create_session_sync(
             app_name=app_name,
-            user_id=strategy_context.user_id or "system",
+            user_id=context.user_id or "system",
             session_id=session_id,
             state={},
         )
@@ -445,17 +444,15 @@ def _execute_single_strategy(
         )
 
         # Build comprehensive research query
-        research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {strategy_context.company_name}\n\n"
-        research_query += f"Company: {strategy_context.company_name}\n"
-        if strategy_context.websites:
-            research_query += f"Website(s): {', '.join(strategy_context.websites)}\n"
-        research_query += f"Industry: {strategy_context.industry}\n"
-        if strategy_context.customer_regions:
-            research_query += (
-                f"Customer Regions: {', '.join(strategy_context.customer_regions)}\n"
-            )
-        if strategy_context.annual_ad_budget:
-            research_query += f"Annual Advertising Budget: ${strategy_context.annual_ad_budget:,.0f}\n"
+        research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}\n\n"
+        research_query += f"Company: {context.company_name}\n"
+        if context.websites:
+            research_query += f"Website(s): {', '.join(context.websites)}\n"
+        research_query += f"Industry: {context.industry}\n"
+        if context.customer_regions:
+            research_query += f"Customer Regions: {', '.join(context.customer_regions)}\n"
+        if context.annual_ad_budget:
+            research_query += f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
 
         # For marketing strategy, handle product categories
         if strategy_name == "marketing_strategy":
@@ -488,105 +485,95 @@ def _execute_single_strategy(
                 research_query += f"\n{i}. {category}"
             research_query += "\n\nFor each category, include:\n"
             research_query += "- product_category_name (EXACT name from above)\n"
-            research_query += (
-                "- customer_profile_names (reference Master profiles by display_name)\n"
-            )
+            research_query += "- customer_profile_names (reference Master profiles by display_name)\n"
             research_query += "- marketing_channels, messaging_themes, campaign_ideas\n"
 
         # Execute research
-        logger.info(
-            f"[SPLIT AGENT] Sending research query (length: {len(research_query)} chars)"
-        )
+        logger.info(f"[SPLIT AGENT] Sending research query (length: {len(research_query)} chars)")
 
         @weave.op(name=f"{strategy_name}_research")
         def run_research():
-            return list(
-                runner.run(
-                    user_id=strategy_context.user_id or "system",
-                    session_id=session_id,
-                    new_message=Content(parts=[{"text": research_query}]),
-                )
+            return runner.run_sync(
+                user_id=context.user_id or "system",
+                session_id=session_id,
+                new_message=Content(parts=[{"text": research_query}]),
             )
 
-        events = run_research()
-
-        # Extract research text and grounding metadata (source URLs)
-        research_text = ""
-        source_urls = []
-        for event in events:
-            if hasattr(event, "content") and hasattr(event.content, "parts"):
-                for part in event.content.parts:
-                    if hasattr(part, "text") and part.text is not None:
-                        research_text += part.text
-
-            # Extract source URLs from grounding metadata
-            if hasattr(event, "grounding_metadata") and event.grounding_metadata:
-                if hasattr(event.grounding_metadata, "grounding_attributions"):
-                    for attribution in event.grounding_metadata.grounding_attributions:
-                        if hasattr(attribution, "source_id"):
-                            if hasattr(attribution.source_id, "grounding_passage"):
-                                if hasattr(
-                                    attribution.source_id.grounding_passage, "uri"
-                                ):
-                                    url = attribution.source_id.grounding_passage.uri
-                                    if url and url not in source_urls:
-                                        source_urls.append(url)
-
-        logger.info(
-            f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars, "
-            f"{len(source_urls)} source URLs"
-        )
-        if source_urls:
-            logger.info(f"[SPLIT AGENT] Source URLs: {source_urls[:3]}...")
-
-        if not research_text:
-            raise ValueError(f"Research phase returned no data for {strategy_name}")
+        research_result = run_research()
+        research_output = research_result.history[-1].parts[0]["text"]
+        logger.info(f"[SPLIT AGENT] ✅ Research complete ({len(research_output)} chars)")
 
         # ===== STEP 2: FORMAT (no tools, with schema) =====
-        # Using OpenAI directly (Gemini formatter removed due to high failure rate)
-        logger.info(
-            f"[SPLIT AGENT] Step 2: Formatting with OpenAI ({strategy_config['model_class'].__name__})"
+        logger.info(f"[SPLIT AGENT] Step 2: Formatting with {strategy_config['model_class'].__name__}")
+
+        formatter = strategy_config["create_formatter"]()
+        formatter_session_service = InMemorySessionService()
+        formatter_app_name = f"{strategy_name}_format"
+        formatter_session_id = f"session_{uuid.uuid4().hex[:8]}"
+
+        formatter_session = formatter_session_service.create_session_sync(
+            app_name=formatter_app_name,
+            user_id=context.user_id or "system",
+            session_id=formatter_session_id,
+            state={},
         )
 
-        # Import OpenAI formatter
-        from .openai_formatter import format_with_openai
+        formatter_runner = Runner(
+            agent=formatter,
+            app_name=formatter_app_name,
+            session_service=formatter_session_service,
+        )
 
-        # Load Firestore instructions using config_loader
-        firestore_instructions = None
-        if "formatter_doc_id" in strategy_config:
-            try:
-                from .config_loader import load_config_from_firestore
+        format_query = f"Format this {strategy_name.replace('_', ' ')} research:\n\n{research_output}"
 
-                config, _ = load_config_from_firestore(
-                    strategy_config["formatter_doc_id"]
-                )
-                firestore_instructions = getattr(
-                    config, "instruction", None
-                ) or getattr(config, "system_instruction", None)
-                if firestore_instructions:
-                    logger.info(
-                        f"[SPLIT AGENT] ✅ Loaded Firestore instructions for {strategy_name} "
-                        f"(length: {len(firestore_instructions)} chars)"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"[SPLIT AGENT] ⚠️  Failed to load Firestore instructions: {e}"
-                )
-
-        @weave.op(name=f"{strategy_name}_format_openai")
-        def run_openai_formatter():
-            return format_with_openai(
-                research_text,
-                strategy_config["model_class"],
-                strategy_name,
-                source_urls,
-                custom_instructions=firestore_instructions,
+        @weave.op(name=f"{strategy_name}_format_gemini")
+        def run_formatter():
+            return formatter_runner.run_sync(
+                user_id=context.user_id or "system",
+                session_id=formatter_session_id,
+                new_message=Content(parts=[{"text": format_query}]),
             )
 
-        openai_dict = run_openai_formatter()
-        formatted_data = strategy_config["model_class"](**openai_dict)
-        used_openai = True
-        logger.info("[SPLIT AGENT] ✅ OpenAI formatting successful")
+        try:
+            formatter_result = run_formatter()
+            formatted_text = formatter_result.history[-1].parts[0]["text"]
+
+            # Parse JSON from Gemini response
+            import re
+            json_match = re.search(r"```json\s*(\{.*?\})\s*```", formatted_text, re.DOTALL)
+            if json_match:
+                formatted_json = json_match.group(1)
+            else:
+                formatted_json = formatted_text.strip()
+
+            formatted_dict = json.loads(formatted_json)
+            formatted_data = strategy_config["model_class"](**formatted_dict)
+            logger.info("[SPLIT AGENT] ✅ Gemini formatting successful")
+
+        except Exception as gemini_error:
+            logger.warning(f"[SPLIT AGENT] Gemini formatting failed: {gemini_error}")
+            logger.info("[SPLIT AGENT] Falling back to OpenAI...")
+
+            # Import OpenAI fallback
+            from .openai_formatter import format_with_openai
+
+            # Get Firestore custom instructions
+            firestore_instructions = firestore_client.get_custom_instructions_sync(
+                strategy_config["formatter_doc_id"]
+            )
+
+            @weave.op(name=f"{strategy_name}_format_openai")
+            def run_openai_formatter():
+                return format_with_openai(
+                    research_output=research_output,
+                    model_class=strategy_config["model_class"],
+                    custom_instructions=firestore_instructions,
+                )
+
+            openai_dict = run_openai_formatter()
+            formatted_data = strategy_config["model_class"](**openai_dict)
+            used_openai = True
+            logger.info("[SPLIT AGENT] ✅ OpenAI fallback successful")
 
         # Convert to dict for storage
         doc_content = formatted_data.model_dump()
@@ -595,10 +582,10 @@ def _execute_single_strategy(
         if not dry_run:
             logger.info("[SPLIT AGENT] Step 3: Saving to Firestore")
             save_result = firestore_client.save_strategy_document_sync(
-                account_id=strategy_context.account_id,
+                account_id=context.account_id,
                 doc_type=strategy_name,
                 content=doc_content,
-                user_id=strategy_context.user_id,
+                user_id=context.user_id,
             )
 
             if not save_result:
@@ -614,9 +601,7 @@ def _execute_single_strategy(
             graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
             build_method = getattr(graph_builder, strategy_config["graph_method"])
             graph_nodes = build_method(
-                formatted_data,
-                strategy_context.account_id,
-                strategy_context.user_id or "system",
+                formatted_data, context.account_id, context.user_id or "system"
             )
             logger.info("[SPLIT AGENT] ✅ Neo4j graph built successfully")
         elif dry_run:
@@ -627,15 +612,13 @@ def _execute_single_strategy(
             logger.info("[SPLIT AGENT] Step 5: Generating embeddings")
             try:
                 embedding_result = embedding_generator.generate_embeddings_for_account(
-                    strategy_context.account_id
+                    context.account_id
                 )
                 logger.info(
                     f"[SPLIT AGENT] ✅ Embeddings generated: {embedding_result.get('embeddings_created', 0)} nodes"
                 )
             except Exception as embed_error:
-                logger.error(
-                    f"[SPLIT AGENT] ❌ Embedding generation failed: {embed_error}"
-                )
+                logger.error(f"[SPLIT AGENT] ❌ Embedding generation failed: {embed_error}")
         elif dry_run:
             logger.info("[DRY-RUN] ⏩ Skipping embedding generation")
 
@@ -666,23 +649,19 @@ def _execute_single_strategy(
         raise  # Re-raise for fail-fast behavior
 
 
-@weave.op(name="execute_all_strategies")
+@weave.op(name="execute_strategy_generation_direct")
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
-    analytics_service: AnalyticsService | None = None,
-    performance_profiler: PerformanceProfiler | None = None,
-    alert_manager: AlertManager | None = None,
-    enabled_strategies: list[str] | None = None,
-    override_product_categories: list[str] | None = None,
+    analytics_service: Optional[AnalyticsService] = None,
+    performance_profiler: Optional[PerformanceProfiler] = None,
+    alert_manager: Optional[AlertManager] = None,
+    enabled_strategies: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
-
-    This function orchestrates all 4 strategy executions (business first,
-    then 3 in parallel) and is traced to ensure proper parent-child
-    relationships in W&B Weave.
 
     New architecture:
     1. Runs researcher agent (with tools, no output_schema)
@@ -717,25 +696,17 @@ def execute_strategy_generation_direct(
 
     # Log dry-run mode if enabled
     if dry_run:
-        logger.info(
-            "[DRY-RUN] 🔧 Dry-run mode enabled - strategies will NOT be saved to Firestore/Neo4j"
-        )
-        logger.info(
-            "[DRY-RUN] W&B Weave traces will be captured for evaluation purposes"
-        )
+        logger.info("[DRY-RUN] 🔧 Dry-run mode enabled - strategies will NOT be saved to Firestore/Neo4j")
+        logger.info("[DRY-RUN] W&B Weave traces will be captured for evaluation purposes")
 
     # Validate and set default for enabled_strategies
     if enabled_strategies is None:
         # If not specified, generate all strategies
         enabled_strategies = VALID_STRATEGY_TYPES.copy()
-        logger.info(
-            "[SELECTIVE] No enabled_strategies specified, generating all strategies"
-        )
+        logger.info("[SELECTIVE] No enabled_strategies specified, generating all strategies")
     else:
         # Validate that all provided strategies are valid
-        invalid_strategies = [
-            s for s in enabled_strategies if s not in VALID_STRATEGY_TYPES
-        ]
+        invalid_strategies = [s for s in enabled_strategies if s not in VALID_STRATEGY_TYPES]
         if invalid_strategies:
             raise ValueError(
                 f"Invalid strategy types: {invalid_strategies}. "
@@ -789,6 +760,7 @@ def execute_strategy_generation_direct(
 
         # Import Neo4j components
         from .neo4j_tools import get_neo4j_operations
+        from .openai_formatter import format_with_openai  # Shared OpenAI formatter
 
         # Import Pydantic models
         from .structured_models import StructuredBusinessStrategy
@@ -921,13 +893,11 @@ def execute_strategy_generation_direct(
 
     # PHASE 1: Execute business strategy (if enabled)
     if business_strategy_config and "business_strategy" in enabled_strategies:
-        logger.info(
-            "\n[PARALLEL] ========== PHASE 1: Executing business_strategy (must run first) =========="
-        )
+        logger.info("\n[PARALLEL] ========== PHASE 1: Executing business_strategy (must run first) ==========")
         try:
-            strategy_name, doc_content, _used_openai = _execute_single_strategy(
+            strategy_name, doc_content, used_openai = _execute_single_strategy(
                 strategy_config=business_strategy_config,
-                strategy_context=context,
+                context=context,
                 firestore_client=firestore_client,
                 google_search_agent=google_search_agent,
                 neo4j_ops=neo4j_ops,
@@ -952,18 +922,14 @@ def execute_strategy_generation_direct(
                         f"[COORDINATION] Extracted {len(product_category_names)} ProductCategory names: {product_category_names}"
                     )
                 except Exception as e:
-                    logger.warning(
-                        f"[COORDINATION] Failed to extract ProductCategory names: {e}"
-                    )
+                    logger.warning(f"[COORDINATION] Failed to extract ProductCategory names: {e}")
 
         except Exception as e:
             error_msg = f"Business strategy generation failed: {e}"
             logger.error(f"[PARALLEL] ❌ {error_msg}")
             # Fail-fast: If business strategy fails, we might want to continue with others
             # but marketing will use default categories
-            logger.warning(
-                "[PARALLEL] Continuing with other strategies using default product categories"
-            )
+            logger.warning("[PARALLEL] Continuing with other strategies using default product categories")
 
     # PHASE 2: Execute remaining strategies in parallel
     remaining_strategies = [
@@ -974,28 +940,17 @@ def execute_strategy_generation_direct(
         logger.info(
             f"\n[PARALLEL] ========== PHASE 2: Executing {len(remaining_strategies)} strategies in parallel =========="
         )
-        logger.info(
-            f"[PARALLEL] Strategies: {[s['name'] for s in remaining_strategies]}"
-        )
+        logger.info(f"[PARALLEL] Strategies: {[s['name'] for s in remaining_strategies]}")
 
-        # Use Weave's ThreadPoolExecutor to maintain trace context across threads
-        # This ensures all parallel strategy executions nest under the parent trace
-        logger.info(
-            "[PARALLEL] Using weave.ThreadPoolExecutor for trace-aware parallel execution"
-        )
-
-        # Use weave.ThreadPoolExecutor for parallel execution with proper trace nesting
-        with weave.ThreadPoolExecutor(
-            max_workers=len(remaining_strategies)
-        ) as executor:
+        # Use ThreadPoolExecutor for parallel execution
+        with ThreadPoolExecutor(max_workers=len(remaining_strategies)) as executor:
             # Submit all strategies for parallel execution
-            # Context propagation happens automatically in Python 3.12+
             future_to_strategy = {}
-            for strat_config in remaining_strategies:
+            for strategy_config in remaining_strategies:
                 future = executor.submit(
                     _execute_single_strategy,
-                    strategy_config=strat_config,
-                    strategy_context=context,
+                    strategy_config=strategy_config,
+                    context=context,
                     firestore_client=firestore_client,
                     google_search_agent=google_search_agent,
                     neo4j_ops=neo4j_ops,
@@ -1006,32 +961,26 @@ def execute_strategy_generation_direct(
                     product_category_names=product_category_names,
                     override_product_categories=override_product_categories,
                 )
-                future_to_strategy[future] = strat_config["name"]
+                future_to_strategy[future] = strategy_config["name"]
 
             # Process results as they complete (fail-fast on first error)
             for future in as_completed(future_to_strategy):
                 strategy_name = future_to_strategy[future]
                 try:
-                    result_name, doc_content, _used_openai = future.result()
+                    result_name, doc_content, used_openai = future.result()
                     generated_documents[result_name] = doc_content
                     logger.info(f"[PARALLEL] ✅ {result_name} completed successfully")
                 except Exception as e:
                     error_msg = f"{strategy_name} failed: {e}"
                     logger.error(f"[PARALLEL] ❌ {error_msg}")
                     # Fail-fast: Cancel remaining futures and raise
-                    logger.error(
-                        "[PARALLEL] Cancelling remaining strategies due to failure (fail-fast)"
-                    )
+                    logger.error("[PARALLEL] Cancelling remaining strategies due to failure (fail-fast)")
                     for remaining_future in future_to_strategy:
                         if not remaining_future.done():
                             remaining_future.cancel()
-                    raise RuntimeError(
-                        f"Strategy generation failed (fail-fast): {error_msg}"
-                    ) from e
+                    raise RuntimeError(f"Strategy generation failed (fail-fast): {error_msg}") from e
 
-        logger.info(
-            f"[PARALLEL] ✅ All {len(remaining_strategies)} parallel strategies completed successfully"
-        )
+        logger.info(f"[PARALLEL] ✅ All {len(remaining_strategies)} parallel strategies completed successfully")
 
     # Don't close Neo4j connection - let driver manage its own lifecycle and handle reconnections
     # Closing causes "Driver closed" errors when strategies take a long time to generate
@@ -1045,6 +994,464 @@ def execute_strategy_generation_direct(
 # OLD SEQUENTIAL LOOP CODE REMOVED - Now using two-phase parallel execution above
 # The old code has been extracted into _execute_single_strategy() helper function
 # Business strategy runs first, then remaining strategies run in parallel with ThreadPoolExecutor
+
+
+@weave.op(name="execute_strategy_generation")
+def execute_strategy_generation(
+    company_name: str,
+    industry: str,
+    websites: str,
+    customer_regions: str,
+    account_id: str,
+    user_id: str,
+    annual_ad_budget: float = 0.0,
+    project_id: Optional[str] = None,
+    uploaded_documents: Optional[List[str]] = None,
+    enable_analytics: bool = True,
+    enabled_strategies: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
+    dry_run: bool = False,
+) -> str:
+    """Execute strategy generation - FIND REAL FUNCTION BELOW"""
+    pass
+
+
+# PLACEHOLDER - Real function is at line 1433
+if False:
+    strategy_name = None
+    enabled_strategies = []
+    if strategy_name not in enabled_strategies:
+            logger.info(
+                f"\n[SELECTIVE] ========== Skipping {strategy_name} "
+                f"(not in enabled_strategies) =========="
+            )
+            continue
+
+        logger.info(f"\n[SPLIT AGENT] ========== Starting {strategy_name} ==========")
+
+        # Track operation
+        operation = None
+        if performance_profiler:
+            operation = performance_profiler.start_operation(
+                agent_name=f"{strategy_name}_split",
+                operation="strategy_generation",
+                metadata={"strategy_type": strategy_name},
+            )
+
+        try:
+            # ===== STEP 1: RESEARCH (with tools, no schema) =====
+            logger.info(f"[SPLIT AGENT] Step 1: Research phase for {strategy_name}")
+            researcher = strategy_config["create_researcher"]()
+
+            # Run researcher agent
+            from google.adk import Runner
+            from google.adk.sessions import InMemorySessionService
+            from google.genai.types import Content
+
+            session_service = InMemorySessionService()
+            app_name = f"{strategy_name}_research"
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
+
+            session = session_service.create_session_sync(
+                app_name=app_name,
+                user_id=context.user_id or "system",
+                session_id=session_id,
+                state={},
+            )
+
+            runner = Runner(
+                agent=researcher, app_name=app_name, session_service=session_service
+            )
+
+            # Build comprehensive research query with all context
+            research_query = f"Research comprehensive {strategy_name.replace('_', ' ')} for {context.company_name}\n\n"
+            research_query += f"Company: {context.company_name}\n"
+            if context.websites:
+                research_query += f"Website(s): {', '.join(context.websites)}\n"
+            research_query += f"Industry: {context.industry}\n"
+            if context.customer_regions:
+                research_query += (
+                    f"Customer Regions: {', '.join(context.customer_regions)}\n"
+                )
+            if context.annual_ad_budget:
+                research_query += (
+                    f"Annual Advertising Budget: ${context.annual_ad_budget:,.0f}\n"
+                )
+
+            # For marketing strategy, include ProductCategory names
+            if strategy_name == "marketing_strategy":
+                # Determine which product categories to use
+                categories_to_use = None
+                if override_product_categories is not None:
+                    # Use override categories (admin provided for testing)
+                    categories_to_use = override_product_categories
+                    logger.info(
+                        f"[SELECTIVE] Using {len(categories_to_use)} override product categories "
+                        f"for marketing strategy"
+                    )
+                elif product_category_names:
+                    # Use categories from business strategy
+                    categories_to_use = product_category_names
+                    logger.info(
+                        f"[COORDINATION] Using {len(categories_to_use)} product categories "
+                        f"from business strategy"
+                    )
+                else:
+                    # Use default categories (business strategy not run)
+                    categories_to_use = DEFAULT_PRODUCT_CATEGORIES
+                    logger.info(
+                        f"[SELECTIVE] Business strategy not run and no override provided - "
+                        f"using {len(categories_to_use)} default product categories"
+                    )
+
+                # Add structured instructions with product categories
+                research_query += (
+                    "\n\n=== CRITICAL STRUCTURE REQUIREMENTS ===\n"
+                )
+                research_query += "\nPHASE 1: Create 2-5 MASTER customer profiles for the entire company\n"
+                research_query += "- Give each profile a unique, descriptive display_name (e.g., 'Marketing Manager Mary', 'Technical Director Tom')\n"
+                research_query += "- Include ONLY: display_name, narrative (persona background/needs/motivations), references\n"
+                research_query += "- Do NOT include strategies in profiles - strategies are created separately per product category\n"
+                research_query += "- Focus on distinct customer segments with different needs, behaviors, and buying patterns\n"
+                research_query += "\nPHASE 2: For EACH product category below, create marketing strategies for relevant profiles\n"
+                research_query += "Product categories:\n"
+                for cat_name in categories_to_use:
+                    research_query += f"- {cat_name}\n"
+                research_query += "\nFor each category:\n"
+                research_query += "1. Identify which 1-5 master profiles are most relevant to this category\n"
+                research_query += "2. For EACH relevant profile, create a COMPLETE 5-stage marketing strategy:\n"
+                research_query += "   - problem_awareness_strategy (how to make this profile aware of problems this category solves)\n"
+                research_query += "   - brand_awareness_strategy (how to make this profile aware of our brand for this category)\n"
+                research_query += "   - consideration_strategy (how to persuade this profile to evaluate this category)\n"
+                research_query += "   - conversion_strategy (how to convert this profile to purchase this category)\n"
+                research_query += "   - loyalty_strategy (how to build loyalty with this profile after purchasing this category)\n"
+                research_query += "\nIMPORTANT: Each strategy is SPECIFIC to the combination of product category + customer profile.\n"
+                research_query += "The same profile can have DIFFERENT strategies for different categories.\n"
+                logger.info(
+                    f"[COORDINATION] Passing {len(categories_to_use)} ProductCategory names to marketing research with product-scoped strategy instructions"
+                )
+
+            message_content = Content(role="user", parts=[{"text": research_query}])
+
+            # Wrap researcher execution with weave tracing
+            @weave.op(name=f"{strategy_name}_researcher")
+            def run_researcher():
+                return list(
+                    runner.run(
+                        user_id=context.user_id or "system",
+                        session_id=session_id,
+                        new_message=message_content,
+                    )
+                )
+
+            events = run_researcher()
+
+            # Extract research text and grounding metadata (source URLs)
+            research_text = ""
+            source_urls = []
+            for event in events:
+                if hasattr(event, "content") and hasattr(event.content, "parts"):
+                    for part in event.content.parts:
+                        if hasattr(part, "text") and part.text is not None:
+                            research_text += part.text
+
+                # Extract source URLs from grounding metadata
+                if hasattr(event, "grounding_metadata") and event.grounding_metadata:
+                    if hasattr(event.grounding_metadata, "grounding_attributions"):
+                        for (
+                            attribution
+                        ) in event.grounding_metadata.grounding_attributions:
+                            if hasattr(attribution, "source_id"):
+                                if hasattr(attribution.source_id, "grounding_passage"):
+                                    # Web grounding passages have URI
+                                    if hasattr(
+                                        attribution.source_id.grounding_passage, "uri"
+                                    ):
+                                        url = (
+                                            attribution.source_id.grounding_passage.uri
+                                        )
+                                        if url and url not in source_urls:
+                                            source_urls.append(url)
+
+            if not research_text:
+                raise ValueError(f"Research phase returned no data for {strategy_name}")
+
+            logger.info(
+                f"[SPLIT AGENT] ✅ Research completed: {len(research_text)} chars, {len(source_urls)} source URLs"
+            )
+            if source_urls:
+                logger.info(
+                    f"[SPLIT AGENT] Source URLs: {source_urls[:3]}..."
+                )  # Log first 3
+
+            # ===== STEP 2: FORMAT (no tools, with schema) =====
+            logger.info(f"[SPLIT AGENT] Step 2: Format phase for {strategy_name}")
+            formatter = strategy_config["create_formatter"]()
+
+            # Load Firestore instructions directly from config if formatter_doc_id is provided
+            # This ensures we have them for OpenAI fallback even if Gemini formatter fails
+            firestore_instructions = None
+            if "formatter_doc_id" in strategy_config:
+                try:
+                    from .config_loader import load_config_from_firestore
+                    config, _ = load_config_from_firestore(strategy_config["formatter_doc_id"])
+                    # Try both field names: 'instruction' (Firestore field name) and 'system_instruction' (ADK field name)
+                    firestore_instructions = getattr(config, "instruction", None) or getattr(config, "system_instruction", None)
+                    if firestore_instructions:
+                        logger.info(
+                            f"[SPLIT AGENT] ✅ Loaded Firestore instructions for {strategy_name} formatter "
+                            f"(length: {len(firestore_instructions)} chars, type: {type(firestore_instructions).__name__})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[SPLIT AGENT] ⚠️ Config loaded but no system_instruction found for {strategy_name} "
+                            f"(value: {repr(firestore_instructions)})"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"[SPLIT AGENT] ⚠️ Failed to load Firestore instructions for {strategy_name}: {e}"
+                    )
+            else:
+                logger.warning(
+                    f"[SPLIT AGENT] ⚠️ No formatter_doc_id in config for {strategy_name}, cannot load Firestore instructions"
+                )
+
+            # Try Gemini formatter first
+            formatted_data = None
+            used_openai = False
+
+            try:
+                session_service2 = InMemorySessionService()
+                app_name2 = f"{strategy_name}_format"
+                session_id2 = f"session_{uuid.uuid4().hex[:8]}"
+
+                session2 = session_service2.create_session_sync(
+                    app_name=app_name2,
+                    user_id=context.user_id or "system",
+                    session_id=session_id2,
+                    state={},
+                )
+
+                runner2 = Runner(
+                    agent=formatter,
+                    app_name=app_name2,
+                    session_service=session_service2,
+                )
+
+                # Build format instructions with source URLs
+                format_instructions = f"""Format this research into the required structured format.
+
+IMPORTANT: For each node with descriptive information from web research, populate the 'references' field with relevant source URLs from the list below.
+
+Source URLs from research:
+{chr(10).join(f"- {url}" for url in source_urls) if source_urls else "(No URLs found in grounding metadata)"}
+
+Research text:
+
+{research_text}"""
+
+                format_message = Content(
+                    role="user", parts=[{"text": format_instructions}]
+                )
+
+                # Wrap formatter execution with weave tracing
+                @weave.op(name=f"{strategy_name}_gemini_formatter")
+                def run_formatter():
+                    return list(
+                        runner2.run(
+                            user_id=context.user_id or "system",
+                            session_id=session_id2,
+                            new_message=format_message,
+                        )
+                    )
+
+                events2 = run_formatter()
+
+                # Extract formatted JSON
+                formatted_json = ""
+                for event in events2:
+                    if hasattr(event, "content") and hasattr(event.content, "parts"):
+                        for part in event.content.parts:
+                            if hasattr(part, "text") and part.text is not None:
+                                formatted_json += part.text
+
+                # Parse and validate with Pydantic
+                formatted_data = strategy_config["model_class"](
+                    **json.loads(formatted_json)
+                )
+                logger.info("[SPLIT AGENT] ✅ Gemini formatting successful")
+
+            except Exception as e:
+                logger.warning(
+                    f"[SPLIT AGENT] ⚠️ Gemini formatting failed: {e}, falling back to OpenAI"
+                )
+                # Log the instructions being passed to OpenAI fallback
+                if firestore_instructions:
+                    logger.info(
+                        f"[SPLIT AGENT] Passing Firestore instructions to OpenAI fallback "
+                        f"(length: {len(firestore_instructions)} chars)"
+                    )
+                else:
+                    logger.warning(
+                        f"[SPLIT AGENT] ⚠️ No Firestore instructions available for OpenAI fallback "
+                        f"(value: {repr(firestore_instructions)})"
+                    )
+                # Fallback to OpenAI using shared formatter
+                try:
+                    openai_dict = format_with_openai(
+                        research_text,
+                        strategy_config["model_class"],
+                        strategy_name,
+                        source_urls,
+                        custom_instructions=firestore_instructions,
+                    )
+                    formatted_data = strategy_config["model_class"](**openai_dict)
+                    used_openai = True
+                    logger.info("[SPLIT AGENT] ✅ OpenAI fallback successful")
+                except Exception as openai_error:
+                    raise ValueError(
+                        f"Both Gemini and OpenAI formatting failed: {openai_error}"
+                    )
+
+            # Convert to dict for storage
+            doc_content = formatted_data.model_dump()
+
+            # ===== STEP 3: SAVE TO FIRESTORE =====
+            if not dry_run:
+                logger.info("[SPLIT AGENT] Step 3: Saving to Firestore")
+                save_result = firestore_client.save_strategy_document_sync(
+                    account_id=context.account_id,
+                    doc_type=strategy_name,
+                    content=doc_content,
+                    user_id=context.user_id,
+                )
+
+                if not save_result:
+                    raise ValueError(f"Failed to save {strategy_name} to Firestore")
+
+                logger.info("[SPLIT AGENT] ✅ Saved to Firestore")
+            else:
+                logger.info("[DRY-RUN] ⏩ Skipping Firestore save")
+
+            # ===== STEP 4: BUILD NEO4J GRAPH =====
+            if neo4j_ops and not dry_run:
+                logger.info("[SPLIT AGENT] Step 4: Building Neo4j knowledge graph")
+                graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
+                build_method = getattr(graph_builder, strategy_config["graph_method"])
+                graph_nodes = build_method(
+                    formatted_data, context.account_id, context.user_id or "system"
+                )
+                logger.info("[SPLIT AGENT] ✅ Neo4j graph built successfully")
+            elif dry_run:
+                logger.info("[DRY-RUN] ⏩ Skipping Neo4j graph build")
+
+            # ===== STEP 5: GENERATE EMBEDDINGS =====
+            if neo4j_ops and embedding_generator and not dry_run:
+                logger.info("[SPLIT AGENT] Step 5: Generating embeddings")
+                try:
+                    embedding_result = (
+                        embedding_generator.generate_embeddings_for_account(
+                            context.account_id
+                        )
+                    )
+                    logger.info(
+                        f"[SPLIT AGENT] ✅ Embeddings generated: {embedding_result.get('embeddings_created', 0)} nodes"
+                    )
+                except Exception as embed_error:
+                    logger.error(
+                        f"[SPLIT AGENT] ❌ Embedding generation failed: {embed_error}"
+                    )
+            elif dry_run:
+                logger.info("[DRY-RUN] ⏩ Skipping embedding generation")
+
+            # Success!
+            generated_documents[strategy_name] = doc_content
+            logger.info(f"[SPLIT AGENT] ✅✅✅ Successfully completed {strategy_name}")
+
+            # Extract ProductCategory names from business strategy for marketing coordination
+            if (
+                strategy_name == "business_strategy"
+                and "product_portfolio" in doc_content
+            ):
+                try:
+                    for category in doc_content["product_portfolio"]:
+                        # Use product_name (correct field per structured_models.py)
+                        # NOT category_name which was deprecated
+                        if "product_name" in category:
+                            product_category_names.append(category["product_name"])
+                        elif "category_name" in category:
+                            # Fallback for backward compatibility
+                            product_category_names.append(category["category_name"])
+                    logger.info(
+                        f"[COORDINATION] Extracted {len(product_category_names)} ProductCategory names from business strategy: {product_category_names}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[COORDINATION] Failed to extract ProductCategory names: {e}"
+                    )
+
+            # Track analytics
+            if performance_profiler and operation:
+                performance_profiler.end_operation(operation, success=True)
+
+            if analytics_service:
+                analytics_service.track_agent_execution(
+                    agent_name=f"{strategy_name}_{'openai' if used_openai else 'gemini'}",
+                    prompt_tokens=0,
+                    response_tokens=0,
+                    model="gpt-4o" if used_openai else "gemini-2.5-pro",
+                    execution_time=0,
+                    success=True,
+                )
+
+        except Exception as e:
+            error_msg = f"Error generating {strategy_name}: {e}"
+            logger.error(f"[SPLIT AGENT] ❌ {error_msg}")
+
+            if performance_profiler and operation:
+                performance_profiler.end_operation(
+                    operation, success=False, error=str(e)
+                )
+
+            # Create placeholder nodes so graph isn't completely empty
+            if neo4j_ops:
+                try:
+                    logger.info(
+                        f"[SPLIT AGENT] Creating placeholder nodes for failed {strategy_name}"
+                    )
+                    placeholder_data = _create_placeholder_strategy(
+                        strategy_config["model_class"],
+                        strategy_name,
+                        context.company_name,
+                    )
+                    graph_builder = strategy_config["graph_builder_class"](neo4j_ops)
+                    build_method = getattr(
+                        graph_builder, strategy_config["graph_method"]
+                    )
+                    build_method(
+                        placeholder_data,
+                        context.account_id,
+                        context.user_id or "system",
+                    )
+                    logger.info(
+                        f"[SPLIT AGENT] ✅ Created placeholder nodes for {strategy_name}"
+                    )
+                except Exception as placeholder_error:
+                    logger.warning(
+                        f"[SPLIT AGENT] Failed to create placeholders: {placeholder_error}"
+                    )
+
+            # Continue to next strategy instead of fail-fast
+            # This ensures we try all strategies even if one fails
+            continue
+
+    # Don't close Neo4j connection - let driver manage its own lifecycle and handle reconnections
+    # Closing causes "Driver closed" errors when strategies take a long time to generate
+
+    logger.info(
+        f"\n[SPLIT AGENT] 🎉🎉🎉 Successfully generated all {len(generated_documents)} strategies!"
+    )
+    return generated_documents
 
 
 @weave.op(name="execute_strategy_generation")

@@ -44,6 +44,7 @@ export interface AccountCreationData {
   // Step 4: Strategy Selection (admin only)
   enabled_strategies: string[];
   override_product_categories: string[];
+  dry_run?: boolean;
 
   // Configuration fields (from step 1 and template)
   timezone: string;
@@ -96,6 +97,7 @@ export const AccountCreationWizard = ({
     timezone: "America/New_York",
     data_region: "US",
     region: ["US"],
+    dry_run: false,
   });
 
   const STRATEGY_STEP = 4;
@@ -133,6 +135,7 @@ export const AccountCreationWizard = ({
         timezone: "America/New_York",
         data_region: "US",
         region: ["US"],
+        dry_run: false,
       });
       setValidationErrors([]);
       setSubmitError(null);
@@ -377,6 +380,7 @@ export const AccountCreationWizard = ({
                   override_product_categories={
                     formData.override_product_categories
                   }
+                  dry_run={formData.dry_run}
                   onUpdate={(data) => setFormData({ ...formData, ...data })}
                 />
               )}
