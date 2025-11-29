@@ -175,6 +175,46 @@ Target length: 2000-6000 characters total across all sections. This narrative is
         description="Source URLs where information about this customer profile was found during research",
     )
 
+    @field_validator("narrative")
+    @classmethod
+    def validate_narrative_structure(cls, v: str) -> str:
+        """
+        Validate that the narrative contains all required sections and meets length requirements.
+
+        Ensures the narrative is comprehensive and structured according to the field requirements.
+        """
+        # Check minimum length
+        if len(v) < 2000:
+            raise ValueError(
+                f"Narrative must be at least 2000 characters (got {len(v)})"
+            )
+
+        # Check maximum length
+        if len(v) > 6000:
+            raise ValueError(
+                f"Narrative must be at most 6000 characters (got {len(v)})"
+            )
+
+        # Check required sections
+        required_sections = [
+            "Demographics:",
+            "Psychographics:",
+            "Needs / Jobs-to-be-done:",
+            "Pain Points:",
+            "Goals:",
+            "Motivations:",
+            "Buying Behaviors:",
+            "Communication Channels:",
+            "Exclusion Criteria:",
+        ]
+        missing = [s for s in required_sections if s not in v]
+        if missing:
+            raise ValueError(
+                f"Narrative missing required sections: {', '.join(missing)}"
+            )
+
+        return v
+
 
 class ProductCategoryMapping(BaseModel):
     """
