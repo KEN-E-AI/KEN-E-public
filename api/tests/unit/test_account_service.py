@@ -240,19 +240,22 @@ class TestCreateAccountInternal:
 
         with patch("src.kene_api.tasks.strategy_tasks.trigger_strategy_generation"):
             with patch(
-                "src.kene_api.services.notification_service_v2.NotificationService"
+                "src.kene_api.services.account_service.NotificationService"
             ) as mock_notification_service:
-                with patch("src.kene_api.repositories.FirestoreNotificationRepository"):
+                with patch(
+                    "src.kene_api.services.account_service.FirestoreNotificationRepository"
+                ) as mock_notification_repository:
+                    # Setup mock notification repository
+                    mock_repo_instance = AsyncMock()
+                    mock_repo_instance.batch_create_user_statuses = AsyncMock()
+                    mock_notification_repository.return_value = mock_repo_instance
+
                     # Setup mock notification service
                     mock_service_instance = AsyncMock()
                     mock_service_instance.create_notification.return_value = (
                         "notif_test_123"
                     )
                     mock_notification_service.return_value = mock_service_instance
-
-                    # Also mock batch_create_user_statuses
-                    mock_repo_instance = AsyncMock()
-                    mock_repo_instance.batch_create_user_statuses = AsyncMock()
 
                     result = await create_account_internal(
                         request=sample_request,
@@ -275,3 +278,50 @@ class TestCreateAccountInternal:
                     assert call_kwargs["description"] == "Configure your new account"
                     assert "account_name" in call_kwargs["data"]
                     assert call_kwargs["data"]["account_name"] == "Test Account"
+
+    @pytest.mark.asyncio
+    async def test_account_creation_succeeds_when_notification_fails(
+        self, mock_dependencies, sample_request
+    ):
+        """Test that account creation succeeds even when notification creation fails."""
+        # Mock firestore client for notification repository
+        mock_firestore_client = MagicMock()
+        mock_dependencies["firestore"].get_client.return_value = mock_firestore_client
+
+        with patch("src.kene_api.tasks.strategy_tasks.trigger_strategy_generation"):
+            with patch(
+                "src.kene_api.services.account_service.NotificationService"
+            ) as mock_notification_service:
+                with patch(
+                    "src.kene_api.services.account_service.FirestoreNotificationRepository"
+                ) as mock_notification_repository:
+                    # Setup mock notification repository
+                    mock_repo_instance = AsyncMock()
+                    mock_notification_repository.return_value = mock_repo_instance
+
+                    # Setup mock notification service to raise exception
+                    mock_service_instance = AsyncMock()
+                    mock_service_instance.create_notification.side_effect = Exception(
+                        "Notification service unavailable"
+                    )
+                    mock_notification_service.return_value = mock_service_instance
+
+                    # Account creation should still succeed
+                    result = await create_account_internal(
+                        request=sample_request,
+                        uploaded_document_urls=[],
+                        background_tasks=mock_dependencies["background_tasks"],
+                        user=mock_dependencies["user"],
+                        firestore=mock_dependencies["firestore"],
+                        storage=mock_dependencies["storage"],
+                        neo4j_service=mock_dependencies["neo4j"],
+                        bigquery_service=None,
+                    )
+
+                    # Verify account was created successfully despite notification failure
+                    assert result is not None
+                    assert isinstance(result, Account)
+                    assert result.account_name == "Test Account"
+
+                    # Verify notification creation was attempted
+                    mock_service_instance.create_notification.assert_called_once()

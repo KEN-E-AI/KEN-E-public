@@ -668,7 +668,9 @@ Please execute strategy generation with these parameters:
         if not dry_run:
             await update_account_setup_status(account_id, "completed", completed=True)
         else:
-            logger.info(f"[DRY-RUN] Strategy generation complete - skipping status update for {account_id}")
+            logger.info(
+                f"[DRY-RUN] Strategy generation complete - skipping status update for {account_id}"
+            )
 
         # Send email notification
         try:
@@ -723,7 +725,10 @@ Please execute strategy generation with these parameters:
 
 
 async def update_account_setup_status(
-    account_id: str, status: str, completed: bool = False, error_message: str = None
+    account_id: str,
+    status: str,
+    completed: bool = False,
+    error_message: str | None = None,
 ) -> None:
     """
     Update the setup status of an account in Neo4j.
@@ -965,7 +970,9 @@ def trigger_strategy_generation_sync(
             )
             # Add callback for cleanup/logging
             task.add_done_callback(
-                lambda t: logger.info(f"Strategy generation task completed for {account_id}")
+                lambda t: logger.info(
+                    f"Strategy generation task completed for {account_id}"
+                )
             )
         else:
             # Run in the existing loop
