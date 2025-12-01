@@ -506,7 +506,6 @@ const AccountsManagement = ({
     region: [] as string[],
   });
 
-
   // Filter accounts based on user permissions
   const organizationAccounts = useMemo(() => {
     // Super admins or organization admins have access to all accounts
@@ -1435,7 +1434,6 @@ const AccountsManagement = ({
     });
   };
 
-
   return (
     <TooltipProvider>
       <Card>
@@ -2261,11 +2259,16 @@ const AccountsManagement = ({
         isOpen={isCreateAccountModalOpen}
         onClose={() => {
           setIsCreateAccountModalOpen(false);
-          // Clean up operation state when wizard closes
-          if (isOperationInProgress) {
-            endOperation();
+          // Only clean up if user is canceling (not if account creation is in progress)
+          // The progress tracking will clean up when creation completes/fails
+          if (!creatingAccountId) {
+            // No account creation in progress - safe to clean up
+            if (isOperationInProgress) {
+              endOperation();
+            }
           }
-          setCreatingAccountId(null);
+          // Don't clear creatingAccountId here - let the progress tracking handle it
+          // This allows polling to continue after wizard closes
         }}
         onComplete={handleWizardComplete}
       />

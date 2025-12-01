@@ -10,7 +10,14 @@ from ..auth import UserContext
 from ..bigquery import BigQueryService
 from ..database import Neo4jService
 from ..firestore import FirestoreService
-from ..models.kene_models import Account, AccountRequest
+from ..models.kene_models import (
+    Account,
+    AccountRequest,
+    NotificationCategory,
+    NotificationStatus,
+)
+from ..repositories import FirestoreNotificationRepository
+from ..services import NotificationService
 from ..services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
@@ -59,10 +66,10 @@ async def _rollback_account_creation(
         MATCH (acc:Account {account_id: $account_id})
         DETACH DELETE acc
         """
-        await neo4j_service.execute_write_query(delete_query, {"account_id": account_id})
-        logger.info(
-            f"[ROLLBACK] Successfully deleted account {account_id} from Neo4j"
+        await neo4j_service.execute_write_query(
+            delete_query, {"account_id": account_id}
         )
+        logger.info(f"[ROLLBACK] Successfully deleted account {account_id} from Neo4j")
     except Exception as rollback_error:
         logger.error(
             f"[ROLLBACK] Failed to delete account {account_id} during rollback: {rollback_error}"
@@ -291,12 +298,16 @@ async def create_account_internal(
     except Exception as e:
         if not request.dry_run:
             logger.error(f"[ACCOUNT_CREATION] Failed to create account in Neo4j: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to create account: {e!s}") from e
+            raise HTTPException(
+                status_code=500, detail=f"Failed to create account: {e!s}"
+            ) from e
 
     # Skip database setup for dry-run mode
     if not request.dry_run:
         # Log database setup continuing (progress tracking simplified)
-        logger.info(f"[ACCOUNT_CREATION] Setting up database structures for {account_id}")
+        logger.info(
+            f"[ACCOUNT_CREATION] Setting up database structures for {account_id}"
+        )
 
         # Wrap remaining setup in try/except to enable rollback on critical failures
         try:
@@ -312,7 +323,9 @@ async def create_account_internal(
                     f"[ACCOUNT_CREATION] Created {activities_count} initial activities"
                 )
             except Exception as e:
-                logger.error(f"[ACCOUNT_CREATION] Failed to create initial activities: {e}")
+                logger.error(
+                    f"[ACCOUNT_CREATION] Failed to create initial activities: {e}"
+                )
                 # Don't fail account creation if initial activities fail (recoverable)
 
             # Create initial activity logs if BigQuery service is available
@@ -320,13 +333,17 @@ async def create_account_internal(
             if bigquery_service:
                 try:
                     created_count = await create_initial_activity_logs(
-                        account_id=account_id, industry=request.industry, db=bigquery_service
+                        account_id=account_id,
+                        industry=request.industry,
+                        db=bigquery_service,
                     )
                     logger.info(
                         f"[ACCOUNT_CREATION] Created {created_count} initial activity logs"
                     )
                 except Exception as e:
-                    logger.error(f"[ACCOUNT_CREATION] Failed to create activity logs: {e}")
+                    logger.error(
+                        f"[ACCOUNT_CREATION] Failed to create activity logs: {e}"
+                    )
                     # Don't fail account creation if activity logs fail (recoverable)
 
             # Log database setup continuing (progress tracking simplified)
@@ -342,13 +359,17 @@ async def create_account_internal(
                 )
 
                 # Create account folder
-                folder_created = await storage.ensure_account_folder(account_id, data_region)
+                folder_created = await storage.ensure_account_folder(
+                    account_id, data_region
+                )
                 if folder_created:
                     logger.info(
                         f"Created GCS folder for account {account_id} in region {data_region}"
                     )
             except Exception as e:
-                logger.error(f"Failed to ensure GCS storage for account {account_id}: {e}")
+                logger.error(
+                    f"Failed to ensure GCS storage for account {account_id}: {e}"
+                )
                 # Don't fail account creation if storage setup fails (recoverable)
 
             # Create Firestore collection for strategy documents
@@ -412,6 +433,49 @@ async def create_account_internal(
                 logger.error(f"Failed to invalidate user cache: {e}")
                 # Don't fail account creation if cache invalidation fails (recoverable)
 
+            # Create welcome notification for the new account
+            # Note: Notification creation is recoverable - log but continue on failure
+            try:
+                notification_repository = FirestoreNotificationRepository(
+                    firestore.get_client()
+                )
+                notification_service = NotificationService(notification_repository)
+
+                notification_id = await notification_service.create_notification(
+                    account_id=account_id,
+                    category=NotificationCategory.NEW_FEATURES,
+                    description="Configure your new account",
+                    data={
+                        "account_name": request.account_name,
+                        "created_by": user.user_id,
+                        "created_at": datetime.utcnow().isoformat(),
+                    },
+                )
+                logger.info(
+                    f"[ACCOUNT_CREATION] Created welcome notification {notification_id} for account {account_id}"
+                )
+
+                # Create notification status for the creating user
+                await notification_repository.batch_create_user_statuses(
+                    [
+                        {
+                            "user_id": user.user_id,
+                            "notification_id": notification_id,
+                            "status": NotificationStatus.UNREAD.value,
+                            "updated_at": datetime.utcnow().isoformat(),
+                        }
+                    ]
+                )
+                logger.info(
+                    f"[ACCOUNT_CREATION] Created notification status for user {user.user_id}"
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"[ACCOUNT_CREATION] Failed to create welcome notification for account {account_id}: {e}"
+                )
+                # Don't fail account creation if notification creation fails (recoverable)
+
         except Exception as e:
             # Critical failure during account setup - rollback Neo4j account
             logger.error(
@@ -420,7 +484,7 @@ async def create_account_internal(
             await _rollback_account_creation(neo4j_service, account_id)
             raise HTTPException(
                 status_code=500,
-                detail=f"Account creation failed and was rolled back: {e!s}"
+                detail=f"Account creation failed and was rolled back: {e!s}",
             ) from e
     else:
         logger.info(
