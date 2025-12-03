@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.kene_api.email_service import EmailService
-from src.kene_api.secret_manager import get_env_var_or_secret
+from src.kene_api.utils.secrets import get_env_or_secret
 from dotenv import load_dotenv
 
 
@@ -43,7 +43,7 @@ def test_sendgrid_configuration():
     
     # Test 2: Try to fetch the actual API key
     try:
-        api_key = get_env_var_or_secret("SENDGRID_API_KEY")
+        api_key = get_env_or_secret("SENDGRID_API_KEY")
         if api_key:
             logger.info(f"Successfully retrieved SendGrid API key (length: {len(api_key)})")
             # Check if it looks like a valid SendGrid API key

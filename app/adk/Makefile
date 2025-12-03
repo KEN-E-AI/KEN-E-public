@@ -1,4 +1,4 @@
-# Company News Chatbot - Deployment Commands
+# KEN-E Agent Deployment - Makefile
 
 # Install dependencies
 install:
@@ -9,21 +9,48 @@ install:
 test-local:
 	uv run python test_agent.py
 
-# Deploy to Vertex AI Agent Engine  
-deploy:
-	uv run python deploy_supervisor.py
+# ============================================================================
+# Strategy Supervisor Agent Deployment
+# ============================================================================
 
-# Deploy with specific project
+# Deploy Strategy Supervisor to development
+deploy:
+	uv run python deploy_with_sys_version.py --env dev
+
+deploy-dev:
+	uv run python deploy_with_sys_version.py --env dev
+
+# Deploy Strategy Supervisor to staging
 deploy-staging:
-	GOOGLE_CLOUD_PROJECT_ID=ken-e-staging VERTEX_AI_PROJECT_ID=ken-e-staging VERTEX_AI_LOCATION=us-central1 uv run python deploy_supervisor.py
+	uv run python deploy_with_sys_version.py --env staging
+
+# Deploy Strategy Supervisor to production
+deploy-production:
+	uv run python deploy_with_sys_version.py --env prod
+
+# ============================================================================
+# KEN-E Chat Agent Deployment
+# ============================================================================
+
+# Deploy KEN-E Chat Agent to development
+deploy-ken-e:
+	uv run python deploy_ken_e.py --env dev
+
+# Deploy KEN-E Chat Agent to staging
+deploy-ken-e-staging:
+	uv run python deploy_ken_e.py --env staging
+
+# Deploy KEN-E Chat Agent to production
+deploy-ken-e-production:
+	uv run python deploy_ken_e.py --env prod
+
+# ============================================================================
+# Utilities
+# ============================================================================
 
 # Setup dev environment resources
 setup-dev:
 	uv run python setup_dev_resources.py --project ken-e-dev
-
-# Deploy to dev environment
-deploy-dev:
-	GOOGLE_CLOUD_PROJECT_ID=ken-e-dev VERTEX_AI_PROJECT_ID=ken-e-dev VERTEX_AI_LOCATION=us-central1 uv run python deploy_supervisor.py
 
 # Test the deployed agent
 test-deployed:
@@ -38,4 +65,4 @@ clean:
 	rm -rf .venv/
 	rm -f deployment_metadata.json
 
-.PHONY: install test-local deploy deploy-staging test-deployed clean
+.PHONY: install test-local deploy deploy-dev deploy-staging deploy-production deploy-ken-e deploy-ken-e-staging deploy-ken-e-production setup-dev test-deployed test-dev clean

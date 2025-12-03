@@ -88,21 +88,26 @@ def init_weave_if_needed():
     """Initialize W&B Weave if not already initialized and API key is available."""
     global WEAVE_INITIALIZED
     if not WEAVE_INITIALIZED:
-        # Fetch W&B API key directly from Secret Manager
+        # Fetch W&B API key using universal secret resolution
         wandb_api_key = None
         try:
-            from google.cloud import secretmanager
+            # Import here to avoid deployment issues if API module not available
+            import sys
+            from pathlib import Path
+            api_path = Path(__file__).parent.parent.parent.parent.parent / "api" / "src"
+            if str(api_path) not in sys.path:
+                sys.path.insert(0, str(api_path))
 
-            client = secretmanager.SecretManagerServiceClient()
-            # Use project number for consistency with other components
-            secret_name = "projects/525657242938/secrets/wandb_api_key/versions/latest"
-            response = client.access_secret_version(request={"name": secret_name})
-            wandb_api_key = response.payload.data.decode("UTF-8")
-            # Set in environment for weave to use
-            os.environ["WANDB_API_KEY"] = wandb_api_key
-            logger.info("✅ Fetched WANDB_API_KEY from Secret Manager")
+            from kene_api.utils.secrets import get_env_or_secret
+
+            wandb_api_key = get_env_or_secret("WANDB_API_KEY")
+            if wandb_api_key:
+                os.environ["WANDB_API_KEY"] = wandb_api_key
+                logger.info("✅ Retrieved WANDB_API_KEY")
+            else:
+                logger.warning("⚠️ WANDB_API_KEY not found in environment or Secret Manager")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to fetch WANDB_API_KEY from Secret Manager: {e}")
+            logger.warning(f"⚠️ Failed to retrieve WANDB_API_KEY: {e}")
 
         if wandb_api_key:
             try:

@@ -2,8 +2,14 @@
 """
 Deployment script for KEN-E chat agent.
 Deploys the frontend-facing agent for company news and analytics.
+
+Usage:
+    python deploy_ken_e.py --env dev
+    python deploy_ken_e.py --env staging
+    python deploy_ken_e.py --env prod
 """
 
+import argparse
 import logging
 import os
 import re
@@ -26,6 +32,22 @@ try:
 except ImportError:
     logger.warning("Could not import secrets utility, will copy .env as-is")
     get_env_or_secret = None
+
+# Environment to GCP project mapping
+ENV_CONFIG = {
+    "dev": {
+        "project_id": "ken-e-dev",
+        "project_number": "525657242938",
+    },
+    "staging": {
+        "project_id": "ken-e-staging",
+        "project_number": "391472102753",
+    },
+    "prod": {
+        "project_id": "ken-e-production",
+        "project_number": "395770269870",
+    },
+}
 
 
 def update_secret_manager(secret_name: str, secret_value: str, project_id: str) -> bool:
@@ -99,7 +121,7 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
                 # Check if this value needs Secret Manager resolution
                 if value.startswith("sm://"):
                     try:
-                        # Set the environment variable temporarily to use get_env_or_secret
+                        # Set env var temporarily to use get_env_or_secret
                         os.environ[key] = value
                         resolved_value = get_env_or_secret(key)
                         if resolved_value:
@@ -317,10 +339,12 @@ Location: {location}
 
                 # Update Secret Manager with the new engine ID
                 print("\n📝 Updating Secret Manager...")
+                # Get project number from environment (set in main)
+                project_number = os.getenv("_PROJECT_NUMBER", "525657242938")
                 secret_updated = update_secret_manager(
                     secret_name="ken-e-engine-id",
                     secret_value=engine_id,
-                    project_id="525657242938",  # Using the project ID from the secrets
+                    project_id=project_number,
                 )
 
                 if secret_updated:
@@ -351,20 +375,37 @@ Location: {location}
 
 
 if __name__ == "__main__":
-    # Set environment variables if provided as arguments
-    if len(sys.argv) > 1:
-        import argparse
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Deploy KEN-E agent to Vertex AI")
+    parser.add_argument(
+        "--env",
+        choices=["dev", "staging", "prod"],
+        default="dev",
+        help="Target environment (dev, staging, or prod). Default: dev",
+    )
+    parser.add_argument(
+        "--location",
+        default="us-central1",
+        help="Vertex AI location (default: us-central1)",
+    )
+    args = parser.parse_args()
 
-        parser = argparse.ArgumentParser(description="Deploy KEN-E agent to Vertex AI")
-        parser.add_argument("--project", help="GCP project ID")
-        parser.add_argument("--location", help="Vertex AI location")
-        args = parser.parse_args()
+    # Get configuration for target environment
+    env_config = ENV_CONFIG[args.env]
 
-        if args.project:
-            os.environ["VERTEX_AI_PROJECT_ID"] = args.project
-            os.environ["GOOGLE_CLOUD_PROJECT_ID"] = args.project
-        if args.location:
-            os.environ["VERTEX_AI_LOCATION"] = args.location
+    # Set environment variables from config
+    os.environ["VERTEX_AI_PROJECT_ID"] = env_config["project_id"]
+    os.environ["GOOGLE_CLOUD_PROJECT_ID"] = env_config["project_id"]
+    os.environ["VERTEX_AI_LOCATION"] = args.location
+    os.environ["_TARGET_ENV"] = args.env
+    os.environ["_PROJECT_NUMBER"] = env_config["project_number"]
+
+    logger.info("=" * 70)
+    logger.info("Deploying KEN-E Chat Agent")
+    logger.info(f"Environment: {args.env.upper()}")
+    logger.info(f"Project: {env_config['project_id']} ({env_config['project_number']})")
+    logger.info(f"Location: {args.location}")
+    logger.info("=" * 70)
 
     result = deploy_ken_e()
     sys.exit(0 if result else 1)

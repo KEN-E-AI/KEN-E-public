@@ -7,8 +7,14 @@ This script:
 2. Copies agents/ and requirements.txt
 3. Processes .env to resolve sm:// references
 4. Deploys from temp directory with Python 3.12
+
+Usage:
+    python deploy_with_sys_version.py --env dev
+    python deploy_with_sys_version.py --env staging
+    python deploy_with_sys_version.py --env prod
 """
 
+import argparse
 import logging
 import os
 import shutil
@@ -32,12 +38,44 @@ except ImportError:
     logger.error("❌ Could not import secrets utility")
     sys.exit(1)
 
-# Configuration
-PROJECT_ID = "ken-e-dev"
-PROJECT_NUMBER = "525657242938"
-LOCATION = "us-central1"
-STAGING_BUCKET = f"gs://{PROJECT_ID}-adk-staging"
+# Default Configuration
 PYTHON_VERSION = "3.12"
+DEFAULT_LOCATION = "us-central1"
+
+# Environment to GCP project mapping
+ENV_CONFIG = {
+    "dev": {
+        "project_id": "ken-e-dev",
+        "project_number": "525657242938",
+    },
+    "staging": {
+        "project_id": "ken-e-staging",
+        "project_number": "391472102753",
+    },
+    "prod": {
+        "project_id": "ken-e-production",
+        "project_number": "395770269870",
+    },
+}
+
+
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Deploy Strategy Supervisor to Vertex AI Agent Engine"
+    )
+    parser.add_argument(
+        "--env",
+        choices=["dev", "staging", "prod"],
+        default="dev",
+        help="Target environment (dev, staging, or prod). Default: dev",
+    )
+    parser.add_argument(
+        "--location",
+        default=DEFAULT_LOCATION,
+        help=f"Vertex AI location (default: {DEFAULT_LOCATION})",
+    )
+    return parser.parse_args()
 
 
 def process_env_file(source_path: Path, dest_path: Path) -> None:
@@ -83,12 +121,24 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
     logger.info(f"Processed .env written to {dest_path} with mode 0o600")
 
 
+# Parse command-line arguments
+args = parse_args()
+
+# Get configuration for target environment
+env_config = ENV_CONFIG[args.env]
+PROJECT_ID = env_config["project_id"]
+PROJECT_NUMBER = env_config["project_number"]
+LOCATION = args.location
+STAGING_BUCKET = f"gs://{PROJECT_ID}-adk-staging"
+
 # Save current directory
 original_dir = os.getcwd()
 
 logger.info("=" * 70)
 logger.info(f"Deploying Strategy Agent with Python {PYTHON_VERSION}")
-logger.info(f"Project: {PROJECT_ID} ({PROJECT_NUMBER}), Location: {LOCATION}")
+logger.info(f"Environment: {args.env.upper()}")
+logger.info(f"Project: {PROJECT_ID} ({PROJECT_NUMBER})")
+logger.info(f"Location: {LOCATION}")
 logger.info("=" * 70)
 
 # Create temporary deployment directory
@@ -150,7 +200,10 @@ with tempfile.TemporaryDirectory() as temp_dir:
             reasoning_engine=app,
             requirements="requirements.txt",
             display_name=f"strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}",
-            description=f"Strategy supervisor with Python {PYTHON_VERSION}, split agents, Neo4j, W&B",
+            description=(
+                f"Strategy supervisor with Python {PYTHON_VERSION}, "
+                "split agents, Neo4j, W&B"
+            ),
             sys_version=PYTHON_VERSION,
             extra_packages=["agents"],
         )
@@ -170,10 +223,11 @@ with tempfile.TemporaryDirectory() as temp_dir:
             f.write(f"Project: {PROJECT_ID}\n")
             f.write(f"Location: {LOCATION}\n")
 
-        # Update Secret Manager
+        # Update Secret Manager with new engine ID
         try:
             client = secretmanager.SecretManagerServiceClient()
-            parent = f"projects/{PROJECT_ID}/secrets/strategy-supervisor-engine-id"
+            # Use project number (not ID) for Secret Manager
+            parent = f"projects/{PROJECT_NUMBER}/secrets/strategy-supervisor-engine-id"
             response = client.add_secret_version(
                 request={
                     "parent": parent,
