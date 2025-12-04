@@ -1,7 +1,12 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Node, Edge } from "reactflow";
 import { Plus, Trash2, Users, Pencil, Loader2, Blocks } from "lucide-react";
+import {
+  calculateChildNodeX,
+  calculateChildNodeY,
+} from "@/components/knowledge-graph/utils/layoutCalculations";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import type { CustomerProfile } from "@/services/customerProfileService";
@@ -71,6 +76,7 @@ export const CustomerProfilesManagement = ({
   const { startOperation, endOperation } = useAccountOperations();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Fetch customer profiles
   const { data: profilesData, isLoading } = useCustomerProfiles(
@@ -160,6 +166,26 @@ export const CustomerProfilesManagement = ({
     });
     setIsEditing(false);
     // Don't open side sheet here - only open when clicking nodes in React Flow
+
+    // Prefetch linked categories for faster UX
+    if (selectedOrgAccount?.accountId) {
+      queryClient.prefetchQuery({
+        queryKey: [
+          "linkedProductCategories",
+          selectedOrgAccount.accountId,
+          profile.node_id,
+        ],
+        queryFn: async () => {
+          const customerProfileService = await import(
+            "@/services/customerProfileService"
+          );
+          return customerProfileService.default.getLinkedProductCategories(
+            selectedOrgAccount.accountId,
+            profile.node_id,
+          );
+        },
+      });
+    }
   };
 
   const handleDeleteClick = (profile: CustomerProfile) => {
@@ -459,18 +485,13 @@ export const CustomerProfilesManagement = ({
     });
 
     // Row 2: Linked Product Categories
-    const totalWidth =
-      linkedProductCategories.length * DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH -
-      DIAGRAM_LAYOUT.HORIZONTAL_GAP;
-    const startX = DIAGRAM_LAYOUT.PARENT_NODE_X - totalWidth / 2;
-
     linkedProductCategories.forEach((category, index) => {
       nodes.push({
         id: category.node_id,
         type: "productCategoryNode",
         position: {
-          x: startX + index * DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING,
+          x: calculateChildNodeX(index, linkedProductCategories.length),
+          y: calculateChildNodeY(),
         },
         data: {
           label: category.product_name,

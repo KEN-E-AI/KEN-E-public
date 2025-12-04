@@ -20,10 +20,8 @@ from ..models.monitoring_models import (
     AddCompetitorRequest,
     AddCustomerConceptRequest,
     AddCustomerProfileRequest,
-    CompetitorEntry,
     ConceptOption,
     CustomerKeywordConcept,
-    CustomerProfileEntry,
     IndustryKeywords,
     IndustryKeywordsListResponse,
     MonitoringTopics,
@@ -398,11 +396,11 @@ async def update_customer_keywords(
         # Get existing concept keywords to preserve them
         existing_concepts = doc.get("customer_concepts", []) if doc else []
         concept_keywords = [c.get("keyword") for c in existing_concepts if c.get("keyword")]
-        
+
         # Combine the plain keywords from request with concept keywords
         # This maintains backward compatibility with the customer_keywords field
         all_keywords = list(set(request.customer_keywords + concept_keywords))
-        
+
         # Now update the document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -1258,3 +1256,126 @@ async def update_industry_keywords(
         raise HTTPException(
             status_code=500, detail="Failed to update industry keywords"
         )
+
+
+@router.post("/{account_id}/cleanup-orphaned-entries", response_model=SuccessResponse)
+async def cleanup_orphaned_monitoring_entries(
+    account_id: str = Path(..., description="Account ID"),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """
+    Clean up monitoring entries for deleted competitors/customer profiles.
+
+    This endpoint finds and removes monitoring entries whose node_ids
+    no longer exist in Neo4j. Requires admin access.
+
+    Args:
+        account_id: Account identifier
+        user: User context from authentication
+        firestore: Firestore service instance
+
+    Returns:
+        SuccessResponse with count of removed entries
+
+    Raises:
+        HTTPException: If user lacks admin access or cleanup fails
+    """
+    # Check user has admin access
+    if not user.is_super_admin and not user.has_account_access(account_id, ["admin"]):
+        raise HTTPException(
+            status_code=403, detail=f"Admin access required for account {account_id}"
+        )
+
+    try:
+        # Get monitoring topics
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            return SuccessResponse(message="No monitoring topics found")
+
+        neo4j = await get_neo4j_service()
+        removed_count = 0
+
+        # Check competitor entries
+        if "competitor_entries" in doc:
+            competitors = doc["competitor_entries"]
+            valid_competitors = []
+
+            for entry in competitors:
+                node_id = entry.get("node_id")
+                if node_id:
+                    # Check if node exists in Neo4j
+                    exists_query = """
+                    MATCH (c:Competitor {node_id: $node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+                    RETURN count(c) > 0 as exists
+                    """
+                    result = await neo4j.execute_query(
+                        exists_query, {"node_id": node_id, "account_id": account_id}
+                    )
+                    if result and result[0]["exists"]:
+                        valid_competitors.append(entry)
+                    else:
+                        removed_count += 1
+                        logger.info(
+                            f"Removing orphaned competitor entry: {node_id} from account {account_id}"
+                        )
+                else:
+                    # Keep legacy entries without node_id
+                    valid_competitors.append(entry)
+
+            doc["competitor_entries"] = valid_competitors
+
+        # Check customer profile entries
+        if "customer_profile_entries" in doc:
+            profiles = doc["customer_profile_entries"]
+            valid_profiles = []
+
+            for entry in profiles:
+                node_id = entry.get("node_id")
+                if node_id:
+                    exists_query = """
+                    MATCH (cp:CustomerProfile {node_id: $node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+                    RETURN count(cp) > 0 as exists
+                    """
+                    result = await neo4j.execute_query(
+                        exists_query, {"node_id": node_id, "account_id": account_id}
+                    )
+                    if result and result[0]["exists"]:
+                        valid_profiles.append(entry)
+                    else:
+                        removed_count += 1
+                        logger.info(
+                            f"Removing orphaned customer profile entry: {node_id} from account {account_id}"
+                        )
+                else:
+                    # Keep legacy entries without node_id
+                    valid_profiles.append(entry)
+
+            doc["customer_profile_entries"] = valid_profiles
+
+        # Update document if changes were made
+        if removed_count > 0:
+            firestore.update_document(
+                collection=MONITORING_TOPICS_COLLECTION,
+                document_id=account_id,
+                data={
+                    "competitor_entries": doc.get("competitor_entries", []),
+                    "customer_profile_entries": doc.get(
+                        "customer_profile_entries", []
+                    ),
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+            )
+
+        return SuccessResponse(
+            message=f"Cleanup complete. Removed {removed_count} orphaned entries.",
+            data={"removed_count": removed_count},
+        )
+
+    except Exception as e:
+        logger.error(f"Error cleaning up orphaned entries: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to cleanup orphaned entries")

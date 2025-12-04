@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..validators import CompetitorValidators, KeywordValidators, URLValidators
 from .kene_models import BaseRequest
@@ -108,6 +108,13 @@ class CompetitorEntry(BaseModel):
         """Validate keywords list."""
         return KeywordValidators.validate_keyword_list(v)
 
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "CompetitorEntry":
+        """Ensure either node_id or name is provided."""
+        if not self.node_id and not self.name:
+            raise ValueError("Either node_id or name must be provided")
+        return self
+
 
 class CustomerProfileEntry(BaseModel):
     """Customer profile monitoring entry."""
@@ -127,6 +134,13 @@ class CustomerProfileEntry(BaseModel):
     def validate_keywords(cls, v: list[str]) -> list[str]:
         """Validate keywords list."""
         return KeywordValidators.validate_keyword_list(v)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "CustomerProfileEntry":
+        """Ensure either node_id or name is provided."""
+        if not self.node_id and not self.name:
+            raise ValueError("Either node_id or name must be provided")
+        return self
 
 
 class MonitoringTopics(BaseModel):
