@@ -958,7 +958,7 @@ class CustomerProfileCreate(BaseModel):
             "examples": [
                 {
                     "display_name": "Marketing Mary",
-                    "narrative": "Marketing Mary is a 35-year-old marketing director at a mid-sized SaaS company. She struggles with attribution tracking across multiple channels and needs tools that integrate with her existing martech stack. She prefers learning through webinars and case studies.",
+                    "description": "Marketing Mary is a 35-year-old marketing director at a mid-sized SaaS company. She struggles with attribution tracking across multiple channels and needs tools that integrate with her existing martech stack. She prefers learning through webinars and case studies.",
                     "references": ["https://example.com/customer-research"],
                 }
             ]
@@ -970,7 +970,7 @@ class CustomerProfileCreate(BaseModel):
         max_length=200,
         description="Short, unique persona name (e.g., 'Marketing Mary')",
     )
-    narrative: str = Field(
+    description: str = Field(
         ...,
         max_length=4000,
         description="Full persona narrative including background, pain points, needs, and communication preferences",
@@ -984,7 +984,7 @@ class CustomerProfileUpdate(BaseModel):
     """Request model for updating a customer profile."""
 
     display_name: str | None = Field(None, max_length=200)
-    narrative: str | None = Field(None, max_length=4000)
+    description: str | None = Field(None, max_length=4000)
     references: list[str] | None = None
 
 
@@ -992,14 +992,14 @@ class CustomerProfileResponse(NodeBase):
     """Response model for customer profile."""
 
     display_name: str
-    narrative: str
-    references: list[str]
+    description: str = ""  # Default to empty string for backward compatibility
+    references: list[str] = []
 
 
 class CustomerProfileListResponse(BaseModel):
     """Response model for list of customer profiles."""
 
-    profiles: list[CustomerProfileResponse]
+    customer_profiles: list[CustomerProfileResponse]
     total_count: int
 
 

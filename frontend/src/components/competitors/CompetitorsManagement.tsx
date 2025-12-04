@@ -2864,7 +2864,7 @@ export const CompetitorsManagement = ({
             selectedCompetitor &&
             !isEditing && (
               <CompetitorKeywordsSection
-                competitorName={selectedCompetitor.display_name}
+                competitorNodeId={selectedCompetitor.node_id}
                 hasEditAccess={hasEditAccess}
               />
             )}

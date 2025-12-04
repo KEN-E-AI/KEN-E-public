@@ -237,14 +237,46 @@ export const ProductCategoriesManagement = ({
     isEditing,
   );
 
-  // Handle navigation from other pages (e.g., Competitors page)
+  // Handle navigation from other pages (e.g., Competitors page, Customers page)
   useEffect(() => {
     const navState = location.state as {
       selectedProductId?: string;
+      selectedCategoryId?: string;
       categoryNodeId?: string;
       autoEdit?: boolean;
     } | null;
 
+    // Handle category-only navigation (from Customers page)
+    if (
+      navState?.selectedCategoryId &&
+      navState?.autoEdit &&
+      !hasProcessedNavigation.current &&
+      !navState.selectedProductId
+    ) {
+      const category = categories.find(
+        (c) => c.node_id === navState.selectedCategoryId,
+      );
+      if (category) {
+        hasProcessedNavigation.current = true;
+
+        setSelectedCategoryId(category.node_id);
+        setSelectedCategory(category);
+        setFormData({
+          product_name: category.product_name,
+          description: category.description,
+          product_detail_page: "",
+        });
+        setContextMenuType("category");
+        setIsContextMenuOpen(true);
+        setIsEditing(true);
+
+        // Clear navigation state
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+      return;
+    }
+
+    // Handle product navigation (from Competitors page)
     if (
       navState?.selectedProductId &&
       navState?.autoEdit &&

@@ -2290,6 +2290,39 @@ class GraphSyncService:
             check_dependencies=False,  # We already cascaded the dependencies
         )
 
+        # 10. Delete associated monitoring keywords from Firestore
+        try:
+            # Get monitoring topics document
+            doc = self.firestore.get_document(
+                collection="monitoring_topics", document_id=account_id
+            )
+
+            if doc and "competitor_entries" in doc:
+                competitors = doc["competitor_entries"]
+
+                # Find and remove the entry matching this competitor's node_id
+                updated_competitors = [
+                    entry for entry in competitors if entry.get("node_id") != node_id
+                ]
+
+                # Only update if we actually removed something
+                if len(updated_competitors) < len(competitors):
+                    from datetime import datetime
+
+                    self.firestore.update_document(
+                        collection="monitoring_topics",
+                        document_id=account_id,
+                        data={
+                            "competitor_entries": updated_competitors,
+                            "updated_at": datetime.utcnow().isoformat(),
+                        },
+                    )
+        except Exception as e:
+            # Log but don't fail the deletion if monitoring keywords cleanup fails
+            logger.warning(
+                f"Failed to delete monitoring keywords for competitor {node_id}: {e}"
+            )
+
     async def create_competitor_tactic(
         self,
         account_id: str,
@@ -2724,10 +2757,10 @@ class GraphSyncService:
             raise ValidationException(error, "display_name")
 
         is_valid, error = self.validation.validate_non_empty_string(
-            profile.narrative, "narrative"
+            profile.description, "description"
         )
         if not is_valid:
-            raise ValidationException(error, "narrative")
+            raise ValidationException(error, "description")
 
         # Check for duplicate display_name (case-insensitive)
         is_unique, error = await self.validation.validate_unique_customer_profile_name(
@@ -2740,7 +2773,7 @@ class GraphSyncService:
 
         node_data = {
             "display_name": profile.display_name.strip().lower(),  # Store lowercase for case-insensitive matching
-            "narrative": profile.narrative.strip(),
+            "description": profile.description.strip(),
             "references": profile.references,
         }
 
@@ -2793,13 +2826,14 @@ class GraphSyncService:
         1. Delete all marketing strategy nodes linked to this profile (across all ProductCategories)
         2. Delete all IS_MARKETED_TO relationships
         3. Delete the CustomerProfile node
+        4. Delete associated monitoring keywords from Firestore
 
         Args:
             account_id: Account identifier
             node_id: CustomerProfile node_id
             user_id: User performing deletion
         """
-        # First, delete all linked strategy nodes
+        # Delete all linked strategy nodes
         strategy_types = [
             "ProblemAwarenessStrategy",
             "BrandAwarenessStrategy",
@@ -2840,6 +2874,248 @@ class GraphSyncService:
             firestore_doc_type="marketing_strategy",
             check_dependencies=False,  # We already cascaded the dependencies
         )
+
+        # Finally, delete associated monitoring keywords from Firestore
+        try:
+            # Get monitoring topics document
+            doc = self.firestore.get_document(
+                collection="monitoring_topics", document_id=account_id
+            )
+
+            if doc and "customer_profile_entries" in doc:
+                customer_profiles = doc["customer_profile_entries"]
+
+                # Find and remove the entry matching this profile's node_id
+                updated_profiles = [
+                    entry
+                    for entry in customer_profiles
+                    if entry.get("node_id") != node_id
+                ]
+
+                # Only update if we actually removed something
+                if len(updated_profiles) < len(customer_profiles):
+                    from datetime import datetime
+
+                    self.firestore.update_document(
+                        collection="monitoring_topics",
+                        document_id=account_id,
+                        data={
+                            "customer_profile_entries": updated_profiles,
+                            "updated_at": datetime.utcnow().isoformat(),
+                        },
+                    )
+        except Exception as e:
+            # Log but don't fail the deletion if monitoring keywords cleanup fails
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Failed to delete monitoring keywords for customer profile {node_id}: {e}"
+            )
+
+    async def link_product_category_to_customer_profile(
+        self,
+        account_id: str,
+        customer_profile_id: str,
+        product_category_id: str,
+        user_id: str,
+    ) -> None:
+        """Link a product category to a customer profile via IS_MARKETED_TO relationship.
+
+        Args:
+            account_id: Account identifier
+            customer_profile_id: CustomerProfile node_id
+            product_category_id: ProductCategory node_id
+            user_id: User performing the operation
+        """
+        # Validate both nodes exist
+        if not await self.validation.validate_node_exists(
+            customer_profile_id, "CustomerProfile"
+        ):
+            raise ValidationException(
+                f"CustomerProfile {customer_profile_id} not found",
+                "customer_profile_id",
+            )
+
+        if not await self.validation.validate_node_exists(
+            product_category_id, "ProductCategory"
+        ):
+            raise ValidationException(
+                f"ProductCategory {product_category_id} not found",
+                "product_category_id",
+            )
+
+        # Create IS_MARKETED_TO relationship
+        query = """
+        MATCH (pc:ProductCategory {node_id: $product_category_id})
+        MATCH (cp:CustomerProfile {node_id: $customer_profile_id})
+        WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        MERGE (pc)-[:IS_MARKETED_TO]->(cp)
+        RETURN pc, cp
+        """
+
+        result = await self.neo4j.execute_write_query(
+            query,
+            {
+                "product_category_id": product_category_id,
+                "customer_profile_id": customer_profile_id,
+                "account_id": account_id,
+            },
+        )
+
+        if not result:
+            raise ValidationException(
+                "Failed to create IS_MARKETED_TO relationship. Nodes may not belong to this account.",
+                "relationship",
+            )
+
+    async def unlink_product_category_from_customer_profile(
+        self,
+        account_id: str,
+        customer_profile_id: str,
+        product_category_id: str,
+        user_id: str,
+    ) -> None:
+        """Unlink a product category from a customer profile with cascade deletion of strategies.
+
+        This will:
+        1. Delete all 5 strategy nodes for this (CustomerProfile, ProductCategory) pair
+        2. Delete the IS_MARKETED_TO relationship
+
+        Args:
+            account_id: Account identifier
+            customer_profile_id: CustomerProfile node_id
+            product_category_id: ProductCategory node_id
+            user_id: User performing deletion
+        """
+        # Delete all strategy nodes for this pair
+        strategy_types = [
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]
+
+        for strategy_type in strategy_types:
+            # Find strategies for this specific (CustomerProfile, ProductCategory) pair
+            query = f"""
+            MATCH (s:{strategy_type})
+            WHERE s.customer_profile_node_id = $customer_profile_id
+              AND s.product_category_node_id = $product_category_id
+              AND (s)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
+            RETURN s.node_id as node_id
+            """
+            strategies = await self.neo4j.execute_query(
+                query,
+                {
+                    "customer_profile_id": customer_profile_id,
+                    "product_category_id": product_category_id,
+                    "account_id": account_id,
+                },
+            )
+
+            # Delete each strategy
+            for strategy in strategies:
+                strategy_node_id = strategy["node_id"]
+                await self.delete_node(
+                    account_id=account_id,
+                    node_id=strategy_node_id,
+                    node_type=strategy_type,
+                    user_id=user_id,
+                    firestore_doc_type="marketing_strategy",
+                    check_dependencies=False,
+                )
+
+        # Delete the IS_MARKETED_TO relationship
+        delete_query = """
+        MATCH (pc:ProductCategory {node_id: $product_category_id})-[r:IS_MARKETED_TO]->(cp:CustomerProfile {node_id: $customer_profile_id})
+        WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        DELETE r
+        """
+
+        await self.neo4j.execute_write_query(
+            delete_query,
+            {
+                "product_category_id": product_category_id,
+                "customer_profile_id": customer_profile_id,
+                "account_id": account_id,
+            },
+        )
+
+    async def list_linked_product_categories(
+        self,
+        account_id: str,
+        customer_profile_id: str,
+    ) -> list[dict]:
+        """List all product categories linked to a customer profile.
+
+        Args:
+            account_id: Account identifier
+            customer_profile_id: CustomerProfile node_id
+
+        Returns:
+            List of ProductCategory nodes with strategy counts
+        """
+        query = """
+        MATCH (pc:ProductCategory)-[:IS_MARKETED_TO]->(cp:CustomerProfile {node_id: $customer_profile_id})
+        WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+
+        OPTIONAL MATCH (pc)-[:HAS_PROBLEM_AWARENESS_STRATEGY]->(pas)
+        WHERE pas.customer_profile_node_id = $customer_profile_id
+
+        OPTIONAL MATCH (pc)-[:HAS_BRAND_AWARENESS_STRATEGY]->(bas)
+        WHERE bas.customer_profile_node_id = $customer_profile_id
+
+        OPTIONAL MATCH (pc)-[:HAS_CONSIDERATION_STRATEGY]->(cs)
+        WHERE cs.customer_profile_node_id = $customer_profile_id
+
+        OPTIONAL MATCH (pc)-[:HAS_CONVERSION_STRATEGY]->(cos)
+        WHERE cos.customer_profile_node_id = $customer_profile_id
+
+        OPTIONAL MATCH (pc)-[:HAS_LOYALTY_STRATEGY]->(ls)
+        WHERE ls.customer_profile_node_id = $customer_profile_id
+
+        WITH pc,
+             count(DISTINCT pas) + count(DISTINCT bas) + count(DISTINCT cs) + count(DISTINCT cos) + count(DISTINCT ls) as strategy_count
+
+        RETURN pc.node_id as node_id,
+               $account_id as account_id,
+               pc.product_name as product_name,
+               pc.description as description,
+               pc.references as references,
+               pc.created_time as created_time,
+               pc.last_modified as last_modified,
+               pc.created_by as created_by,
+               pc.last_modified_by as last_modified_by,
+               strategy_count
+        ORDER BY pc.product_name
+        """
+
+        results = await self.neo4j.execute_query(
+            query,
+            {
+                "customer_profile_id": customer_profile_id,
+                "account_id": account_id,
+            },
+        )
+
+        # Convert Neo4j DateTime objects to ISO strings and ensure all fields are present
+        categories = []
+        for record in results:
+            category_dict = dict(record)
+            # Convert DateTime objects to ISO strings
+            if category_dict.get("created_time"):
+                category_dict["created_time"] = category_dict["created_time"].isoformat()
+            if category_dict.get("last_modified"):
+                category_dict["last_modified"] = category_dict["last_modified"].isoformat()
+            # Ensure account_id is set
+            if not category_dict.get("account_id"):
+                category_dict["account_id"] = account_id
+            categories.append(category_dict)
+
+        return categories
 
     async def create_problem_awareness_strategy(
         self,
