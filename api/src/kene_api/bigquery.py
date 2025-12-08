@@ -10,7 +10,7 @@ from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 from google.oauth2 import service_account
 
-from .utils.secrets import get_env_or_secret
+from shared.secrets import get_env_or_secret
 
 # Load environment variables
 load_dotenv()

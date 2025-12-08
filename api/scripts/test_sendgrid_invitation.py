@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.kene_api.email_service import EmailService
-from src.kene_api.utils.secrets import get_env_or_secret
+from shared.secrets import get_env_or_secret
 from dotenv import load_dotenv
 
 

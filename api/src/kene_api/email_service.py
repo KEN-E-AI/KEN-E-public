@@ -9,7 +9,7 @@ from sendgrid.helpers.mail import Content, Email, Mail, To
 
 from .exceptions import EmailServiceInitializationError, SecretManagerError
 from .templates.template_loader import template_loader
-from .utils.secrets import get_env_or_secret  # Supports sm:// format
+from shared.secrets import get_env_or_secret  # Supports sm:// format
 
 logger = logging.getLogger(__name__)
 

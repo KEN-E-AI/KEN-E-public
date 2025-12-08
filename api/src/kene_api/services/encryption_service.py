@@ -32,7 +32,7 @@ class EncryptionService:
         """Initialize the encryption service."""
         if USE_LOCAL_ENCRYPTION:
             # For local development, use a fixed key (should be in env vars in production)
-            from ..utils.secrets import get_env_or_secret
+            from shared.secrets import get_env_or_secret
             encryption_key = get_env_or_secret("ENCRYPTION_KEY")
             if not encryption_key:
                 # Generate a new key for development

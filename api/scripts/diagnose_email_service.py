@@ -54,7 +54,7 @@ if api_key:
         print(f"  - Will attempt to fetch from Secret Manager using project: {gcp_project or 'ken-e-dev (default)'}")
         # Try to fetch the actual secret
         try:
-            from src.kene_api.utils.secrets import get_env_or_secret
+            from shared.secrets import get_env_or_secret
             actual_key = get_env_or_secret("SENDGRID_API_KEY")
             if actual_key and actual_key.startswith("SG."):
                 print(f"  - ✓ Successfully fetched secret from Secret Manager")

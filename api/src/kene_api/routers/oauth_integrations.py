@@ -39,7 +39,7 @@ from ..models.oauth_models import (
 )
 from ..services.encryption_service import IntegrationCredentialsService
 from ..services.oauth_state_service import OAuthStateService
-from ..utils.secrets import get_env_or_secret
+from shared.secrets import get_env_or_secret
 
 logger = logging.getLogger(__name__)
 

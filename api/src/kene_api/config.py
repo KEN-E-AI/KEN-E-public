@@ -1,9 +1,16 @@
 import os
+import sys
+from pathlib import Path
 from typing import ClassVar
 
 from dotenv import load_dotenv
 
-from .utils.secrets import get_env_or_secret
+# Add root directory to path to import shared package
+root_dir = Path(__file__).parent.parent.parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+from shared.secrets import get_env_or_secret
 
 # Load environment variables from .env file
 load_dotenv()

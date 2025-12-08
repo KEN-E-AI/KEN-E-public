@@ -72,6 +72,12 @@ try:
     if env_path.exists():
         load_dotenv(env_path, override=False)
         logging.info(f"Loaded environment variables from {env_path}")
+    else:
+        # Try alternate location (agents/.env)
+        alt_path = Path(__file__).parent.parent / ".env"
+        if alt_path.exists():
+            load_dotenv(alt_path, override=False)
+            logging.info(f"Loaded environment variables from {alt_path}")
 except ImportError:
     logging.warning("python-dotenv not available")
 except Exception as e:
@@ -88,17 +94,10 @@ def init_weave_if_needed():
     """Initialize W&B Weave if not already initialized and API key is available."""
     global WEAVE_INITIALIZED
     if not WEAVE_INITIALIZED:
-        # Fetch W&B API key using universal secret resolution
+        # Get W&B API key using shared secrets utility
         wandb_api_key = None
         try:
-            # Import here to avoid deployment issues if API module not available
-            import sys
-            from pathlib import Path
-            api_path = Path(__file__).parent.parent.parent.parent.parent / "api" / "src"
-            if str(api_path) not in sys.path:
-                sys.path.insert(0, str(api_path))
-
-            from kene_api.utils.secrets import get_env_or_secret
+            from shared.secrets import get_env_or_secret
 
             wandb_api_key = get_env_or_secret("WANDB_API_KEY")
             if wandb_api_key:

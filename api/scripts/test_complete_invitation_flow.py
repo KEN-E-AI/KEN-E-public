@@ -123,7 +123,7 @@ def test_sendgrid_api_directly():
     load_dotenv(env_file, override=True)
     os.environ["GOOGLE_CLOUD_PROJECT_ID"] = "ken-e-staging"
 
-    from src.kene_api.utils.secrets import get_env_or_secret
+    from shared.secrets import get_env_or_secret
 
     # Get the API key
     api_key = get_env_or_secret("SENDGRID_API_KEY")

@@ -12,7 +12,7 @@ from google.cloud.firestore_v1 import DELETE_FIELD
 from google.cloud.firestore_v1.base_query import FieldFilter
 from google.oauth2 import service_account
 
-from .utils.secrets import get_env_or_secret
+from shared.secrets import get_env_or_secret
 
 # Load environment variables
 load_dotenv()

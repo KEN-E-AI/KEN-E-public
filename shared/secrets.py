@@ -1,5 +1,7 @@
 """Universal Secret Manager integration for environment variables.
 
+Shared utility for API, agents, and deployment scripts.
+
 Environment variables can contain:
 1. Raw values: Returned as-is (e.g., "my_password", "true", "8000")
 2. sm:// format: sm://project_id/secret_name or sm://secret_name
@@ -31,6 +33,8 @@ Format examples:
   Full GCP path:
     NEO4J_PASSWORD=projects/525657242938/secrets/NEO4J_PASSWORD/versions/latest
 """
+
+from __future__ import annotations
 
 import logging
 import os
@@ -90,7 +94,7 @@ def get_env_or_secret(key: str, default: str | None = None) -> str | None:
             _secret_cache[secret_path] = secret_value
             return secret_value
         except Exception as e:
-            logger.error(f"Failed to fetch secret from sm://{secret_path}: {e}")
+            logger.error(f"Failed to fetch secret for {key}: {e}")
             return default
 
     # Check for full GCP Secret Manager path
@@ -104,7 +108,7 @@ def get_env_or_secret(key: str, default: str | None = None) -> str | None:
             _secret_cache[value] = secret_value
             return secret_value
         except Exception as e:
-            logger.error(f"Failed to fetch secret from full path {value}: {e}")
+            logger.error(f"Failed to fetch secret for {key}: {e}")
             return default
 
     # Not a secret reference, return raw value

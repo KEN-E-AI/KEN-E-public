@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_secret(secret_name: str) -> str | None:
-    """Load secret using universal secret resolution.
+    """Load secret using shared secrets utility.
 
     Args:
         secret_name: Environment variable name to resolve
@@ -29,19 +29,9 @@ def _get_secret(secret_name: str) -> str | None:
         The secret value or None if not found
     """
     try:
-        # Import here to avoid deployment issues if API module not available
-        import sys
-        from pathlib import Path
-        api_path = Path(__file__).parent.parent.parent.parent.parent / "api" / "src"
-        if str(api_path) not in sys.path:
-            sys.path.insert(0, str(api_path))
-
-        from kene_api.utils.secrets import get_env_or_secret
+        from shared.secrets import get_env_or_secret
 
         return get_env_or_secret(secret_name)
-    except ImportError:
-        logger.warning(f"Could not import secrets utility for {secret_name}")
-        return None
     except Exception as e:
         logger.warning(f"Could not load secret {secret_name}: {e}")
         return None

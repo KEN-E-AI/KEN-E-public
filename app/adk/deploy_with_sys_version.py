@@ -29,13 +29,13 @@ from vertexai.preview import reasoning_engines
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add API source to path to access the secrets utility
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "api" / "src"))
+# Add shared package to path for secret resolution
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
-    from kene_api.utils.secrets import get_env_or_secret
+    from shared.secrets import get_env_or_secret
 except ImportError:
-    logger.error("❌ Could not import secrets utility")
+    logger.error("❌ Could not import shared secrets utility")
     sys.exit(1)
 
 # Default Configuration
@@ -84,9 +84,22 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
     Args:
         source_path: Path to source .env file
         dest_path: Path to write processed .env file
+
+    Raises:
+        SystemExit: If critical secrets cannot be resolved
     """
     logger.info("Processing .env file to resolve Secret Manager references...")
     processed_lines = []
+
+    # Critical secrets that MUST be resolved
+    CRITICAL_SECRETS = [
+        "NEO4J_URI",
+        "NEO4J_PASSWORD",
+        "WANDB_API_KEY",
+        "OPENAI_API_KEY"
+    ]
+
+    failed_secrets = []
 
     with open(source_path) as f:
         for line in f:
@@ -104,13 +117,33 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
                 resolved_value = get_env_or_secret(key)
 
                 if resolved_value:
+                    # Debug: Show what we're resolving
+                    if key in CRITICAL_SECRETS:
+                        logger.info(f"✅ {key}: {value} → resolved (length: {len(resolved_value)})")
                     processed_lines.append(f"{key}={resolved_value}\n")
-                    if key == "WANDB_API_KEY":
-                        logger.info("✅ WANDB_API_KEY resolved from Secret Manager")
                 else:
+                    # Check if this is a critical secret
+                    if key in CRITICAL_SECRETS:
+                        logger.error(f"❌ CRITICAL: {key}: {value} → NOT resolved (got None)")
+                        failed_secrets.append(key)
+                    else:
+                        logger.debug(f"⚠️ {key}: {value} → NOT resolved (got None)")
                     processed_lines.append(line)
             else:
                 processed_lines.append(line)
+
+    # Fail deployment if any critical secrets weren't resolved
+    if failed_secrets:
+        logger.error("=" * 70)
+        logger.error("❌ DEPLOYMENT ABORTED: Critical secrets not resolved")
+        logger.error(f"Failed secrets: {', '.join(failed_secrets)}")
+        logger.error("=" * 70)
+        logger.error("Possible causes:")
+        logger.error("  1. GOOGLE_CLOUD_PROJECT not set in .env")
+        logger.error("  2. Missing Secret Manager permissions")
+        logger.error("  3. Secrets don't exist in Secret Manager")
+        logger.error("  4. Not authenticated with gcloud")
+        sys.exit(1)
 
     # Write with restrictive permissions (owner read/write only)
     # This minimizes the exposure window for plaintext secrets
@@ -155,6 +188,14 @@ with tempfile.TemporaryDirectory() as temp_dir:
         logger.error("❌ agents directory not found")
         sys.exit(1)
 
+    # Copy shared package (contains secrets utility and other shared code)
+    shared_src = Path(__file__).parent.parent.parent / "shared"
+    if shared_src.exists():
+        shutil.copytree(shared_src, temp_path / "shared")
+        logger.info("Copied shared package")
+    else:
+        logger.warning("⚠️  shared package not found")
+
     # Copy requirements.txt
     if Path("requirements.txt").exists():
         shutil.copy2("requirements.txt", temp_path / "requirements.txt")
@@ -164,7 +205,10 @@ with tempfile.TemporaryDirectory() as temp_dir:
     env_file = Path(".env")
     if env_file.exists():
         process_env_file(env_file, temp_path / ".env")
-        logger.info("Processed and copied .env file")
+        logger.info("Processed and copied .env file to root")
+        # Also copy to agents directory for runtime loading
+        process_env_file(env_file, temp_path / "agents" / ".env")
+        logger.info("Copied .env file to agents/ directory for runtime loading")
     else:
         logger.warning("⚠️  .env file not found")
 
@@ -205,7 +249,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
                 "split agents, Neo4j, W&B"
             ),
             sys_version=PYTHON_VERSION,
-            extra_packages=["agents"],
+            extra_packages=["agents", "shared"],
         )
 
         logger.info("✅ Deployment successful!")

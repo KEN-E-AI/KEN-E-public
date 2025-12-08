@@ -54,7 +54,7 @@ def test_sendgrid_directly():
             continue
         
         # Try to retrieve the actual key
-        from src.kene_api.utils.secrets import get_env_or_secret
+        from shared.secrets import get_env_or_secret
 
         try:
             api_key = get_env_or_secret("SENDGRID_API_KEY")

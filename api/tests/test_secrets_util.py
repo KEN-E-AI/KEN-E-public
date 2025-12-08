@@ -3,7 +3,7 @@
 import os
 from unittest.mock import patch
 
-from src.kene_api.utils.secrets import get_env_or_secret
+from shared.secrets import get_env_or_secret
 
 
 class TestGetEnvOrSecret:
@@ -32,7 +32,7 @@ class TestGetEnvOrSecret:
             result = get_env_or_secret(env_var)
             assert result == "true"
 
-    @patch("src.kene_api.utils.secrets._fetch_secret_from_full_path")
+    @patch("shared.secrets._fetch_secret_from_full_path")
     def test_sm_format_with_project_id(self, mock_fetch):
         """Test sm:// format with project ID included."""
         env_var = "TEST_SECRET"
@@ -49,7 +49,7 @@ class TestGetEnvOrSecret:
                 "projects/525657242938/secrets/NEO4J_PASSWORD/versions/latest"
             )
 
-    @patch("src.kene_api.utils.secrets._fetch_secret_from_full_path")
+    @patch("shared.secrets._fetch_secret_from_full_path")
     def test_sm_format_without_project_id(self, mock_fetch):
         """Test sm:// format using default project from GOOGLE_CLOUD_PROJECT."""
         env_var = "TEST_SECRET"
@@ -68,7 +68,7 @@ class TestGetEnvOrSecret:
                 "projects/ken-e-staging/secrets/wandb_api_key/versions/latest"
             )
 
-    @patch("src.kene_api.utils.secrets._fetch_secret_from_full_path")
+    @patch("shared.secrets._fetch_secret_from_full_path")
     def test_full_gcp_path_format(self, mock_fetch):
         """Test with full GCP Secret Manager path."""
         env_var = "NEO4J_PASSWORD"
@@ -82,7 +82,7 @@ class TestGetEnvOrSecret:
             assert result == secret_value
             mock_fetch.assert_called_once_with(secret_path)
 
-    @patch("src.kene_api.utils.secrets._fetch_secret_from_full_path")
+    @patch("shared.secrets._fetch_secret_from_full_path")
     def test_secret_fetch_failure_returns_default(self, mock_fetch):
         """Test returns default value when Secret Manager fetch fails."""
         env_var = "TEST_SECRET"
@@ -122,7 +122,7 @@ class TestGetEnvOrSecret:
             result = get_env_or_secret(env_var)
             assert result == partial_path
 
-    @patch("src.kene_api.utils.secrets._fetch_secret_from_full_path")
+    @patch("shared.secrets._fetch_secret_from_full_path")
     def test_caching_same_sm_path(self, mock_fetch):
         """Test that secrets are cached to avoid redundant fetches."""
         mock_fetch.return_value = "cached_value"
@@ -142,7 +142,7 @@ class TestGetEnvOrSecret:
             # Should only fetch once due to caching
             assert mock_fetch.call_count == 1
 
-    @patch("src.kene_api.utils.secrets._fetch_secret_from_full_path")
+    @patch("shared.secrets._fetch_secret_from_full_path")
     def test_caching_same_full_path(self, mock_fetch):
         """Test that full GCP paths are also cached."""
         mock_fetch.return_value = "cached_value"

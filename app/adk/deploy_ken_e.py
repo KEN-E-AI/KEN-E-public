@@ -24,13 +24,13 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add API source to path to access the secrets utility
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "api" / "src"))
+# Add shared package to path for secret resolution
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
-    from kene_api.utils.secrets import get_env_or_secret
+    from shared.secrets import get_env_or_secret
 except ImportError:
-    logger.warning("Could not import secrets utility, will copy .env as-is")
+    logger.warning("Could not import shared secrets utility, will copy .env as-is")
     get_env_or_secret = None
 
 # Environment to GCP project mapping
