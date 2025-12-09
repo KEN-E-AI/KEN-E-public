@@ -1,10 +1,11 @@
 """Integration tests for customer profile monitoring keywords."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from src.kene_api.auth.models import UserContext
+from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.main import app
 
 
@@ -22,16 +23,26 @@ class TestCustomerProfileMonitoring:
         )
 
     @pytest.fixture
+    def mock_user_no_access(self):
+        """Create mock user without access."""
+        return UserContext(
+            user_id="test_user_no_access",
+            email="notest@example.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+
+    @pytest.fixture
     def client(self):
         """Create test client."""
         return TestClient(app)
 
     def test_add_customer_profile_keywords_success(self, client, mock_user):
         """Test adding customer profile keywords."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context",
-            return_value=mock_user,
-        ):
+        # Override auth dependency
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+
+        try:
             with patch(
                 "src.kene_api.routers.monitoring_topics.get_firestore_service"
             ) as mock_firestore:
@@ -63,20 +74,16 @@ class TestCustomerProfileMonitoring:
 
                 # Verify Firestore was updated
                 mock_firestore.return_value.update_document.assert_called_once()
+        finally:
+            # Clean up override
+            app.dependency_overrides.clear()
 
-    def test_add_customer_profile_keywords_no_access(self, client):
+    def test_add_customer_profile_keywords_no_access(self, client, mock_user_no_access):
         """Test adding customer profile keywords without access fails."""
-        mock_user_no_access = UserContext(
-            user_id="test_user_no_access",
-            email="notest@example.com",
-            organization_permissions={},
-            account_permissions={},
-        )
+        # Override auth dependency
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user_no_access
 
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context",
-            return_value=mock_user_no_access,
-        ):
+        try:
             response = client.post(
                 "/api/v1/monitoring-topics/acc_test/customer-profiles",
                 json={
@@ -90,13 +97,14 @@ class TestCustomerProfileMonitoring:
             )
 
             assert response.status_code == 403
+        finally:
+            app.dependency_overrides.clear()
 
     def test_update_customer_profile_keywords_success(self, client, mock_user):
         """Test updating customer profile keywords."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context",
-            return_value=mock_user,
-        ):
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+
+        try:
             with patch(
                 "src.kene_api.routers.monitoring_topics.get_firestore_service"
             ) as mock_firestore:
@@ -126,15 +134,16 @@ class TestCustomerProfileMonitoring:
                     == "Customer profile keywords updated successfully"
                 )
                 assert "new_keyword1" in data["data"]["customer_profile"]["keywords"]
+        finally:
+            app.dependency_overrides.clear()
 
     def test_update_customer_profile_keywords_invalid_index(
         self, client, mock_user
     ):
         """Test updating customer profile with invalid index fails."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context",
-            return_value=mock_user,
-        ):
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+
+        try:
             with patch(
                 "src.kene_api.routers.monitoring_topics.get_firestore_service"
             ) as mock_firestore:
@@ -157,13 +166,14 @@ class TestCustomerProfileMonitoring:
                 )
 
                 assert response.status_code == 404
+        finally:
+            app.dependency_overrides.clear()
 
     def test_delete_customer_profile_keywords_success(self, client, mock_user):
         """Test deleting customer profile keywords."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context",
-            return_value=mock_user,
-        ):
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+
+        try:
             with patch(
                 "src.kene_api.routers.monitoring_topics.get_firestore_service"
             ) as mock_firestore:
@@ -187,15 +197,16 @@ class TestCustomerProfileMonitoring:
                     == "Customer profile keywords deleted successfully"
                 )
                 assert data["data"]["deleted_customer_profile"]["node_id"] == "prof_123"
+        finally:
+            app.dependency_overrides.clear()
 
     def test_delete_customer_profile_keywords_invalid_index(
         self, client, mock_user
     ):
         """Test deleting customer profile with invalid index fails."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context",
-            return_value=mock_user,
-        ):
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+
+        try:
             with patch(
                 "src.kene_api.routers.monitoring_topics.get_firestore_service"
             ) as mock_firestore:
@@ -211,3 +222,5 @@ class TestCustomerProfileMonitoring:
                 )
 
                 assert response.status_code == 404
+        finally:
+            app.dependency_overrides.clear()
