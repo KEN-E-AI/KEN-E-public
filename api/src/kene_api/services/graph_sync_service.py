@@ -69,9 +69,6 @@ from ..models.graph_models import (
     RiskCreate,
     RiskResponse,
     RiskUpdate,
-    RollupMarketingStrategyCreate,
-    RollupMarketingStrategyResponse,
-    RollupMarketingStrategyUpdate,
     StrengthCreate,
     StrengthResponse,
     StrengthUpdate,
@@ -4257,6 +4254,7 @@ class GraphSyncService:
         Only returns rollup strategies (node_id starts with 'rollup_').
         """
         # Get strategies
+        limit_clause = "LIMIT $limit" if limit else ""
         query = f"""
         MATCH (strategy:{strategy_type})-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
         WHERE strategy.node_id STARTS WITH 'rollup_'
@@ -4264,7 +4262,7 @@ class GraphSyncService:
         WITH strategy, count(individual) as individual_count
         ORDER BY strategy.created_time DESC
         SKIP $skip
-        {f"LIMIT $limit" if limit else ""}
+        {limit_clause}
         RETURN strategy, individual_count
         """
 
