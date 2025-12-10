@@ -314,3 +314,153 @@ A central hub for all information related to the ideal customer profile.
 | **LoyaltyStrategy** | -[:BELONGS\_TO]-\> | Account | Each child node of the Account must have the BELONGS\_TO relationship. |
 | **LoyaltyStrategy** | \<-[:BECOMES\_AN\_ADVOCATE\_BECAUSE]- | CustomerProfile | Identifies the strategy for building loyalty with existing customers within this customer profile. |
 | **LoyaltyStrategy** | \<-[:HAS\_LOYALTY\_STRATEGY]- | ProductCategory | Links the strategy to the specific product category it applies to. |
+
+-----
+
+## Rollup Marketing Strategy Nodes
+
+**Purpose**: Consolidate all individual marketing strategies into a single company-wide marketing strategy.
+
+After all individual (ProductCategory × CustomerProfile) strategies are created, the system automatically generates:
+1. One **RollupMarketingStrategy** hub node - central entry point for consolidated strategy
+2. Five rollup strategy nodes - one per funnel stage, consolidating all individual strategies of that type
+
+**Key Characteristics**:
+- **Automatic creation**: Generated during account setup, after individual strategies complete
+- **Editable**: Full CRUD operations via API endpoints
+- **Bidirectional traceability**: Links to individual strategies via [:CAN\_BE\_CUSTOMIZED\_BY]
+- **Same node types**: Rollup strategies use same labels as individuals (e.g., both are ProblemAwarenessStrategy:Strategy)
+- **Distinguished by node\_id**: Rollup node\_ids start with "rollup\_", individuals don't
+
+-----
+
+### RollupMarketingStrategy Node (Hub)
+
+**Purpose**: Central hub node that links the Account to all consolidated marketing strategies.
+
+| name | type | description | example |
+| :--- | :--- | :--- | :--- |
+| **node\_id** | string | Deterministic identifier for the rollup hub. | `rollup_marketing_hub_{account_id}` |
+| **account\_id** | string | The account identifier this node belongs to. | `acc_ab8cfbbb02b84d128f955fb98382c0b2` |
+| **label** | string | The node type in neo4j. | `RollupMarketingStrategy` |
+| **label** | string | The strategy label for embedding search. | `Strategy` |
+| **description** | string | Description of the consolidated marketing strategy. | `Consolidated marketing strategy for the entire business` |
+| **created\_time** | timestamp | The timestamp when the node was created. | 2025-12-10 10:00:00.000000 UTC |
+| **last\_modified** | timestamp | The timestamp when the node was last modified | 2025-12-10 10:00:00.000000 UTC |
+| **created\_by** | string | User who created the node, or "System" if auto-generated. | `System` |
+| **last\_modified\_by** | string | User who last modified the node. | `John Doe` |
+| **embedding** | list | Vector embeddings for search. Initially null. | |
+
+**Relationships**
+| Label | Relationship | Label | Description |
+| :--- | :--- | :--- | :--- |
+| **RollupMarketingStrategy** | -[:BELONGS\_TO]-\> | Account | Standard relationship for all Strategy nodes. |
+| **RollupMarketingStrategy** | -[:INCREASES\_CUSTOMERS\_BY]-\> | Account | Links the rollup hub to its account. |
+| **RollupMarketingStrategy** | -[:INCREASES\_PROBLEM\_AWARENESS\_BY]-\> | ProblemAwarenessStrategy | Links hub to problem awareness rollup strategy. |
+| **RollupMarketingStrategy** | -[:INCREASES\_BRAND\_AWARENESS\_BY]-\> | BrandAwarenessStrategy | Links hub to brand awareness rollup strategy. |
+| **RollupMarketingStrategy** | -[:INCREASES\_CUSTOMERS\_CONSIDERING\_PURCHASE\_BY]-\> | ConsiderationStrategy | Links hub to consideration rollup strategy. |
+| **RollupMarketingStrategy** | -[:INCREASES\_PAYING\_CUSTOMERS\_BY]-\> | ConversionStrategy | Links hub to conversion rollup strategy. |
+| **RollupMarketingStrategy** | -[:INCREASES\_LOYAL\_CUSTOMERS\_BY]-\> | LoyaltyStrategy | Links hub to loyalty rollup strategy. |
+
+-----
+
+### Rollup Strategy Nodes (Problem Awareness, Brand Awareness, Consideration, Conversion, Loyalty)
+
+**Purpose**: Consolidated strategy nodes that summarize all individual strategies for a specific funnel stage.
+
+**Important**: Rollup strategies use the SAME node types as individual strategies:
+- Both rollup and individual problem awareness strategies are `ProblemAwarenessStrategy:Strategy`
+- Distinguished by node\_id pattern: rollup node\_ids start with `rollup_`, individual node\_ids don't
+
+**Example: Rollup ProblemAwarenessStrategy**
+
+| name | type | description | example |
+| :--- | :--- | :--- | :--- |
+| **node\_id** | string | Deterministic identifier. Format: `rollup_{stage}_{account_id}` | `rollup_problemaware_acc_ab8cfbbb02b84d128f955fb98382c0b2` |
+| **account\_id** | string | The account identifier this node belongs to. | `acc_ab8cfbbb02b84d128f955fb98382c0b2` |
+| **label** | string | Same node type as individual strategies. | `ProblemAwarenessStrategy` |
+| **label** | string | Strategy label for embedding search. | `Strategy` |
+| **description** | string | Consolidated summary of all problem awareness strategies. | `Summary combining strategies from all customer profiles and product categories...` |
+| **references** | list[string] | Aggregated references from all individual strategies. | `["https://example.com/research1", "https://example.com/research2"]` |
+| **created\_time** | timestamp | When the rollup was created. | 2025-12-10 10:00:00.000000 UTC |
+| **last\_modified** | timestamp | When the rollup was last modified | 2025-12-10 10:00:00.000000 UTC |
+| **created\_by** | string | User who created, or "System" if auto-generated. | `System` |
+| **last\_modified\_by** | string | User who last modified the node. | `John Doe` |
+| **embedding** | list | Vector embeddings for search. Initially null. | |
+
+**Relationships**
+| Label | Relationship | Label | Description |
+| :--- | :--- | :--- | :--- |
+| **ProblemAwarenessStrategy (rollup)** | -[:BELONGS\_TO]-\> | Account | Standard relationship for all Strategy nodes. |
+| **ProblemAwarenessStrategy (rollup)** | \<-[:INCREASES\_PROBLEM\_AWARENESS\_BY]- | RollupMarketingStrategy | Links from the hub to this rollup strategy. |
+| **ProblemAwarenessStrategy (rollup)** | -[:CAN\_BE\_CUSTOMIZED\_BY]-\> | ProblemAwarenessStrategy (individual) | Links rollup to each individual strategy it consolidates. Multiple relationships, one per individual strategy. |
+
+**Note**: The same structure applies to the other 4 rollup strategy types:
+- `RollupBrandAwarenessStrategy` (node\_id: `rollup_brandaware_{account_id}`)
+- `RollupConsiderationStrategy` (node\_id: `rollup_consideration_{account_id}`)
+- `RollupConversionStrategy` (node\_id: `rollup_conversion_{account_id}`)
+- `RollupLoyaltyStrategy` (node\_id: `rollup_loyalty_{account_id}`)
+
+-----
+
+### Complete Rollup Graph Structure
+
+```
+Account
+  ↑
+  [:INCREASES_CUSTOMERS_BY]
+  |
+RollupMarketingStrategy (hub: rollup_marketing_hub_{account_id})
+  |
+  ├─[:INCREASES_PROBLEM_AWARENESS_BY]──────→ ProblemAwarenessStrategy (rollup)
+  |                                             ├─[:CAN_BE_CUSTOMIZED_BY]→ ProblemAwarenessStrategy (category1×profile1)
+  |                                             ├─[:CAN_BE_CUSTOMIZED_BY]→ ProblemAwarenessStrategy (category1×profile2)
+  |                                             ├─[:CAN_BE_CUSTOMIZED_BY]→ ProblemAwarenessStrategy (category2×profile1)
+  |                                             └─[:CAN_BE_CUSTOMIZED_BY]→ ... (all problem awareness strategies)
+  |
+  ├─[:INCREASES_BRAND_AWARENESS_BY]────────→ BrandAwarenessStrategy (rollup)
+  |                                             └─[:CAN_BE_CUSTOMIZED_BY]→ ... (all brand awareness strategies)
+  |
+  ├─[:INCREASES_CUSTOMERS_CONSIDERING_PURCHASE_BY]→ ConsiderationStrategy (rollup)
+  |                                                    └─[:CAN_BE_CUSTOMIZED_BY]→ ... (all consideration strategies)
+  |
+  ├─[:INCREASES_PAYING_CUSTOMERS_BY]───────→ ConversionStrategy (rollup)
+  |                                             └─[:CAN_BE_CUSTOMIZED_BY]→ ... (all conversion strategies)
+  |
+  └─[:INCREASES_LOYAL_CUSTOMERS_BY]────────→ LoyaltyStrategy (rollup)
+                                                └─[:CAN_BE_CUSTOMIZED_BY]→ ... (all loyalty strategies)
+```
+
+-----
+
+### Querying Rollup Strategies
+
+**Get the rollup hub with all linked rollup strategies:**
+```cypher
+MATCH (hub:RollupMarketingStrategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+OPTIONAL MATCH (hub)-[r]->(rollup:Strategy)
+WHERE type(r) STARTS WITH 'INCREASES_'
+RETURN hub, collect({type: type(r), strategy: rollup}) as linked_strategies
+```
+
+**Get a rollup strategy with all individual strategies it consolidates:**
+```cypher
+MATCH (rollup:ProblemAwarenessStrategy {node_id: $rollup_id})
+WHERE rollup.node_id STARTS WITH 'rollup_'
+MATCH (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual:ProblemAwarenessStrategy)
+RETURN rollup, collect(individual) as individual_strategies
+```
+
+**List only rollup strategies (exclude individuals):**
+```cypher
+MATCH (strategy:ProblemAwarenessStrategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+WHERE strategy.node_id STARTS WITH 'rollup_'
+RETURN strategy
+```
+
+**List only individual strategies (exclude rollups):**
+```cypher
+MATCH (strategy:ProblemAwarenessStrategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+WHERE NOT strategy.node_id STARTS WITH 'rollup_'
+RETURN strategy
+```
