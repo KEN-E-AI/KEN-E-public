@@ -63,6 +63,8 @@ class MarketingGraphBuilder:
                 "conversion_strategies": [],
                 "loyalty_strategies": [],
                 "is_marketed_to_relationships": [],
+                "rollup_marketing_hub": None,
+                "rollup_strategies": {},
             }
 
             # Phase 1: Create master CustomerProfile nodes (2-5 total, NO strategies)
@@ -202,6 +204,27 @@ class MarketingGraphBuilder:
                         created_nodes["is_marketed_to_relationships"].append(
                             relationship
                         )
+
+            # Phase 3: Create rollup strategies (NEW)
+            try:
+                rollup_nodes = self._create_rollup_strategies(
+                    research_report=research_report,
+                    account_id=account_id,
+                    user_id=user_id,
+                    created_nodes=created_nodes,
+                )
+                created_nodes["rollup_marketing_hub"] = rollup_nodes["hub"]
+                created_nodes["rollup_strategies"] = rollup_nodes["strategies"]
+                logger.info(
+                    f"Successfully created rollup marketing strategy with "
+                    f"{len(rollup_nodes['strategies'])} rollup strategy nodes"
+                )
+            except Exception as rollup_error:
+                # Log warning but don't fail entire graph build
+                logger.warning(
+                    f"Failed to create rollup strategies (non-critical): {rollup_error}",
+                    exc_info=True,
+                )
 
             # Validate strategy count - we create 5 strategy types per profile
             # Count all created strategies across all 5 types
@@ -619,3 +642,220 @@ class MarketingGraphBuilder:
                 f"Failed to link ProductCategory {product_category_id} to CustomerProfile {customer_profile_id}"
             )
             return None
+
+    def _create_rollup_strategies(
+        self,
+        research_report: MarketingResearchReport,
+        account_id: str,
+        user_id: str,
+        created_nodes: dict,
+    ) -> dict:
+        """
+        Create rollup marketing strategies that consolidate all individual strategies.
+
+        Creates:
+        1. One RollupMarketingStrategy hub node
+        2. Five rollup strategy nodes (one per funnel stage)
+        3. Relationships: hub → account, hub → rollup strategies, rollup strategies → individuals
+
+        Args:
+            research_report: Marketing research with profiles and category mappings
+            account_id: Account identifier
+            user_id: User identifier
+            created_nodes: Dictionary with previously created nodes
+
+        Returns:
+            Dictionary with hub and strategy nodes
+        """
+        # Verify we have individual strategies to roll up
+        required_keys = [
+            "problem_awareness_strategies",
+            "brand_awareness_strategies",
+            "consideration_strategies",
+            "conversion_strategies",
+            "loyalty_strategies",
+        ]
+
+        for key in required_keys:
+            if not created_nodes.get(key):
+                raise ValueError(
+                    f"Cannot create rollup strategies: {key} is empty. "
+                    "Individual strategies must be created first."
+                )
+
+        # Step 1: Create hub node
+        hub_node = self._create_rollup_marketing_hub(account_id, user_id)
+
+        # Step 2: Create 5 rollup strategy nodes
+        rollup_configs = [
+            {
+                "stage": "problem_awareness",
+                "node_type": "ProblemAwarenessStrategy",
+                "created_key": "problem_awareness_strategies",
+                "hub_relationship": "INCREASES_PROBLEM_AWARENESS_BY",
+            },
+            {
+                "stage": "brand_awareness",
+                "node_type": "BrandAwarenessStrategy",
+                "created_key": "brand_awareness_strategies",
+                "hub_relationship": "INCREASES_BRAND_AWARENESS_BY",
+            },
+            {
+                "stage": "consideration",
+                "node_type": "ConsiderationStrategy",
+                "created_key": "consideration_strategies",
+                "hub_relationship": "INCREASES_CUSTOMERS_CONSIDERING_PURCHASE_BY",
+            },
+            {
+                "stage": "conversion",
+                "node_type": "ConversionStrategy",
+                "created_key": "conversion_strategies",
+                "hub_relationship": "INCREASES_PAYING_CUSTOMERS_BY",
+            },
+            {
+                "stage": "loyalty",
+                "node_type": "LoyaltyStrategy",
+                "created_key": "loyalty_strategies",
+                "hub_relationship": "INCREASES_LOYAL_CUSTOMERS_BY",
+            },
+        ]
+
+        strategy_nodes = {}
+
+        for config in rollup_configs:
+            individual_strategies = created_nodes[config["created_key"]]
+
+            rollup_node = self._create_single_rollup_strategy(
+                config=config,
+                individual_strategies=individual_strategies,
+                hub_node_id=hub_node["node_id"],
+                account_id=account_id,
+                user_id=user_id,
+            )
+
+            strategy_nodes[config["stage"]] = rollup_node
+
+        return {
+            "hub": hub_node,
+            "strategies": strategy_nodes,
+        }
+
+    def _create_rollup_marketing_hub(
+        self,
+        account_id: str,
+        user_id: str,
+    ) -> dict:
+        """
+        Create RollupMarketingStrategy hub node.
+
+        This is the central node that links to the Account and all 5 rollup strategies.
+
+        Args:
+            account_id: Account identifier
+            user_id: User identifier
+
+        Returns:
+            Created hub node data
+        """
+        node_id = f"rollup_marketing_hub_{account_id}"
+
+        node_data = {
+            "node_id": node_id,
+            "description": "Consolidated marketing strategy for the entire business",
+            "created_time": datetime.now().isoformat(),
+            "last_modified": datetime.now().isoformat(),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        # Create hub node
+        self.neo4j_ops.create_strategy_node(
+            "RollupMarketingStrategy", node_data, account_id
+        )
+
+        # Link hub to Account
+        query = """
+        MATCH (hub:RollupMarketingStrategy {node_id: $hub_id})
+        MATCH (acc:Account {account_id: $account_id})
+        MERGE (hub)-[:INCREASES_CUSTOMERS_BY]->(acc)
+        """
+        self.neo4j_ops.connection.execute_query(
+            query, {"hub_id": node_id, "account_id": account_id}
+        )
+
+        logger.info(f"Created RollupMarketingStrategy hub: {node_id}")
+        return node_data
+
+    def _create_single_rollup_strategy(
+        self,
+        config: dict,
+        individual_strategies: list[dict],
+        hub_node_id: str,
+        account_id: str,
+        user_id: str,
+    ) -> dict:
+        """
+        Create a single rollup strategy node for one funnel stage.
+
+        Args:
+            config: Configuration dict with stage, node_type, hub_relationship
+            individual_strategies: List of individual strategy nodes to consolidate
+            hub_node_id: Node ID of the RollupMarketingStrategy hub
+            account_id: Account identifier
+            user_id: User identifier
+
+        Returns:
+            Created rollup strategy node data
+        """
+        # Generate deterministic node ID
+        node_id = f"rollup_{config['stage'].replace('_', '')}_{account_id}"
+
+        # MVP: Empty description field (can be populated later via API or LLM enhancement)
+        # Future enhancement: Could aggregate references or create summary
+        node_data = {
+            "node_id": node_id,
+            "description": "",  # Empty for MVP - populate via API PATCH later
+            "references": [],  # Empty for MVP - could aggregate from individuals later
+            "created_time": datetime.now().isoformat(),
+            "last_modified": datetime.now().isoformat(),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        # Create rollup strategy node
+        self.neo4j_ops.create_strategy_node(
+            config["node_type"], node_data, account_id
+        )
+
+        # Link hub to rollup strategy
+        link_hub_query = f"""
+        MATCH (hub:RollupMarketingStrategy {{node_id: $hub_id}})
+        MATCH (rollup:{config['node_type']} {{node_id: $rollup_id}})
+        MERGE (hub)-[:{config['hub_relationship']}]->(rollup)
+        """
+        self.neo4j_ops.connection.execute_query(
+            link_hub_query, {"hub_id": hub_node_id, "rollup_id": node_id}
+        )
+
+        # Link rollup strategy to all individual strategies via [:CAN_BE_CUSTOMIZED_BY]
+        individual_ids = [s["node_id"] for s in individual_strategies]
+
+        link_individuals_query = f"""
+        MATCH (rollup:{config['node_type']} {{node_id: $rollup_id}})
+        MATCH (individual:{config['node_type']})
+        WHERE individual.node_id IN $individual_ids
+        MERGE (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
+        """
+        self.neo4j_ops.connection.execute_query(
+            link_individuals_query,
+            {"rollup_id": node_id, "individual_ids": individual_ids},
+        )
+
+        logger.info(
+            f"Created rollup {config['node_type']} (node_id: {node_id}) "
+            f"consolidating {len(individual_strategies)} individual strategies"
+        )
+
+        return node_data

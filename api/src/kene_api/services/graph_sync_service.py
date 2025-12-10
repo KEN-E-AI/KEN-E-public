@@ -69,6 +69,9 @@ from ..models.graph_models import (
     RiskCreate,
     RiskResponse,
     RiskUpdate,
+    RollupMarketingStrategyCreate,
+    RollupMarketingStrategyResponse,
+    RollupMarketingStrategyUpdate,
     StrengthCreate,
     StrengthResponse,
     StrengthUpdate,
@@ -4091,6 +4094,246 @@ class GraphSyncService:
             return {k: self._convert_neo4j_value(v) for k, v in value.items()}
 
         return value
+
+    # ==================== ROLLUP MARKETING STRATEGY METHODS ====================
+
+    async def get_rollup_marketing_hub(
+        self,
+        account_id: str,
+    ) -> dict | None:
+        """
+        Get the RollupMarketingStrategy hub node for an account.
+
+        Args:
+            account_id: Account identifier
+
+        Returns:
+            Hub node with linked rollup strategy node_ids, or None if not found
+        """
+        query = """
+        MATCH (hub:RollupMarketingStrategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        OPTIONAL MATCH (hub)-[r]->(rollup:Strategy)
+        WHERE type(r) STARTS WITH 'INCREASES_'
+        RETURN hub, collect({type: type(r), node_id: rollup.node_id}) as linked_strategies
+        """
+
+        result = await self.neo4j.execute_read_query(query, {"account_id": account_id})
+
+        if not result:
+            return None
+
+        hub_data = self._neo4j_node_to_dict(result[0]["hub"])
+        linked = result[0]["linked_strategies"]
+
+        # Build rollup_strategies map
+        rollup_strategies = {}
+        for link in linked:
+            if link.get("node_id"):  # Only include if node_id exists
+                if link["type"] == "INCREASES_PROBLEM_AWARENESS_BY":
+                    rollup_strategies["problem_awareness"] = link["node_id"]
+                elif link["type"] == "INCREASES_BRAND_AWARENESS_BY":
+                    rollup_strategies["brand_awareness"] = link["node_id"]
+                elif link["type"] == "INCREASES_CUSTOMERS_CONSIDERING_PURCHASE_BY":
+                    rollup_strategies["consideration"] = link["node_id"]
+                elif link["type"] == "INCREASES_PAYING_CUSTOMERS_BY":
+                    rollup_strategies["conversion"] = link["node_id"]
+                elif link["type"] == "INCREASES_LOYAL_CUSTOMERS_BY":
+                    rollup_strategies["loyalty"] = link["node_id"]
+
+        hub_data["rollup_strategies"] = rollup_strategies
+        hub_data["account_id"] = account_id
+        return hub_data
+
+    async def create_rollup_marketing_hub(
+        self,
+        account_id: str,
+        data: dict,
+        user_id: str,
+    ) -> dict:
+        """Create a new RollupMarketingStrategy hub node."""
+        node_id = f"rollup_marketing_hub_{account_id}"
+
+        query = """
+        MATCH (acc:Account {account_id: $account_id})
+        CREATE (hub:RollupMarketingStrategy:Strategy)
+        SET hub.node_id = $node_id,
+            hub.description = $description,
+            hub.account_id = $account_id,
+            hub.created_time = datetime(),
+            hub.last_modified = datetime(),
+            hub.created_by = $user_id,
+            hub.last_modified_by = $user_id,
+            hub.embedding = null
+        MERGE (hub)-[:BELONGS_TO]->(acc)
+        MERGE (hub)-[:INCREASES_CUSTOMERS_BY]->(acc)
+        RETURN hub
+        """
+
+        params = {
+            "node_id": node_id,
+            "account_id": account_id,
+            "description": data["description"],
+            "user_id": user_id,
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+
+        if not result:
+            raise Exception("Failed to create RollupMarketingStrategy hub")
+
+        return {**self._neo4j_node_to_dict(result[0]["hub"]), "account_id": account_id}
+
+    async def update_rollup_marketing_hub(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: dict,
+        user_id: str,
+    ) -> dict:
+        """Update an existing RollupMarketingStrategy hub node."""
+        # Build SET clause dynamically
+        set_clauses = ["node.last_modified = datetime()", "node.last_modified_by = $user_id"]
+
+        if "description" in updates and updates["description"] is not None:
+            set_clauses.append("node.description = $description")
+
+        query = f"""
+        MATCH (node:RollupMarketingStrategy {{node_id: $node_id}})
+        MATCH (node)-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
+        SET {', '.join(set_clauses)}
+        RETURN node
+        """
+
+        params = {
+            "node_id": node_id,
+            "account_id": account_id,
+            "user_id": user_id,
+            **{k: v for k, v in updates.items() if v is not None},
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+
+        if not result:
+            raise NodeNotFoundException(
+                f"RollupMarketingStrategy hub {node_id} not found in account {account_id}"
+            )
+
+        return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": account_id}
+
+    async def delete_rollup_marketing_hub(
+        self,
+        account_id: str,
+        node_id: str,
+    ) -> bool:
+        """
+        Delete RollupMarketingStrategy hub node.
+
+        Note: This will NOT cascade delete rollup strategies.
+        Only deletes the hub and its relationships.
+        """
+        query = """
+        MATCH (hub:RollupMarketingStrategy {node_id: $node_id})
+        MATCH (hub)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        DETACH DELETE hub
+        RETURN count(hub) as deleted
+        """
+
+        result = await self.neo4j.execute_write_query(
+            query, {"node_id": node_id, "account_id": account_id}
+        )
+
+        return result[0]["deleted"] > 0 if result else False
+
+    async def list_rollup_strategies_by_type(
+        self,
+        account_id: str,
+        strategy_type: str,
+        skip: int = 0,
+        limit: int | None = None,
+    ) -> dict:
+        """
+        List rollup strategies of a specific type for an account.
+
+        Only returns rollup strategies (node_id starts with 'rollup_').
+        """
+        # Get strategies
+        query = f"""
+        MATCH (strategy:{strategy_type})-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
+        WHERE strategy.node_id STARTS WITH 'rollup_'
+        OPTIONAL MATCH (strategy)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
+        WITH strategy, count(individual) as individual_count
+        ORDER BY strategy.created_time DESC
+        SKIP $skip
+        {f"LIMIT $limit" if limit else ""}
+        RETURN strategy, individual_count
+        """
+
+        # Get total count
+        count_query = f"""
+        MATCH (strategy:{strategy_type})-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
+        WHERE strategy.node_id STARTS WITH 'rollup_'
+        RETURN count(strategy) as total
+        """
+
+        results = await self.neo4j.execute_read_query(
+            query, {"account_id": account_id, "skip": skip, "limit": limit}
+        )
+
+        count_result = await self.neo4j.execute_read_query(
+            count_query, {"account_id": account_id}
+        )
+
+        items = []
+        for record in results:
+            strategy_data = self._neo4j_node_to_dict(record["strategy"])
+            strategy_data["account_id"] = account_id
+            strategy_data["individual_strategy_count"] = record["individual_count"]
+            items.append(strategy_data)
+
+        total = count_result[0]["total"] if count_result else 0
+
+        return {
+            "items": items,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
+
+    async def get_rollup_strategy_with_individuals(
+        self,
+        account_id: str,
+        node_id: str,
+        strategy_type: str,
+    ) -> dict | None:
+        """
+        Get a rollup strategy node with its linked individual strategies.
+
+        Args:
+            account_id: Account identifier
+            node_id: Rollup strategy node_id
+            strategy_type: Strategy node type (e.g., "ProblemAwarenessStrategy")
+
+        Returns:
+            Rollup strategy with list of individual strategy node_ids
+        """
+        query = f"""
+        MATCH (rollup:{strategy_type} {{node_id: $node_id}})
+        MATCH (rollup)-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
+        OPTIONAL MATCH (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual:{strategy_type})
+        RETURN rollup, collect(individual.node_id) as individual_ids
+        """
+
+        result = await self.neo4j.execute_read_query(
+            query, {"node_id": node_id, "account_id": account_id}
+        )
+
+        if not result:
+            return None
+
+        rollup_data = self._neo4j_node_to_dict(result[0]["rollup"])
+        rollup_data["account_id"] = account_id
+        rollup_data["linked_individual_strategies"] = result[0]["individual_ids"]
+        return rollup_data
 
     def _neo4j_node_to_dict(self, node: Any) -> dict[str, Any]:
         """Convert Neo4j node to dictionary with proper type conversion.

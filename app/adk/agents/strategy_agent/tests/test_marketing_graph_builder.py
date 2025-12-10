@@ -916,3 +916,374 @@ def test_pydantic_validation_prevents_invalid_profile_references(
     assert "Wrong Name" in error_msg
     assert "Consumer Banking" in error_msg
     assert "not found in master profile list" in error_msg
+
+
+# ==================== ROLLUP MARKETING STRATEGY TESTS ====================
+
+
+def test_create_rollup_marketing_hub(graph_builder, mock_neo4j_ops):
+    """Test that rollup marketing hub is created correctly."""
+    account_id = "test_acc_123"
+    user_id = "user_456"
+
+    hub_node = graph_builder._create_rollup_marketing_hub(account_id, user_id)
+
+    # Verify node structure
+    assert hub_node["node_id"] == f"rollup_marketing_hub_{account_id}"
+    assert hub_node["description"] == "Consolidated marketing strategy for the entire business"
+    assert hub_node["created_by"] == user_id
+    assert hub_node["last_modified_by"] == user_id
+    assert hub_node["embedding"] is None
+    assert "created_time" in hub_node
+    assert "last_modified" in hub_node
+
+    # Verify create_strategy_node was called
+    mock_neo4j_ops.create_strategy_node.assert_called_once()
+    call_args = mock_neo4j_ops.create_strategy_node.call_args
+    assert call_args[0][0] == "RollupMarketingStrategy"
+    assert call_args[0][1]["node_id"] == f"rollup_marketing_hub_{account_id}"
+    assert call_args[0][2] == account_id
+
+    # Verify link to Account was created
+    assert mock_neo4j_ops.connection.execute_query.called
+
+
+def test_create_single_rollup_strategy(graph_builder, mock_neo4j_ops):
+    """Test creating a single rollup strategy node."""
+    config = {
+        "stage": "problem_awareness",
+        "node_type": "ProblemAwarenessStrategy",
+        "hub_relationship": "INCREASES_PROBLEM_AWARENESS_BY",
+    }
+
+    individual_strategies = [
+        {"node_id": "pas_1", "description": "Strategy 1 for profile A"},
+        {"node_id": "pas_2", "description": "Strategy 2 for profile B"},
+        {"node_id": "pas_3", "description": "Strategy 3 for profile C"},
+    ]
+
+    hub_node_id = "rollup_marketing_hub_test_acc"
+    account_id = "test_acc_123"
+    user_id = "user_456"
+
+    rollup_node = graph_builder._create_single_rollup_strategy(
+        config=config,
+        individual_strategies=individual_strategies,
+        hub_node_id=hub_node_id,
+        account_id=account_id,
+        user_id=user_id,
+    )
+
+    # Verify node structure
+    # Note: .replace('_', '') removes all underscores from stage name
+    assert rollup_node["node_id"] == f"rollup_problemawareness_{account_id}"
+    assert rollup_node["description"] == ""  # Empty for MVP
+    assert rollup_node["references"] == []
+    assert rollup_node["created_by"] == user_id
+    assert rollup_node["last_modified_by"] == user_id
+    assert rollup_node["embedding"] is None
+
+    # Verify relationships created (hub link + individual links)
+    assert mock_neo4j_ops.connection.execute_query.call_count >= 2
+
+
+def test_rollup_strategy_has_empty_description(graph_builder, mock_neo4j_ops):
+    """Test that rollup strategies are created with empty descriptions for MVP."""
+    config = {
+        "stage": "problem_awareness",
+        "node_type": "ProblemAwarenessStrategy",
+        "hub_relationship": "INCREASES_PROBLEM_AWARENESS_BY",
+    }
+
+    individual_strategies = [
+        {"node_id": "pas_1", "description": "Strategy 1 with content"},
+        {"node_id": "pas_2", "description": "Strategy 2 with content"},
+    ]
+
+    rollup_node = graph_builder._create_single_rollup_strategy(
+        config=config,
+        individual_strategies=individual_strategies,
+        hub_node_id="rollup_marketing_hub_test",
+        account_id="test_acc",
+        user_id="test_user",
+    )
+
+    # Verify description is empty string
+    assert rollup_node["description"] == ""
+    # Verify references is empty list
+    assert rollup_node["references"] == []
+
+
+def test_create_rollup_strategies_success(
+    graph_builder,
+    mock_neo4j_ops,
+):
+    """Test full rollup strategy creation flow."""
+    account_id = "test_acc_123"
+    user_id = "user_456"
+
+    # Create individual strategies first
+    created_nodes = {
+        "problem_awareness_strategies": [
+            {"node_id": "pas_1", "description": "Strategy 1"},
+            {"node_id": "pas_2", "description": "Strategy 2"},
+        ],
+        "brand_awareness_strategies": [
+            {"node_id": "bas_1", "description": "Brand 1"},
+        ],
+        "consideration_strategies": [
+            {"node_id": "cs_1", "description": "Consideration 1"},
+        ],
+        "conversion_strategies": [
+            {"node_id": "cvs_1", "description": "Conversion 1"},
+        ],
+        "loyalty_strategies": [
+            {"node_id": "ls_1", "description": "Loyalty 1"},
+        ],
+    }
+
+    # Create minimal research report (not actually used in this test)
+    from ..marketing_models import MarketingResearchReport
+    research_report = MarketingResearchReport(
+        ideal_customer_profiles=[],
+        product_category_mappings=[],
+    )
+
+    rollup_nodes = graph_builder._create_rollup_strategies(
+        research_report=research_report,
+        account_id=account_id,
+        user_id=user_id,
+        created_nodes=created_nodes,
+    )
+
+    # Verify structure
+    assert "hub" in rollup_nodes
+    assert "strategies" in rollup_nodes
+
+    # Verify hub
+    assert rollup_nodes["hub"]["node_id"] == f"rollup_marketing_hub_{account_id}"
+
+    # Verify 5 rollup strategies created
+    assert len(rollup_nodes["strategies"]) == 5
+    assert "problem_awareness" in rollup_nodes["strategies"]
+    assert "brand_awareness" in rollup_nodes["strategies"]
+    assert "consideration" in rollup_nodes["strategies"]
+    assert "conversion" in rollup_nodes["strategies"]
+    assert "loyalty" in rollup_nodes["strategies"]
+
+
+def test_create_rollup_strategies_fails_without_individuals(
+    graph_builder,
+):
+    """Test that rollup creation fails if individual strategies don't exist."""
+    account_id = "test_acc_123"
+    user_id = "user_456"
+
+    # Empty created_nodes
+    created_nodes = {
+        "problem_awareness_strategies": [],  # Empty!
+        "brand_awareness_strategies": [],
+        "consideration_strategies": [],
+        "conversion_strategies": [],
+        "loyalty_strategies": [],
+    }
+
+    # Create minimal research report (not actually used in this test)
+    from ..marketing_models import MarketingResearchReport
+    research_report = MarketingResearchReport(
+        ideal_customer_profiles=[],
+        product_category_mappings=[],
+    )
+
+    with pytest.raises(ValueError, match="Cannot create rollup strategies"):
+        graph_builder._create_rollup_strategies(
+            research_report=research_report,
+            account_id=account_id,
+            user_id=user_id,
+            created_nodes=created_nodes,
+        )
+
+
+def test_build_marketing_graph_includes_rollups(
+    graph_builder,
+    mock_neo4j_ops,
+):
+    """Test that build_marketing_graph creates rollups in Phase 3."""
+    account_id = "test_acc_789"
+    user_id = "user_123"
+
+    # Create a minimal but valid report
+    from ..marketing_models import (
+        IdealCustomerProfile,
+        MarketingResearchReport,
+        MarketingStrategy,
+        MarketingStrategyForProfile,
+        ProductCategoryMapping,
+    )
+
+    # Create narrative with all required sections (Pydantic validation requirement)
+    long_narrative = """
+Demographics: Test user, 25 years old, software engineer.
+
+Psychographics: Values efficiency and modern technology.
+
+Needs / Jobs-to-be-done: Needs reliable marketing analytics platform.
+
+Pain Points: Current solution is too complex and expensive.
+
+Goals: Streamline marketing operations and reduce costs.
+
+Motivations: Wants to make data-driven decisions quickly.
+
+Buying Behaviors: Researches online, prefers self-service trials.
+
+Communication Channels: LinkedIn, email, product documentation.
+
+Exclusion Criteria: Not interested in enterprise-only solutions.
+    """ * 4  # Repeat to ensure >2000 characters
+
+    report = MarketingResearchReport(
+        ideal_customer_profiles=[
+            IdealCustomerProfile(
+                display_name="Test Profile",
+                narrative=long_narrative,
+                references=[],
+            ),
+        ],
+        product_category_mappings=[
+            ProductCategoryMapping(
+                category_name="Test Category",
+                customer_strategies=[
+                    MarketingStrategyForProfile(
+                        customer_profile_name="Test Profile",
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="Test strategy",
+                            brand_awareness_strategy="Test strategy",
+                            consideration_strategy="Test strategy",
+                            conversion_strategy="Test strategy",
+                            loyalty_strategy="Test strategy",
+                            references=[],
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Mock product categories exist
+    mock_neo4j_ops.connection.execute_query.return_value = [
+        {"category_name": "Test Category", "node_id": "pc_001"},
+    ]
+
+    result = graph_builder.build_marketing_graph(
+        report,
+        account_id,
+        user_id,
+    )
+
+    # Verify rollups were created
+    assert "rollup_marketing_hub" in result
+    assert "rollup_strategies" in result
+
+    # Verify hub exists
+    assert result["rollup_marketing_hub"] is not None
+    assert result["rollup_marketing_hub"]["node_id"].startswith(
+        "rollup_marketing_hub_"
+    )
+
+    # Verify 5 rollup strategies
+    assert len(result["rollup_strategies"]) == 5
+
+
+def test_build_marketing_graph_rollup_failure_is_non_critical(
+    graph_builder,
+    mock_neo4j_ops,
+    caplog,
+):
+    """Test that rollup creation failure doesn't fail entire graph build."""
+    account_id = "test_acc_999"
+    user_id = "user_999"
+
+    # Create a minimal but valid report
+    from ..marketing_models import (
+        IdealCustomerProfile,
+        MarketingResearchReport,
+        MarketingStrategy,
+        MarketingStrategyForProfile,
+        ProductCategoryMapping,
+    )
+
+    # Create narrative with all required sections (Pydantic validation requirement)
+    long_narrative = """
+Demographics: Test user, 25 years old, software engineer.
+
+Psychographics: Values efficiency and modern technology.
+
+Needs / Jobs-to-be-done: Needs reliable marketing analytics platform.
+
+Pain Points: Current solution is too complex and expensive.
+
+Goals: Streamline marketing operations and reduce costs.
+
+Motivations: Wants to make data-driven decisions quickly.
+
+Buying Behaviors: Researches online, prefers self-service trials.
+
+Communication Channels: LinkedIn, email, product documentation.
+
+Exclusion Criteria: Not interested in enterprise-only solutions.
+    """ * 4  # Repeat to ensure >2000 characters
+
+    report = MarketingResearchReport(
+        ideal_customer_profiles=[
+            IdealCustomerProfile(
+                display_name="Test Profile",
+                narrative=long_narrative,
+                references=[],
+            ),
+        ],
+        product_category_mappings=[
+            ProductCategoryMapping(
+                category_name="Test Category",
+                customer_strategies=[
+                    MarketingStrategyForProfile(
+                        customer_profile_name="Test Profile",
+                        strategy=MarketingStrategy(
+                            problem_awareness_strategy="Test strategy",
+                            brand_awareness_strategy="Test strategy",
+                            consideration_strategy="Test strategy",
+                            conversion_strategy="Test strategy",
+                            loyalty_strategy="Test strategy",
+                            references=[],
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Mock product categories
+    mock_neo4j_ops.connection.execute_query.return_value = [
+        {"category_name": "Test Category", "node_id": "pc_001"},
+    ]
+
+    # Mock rollup creation to fail
+    def side_effect(*args, **kwargs):
+        if args and args[0] == "RollupMarketingStrategy":
+            raise Exception("Rollup creation failed!")
+        return []
+
+    mock_neo4j_ops.create_strategy_node.side_effect = side_effect
+
+    # Should NOT raise exception
+    result = graph_builder.build_marketing_graph(
+        report,
+        account_id,
+        user_id,
+    )
+
+    # Verify individual strategies still created
+    assert len(result["problem_awareness_strategies"]) > 0
+
+    # Verify warning was logged
+    assert "Failed to create rollup strategies" in caplog.text
