@@ -3056,3 +3056,124 @@ class TestRollupHubCreation:
         assert exc_info.value.node_type == "RollupMarketingStrategy"
         assert exc_info.value.account_id == account_id
         assert "Account may not exist" in str(exc_info.value)
+
+
+class TestRollupStrategyListOptimization:
+    """Tests for optimized rollup strategy list query."""
+
+    @pytest.mark.asyncio
+    async def test_list_rollup_strategies_single_query(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test that list operation uses single database query."""
+        # Arrange
+        account_id = "acc_test123"
+        strategy_type = "ProblemAwarenessStrategy"
+
+        # Mock single combined query result
+        mock_neo4j_service.execute_read_query.return_value = [
+            {
+                "paginated_strategies": [
+                    {
+                        "strategy": {
+                            "node_id": "rollup_problemawareness_acc_test123_abc",
+                            "description": "Test strategy 1",
+                            "created_time": datetime.now(),
+                        },
+                        "individual_count": 3,
+                    },
+                    {
+                        "strategy": {
+                            "node_id": "rollup_problemawareness_acc_test123_def",
+                            "description": "Test strategy 2",
+                            "created_time": datetime.now(),
+                        },
+                        "individual_count": 5,
+                    },
+                ],
+                "total": 10,
+            }
+        ]
+
+        # Act
+        result = await graph_sync_service.list_rollup_strategies_by_type(
+            account_id=account_id,
+            strategy_type=strategy_type,
+            skip=0,
+            limit=2,
+        )
+
+        # Assert - verify single query was made
+        assert mock_neo4j_service.execute_read_query.call_count == 1
+        assert len(result["items"]) == 2
+        assert result["total"] == 10
+        assert result["items"][0]["individual_strategy_count"] == 3
+        assert result["items"][1]["individual_strategy_count"] == 5
+
+    @pytest.mark.asyncio
+    async def test_list_rollup_strategies_with_no_limit(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test pagination with limit=None returns all items after skip."""
+        # Arrange
+        account_id = "acc_test123"
+        strategy_type = "ConsiderationStrategy"
+
+        mock_neo4j_service.execute_read_query.return_value = [
+            {
+                "paginated_strategies": [
+                    {
+                        "strategy": {
+                            "node_id": f"rollup_consideration_acc_test123_{i}",
+                            "description": f"Strategy {i}",
+                            "created_time": datetime.now(),
+                        },
+                        "individual_count": i,
+                    }
+                    for i in range(5, 10)  # Simulating skip=5
+                ],
+                "total": 10,
+            }
+        ]
+
+        # Act
+        result = await graph_sync_service.list_rollup_strategies_by_type(
+            account_id=account_id,
+            strategy_type=strategy_type,
+            skip=5,
+            limit=None,
+        )
+
+        # Assert
+        assert len(result["items"]) == 5
+        assert result["total"] == 10
+        assert result["skip"] == 5
+        assert result["limit"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_rollup_strategies_empty_result(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test handling of empty result set."""
+        # Arrange
+        mock_neo4j_service.execute_read_query.return_value = [
+            {"paginated_strategies": [], "total": 0}
+        ]
+
+        # Act
+        result = await graph_sync_service.list_rollup_strategies_by_type(
+            account_id="acc_test123",
+            strategy_type="ConversionStrategy",
+            skip=0,
+            limit=10,
+        )
+
+        # Assert
+        assert result["items"] == []
+        assert result["total"] == 0

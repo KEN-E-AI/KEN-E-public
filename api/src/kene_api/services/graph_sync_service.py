@@ -4283,42 +4283,39 @@ class GraphSyncService:
         # Validate strategy type to prevent Cypher injection
         self._validate_marketing_strategy_type(strategy_type)
 
-        # Get strategies
-        limit_clause = "LIMIT $limit" if limit else ""
+        # Combined query: get strategies and total count in single database round trip
+        # Use COLLECT to gather all strategies first, then slice for pagination
         query = f"""
         MATCH (strategy:{strategy_type})-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
         WHERE strategy.node_id STARTS WITH 'rollup_'
         OPTIONAL MATCH (strategy)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
         WITH strategy, count(individual) as individual_count
         ORDER BY strategy.created_time DESC
-        SKIP $skip
-        {limit_clause}
-        RETURN strategy, individual_count
+        WITH collect({{strategy: strategy, individual_count: individual_count}}) as all_strategies
+        RETURN
+            CASE
+                WHEN $limit IS NULL THEN all_strategies[$skip..]
+                ELSE all_strategies[$skip..($skip + $limit)]
+            END as paginated_strategies,
+            size(all_strategies) as total
         """
 
-        # Get total count
-        count_query = f"""
-        MATCH (strategy:{strategy_type})-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
-        WHERE strategy.node_id STARTS WITH 'rollup_'
-        RETURN count(strategy) as total
-        """
-
-        results = await self.neo4j.execute_read_query(
+        result = await self.neo4j.execute_read_query(
             query, {"account_id": account_id, "skip": skip, "limit": limit}
         )
 
-        count_result = await self.neo4j.execute_read_query(
-            count_query, {"account_id": account_id}
-        )
-
         items = []
-        for record in results:
-            strategy_data = self._neo4j_node_to_dict(record["strategy"])
-            strategy_data["account_id"] = account_id
-            strategy_data["individual_strategy_count"] = record["individual_count"]
-            items.append(strategy_data)
+        total = 0
 
-        total = count_result[0]["total"] if count_result else 0
+        if result and result[0]:
+            paginated_strategies = result[0].get("paginated_strategies", [])
+            total = result[0].get("total", 0)
+
+            for item in paginated_strategies:
+                strategy_data = self._neo4j_node_to_dict(item["strategy"])
+                strategy_data["account_id"] = account_id
+                strategy_data["individual_strategy_count"] = item["individual_count"]
+                items.append(strategy_data)
 
         return {
             "items": items,
