@@ -206,6 +206,14 @@ class MarketingGraphBuilder:
                         )
 
             # Phase 3: Create rollup strategies (NEW)
+            logger.info("[ROLLUP] Starting Phase 3: Create rollup strategies")
+            logger.info(f"[ROLLUP] Input - account_id: {account_id}, user_id: {user_id}")
+            logger.info(f"[ROLLUP] Individual strategies created: "
+                       f"problem={len(created_nodes.get('problem_awareness_strategies', []))}, "
+                       f"brand={len(created_nodes.get('brand_awareness_strategies', []))}, "
+                       f"consideration={len(created_nodes.get('consideration_strategies', []))}, "
+                       f"conversion={len(created_nodes.get('conversion_strategies', []))}, "
+                       f"loyalty={len(created_nodes.get('loyalty_strategies', []))}")
             try:
                 rollup_nodes = self._create_rollup_strategies(
                     research_report=research_report,
@@ -216,15 +224,17 @@ class MarketingGraphBuilder:
                 created_nodes["rollup_marketing_hub"] = rollup_nodes["hub"]
                 created_nodes["rollup_strategies"] = rollup_nodes["strategies"]
                 logger.info(
-                    f"Successfully created rollup marketing strategy with "
+                    f"[ROLLUP] ✅ Successfully created rollup marketing strategy with "
                     f"{len(rollup_nodes['strategies'])} rollup strategy nodes"
                 )
             except Exception as rollup_error:
                 # Log warning but don't fail entire graph build
-                logger.warning(
-                    f"Failed to create rollup strategies (non-critical): {rollup_error}",
+                logger.error(
+                    f"[ROLLUP] ❌ Failed to create rollup strategies: {rollup_error}",
                     exc_info=True,
                 )
+                logger.error(f"[ROLLUP] Error type: {type(rollup_error).__name__}")
+                logger.error(f"[ROLLUP] Error args: {rollup_error.args}")
 
             # Validate strategy count - we create 5 strategy types per profile
             # Count all created strategies across all 5 types
@@ -667,6 +677,8 @@ class MarketingGraphBuilder:
         Returns:
             Dictionary with hub and strategy nodes
         """
+        logger.info("[ROLLUP] _create_rollup_strategies called")
+
         # Verify we have individual strategies to roll up
         required_keys = [
             "problem_awareness_strategies",
@@ -676,17 +688,25 @@ class MarketingGraphBuilder:
             "loyalty_strategies",
         ]
 
+        logger.info("[ROLLUP] Verifying required strategy keys...")
         for key in required_keys:
+            count = len(created_nodes.get(key, []))
+            logger.info(f"[ROLLUP] Checking {key}: {count} strategies")
             if not created_nodes.get(key):
-                raise ValueError(
+                error_msg = (
                     f"Cannot create rollup strategies: {key} is empty. "
                     "Individual strategies must be created first."
                 )
+                logger.error(f"[ROLLUP] Validation failed: {error_msg}")
+                raise ValueError(error_msg)
 
         # Step 1: Create hub node
+        logger.info("[ROLLUP] Step 1: Creating RollupMarketingStrategy hub node...")
         hub_node = self._create_rollup_marketing_hub(account_id, user_id)
+        logger.info(f"[ROLLUP] Hub node created: {hub_node['node_id']}")
 
         # Step 2: Create 5 rollup strategy nodes
+        logger.info("[ROLLUP] Step 2: Creating 5 rollup strategy nodes...")
         rollup_configs = [
             {
                 "stage": "problem_awareness",
@@ -723,7 +743,9 @@ class MarketingGraphBuilder:
         strategy_nodes = {}
 
         for config in rollup_configs:
+            logger.info(f"[ROLLUP] Creating {config['stage']} rollup strategy...")
             individual_strategies = created_nodes[config["created_key"]]
+            logger.info(f"[ROLLUP] Found {len(individual_strategies)} individual {config['node_type']} strategies")
 
             rollup_node = self._create_single_rollup_strategy(
                 config=config,
@@ -734,7 +756,9 @@ class MarketingGraphBuilder:
             )
 
             strategy_nodes[config["stage"]] = rollup_node
+            logger.info(f"[ROLLUP] ✓ Created {config['stage']} rollup: {rollup_node['node_id']}")
 
+        logger.info(f"[ROLLUP] All rollup strategies created successfully: {len(strategy_nodes)} total")
         return {
             "hub": hub_node,
             "strategies": strategy_nodes,
@@ -758,6 +782,7 @@ class MarketingGraphBuilder:
             Created hub node data
         """
         node_id = f"rollup_marketing_hub_{account_id}"
+        logger.info(f"[ROLLUP] Creating hub node with ID: {node_id}")
 
         node_data = {
             "node_id": node_id,
@@ -770,21 +795,25 @@ class MarketingGraphBuilder:
         }
 
         # Create hub node
+        logger.info("[ROLLUP] Calling neo4j_ops.create_strategy_node for RollupMarketingStrategy")
         self.neo4j_ops.create_strategy_node(
             "RollupMarketingStrategy", node_data, account_id
         )
+        logger.info("[ROLLUP] Hub node created in Neo4j")
 
         # Link hub to Account
+        logger.info(f"[ROLLUP] Linking hub to Account: {account_id}")
         query = """
         MATCH (hub:RollupMarketingStrategy {node_id: $hub_id})
         MATCH (acc:Account {account_id: $account_id})
         MERGE (hub)-[:INCREASES_CUSTOMERS_BY]->(acc)
         """
-        self.neo4j_ops.connection.execute_query(
+        result = self.neo4j_ops.connection.execute_query(
             query, {"hub_id": node_id, "account_id": account_id}
         )
+        logger.info(f"[ROLLUP] Hub linked to Account (query returned {len(result) if result else 0} records)")
 
-        logger.info(f"Created RollupMarketingStrategy hub: {node_id}")
+        logger.info(f"[ROLLUP] Created RollupMarketingStrategy hub: {node_id}")
         return node_data
 
     def _create_single_rollup_strategy(
