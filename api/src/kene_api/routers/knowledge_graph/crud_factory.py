@@ -16,6 +16,7 @@ from ...constants import NODE_TYPE_REGISTRY
 from ...exceptions import (
     DuplicateNodeException,
     GraphSyncException,
+    NodeCreationException,
     NodeHasDependenciesException,
     NodeNotFoundException,
     ValidationException,
@@ -142,6 +143,11 @@ class CRUDEndpoints:
         except NodeNotFoundException as e:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+            ) from e
+        except NodeCreationException as e:
+            logger.error(f"Node creation failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             ) from e
         except GraphSyncException as e:
             logger.error(f"Graph sync error: {e}")

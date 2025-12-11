@@ -3025,3 +3025,34 @@ class TestRollupStrategyValidation:
                 graph_sync_service._validate_marketing_strategy_type(strategy_type)
             assert "Invalid strategy type" in str(exc_info.value)
             assert strategy_type in str(exc_info.value)
+
+
+class TestRollupHubCreation:
+    """Tests for rollup marketing hub creation exception handling."""
+
+    @pytest.mark.asyncio
+    async def test_create_rollup_hub_failure_raises_proper_exception(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test that hub creation failure raises NodeCreationException."""
+        from src.kene_api.exceptions import NodeCreationException
+        from src.kene_api.models.graph_models import RollupMarketingStrategyCreate
+
+        # Arrange - mock Neo4j to return empty result (failure)
+        mock_neo4j_service.execute_write_query.return_value = None
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        hub_data = RollupMarketingStrategyCreate(description="Test rollup strategy")
+
+        # Act & Assert
+        with pytest.raises(NodeCreationException) as exc_info:
+            await graph_sync_service.create_rollup_marketing_hub(
+                account_id, hub_data.model_dump(), user_id
+            )
+
+        assert exc_info.value.node_type == "RollupMarketingStrategy"
+        assert exc_info.value.account_id == account_id
+        assert "Account may not exist" in str(exc_info.value)

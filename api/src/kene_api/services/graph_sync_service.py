@@ -4194,7 +4194,13 @@ class GraphSyncService:
         result = await self.neo4j.execute_write_query(query, params)
 
         if not result:
-            raise Exception("Failed to create RollupMarketingStrategy hub")
+            from ..exceptions import NodeCreationException
+
+            raise NodeCreationException(
+                node_type="RollupMarketingStrategy",
+                account_id=account_id,
+                reason="Account may not exist or hub may already exist",
+            )
 
         return {**self._neo4j_node_to_dict(result[0]["hub"]), "account_id": account_id}
 
