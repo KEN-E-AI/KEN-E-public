@@ -2987,3 +2987,41 @@ class TestBrandStrategyIntegration:
         assert voice_result.brand_identity_node_id == hub_node_id
         # Hub created once + two children
         assert mock_neo4j_service.execute_write_query.call_count == 3
+
+
+# ==================== Rollup Strategy Validation Tests ====================
+
+
+class TestRollupStrategyValidation:
+    """Tests for rollup marketing strategy type validation."""
+
+    def test_validate_marketing_strategy_type_valid(self, graph_sync_service):
+        """Test validation passes for valid strategy types."""
+        valid_types = [
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]
+
+        for strategy_type in valid_types:
+            # Should not raise exception
+            graph_sync_service._validate_marketing_strategy_type(strategy_type)
+
+    def test_validate_marketing_strategy_type_invalid(self, graph_sync_service):
+        """Test validation raises exception for invalid strategy types."""
+        from src.kene_api.exceptions import ValidationException
+
+        invalid_types = [
+            "InvalidStrategy",
+            "ProductCategory",
+            "'; DROP TABLE strategies; --",  # SQL injection attempt
+            "Strategy<script>alert('xss')</script>",  # XSS attempt
+        ]
+
+        for strategy_type in invalid_types:
+            with pytest.raises(ValidationException) as exc_info:
+                graph_sync_service._validate_marketing_strategy_type(strategy_type)
+            assert "Invalid strategy type" in str(exc_info.value)
+            assert strategy_type in str(exc_info.value)

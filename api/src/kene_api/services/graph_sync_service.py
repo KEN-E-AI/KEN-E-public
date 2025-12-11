@@ -2651,7 +2651,7 @@ class GraphSyncService:
         if not result:
             raise ValidationException(
                 "Product or SubstituteProduct not found",
-                "product_node_id or substitute_product_node_id"
+                "product_node_id or substitute_product_node_id",
             )
 
     async def unlink_product_from_substitute(
@@ -2687,7 +2687,7 @@ class GraphSyncService:
         if not result:
             raise ValidationException(
                 "Relationship not found or nodes do not exist",
-                "product_node_id or substitute_product_node_id"
+                "product_node_id or substitute_product_node_id",
             )
 
     # ==================== CONVENIENCE WRAPPERS FOR MARKETING STRATEGY ====================
@@ -4094,6 +4094,24 @@ class GraphSyncService:
 
     # ==================== ROLLUP MARKETING STRATEGY METHODS ====================
 
+    def _validate_marketing_strategy_type(self, strategy_type: str) -> None:
+        """Validate strategy type to prevent Cypher injection.
+
+        Args:
+            strategy_type: Strategy type to validate
+
+        Raises:
+            ValidationException: If strategy type is not in whitelist
+        """
+        from ..constants import VALID_MARKETING_STRATEGY_TYPES
+
+        if strategy_type not in VALID_MARKETING_STRATEGY_TYPES:
+            valid_types = ", ".join(sorted(VALID_MARKETING_STRATEGY_TYPES))
+            raise ValidationException(
+                f"Invalid strategy type '{strategy_type}'. Must be one of: {valid_types}",
+                field_name="strategy_type",
+            )
+
     async def get_rollup_marketing_hub(
         self,
         account_id: str,
@@ -4189,7 +4207,10 @@ class GraphSyncService:
     ) -> dict:
         """Update an existing RollupMarketingStrategy hub node."""
         # Build SET clause dynamically
-        set_clauses = ["node.last_modified = datetime()", "node.last_modified_by = $user_id"]
+        set_clauses = [
+            "node.last_modified = datetime()",
+            "node.last_modified_by = $user_id",
+        ]
 
         if "description" in updates and updates["description"] is not None:
             set_clauses.append("node.description = $description")
@@ -4197,7 +4218,7 @@ class GraphSyncService:
         query = f"""
         MATCH (node:RollupMarketingStrategy {{node_id: $node_id}})
         MATCH (node)-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
-        SET {', '.join(set_clauses)}
+        SET {", ".join(set_clauses)}
         RETURN node
         """
 
@@ -4253,6 +4274,9 @@ class GraphSyncService:
 
         Only returns rollup strategies (node_id starts with 'rollup_').
         """
+        # Validate strategy type to prevent Cypher injection
+        self._validate_marketing_strategy_type(strategy_type)
+
         # Get strategies
         limit_clause = "LIMIT $limit" if limit else ""
         query = f"""
@@ -4314,6 +4338,9 @@ class GraphSyncService:
         Returns:
             Rollup strategy with list of individual strategy node_ids
         """
+        # Validate strategy type to prevent Cypher injection
+        self._validate_marketing_strategy_type(strategy_type)
+
         query = f"""
         MATCH (rollup:{strategy_type} {{node_id: $node_id}})
         MATCH (rollup)-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
