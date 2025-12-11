@@ -886,17 +886,15 @@ async def list_rollup_problem_awareness_strategies(
     Only returns rollup strategies (node_id starts with 'rollup_').
     Typically there will be 0 or 1 rollup strategy per account.
     """
-    await user.check_account_access(account_id, "view")
-
-    result = await service.list_rollup_strategies_by_type(
+    return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ProblemAwarenessStrategy",
+        list_field_name="strategies",
+        list_response_class=ProblemAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
-    )
-
-    return ProblemAwarenessStrategyListResponse(
-        strategies=result["items"], total_count=result["total"]
+        service=service,
+        user=user,
     )
 
 
@@ -913,23 +911,14 @@ async def get_rollup_problem_awareness_strategy(
     """
     Get a rollup problem awareness strategy with its linked individual strategies.
     """
-    await user.check_account_access(account_id, "view")
-
-    strategy = await service.get_rollup_strategy_with_individuals(
+    return await CRUDEndpoints.get_rollup_strategy(
         account_id=account_id,
         node_id=node_id,
         strategy_type="ProblemAwarenessStrategy",
+        response_model_class=ProblemAwarenessStrategyResponse,
+        service=service,
+        user=user,
     )
-
-    if not strategy:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=404,
-            detail=f"Rollup problem awareness strategy {node_id} not found",
-        )
-
-    return ProblemAwarenessStrategyResponse(**strategy)
 
 
 @router.get(
@@ -944,17 +933,15 @@ async def list_rollup_brand_awareness_strategies(
     user: UserContext = Depends(get_current_user),
 ) -> BrandAwarenessStrategyListResponse:
     """List rollup brand awareness strategies for an account."""
-    await user.check_account_access(account_id, "view")
-
-    result = await service.list_rollup_strategies_by_type(
+    return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="BrandAwarenessStrategy",
+        list_field_name="strategies",
+        list_response_class=BrandAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
-    )
-
-    return BrandAwarenessStrategyListResponse(
-        strategies=result["items"], total_count=result["total"]
+        service=service,
+        user=user,
     )
 
 
@@ -969,23 +956,14 @@ async def get_rollup_brand_awareness_strategy(
     user: UserContext = Depends(get_current_user),
 ) -> BrandAwarenessStrategyResponse:
     """Get a rollup brand awareness strategy with its linked individual strategies."""
-    await user.check_account_access(account_id, "view")
-
-    strategy = await service.get_rollup_strategy_with_individuals(
+    return await CRUDEndpoints.get_rollup_strategy(
         account_id=account_id,
         node_id=node_id,
         strategy_type="BrandAwarenessStrategy",
+        response_model_class=BrandAwarenessStrategyResponse,
+        service=service,
+        user=user,
     )
-
-    if not strategy:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=404,
-            detail=f"Rollup brand awareness strategy {node_id} not found",
-        )
-
-    return BrandAwarenessStrategyResponse(**strategy)
 
 
 @router.get(
@@ -1000,17 +978,15 @@ async def list_rollup_consideration_strategies(
     user: UserContext = Depends(get_current_user),
 ) -> ConsiderationStrategyListResponse:
     """List rollup consideration strategies for an account."""
-    await user.check_account_access(account_id, "view")
-
-    result = await service.list_rollup_strategies_by_type(
+    return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ConsiderationStrategy",
+        list_field_name="strategies",
+        list_response_class=ConsiderationStrategyListResponse,
         skip=skip,
         limit=limit,
-    )
-
-    return ConsiderationStrategyListResponse(
-        strategies=result["items"], total_count=result["total"]
+        service=service,
+        user=user,
     )
 
 
@@ -1025,23 +1001,14 @@ async def get_rollup_consideration_strategy(
     user: UserContext = Depends(get_current_user),
 ) -> ConsiderationStrategyResponse:
     """Get a rollup consideration strategy with its linked individual strategies."""
-    await user.check_account_access(account_id, "view")
-
-    strategy = await service.get_rollup_strategy_with_individuals(
+    return await CRUDEndpoints.get_rollup_strategy(
         account_id=account_id,
         node_id=node_id,
         strategy_type="ConsiderationStrategy",
+        response_model_class=ConsiderationStrategyResponse,
+        service=service,
+        user=user,
     )
-
-    if not strategy:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=404,
-            detail=f"Rollup consideration strategy {node_id} not found",
-        )
-
-    return ConsiderationStrategyResponse(**strategy)
 
 
 @router.get(
@@ -1056,17 +1023,15 @@ async def list_rollup_conversion_strategies(
     user: UserContext = Depends(get_current_user),
 ) -> ConversionStrategyListResponse:
     """List rollup conversion strategies for an account."""
-    await user.check_account_access(account_id, "view")
-
-    result = await service.list_rollup_strategies_by_type(
+    return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ConversionStrategy",
+        list_field_name="strategies",
+        list_response_class=ConversionStrategyListResponse,
         skip=skip,
         limit=limit,
-    )
-
-    return ConversionStrategyListResponse(
-        strategies=result["items"], total_count=result["total"]
+        service=service,
+        user=user,
     )
 
 
@@ -1081,23 +1046,14 @@ async def get_rollup_conversion_strategy(
     user: UserContext = Depends(get_current_user),
 ) -> ConversionStrategyResponse:
     """Get a rollup conversion strategy with its linked individual strategies."""
-    await user.check_account_access(account_id, "view")
-
-    strategy = await service.get_rollup_strategy_with_individuals(
+    return await CRUDEndpoints.get_rollup_strategy(
         account_id=account_id,
         node_id=node_id,
         strategy_type="ConversionStrategy",
+        response_model_class=ConversionStrategyResponse,
+        service=service,
+        user=user,
     )
-
-    if not strategy:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=404,
-            detail=f"Rollup conversion strategy {node_id} not found",
-        )
-
-    return ConversionStrategyResponse(**strategy)
 
 
 @router.get(
@@ -1112,17 +1068,15 @@ async def list_rollup_loyalty_strategies(
     user: UserContext = Depends(get_current_user),
 ) -> LoyaltyStrategyListResponse:
     """List rollup loyalty strategies for an account."""
-    await user.check_account_access(account_id, "view")
-
-    result = await service.list_rollup_strategies_by_type(
+    return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="LoyaltyStrategy",
+        list_field_name="strategies",
+        list_response_class=LoyaltyStrategyListResponse,
         skip=skip,
         limit=limit,
-    )
-
-    return LoyaltyStrategyListResponse(
-        strategies=result["items"], total_count=result["total"]
+        service=service,
+        user=user,
     )
 
 
@@ -1137,20 +1091,11 @@ async def get_rollup_loyalty_strategy(
     user: UserContext = Depends(get_current_user),
 ) -> LoyaltyStrategyResponse:
     """Get a rollup loyalty strategy with its linked individual strategies."""
-    await user.check_account_access(account_id, "view")
-
-    strategy = await service.get_rollup_strategy_with_individuals(
+    return await CRUDEndpoints.get_rollup_strategy(
         account_id=account_id,
         node_id=node_id,
         strategy_type="LoyaltyStrategy",
+        response_model_class=LoyaltyStrategyResponse,
+        service=service,
+        user=user,
     )
-
-    if not strategy:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=404,
-            detail=f"Rollup loyalty strategy {node_id} not found",
-        )
-
-    return LoyaltyStrategyResponse(**strategy)

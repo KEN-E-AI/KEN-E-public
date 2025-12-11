@@ -465,3 +465,112 @@ class CRUDEndpoints:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get {config['human_readable']}",
             ) from e
+
+    @staticmethod
+    async def list_rollup_strategies(
+        account_id: str,
+        strategy_type: str,
+        list_field_name: str,
+        list_response_class: type[ListResponseModel],
+        skip: int,
+        limit: int | None,
+        service: GraphSyncService,
+        user: UserContext,
+    ) -> ListResponseModel:
+        """Generic LIST endpoint for rollup marketing strategies.
+
+        Args:
+            account_id: Account identifier
+            strategy_type: Strategy type (e.g., "ProblemAwarenessStrategy")
+            list_field_name: Field name for strategies in list response (e.g., "strategies")
+            list_response_class: List response model class
+            skip: Number of items to skip for pagination
+            limit: Maximum number of items to return
+            service: GraphSyncService instance
+            user: Authenticated user context
+
+        Returns:
+            List response model instance with rollup strategies
+
+        Raises:
+            HTTPException: With appropriate status codes
+        """
+        await check_graph_access(account_id, user, "view")
+
+        try:
+            result = await service.list_rollup_strategies_by_type(
+                account_id=account_id,
+                strategy_type=strategy_type,
+                skip=skip,
+                limit=limit,
+            )
+
+            return list_response_class(
+                **{list_field_name: result["items"], "total_count": result["total"]}
+            )
+        except ValidationException as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+            ) from e
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Failed to list rollup {strategy_type}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to list rollup {strategy_type}",
+            ) from e
+
+    @staticmethod
+    async def get_rollup_strategy(
+        account_id: str,
+        node_id: str,
+        strategy_type: str,
+        response_model_class: type[ResponseModel],
+        service: GraphSyncService,
+        user: UserContext,
+    ) -> ResponseModel:
+        """Generic GET endpoint for single rollup marketing strategy.
+
+        Args:
+            account_id: Account identifier
+            node_id: Node identifier
+            strategy_type: Strategy type (e.g., "ProblemAwarenessStrategy")
+            response_model_class: Response model class
+            service: GraphSyncService instance
+            user: Authenticated user context
+
+        Returns:
+            Response model instance with rollup strategy and linked individuals
+
+        Raises:
+            HTTPException: With appropriate status codes
+        """
+        await check_graph_access(account_id, user, "view")
+
+        try:
+            strategy = await service.get_rollup_strategy_with_individuals(
+                account_id=account_id,
+                node_id=node_id,
+                strategy_type=strategy_type,
+            )
+
+            if not strategy:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Rollup {strategy_type} {node_id} not found",
+                )
+
+            return response_model_class(**strategy)
+        except ValidationException as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+            ) from e
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Failed to get rollup {strategy_type}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get rollup {strategy_type}",
+            ) from e
