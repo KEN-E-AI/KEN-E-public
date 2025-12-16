@@ -2987,3 +2987,195 @@ class TestBrandStrategyIntegration:
         assert voice_result.brand_identity_node_id == hub_node_id
         # Hub created once + two children
         assert mock_neo4j_service.execute_write_query.call_count == 3
+
+
+# ==================== Rollup Strategy Validation Tests ====================
+
+
+class TestRollupStrategyValidation:
+    """Tests for rollup marketing strategy type validation."""
+
+    def test_validate_marketing_strategy_type_valid(self, graph_sync_service):
+        """Test validation passes for valid strategy types."""
+        valid_types = [
+            "ProblemAwarenessStrategy",
+            "BrandAwarenessStrategy",
+            "ConsiderationStrategy",
+            "ConversionStrategy",
+            "LoyaltyStrategy",
+        ]
+
+        for strategy_type in valid_types:
+            # Should not raise exception
+            graph_sync_service._validate_marketing_strategy_type(strategy_type)
+
+    def test_validate_marketing_strategy_type_invalid(self, graph_sync_service):
+        """Test validation raises exception for invalid strategy types."""
+        from src.kene_api.exceptions import ValidationException
+
+        invalid_types = [
+            "InvalidStrategy",
+            "ProductCategory",
+            "'; DROP TABLE strategies; --",  # SQL injection attempt
+            "Strategy<script>alert('xss')</script>",  # XSS attempt
+        ]
+
+        for strategy_type in invalid_types:
+            with pytest.raises(ValidationException) as exc_info:
+                graph_sync_service._validate_marketing_strategy_type(strategy_type)
+            assert "Invalid strategy type" in str(exc_info.value)
+            assert strategy_type in str(exc_info.value)
+
+
+class TestRollupHubCreation:
+    """Tests for rollup marketing hub creation exception handling."""
+
+    @pytest.mark.asyncio
+    async def test_create_rollup_hub_failure_raises_proper_exception(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test that hub creation failure raises NodeCreationException."""
+        from src.kene_api.exceptions import NodeCreationException
+        from src.kene_api.models.graph_models import RollupMarketingStrategyCreate
+
+        # Arrange - mock duplicate check to return None (no existing hub)
+        # Then mock Neo4j creation to return empty result (failure)
+        mock_neo4j_service.execute_read_query.return_value = None
+        mock_neo4j_service.execute_write_query.return_value = None
+
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        hub_data = RollupMarketingStrategyCreate(description="Test rollup strategy")
+
+        # Act & Assert
+        with pytest.raises(NodeCreationException) as exc_info:
+            await graph_sync_service.create_rollup_marketing_hub(
+                account_id, hub_data.model_dump(), user_id
+            )
+
+        assert exc_info.value.node_type == "RollupMarketingStrategy"
+        assert exc_info.value.account_id == account_id
+        assert "Account may not exist" in str(exc_info.value)
+
+
+class TestRollupStrategyListOptimization:
+    """Tests for optimized rollup strategy list query."""
+
+    @pytest.mark.asyncio
+    async def test_list_rollup_strategies_single_query(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test that list operation uses single database query to prevent N+1 problem."""
+        # Arrange
+        account_id = "acc_test123"
+        strategy_type = "ProblemAwarenessStrategy"
+
+        # Mock single combined query result
+        mock_neo4j_service.execute_read_query.return_value = [
+            {
+                "paginated_strategies": [
+                    {
+                        "strategy": {
+                            "node_id": "rollup_problemawareness_acc_test123_abc",
+                            "description": "Test strategy 1",
+                            "created_time": datetime.now(),
+                        },
+                        "individual_count": 3,
+                    },
+                    {
+                        "strategy": {
+                            "node_id": "rollup_problemawareness_acc_test123_def",
+                            "description": "Test strategy 2",
+                            "created_time": datetime.now(),
+                        },
+                        "individual_count": 5,
+                    },
+                ],
+                "total": 10,
+            }
+        ]
+
+        # Act
+        result = await graph_sync_service.list_rollup_strategies_by_type(
+            account_id=account_id,
+            strategy_type=strategy_type,
+            skip=0,
+            limit=2,
+        )
+
+        # Assert - verify single query was made
+        assert mock_neo4j_service.execute_read_query.call_count == 1
+        assert len(result["items"]) == 2
+        assert result["total"] == 10
+        assert result["items"][0]["individual_strategy_count"] == 3
+        assert result["items"][1]["individual_strategy_count"] == 5
+
+    @pytest.mark.asyncio
+    async def test_list_rollup_strategies_with_no_limit(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test pagination with limit=None returns all items after skip."""
+        # Arrange
+        account_id = "acc_test123"
+        strategy_type = "ConsiderationStrategy"
+
+        mock_neo4j_service.execute_read_query.return_value = [
+            {
+                "paginated_strategies": [
+                    {
+                        "strategy": {
+                            "node_id": f"rollup_consideration_acc_test123_{i}",
+                            "description": f"Strategy {i}",
+                            "created_time": datetime.now(),
+                        },
+                        "individual_count": i,
+                    }
+                    for i in range(5, 10)  # Simulating skip=5
+                ],
+                "total": 10,
+            }
+        ]
+
+        # Act
+        result = await graph_sync_service.list_rollup_strategies_by_type(
+            account_id=account_id,
+            strategy_type=strategy_type,
+            skip=5,
+            limit=None,
+        )
+
+        # Assert
+        assert len(result["items"]) == 5
+        assert result["total"] == 10
+        assert result["skip"] == 5
+        assert result["limit"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_rollup_strategies_empty_result(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+    ):
+        """Test handling of empty result set."""
+        # Arrange
+        mock_neo4j_service.execute_read_query.return_value = [
+            {"paginated_strategies": [], "total": 0}
+        ]
+
+        # Act
+        result = await graph_sync_service.list_rollup_strategies_by_type(
+            account_id="acc_test123",
+            strategy_type="ConversionStrategy",
+            skip=0,
+            limit=10,
+        )
+
+        # Assert
+        assert result["items"] == []
+        assert result["total"] == 0

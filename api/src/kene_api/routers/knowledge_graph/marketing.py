@@ -3,6 +3,8 @@
 CRUD endpoints for 6 marketing strategy node types:
 - CustomerProfile, ProblemAwarenessStrategy, BrandAwarenessStrategy
 - ConsiderationStrategy, ConversionStrategy, LoyaltyStrategy
+
+Plus rollup marketing strategy endpoints for consolidated company-wide strategies.
 """
 
 import logging
@@ -39,6 +41,9 @@ from ...models.graph_models import (
     ProblemAwarenessStrategyResponse,
     ProblemAwarenessStrategyUpdate,
     ProductCategoryListResponse,
+    RollupMarketingStrategyCreate,
+    RollupMarketingStrategyResponse,
+    RollupMarketingStrategyUpdate,
 )
 from ...models.kene_models import SuccessResponse
 from ...services.graph_sync_service import GraphSyncService, get_graph_sync_service
@@ -268,7 +273,7 @@ async def list_linked_product_categories(
         logger.error(f"Error listing linked product categories: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to list linked product categories"
-        )
+        ) from e
 
 
 # ==================== PROBLEM AWARENESS STRATEGY ENDPOINTS ====================
@@ -847,6 +852,359 @@ async def delete_loyalty_strategy(
         node_id=node_id,
         node_type="LoyaltyStrategy",
         service_method=service.delete_loyalty_strategy,
+        service=service,
+        user=user,
+    )
+
+
+# ==================== ROLLUP MARKETING STRATEGY HUB ENDPOINTS ====================
+
+
+@router.post(
+    "/{account_id}/rollup-marketing-strategy",
+    response_model=RollupMarketingStrategyResponse,
+    status_code=201,
+)
+async def create_rollup_marketing_hub(
+    account_id: str,
+    hub_data: RollupMarketingStrategyCreate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> RollupMarketingStrategyResponse:
+    """
+    Create a new RollupMarketingStrategy hub node.
+
+    Requires edit permission for the account.
+
+    Note: This is typically auto-generated during account setup.
+    Manual creation is only needed if regenerating the rollup.
+    """
+    await user.check_account_access(account_id, "edit")
+
+    created_hub = await service.create_rollup_marketing_hub(
+        account_id=account_id,
+        data=hub_data.model_dump(),
+        user_id=user.user_id,
+    )
+
+    return RollupMarketingStrategyResponse(**created_hub)
+
+
+@router.get(
+    "/{account_id}/rollup-marketing-strategy",
+    response_model=RollupMarketingStrategyResponse,
+)
+async def get_rollup_marketing_hub(
+    account_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> RollupMarketingStrategyResponse:
+    """
+    Get the RollupMarketingStrategy hub node for an account.
+
+    Returns the hub with links to all 5 rollup strategy nodes.
+    """
+    await user.check_account_access(account_id, "view")
+
+    hub = await service.get_rollup_marketing_hub(account_id)
+
+    if not hub:
+        raise HTTPException(
+            status_code=404,
+            detail=f"RollupMarketingStrategy hub not found for account '{account_id}'",
+        )
+
+    return RollupMarketingStrategyResponse(**hub)
+
+
+@router.patch(
+    "/{account_id}/rollup-marketing-strategy/{node_id}",
+    response_model=RollupMarketingStrategyResponse,
+)
+async def update_rollup_marketing_hub(
+    account_id: str,
+    node_id: str,
+    updates: RollupMarketingStrategyUpdate,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> RollupMarketingStrategyResponse:
+    """Update the RollupMarketingStrategy hub node."""
+    await user.check_account_access(account_id, "edit")
+
+    updated_hub = await service.update_rollup_marketing_hub(
+        account_id=account_id,
+        node_id=node_id,
+        updates=updates.model_dump(exclude_unset=True),
+        user_id=user.user_id,
+    )
+
+    return RollupMarketingStrategyResponse(**updated_hub)
+
+
+@router.delete(
+    "/{account_id}/rollup-marketing-strategy/{node_id}",
+    response_model=DeleteResponse,
+)
+async def delete_rollup_marketing_hub(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> DeleteResponse:
+    """
+    Delete the RollupMarketingStrategy hub node.
+
+    Warning: This does NOT cascade delete the rollup strategies.
+    To fully remove rollups, delete individual rollup strategies separately.
+    """
+    await user.check_account_access(account_id, "edit")
+
+    deleted = await service.delete_rollup_marketing_hub(
+        account_id=account_id,
+        node_id=node_id,
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail=f"RollupMarketingStrategy hub '{node_id}' not found for account '{account_id}'",
+        )
+
+    return DeleteResponse(success=True, message="RollupMarketingStrategy hub deleted")
+
+
+# ==================== ROLLUP STRATEGY ENDPOINTS ====================
+# These endpoints list/get the rollup versions of strategies
+# (distinguished by node_id starting with ROLLUP_NODE_ID_PREFIX)
+
+
+@router.get(
+    "/{account_id}/rollup-problem-awareness-strategies",
+    response_model=ProblemAwarenessStrategyListResponse,
+)
+async def list_rollup_problem_awareness_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProblemAwarenessStrategyListResponse:
+    """
+    List rollup problem awareness strategies for an account.
+
+    Only returns rollup strategies (node_id starts with ROLLUP_NODE_ID_PREFIX).
+    Typically there will be 0 or 1 rollup strategy per account.
+    """
+    return await CRUDEndpoints.list_rollup_strategies(
+        account_id=account_id,
+        strategy_type="ProblemAwarenessStrategy",
+        list_field_name="strategies",
+        list_response_class=ProblemAwarenessStrategyListResponse,
+        skip=skip,
+        limit=limit,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-problem-awareness-strategies/{node_id}",
+    response_model=ProblemAwarenessStrategyResponse,
+)
+async def get_rollup_problem_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProblemAwarenessStrategyResponse:
+    """
+    Get a rollup problem awareness strategy with its linked individual strategies.
+    """
+    return await CRUDEndpoints.get_rollup_strategy(
+        account_id=account_id,
+        node_id=node_id,
+        strategy_type="ProblemAwarenessStrategy",
+        response_model_class=ProblemAwarenessStrategyResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-brand-awareness-strategies",
+    response_model=BrandAwarenessStrategyListResponse,
+)
+async def list_rollup_brand_awareness_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyListResponse:
+    """List rollup brand awareness strategies for an account."""
+    return await CRUDEndpoints.list_rollup_strategies(
+        account_id=account_id,
+        strategy_type="BrandAwarenessStrategy",
+        list_field_name="strategies",
+        list_response_class=BrandAwarenessStrategyListResponse,
+        skip=skip,
+        limit=limit,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-brand-awareness-strategies/{node_id}",
+    response_model=BrandAwarenessStrategyResponse,
+)
+async def get_rollup_brand_awareness_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> BrandAwarenessStrategyResponse:
+    """Get a rollup brand awareness strategy with its linked individual strategies."""
+    return await CRUDEndpoints.get_rollup_strategy(
+        account_id=account_id,
+        node_id=node_id,
+        strategy_type="BrandAwarenessStrategy",
+        response_model_class=BrandAwarenessStrategyResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-consideration-strategies",
+    response_model=ConsiderationStrategyListResponse,
+)
+async def list_rollup_consideration_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConsiderationStrategyListResponse:
+    """List rollup consideration strategies for an account."""
+    return await CRUDEndpoints.list_rollup_strategies(
+        account_id=account_id,
+        strategy_type="ConsiderationStrategy",
+        list_field_name="strategies",
+        list_response_class=ConsiderationStrategyListResponse,
+        skip=skip,
+        limit=limit,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-consideration-strategies/{node_id}",
+    response_model=ConsiderationStrategyResponse,
+)
+async def get_rollup_consideration_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConsiderationStrategyResponse:
+    """Get a rollup consideration strategy with its linked individual strategies."""
+    return await CRUDEndpoints.get_rollup_strategy(
+        account_id=account_id,
+        node_id=node_id,
+        strategy_type="ConsiderationStrategy",
+        response_model_class=ConsiderationStrategyResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-conversion-strategies",
+    response_model=ConversionStrategyListResponse,
+)
+async def list_rollup_conversion_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConversionStrategyListResponse:
+    """List rollup conversion strategies for an account."""
+    return await CRUDEndpoints.list_rollup_strategies(
+        account_id=account_id,
+        strategy_type="ConversionStrategy",
+        list_field_name="strategies",
+        list_response_class=ConversionStrategyListResponse,
+        skip=skip,
+        limit=limit,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-conversion-strategies/{node_id}",
+    response_model=ConversionStrategyResponse,
+)
+async def get_rollup_conversion_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ConversionStrategyResponse:
+    """Get a rollup conversion strategy with its linked individual strategies."""
+    return await CRUDEndpoints.get_rollup_strategy(
+        account_id=account_id,
+        node_id=node_id,
+        strategy_type="ConversionStrategy",
+        response_model_class=ConversionStrategyResponse,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-loyalty-strategies",
+    response_model=LoyaltyStrategyListResponse,
+)
+async def list_rollup_loyalty_strategies(
+    account_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=1000),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> LoyaltyStrategyListResponse:
+    """List rollup loyalty strategies for an account."""
+    return await CRUDEndpoints.list_rollup_strategies(
+        account_id=account_id,
+        strategy_type="LoyaltyStrategy",
+        list_field_name="strategies",
+        list_response_class=LoyaltyStrategyListResponse,
+        skip=skip,
+        limit=limit,
+        service=service,
+        user=user,
+    )
+
+
+@router.get(
+    "/{account_id}/rollup-loyalty-strategies/{node_id}",
+    response_model=LoyaltyStrategyResponse,
+)
+async def get_rollup_loyalty_strategy(
+    account_id: str,
+    node_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> LoyaltyStrategyResponse:
+    """Get a rollup loyalty strategy with its linked individual strategies."""
+    return await CRUDEndpoints.get_rollup_strategy(
+        account_id=account_id,
+        node_id=node_id,
+        strategy_type="LoyaltyStrategy",
+        response_model_class=LoyaltyStrategyResponse,
         service=service,
         user=user,
     )

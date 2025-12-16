@@ -1240,6 +1240,45 @@ class MarketingStrategyResponse(BaseModel):
     loyalty_strategies: list[LoyaltyStrategyResponse]
 
 
+# ==================== ROLLUP MARKETING STRATEGY MODELS ====================
+
+
+class RollupMarketingStrategyBase(BaseModel):
+    """Base model for RollupMarketingStrategy hub node."""
+
+    description: str = Field(..., description="Overall marketing strategy description")
+
+
+class RollupMarketingStrategyCreate(RollupMarketingStrategyBase):
+    """Create model for RollupMarketingStrategy."""
+
+    pass
+
+
+class RollupMarketingStrategyUpdate(BaseModel):
+    """Update model for RollupMarketingStrategy."""
+
+    description: str | None = None
+
+
+class RollupMarketingStrategyResponse(NodeBase):
+    """Response model for RollupMarketingStrategy."""
+
+    description: str
+    rollup_strategies: dict[str, str] | None = Field(
+        None, description="Map of stage name to rollup strategy node_id"
+    )
+
+
+class RollupMarketingStrategyListResponse(BaseModel):
+    """List response for RollupMarketingStrategy."""
+
+    items: list[RollupMarketingStrategyResponse]
+    total: int
+    skip: int
+    limit: int | None
+
+
 # ==================== Brand Strategy Models ====================
 
 

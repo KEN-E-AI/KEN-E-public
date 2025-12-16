@@ -4,7 +4,9 @@
 class SecretManagerError(Exception):
     """Raised when Secret Manager operations fail."""
 
-    def __init__(self, message: str, env_var: str | None = None, secret_path: str | None = None):
+    def __init__(
+        self, message: str, env_var: str | None = None, secret_path: str | None = None
+    ):
         super().__init__(message)
         self.env_var = env_var
         self.secret_path = secret_path
@@ -28,6 +30,19 @@ class EmailServiceInitializationError(Exception):
 # ==================== KNOWLEDGE GRAPH EXCEPTIONS ====================
 
 
+class NodeCreationException(Exception):
+    """Raised when node creation fails in the graph database."""
+
+    def __init__(self, node_type: str, account_id: str, reason: str | None = None):
+        self.node_type = node_type
+        self.account_id = account_id
+        self.reason = reason
+        message = f"Failed to create {node_type} in account '{account_id}'"
+        if reason:
+            message += f": {reason}"
+        super().__init__(message)
+
+
 class NodeNotFoundException(Exception):
     """Raised when a graph node is not found."""
 
@@ -45,13 +60,17 @@ class NodeHasDependenciesException(Exception):
         self.node_id = node_id
         self.dependency_type = dependency_type
         self.count = count
-        super().__init__(f"Cannot delete {node_type} '{node_id}': has {count} dependent {dependency_type}(s)")
+        super().__init__(
+            f"Cannot delete {node_type} '{node_id}': has {count} dependent {dependency_type}(s)"
+        )
 
 
 class DuplicateNodeException(Exception):
     """Raised when attempting to create a node with a duplicate name within the same account."""
 
-    def __init__(self, node_type: str, field_name: str, field_value: str, account_id: str):
+    def __init__(
+        self, node_type: str, field_name: str, field_value: str, account_id: str
+    ):
         self.node_type = node_type
         self.field_name = field_name
         self.field_value = field_value
@@ -72,9 +91,12 @@ class ValidationException(Exception):
 class GraphSyncException(Exception):
     """Raised when Neo4j and Firestore synchronization fails."""
 
-    def __init__(self, message: str, operation: str, node_type: str, node_id: str | None = None):
+    def __init__(
+        self, message: str, operation: str, node_type: str, node_id: str | None = None
+    ):
         self.operation = operation
         self.node_type = node_type
         self.node_id = node_id
-        super().__init__(f"Graph sync failed during {operation} of {node_type}: {message}")
-
+        super().__init__(
+            f"Graph sync failed during {operation} of {node_type}: {message}"
+        )

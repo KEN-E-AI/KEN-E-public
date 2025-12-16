@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import Depends
 
+from ..constants import ROLLUP_NODE_ID_PREFIX, VALID_MARKETING_STRATEGY_TYPES
 from ..database import Neo4jService, get_neo4j_service
 from ..exceptions import (
     DuplicateNodeException,
@@ -2684,7 +2685,7 @@ class GraphSyncService:
         if not result:
             raise ValidationException(
                 "Product or SubstituteProduct not found",
-                "product_node_id or substitute_product_node_id"
+                "product_node_id or substitute_product_node_id",
             )
 
     async def unlink_product_from_substitute(
@@ -2720,7 +2721,7 @@ class GraphSyncService:
         if not result:
             raise ValidationException(
                 "Relationship not found or nodes do not exist",
-                "product_node_id or substitute_product_node_id"
+                "product_node_id or substitute_product_node_id",
             )
 
     # ==================== CONVENIENCE WRAPPERS FOR MARKETING STRATEGY ====================
@@ -4361,6 +4362,301 @@ class GraphSyncService:
             return {k: self._convert_neo4j_value(v) for k, v in value.items()}
 
         return value
+
+    # ==================== ROLLUP MARKETING STRATEGY METHODS ====================
+
+    def _validate_marketing_strategy_type(self, strategy_type: str) -> None:
+        """Validate strategy type to prevent Cypher injection.
+
+        Args:
+            strategy_type: Strategy type to validate
+
+        Raises:
+            ValidationException: If strategy type is not in whitelist
+        """
+        if strategy_type not in VALID_MARKETING_STRATEGY_TYPES:
+            valid_types = ", ".join(sorted(VALID_MARKETING_STRATEGY_TYPES))
+            raise ValidationException(
+                f"Invalid strategy type '{strategy_type}'. Must be one of: {valid_types}",
+                field_name="strategy_type",
+            )
+
+    async def get_rollup_marketing_hub(
+        self,
+        account_id: str,
+    ) -> dict | None:
+        """
+        Get the RollupMarketingStrategy hub node for an account.
+
+        Args:
+            account_id: Account identifier
+
+        Returns:
+            Hub node with linked rollup strategy node_ids, or None if not found
+        """
+        query = """
+        MATCH (hub:RollupMarketingStrategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        OPTIONAL MATCH (hub)-[r]->(rollup:Strategy)
+        WHERE type(r) STARTS WITH 'INCREASES_'
+        RETURN hub, collect({type: type(r), node_id: rollup.node_id}) as linked_strategies
+        """
+
+        result = await self.neo4j.execute_read_query(query, {"account_id": account_id})
+
+        if not result:
+            return None
+
+        hub_data = self._neo4j_node_to_dict(result[0]["hub"])
+        linked = result[0]["linked_strategies"]
+
+        # Build rollup_strategies map
+        rollup_strategies = {}
+        for link in linked:
+            if link.get("node_id"):  # Only include if node_id exists
+                if link["type"] == "INCREASES_PROBLEM_AWARENESS_BY":
+                    rollup_strategies["problem_awareness"] = link["node_id"]
+                elif link["type"] == "INCREASES_BRAND_AWARENESS_BY":
+                    rollup_strategies["brand_awareness"] = link["node_id"]
+                elif link["type"] == "INCREASES_CUSTOMERS_CONSIDERING_PURCHASE_BY":
+                    rollup_strategies["consideration"] = link["node_id"]
+                elif link["type"] == "INCREASES_PAYING_CUSTOMERS_BY":
+                    rollup_strategies["conversion"] = link["node_id"]
+                elif link["type"] == "INCREASES_LOYAL_CUSTOMERS_BY":
+                    rollup_strategies["loyalty"] = link["node_id"]
+
+        hub_data["rollup_strategies"] = rollup_strategies
+        hub_data["account_id"] = account_id
+        return hub_data
+
+    async def create_rollup_marketing_hub(
+        self,
+        account_id: str,
+        data: dict,
+        user_id: str,
+    ) -> dict:
+        """Create a new RollupMarketingStrategy hub node."""
+        # Check if hub already exists to prevent duplicates
+        existing_hub = await self.get_rollup_marketing_hub(account_id)
+        if existing_hub:
+            raise DuplicateNodeException(
+                node_type="RollupMarketingStrategy",
+                field_name="account_id",
+                field_value=account_id,
+                account_id=account_id,
+            )
+
+        node_id = f"rollup_marketing_hub_{account_id}"
+
+        query = """
+        MATCH (acc:Account {account_id: $account_id})
+        CREATE (hub:RollupMarketingStrategy:Strategy)
+        SET hub.node_id = $node_id,
+            hub.description = $description,
+            hub.account_id = $account_id,
+            hub.created_time = datetime(),
+            hub.last_modified = datetime(),
+            hub.created_by = $user_id,
+            hub.last_modified_by = $user_id,
+            hub.embedding = null
+        MERGE (hub)-[:BELONGS_TO]->(acc)
+        MERGE (hub)-[:INCREASES_CUSTOMERS_BY]->(acc)
+        RETURN hub
+        """
+
+        params = {
+            "node_id": node_id,
+            "account_id": account_id,
+            "description": data["description"],
+            "user_id": user_id,
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+
+        if not result:
+            from ..exceptions import NodeCreationException
+
+            raise NodeCreationException(
+                node_type="RollupMarketingStrategy",
+                account_id=account_id,
+                reason="Account may not exist or hub may already exist",
+            )
+
+        return {**self._neo4j_node_to_dict(result[0]["hub"]), "account_id": account_id}
+
+    async def update_rollup_marketing_hub(
+        self,
+        account_id: str,
+        node_id: str,
+        updates: dict,
+        user_id: str,
+    ) -> dict:
+        """Update an existing RollupMarketingStrategy hub node."""
+        # Build SET clause dynamically
+        set_clauses = [
+            "node.last_modified = datetime()",
+            "node.last_modified_by = $user_id",
+        ]
+
+        if "description" in updates and updates["description"] is not None:
+            set_clauses.append("node.description = $description")
+
+        query = f"""
+        MATCH (node:RollupMarketingStrategy {{node_id: $node_id}})
+        MATCH (node)-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
+        SET {", ".join(set_clauses)}
+        RETURN node
+        """
+
+        params = {
+            "node_id": node_id,
+            "account_id": account_id,
+            "user_id": user_id,
+            **{k: v for k, v in updates.items() if v is not None},
+        }
+
+        result = await self.neo4j.execute_write_query(query, params)
+
+        if not result:
+            raise NodeNotFoundException(
+                f"RollupMarketingStrategy hub {node_id} not found in account {account_id}"
+            )
+
+        return {**self._neo4j_node_to_dict(result[0]["node"]), "account_id": account_id}
+
+    async def delete_rollup_marketing_hub(
+        self,
+        account_id: str,
+        node_id: str,
+    ) -> bool:
+        """
+        Delete RollupMarketingStrategy hub node.
+
+        Note: This will NOT cascade delete rollup strategies.
+        Only deletes the hub and its relationships.
+        """
+        query = """
+        MATCH (hub:RollupMarketingStrategy {node_id: $node_id})
+        MATCH (hub)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        DETACH DELETE hub
+        RETURN count(hub) as deleted
+        """
+
+        result = await self.neo4j.execute_write_query(
+            query, {"node_id": node_id, "account_id": account_id}
+        )
+
+        return result[0]["deleted"] > 0 if result else False
+
+    async def list_rollup_strategies_by_type(
+        self,
+        account_id: str,
+        strategy_type: str,
+        skip: int = 0,
+        limit: int | None = None,
+    ) -> dict:
+        """
+        List rollup strategies of a specific type for an account.
+
+        Only returns rollup strategies (node_id starts with ROLLUP_NODE_ID_PREFIX).
+        """
+        # Validate strategy type to prevent Cypher injection
+        self._validate_marketing_strategy_type(strategy_type)
+
+        # Combined query: get strategies and total count in single database round trip
+        # Use COLLECT to gather all strategies first, then slice for pagination
+        # Use WHERE $strategy_label IN labels() for safe parameterization instead of f-string
+        query = """
+        MATCH (strategy:Strategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        WHERE $strategy_label IN labels(strategy) AND strategy.node_id STARTS WITH $rollup_prefix
+        OPTIONAL MATCH (strategy)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
+        WITH strategy, count(individual) as individual_count
+        ORDER BY strategy.created_time DESC
+        WITH collect({{strategy: strategy, individual_count: individual_count}}) as all_strategies
+        RETURN
+            CASE
+                WHEN $limit IS NULL THEN all_strategies[$skip..]
+                ELSE all_strategies[$skip..($skip + $limit)]
+            END as paginated_strategies,
+            size(all_strategies) as total
+        """
+
+        result = await self.neo4j.execute_read_query(
+            query,
+            {
+                "account_id": account_id,
+                "strategy_label": strategy_type,
+                "skip": skip,
+                "limit": limit,
+                "rollup_prefix": ROLLUP_NODE_ID_PREFIX,
+            },
+        )
+
+        items = []
+        total = 0
+
+        if result and result[0]:
+            paginated_strategies = result[0].get("paginated_strategies", [])
+            total = result[0].get("total", 0)
+
+            for item in paginated_strategies:
+                strategy_data = self._neo4j_node_to_dict(item["strategy"])
+                strategy_data["account_id"] = account_id
+                strategy_data["individual_strategy_count"] = item["individual_count"]
+                items.append(strategy_data)
+
+        return {
+            "items": items,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
+
+    async def get_rollup_strategy_with_individuals(
+        self,
+        account_id: str,
+        node_id: str,
+        strategy_type: str,
+    ) -> dict | None:
+        """
+        Get a rollup strategy node with its linked individual strategies.
+
+        Args:
+            account_id: Account identifier
+            node_id: Rollup strategy node_id
+            strategy_type: Strategy node type (e.g., "ProblemAwarenessStrategy")
+
+        Returns:
+            Rollup strategy with list of individual strategy node_ids
+        """
+        # Validate strategy type to prevent Cypher injection
+        self._validate_marketing_strategy_type(strategy_type)
+
+        # Use WHERE $strategy_label IN labels() for safe parameterization instead of f-string
+        query = """
+        MATCH (rollup:Strategy {node_id: $node_id})
+        WHERE $strategy_label IN labels(rollup)
+        MATCH (rollup)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        OPTIONAL MATCH (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual:Strategy)
+        WHERE $strategy_label IN labels(individual)
+        RETURN rollup, collect(individual.node_id) as individual_ids
+        """
+
+        result = await self.neo4j.execute_read_query(
+            query,
+            {
+                "node_id": node_id,
+                "account_id": account_id,
+                "strategy_label": strategy_type,
+            },
+        )
+
+        if not result:
+            return None
+
+        rollup_data = self._neo4j_node_to_dict(result[0]["rollup"])
+        rollup_data["account_id"] = account_id
+        rollup_data["linked_individual_strategies"] = result[0]["individual_ids"]
+        return rollup_data
 
     def _neo4j_node_to_dict(self, node: Any) -> dict[str, Any]:
         """Convert Neo4j node to dictionary with proper type conversion.

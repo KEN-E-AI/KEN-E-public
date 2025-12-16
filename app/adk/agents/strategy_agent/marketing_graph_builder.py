@@ -63,6 +63,8 @@ class MarketingGraphBuilder:
                 "conversion_strategies": [],
                 "loyalty_strategies": [],
                 "is_marketed_to_relationships": [],
+                "rollup_marketing_hub": None,
+                "rollup_strategies": {},
             }
 
             # Phase 1: Create master CustomerProfile nodes (2-5 total, NO strategies)
@@ -81,29 +83,46 @@ class MarketingGraphBuilder:
                 # Store with lowercase key and strip whitespace for case-insensitive lookup
                 profile_key = icp.display_name.lower().strip()
                 profile_node_map[profile_key] = customer_profile_node["node_id"]
-                logger.info(f"Stored profile in map with key: '{profile_key}' (length: {len(profile_key)})")
+                logger.info(
+                    f"Stored profile in map with key: '{profile_key}' (length: {len(profile_key)})"
+                )
 
             # Phase 2: For each ProductCategory, create strategies scoped to category+profile
             # Calculate expected strategy count for validation
             expected_strategy_count = sum(
-                len(mapping.customer_strategies) * 5  # 5 strategies per customer_strategy
+                len(mapping.customer_strategies)
+                * 5  # 5 strategies per customer_strategy
                 for mapping in research_report.product_category_mappings
             )
             logger.info(
                 f"Phase 2: Creating product-scoped marketing strategies for {len(research_report.product_category_mappings)} product categories"
             )
-            logger.info(f"Expected to create {expected_strategy_count} total strategies (5 per customer strategy)")
-            logger.info(f"Product mappings data: {[(m.category_name, len(m.customer_strategies)) for m in research_report.product_category_mappings]}")
-            logger.info(f"Available profile keys in map: {list(profile_node_map.keys())}")
+            logger.info(
+                f"Expected to create {expected_strategy_count} total strategies (5 per customer strategy)"
+            )
+            logger.info(
+                f"Product mappings data: {[(m.category_name, len(m.customer_strategies)) for m in research_report.product_category_mappings]}"
+            )
+            logger.info(
+                f"Available profile keys in map: {list(profile_node_map.keys())}"
+            )
 
             skipped_profiles = []  # Track skipped profiles for detailed error reporting
 
             # Batch fetch all product category IDs to avoid N+1 query pattern
-            category_names = [m.category_name for m in research_report.product_category_mappings]
+            category_names = [
+                m.category_name for m in research_report.product_category_mappings
+            ]
             logger.info(f"Attempting to fetch product categories: {category_names}")
-            category_id_map = self._get_product_category_node_ids(category_names, account_id)
-            logger.info(f"Fetched {len(category_id_map)} product category IDs from Neo4j: {category_id_map}")
-            logger.info(f"Categories requested but not found: {[name for name in category_names if name not in category_id_map]}")
+            category_id_map = self._get_product_category_node_ids(
+                category_names, account_id
+            )
+            logger.info(
+                f"Fetched {len(category_id_map)} product category IDs from Neo4j: {category_id_map}"
+            )
+            logger.info(
+                f"Categories requested but not found: {[name for name in category_names if name not in category_id_map]}"
+            )
 
             for mapping in research_report.product_category_mappings:
                 logger.info(
@@ -122,17 +141,23 @@ class MarketingGraphBuilder:
                 # For each customer strategy in this product category
                 for customer_strategy in mapping.customer_strategies:
                     profile_name = customer_strategy.customer_profile_name
-                    profile_name_lower = profile_name.lower().strip()  # Normalize for lookup
+                    profile_name_lower = (
+                        profile_name.lower().strip()
+                    )  # Normalize for lookup
                     strategy = customer_strategy.strategy
 
-                    logger.info(f"Looking up profile with key: '{profile_name_lower}' (length: {len(profile_name_lower)}) for category '{mapping.category_name}'")
+                    logger.info(
+                        f"Looking up profile with key: '{profile_name_lower}' (length: {len(profile_name_lower)}) for category '{mapping.category_name}'"
+                    )
 
                     # Validate profile reference exists (case-insensitive)
                     if profile_name_lower not in profile_node_map:
-                        skipped_profiles.append({
-                            "profile_name": profile_name,
-                            "category": mapping.category_name
-                        })
+                        skipped_profiles.append(
+                            {
+                                "profile_name": profile_name,
+                                "category": mapping.category_name,
+                            }
+                        )
                         logger.warning(
                             f"Profile '{profile_name}' (normalized: '{profile_name_lower}', length: {len(profile_name_lower)}) referenced in category '{mapping.category_name}' not found in master profile list. Available keys: {list(profile_node_map.keys())}"
                         )
@@ -170,9 +195,7 @@ class MarketingGraphBuilder:
                         account_id=account_id,
                         references=strategy.references,
                     )
-                    created_nodes["consideration_strategies"].append(
-                        consideration_node
-                    )
+                    created_nodes["consideration_strategies"].append(consideration_node)
 
                     conversion_node = self._create_conversion_strategy(
                         strategy.conversion_strategy,
@@ -202,6 +225,41 @@ class MarketingGraphBuilder:
                         created_nodes["is_marketed_to_relationships"].append(
                             relationship
                         )
+
+            # Phase 3: Create rollup strategies (NEW)
+            logger.info("[ROLLUP] Starting Phase 3: Create rollup strategies")
+            logger.info(
+                f"[ROLLUP] Input - account_id: {account_id}, user_id: {user_id}"
+            )
+            logger.info(
+                f"[ROLLUP] Individual strategies created: "
+                f"problem={len(created_nodes.get('problem_awareness_strategies', []))}, "
+                f"brand={len(created_nodes.get('brand_awareness_strategies', []))}, "
+                f"consideration={len(created_nodes.get('consideration_strategies', []))}, "
+                f"conversion={len(created_nodes.get('conversion_strategies', []))}, "
+                f"loyalty={len(created_nodes.get('loyalty_strategies', []))}"
+            )
+            try:
+                rollup_nodes = self._create_rollup_strategies(
+                    research_report=research_report,
+                    account_id=account_id,
+                    user_id=user_id,
+                    created_nodes=created_nodes,
+                )
+                created_nodes["rollup_marketing_hub"] = rollup_nodes["hub"]
+                created_nodes["rollup_strategies"] = rollup_nodes["strategies"]
+                logger.info(
+                    f"[ROLLUP] ✅ Successfully created rollup marketing strategy with "
+                    f"{len(rollup_nodes['strategies'])} rollup strategy nodes"
+                )
+            except Exception as rollup_error:
+                # Log warning but don't fail entire graph build
+                logger.error(
+                    f"[ROLLUP] ❌ Failed to create rollup strategies: {rollup_error}",
+                    exc_info=True,
+                )
+                logger.error(f"[ROLLUP] Error type: {type(rollup_error).__name__}")
+                logger.error(f"[ROLLUP] Error args: {rollup_error.args}")
 
             # Validate strategy count - we create 5 strategy types per profile
             # Count all created strategies across all 5 types
@@ -234,7 +292,9 @@ class MarketingGraphBuilder:
 
         except Exception as e:
             logger.error(f"Failed to build marketing graph: {e}", exc_info=True)
-            logger.error(f"Exception type: {type(e).__name__}, Exception args: {e.args}")
+            logger.error(
+                f"Exception type: {type(e).__name__}, Exception args: {e.args}"
+            )
             raise
 
     def _get_product_category_node_ids(
@@ -260,7 +320,9 @@ class MarketingGraphBuilder:
         WHERE toLower(pc.product_name) IN [name IN $category_names | toLower(name)]
         RETURN pc.product_name as category_name, pc.node_id as node_id
         """
-        logger.info(f"Querying Neo4j for product categories with account_id: {account_id}, category_names: {category_names}")
+        logger.info(
+            f"Querying Neo4j for product categories with account_id: {account_id}, category_names: {category_names}"
+        )
         result = self.neo4j_ops.connection.execute_query(
             query,
             {"account_id": account_id, "category_names": category_names},
@@ -272,7 +334,9 @@ class MarketingGraphBuilder:
         for record in result:
             category_name = record["category_name"]
             node_id = record["node_id"]
-            logger.info(f"Found ProductCategory in Neo4j: '{category_name}' -> {node_id}")
+            logger.info(
+                f"Found ProductCategory in Neo4j: '{category_name}' -> {node_id}"
+            )
             # Store with original case from database
             category_map[category_name] = node_id
 
@@ -508,9 +572,7 @@ class MarketingGraphBuilder:
             "embedding": None,
         }
 
-        self.neo4j_ops.create_strategy_node(
-            "ConversionStrategy", node_data, account_id
-        )
+        self.neo4j_ops.create_strategy_node("ConversionStrategy", node_data, account_id)
 
         # Link to BOTH ProductCategory and CustomerProfile
         query = """
@@ -619,3 +681,293 @@ class MarketingGraphBuilder:
                 f"Failed to link ProductCategory {product_category_id} to CustomerProfile {customer_profile_id}"
             )
             return None
+
+    def _create_rollup_strategies(
+        self,
+        research_report: MarketingResearchReport,
+        account_id: str,
+        user_id: str,
+        created_nodes: dict,
+    ) -> dict:
+        """
+        Create rollup marketing strategies that consolidate all individual strategies.
+
+        Creates:
+        1. One RollupMarketingStrategy hub node
+        2. Five rollup strategy nodes (one per funnel stage)
+        3. Relationships: hub → account, hub → rollup strategies, rollup strategies → individuals
+
+        Args:
+            research_report: Marketing research with profiles and category mappings
+            account_id: Account identifier
+            user_id: User identifier
+            created_nodes: Dictionary with previously created nodes
+
+        Returns:
+            Dictionary with hub and strategy nodes
+        """
+        logger.info("[ROLLUP] _create_rollup_strategies called")
+
+        # Verify we have individual strategies to roll up
+        required_keys = [
+            "problem_awareness_strategies",
+            "brand_awareness_strategies",
+            "consideration_strategies",
+            "conversion_strategies",
+            "loyalty_strategies",
+        ]
+
+        logger.info("[ROLLUP] Verifying required strategy keys...")
+        for key in required_keys:
+            count = len(created_nodes.get(key, []))
+            logger.info(f"[ROLLUP] Checking {key}: {count} strategies")
+            if not created_nodes.get(key):
+                error_msg = (
+                    f"Cannot create rollup strategies: {key} is empty. "
+                    "Individual strategies must be created first."
+                )
+                logger.error(f"[ROLLUP] Validation failed: {error_msg}")
+                raise ValueError(error_msg)
+
+        # Step 1: Create hub node
+        logger.info("[ROLLUP] Step 1: Creating RollupMarketingStrategy hub node...")
+        hub_node = self._create_rollup_marketing_hub(account_id, user_id)
+        logger.info(f"[ROLLUP] Hub node created: {hub_node['node_id']}")
+
+        # Step 2: Create 5 rollup strategy nodes
+        logger.info("[ROLLUP] Step 2: Creating 5 rollup strategy nodes...")
+        rollup_configs = [
+            {
+                "stage": "problem_awareness",
+                "node_type": "ProblemAwarenessStrategy",
+                "created_key": "problem_awareness_strategies",
+                "hub_relationship": "INCREASES_PROBLEM_AWARENESS_BY",
+            },
+            {
+                "stage": "brand_awareness",
+                "node_type": "BrandAwarenessStrategy",
+                "created_key": "brand_awareness_strategies",
+                "hub_relationship": "INCREASES_BRAND_AWARENESS_BY",
+            },
+            {
+                "stage": "consideration",
+                "node_type": "ConsiderationStrategy",
+                "created_key": "consideration_strategies",
+                "hub_relationship": "INCREASES_CUSTOMERS_CONSIDERING_PURCHASE_BY",
+            },
+            {
+                "stage": "conversion",
+                "node_type": "ConversionStrategy",
+                "created_key": "conversion_strategies",
+                "hub_relationship": "INCREASES_PAYING_CUSTOMERS_BY",
+            },
+            {
+                "stage": "loyalty",
+                "node_type": "LoyaltyStrategy",
+                "created_key": "loyalty_strategies",
+                "hub_relationship": "INCREASES_LOYAL_CUSTOMERS_BY",
+            },
+        ]
+
+        strategy_nodes = {}
+
+        try:
+            for config in rollup_configs:
+                logger.info(f"[ROLLUP] Creating {config['stage']} rollup strategy...")
+                individual_strategies = created_nodes[config["created_key"]]
+                logger.info(
+                    f"[ROLLUP] Found {len(individual_strategies)} individual {config['node_type']} strategies"
+                )
+
+                rollup_node = self._create_single_rollup_strategy(
+                    config=config,
+                    individual_strategies=individual_strategies,
+                    hub_node_id=hub_node["node_id"],
+                    account_id=account_id,
+                    user_id=user_id,
+                )
+
+                strategy_nodes[config["stage"]] = rollup_node
+                logger.info(
+                    f"[ROLLUP] ✓ Created {config['stage']} rollup: {rollup_node['node_id']}"
+                )
+
+            logger.info(
+                f"[ROLLUP] All rollup strategies created successfully: {len(strategy_nodes)} total"
+            )
+            return {
+                "hub": hub_node,
+                "strategies": strategy_nodes,
+            }
+        except Exception as e:
+            # Cleanup: delete hub and any partially created rollup strategies
+            logger.error(f"[ROLLUP] Failed to create rollup strategies: {e}")
+            logger.info(f"[ROLLUP] Cleaning up hub node: {hub_node['node_id']}")
+            try:
+                self._cleanup_rollup_hub_and_strategies(hub_node["node_id"], account_id)
+                logger.info("[ROLLUP] Cleanup completed")
+            except Exception as cleanup_error:
+                logger.error(f"[ROLLUP] Cleanup failed: {cleanup_error}")
+            raise
+
+    def _create_rollup_marketing_hub(
+        self,
+        account_id: str,
+        user_id: str,
+    ) -> dict:
+        """
+        Create RollupMarketingStrategy hub node.
+
+        This is the central node that links to the Account and all 5 rollup strategies.
+
+        Args:
+            account_id: Account identifier
+            user_id: User identifier
+
+        Returns:
+            Created hub node data
+        """
+        node_id = f"rollup_marketing_hub_{account_id}"
+        logger.info(f"[ROLLUP] Creating hub node with ID: {node_id}")
+
+        node_data = {
+            "node_id": node_id,
+            "description": "Consolidated marketing strategy for the entire business",
+            "created_time": datetime.now().isoformat(),
+            "last_modified": datetime.now().isoformat(),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        # Create hub node
+        logger.info(
+            "[ROLLUP] Calling neo4j_ops.create_strategy_node for RollupMarketingStrategy"
+        )
+        self.neo4j_ops.create_strategy_node(
+            "RollupMarketingStrategy", node_data, account_id
+        )
+        logger.info("[ROLLUP] Hub node created in Neo4j")
+
+        # Link hub to Account
+        logger.info(f"[ROLLUP] Linking hub to Account: {account_id}")
+        query = """
+        MATCH (hub:RollupMarketingStrategy {node_id: $hub_id})
+        MATCH (acc:Account {account_id: $account_id})
+        MERGE (hub)-[:INCREASES_CUSTOMERS_BY]->(acc)
+        """
+        result = self.neo4j_ops.connection.execute_query(
+            query, {"hub_id": node_id, "account_id": account_id}
+        )
+        logger.info(
+            f"[ROLLUP] Hub linked to Account (query returned {len(result) if result else 0} records)"
+        )
+
+        logger.info(f"[ROLLUP] Created RollupMarketingStrategy hub: {node_id}")
+        return node_data
+
+    def _create_single_rollup_strategy(
+        self,
+        config: dict,
+        individual_strategies: list[dict],
+        hub_node_id: str,
+        account_id: str,
+        user_id: str,
+    ) -> dict:
+        """
+        Create a single rollup strategy node for one funnel stage.
+
+        Args:
+            config: Configuration dict with stage, node_type, hub_relationship
+            individual_strategies: List of individual strategy nodes to consolidate
+            hub_node_id: Node ID of the RollupMarketingStrategy hub
+            account_id: Account identifier
+            user_id: User identifier
+
+        Returns:
+            Created rollup strategy node data
+        """
+        # Generate deterministic node ID
+        node_id = f"rollup_{config['stage'].replace('_', '')}_{account_id}"
+
+        # MVP: Empty description field (can be populated later via API or LLM enhancement)
+        # Future enhancement: Could aggregate references or create summary
+        node_data = {
+            "node_id": node_id,
+            "description": "",  # Empty for MVP - populate via API PATCH later
+            "references": [],  # Empty for MVP - could aggregate from individuals later
+            "created_time": datetime.now().isoformat(),
+            "last_modified": datetime.now().isoformat(),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        # Create rollup strategy node
+        self.neo4j_ops.create_strategy_node(config["node_type"], node_data, account_id)
+
+        # Link hub to rollup strategy
+        link_hub_query = f"""
+        MATCH (hub:RollupMarketingStrategy {{node_id: $hub_id}})
+        MATCH (rollup:{config["node_type"]} {{node_id: $rollup_id}})
+        MERGE (hub)-[:{config["hub_relationship"]}]->(rollup)
+        """
+        self.neo4j_ops.connection.execute_query(
+            link_hub_query, {"hub_id": hub_node_id, "rollup_id": node_id}
+        )
+
+        # Link rollup strategy to all individual strategies via [:CAN_BE_CUSTOMIZED_BY]
+        individual_ids = [s["node_id"] for s in individual_strategies]
+
+        link_individuals_query = f"""
+        MATCH (rollup:{config["node_type"]} {{node_id: $rollup_id}})
+        MATCH (individual:{config["node_type"]})
+        WHERE individual.node_id IN $individual_ids
+        MERGE (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
+        """
+        self.neo4j_ops.connection.execute_query(
+            link_individuals_query,
+            {"rollup_id": node_id, "individual_ids": individual_ids},
+        )
+
+        logger.info(
+            f"Created rollup {config['node_type']} (node_id: {node_id}) "
+            f"consolidating {len(individual_strategies)} individual strategies"
+        )
+
+        return node_data
+
+    def _cleanup_rollup_hub_and_strategies(
+        self, hub_node_id: str, account_id: str
+    ) -> None:
+        """
+        Clean up rollup hub and all associated rollup strategy nodes.
+
+        Used when rollup creation fails partway through to maintain data integrity.
+
+        Args:
+            hub_node_id: The hub node_id to delete
+            account_id: Account identifier
+        """
+        logger.info(
+            f"[ROLLUP CLEANUP] Deleting hub and rollup strategies for {hub_node_id}"
+        )
+
+        # Delete hub and all rollup strategies linked to it
+        # The rollup strategies start with 'rollup_' and belong to this account
+        cleanup_query = """
+        MATCH (hub:RollupMarketingStrategy {node_id: $hub_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        OPTIONAL MATCH (hub)-[hub_rel]-()
+        OPTIONAL MATCH (rollup:Strategy)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        WHERE rollup.node_id STARTS WITH 'rollup_' AND rollup.node_id <> $hub_id
+        OPTIONAL MATCH (rollup)-[rollup_rel]-()
+        DELETE hub_rel, rollup_rel, hub, rollup
+        """
+
+        self.neo4j_ops.connection.execute_query(
+            cleanup_query, {"hub_id": hub_node_id, "account_id": account_id}
+        )
+
+        logger.info(
+            f"[ROLLUP CLEANUP] Deleted hub {hub_node_id} and associated rollup strategies"
+        )
