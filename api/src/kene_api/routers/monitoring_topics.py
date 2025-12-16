@@ -19,7 +19,7 @@ from ..models.kene_models import SuccessResponse
 from ..models.monitoring_models import (
     AddCompetitorRequest,
     AddCustomerConceptRequest,
-    CompetitorEntry,
+    AddCustomerProfileRequest,
     ConceptOption,
     CustomerKeywordConcept,
     IndustryKeywords,
@@ -30,6 +30,7 @@ from ..models.monitoring_models import (
     UpdateCompanyKeywordsRequest,
     UpdateCompetitorRequest,
     UpdateCustomerKeywordsRequest,
+    UpdateCustomerProfileRequest,
     UpdateIndustryKeywordsRequest,
 )
 from ..services.concept_service import ConceptDisambiguationService
@@ -122,6 +123,7 @@ async def get_or_create_monitoring_topics(
             company_keywords=[],
             customer_keywords=[],
             competitor_entries=[],
+            customer_profile_entries=[],
             created_at=now,
             updated_at=now,
         )
@@ -394,11 +396,11 @@ async def update_customer_keywords(
         # Get existing concept keywords to preserve them
         existing_concepts = doc.get("customer_concepts", []) if doc else []
         concept_keywords = [c.get("keyword") for c in existing_concepts if c.get("keyword")]
-        
+
         # Combine the plain keywords from request with concept keywords
         # This maintains backward compatibility with the customer_keywords field
         all_keywords = list(set(request.customer_keywords + concept_keywords))
-        
+
         # Now update the document
         firestore.update_document(
             collection=MONITORING_TOPICS_COLLECTION,
@@ -698,12 +700,8 @@ async def add_competitor(
 
         # Add new competitor
         competitors = doc.get("competitor_entries", [])
-        new_competitor = CompetitorEntry(
-            name=request.name,
-            website=request.website,
-            keywords=request.keywords or [request.name.lower()],
-        )
-        competitors.append(new_competitor.model_dump())
+        new_entry = request.competitor_entry
+        competitors.append(new_entry.model_dump())
 
         # Update document
         firestore.update_document(
@@ -717,7 +715,7 @@ async def add_competitor(
 
         return SuccessResponse(
             message="Competitor added successfully",
-            data={"competitor": new_competitor.model_dump()},
+            data={"competitor": new_entry.model_dump()},
         )
     except HTTPException:
         raise
@@ -777,6 +775,8 @@ async def update_competitor(
             )
 
         # Update competitor
+        if request.node_id is not None:
+            competitors[competitor_index]["node_id"] = request.node_id
         if request.name is not None:
             competitors[competitor_index]["name"] = request.name
         if request.website is not None:
@@ -863,6 +863,244 @@ async def delete_competitor(
     except Exception as e:
         logger.error(f"Error deleting competitor: {e!s}")
         raise HTTPException(status_code=500, detail="Failed to delete competitor")
+
+
+# ==================== CUSTOMER PROFILE MONITORING ENDPOINTS ====================
+
+
+@router.post("/{account_id}/customer-profiles", response_model=SuccessResponse)
+async def add_customer_profile_keywords(
+    account_id: str = Path(..., description="Account ID"),
+    request: AddCustomerProfileRequest = Body(...),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """Add a new customer profile to monitoring."""
+    # Check user has write access to this account
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Write access denied to account {account_id}"
+        )
+
+    # Validate account_id matches
+    if request.account_id != account_id:
+        raise HTTPException(
+            status_code=400, detail="Account ID in path does not match request body"
+        )
+
+    try:
+        # Get current document
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            # Need to get account info to create the document
+            neo4j = await get_neo4j_service()
+
+            account_query = """
+            MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+            RETURN acc.industry as industry, org.organization_id as organization_id
+            """
+
+            async with neo4j.get_session() as session:
+                result = await session.run(account_query, {"account_id": account_id})
+                record = await result.single()
+
+                if not record:
+                    raise HTTPException(status_code=404, detail="Account not found")
+
+                industry = record["industry"]
+                organization_id = record["organization_id"]
+
+            # Create the document
+            monitoring_topics = await get_or_create_monitoring_topics(
+                account_id, organization_id, industry, firestore
+            )
+            doc = monitoring_topics.model_dump()
+
+        # Add new customer profile entry
+        customer_profiles = doc.get("customer_profile_entries", [])
+        new_entry = request.customer_profile_entry
+        customer_profiles.append(new_entry.model_dump())
+
+        # Update document
+        firestore.update_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+            data={
+                "customer_profile_entries": customer_profiles,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+        return SuccessResponse(
+            message="Customer profile keywords added successfully",
+            data={"customer_profile": new_entry.model_dump()},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding customer profile keywords: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to add customer profile keywords"
+        )
+
+
+@router.put(
+    "/{account_id}/customer-profiles/{customer_profile_index}",
+    response_model=SuccessResponse,
+)
+async def update_customer_profile_keywords(
+    account_id: str = Path(..., description="Account ID"),
+    customer_profile_index: int = Path(
+        ..., ge=0, description="Customer profile index in array"
+    ),
+    request: UpdateCustomerProfileRequest = Body(...),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """Update an existing customer profile entry."""
+    # Check user has write access to this account
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Write access denied to account {account_id}"
+        )
+
+    # Validate account_id matches
+    if request.account_id != account_id:
+        raise HTTPException(
+            status_code=400, detail="Account ID in path does not match request body"
+        )
+
+    # Validate customer_profile_index matches
+    if request.customer_profile_index != customer_profile_index:
+        raise HTTPException(
+            status_code=400,
+            detail="Customer profile index in path does not match request body",
+        )
+
+    try:
+        # Get current document
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            raise HTTPException(
+                status_code=404, detail="Monitoring topics not found for this account"
+            )
+
+        # Get customer profile entries
+        customer_profiles = doc.get("customer_profile_entries", [])
+
+        if (
+            customer_profile_index < 0
+            or customer_profile_index >= len(customer_profiles)
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Customer profile not found at specified index",
+            )
+
+        # Update customer profile
+        if request.node_id is not None:
+            customer_profiles[customer_profile_index]["node_id"] = request.node_id
+        if request.keywords is not None:
+            customer_profiles[customer_profile_index]["keywords"] = request.keywords
+
+        # Update document
+        firestore.update_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+            data={
+                "customer_profile_entries": customer_profiles,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+        return SuccessResponse(
+            message="Customer profile keywords updated successfully",
+            data={"customer_profile": customer_profiles[customer_profile_index]},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating customer profile keywords: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to update customer profile keywords"
+        )
+
+
+@router.delete(
+    "/{account_id}/customer-profiles/{customer_profile_index}",
+    response_model=SuccessResponse,
+)
+async def delete_customer_profile_keywords(
+    account_id: str = Path(..., description="Account ID"),
+    customer_profile_index: int = Path(
+        ..., ge=0, description="Customer profile index in array"
+    ),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """Delete a customer profile from monitoring."""
+    # Check user has write access to this account
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Write access denied to account {account_id}"
+        )
+
+    try:
+        # Get current document
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            raise HTTPException(
+                status_code=404, detail="Monitoring topics not found for this account"
+            )
+
+        # Get customer profile entries
+        customer_profiles = doc.get("customer_profile_entries", [])
+
+        if (
+            customer_profile_index < 0
+            or customer_profile_index >= len(customer_profiles)
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Customer profile not found at specified index",
+            )
+
+        # Remove customer profile
+        deleted_profile = customer_profiles.pop(customer_profile_index)
+
+        # Update document
+        firestore.update_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+            data={
+                "customer_profile_entries": customer_profiles,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+        return SuccessResponse(
+            message="Customer profile keywords deleted successfully",
+            data={"deleted_customer_profile": deleted_profile},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting customer profile keywords: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to delete customer profile keywords"
+        )
 
 
 @router.get("/{account_id}/company/paginated", response_model=PaginatedKeywordsResponse)
@@ -1018,3 +1256,126 @@ async def update_industry_keywords(
         raise HTTPException(
             status_code=500, detail="Failed to update industry keywords"
         )
+
+
+@router.post("/{account_id}/cleanup-orphaned-entries", response_model=SuccessResponse)
+async def cleanup_orphaned_monitoring_entries(
+    account_id: str = Path(..., description="Account ID"),
+    user: UserContext = Depends(get_current_user_context),
+    firestore: FirestoreService = Depends(get_firestore_service),
+) -> SuccessResponse:
+    """
+    Clean up monitoring entries for deleted competitors/customer profiles.
+
+    This endpoint finds and removes monitoring entries whose node_ids
+    no longer exist in Neo4j. Requires admin access.
+
+    Args:
+        account_id: Account identifier
+        user: User context from authentication
+        firestore: Firestore service instance
+
+    Returns:
+        SuccessResponse with count of removed entries
+
+    Raises:
+        HTTPException: If user lacks admin access or cleanup fails
+    """
+    # Check user has admin access
+    if not user.is_super_admin and not user.has_account_access(account_id, ["admin"]):
+        raise HTTPException(
+            status_code=403, detail=f"Admin access required for account {account_id}"
+        )
+
+    try:
+        # Get monitoring topics
+        doc = firestore.get_document(
+            collection=MONITORING_TOPICS_COLLECTION,
+            document_id=account_id,
+        )
+
+        if not doc:
+            return SuccessResponse(message="No monitoring topics found")
+
+        neo4j = await get_neo4j_service()
+        removed_count = 0
+
+        # Check competitor entries
+        if "competitor_entries" in doc:
+            competitors = doc["competitor_entries"]
+            valid_competitors = []
+
+            for entry in competitors:
+                node_id = entry.get("node_id")
+                if node_id:
+                    # Check if node exists in Neo4j
+                    exists_query = """
+                    MATCH (c:Competitor {node_id: $node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+                    RETURN count(c) > 0 as exists
+                    """
+                    result = await neo4j.execute_query(
+                        exists_query, {"node_id": node_id, "account_id": account_id}
+                    )
+                    if result and result[0]["exists"]:
+                        valid_competitors.append(entry)
+                    else:
+                        removed_count += 1
+                        logger.info(
+                            f"Removing orphaned competitor entry: {node_id} from account {account_id}"
+                        )
+                else:
+                    # Keep legacy entries without node_id
+                    valid_competitors.append(entry)
+
+            doc["competitor_entries"] = valid_competitors
+
+        # Check customer profile entries
+        if "customer_profile_entries" in doc:
+            profiles = doc["customer_profile_entries"]
+            valid_profiles = []
+
+            for entry in profiles:
+                node_id = entry.get("node_id")
+                if node_id:
+                    exists_query = """
+                    MATCH (cp:CustomerProfile {node_id: $node_id})-[:BELONGS_TO]->(:Account {account_id: $account_id})
+                    RETURN count(cp) > 0 as exists
+                    """
+                    result = await neo4j.execute_query(
+                        exists_query, {"node_id": node_id, "account_id": account_id}
+                    )
+                    if result and result[0]["exists"]:
+                        valid_profiles.append(entry)
+                    else:
+                        removed_count += 1
+                        logger.info(
+                            f"Removing orphaned customer profile entry: {node_id} from account {account_id}"
+                        )
+                else:
+                    # Keep legacy entries without node_id
+                    valid_profiles.append(entry)
+
+            doc["customer_profile_entries"] = valid_profiles
+
+        # Update document if changes were made
+        if removed_count > 0:
+            firestore.update_document(
+                collection=MONITORING_TOPICS_COLLECTION,
+                document_id=account_id,
+                data={
+                    "competitor_entries": doc.get("competitor_entries", []),
+                    "customer_profile_entries": doc.get(
+                        "customer_profile_entries", []
+                    ),
+                    "updated_at": datetime.utcnow().isoformat(),
+                },
+            )
+
+        return SuccessResponse(
+            message=f"Cleanup complete. Removed {removed_count} orphaned entries.",
+            data={"removed_count": removed_count},
+        )
+
+    except Exception as e:
+        logger.error(f"Error cleaning up orphaned entries: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to cleanup orphaned entries")

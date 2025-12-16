@@ -9,10 +9,11 @@ Plus rollup marketing strategy endpoints for consolidated company-wide strategie
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
+from ...exceptions import NodeNotFoundException, ValidationException
 from ...models.graph_models import (
     BrandAwarenessStrategyCreate,
     BrandAwarenessStrategyListResponse,
@@ -39,10 +40,12 @@ from ...models.graph_models import (
     ProblemAwarenessStrategyListResponse,
     ProblemAwarenessStrategyResponse,
     ProblemAwarenessStrategyUpdate,
+    ProductCategoryListResponse,
     RollupMarketingStrategyCreate,
     RollupMarketingStrategyResponse,
     RollupMarketingStrategyUpdate,
 )
+from ...models.kene_models import SuccessResponse
 from ...services.graph_sync_service import GraphSyncService, get_graph_sync_service
 from .crud_factory import CRUDEndpoints
 
@@ -161,6 +164,116 @@ async def delete_customer_profile(
         service=service,
         user=user,
     )
+
+
+@router.post(
+    "/{account_id}/customer-profiles/{customer_profile_id}/link-product-category",
+    response_model=SuccessResponse,
+)
+async def link_product_category_to_customer_profile(
+    account_id: str,
+    customer_profile_id: str,
+    product_category_node_id: str = Body(..., embed=True),
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> SuccessResponse:
+    """Link a product category to a customer profile."""
+    # Check edit permission
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Edit permission denied for account {account_id}"
+        )
+
+    try:
+        await service.link_product_category_to_customer_profile(
+            account_id=account_id,
+            customer_profile_id=customer_profile_id,
+            product_category_id=product_category_node_id,
+            user_id=user.user_id,
+        )
+        return SuccessResponse(message="Product category linked successfully")
+    except ValidationException as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception:
+        logger.exception("Unexpected error linking product category")
+        raise HTTPException(
+            status_code=500, detail="Failed to link product category"
+        ) from None
+
+
+@router.delete(
+    "/{account_id}/customer-profiles/{customer_profile_id}/unlink-product-category/{product_category_id}",
+    response_model=SuccessResponse,
+)
+async def unlink_product_category_from_customer_profile(
+    account_id: str,
+    customer_profile_id: str,
+    product_category_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> SuccessResponse:
+    """Unlink a product category from a customer profile with cascade deletion of strategies."""
+    # Check edit permission
+    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Edit permission denied for account {account_id}"
+        )
+
+    try:
+        await service.unlink_product_category_from_customer_profile(
+            account_id=account_id,
+            customer_profile_id=customer_profile_id,
+            product_category_id=product_category_id,
+            user_id=user.user_id,
+        )
+        return SuccessResponse(message="Product category unlinked successfully")
+    except ValidationException as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception:
+        logger.exception("Unexpected error unlinking product category")
+        raise HTTPException(
+            status_code=500, detail="Failed to unlink product category"
+        ) from None
+
+
+@router.get(
+    "/{account_id}/customer-profiles/{customer_profile_id}/product-categories",
+    response_model=ProductCategoryListResponse,
+)
+async def list_linked_product_categories(
+    account_id: str,
+    customer_profile_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> ProductCategoryListResponse:
+    """List all product categories linked to a customer profile."""
+    # Check read permission
+    if not user.has_account_access(account_id) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Access denied to account {account_id}"
+        )
+
+    try:
+        categories_data = await service.list_linked_product_categories(
+            account_id=account_id,
+            customer_profile_id=customer_profile_id,
+        )
+        # Convert to response model
+        from ...models.graph_models import ProductCategoryResponse
+
+        categories = [ProductCategoryResponse(**cat) for cat in categories_data]
+        return ProductCategoryListResponse(
+            categories=categories, total_count=len(categories)
+        )
+    except Exception as e:
+        logger.error(f"Error listing linked product categories: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to list linked product categories"
+        ) from e
 
 
 # ==================== PROBLEM AWARENESS STRATEGY ENDPOINTS ====================

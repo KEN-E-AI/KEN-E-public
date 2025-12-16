@@ -5,6 +5,7 @@ export interface ProductCategory {
   node_id: string;
   product_name: string;
   description: string;
+  strategy_count?: number; // Count of strategies for this category (when linked to customer profile)
   account_id?: string;
   created_at?: string;
   updated_at?: string;
@@ -68,6 +69,37 @@ class ProductCategoryService {
   async delete(accountId: AccountId, nodeId: string): Promise<void> {
     await api.delete(
       `/api/v1/knowledge-graph/${accountId}/product-categories/${nodeId}`,
+    );
+  }
+
+  async listLinkedToCustomerProfile(
+    accountId: AccountId,
+    customerProfileId: string,
+  ): Promise<ProductCategoryListResponse> {
+    const response = await api.get(
+      `/api/v1/knowledge-graph/${accountId}/customer-profiles/${customerProfileId}/product-categories`,
+    );
+    return response.data;
+  }
+
+  async linkToCustomerProfile(
+    accountId: AccountId,
+    productCategoryId: string,
+    customerProfileNodeId: string,
+  ): Promise<void> {
+    await api.post(
+      `/api/v1/knowledge-graph/${accountId}/customer-profiles/${customerProfileNodeId}/link-product-category`,
+      { product_category_node_id: productCategoryId },
+    );
+  }
+
+  async unlinkFromCustomerProfile(
+    accountId: AccountId,
+    productCategoryId: string,
+    customerProfileNodeId: string,
+  ): Promise<void> {
+    await api.delete(
+      `/api/v1/knowledge-graph/${accountId}/customer-profiles/${customerProfileNodeId}/unlink-product-category/${productCategoryId}`,
     );
   }
 }

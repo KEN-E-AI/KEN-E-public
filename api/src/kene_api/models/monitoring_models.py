@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..validators import CompetitorValidators, KeywordValidators, URLValidators
 from .kene_models import BaseRequest
@@ -77,7 +77,12 @@ class CustomerKeywordConcept(BaseModel):
 class CompetitorEntry(BaseModel):
     """Competitor monitoring entry."""
 
-    name: str = Field(..., description="Competitor name")
+    node_id: str | None = Field(
+        None, description="Competitor node_id (immutable). Migrating from legacy 'name' field."
+    )
+    name: str | None = Field(
+        None, description="DEPRECATED: Legacy field. Use node_id instead."
+    )
     website: str | None = Field(None, description="Competitor website URL")
     keywords: list[str] = Field(
         ..., description="Keywords for monitoring this competitor"
@@ -85,8 +90,10 @@ class CompetitorEntry(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def validate_name(cls, v: str) -> str:
+    def validate_name(cls, v: str | None) -> str | None:
         """Validate competitor name."""
+        if v is None:
+            return v
         return CompetitorValidators.validate_competitor_name(v)
 
     @field_validator("website")
@@ -100,6 +107,40 @@ class CompetitorEntry(BaseModel):
     def validate_keywords(cls, v: list[str]) -> list[str]:
         """Validate keywords list."""
         return KeywordValidators.validate_keyword_list(v)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "CompetitorEntry":
+        """Ensure either node_id or name is provided."""
+        if not self.node_id and not self.name:
+            raise ValueError("Either node_id or name must be provided")
+        return self
+
+
+class CustomerProfileEntry(BaseModel):
+    """Customer profile monitoring entry."""
+
+    node_id: str | None = Field(
+        None, description="Customer profile node_id (immutable). Migrating from legacy 'name' field."
+    )
+    name: str | None = Field(
+        None, description="DEPRECATED: Legacy field. Use node_id instead."
+    )
+    keywords: list[str] = Field(
+        ..., description="Keywords for monitoring this customer profile"
+    )
+
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v: list[str]) -> list[str]:
+        """Validate keywords list."""
+        return KeywordValidators.validate_keyword_list(v)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "CustomerProfileEntry":
+        """Ensure either node_id or name is provided."""
+        if not self.node_id and not self.name:
+            raise ValueError("Either node_id or name must be provided")
+        return self
 
 
 class MonitoringTopics(BaseModel):
@@ -124,6 +165,9 @@ class MonitoringTopics(BaseModel):
     )
     competitor_entries: list[CompetitorEntry] = Field(
         default_factory=list, description="List of competitors to monitor"
+    )
+    customer_profile_entries: list[CustomerProfileEntry] = Field(
+        default_factory=list, description="List of customer profiles to monitor"
     )
     created_at: str = Field(..., description="ISO timestamp of creation")
     updated_at: str = Field(..., description="ISO timestamp of last update")
@@ -200,29 +244,9 @@ class AddCustomerConceptRequest(BaseRequest):
 class AddCompetitorRequest(BaseRequest):
     """Request to add a new competitor."""
 
-    name: str = Field(..., description="Competitor name")
-    website: str | None = Field(None, description="Competitor website URL")
-    keywords: list[str] = Field(
-        default_factory=list, description="Keywords for monitoring this competitor"
+    competitor_entry: CompetitorEntry = Field(
+        ..., description="Competitor entry with node_id and keywords"
     )
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        """Validate competitor name."""
-        return CompetitorValidators.validate_competitor_name(v)
-
-    @field_validator("website")
-    @classmethod
-    def validate_website(cls, v: str | None) -> str | None:
-        """Validate competitor website."""
-        return URLValidators.validate_website_url(v)
-
-    @field_validator("keywords")
-    @classmethod
-    def validate_keywords(cls, v: list[str]) -> list[str]:
-        """Validate keywords list."""
-        return KeywordValidators.validate_keyword_list(v)
 
 
 class UpdateCompetitorRequest(BaseRequest):
@@ -231,8 +255,29 @@ class UpdateCompetitorRequest(BaseRequest):
     competitor_index: int = Field(
         ..., description="Index of the competitor in the competitor_entries array"
     )
-    name: str | None = Field(None, description="Updated competitor name")
+    node_id: str | None = Field(None, description="Updated competitor node_id")
+    name: str | None = Field(None, description="DEPRECATED: Use node_id instead")
     website: str | None = Field(None, description="Updated competitor website URL")
+    keywords: list[str] | None = Field(
+        None, description="Updated keywords for monitoring"
+    )
+
+
+class AddCustomerProfileRequest(BaseRequest):
+    """Request to add a new customer profile entry."""
+
+    customer_profile_entry: CustomerProfileEntry = Field(
+        ..., description="Customer profile entry with name and keywords"
+    )
+
+
+class UpdateCustomerProfileRequest(BaseRequest):
+    """Request to update an existing customer profile entry."""
+
+    customer_profile_index: int = Field(
+        ..., description="Index of the customer profile in the customer_profile_entries array"
+    )
+    node_id: str | None = Field(None, description="Updated customer profile node_id")
     keywords: list[str] | None = Field(
         None, description="Updated keywords for monitoring"
     )

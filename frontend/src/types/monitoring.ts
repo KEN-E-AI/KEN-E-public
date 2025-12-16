@@ -3,8 +3,15 @@
  */
 
 export interface CompetitorEntry {
-  name: string;
+  node_id?: string;
+  name?: string; // DEPRECATED: Legacy field for backward compatibility
   website?: string;
+  keywords: string[];
+}
+
+export interface CustomerProfileEntry {
+  node_id?: string;
+  name?: string; // DEPRECATED: Legacy field for backward compatibility
   keywords: string[];
 }
 
@@ -50,6 +57,7 @@ export interface MonitoringTopics {
   customer_keywords: string[];
   customer_concepts?: CustomerKeywordConcept[];
   competitor_entries: CompetitorEntry[];
+  customer_profile_entries: CustomerProfileEntry[];
   created_at: string;
   updated_at: string;
 }

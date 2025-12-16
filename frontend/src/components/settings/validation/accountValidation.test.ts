@@ -1,5 +1,8 @@
 import { describe, test, expect } from "vitest";
-import { validateAccountCreation, accountCreationSchema } from "./accountValidation";
+import {
+  validateAccountCreation,
+  accountCreationSchema,
+} from "./accountValidation";
 
 describe("validateAccountCreation", () => {
   test("validates account creation with dry_run=true", () => {
