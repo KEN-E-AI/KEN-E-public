@@ -62,11 +62,17 @@ class LazyWeave:
 
 weave = LazyWeave()
 
-# Configuration
-GA_MCP_SERVER_URL = os.getenv(
-    "GA_MCP_SERVER_URL", "https://google-analytics-mcp-395770269870.us-central1.run.app"
-)
-MCP_API_KEY = os.getenv("MCP_API_KEY", "")  # API key for MCP server authentication
+# Configuration - reads from environment (set in .env files)
+GA_MCP_SERVER_URL = os.getenv("GA_MCP_SERVER_URL")
+if not GA_MCP_SERVER_URL:
+    raise ValueError(
+        "GA_MCP_SERVER_URL not set. Add to .env file "
+        "(e.g., GA_MCP_SERVER_URL=https://google-analytics-mcp-{project}.run.app)"
+    )
+
+MCP_API_KEY = os.getenv("MCP_API_KEY")
+if not MCP_API_KEY:
+    raise ValueError("MCP_API_KEY not set in environment")
 
 
 class GAMCPClient:
