@@ -9,7 +9,7 @@ Plus rollup marketing strategy endpoints for consolidated company-wide strategie
 
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
@@ -796,11 +796,9 @@ async def get_rollup_marketing_hub(
     hub = await service.get_rollup_marketing_hub(account_id)
 
     if not hub:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=404,
-            detail=f"RollupMarketingStrategy hub not found for account {account_id}",
+            detail=f"RollupMarketingStrategy hub not found for account '{account_id}'",
         )
 
     return RollupMarketingStrategyResponse(**hub)
@@ -854,11 +852,9 @@ async def delete_rollup_marketing_hub(
     )
 
     if not deleted:
-        from fastapi import HTTPException
-
         raise HTTPException(
             status_code=404,
-            detail=f"RollupMarketingStrategy hub {node_id} not found in account {account_id}",
+            detail=f"RollupMarketingStrategy hub '{node_id}' not found for account '{account_id}'",
         )
 
     return DeleteResponse(success=True, message="RollupMarketingStrategy hub deleted")
@@ -866,7 +862,7 @@ async def delete_rollup_marketing_hub(
 
 # ==================== ROLLUP STRATEGY ENDPOINTS ====================
 # These endpoints list/get the rollup versions of strategies
-# (distinguished by node_id starting with 'rollup_')
+# (distinguished by node_id starting with ROLLUP_NODE_ID_PREFIX)
 
 
 @router.get(
@@ -883,7 +879,7 @@ async def list_rollup_problem_awareness_strategies(
     """
     List rollup problem awareness strategies for an account.
 
-    Only returns rollup strategies (node_id starts with 'rollup_').
+    Only returns rollup strategies (node_id starts with ROLLUP_NODE_ID_PREFIX).
     Typically there will be 0 or 1 rollup strategy per account.
     """
     return await CRUDEndpoints.list_rollup_strategies(

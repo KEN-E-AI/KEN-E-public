@@ -59,6 +59,10 @@ VALID_MARKETING_STRATEGY_TYPES = frozenset(
     }
 )
 
+# Prefix for rollup strategy node IDs
+# Used to identify rollup strategies vs individual strategies
+ROLLUP_NODE_ID_PREFIX = "rollup_"
+
 # Mapping of node types to their ID prefixes
 # Used for generating consistent node_id values
 NODE_TYPE_TO_PREFIX: dict[str, str] = {

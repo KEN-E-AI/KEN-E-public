@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import Depends
 
+from ..constants import ROLLUP_NODE_ID_PREFIX, VALID_MARKETING_STRATEGY_TYPES
 from ..database import Neo4jService, get_neo4j_service
 from ..exceptions import (
     DuplicateNodeException,
@@ -4103,8 +4104,6 @@ class GraphSyncService:
         Raises:
             ValidationException: If strategy type is not in whitelist
         """
-        from ..constants import VALID_MARKETING_STRATEGY_TYPES
-
         if strategy_type not in VALID_MARKETING_STRATEGY_TYPES:
             valid_types = ", ".join(sorted(VALID_MARKETING_STRATEGY_TYPES))
             raise ValidationException(
@@ -4166,6 +4165,16 @@ class GraphSyncService:
         user_id: str,
     ) -> dict:
         """Create a new RollupMarketingStrategy hub node."""
+        # Check if hub already exists to prevent duplicates
+        existing_hub = await self.get_rollup_marketing_hub(account_id)
+        if existing_hub:
+            raise DuplicateNodeException(
+                node_type="RollupMarketingStrategy",
+                field_name="account_id",
+                field_value=account_id,
+                account_id=account_id,
+            )
+
         node_id = f"rollup_marketing_hub_{account_id}"
 
         query = """
@@ -4278,16 +4287,17 @@ class GraphSyncService:
         """
         List rollup strategies of a specific type for an account.
 
-        Only returns rollup strategies (node_id starts with 'rollup_').
+        Only returns rollup strategies (node_id starts with ROLLUP_NODE_ID_PREFIX).
         """
         # Validate strategy type to prevent Cypher injection
         self._validate_marketing_strategy_type(strategy_type)
 
         # Combined query: get strategies and total count in single database round trip
         # Use COLLECT to gather all strategies first, then slice for pagination
-        query = f"""
-        MATCH (strategy:{strategy_type})-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
-        WHERE strategy.node_id STARTS WITH 'rollup_'
+        # Use WHERE $strategy_label IN labels() for safe parameterization instead of f-string
+        query = """
+        MATCH (strategy:Strategy)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        WHERE $strategy_label IN labels(strategy) AND strategy.node_id STARTS WITH $rollup_prefix
         OPTIONAL MATCH (strategy)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
         WITH strategy, count(individual) as individual_count
         ORDER BY strategy.created_time DESC
@@ -4301,7 +4311,14 @@ class GraphSyncService:
         """
 
         result = await self.neo4j.execute_read_query(
-            query, {"account_id": account_id, "skip": skip, "limit": limit}
+            query,
+            {
+                "account_id": account_id,
+                "strategy_label": strategy_type,
+                "skip": skip,
+                "limit": limit,
+                "rollup_prefix": ROLLUP_NODE_ID_PREFIX,
+            },
         )
 
         items = []
@@ -4344,15 +4361,23 @@ class GraphSyncService:
         # Validate strategy type to prevent Cypher injection
         self._validate_marketing_strategy_type(strategy_type)
 
-        query = f"""
-        MATCH (rollup:{strategy_type} {{node_id: $node_id}})
-        MATCH (rollup)-[:BELONGS_TO]->(acc:Account {{account_id: $account_id}})
-        OPTIONAL MATCH (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual:{strategy_type})
+        # Use WHERE $strategy_label IN labels() for safe parameterization instead of f-string
+        query = """
+        MATCH (rollup:Strategy {node_id: $node_id})
+        WHERE $strategy_label IN labels(rollup)
+        MATCH (rollup)-[:BELONGS_TO]->(acc:Account {account_id: $account_id})
+        OPTIONAL MATCH (rollup)-[:CAN_BE_CUSTOMIZED_BY]->(individual:Strategy)
+        WHERE $strategy_label IN labels(individual)
         RETURN rollup, collect(individual.node_id) as individual_ids
         """
 
         result = await self.neo4j.execute_read_query(
-            query, {"node_id": node_id, "account_id": account_id}
+            query,
+            {
+                "node_id": node_id,
+                "account_id": account_id,
+                "strategy_label": strategy_type,
+            },
         )
 
         if not result:

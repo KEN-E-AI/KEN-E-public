@@ -376,7 +376,7 @@ After all individual (ProductCategory × CustomerProfile) strategies are created
 
 | name | type | description | example |
 | :--- | :--- | :--- | :--- |
-| **node\_id** | string | Deterministic identifier. Format: `rollup_{stage}_{account_id}` | `rollup_problemaware_acc_ab8cfbbb02b84d128f955fb98382c0b2` |
+| **node\_id** | string | Deterministic identifier. Format: `rollup_{stage}_{account_id}` | `rollup_problemawareness_acc_ab8cfbbb02b84d128f955fb98382c0b2` |
 | **account\_id** | string | The account identifier this node belongs to. | `acc_ab8cfbbb02b84d128f955fb98382c0b2` |
 | **label** | string | Same node type as individual strategies. | `ProblemAwarenessStrategy` |
 | **label** | string | Strategy label for embedding search. | `Strategy` |
@@ -396,7 +396,7 @@ After all individual (ProductCategory × CustomerProfile) strategies are created
 | **ProblemAwarenessStrategy (rollup)** | -[:CAN\_BE\_CUSTOMIZED\_BY]-\> | ProblemAwarenessStrategy (individual) | Links rollup to each individual strategy it consolidates. Multiple relationships, one per individual strategy. |
 
 **Note**: The same structure applies to the other 4 rollup strategy types:
-- `RollupBrandAwarenessStrategy` (node\_id: `rollup_brandaware_{account_id}`)
+- `RollupBrandAwarenessStrategy` (node\_id: `rollup_brandawareness_{account_id}`)
 - `RollupConsiderationStrategy` (node\_id: `rollup_consideration_{account_id}`)
 - `RollupConversionStrategy` (node\_id: `rollup_conversion_{account_id}`)
 - `RollupLoyaltyStrategy` (node\_id: `rollup_loyalty_{account_id}`)

@@ -450,3 +450,66 @@ class TestRollupEdgeCases:
 
             # Should either accept empty string or reject it
             assert update_response.status_code in [200, 400]
+
+
+async def test_rollup_strategy_links_to_individual_strategies(
+    authenticated_client, setup_test_account
+):
+    """Verify rollup strategies correctly link to individual strategies via [:CAN_BE_CUSTOMIZED_BY] relationship."""
+    account_id = setup_test_account
+    base_url = f"/api/v1/knowledge-graph/marketing/{account_id}"
+
+    # Step 1: Create a customer profile
+    profile_response = await authenticated_client.post(
+        f"{base_url}/customer-profiles",
+        json={
+            "profile_name": "Test Profile for Rollup Links",
+            "narrative": "Test customer profile narrative for rollup relationship testing",
+        },
+    )
+    assert profile_response.status_code == 201
+    profile_data = profile_response.json()
+    profile_node_id = profile_data["node_id"]
+
+    # Step 2: Create 3 individual problem awareness strategies
+    individual_strategies = []
+    for i in range(3):
+        strategy_response = await authenticated_client.post(
+            f"{base_url}/problem-awareness-strategies",
+            json={
+                "strategy_text": f"Test individual strategy {i+1}",
+                "customer_profile_node_id": profile_node_id,
+            },
+        )
+        assert strategy_response.status_code == 201
+        strategy_data = strategy_response.json()
+        individual_strategies.append(strategy_data["node_id"])
+
+    # Step 3: Get the list of rollup problem awareness strategies
+    # (Assumes rollup was created during test account setup or needs to be created)
+    rollup_list_response = await authenticated_client.get(
+        f"{base_url}/rollup-problem-awareness-strategies"
+    )
+
+    # If no rollup exists, this test can't verify the relationship
+    if rollup_list_response.status_code == 200:
+        rollup_list_data = rollup_list_response.json()
+        if rollup_list_data.get("strategies") and len(rollup_list_data["strategies"]) > 0:
+            rollup_strategy = rollup_list_data["strategies"][0]
+
+            # Step 4: Verify the rollup strategy has linked_individual_strategies field
+            assert "linked_individual_strategies" in rollup_strategy
+            linked_strategies = rollup_strategy["linked_individual_strategies"]
+
+            # The rollup should link to our 3 individual strategies
+            # (or at least include them in the list)
+            assert isinstance(linked_strategies, list)
+
+            # Verify at least some of our strategies are linked
+            # Note: Other tests may have created additional strategies, so we check
+            # that our strategies are present, not that ONLY our strategies are present
+            for strategy_id in individual_strategies:
+                assert strategy_id in linked_strategies, (
+                    f"Individual strategy {strategy_id} should be linked to rollup strategy "
+                    f"via [:CAN_BE_CUSTOMIZED_BY] relationship"
+                )

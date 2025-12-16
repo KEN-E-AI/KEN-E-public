@@ -3040,7 +3040,9 @@ class TestRollupHubCreation:
         from src.kene_api.exceptions import NodeCreationException
         from src.kene_api.models.graph_models import RollupMarketingStrategyCreate
 
-        # Arrange - mock Neo4j to return empty result (failure)
+        # Arrange - mock duplicate check to return None (no existing hub)
+        # Then mock Neo4j creation to return empty result (failure)
+        mock_neo4j_service.execute_read_query.return_value = None
         mock_neo4j_service.execute_write_query.return_value = None
 
         account_id = "acc_test123"
@@ -3067,7 +3069,7 @@ class TestRollupStrategyListOptimization:
         graph_sync_service,
         mock_neo4j_service,
     ):
-        """Test that list operation uses single database query."""
+        """Test that list operation uses single database query to prevent N+1 problem."""
         # Arrange
         account_id = "acc_test123"
         strategy_type = "ProblemAwarenessStrategy"
