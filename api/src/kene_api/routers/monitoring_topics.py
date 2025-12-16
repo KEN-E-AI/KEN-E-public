@@ -955,7 +955,7 @@ async def add_customer_profile_keywords(
 async def update_customer_profile_keywords(
     account_id: str = Path(..., description="Account ID"),
     customer_profile_index: int = Path(
-        ..., description="Customer profile index in array"
+        ..., ge=0, description="Customer profile index in array"
     ),
     request: UpdateCustomerProfileRequest = Body(...),
     user: UserContext = Depends(get_current_user_context),
@@ -1041,7 +1041,7 @@ async def update_customer_profile_keywords(
 async def delete_customer_profile_keywords(
     account_id: str = Path(..., description="Account ID"),
     customer_profile_index: int = Path(
-        ..., description="Customer profile index in array"
+        ..., ge=0, description="Customer profile index in array"
     ),
     user: UserContext = Depends(get_current_user_context),
     firestore: FirestoreService = Depends(get_firestore_service),

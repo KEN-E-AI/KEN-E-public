@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from ...auth.dependencies import get_current_user
 from ...auth.models import UserContext
-from ...exceptions import ValidationException
+from ...exceptions import NodeNotFoundException, ValidationException
 from ...models.graph_models import (
     BrandAwarenessStrategyCreate,
     BrandAwarenessStrategyListResponse,
@@ -188,12 +188,14 @@ async def link_product_category_to_customer_profile(
         )
         return SuccessResponse(message="Product category linked successfully")
     except ValidationException as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error linking product category: {e!s}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception:
+        logger.exception("Unexpected error linking product category")
         raise HTTPException(
             status_code=500, detail="Failed to link product category"
-        )
+        ) from None
 
 
 @router.delete(
@@ -223,12 +225,14 @@ async def unlink_product_category_from_customer_profile(
         )
         return SuccessResponse(message="Product category unlinked successfully")
     except ValidationException as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error unlinking product category: {e!s}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except NodeNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception:
+        logger.exception("Unexpected error unlinking product category")
         raise HTTPException(
             status_code=500, detail="Failed to unlink product category"
-        )
+        ) from None
 
 
 @router.get(

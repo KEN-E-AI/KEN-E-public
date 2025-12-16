@@ -2987,44 +2987,38 @@ class GraphSyncService:
             product_category_id: ProductCategory node_id
             user_id: User performing deletion
         """
-        # Delete all strategy nodes for this pair
-        strategy_types = [
-            "ProblemAwarenessStrategy",
-            "BrandAwarenessStrategy",
-            "ConsiderationStrategy",
-            "ConversionStrategy",
-            "LoyaltyStrategy",
-        ]
+        # Find all strategy nodes for this pair using a single atomic query
+        find_strategies_query = """
+        MATCH (s)
+        WHERE s.customer_profile_node_id = $customer_profile_id
+          AND s.product_category_node_id = $product_category_id
+          AND (s)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (s:ProblemAwarenessStrategy OR s:BrandAwarenessStrategy
+               OR s:ConsiderationStrategy OR s:ConversionStrategy OR s:LoyaltyStrategy)
+        RETURN s.node_id as node_id, labels(s)[0] as strategy_type
+        """
+        strategies = await self.neo4j.execute_query(
+            find_strategies_query,
+            {
+                "customer_profile_id": customer_profile_id,
+                "product_category_id": product_category_id,
+                "account_id": account_id,
+            },
+        )
 
-        for strategy_type in strategy_types:
-            # Find strategies for this specific (CustomerProfile, ProductCategory) pair
-            query = f"""
-            MATCH (s:{strategy_type})
-            WHERE s.customer_profile_node_id = $customer_profile_id
-              AND s.product_category_node_id = $product_category_id
-              AND (s)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
-            RETURN s.node_id as node_id
-            """
-            strategies = await self.neo4j.execute_query(
-                query,
-                {
-                    "customer_profile_id": customer_profile_id,
-                    "product_category_id": product_category_id,
-                    "account_id": account_id,
-                },
+        # Delete all strategies found
+        # Note: delete_node handles both Neo4j and Firestore with rollback on failure
+        for strategy in strategies:
+            strategy_node_id = strategy["node_id"]
+            strategy_type = strategy["strategy_type"]
+            await self.delete_node(
+                account_id=account_id,
+                node_id=strategy_node_id,
+                node_type=strategy_type,
+                user_id=user_id,
+                firestore_doc_type="marketing_strategy",
+                check_dependencies=False,
             )
-
-            # Delete each strategy
-            for strategy in strategies:
-                strategy_node_id = strategy["node_id"]
-                await self.delete_node(
-                    account_id=account_id,
-                    node_id=strategy_node_id,
-                    node_type=strategy_type,
-                    user_id=user_id,
-                    firestore_doc_type="marketing_strategy",
-                    check_dependencies=False,
-                )
 
         # Delete the IS_MARKETED_TO relationship
         delete_query = """

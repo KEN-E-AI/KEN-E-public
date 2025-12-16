@@ -130,6 +130,16 @@ export function CustomerKeywordsSection({
       const customerProfileExists = (customerProfileIndex ?? -1) >= 0;
 
       if (!customerProfileExists) {
+        // Validate customerProfileNodeId is defined
+        if (!customerProfileNodeId) {
+          toast({
+            title: "Error",
+            description: "Invalid customer profile ID",
+            variant: "destructive",
+          });
+          return;
+        }
+
         // Create new customer profile entry
         await addMutation.mutateAsync({
           accountId,

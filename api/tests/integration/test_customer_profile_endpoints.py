@@ -12,7 +12,11 @@ from httpx import ASGITransport, AsyncClient
 
 from src.kene_api.main import app
 from src.kene_api.models.graph_models import (
+    BrandAwarenessStrategyCreate,
+    ConsiderationStrategyCreate,
+    ConversionStrategyCreate,
     CustomerProfileCreate,
+    LoyaltyStrategyCreate,
     ProblemAwarenessStrategyCreate,
     ProductCategoryCreate,
 )
@@ -175,7 +179,7 @@ class TestCascadeDeletion:
     async def test_unlink_deletes_strategies(
         self, authenticated_client, test_customer_profile, test_product_category
     ):
-        """Test that unlinking deletes associated marketing strategies."""
+        """Test that unlinking deletes ALL 5 associated marketing strategy types."""
         base_url = f"/api/v1/knowledge-graph/{TEST_ACCOUNT_ID}"
         profile_id = test_customer_profile["node_id"]
         category_id = test_product_category["node_id"]
@@ -186,26 +190,40 @@ class TestCascadeDeletion:
             json={"product_category_node_id": category_id},
         )
 
-        # Create a ProblemAwarenessStrategy for this profile/category pair
-        strategy_data = ProblemAwarenessStrategyCreate(
-            display_name="Test Strategy", description="Test strategy description"
-        )
+        # Create all 5 strategy types for this profile/category pair
+        strategy_types = [
+            ("problem-awareness-strategies", ProblemAwarenessStrategyCreate),
+            ("brand-awareness-strategies", BrandAwarenessStrategyCreate),
+            ("consideration-strategies", ConsiderationStrategyCreate),
+            ("conversion-strategies", ConversionStrategyCreate),
+            ("loyalty-strategies", LoyaltyStrategyCreate),
+        ]
 
-        strategy_response = await authenticated_client.post(
-            f"{base_url}/product-categories/{category_id}/customer-profiles/{profile_id}/problem-awareness-strategies",
-            json=strategy_data.model_dump(),
-        )
-        assert strategy_response.status_code == 200
-        strategy_id = strategy_response.json()["node_id"]
+        strategy_ids = {}
+        for endpoint_name, strategy_class in strategy_types:
+            strategy_data = strategy_class(
+                display_name=f"Test {endpoint_name.replace('-', ' ').title()}",
+                description=f"Test {endpoint_name} description",
+            )
 
-        # Unlink (should cascade delete strategy)
+            strategy_response = await authenticated_client.post(
+                f"{base_url}/product-categories/{category_id}/customer-profiles/{profile_id}/{endpoint_name}",
+                json=strategy_data.model_dump(),
+            )
+            assert strategy_response.status_code == 200
+            strategy_ids[endpoint_name] = strategy_response.json()["node_id"]
+
+        # Unlink (should cascade delete ALL strategies)
         unlink_response = await authenticated_client.delete(
             f"{base_url}/customer-profiles/{profile_id}/unlink-product-category/{category_id}"
         )
         assert unlink_response.status_code == 200
 
-        # Verify strategy is deleted
-        strategy_get = await authenticated_client.get(
-            f"{base_url}/problem-awareness-strategies/{strategy_id}"
-        )
-        assert strategy_get.status_code == 404
+        # Verify ALL 5 strategies are deleted
+        for endpoint_name, strategy_id in strategy_ids.items():
+            strategy_get = await authenticated_client.get(
+                f"{base_url}/{endpoint_name}/{strategy_id}"
+            )
+            assert (
+                strategy_get.status_code == 404
+            ), f"Strategy {endpoint_name} with ID {strategy_id} should be deleted"
