@@ -22,6 +22,7 @@ import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Recommendations from "./pages/Recommendations";
 import Products from "./pages/Products";
+import Customers from "./pages/Customers";
 import Campaigns from "./pages/Campaigns";
 import Reports from "./pages/Reports";
 import Simulations from "./pages/Simulations";
@@ -204,6 +205,14 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <Products />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/knowledge/customers"
+                    element={
+                      <ProtectedRoute>
+                        <Customers />
                       </ProtectedRoute>
                     }
                   />

@@ -7,25 +7,25 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useMonitoringTopics,
-  useAddCompetitorKeywords,
-  useUpdateCompetitorKeywords,
+  useAddCustomerProfileKeywords,
+  useUpdateCustomerProfileKeywords,
 } from "@/queries/monitoringTopics";
-import type { CompetitorEntry } from "@/types/monitoring";
+import type { CustomerProfileEntry } from "@/types/monitoring";
 
 // Validation constants (matching backend validators)
 const MAX_KEYWORDS = 20;
 const MAX_KEYWORD_LENGTH = 50;
 const MIN_KEYWORD_LENGTH = 2;
 
-interface CompetitorKeywordsSectionProps {
-  competitorNodeId: string;
+interface CustomerKeywordsSectionProps {
+  customerProfileNodeId: string;
   hasEditAccess: boolean;
 }
 
-export function CompetitorKeywordsSection({
-  competitorNodeId,
+export function CustomerKeywordsSection({
+  customerProfileNodeId,
   hasEditAccess,
-}: CompetitorKeywordsSectionProps) {
+}: CustomerKeywordsSectionProps) {
   const { selectedOrgAccount } = useAuth();
   const { toast } = useToast();
   const accountId = selectedOrgAccount?.accountId || null;
@@ -33,32 +33,33 @@ export function CompetitorKeywordsSection({
   const { data: monitoringTopics, isLoading: isLoadingTopics } =
     useMonitoringTopics(accountId);
 
-  const addMutation = useAddCompetitorKeywords();
-  const updateMutation = useUpdateCompetitorKeywords();
+  const addMutation = useAddCustomerProfileKeywords();
+  const updateMutation = useUpdateCustomerProfileKeywords();
 
   const [isEditing, setIsEditing] = useState(false);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // Find the competitor entry in monitoring topics
-  const competitorEntry = monitoringTopics?.competitor_entries?.find(
-    (entry) => entry.node_id === competitorNodeId,
+  // Find the customer profile entry in monitoring topics
+  const customerProfileEntry = monitoringTopics?.customer_profile_entries?.find(
+    (entry) => entry.node_id === customerProfileNodeId,
   );
-  const competitorIndex = monitoringTopics?.competitor_entries?.findIndex(
-    (entry) => entry.node_id === competitorNodeId,
-  );
+  const customerProfileIndex =
+    monitoringTopics?.customer_profile_entries?.findIndex(
+      (entry) => entry.node_id === customerProfileNodeId,
+    );
 
   useEffect(() => {
-    // Only sync when competitor changes, not on every render
-    if (competitorEntry && !isEditing && !hasUnsavedChanges) {
-      setKeywords(competitorEntry.keywords || []);
+    // Only sync when customer profile changes, not on every render
+    if (customerProfileEntry && !isEditing && !hasUnsavedChanges) {
+      setKeywords(customerProfileEntry.keywords || []);
     }
-    // Reset when switching to a different competitor
-    if (!competitorEntry && !isEditing) {
+    // Reset when switching to a different customer profile
+    if (!customerProfileEntry && !isEditing) {
       setKeywords([]);
     }
-  }, [competitorEntry?.node_id]); // Only when competitor changes
+  }, [customerProfileEntry?.node_id]); // Only when customer profile changes
 
   const handleAddKeyword = () => {
     const trimmedKeyword = keywordInput.trim().toLowerCase();
@@ -125,15 +126,25 @@ export function CompetitorKeywordsSection({
     }
 
     try {
-      // Check if competitor exists in monitoring topics
-      const competitorExists = (competitorIndex ?? -1) >= 0;
+      // Check if customer profile exists in monitoring topics
+      const customerProfileExists = (customerProfileIndex ?? -1) >= 0;
 
-      if (!competitorExists) {
-        // Create new competitor entry
+      if (!customerProfileExists) {
+        // Validate customerProfileNodeId is defined
+        if (!customerProfileNodeId) {
+          toast({
+            title: "Error",
+            description: "Invalid customer profile ID",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Create new customer profile entry
         await addMutation.mutateAsync({
           accountId,
           data: {
-            node_id: competitorNodeId,
+            node_id: customerProfileNodeId,
             keywords,
           },
         });
@@ -141,7 +152,7 @@ export function CompetitorKeywordsSection({
         // Update existing entry
         await updateMutation.mutateAsync({
           accountId,
-          competitorIndex,
+          customerProfileIndex,
           data: { keywords },
         });
       }
@@ -164,8 +175,8 @@ export function CompetitorKeywordsSection({
   };
 
   const handleCancel = () => {
-    if (competitorEntry) {
-      setKeywords(competitorEntry.keywords || []);
+    if (customerProfileEntry) {
+      setKeywords(customerProfileEntry.keywords || []);
     }
     setKeywordInput("");
     setIsEditing(false);
@@ -282,17 +293,17 @@ export function CompetitorKeywordsSection({
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {competitorEntry
+              {customerProfileEntry
                 ? "No keywords configured for monitoring"
-                : "This competitor is not being monitored yet. Add keywords to start tracking"}
+                : "This customer profile is not being monitored yet. Add keywords to start tracking"}
             </p>
           )}
         </div>
       )}
 
-      {!isEditing && keywords.length === 0 && !competitorEntry && (
+      {!isEditing && keywords.length === 0 && !customerProfileEntry && (
         <p className="text-xs text-muted-foreground mt-2">
-          Keywords help track this competitor in news and social media
+          Keywords help track this customer profile in news and social media
         </p>
       )}
     </div>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AccountId } from "@/lib/branded-types";
 import { monitoringTopicsService } from "@/services/monitoringTopicsService";
-import type { CompetitorEntry } from "@/types/monitoring";
+import type { CompetitorEntry, CustomerProfileEntry } from "@/types/monitoring";
 
 export function useMonitoringTopics(accountId: AccountId | null) {
   return useQuery({
@@ -76,6 +76,81 @@ export function useDeleteCompetitorKeywords() {
       return monitoringTopicsService.deleteCompetitorKeywords(
         accountId,
         competitorIndex,
+      );
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["monitoring-topics", variables.accountId],
+      });
+    },
+  });
+}
+
+export function useAddCustomerProfileKeywords() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      accountId,
+      data,
+    }: {
+      accountId: AccountId;
+      data: CustomerProfileEntry;
+    }) => {
+      return monitoringTopicsService.addCustomerProfileKeywords(
+        accountId,
+        data,
+      );
+    },
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["monitoring-topics", variables.accountId],
+      });
+    },
+  });
+}
+
+export function useUpdateCustomerProfileKeywords() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      accountId,
+      customerProfileIndex,
+      data,
+    }: {
+      accountId: AccountId;
+      customerProfileIndex: number;
+      data: Partial<CustomerProfileEntry>;
+    }) => {
+      return monitoringTopicsService.updateCustomerProfileKeywords(
+        accountId,
+        customerProfileIndex,
+        data,
+      );
+    },
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: ["monitoring-topics", variables.accountId],
+      });
+    },
+  });
+}
+
+export function useDeleteCustomerProfileKeywords() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      accountId,
+      customerProfileIndex,
+    }: {
+      accountId: AccountId;
+      customerProfileIndex: number;
+    }) => {
+      return monitoringTopicsService.deleteCustomerProfileKeywords(
+        accountId,
+        customerProfileIndex,
       );
     },
     onSuccess: (_, variables) => {
