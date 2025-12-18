@@ -297,3 +297,30 @@ export const useDeleteValueProposition = () => {
     },
   });
 };
+
+// Query for customer profiles linked to a product category
+export const useLinkedCustomerProfilesForCategory = (
+  accountId: AccountId | null,
+  productCategoryId: string | null,
+) => {
+  return useQuery({
+    queryKey: [
+      "products",
+      "linked-customer-profiles",
+      accountId,
+      productCategoryId,
+    ],
+    queryFn: async () => {
+      if (!accountId || !productCategoryId)
+        return { customer_profiles: [], total_count: 0 };
+      return productCategoryService.listLinkedCustomerProfiles(
+        accountId,
+        productCategoryId,
+      );
+    },
+    enabled: !!accountId && !!productCategoryId,
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+};

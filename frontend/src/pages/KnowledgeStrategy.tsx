@@ -16,7 +16,10 @@ import {
   useUpdateStrategy,
   useDeleteStrategy,
 } from "@/queries/marketing";
-import { useProductCategories } from "@/queries/products";
+import {
+  useProductCategories,
+  useLinkedCustomerProfilesForCategory,
+} from "@/queries/products";
 import {
   useCustomerProfiles,
   useLinkedProductCategories,
@@ -120,23 +123,19 @@ export default function KnowledgeStrategy() {
     useProductCategories(selectedOrgAccount?.accountId || null);
   const categories = categoriesData?.categories || [];
 
-  const { data: profilesData } = useCustomerProfiles(
-    selectedOrgAccount?.accountId || null,
-  );
-  const allProfiles = profilesData?.customer_profiles || [];
-
   const { data: linkedCategoriesData } = useLinkedProductCategories(
     selectedOrgAccount?.accountId || null,
     selectedProfileId,
   );
   const linkedCategories = linkedCategoriesData?.categories || [];
 
-  // Fetch all strategies for the selected category (without profile filter)
-  const { data: allCategoryStrategies = [] } = useIndividualStrategies(
-    selectedOrgAccount?.accountId || null,
-    selectedCategoryId,
-    null,
-  );
+  // Fetch customer profiles linked to the selected category via IS_MARKETED_TO
+  const { data: linkedProfilesData } =
+    useLinkedCustomerProfilesForCategory(
+      selectedOrgAccount?.accountId || null,
+      selectedCategoryId,
+    );
+  const profilesForCategory = linkedProfilesData?.customer_profiles || [];
 
   // Fetch strategies for selected category AND profile (for third row)
   const { data: individualStrategies = [], isLoading: isLoadingStrategies } =
@@ -169,19 +168,6 @@ export default function KnowledgeStrategy() {
       ? getStrategyTypeForNode(selectedNode.data) || "problem-awareness"
       : "problem-awareness",
   );
-
-  // Filter profiles that are linked to the selected category
-  const profilesForCategory = useMemo(() => {
-    if (!selectedCategoryId || allCategoryStrategies.length === 0) return [];
-
-    const profileIds = new Set(
-      allCategoryStrategies
-        .map((s) => s.customer_profile_node_id)
-        .filter((id): id is string => !!id),
-    );
-
-    return allProfiles.filter((profile) => profileIds.has(profile.node_id));
-  }, [allProfiles, selectedCategoryId, allCategoryStrategies]);
 
   // React Flow setup
   const nodeTypes = {

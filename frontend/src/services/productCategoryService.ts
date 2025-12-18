@@ -102,6 +102,16 @@ class ProductCategoryService {
       `/api/v1/knowledge-graph/${accountId}/customer-profiles/${customerProfileNodeId}/unlink-product-category/${productCategoryId}`,
     );
   }
+
+  async listLinkedCustomerProfiles(
+    accountId: AccountId,
+    productCategoryId: string,
+  ): Promise<{ customer_profiles: any[]; total_count: number }> {
+    const response = await api.get(
+      `/api/v1/knowledge-graph/${accountId}/product-categories/${productCategoryId}/customer-profiles`,
+    );
+    return response.data;
+  }
 }
 
 export const productCategoryService = new ProductCategoryService();

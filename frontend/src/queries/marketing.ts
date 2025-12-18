@@ -71,11 +71,6 @@ export const useIndividualStrategies = (
     queryFn: async () => {
       if (!accountId || !categoryId) return [];
 
-      console.log("[useIndividualStrategies] Fetching strategies:");
-      console.log("  accountId:", accountId);
-      console.log("  categoryId:", categoryId);
-      console.log("  profileId:", profileId);
-
       const strategyTypes: StrategyType[] = [
         "problem-awareness",
         "brand-awareness",
@@ -90,33 +85,18 @@ export const useIndividualStrategies = (
         ),
       );
 
-      console.log("  Raw results from API:", results);
-
       const allStrategies = results.flatMap((res) => res.strategies);
-
-      console.log("  All strategies before filter:", allStrategies.length);
 
       // Filter out rollup strategies (which don't have product_category_node_id)
       const individualOnly = allStrategies.filter(
         (s) => !s.node_id.startsWith("rollup_"),
       );
 
-      console.log("  Individual strategies (non-rollup):", individualOnly.length);
-      console.log(
-        "  Unique product_category_node_ids in strategies:",
-        Array.from(
-          new Set(individualOnly.map((s) => s.product_category_node_id)),
-        ),
-      );
-      console.log("  Looking for categoryId:", categoryId);
-
       const filtered = individualOnly.filter(
         (strategy) =>
           strategy.product_category_node_id === categoryId &&
           (!profileId || strategy.customer_profile_node_id === profileId),
       );
-
-      console.log("  Filtered strategies:", filtered.length, filtered);
 
       return filtered;
     },
