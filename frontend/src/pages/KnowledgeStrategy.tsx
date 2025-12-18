@@ -32,6 +32,7 @@ import {
   useCustomerProfiles,
   useLinkedProductCategories,
   useLinkProductCategoryToProfile,
+  useUnlinkProductCategoryFromProfile,
 } from "@/queries/customerProfiles";
 import { MarketingFunnelVisualization } from "@/components/marketing/MarketingFunnelVisualization";
 import {
@@ -134,6 +135,8 @@ export default function KnowledgeStrategy() {
   const [isLinkProfileDialogOpen, setIsLinkProfileDialogOpen] = useState(false);
   const [selectedProfileToLink, setSelectedProfileToLink] =
     useState<CustomerProfile | null>(null);
+  const [isUnlinkProfileDialogOpen, setIsUnlinkProfileDialogOpen] =
+    useState(false);
 
   // Data fetching
   const { data: rollupStrategiesData, isLoading: isLoadingRollup } =
@@ -173,6 +176,7 @@ export default function KnowledgeStrategy() {
   // Mutations
   const updateRollupMutation = useUpdateStrategy(selectedStrategyMode);
   const linkProfileMutation = useLinkProductCategoryToProfile();
+  const unlinkProfileMutation = useUnlinkProductCategoryFromProfile();
 
   const getStrategyTypeForNode = (
     strategy: MarketingStrategy,
@@ -245,6 +249,43 @@ export default function KnowledgeStrategy() {
       toast({
         title: "Error",
         description: "Failed to link customer profile",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
+    }
+  };
+
+  const handleUnlinkCustomerProfile = async () => {
+    if (
+      !selectedOrgAccount?.accountId ||
+      !selectedCategoryId ||
+      selectedNode?.type !== "profile"
+    )
+      return;
+
+    try {
+      startOperation("Unlinking customer profile...");
+      setIsUnlinkProfileDialogOpen(false);
+
+      await unlinkProfileMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        productCategoryId: selectedCategoryId,
+        customerProfileId: selectedNode.data.node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Customer profile unlinked successfully",
+      });
+
+      setIsSideSheetOpen(false);
+      setSelectedNode(null);
+      setSelectedProfileId(null);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to unlink customer profile",
         variant: "destructive",
       });
     } finally {
@@ -688,7 +729,12 @@ export default function KnowledgeStrategy() {
           onDelete={
             selectedNode?.type === "strategy"
               ? () => setIsDeleteDialogOpen(true)
-              : undefined
+              : selectedNode?.type === "profile"
+                ? () => setIsUnlinkProfileDialogOpen(true)
+                : undefined
+          }
+          deleteButtonLabel={
+            selectedNode?.type === "profile" ? "Unlink" : undefined
           }
           hasEditAccess={hasEditAccess}
           editButtonLabel={
@@ -870,6 +916,36 @@ export default function KnowledgeStrategy() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Unlink Customer Profile Confirmation */}
+        <AlertDialog
+          open={isUnlinkProfileDialogOpen}
+          onOpenChange={setIsUnlinkProfileDialogOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Unlink Customer Profile?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to unlink "
+                {selectedNode?.type === "profile"
+                  ? selectedNode.data.display_name
+                  : ""}
+                "? This will also delete all associated marketing strategies for
+                this customer profile/category pair. This action cannot be
+                undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleUnlinkCustomerProfile}
+                className="bg-brand-red hover:bg-brand-red/90"
+              >
+                Unlink and Delete Strategies
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog

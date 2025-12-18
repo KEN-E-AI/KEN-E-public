@@ -164,12 +164,21 @@ export const useUnlinkProductCategoryFromProfile = () => {
         data.customerProfileId,
       ),
     onSuccess: (_, variables) => {
-      // Invalidate linked categories for this profile
+      // Invalidate linked categories for this profile (Customers page)
       queryClient.invalidateQueries({
         queryKey: customerProfileKeys.linkedCategories(
           variables.accountId,
           variables.customerProfileId,
         ),
+      });
+      // Invalidate linked profiles for this category (Strategy page)
+      queryClient.invalidateQueries({
+        queryKey: [
+          "products",
+          "linked-customer-profiles",
+          variables.accountId,
+          variables.productCategoryId,
+        ],
       });
     },
   });
