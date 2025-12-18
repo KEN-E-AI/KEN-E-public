@@ -58,14 +58,6 @@ type SelectedNode =
   | { type: "profile"; data: CustomerProfile }
   | { type: "strategy"; data: MarketingStrategy };
 
-const STRATEGY_TYPE_MAP: Record<number, StrategyType> = {
-  0: "problem-awareness",
-  1: "brand-awareness",
-  2: "consideration",
-  3: "conversion",
-  4: "loyalty",
-};
-
 const NODE_TYPE_PREFIX_MAP: Record<string, string> = {
   problemaware_: "ProblemAwarenessStrategy",
   brandaware_: "BrandAwarenessStrategy",
@@ -106,7 +98,8 @@ export default function KnowledgeStrategy() {
   }, [selectedOrgAccount, user, isSuperAdmin]);
 
   // State
-  const [selectedStrategyIndex, setSelectedStrategyIndex] = useState(0);
+  const [selectedStrategyMode, setSelectedStrategyMode] =
+    useState<StrategyType>("problem-awareness");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
     null,
   );
@@ -146,9 +139,7 @@ export default function KnowledgeStrategy() {
     );
 
   // Mutations
-  const updateRollupMutation = useUpdateStrategy(
-    STRATEGY_TYPE_MAP[selectedStrategyIndex],
-  );
+  const updateRollupMutation = useUpdateStrategy(selectedStrategyMode);
 
   const getStrategyTypeForNode = (
     strategy: MarketingStrategy,
@@ -338,20 +329,20 @@ export default function KnowledgeStrategy() {
 
   // Handlers
   const handleSaveRollupDescription = async (
-    strategyIndex: number,
+    strategyMode: StrategyType,
     description: string,
   ) => {
     if (!selectedOrgAccount?.accountId || !rollupStrategiesData) return;
 
-    const strategies = [
-      rollupStrategiesData.problemAwareness,
-      rollupStrategiesData.brandAwareness,
-      rollupStrategiesData.consideration,
-      rollupStrategiesData.conversion,
-      rollupStrategiesData.loyalty,
-    ];
+    const strategyMap: Record<StrategyType, MarketingStrategy | null> = {
+      "problem-awareness": rollupStrategiesData.problemAwareness,
+      "brand-awareness": rollupStrategiesData.brandAwareness,
+      consideration: rollupStrategiesData.consideration,
+      conversion: rollupStrategiesData.conversion,
+      loyalty: rollupStrategiesData.loyalty,
+    };
 
-    const strategy = strategies[strategyIndex];
+    const strategy = strategyMap[strategyMode];
     if (!strategy) return;
 
     await updateRollupMutation.mutateAsync({
@@ -484,8 +475,8 @@ export default function KnowledgeStrategy() {
         <MarketingFunnelVisualization
           strategies={rollupStrategiesData || null}
           isLoading={isLoadingRollup}
-          selectedStrategyIndex={selectedStrategyIndex}
-          onStrategyChange={setSelectedStrategyIndex}
+          selectedStrategyMode={selectedStrategyMode}
+          onStrategyModeChange={setSelectedStrategyMode}
           onSaveDescription={handleSaveRollupDescription}
           hasEditAccess={hasEditAccess}
           isSaving={updateRollupMutation.isPending}

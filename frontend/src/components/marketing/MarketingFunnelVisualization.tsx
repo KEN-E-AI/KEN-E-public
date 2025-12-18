@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Filter, Pencil, Loader2 } from "lucide-react";
-import { KnowledgeGraphCard } from "@/components/knowledge-graph";
-import { Slider } from "@/components/ui/slider";
+import { KnowledgeGraphCard, ModeSelector } from "@/components/knowledge-graph";
+import type { ModeConfig } from "@/components/knowledge-graph";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FunnelStage } from "./FunnelStage";
-import type { MarketingStrategy } from "@/services/marketingStrategyService";
+import type {
+  MarketingStrategy,
+  StrategyType,
+} from "@/services/marketingStrategyService";
 import { useToast } from "@/hooks/use-toast";
 
 interface RollupStrategiesData {
@@ -19,23 +22,31 @@ interface RollupStrategiesData {
 interface MarketingFunnelVisualizationProps {
   strategies: RollupStrategiesData | null;
   isLoading: boolean;
-  selectedStrategyIndex: number;
-  onStrategyChange: (index: number) => void;
+  selectedStrategyMode: StrategyType;
+  onStrategyModeChange: (mode: StrategyType) => void;
   onSaveDescription: (
-    strategyIndex: number,
+    strategyMode: StrategyType,
     description: string,
   ) => Promise<void>;
   hasEditAccess: boolean;
   isSaving: boolean;
 }
 
-const STRATEGY_LABELS = [
-  "Problem Awareness",
-  "Brand Awareness",
-  "Consideration",
-  "Conversion",
-  "Loyalty",
+const STRATEGY_MODES: readonly ModeConfig<StrategyType>[] = [
+  { value: "problem-awareness", label: "Problem Awareness" },
+  { value: "brand-awareness", label: "Brand Awareness" },
+  { value: "consideration", label: "Consideration" },
+  { value: "conversion", label: "Conversion" },
+  { value: "loyalty", label: "Loyalty" },
 ];
+
+const STRATEGY_MODE_TO_INDEX: Record<StrategyType, number> = {
+  "problem-awareness": 0,
+  "brand-awareness": 1,
+  consideration: 2,
+  conversion: 3,
+  loyalty: 4,
+};
 
 const FUNNEL_STAGES = [
   { label: "Total Addressable Market", baseColor: "fill-dashboard-gray-300" },
@@ -49,8 +60,8 @@ const FUNNEL_STAGES = [
 export const MarketingFunnelVisualization = ({
   strategies,
   isLoading,
-  selectedStrategyIndex,
-  onStrategyChange,
+  selectedStrategyMode,
+  onStrategyModeChange,
   onSaveDescription,
   hasEditAccess,
   isSaving,
@@ -63,20 +74,21 @@ export const MarketingFunnelVisualization = ({
   const getCurrentStrategy = (): MarketingStrategy | null => {
     if (!strategies) return null;
 
-    const strategyMap = [
-      strategies.problemAwareness,
-      strategies.brandAwareness,
-      strategies.consideration,
-      strategies.conversion,
-      strategies.loyalty,
-    ];
+    const strategyMap: Record<StrategyType, MarketingStrategy | null> = {
+      "problem-awareness": strategies.problemAwareness,
+      "brand-awareness": strategies.brandAwareness,
+      consideration: strategies.consideration,
+      conversion: strategies.conversion,
+      loyalty: strategies.loyalty,
+    };
 
-    return strategyMap[selectedStrategyIndex];
+    return strategyMap[selectedStrategyMode];
   };
 
   const getStageColor = (stageIndex: number): string => {
-    const fromStage = selectedStrategyIndex;
-    const toStage = selectedStrategyIndex + 1;
+    const strategyIndex = STRATEGY_MODE_TO_INDEX[selectedStrategyMode];
+    const fromStage = strategyIndex;
+    const toStage = strategyIndex + 1;
 
     if (stageIndex === fromStage) return "fill-brand-dark-blue";
     if (stageIndex === toStage) return "fill-brand-medium-blue";
@@ -99,7 +111,7 @@ export const MarketingFunnelVisualization = ({
     }
 
     try {
-      await onSaveDescription(selectedStrategyIndex, editedDescription);
+      await onSaveDescription(selectedStrategyMode, editedDescription);
       setIsEditing(false);
       toast({
         title: "Success",
@@ -135,30 +147,13 @@ export const MarketingFunnelVisualization = ({
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Strategy Selector Slider */}
+          {/* Strategy Mode Selector */}
           <div className="px-6 pt-4">
-            <Slider
-              min={0}
-              max={4}
-              step={1}
-              value={[selectedStrategyIndex]}
-              onValueChange={(value) => onStrategyChange(value[0])}
-              className="mb-4"
+            <ModeSelector
+              modes={STRATEGY_MODES}
+              value={selectedStrategyMode}
+              onChange={onStrategyModeChange}
             />
-            <div className="flex justify-between text-xs text-dashboard-gray-600">
-              {STRATEGY_LABELS.map((label, index) => (
-                <span
-                  key={label}
-                  className={
-                    index === selectedStrategyIndex
-                      ? "font-semibold text-brand-dark-blue"
-                      : ""
-                  }
-                >
-                  {label}
-                </span>
-              ))}
-            </div>
           </div>
 
           {/* Funnel Visualization + Description */}
@@ -188,7 +183,10 @@ export const MarketingFunnelVisualization = ({
             <div className="flex-1 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-base">
-                  {STRATEGY_LABELS[selectedStrategyIndex]}
+                  {
+                    STRATEGY_MODES.find((m) => m.value === selectedStrategyMode)
+                      ?.label
+                  }
                 </h3>
                 {hasEditAccess && !isEditing && (
                   <Button
