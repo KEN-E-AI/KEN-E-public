@@ -131,6 +131,14 @@ export default function KnowledgeStrategy() {
   );
   const linkedCategories = linkedCategoriesData?.categories || [];
 
+  // Fetch all strategies for the selected category (without profile filter)
+  const { data: allCategoryStrategies = [] } = useIndividualStrategies(
+    selectedOrgAccount?.accountId || null,
+    selectedCategoryId,
+    null,
+  );
+
+  // Fetch strategies for selected category AND profile (for third row)
   const { data: individualStrategies = [], isLoading: isLoadingStrategies } =
     useIndividualStrategies(
       selectedOrgAccount?.accountId || null,
@@ -164,11 +172,16 @@ export default function KnowledgeStrategy() {
 
   // Filter profiles that are linked to the selected category
   const profilesForCategory = useMemo(() => {
-    if (!selectedCategoryId) return [];
-    return allProfiles.filter((profile) =>
-      linkedCategories.some((cat) => cat.node_id === selectedCategoryId),
+    if (!selectedCategoryId || allCategoryStrategies.length === 0) return [];
+
+    const profileIds = new Set(
+      allCategoryStrategies
+        .map((s) => s.customer_profile_node_id)
+        .filter((id): id is string => !!id),
     );
-  }, [allProfiles, selectedCategoryId, linkedCategories]);
+
+    return allProfiles.filter((profile) => profileIds.has(profile.node_id));
+  }, [allProfiles, selectedCategoryId, allCategoryStrategies]);
 
   // React Flow setup
   const nodeTypes = {
