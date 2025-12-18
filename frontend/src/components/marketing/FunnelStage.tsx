@@ -20,6 +20,12 @@ export const FunnelStage = ({
   const nextWidth = stageWidth - 40;
   const xOffset = (baseWidth - stageWidth) / 2;
 
+  const isHighlighted =
+    color === "fill-brand-dark-blue" || color === "fill-brand-medium-blue";
+  const textColorClass = isHighlighted
+    ? "fill-white font-semibold"
+    : "fill-dashboard-gray-800 font-medium";
+
   return (
     <g>
       <path
@@ -39,7 +45,7 @@ export const FunnelStage = ({
         y={yPosition + height / 2}
         textAnchor="middle"
         dominantBaseline="middle"
-        className="text-xs font-medium fill-dashboard-gray-800"
+        className={cn("text-xs transition-colors duration-300", textColorClass)}
       >
         {label}
       </text>
