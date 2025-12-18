@@ -3133,7 +3133,7 @@ class GraphSyncService:
         RETURN cp.node_id as node_id,
                $account_id as account_id,
                cp.display_name as display_name,
-               cp.narrative as narrative,
+               cp.description as description,
                cp.references as references,
                cp.created_time as created_time,
                cp.last_modified as last_modified,
@@ -3154,13 +3154,9 @@ class GraphSyncService:
         for record in results:
             profile_dict = dict(record)
             if profile_dict.get("created_time"):
-                profile_dict["created_time"] = self._convert_datetime_to_iso(
-                    profile_dict["created_time"]
-                )
+                profile_dict["created_time"] = profile_dict["created_time"].isoformat()
             if profile_dict.get("last_modified"):
-                profile_dict["last_modified"] = self._convert_datetime_to_iso(
-                    profile_dict["last_modified"]
-                )
+                profile_dict["last_modified"] = profile_dict["last_modified"].isoformat()
             if not profile_dict.get("account_id"):
                 profile_dict["account_id"] = account_id
             profiles.append(profile_dict)
