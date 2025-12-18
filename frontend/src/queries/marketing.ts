@@ -69,7 +69,7 @@ export const useIndividualStrategies = (
       profileId,
     ],
     queryFn: async () => {
-      if (!accountId || !categoryId || !profileId) return [];
+      if (!accountId || !categoryId) return [];
 
       const strategyTypes: StrategyType[] = [
         "problem-awareness",
@@ -90,10 +90,10 @@ export const useIndividualStrategies = (
       return allStrategies.filter(
         (strategy) =>
           strategy.product_category_node_id === categoryId &&
-          strategy.customer_profile_node_id === profileId,
+          (!profileId || strategy.customer_profile_node_id === profileId),
       );
     },
-    enabled: !!accountId && !!categoryId && !!profileId,
+    enabled: !!accountId && !!categoryId,
   });
 };
 
