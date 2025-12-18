@@ -21,6 +21,7 @@ interface CustomerProfileNodeProps {
   data: {
     label: string;
     isSelected: boolean;
+    hasStrategies?: boolean;
   };
 }
 
@@ -80,8 +81,8 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
         style={{ right: "30px", left: "auto" }}
       />
 
-      {/* Bottom Handle for outgoing connections (when selected) */}
-      {data.isSelected && (
+      {/* Bottom Handle for outgoing connections (show if has strategies) */}
+      {data.hasStrategies && (
         <Handle
           type="source"
           position={Position.Bottom}

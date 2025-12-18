@@ -355,6 +355,18 @@ export default function KnowledgeStrategy() {
     const startX = DIAGRAM_LAYOUT.PARENT_NODE_X - totalWidth / 2;
 
     profiles.forEach((profile, index) => {
+      // Level 3: Strategy Bundle for this profile (if strategies exist)
+      const profileStrategies = individualStrategies.filter(
+        (s) => s.customer_profile_node_id === profile.node_id,
+      );
+
+      console.log(
+        `Profile: ${profile.display_name}, Strategies:`,
+        profileStrategies,
+      );
+
+      const hasStrategies = profileStrategies.length > 0;
+
       nodes.push({
         id: profile.node_id,
         type: "customerProfileNode",
@@ -367,15 +379,12 @@ export default function KnowledgeStrategy() {
           isSelected:
             selectedNode?.type === "profile" &&
             selectedNode.data.node_id === profile.node_id,
+          hasStrategies, // NEW: pass this to show bottom handle
         },
       });
 
-      // Level 3: Strategy Bundle for this profile (if strategies exist)
-      const profileStrategies = individualStrategies.filter(
-        (s) => s.customer_profile_node_id === profile.node_id,
-      );
-
-      if (profileStrategies.length > 0) {
+      if (hasStrategies) {
+        console.log(`Creating bundle for ${profile.display_name}`);
         nodes.push({
           id: `bundle_${selectedCategoryId}_${profile.node_id}`,
           type: "strategyBundleNode",
