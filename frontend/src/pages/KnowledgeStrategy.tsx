@@ -508,6 +508,30 @@ export default function KnowledgeStrategy() {
     } else if (node.type === "strategyBundleNode") {
       if (!selectedCategoryId || !selectedProfileId) return;
 
+      // Initialize edited strategies from current data
+      const initialStrategies: Record<StrategyType, string> = {
+        "problem-awareness": "",
+        "brand-awareness": "",
+        consideration: "",
+        conversion: "",
+        loyalty: "",
+      };
+
+      individualStrategies.forEach((strategy) => {
+        if (strategy.node_id.startsWith("problemaware_")) {
+          initialStrategies["problem-awareness"] = strategy.description;
+        } else if (strategy.node_id.startsWith("brandaware_")) {
+          initialStrategies["brand-awareness"] = strategy.description;
+        } else if (strategy.node_id.startsWith("consideration_")) {
+          initialStrategies.consideration = strategy.description;
+        } else if (strategy.node_id.startsWith("conversion_")) {
+          initialStrategies.conversion = strategy.description;
+        } else if (strategy.node_id.startsWith("loyalty_")) {
+          initialStrategies.loyalty = strategy.description;
+        }
+      });
+
+      setEditedStrategies(initialStrategies);
       setSelectedNode({
         type: "strategyBundle",
         data: {
@@ -524,6 +548,52 @@ export default function KnowledgeStrategy() {
       setSelectedNode({ type: "strategy", data: strategy });
       setEditedDescription(strategy.description);
       setIsSideSheetOpen(true);
+    }
+  };
+
+  const handleSaveStrategyBundle = async () => {
+    if (
+      !selectedOrgAccount?.accountId ||
+      selectedNode?.type !== "strategyBundle"
+    )
+      return;
+
+    try {
+      startOperation("Updating strategies...");
+
+      // Save all strategies that have been modified
+      const savePromises = selectedNode.data.strategies.map(
+        async (strategy) => {
+          const strategyType = getStrategyTypeForNode(strategy);
+          if (!strategyType) return;
+
+          const newDescription = editedStrategies[strategyType];
+          // Only update if description has changed
+          if (newDescription !== strategy.description) {
+            return updateIndividualMutation.mutateAsync({
+              accountId: selectedOrgAccount.accountId,
+              nodeId: strategy.node_id,
+              updates: { description: newDescription },
+            });
+          }
+        },
+      );
+
+      await Promise.all(savePromises);
+
+      setIsEditing(false);
+      toast({
+        title: "Success",
+        description: "Strategies updated successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update strategies",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
     }
   };
 
@@ -701,7 +771,9 @@ export default function KnowledgeStrategy() {
               ? selectedNode.data.product_name
               : selectedNode?.type === "profile"
                 ? selectedNode.data.display_name
-                : "Strategy Details"
+                : selectedNode?.type === "strategyBundle"
+                  ? "Marketing Strategies"
+                  : "Strategy Details"
           }
           icon={
             selectedNode?.type === "category"
@@ -710,7 +782,11 @@ export default function KnowledgeStrategy() {
                 ? Users
                 : Filter
           }
-          isEditing={isEditing && selectedNode?.type === "strategy"}
+          isEditing={
+            isEditing &&
+            (selectedNode?.type === "strategy" ||
+              selectedNode?.type === "strategyBundle")
+          }
           onEdit={
             selectedNode?.type === "category"
               ? () =>
@@ -733,7 +809,9 @@ export default function KnowledgeStrategy() {
           onSave={
             selectedNode?.type === "strategy"
               ? handleSaveIndividualStrategy
-              : undefined
+              : selectedNode?.type === "strategyBundle"
+                ? handleSaveStrategyBundle
+                : undefined
           }
           onCancel={
             selectedNode?.type === "strategy"
@@ -741,7 +819,32 @@ export default function KnowledgeStrategy() {
                   setIsEditing(false);
                   setEditedDescription(selectedNode.data.description);
                 }
-              : undefined
+              : selectedNode?.type === "strategyBundle"
+                ? () => {
+                    setIsEditing(false);
+                    // Reset to original descriptions
+                    const resetStrategies: Record<StrategyType, string> = {
+                      "problem-awareness": "",
+                      "brand-awareness": "",
+                      consideration: "",
+                      conversion: "",
+                      loyalty: "",
+                    };
+                    selectedNode.data.strategies.forEach((s) => {
+                      if (s.node_id.startsWith("problemaware_"))
+                        resetStrategies["problem-awareness"] = s.description;
+                      else if (s.node_id.startsWith("brandaware_"))
+                        resetStrategies["brand-awareness"] = s.description;
+                      else if (s.node_id.startsWith("consideration_"))
+                        resetStrategies.consideration = s.description;
+                      else if (s.node_id.startsWith("conversion_"))
+                        resetStrategies.conversion = s.description;
+                      else if (s.node_id.startsWith("loyalty_"))
+                        resetStrategies.loyalty = s.description;
+                    });
+                    setEditedStrategies(resetStrategies);
+                  }
+                : undefined
           }
           onDelete={
             selectedNode?.type === "strategy"
@@ -812,6 +915,20 @@ export default function KnowledgeStrategy() {
                 </p>
               </div>
             </div>
+          ) : selectedNode?.type === "strategyBundle" ? (
+            <MiniMarketingFunnel
+              strategies={selectedNode.data.strategies}
+              selectedMode={selectedStrategyMode}
+              onModeChange={setSelectedStrategyMode}
+              onDescriptionChange={(mode, value) => {
+                setEditedStrategies((prev) => ({
+                  ...prev,
+                  [mode]: value,
+                }));
+              }}
+              descriptions={editedStrategies}
+              isEditing={isEditing}
+            />
           ) : selectedNode?.type === "strategy" ? (
             isEditing ? (
               <div className="space-y-4">
