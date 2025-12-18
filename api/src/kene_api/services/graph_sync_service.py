@@ -3153,9 +3153,14 @@ class GraphSyncService:
         profiles = []
         for record in results:
             profile_dict = dict(record)
-            if profile_dict.get("created_time"):
+            # Convert DateTime objects to ISO strings if needed
+            if profile_dict.get("created_time") and hasattr(
+                profile_dict["created_time"], "isoformat"
+            ):
                 profile_dict["created_time"] = profile_dict["created_time"].isoformat()
-            if profile_dict.get("last_modified"):
+            if profile_dict.get("last_modified") and hasattr(
+                profile_dict["last_modified"], "isoformat"
+            ):
                 profile_dict["last_modified"] = profile_dict["last_modified"].isoformat()
             if not profile_dict.get("account_id"):
                 profile_dict["account_id"] = account_id
