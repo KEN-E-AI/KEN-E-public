@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import { useToast } from "@/hooks/use-toast";
@@ -483,46 +484,51 @@ export default function KnowledgeStrategy() {
           isSaving={updateRollupMutation.isPending}
         />
 
-        {/* Product Categories Slider */}
-        <KnowledgeGraphCard
-          title="Product Categories"
-          icon={Blocks}
-          tooltip="Select a product category to view marketing strategies for customer profiles within that category."
-        >
-          <HorizontalScrollList
-            items={categories}
-            selectedId={selectedCategoryId}
-            onItemClick={handleCategoryClick}
-            isLoading={isLoadingCategories}
-            emptyMessage="No product categories found."
-            hasEditAccess={false}
-            renderItem={(category, isSelected) => (
-              <HorizontalScrollItem
-                label={category.product_name}
-                sublabel="Product Category"
-                icon={Blocks}
-                bgColor="bg-brand-light-blue bg-opacity-30"
-                iconBgColor="bg-brand-light-blue"
-                isSelected={isSelected}
-                onClick={() => {}}
+        {/* Product Categories and Targeted Strategies - Grouped */}
+        <Card>
+          <CardContent className="p-6 space-y-6">
+            {/* Product Categories Slider */}
+            <KnowledgeGraphCard
+              title="Product Categories"
+              icon={Blocks}
+              tooltip="Select a product category to view marketing strategies for customer profiles within that category."
+            >
+              <HorizontalScrollList
+                items={categories}
+                selectedId={selectedCategoryId}
+                onItemClick={handleCategoryClick}
+                isLoading={isLoadingCategories}
+                emptyMessage="No product categories found."
+                hasEditAccess={false}
+                renderItem={(category, isSelected) => (
+                  <HorizontalScrollItem
+                    label={category.product_name}
+                    sublabel="Product Category"
+                    icon={Blocks}
+                    bgColor="bg-brand-light-blue bg-opacity-30"
+                    iconBgColor="bg-brand-light-blue"
+                    isSelected={isSelected}
+                    onClick={() => {}}
+                  />
+                )}
               />
-            )}
-          />
-        </KnowledgeGraphCard>
+            </KnowledgeGraphCard>
 
-        {/* React Flow Diagram */}
-        <GraphVisualizationCard
-          title="Targeted Marketing Strategies"
-          icon={Filter}
-          tooltip="View and edit individual marketing strategies for each customer profile within the selected product category."
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodeClick={handleNodeClick}
-          isLoading={isLoadingStrategies}
-          showEmpty={!selectedCategoryId}
-          emptyMessage="Select a product category to view strategies."
-        />
+            {/* React Flow Diagram */}
+            <GraphVisualizationCard
+              title="Targeted Marketing Strategies"
+              icon={Filter}
+              tooltip="View and edit individual marketing strategies for each customer profile within the selected product category."
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              onNodeClick={handleNodeClick}
+              isLoading={isLoadingStrategies}
+              showEmpty={!selectedCategoryId}
+              emptyMessage="Select a product category to view strategies."
+            />
+          </CardContent>
+        </Card>
 
         {/* Side Sheet */}
         <KnowledgeGraphSideSheet
