@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountOperations } from "@/contexts/AccountOperationsContext";
 import { useToast } from "@/hooks/use-toast";
@@ -486,7 +493,27 @@ export default function KnowledgeStrategy() {
 
         {/* Product Categories and Targeted Strategies - Grouped */}
         <Card>
-          <CardContent className="p-6 space-y-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Targeted Marketing Strategies
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-4 w-4 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      Select a product category to view targeted customer
+                      profiles and their individual marketing strategies across
+                      the funnel stages.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
             {/* Product Categories Slider */}
             <KnowledgeGraphCard
               title="Product Categories"
@@ -516,9 +543,9 @@ export default function KnowledgeStrategy() {
 
             {/* React Flow Diagram */}
             <GraphVisualizationCard
-              title="Targeted Marketing Strategies"
-              icon={Filter}
-              tooltip="View and edit individual marketing strategies for each customer profile within the selected product category."
+              title="Targeted Customer Profiles"
+              icon={Users}
+              tooltip="Customer profiles who are targeted with messaging about the selected product category. Click a profile to view and edit their individual marketing strategies."
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
