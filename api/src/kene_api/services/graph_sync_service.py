@@ -3112,6 +3112,61 @@ class GraphSyncService:
 
         return categories
 
+    async def list_linked_customer_profiles(
+        self,
+        account_id: str,
+        product_category_id: str,
+    ) -> list[dict]:
+        """List all customer profiles linked to a product category via IS_MARKETED_TO.
+
+        Args:
+            account_id: Account identifier
+            product_category_id: ProductCategory node_id
+
+        Returns:
+            List of CustomerProfile nodes
+        """
+        query = """
+        MATCH (pc:ProductCategory {node_id: $product_category_id})-[:IS_MARKETED_TO]->(cp:CustomerProfile)
+        WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        RETURN cp.node_id as node_id,
+               $account_id as account_id,
+               cp.display_name as display_name,
+               cp.narrative as narrative,
+               cp.references as references,
+               cp.created_time as created_time,
+               cp.last_modified as last_modified,
+               cp.created_by as created_by,
+               cp.last_modified_by as last_modified_by
+        ORDER BY cp.display_name
+        """
+
+        results = await self.neo4j.execute_query(
+            query,
+            {
+                "product_category_id": product_category_id,
+                "account_id": account_id,
+            },
+        )
+
+        profiles = []
+        for record in results:
+            profile_dict = dict(record)
+            if profile_dict.get("created_time"):
+                profile_dict["created_time"] = self._convert_datetime_to_iso(
+                    profile_dict["created_time"]
+                )
+            if profile_dict.get("last_modified"):
+                profile_dict["last_modified"] = self._convert_datetime_to_iso(
+                    profile_dict["last_modified"]
+                )
+            if not profile_dict.get("account_id"):
+                profile_dict["account_id"] = account_id
+            profiles.append(profile_dict)
+
+        return profiles
+
     async def create_problem_awareness_strategy(
         self,
         account_id: str,
