@@ -18,40 +18,59 @@ interface CustomerProfileNodeProps {
 
 export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
   return (
-    <div
-      className={cn(
-        "px-4 py-3 rounded-lg border-2 bg-white shadow-sm transition-all",
-        "min-w-[160px] max-w-[200px]",
-        data.isSelected
-          ? "border-brand-dark-blue ring-2 ring-brand-dark-blue ring-offset-2"
-          : "border-dashboard-gray-300 hover:border-brand-medium-blue",
-      )}
-    >
+    <div className="relative">
+      {/* Badge matching horizontal scroll design */}
+      <div className="flex items-center">
+        {/* Text Box - Left */}
+        <div
+          className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
+          style={{ width: "200px" }}
+        >
+          <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            Customer Profile
+          </p>
+          <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+            {data.label}
+          </p>
+        </div>
+
+        {/* Circle with Icon - Right */}
+        <div className="flex-shrink-0 -ml-12 relative z-10">
+          <div
+            className="rounded-full bg-brand-medium-blue flex items-center justify-center"
+            style={{
+              width: "72px",
+              height: "72px",
+              boxShadow: data.isSelected
+                ? "0 0 0 3px rgba(70, 143, 208, 0.4)"
+                : "none",
+            }}
+          >
+            <Users
+              className="text-white"
+              style={{ width: "48px", height: "48px" }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Top Handle for incoming connections - positioned at circle top center */}
       <Handle
         type="target"
         position={Position.Top}
         id="top"
-        className="!bg-brand-medium-blue"
+        className="opacity-0"
+        style={{ right: "30px", left: "auto" }}
       />
 
-      <div className="flex items-center gap-2">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-brand-light-blue flex items-center justify-center">
-          <Users className="h-4 w-4 text-brand-dark-blue" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-dashboard-gray-900 truncate">
-            {data.label}
-          </p>
-          <p className="text-xs text-dashboard-gray-500">Customer Profile</p>
-        </div>
-      </div>
-
+      {/* Bottom Handle for outgoing connections (when selected) */}
       {data.isSelected && (
         <Handle
           type="source"
           position={Position.Bottom}
           id="bottom"
-          className="!bg-brand-medium-blue"
+          className="opacity-0"
+          style={{ right: "30px", left: "auto" }}
         />
       )}
     </div>

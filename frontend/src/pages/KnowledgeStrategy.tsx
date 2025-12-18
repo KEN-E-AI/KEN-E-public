@@ -130,11 +130,10 @@ export default function KnowledgeStrategy() {
   const linkedCategories = linkedCategoriesData?.categories || [];
 
   // Fetch customer profiles linked to the selected category via IS_MARKETED_TO
-  const { data: linkedProfilesData } =
-    useLinkedCustomerProfilesForCategory(
-      selectedOrgAccount?.accountId || null,
-      selectedCategoryId,
-    );
+  const { data: linkedProfilesData } = useLinkedCustomerProfilesForCategory(
+    selectedOrgAccount?.accountId || null,
+    selectedCategoryId,
+  );
   const profilesForCategory = linkedProfilesData?.customer_profiles || [];
 
   // Fetch strategies for selected category AND profile (for third row)
@@ -197,7 +196,8 @@ export default function KnowledgeStrategy() {
       data: {
         label: selectedCategory.product_name,
         isSelected:
-          selectedCategoryId === selectedCategory.node_id && !selectedProfileId,
+          selectedNode?.type === "category" &&
+          selectedNode.data.node_id === selectedCategory.node_id,
       },
     });
 
@@ -218,7 +218,9 @@ export default function KnowledgeStrategy() {
         },
         data: {
           label: profile.display_name,
-          isSelected: selectedProfileId === profile.node_id,
+          isSelected:
+            selectedNode?.type === "profile" &&
+            selectedNode.data.node_id === profile.node_id,
         },
       });
     });
@@ -366,7 +368,7 @@ export default function KnowledgeStrategy() {
       setSelectedNode({ type: "category", data: category });
       setIsSideSheetOpen(true);
     } else if (node.type === "customerProfileNode") {
-      const profile = allProfiles.find((p) => p.node_id === node.id);
+      const profile = profilesForCategory.find((p) => p.node_id === node.id);
       if (!profile) return;
 
       setSelectedProfileId(node.id);
@@ -450,7 +452,7 @@ export default function KnowledgeStrategy() {
 
   const getProfileName = (profileId: string | undefined): string => {
     if (!profileId) return "Unknown Profile";
-    const profile = allProfiles.find((p) => p.node_id === profileId);
+    const profile = profilesForCategory.find((p) => p.node_id === profileId);
     return profile?.display_name || "Unknown Profile";
   };
 
@@ -613,9 +615,9 @@ export default function KnowledgeStrategy() {
                 <p>{selectedNode.data.display_name}</p>
               </div>
               <div>
-                <p className="font-semibold">Narrative:</p>
+                <p className="font-semibold">Description:</p>
                 <p className="text-sm text-dashboard-gray-600">
-                  {selectedNode.data.narrative || "No narrative provided."}
+                  {selectedNode.data.description || "No description provided."}
                 </p>
               </div>
               {linkedCategories.length > 0 && (
