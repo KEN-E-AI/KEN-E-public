@@ -145,6 +145,10 @@ export const useLinkProductCategoryToProfile = () => {
           variables.productCategoryId,
         ],
       });
+      // Invalidate individual strategies query (for strategy bundle nodes)
+      queryClient.invalidateQueries({
+        queryKey: ["marketing", "individual-strategies", variables.accountId],
+      });
     },
   });
 };
@@ -179,6 +183,10 @@ export const useUnlinkProductCategoryFromProfile = () => {
           variables.accountId,
           variables.productCategoryId,
         ],
+      });
+      // Invalidate individual strategies query (removes strategy bundle nodes)
+      queryClient.invalidateQueries({
+        queryKey: ["marketing", "individual-strategies", variables.accountId],
       });
     },
   });
