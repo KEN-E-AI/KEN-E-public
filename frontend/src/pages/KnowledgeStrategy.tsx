@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
-import { ArrowLeft, Blocks, Package, Users } from "lucide-react";
+import { ArrowLeft, Blocks, Filter, Users } from "lucide-react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -511,8 +511,8 @@ export default function KnowledgeStrategy() {
 
         {/* React Flow Diagram */}
         <GraphVisualizationCard
-          title="Strategies by Customer Profile"
-          icon={Users}
+          title="Targeted Marketing Strategies"
+          icon={Filter}
           tooltip="View and edit individual marketing strategies for each customer profile within the selected product category."
           nodes={nodes}
           edges={edges}
