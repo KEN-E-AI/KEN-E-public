@@ -1,4 +1,5 @@
 import { Handle, Position } from "reactflow";
+import type { NodeProps } from "reactflow";
 import {
   AlertCircle,
   Eye,
@@ -6,6 +7,7 @@ import {
   ShoppingCart,
   Heart,
   Users,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -88,6 +90,68 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
           style={{ right: "30px", left: "auto" }}
         />
       )}
+    </div>
+  );
+};
+
+interface StrategyBundleNodeData {
+  label: string;
+  isSelected: boolean;
+}
+
+export const StrategyBundleNode = ({
+  data,
+}: NodeProps<StrategyBundleNodeData>) => {
+  return (
+    <div className="relative">
+      <div className="flex items-center">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className="bg-brand-dark-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
+                style={{ width: "200px" }}
+              >
+                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                  Marketing Strategies
+                </p>
+                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                  {data.label}
+                </p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{data.label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <div className="flex-shrink-0 -ml-12 relative z-10">
+          <div
+            className="rounded-full bg-brand-dark-blue flex items-center justify-center"
+            style={{
+              width: "72px",
+              height: "72px",
+              boxShadow: data.isSelected
+                ? "0 0 0 3px rgba(27, 66, 111, 0.4)"
+                : "none",
+            }}
+          >
+            <Filter
+              className="text-white"
+              style={{ width: "48px", height: "48px" }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        className="opacity-0"
+        style={{ right: "30px", left: "auto" }}
+      />
     </div>
   );
 };

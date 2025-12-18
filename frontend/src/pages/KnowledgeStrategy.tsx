@@ -35,9 +35,11 @@ import {
   useUnlinkProductCategoryFromProfile,
 } from "@/queries/customerProfiles";
 import { MarketingFunnelVisualization } from "@/components/marketing/MarketingFunnelVisualization";
+import { MiniMarketingFunnel } from "@/components/marketing/MiniMarketingFunnel";
 import {
   CustomerProfileNode,
   IndividualStrategyNode,
+  StrategyBundleNode,
 } from "@/components/marketing/StrategyFlowNodes";
 import { CategoryNode } from "@/components/products/ProductFlowNodes";
 import {
@@ -77,7 +79,15 @@ import {
 type SelectedNode =
   | { type: "category"; data: ProductCategory }
   | { type: "profile"; data: CustomerProfile }
-  | { type: "strategy"; data: MarketingStrategy };
+  | { type: "strategy"; data: MarketingStrategy }
+  | {
+      type: "strategyBundle";
+      data: {
+        categoryId: string;
+        profileId: string;
+        strategies: MarketingStrategy[];
+      };
+    };
 
 const NODE_TYPE_PREFIX_MAP: Record<string, string> = {
   problemaware_: "ProblemAwarenessStrategy",
@@ -137,6 +147,15 @@ export default function KnowledgeStrategy() {
     useState<CustomerProfile | null>(null);
   const [isUnlinkProfileDialogOpen, setIsUnlinkProfileDialogOpen] =
     useState(false);
+  const [editedStrategies, setEditedStrategies] = useState<
+    Record<StrategyType, string>
+  >({
+    "problem-awareness": "",
+    "brand-awareness": "",
+    consideration: "",
+    conversion: "",
+    loyalty: "",
+  });
 
   // Data fetching
   const { data: rollupStrategiesData, isLoading: isLoadingRollup } =
@@ -298,6 +317,7 @@ export default function KnowledgeStrategy() {
     categoryNode: CategoryNode,
     customerProfileNode: CustomerProfileNode,
     individualStrategyNode: IndividualStrategyNode,
+    strategyBundleNode: StrategyBundleNode,
   };
 
   const generateNodes = (): Node[] => {
@@ -351,32 +371,19 @@ export default function KnowledgeStrategy() {
       });
     });
 
-    // Level 3: Individual Strategies
+    // Level 3: Strategy Bundle (single node representing all 5 strategies)
     if (selectedProfileId && individualStrategies.length > 0) {
-      const strategyWidth = DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH;
-      const strategyTotalWidth =
-        individualStrategies.length * strategyWidth -
-        DIAGRAM_LAYOUT.HORIZONTAL_GAP;
-      const strategyStartX =
-        DIAGRAM_LAYOUT.PARENT_NODE_X - strategyTotalWidth / 2;
-      const strategyY =
-        DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING * 2;
-
-      individualStrategies.forEach((strategy, index) => {
-        nodes.push({
-          id: strategy.node_id,
-          type: "individualStrategyNode",
-          position: {
-            x: strategyStartX + index * strategyWidth,
-            y: strategyY,
-          },
-          data: {
-            strategyType: getNodeTypeFromId(strategy.node_id),
-            isSelected:
-              selectedNode?.type === "strategy" &&
-              selectedNode.data.node_id === strategy.node_id,
-          },
-        });
+      nodes.push({
+        id: `bundle_${selectedCategoryId}_${selectedProfileId}`,
+        type: "strategyBundleNode",
+        position: {
+          x: DIAGRAM_LAYOUT.PARENT_NODE_X,
+          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING * 2,
+        },
+        data: {
+          label: "5 Funnel Stages",
+          isSelected: selectedNode?.type === "strategyBundle",
+        },
       });
     }
 
@@ -413,18 +420,16 @@ export default function KnowledgeStrategy() {
       });
     });
 
-    // Profile → Strategies
-    if (selectedProfileId) {
-      individualStrategies.forEach((strategy) => {
-        edges.push({
-          id: `${selectedProfileId}-${strategy.node_id}`,
-          source: selectedProfileId,
-          target: strategy.node_id,
-          type: "smoothstep",
-          style: DEFAULT_EDGE_STYLE,
-          sourceHandle: "bottom",
-          targetHandle: "top",
-        });
+    // Profile → Strategy Bundle
+    if (selectedProfileId && individualStrategies.length > 0) {
+      edges.push({
+        id: `${selectedProfileId}-bundle`,
+        source: selectedProfileId,
+        target: `bundle_${selectedCategoryId}_${selectedProfileId}`,
+        type: "smoothstep",
+        style: DEFAULT_EDGE_STYLE,
+        sourceHandle: "bottom",
+        targetHandle: "top",
       });
     }
 
@@ -499,6 +504,18 @@ export default function KnowledgeStrategy() {
 
       setSelectedProfileId(node.id);
       setSelectedNode({ type: "profile", data: profile });
+      setIsSideSheetOpen(true);
+    } else if (node.type === "strategyBundleNode") {
+      if (!selectedCategoryId || !selectedProfileId) return;
+
+      setSelectedNode({
+        type: "strategyBundle",
+        data: {
+          categoryId: selectedCategoryId,
+          profileId: selectedProfileId,
+          strategies: individualStrategies,
+        },
+      });
       setIsSideSheetOpen(true);
     } else if (node.type === "individualStrategyNode") {
       const strategy = individualStrategies.find((s) => s.node_id === node.id);

@@ -2969,6 +2969,62 @@ class GraphSyncService:
                 "relationship",
             )
 
+        # Auto-create all 5 marketing strategy nodes with placeholder descriptions
+        strategy_configs = [
+            (
+                "ProblemAwarenessStrategy",
+                "problemaware_",
+                "DISCOVERS_THE_PROBLEM_BY",
+                "HAS_PROBLEM_AWARENESS_STRATEGY",
+            ),
+            (
+                "BrandAwarenessStrategy",
+                "brandaware_",
+                "DISCOVERS_OUR_BRAND_BY",
+                "HAS_BRAND_AWARENESS_STRATEGY",
+            ),
+            (
+                "ConsiderationStrategy",
+                "consideration_",
+                "CONSIDERS_OUR_BRAND_BECAUSE",
+                "HAS_CONSIDERATION_STRATEGY",
+            ),
+            (
+                "ConversionStrategy",
+                "conversion_",
+                "PURCHASES_OUR_BRAND_BECAUSE",
+                "HAS_CONVERSION_STRATEGY",
+            ),
+            (
+                "LoyaltyStrategy",
+                "loyalty_",
+                "BECOMES_AN_ADVOCATE_BECAUSE",
+                "HAS_LOYALTY_STRATEGY",
+            ),
+        ]
+
+        for node_type, prefix, profile_rel, category_rel in strategy_configs:
+            node_id = f"{prefix}{product_category_id}_{customer_profile_id}"
+
+            node_data = {
+                "description": "No description provided yet. Click edit to add your strategy.",
+                "references": [],
+                "customer_profile_node_id": customer_profile_id,
+                "product_category_node_id": product_category_id,
+            }
+
+            await self._create_marketing_strategy_node(
+                node_id=node_id,
+                node_type=node_type,
+                node_data=node_data,
+                account_id=account_id,
+                customer_profile_id=customer_profile_id,
+                product_category_id=product_category_id,
+                user_id=user_id,
+                profile_relationship=profile_rel,
+                category_relationship=category_rel,
+            )
+
     async def unlink_product_category_from_customer_profile(
         self,
         account_id: str,
