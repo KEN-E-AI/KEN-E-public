@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
-import { ArrowLeft, Blocks, Filter, Users } from "lucide-react";
+import { ArrowLeft, Blocks, Filter, Users, Loader2 } from "lucide-react";
 import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,7 @@ import {
 import {
   useCustomerProfiles,
   useLinkedProductCategories,
+  useLinkProductCategoryToProfile,
 } from "@/queries/customerProfiles";
 import { MarketingFunnelVisualization } from "@/components/marketing/MarketingFunnelVisualization";
 import {
@@ -63,6 +64,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type SelectedNode =
   | { type: "category"; data: ProductCategory }
@@ -122,6 +131,9 @@ export default function KnowledgeStrategy() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState("");
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isLinkProfileDialogOpen, setIsLinkProfileDialogOpen] = useState(false);
+  const [selectedProfileToLink, setSelectedProfileToLink] =
+    useState<CustomerProfile | null>(null);
 
   // Data fetching
   const { data: rollupStrategiesData, isLoading: isLoadingRollup } =
@@ -144,6 +156,12 @@ export default function KnowledgeStrategy() {
   );
   const profilesForCategory = linkedProfilesData?.customer_profiles || [];
 
+  // Fetch all customer profiles (for link dialog)
+  const { data: allProfilesData } = useCustomerProfiles(
+    selectedOrgAccount?.accountId || null,
+  );
+  const allProfiles = allProfilesData?.customer_profiles || [];
+
   // Fetch strategies for selected category AND profile (for third row)
   const { data: individualStrategies = [], isLoading: isLoadingStrategies } =
     useIndividualStrategies(
@@ -154,6 +172,7 @@ export default function KnowledgeStrategy() {
 
   // Mutations
   const updateRollupMutation = useUpdateStrategy(selectedStrategyMode);
+  const linkProfileMutation = useLinkProductCategoryToProfile();
 
   const getStrategyTypeForNode = (
     strategy: MarketingStrategy,
@@ -175,6 +194,63 @@ export default function KnowledgeStrategy() {
       ? getStrategyTypeForNode(selectedNode.data) || "problem-awareness"
       : "problem-awareness",
   );
+
+  // Handlers
+  const handleOpenLinkProfileDialog = () => {
+    if (!selectedCategoryId) return;
+
+    // Filter out already linked profiles
+    const linkedProfileIds = new Set(profilesForCategory.map((p) => p.node_id));
+    const availableProfiles = allProfiles.filter(
+      (p) => !linkedProfileIds.has(p.node_id),
+    );
+
+    if (availableProfiles.length === 0) {
+      toast({
+        title: "No Profiles Available",
+        description:
+          "All customer profiles are already linked to this category.",
+      });
+      return;
+    }
+
+    setIsLinkProfileDialogOpen(true);
+  };
+
+  const handleLinkCustomerProfile = async () => {
+    if (
+      !selectedOrgAccount?.accountId ||
+      !selectedCategoryId ||
+      !selectedProfileToLink
+    )
+      return;
+
+    try {
+      startOperation("Linking customer profile...");
+
+      await linkProfileMutation.mutateAsync({
+        accountId: selectedOrgAccount.accountId,
+        productCategoryId: selectedCategoryId,
+        customerProfileId: selectedProfileToLink.node_id,
+      });
+
+      toast({
+        title: "Success",
+        description: "Customer profile linked successfully",
+      });
+
+      setIsLinkProfileDialogOpen(false);
+      setSelectedProfileToLink(null);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to link customer profile",
+        variant: "destructive",
+      });
+    } finally {
+      endOperation();
+    }
+  };
 
   // React Flow setup
   const nodeTypes = {
@@ -206,6 +282,7 @@ export default function KnowledgeStrategy() {
         isSelected:
           selectedNode?.type === "category" &&
           selectedNode.data.node_id === selectedCategory.node_id,
+        onAddProduct: handleOpenLinkProfileDialog,
       },
     });
 
@@ -710,6 +787,89 @@ export default function KnowledgeStrategy() {
             )
           ) : null}
         </KnowledgeGraphSideSheet>
+
+        {/* Link Customer Profile Dialog */}
+        <Dialog
+          open={isLinkProfileDialogOpen}
+          onOpenChange={setIsLinkProfileDialogOpen}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Link Customer Profile</DialogTitle>
+              <DialogDescription>
+                Select which customer profile should be targeted with messaging
+                about this product category.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {allProfiles.filter(
+                (p) =>
+                  !profilesForCategory.some((lp) => lp.node_id === p.node_id),
+              ).length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  No available customer profiles to link. All profiles are
+                  already linked.
+                </p>
+              ) : (
+                <>
+                  <Label>Select Customer Profile</Label>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={selectedProfileToLink?.node_id || ""}
+                    onChange={(e) => {
+                      const profile = allProfiles.find(
+                        (p) => p.node_id === e.target.value,
+                      );
+                      setSelectedProfileToLink(profile || null);
+                    }}
+                  >
+                    <option value="">-- Select Customer Profile --</option>
+                    {allProfiles
+                      .filter(
+                        (p) =>
+                          !profilesForCategory.some(
+                            (lp) => lp.node_id === p.node_id,
+                          ),
+                      )
+                      .map((profile) => (
+                        <option key={profile.node_id} value={profile.node_id}>
+                          {profile.display_name}
+                        </option>
+                      ))}
+                  </select>
+                </>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsLinkProfileDialogOpen(false);
+                  setSelectedProfileToLink(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleLinkCustomerProfile}
+                disabled={
+                  !selectedProfileToLink || linkProfileMutation.isPending
+                }
+              >
+                {linkProfileMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Linking...
+                  </>
+                ) : (
+                  "Link Customer Profile"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog
