@@ -4401,7 +4401,7 @@ class GraphSyncService:
         RETURN hub, collect({type: type(r), node_id: rollup.node_id}) as linked_strategies
         """
 
-        result = await self.neo4j.execute_read_query(query, {"account_id": account_id})
+        result = await self.neo4j.execute_query(query, {"account_id": account_id})
 
         if not result:
             return None
@@ -4571,7 +4571,7 @@ class GraphSyncService:
         OPTIONAL MATCH (strategy)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
         WITH strategy, count(individual) as individual_count
         ORDER BY strategy.created_time DESC
-        WITH collect({{strategy: strategy, individual_count: individual_count}}) as all_strategies
+        WITH collect({strategy: strategy, individual_count: individual_count}) as all_strategies
         RETURN
             CASE
                 WHEN $limit IS NULL THEN all_strategies[$skip..]
@@ -4580,7 +4580,7 @@ class GraphSyncService:
             size(all_strategies) as total
         """
 
-        result = await self.neo4j.execute_read_query(
+        result = await self.neo4j.execute_query(
             query,
             {
                 "account_id": account_id,
@@ -4641,7 +4641,7 @@ class GraphSyncService:
         RETURN rollup, collect(individual.node_id) as individual_ids
         """
 
-        result = await self.neo4j.execute_read_query(
+        result = await self.neo4j.execute_query(
             query,
             {
                 "node_id": node_id,
