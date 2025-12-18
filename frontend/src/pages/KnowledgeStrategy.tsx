@@ -184,12 +184,12 @@ export default function KnowledgeStrategy() {
   );
   const allProfiles = allProfilesData?.customer_profiles || [];
 
-  // Fetch strategies for selected category AND profile (for third row)
+  // Fetch strategies for selected category (all profiles, for bundle nodes)
   const { data: individualStrategies = [], isLoading: isLoadingStrategies } =
     useIndividualStrategies(
       selectedOrgAccount?.accountId || null,
       selectedCategoryId,
-      selectedProfileId,
+      null, // Fetch for all profiles, not just selected one
     );
 
   // Mutations
