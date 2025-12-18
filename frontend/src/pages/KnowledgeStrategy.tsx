@@ -325,6 +325,11 @@ export default function KnowledgeStrategy() {
 
     if (!selectedCategoryId) return nodes;
 
+    console.log("=== generateNodes Debug ===");
+    console.log("selectedCategoryId:", selectedCategoryId);
+    console.log("individualStrategies:", individualStrategies);
+    console.log("Total strategies fetched:", individualStrategies.length);
+
     const selectedCategory = categories.find(
       (c) => c.node_id === selectedCategoryId,
     );
