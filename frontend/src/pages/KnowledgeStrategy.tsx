@@ -361,12 +361,17 @@ export default function KnowledgeStrategy() {
 
     profiles.forEach((profile, index) => {
       // Level 3: Strategy Bundle for this profile (if strategies exist)
-      const profileStrategies = individualStrategies.filter(
-        (s) => s.customer_profile_node_id === profile.node_id,
-      );
+      // Support both property-based and node_id-based matching for backward compatibility
+      const profileStrategies = individualStrategies.filter((s) => {
+        // Try property first (new nodes)
+        if (s.customer_profile_node_id === profile.node_id) return true;
+        // Fallback to parsing node_id (old nodes without properties)
+        // Format: {prefix}_{categoryId}_{profileId}
+        return s.node_id.endsWith(`_${profile.node_id}`);
+      });
 
       console.log(
-        `Profile: ${profile.display_name}, Strategies:`,
+        `Profile: ${profile.display_name} (${profile.node_id}), Strategies:`,
         profileStrategies,
       );
 
@@ -442,9 +447,10 @@ export default function KnowledgeStrategy() {
       });
 
       // Profile → Strategy Bundle (if this profile has strategies)
-      const profileStrategies = individualStrategies.filter(
-        (s) => s.customer_profile_node_id === profile.node_id,
-      );
+      const profileStrategies = individualStrategies.filter((s) => {
+        if (s.customer_profile_node_id === profile.node_id) return true;
+        return s.node_id.endsWith(`_${profile.node_id}`);
+      });
 
       if (profileStrategies.length > 0) {
         edges.push({
@@ -537,10 +543,11 @@ export default function KnowledgeStrategy() {
       // Extract profileId from bundle node ID: bundle_{categoryId}_{profileId}
       const profileId = node.id.split("_").slice(2).join("_");
 
-      // Get strategies for this specific profile
-      const bundleStrategies = individualStrategies.filter(
-        (s) => s.customer_profile_node_id === profileId,
-      );
+      // Get strategies for this specific profile (support old nodes without properties)
+      const bundleStrategies = individualStrategies.filter((s) => {
+        if (s.customer_profile_node_id === profileId) return true;
+        return s.node_id.endsWith(`_${profileId}`);
+      });
 
       // Initialize edited strategies from current data
       const initialStrategies: Record<StrategyType, string> = {
