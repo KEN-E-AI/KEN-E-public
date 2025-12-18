@@ -539,7 +539,7 @@ export default function KnowledgeStrategy() {
               ? Blocks
               : selectedNode?.type === "profile"
                 ? Users
-                : Package
+                : Filter
           }
           isEditing={isEditing && selectedNode?.type === "strategy"}
           onEdit={
