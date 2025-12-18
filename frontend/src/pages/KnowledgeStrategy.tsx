@@ -369,23 +369,31 @@ export default function KnowledgeStrategy() {
             selectedNode.data.node_id === profile.node_id,
         },
       });
-    });
 
-    // Level 3: Strategy Bundle (single node representing all 5 strategies)
-    if (selectedProfileId && individualStrategies.length > 0) {
-      nodes.push({
-        id: `bundle_${selectedCategoryId}_${selectedProfileId}`,
-        type: "strategyBundleNode",
-        position: {
-          x: DIAGRAM_LAYOUT.PARENT_NODE_X,
-          y: DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING * 2,
-        },
-        data: {
-          label: "5 Funnel Stages",
-          isSelected: selectedNode?.type === "strategyBundle",
-        },
-      });
-    }
+      // Level 3: Strategy Bundle for this profile (if strategies exist)
+      const profileStrategies = individualStrategies.filter(
+        (s) => s.customer_profile_node_id === profile.node_id,
+      );
+
+      if (profileStrategies.length > 0) {
+        nodes.push({
+          id: `bundle_${selectedCategoryId}_${profile.node_id}`,
+          type: "strategyBundleNode",
+          position: {
+            x: startX + index * DIAGRAM_LAYOUT.NODE_TOTAL_WIDTH,
+            y:
+              DIAGRAM_LAYOUT.PARENT_NODE_Y +
+              DIAGRAM_LAYOUT.VERTICAL_SPACING * 2,
+          },
+          data: {
+            label: "5 Funnel Stages",
+            isSelected:
+              selectedNode?.type === "strategyBundle" &&
+              selectedNode.data.profileId === profile.node_id,
+          },
+        });
+      }
+    });
 
     return nodes;
   };
@@ -418,20 +426,24 @@ export default function KnowledgeStrategy() {
         sourceHandle: "bottom",
         targetHandle: "top",
       });
-    });
 
-    // Profile → Strategy Bundle
-    if (selectedProfileId && individualStrategies.length > 0) {
-      edges.push({
-        id: `${selectedProfileId}-bundle`,
-        source: selectedProfileId,
-        target: `bundle_${selectedCategoryId}_${selectedProfileId}`,
-        type: "smoothstep",
-        style: DEFAULT_EDGE_STYLE,
-        sourceHandle: "bottom",
-        targetHandle: "top",
-      });
-    }
+      // Profile → Strategy Bundle (if this profile has strategies)
+      const profileStrategies = individualStrategies.filter(
+        (s) => s.customer_profile_node_id === profile.node_id,
+      );
+
+      if (profileStrategies.length > 0) {
+        edges.push({
+          id: `${profile.node_id}-bundle`,
+          source: profile.node_id,
+          target: `bundle_${selectedCategoryId}_${profile.node_id}`,
+          type: "smoothstep",
+          style: DEFAULT_EDGE_STYLE,
+          sourceHandle: "bottom",
+          targetHandle: "top",
+        });
+      }
+    });
 
     return edges;
   };
@@ -506,7 +518,15 @@ export default function KnowledgeStrategy() {
       setSelectedNode({ type: "profile", data: profile });
       setIsSideSheetOpen(true);
     } else if (node.type === "strategyBundleNode") {
-      if (!selectedCategoryId || !selectedProfileId) return;
+      if (!selectedCategoryId) return;
+
+      // Extract profileId from bundle node ID: bundle_{categoryId}_{profileId}
+      const profileId = node.id.split("_").slice(2).join("_");
+
+      // Get strategies for this specific profile
+      const bundleStrategies = individualStrategies.filter(
+        (s) => s.customer_profile_node_id === profileId,
+      );
 
       // Initialize edited strategies from current data
       const initialStrategies: Record<StrategyType, string> = {
@@ -517,7 +537,7 @@ export default function KnowledgeStrategy() {
         loyalty: "",
       };
 
-      individualStrategies.forEach((strategy) => {
+      bundleStrategies.forEach((strategy) => {
         if (strategy.node_id.startsWith("problemaware_")) {
           initialStrategies["problem-awareness"] = strategy.description;
         } else if (strategy.node_id.startsWith("brandaware_")) {
@@ -532,12 +552,13 @@ export default function KnowledgeStrategy() {
       });
 
       setEditedStrategies(initialStrategies);
+      setSelectedProfileId(profileId);
       setSelectedNode({
         type: "strategyBundle",
         data: {
           categoryId: selectedCategoryId,
-          profileId: selectedProfileId,
-          strategies: individualStrategies,
+          profileId: profileId,
+          strategies: bundleStrategies,
         },
       });
       setIsSideSheetOpen(true);
