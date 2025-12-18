@@ -8,6 +8,12 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface CustomerProfileNodeProps {
   data: {
@@ -22,17 +28,26 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
       {/* Badge matching horizontal scroll design */}
       <div className="flex items-center">
         {/* Text Box - Left */}
-        <div
-          className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-          style={{ width: "200px" }}
-        >
-          <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-            Customer Profile
-          </p>
-          <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
-            {data.label}
-          </p>
-        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
+                style={{ width: "200px" }}
+              >
+                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                  Customer Profile
+                </p>
+                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                  {data.label}
+                </p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{data.label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {/* Circle with Icon - Right */}
         <div className="flex-shrink-0 -ml-12 relative z-10">
