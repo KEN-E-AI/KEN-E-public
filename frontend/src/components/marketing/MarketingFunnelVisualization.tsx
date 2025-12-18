@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Target, Pencil, Loader2 } from "lucide-react";
+import { Filter, Pencil, Loader2 } from "lucide-react";
 import { KnowledgeGraphCard } from "@/components/knowledge-graph";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
@@ -125,8 +125,8 @@ export const MarketingFunnelVisualization = ({
 
   return (
     <KnowledgeGraphCard
-      title="Marketing Strategies"
-      icon={Target}
+      title="Marketing Strategy Rollup"
+      icon={Filter}
       tooltip="Select a marketing strategy to view how it moves customers through the funnel. Edit the rollup strategy description to customize your overall approach."
     >
       {isLoading ? (

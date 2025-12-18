@@ -66,15 +66,20 @@ const STRATEGY_TYPE_MAP: Record<number, StrategyType> = {
   4: "loyalty",
 };
 
-const getStrategyTypeFromLabel = (label: string): StrategyType | null => {
-  const labelMap: Record<string, StrategyType> = {
-    ProblemAwarenessStrategy: "problem-awareness",
-    BrandAwarenessStrategy: "brand-awareness",
-    ConsiderationStrategy: "consideration",
-    ConversionStrategy: "conversion",
-    LoyaltyStrategy: "loyalty",
-  };
-  return labelMap[label] || null;
+const NODE_TYPE_PREFIX_MAP: Record<string, string> = {
+  problemaware_: "ProblemAwarenessStrategy",
+  brandaware_: "BrandAwarenessStrategy",
+  consideration_: "ConsiderationStrategy",
+  conversion_: "ConversionStrategy",
+  loyalty_: "LoyaltyStrategy",
+};
+
+const STRATEGY_PREFIX_TO_API_TYPE: Record<string, StrategyType> = {
+  problemaware_: "problem-awareness",
+  brandaware_: "brand-awareness",
+  consideration_: "consideration",
+  conversion_: "conversion",
+  loyalty_: "loyalty",
 };
 
 export default function KnowledgeStrategy() {
@@ -148,13 +153,10 @@ export default function KnowledgeStrategy() {
   const getStrategyTypeForNode = (
     strategy: MarketingStrategy,
   ): StrategyType | null => {
-    if (strategy.node_id.startsWith("problemaware_"))
-      return "problem-awareness";
-    if (strategy.node_id.startsWith("brandaware_")) return "brand-awareness";
-    if (strategy.node_id.startsWith("consideration_")) return "consideration";
-    if (strategy.node_id.startsWith("conversion_")) return "conversion";
-    if (strategy.node_id.startsWith("loyalty_")) return "loyalty";
-    return null;
+    const entry = Object.entries(STRATEGY_PREFIX_TO_API_TYPE).find(([prefix]) =>
+      strategy.node_id.startsWith(prefix),
+    );
+    return entry?.[1] || null;
   };
 
   const updateIndividualMutation = useUpdateStrategy(
@@ -243,10 +245,6 @@ export default function KnowledgeStrategy() {
         DIAGRAM_LAYOUT.PARENT_NODE_Y + DIAGRAM_LAYOUT.VERTICAL_SPACING * 2;
 
       individualStrategies.forEach((strategy, index) => {
-        const strategyType = getStrategyTypeFromLabel(
-          strategy.node_id.split("_")[0],
-        ) as keyof typeof import("@/components/marketing/StrategyFlowNodes");
-
         nodes.push({
           id: strategy.node_id,
           type: "individualStrategyNode",
@@ -268,12 +266,10 @@ export default function KnowledgeStrategy() {
   };
 
   const getNodeTypeFromId = (nodeId: string): string => {
-    if (nodeId.startsWith("problemaware_")) return "ProblemAwarenessStrategy";
-    if (nodeId.startsWith("brandaware_")) return "BrandAwarenessStrategy";
-    if (nodeId.startsWith("consideration_")) return "ConsiderationStrategy";
-    if (nodeId.startsWith("conversion_")) return "ConversionStrategy";
-    if (nodeId.startsWith("loyalty_")) return "LoyaltyStrategy";
-    return "ProblemAwarenessStrategy";
+    const entry = Object.entries(NODE_TYPE_PREFIX_MAP).find(([prefix]) =>
+      nodeId.startsWith(prefix),
+    );
+    return entry?.[1] || "ProblemAwarenessStrategy";
   };
 
   const generateEdges = (): Edge[] => {
@@ -320,6 +316,7 @@ export default function KnowledgeStrategy() {
   const nodes = useMemo(
     () => generateNodes(),
     [
+      categories,
       selectedCategoryId,
       profilesForCategory,
       selectedProfileId,
@@ -331,6 +328,7 @@ export default function KnowledgeStrategy() {
   const edges = useMemo(
     () => generateEdges(),
     [
+      categories,
       selectedCategoryId,
       profilesForCategory,
       selectedProfileId,
