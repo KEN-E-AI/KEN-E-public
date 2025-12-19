@@ -3052,7 +3052,14 @@ class GraphSyncService:
           AND (s)-[:BELONGS_TO]->(:Account {account_id: $account_id})
           AND (s:ProblemAwarenessStrategy OR s:BrandAwarenessStrategy
                OR s:ConsiderationStrategy OR s:ConversionStrategy OR s:LoyaltyStrategy)
-        RETURN s.node_id as node_id, labels(s)[0] as strategy_type
+        RETURN s.node_id as node_id,
+               CASE
+                 WHEN s:ProblemAwarenessStrategy THEN 'ProblemAwarenessStrategy'
+                 WHEN s:BrandAwarenessStrategy THEN 'BrandAwarenessStrategy'
+                 WHEN s:ConsiderationStrategy THEN 'ConsiderationStrategy'
+                 WHEN s:ConversionStrategy THEN 'ConversionStrategy'
+                 WHEN s:LoyaltyStrategy THEN 'LoyaltyStrategy'
+               END as strategy_type
         """
         strategies = await self.neo4j.execute_query(
             find_strategies_query,
