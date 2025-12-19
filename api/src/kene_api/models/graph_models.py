@@ -1043,12 +1043,16 @@ class ProblemAwarenessStrategyUpdate(BaseModel):
 
 
 class ProblemAwarenessStrategyResponse(NodeBase):
-    """Response model for problem awareness strategy."""
+    """Response model for problem awareness strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class ProblemAwarenessStrategyListResponse(BaseModel):
@@ -1085,12 +1089,16 @@ class BrandAwarenessStrategyUpdate(BaseModel):
 
 
 class BrandAwarenessStrategyResponse(NodeBase):
-    """Response model for brand awareness strategy."""
+    """Response model for brand awareness strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class BrandAwarenessStrategyListResponse(BaseModel):
@@ -1127,12 +1135,16 @@ class ConsiderationStrategyUpdate(BaseModel):
 
 
 class ConsiderationStrategyResponse(NodeBase):
-    """Response model for consideration strategy."""
+    """Response model for consideration strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class ConsiderationStrategyListResponse(BaseModel):
@@ -1169,12 +1181,16 @@ class ConversionStrategyUpdate(BaseModel):
 
 
 class ConversionStrategyResponse(NodeBase):
-    """Response model for conversion strategy."""
+    """Response model for conversion strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class ConversionStrategyListResponse(BaseModel):
@@ -1209,12 +1225,16 @@ class LoyaltyStrategyUpdate(BaseModel):
 
 
 class LoyaltyStrategyResponse(NodeBase):
-    """Response model for loyalty strategy."""
+    """Response model for loyalty strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class LoyaltyStrategyListResponse(BaseModel):
