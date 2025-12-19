@@ -27,8 +27,24 @@ export interface MarketingStrategyUpdate {
 }
 
 interface StrategyListResponse {
-  strategies: MarketingStrategy[];
+  problem_awareness_strategies?: MarketingStrategy[];
+  brand_awareness_strategies?: MarketingStrategy[];
+  consideration_strategies?: MarketingStrategy[];
+  conversion_strategies?: MarketingStrategy[];
+  loyalty_strategies?: MarketingStrategy[];
   total_count: number;
+}
+
+// Helper to extract strategies from response regardless of field name
+function extractStrategies(response: StrategyListResponse): MarketingStrategy[] {
+  return (
+    response.problem_awareness_strategies ||
+    response.brand_awareness_strategies ||
+    response.consideration_strategies ||
+    response.conversion_strategies ||
+    response.loyalty_strategies ||
+    []
+  );
 }
 
 class MarketingStrategyService {
@@ -48,7 +64,7 @@ class MarketingStrategyService {
     strategyType: StrategyType,
     skip = 0,
     limit = 1000,
-  ): Promise<StrategyListResponse> {
+  ): Promise<{ strategies: MarketingStrategy[]; total_count: number }> {
     const endpoint = this.getEndpointPrefix(strategyType);
     const params = { skip, limit };
 
@@ -56,7 +72,11 @@ class MarketingStrategyService {
       `/api/v1/knowledge-graph/${accountId}/rollup-${endpoint}`,
       { params },
     );
-    return response.data;
+    const data = response.data as StrategyListResponse;
+    return {
+      strategies: extractStrategies(data),
+      total_count: data.total_count,
+    };
   }
 
   async listIndividualStrategies(
@@ -64,7 +84,7 @@ class MarketingStrategyService {
     strategyType: StrategyType,
     skip = 0,
     limit = 1000,
-  ): Promise<StrategyListResponse> {
+  ): Promise<{ strategies: MarketingStrategy[]; total_count: number }> {
     const endpoint = this.getEndpointPrefix(strategyType);
     const params = { skip, limit };
 
@@ -72,7 +92,11 @@ class MarketingStrategyService {
       `/api/v1/knowledge-graph/${accountId}/${endpoint}`,
       { params },
     );
-    return response.data;
+    const data = response.data as StrategyListResponse;
+    return {
+      strategies: extractStrategies(data),
+      total_count: data.total_count,
+    };
   }
 
   async updateStrategy(
