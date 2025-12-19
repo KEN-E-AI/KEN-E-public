@@ -36,7 +36,9 @@ interface StrategyListResponse {
 }
 
 // Helper to extract strategies from response regardless of field name
-function extractStrategies(response: StrategyListResponse): MarketingStrategy[] {
+function extractStrategies(
+  response: StrategyListResponse,
+): MarketingStrategy[] {
   return (
     response.problem_awareness_strategies ||
     response.brand_awareness_strategies ||

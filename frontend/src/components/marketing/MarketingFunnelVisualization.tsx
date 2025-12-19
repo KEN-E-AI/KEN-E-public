@@ -1,9 +1,15 @@
 import { useState } from "react";
-import { Filter, Pencil, Loader2 } from "lucide-react";
+import { Filter, Pencil, Loader2, Info, Play } from "lucide-react";
 import { KnowledgeGraphCard, ModeSelector } from "@/components/knowledge-graph";
 import type { ModeConfig } from "@/components/knowledge-graph";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { FunnelStage } from "./FunnelStage";
 import type {
   MarketingStrategy,
@@ -39,6 +45,27 @@ const STRATEGY_MODES: readonly ModeConfig<StrategyType>[] = [
   { value: "conversion", label: "Conversion" },
   { value: "loyalty", label: "Loyalty" },
 ];
+
+const STRATEGY_FULL_NAMES: Record<StrategyType, string> = {
+  "problem-awareness": "Problem Awareness Strategy",
+  "brand-awareness": "Brand Awareness Strategy",
+  consideration: "Consideration Strategy",
+  conversion: "Conversion Strategy",
+  loyalty: "Loyalty Strategy",
+};
+
+const STRATEGY_DESCRIPTIONS: Record<StrategyType, string> = {
+  "problem-awareness":
+    "Educate prospects about problems they may not know they have. Build awareness of pain points and challenges your product solves.",
+  "brand-awareness":
+    "Increase visibility and recognition of your brand. Make prospects aware of your company and what you offer.",
+  consideration:
+    "Help prospects evaluate your solution against alternatives. Provide detailed information to aid their decision-making process.",
+  conversion:
+    "Persuade prospects to become paying customers. Remove friction from the purchase process and provide compelling reasons to buy.",
+  loyalty:
+    "Turn customers into repeat buyers and advocates. Build long-term relationships through excellent service and engagement.",
+};
 
 const STRATEGY_MODE_TO_INDEX: Record<StrategyType, number> = {
   "problem-awareness": 0,
@@ -162,8 +189,8 @@ export const MarketingFunnelVisualization = ({
             <div className="flex-1 flex justify-center items-center">
               <svg
                 width="280"
-                height="360"
-                viewBox="0 0 280 360"
+                height="390"
+                viewBox="0 0 280 390"
                 className="w-full max-w-xs"
               >
                 {FUNNEL_STAGES.map((stage, index) => (
@@ -176,18 +203,49 @@ export const MarketingFunnelVisualization = ({
                     height={55}
                   />
                 ))}
+                {/* Render arrow after all stages so it appears on top */}
+                {(() => {
+                  const strategyIndex =
+                    STRATEGY_MODE_TO_INDEX[selectedStrategyMode];
+                  const yPos = strategyIndex * 60;
+                  const height = 55;
+                  return (
+                    <foreignObject
+                      x={140 - 12}
+                      y={yPos + height + 2}
+                      width={24}
+                      height={24}
+                    >
+                      <div className="flex items-center justify-center">
+                        <Play
+                          className="h-6 w-6 text-white fill-white rotate-90"
+                          strokeWidth={0}
+                        />
+                      </div>
+                    </foreignObject>
+                  );
+                })()}
               </svg>
             </div>
 
             {/* Right: Description */}
             <div className="flex-1 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-base">
-                  {
-                    STRATEGY_MODES.find((m) => m.value === selectedStrategyMode)
-                      ?.label
-                  }
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-base">
+                    {STRATEGY_FULL_NAMES[selectedStrategyMode]}
+                  </h3>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>{STRATEGY_DESCRIPTIONS[selectedStrategyMode]}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 {hasEditAccess && !isEditing && (
                   <Button
                     onClick={handleEdit}

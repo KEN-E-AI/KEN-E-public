@@ -188,6 +188,13 @@ export const CustomerProfilesManagement = ({
     }
   }, [customerProfiles, location, navigate]);
 
+  // Reset navigation processing flag when location changes
+  useEffect(() => {
+    return () => {
+      hasProcessedNavigation.current = false;
+    };
+  }, [location.pathname]);
+
   const handleCreateClick = () => {
     setFormData({ display_name: "", description: "" });
     setIsCreateModalOpen(true);

@@ -3038,13 +3038,16 @@ class GraphSyncService:
         1. Delete all 5 strategy nodes for this (CustomerProfile, ProductCategory) pair
         2. Delete the IS_MARKETED_TO relationship
 
+        Uses a single atomic query to delete all strategies in Neo4j, preventing partial
+        deletion issues on failure.
+
         Args:
             account_id: Account identifier
             customer_profile_id: CustomerProfile node_id
             product_category_id: ProductCategory node_id
             user_id: User performing deletion
         """
-        # Find all strategy nodes for this pair using a single atomic query
+        # Find all strategy nodes for this pair
         find_strategies_query = """
         MATCH (s)
         WHERE s.customer_profile_node_id = $customer_profile_id
@@ -3070,36 +3073,61 @@ class GraphSyncService:
             },
         )
 
-        # Delete all strategies found
-        # Note: delete_node handles both Neo4j and Firestore with rollback on failure
-        for strategy in strategies:
-            strategy_node_id = strategy["node_id"]
-            strategy_type = strategy["strategy_type"]
-            await self.delete_node(
-                account_id=account_id,
-                node_id=strategy_node_id,
-                node_type=strategy_type,
-                user_id=user_id,
-                firestore_doc_type="marketing_strategy",
-                check_dependencies=False,
-            )
+        # Delete all strategies and relationship atomically in Neo4j
+        # This prevents partial deletion issues
+        delete_all_query = """
+        MATCH (s)
+        WHERE s.customer_profile_node_id = $customer_profile_id
+          AND s.product_category_node_id = $product_category_id
+          AND (s)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (s:ProblemAwarenessStrategy OR s:BrandAwarenessStrategy
+               OR s:ConsiderationStrategy OR s:ConversionStrategy OR s:LoyaltyStrategy)
+        DETACH DELETE s
 
-        # Delete the IS_MARKETED_TO relationship
-        delete_query = """
+        WITH 1 as dummy
         MATCH (pc:ProductCategory {node_id: $product_category_id})-[r:IS_MARKETED_TO]->(cp:CustomerProfile {node_id: $customer_profile_id})
         WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
           AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         DELETE r
         """
 
-        await self.neo4j.execute_write_query(
-            delete_query,
-            {
-                "product_category_id": product_category_id,
-                "customer_profile_id": customer_profile_id,
-                "account_id": account_id,
-            },
-        )
+        try:
+            # Execute atomic deletion in Neo4j
+            await self.neo4j.execute_write_query(
+                delete_all_query,
+                {
+                    "customer_profile_id": customer_profile_id,
+                    "product_category_id": product_category_id,
+                    "account_id": account_id,
+                },
+            )
+
+            # Sync each strategy deletion to Firestore
+            # Note: If Firestore sync fails, the Neo4j transaction already committed
+            # This is acceptable since Neo4j is source of truth
+            for strategy in strategies:
+                strategy_node_id = strategy["node_id"]
+                strategy_type = strategy["strategy_type"]
+                try:
+                    await self._sync_node_to_firestore(
+                        account_id=account_id,
+                        node_id=strategy_node_id,
+                        node_type=strategy_type,
+                        node_data={},
+                        firestore_doc_type="marketing_strategy",
+                        operation="delete",
+                    )
+                except Exception as firestore_error:
+                    # Log but don't fail - Neo4j is source of truth
+                    logger.warning(
+                        f"Failed to sync deletion of {strategy_node_id} to Firestore: {firestore_error}"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to unlink product category {product_category_id} from customer profile {customer_profile_id}: {e}"
+            )
+            raise
 
     async def list_linked_product_categories(
         self,
@@ -3823,6 +3851,9 @@ class GraphSyncService:
         Marketing strategies are unique because they link to BOTH CustomerProfile AND
         ProductCategory through separate relationships.
 
+        This operation is idempotent - if the node already exists, it will be updated
+        with the new data and timestamps, preventing race conditions on retries.
+
         Args:
             node_id: Pre-generated node ID (format: {type}_{category_id}_{profile_id})
             node_type: Strategy node type
@@ -3839,19 +3870,18 @@ class GraphSyncService:
         """
         validate_node_type(node_type)
 
-        # Create strategy node with BELONGS_TO + dual parent relationships
+        # Use MERGE to make this operation idempotent (prevents race conditions on retries)
         query = f"""
         MATCH (acc:Account {{account_id: $account_id}})
         MATCH (cp:CustomerProfile {{node_id: $customer_profile_id}})
         MATCH (pc:ProductCategory {{node_id: $product_category_id}})
 
-        CREATE (node:{node_type}:Strategy)
+        MERGE (node:{node_type}:Strategy {{node_id: $node_id}})
         SET node += $node_data,
-            node.node_id = $node_id,
             node.account_id = $account_id,
-            node.created_time = datetime(),
+            node.created_time = COALESCE(node.created_time, datetime()),
             node.last_modified = datetime(),
-            node.created_by = $user_id,
+            node.created_by = COALESCE(node.created_by, $user_id),
             node.last_modified_by = $user_id,
             node.embedding = null
 
@@ -4520,7 +4550,7 @@ class GraphSyncService:
         RETURN hub, collect({type: type(r), node_id: rollup.node_id}) as linked_strategies
         """
 
-        # Using execute_query (which internally uses execute_read) for read-only rollup queries
+        # Note: execute_query uses session.execute_read internally (see database.py:81-134)
         result = await self.neo4j.execute_query(query, {"account_id": account_id})
 
         if not result:

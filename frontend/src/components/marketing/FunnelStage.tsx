@@ -6,6 +6,7 @@ interface FunnelStageProps {
   width: number;
   yPosition: number;
   height: number;
+  baseWidth?: number;
 }
 
 export const FunnelStage = ({
@@ -14,8 +15,8 @@ export const FunnelStage = ({
   width,
   yPosition,
   height,
+  baseWidth = 280,
 }: FunnelStageProps) => {
-  const baseWidth = 280;
   const stageWidth = baseWidth * (width / 100);
   const nextWidth = stageWidth - 40;
   const xOffset = (baseWidth - stageWidth) / 2;
@@ -37,8 +38,6 @@ export const FunnelStage = ({
           Z
         `}
         className={cn("transition-colors duration-300", color)}
-        stroke="#64748b"
-        strokeWidth="1"
       />
       <text
         x={baseWidth / 2}
