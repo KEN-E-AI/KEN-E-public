@@ -1058,7 +1058,7 @@ class ProblemAwarenessStrategyResponse(NodeBase):
 class ProblemAwarenessStrategyListResponse(BaseModel):
     """Response model for list of problem awareness strategies."""
 
-    strategies: list[ProblemAwarenessStrategyResponse]
+    problem_awareness_strategies: list[ProblemAwarenessStrategyResponse]
     total_count: int
 
 
@@ -1104,7 +1104,7 @@ class BrandAwarenessStrategyResponse(NodeBase):
 class BrandAwarenessStrategyListResponse(BaseModel):
     """Response model for list of brand awareness strategies."""
 
-    strategies: list[BrandAwarenessStrategyResponse]
+    brand_awareness_strategies: list[BrandAwarenessStrategyResponse]
     total_count: int
 
 
@@ -1150,7 +1150,7 @@ class ConsiderationStrategyResponse(NodeBase):
 class ConsiderationStrategyListResponse(BaseModel):
     """Response model for list of consideration strategies."""
 
-    strategies: list[ConsiderationStrategyResponse]
+    consideration_strategies: list[ConsiderationStrategyResponse]
     total_count: int
 
 
@@ -1196,7 +1196,7 @@ class ConversionStrategyResponse(NodeBase):
 class ConversionStrategyListResponse(BaseModel):
     """Response model for list of conversion strategies."""
 
-    strategies: list[ConversionStrategyResponse]
+    conversion_strategies: list[ConversionStrategyResponse]
     total_count: int
 
 
@@ -1240,7 +1240,7 @@ class LoyaltyStrategyResponse(NodeBase):
 class LoyaltyStrategyListResponse(BaseModel):
     """Response model for list of loyalty strategies."""
 
-    strategies: list[LoyaltyStrategyResponse]
+    loyalty_strategies: list[LoyaltyStrategyResponse]
     total_count: int
 
 
