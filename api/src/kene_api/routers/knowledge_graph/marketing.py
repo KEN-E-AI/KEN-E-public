@@ -1034,7 +1034,7 @@ async def list_rollup_problem_awareness_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ProblemAwarenessStrategy",
-        list_field_name="strategies",
+        list_field_name="problem_awareness_strategies",
         list_response_class=ProblemAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1081,7 +1081,7 @@ async def list_rollup_brand_awareness_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="BrandAwarenessStrategy",
-        list_field_name="strategies",
+        list_field_name="brand_awareness_strategies",
         list_response_class=BrandAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1126,7 +1126,7 @@ async def list_rollup_consideration_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ConsiderationStrategy",
-        list_field_name="strategies",
+        list_field_name="consideration_strategies",
         list_response_class=ConsiderationStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1171,7 +1171,7 @@ async def list_rollup_conversion_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ConversionStrategy",
-        list_field_name="strategies",
+        list_field_name="conversion_strategies",
         list_response_class=ConversionStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1216,7 +1216,7 @@ async def list_rollup_loyalty_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="LoyaltyStrategy",
-        list_field_name="strategies",
+        list_field_name="loyalty_strategies",
         list_response_class=LoyaltyStrategyListResponse,
         skip=skip,
         limit=limit,
