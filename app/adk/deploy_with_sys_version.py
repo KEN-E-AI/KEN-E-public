@@ -201,16 +201,26 @@ with tempfile.TemporaryDirectory() as temp_dir:
         shutil.copy2("requirements.txt", temp_path / "requirements.txt")
         logger.info("Copied requirements.txt")
 
-    # Process .env file (resolve sm:// references)
-    env_file = Path(".env")
+    # Process environment-specific .env file (resolve sm:// references)
+    # Use .env.{environment} file, fallback to .env
+    env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
+    env_name = env_mapping.get(args.env, args.env)
+    env_file = Path(f".env.{env_name}")
+
+    if not env_file.exists():
+        logger.warning(f"⚠️  {env_file} not found, trying .env")
+        env_file = Path(".env")
+
     if env_file.exists():
+        logger.info(f"Using {env_file} for {args.env} environment")
         process_env_file(env_file, temp_path / ".env")
         logger.info("Processed and copied .env file to root")
         # Also copy to agents directory for runtime loading
         process_env_file(env_file, temp_path / "agents" / ".env")
         logger.info("Copied .env file to agents/ directory for runtime loading")
     else:
-        logger.warning("⚠️  .env file not found")
+        logger.error("❌ No .env file found")
+        sys.exit(1)
 
     # Change to temp directory for deployment
     os.chdir(temp_path)

@@ -6,9 +6,26 @@ Environment-aware: Uses GOOGLE_CLOUD_PROJECT and VERTEX_AI_NEWS_DATASTORE_ID fro
 """
 
 import os
+from pathlib import Path
 import vertexai
 from google.adk.agents import Agent
 from google.adk.tools import VertexAiSearchTool
+
+# Load environment variables from .env file if it exists
+# This must happen before reading config to ensure env vars are available
+try:
+    from dotenv import load_dotenv
+
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+    else:
+        # Try alternate location (agents/.env)
+        alt_path = Path(__file__).parent.parent / ".env"
+        if alt_path.exists():
+            load_dotenv(alt_path, override=False)
+except Exception:
+    pass  # Continue without .env if loading fails
 
 # Configuration - reads from environment variables set in .env files
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
