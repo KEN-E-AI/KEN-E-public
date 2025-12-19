@@ -4520,6 +4520,7 @@ class GraphSyncService:
         RETURN hub, collect({type: type(r), node_id: rollup.node_id}) as linked_strategies
         """
 
+        # Using execute_query (which internally uses execute_read) for read-only rollup queries
         result = await self.neo4j.execute_query(query, {"account_id": account_id})
 
         if not result:
@@ -4699,6 +4700,7 @@ class GraphSyncService:
             size(all_strategies) as total
         """
 
+        # Using execute_query for read-only list operations with pagination
         result = await self.neo4j.execute_query(
             query,
             {
@@ -4760,6 +4762,7 @@ class GraphSyncService:
         RETURN rollup, collect(individual.node_id) as individual_ids
         """
 
+        # Using execute_query for read-only fetch of rollup strategy with individuals
         result = await self.neo4j.execute_query(
             query,
             {

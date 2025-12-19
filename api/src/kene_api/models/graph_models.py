@@ -1047,8 +1047,8 @@ class ProblemAwarenessStrategyResponse(NodeBase):
 
     description: str
     references: list[str]
-    customer_profile_node_id: str | None = None
-    product_category_node_id: str | None = None
+    customer_profile_node_id: str
+    product_category_node_id: str
 
 
 class ProblemAwarenessStrategyListResponse(BaseModel):
@@ -1089,8 +1089,8 @@ class BrandAwarenessStrategyResponse(NodeBase):
 
     description: str
     references: list[str]
-    customer_profile_node_id: str | None = None
-    product_category_node_id: str | None = None
+    customer_profile_node_id: str
+    product_category_node_id: str
 
 
 class BrandAwarenessStrategyListResponse(BaseModel):
@@ -1131,8 +1131,8 @@ class ConsiderationStrategyResponse(NodeBase):
 
     description: str
     references: list[str]
-    customer_profile_node_id: str | None = None
-    product_category_node_id: str | None = None
+    customer_profile_node_id: str
+    product_category_node_id: str
 
 
 class ConsiderationStrategyListResponse(BaseModel):
@@ -1173,8 +1173,8 @@ class ConversionStrategyResponse(NodeBase):
 
     description: str
     references: list[str]
-    customer_profile_node_id: str | None = None
-    product_category_node_id: str | None = None
+    customer_profile_node_id: str
+    product_category_node_id: str
 
 
 class ConversionStrategyListResponse(BaseModel):
@@ -1213,8 +1213,8 @@ class LoyaltyStrategyResponse(NodeBase):
 
     description: str
     references: list[str]
-    customer_profile_node_id: str | None = None
-    product_category_node_id: str | None = None
+    customer_profile_node_id: str
+    product_category_node_id: str
 
 
 class LoyaltyStrategyListResponse(BaseModel):

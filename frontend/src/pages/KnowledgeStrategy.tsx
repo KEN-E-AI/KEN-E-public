@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
 import { ArrowLeft, Blocks, Filter, Users, Loader2 } from "lucide-react";
 import Layout from "@/components/layout/Layout";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -105,7 +106,7 @@ const STRATEGY_PREFIX_TO_API_TYPE: Record<string, StrategyType> = {
   loyalty_: "loyalty",
 };
 
-export default function KnowledgeStrategy() {
+function KnowledgeStrategy() {
   const navigate = useNavigate();
   const { selectedOrgAccount, user, isSuperAdmin } = useAuth();
   const { startOperation, endOperation } = useAccountOperations();
@@ -1149,5 +1150,13 @@ export default function KnowledgeStrategy() {
         </AlertDialog>
       </div>
     </Layout>
+  );
+}
+
+export default function KnowledgeStrategyWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <KnowledgeStrategy />
+    </ErrorBoundary>
   );
 }
