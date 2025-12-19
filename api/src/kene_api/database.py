@@ -84,6 +84,10 @@ class Neo4jService:
         """
         Execute a Cypher query and return results.
 
+        Note: Despite the name, this method uses session.execute_read internally,
+        routing queries to read replicas for better load distribution.
+        For write queries that modify data, use execute_write_query instead.
+
         Args:
             query: Cypher query string
             parameters: Query parameters

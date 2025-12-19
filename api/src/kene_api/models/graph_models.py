@@ -1043,18 +1043,22 @@ class ProblemAwarenessStrategyUpdate(BaseModel):
 
 
 class ProblemAwarenessStrategyResponse(NodeBase):
-    """Response model for problem awareness strategy."""
+    """Response model for problem awareness strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class ProblemAwarenessStrategyListResponse(BaseModel):
     """Response model for list of problem awareness strategies."""
 
-    strategies: list[ProblemAwarenessStrategyResponse]
+    problem_awareness_strategies: list[ProblemAwarenessStrategyResponse]
     total_count: int
 
 
@@ -1085,18 +1089,22 @@ class BrandAwarenessStrategyUpdate(BaseModel):
 
 
 class BrandAwarenessStrategyResponse(NodeBase):
-    """Response model for brand awareness strategy."""
+    """Response model for brand awareness strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class BrandAwarenessStrategyListResponse(BaseModel):
     """Response model for list of brand awareness strategies."""
 
-    strategies: list[BrandAwarenessStrategyResponse]
+    brand_awareness_strategies: list[BrandAwarenessStrategyResponse]
     total_count: int
 
 
@@ -1127,18 +1135,22 @@ class ConsiderationStrategyUpdate(BaseModel):
 
 
 class ConsiderationStrategyResponse(NodeBase):
-    """Response model for consideration strategy."""
+    """Response model for consideration strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class ConsiderationStrategyListResponse(BaseModel):
     """Response model for list of consideration strategies."""
 
-    strategies: list[ConsiderationStrategyResponse]
+    consideration_strategies: list[ConsiderationStrategyResponse]
     total_count: int
 
 
@@ -1169,18 +1181,22 @@ class ConversionStrategyUpdate(BaseModel):
 
 
 class ConversionStrategyResponse(NodeBase):
-    """Response model for conversion strategy."""
+    """Response model for conversion strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class ConversionStrategyListResponse(BaseModel):
     """Response model for list of conversion strategies."""
 
-    strategies: list[ConversionStrategyResponse]
+    conversion_strategies: list[ConversionStrategyResponse]
     total_count: int
 
 
@@ -1209,18 +1225,22 @@ class LoyaltyStrategyUpdate(BaseModel):
 
 
 class LoyaltyStrategyResponse(NodeBase):
-    """Response model for loyalty strategy."""
+    """Response model for loyalty strategy.
+
+    Note: customer_profile_node_id and product_category_node_id are required
+    for individual strategies but optional for rollup strategies.
+    """
 
     description: str
     references: list[str]
-    customer_profile_node_id: str
-    product_category_node_id: str
+    customer_profile_node_id: str | None = None
+    product_category_node_id: str | None = None
 
 
 class LoyaltyStrategyListResponse(BaseModel):
     """Response model for list of loyalty strategies."""
 
-    strategies: list[LoyaltyStrategyResponse]
+    loyalty_strategies: list[LoyaltyStrategyResponse]
     total_count: int
 
 

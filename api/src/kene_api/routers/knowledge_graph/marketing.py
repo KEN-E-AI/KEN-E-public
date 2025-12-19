@@ -276,6 +276,42 @@ async def list_linked_product_categories(
         ) from e
 
 
+@router.get(
+    "/{account_id}/product-categories/{product_category_id}/customer-profiles",
+    response_model=CustomerProfileListResponse,
+)
+async def list_linked_customer_profiles(
+    account_id: str,
+    product_category_id: str,
+    service: GraphSyncService = Depends(get_graph_sync_service),
+    user: UserContext = Depends(get_current_user),
+) -> CustomerProfileListResponse:
+    """List all customer profiles linked to a product category via IS_MARKETED_TO."""
+    # Check read permission
+    if not user.has_account_access(account_id) and not user.is_super_admin:
+        raise HTTPException(
+            status_code=403, detail=f"Access denied to account {account_id}"
+        )
+
+    try:
+        profiles_data = await service.list_linked_customer_profiles(
+            account_id=account_id,
+            product_category_id=product_category_id,
+        )
+        # Convert to response model
+        from ...models.graph_models import CustomerProfileResponse
+
+        profiles = [CustomerProfileResponse(**prof) for prof in profiles_data]
+        return CustomerProfileListResponse(
+            customer_profiles=profiles, total_count=len(profiles)
+        )
+    except Exception as e:
+        logger.error(f"Error listing linked customer profiles: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to list linked customer profiles"
+        ) from e
+
+
 # ==================== PROBLEM AWARENESS STRATEGY ENDPOINTS ====================
 
 
@@ -998,7 +1034,7 @@ async def list_rollup_problem_awareness_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ProblemAwarenessStrategy",
-        list_field_name="strategies",
+        list_field_name="problem_awareness_strategies",
         list_response_class=ProblemAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1045,7 +1081,7 @@ async def list_rollup_brand_awareness_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="BrandAwarenessStrategy",
-        list_field_name="strategies",
+        list_field_name="brand_awareness_strategies",
         list_response_class=BrandAwarenessStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1090,7 +1126,7 @@ async def list_rollup_consideration_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ConsiderationStrategy",
-        list_field_name="strategies",
+        list_field_name="consideration_strategies",
         list_response_class=ConsiderationStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1135,7 +1171,7 @@ async def list_rollup_conversion_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="ConversionStrategy",
-        list_field_name="strategies",
+        list_field_name="conversion_strategies",
         list_response_class=ConversionStrategyListResponse,
         skip=skip,
         limit=limit,
@@ -1180,7 +1216,7 @@ async def list_rollup_loyalty_strategies(
     return await CRUDEndpoints.list_rollup_strategies(
         account_id=account_id,
         strategy_type="LoyaltyStrategy",
-        list_field_name="strategies",
+        list_field_name="loyalty_strategies",
         list_response_class=LoyaltyStrategyListResponse,
         skip=skip,
         limit=limit,

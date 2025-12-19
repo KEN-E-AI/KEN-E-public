@@ -34,6 +34,7 @@ import KnowledgeAccount from "./pages/KnowledgeAccount";
 import KnowledgeCustomers from "./pages/KnowledgeCustomers";
 import KnowledgeCompetitors from "./pages/KnowledgeCompetitors";
 import KnowledgeBrand from "./pages/KnowledgeBrand";
+import KnowledgeStrategy from "./pages/KnowledgeStrategy";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import UserSettings from "./pages/UserSettings";
@@ -172,7 +173,7 @@ const App = () => (
                     path="/knowledge/strategy"
                     element={
                       <ProtectedRoute>
-                        <Index />
+                        <KnowledgeStrategy />
                       </ProtectedRoute>
                     }
                   />

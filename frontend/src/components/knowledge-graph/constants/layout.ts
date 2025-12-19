@@ -11,8 +11,13 @@ export const DIAGRAM_LAYOUT = {
 
   // Spacing
   VERTICAL_SPACING: 224, // Y offset from parent to children (px)
-  HORIZONTAL_GAP: 36, // Gap between nodes (px)
-  NODE_TOTAL_WIDTH: 224, // Total node width including padding (px)
+  HORIZONTAL_GAP: 15, // Minimum gap between nodes (px)
+  // NODE_TOTAL_WIDTH calculation:
+  // Visual node width = NODE_TEXT_WIDTH - overlap + NODE_CIRCLE_SIZE
+  //                   = 200 - 12 + 72 = 260px
+  // Add HORIZONTAL_GAP for minimum spacing between nodes
+  // Total = 260 + 15 = 275px
+  NODE_TOTAL_WIDTH: 275, // Total node width including gap (px)
 
   // Initial positioning
   PARENT_NODE_X: 300, // Parent node X position (px)

@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Node, Edge } from "reactflow";
 import { Plus, Trash2, Users, Pencil, Loader2, Blocks } from "lucide-react";
@@ -76,7 +76,9 @@ export const CustomerProfilesManagement = ({
   const { startOperation, endOperation } = useAccountOperations();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const hasProcessedNavigation = useRef(false);
 
   // Fetch customer profiles
   const { data: profilesData, isLoading } = useCustomerProfiles(
@@ -151,6 +153,47 @@ export const CustomerProfilesManagement = ({
     formData,
     isEditing,
   );
+
+  // Handle navigation from other pages (e.g., Strategy page)
+  useEffect(() => {
+    const navState = location.state as {
+      selectedProfileId?: string;
+      autoEdit?: boolean;
+    } | null;
+
+    if (
+      navState?.selectedProfileId &&
+      navState?.autoEdit &&
+      !hasProcessedNavigation.current
+    ) {
+      const profile = customerProfiles.find(
+        (p) => p.node_id === navState.selectedProfileId,
+      );
+      if (profile) {
+        hasProcessedNavigation.current = true;
+
+        setSelectedProfileId(profile.node_id);
+        setSelectedProfile(profile);
+        setFormData({
+          display_name: profile.display_name,
+          description: profile.description,
+        });
+        setContextMenuType("customerProfile");
+        setIsContextMenuOpen(true);
+        setIsEditing(true);
+
+        // Clear navigation state
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    }
+  }, [customerProfiles, location, navigate]);
+
+  // Reset navigation processing flag when location changes
+  useEffect(() => {
+    return () => {
+      hasProcessedNavigation.current = false;
+    };
+  }, [location.pathname]);
 
   const handleCreateClick = () => {
     setFormData({ display_name: "", description: "" });

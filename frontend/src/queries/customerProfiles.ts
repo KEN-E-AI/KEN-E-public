@@ -129,12 +129,25 @@ export const useLinkProductCategoryToProfile = () => {
         data.customerProfileId,
       ),
     onSuccess: (_, variables) => {
-      // Invalidate linked categories for this profile
+      // Invalidate linked categories for this profile (Customers page)
       queryClient.invalidateQueries({
         queryKey: customerProfileKeys.linkedCategories(
           variables.accountId,
           variables.customerProfileId,
         ),
+      });
+      // Invalidate linked profiles for this category (Strategy page)
+      queryClient.invalidateQueries({
+        queryKey: [
+          "products",
+          "linked-customer-profiles",
+          variables.accountId,
+          variables.productCategoryId,
+        ],
+      });
+      // Invalidate individual strategies query (for strategy bundle nodes)
+      queryClient.invalidateQueries({
+        queryKey: ["marketing", "individual-strategies", variables.accountId],
       });
     },
   });
@@ -155,12 +168,25 @@ export const useUnlinkProductCategoryFromProfile = () => {
         data.customerProfileId,
       ),
     onSuccess: (_, variables) => {
-      // Invalidate linked categories for this profile
+      // Invalidate linked categories for this profile (Customers page)
       queryClient.invalidateQueries({
         queryKey: customerProfileKeys.linkedCategories(
           variables.accountId,
           variables.customerProfileId,
         ),
+      });
+      // Invalidate linked profiles for this category (Strategy page)
+      queryClient.invalidateQueries({
+        queryKey: [
+          "products",
+          "linked-customer-profiles",
+          variables.accountId,
+          variables.productCategoryId,
+        ],
+      });
+      // Invalidate individual strategies query (removes strategy bundle nodes)
+      queryClient.invalidateQueries({
+        queryKey: ["marketing", "individual-strategies", variables.accountId],
       });
     },
   });

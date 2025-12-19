@@ -2,6 +2,12 @@ import { memo } from "react";
 import { Handle, Position } from "reactflow";
 import type { NodeProps } from "reactflow";
 import { Plus, Blocks, Package } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface CategoryNodeData {
   label: string;
@@ -15,14 +21,23 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
       {/* Badge matching horizontal scroll design */}
       <div className="flex items-center">
         {/* Text Box - Left */}
-        <div className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
-          <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-            Product Category
-          </p>
-          <p className="font-semibold text-dashboard-gray-900 leading-tight">
-            {data.label}
-          </p>
-        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
+                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                  Product Category
+                </p>
+                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                  {data.label}
+                </p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{data.label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {/* Circle with Icon - Right */}
         <div className="flex-shrink-0 -ml-12 relative z-10">
@@ -82,17 +97,26 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
       {/* Badge matching horizontal scroll design */}
       <div className="flex items-center">
         {/* Text Box - Left - Fixed width for consistent spacing */}
-        <div
-          className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-          style={{ width: "200px" }}
-        >
-          <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
-            Product
-          </p>
-          <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
-            {data.label}
-          </p>
-        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
+                style={{ width: "200px" }}
+              >
+                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                  Product
+                </p>
+                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                  {data.label}
+                </p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{data.label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {/* Circle with Icon - Right */}
         <div className="flex-shrink-0 -ml-12 relative z-10">

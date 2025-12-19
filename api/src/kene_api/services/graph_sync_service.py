@@ -2969,6 +2969,62 @@ class GraphSyncService:
                 "relationship",
             )
 
+        # Auto-create all 5 marketing strategy nodes with placeholder descriptions
+        strategy_configs = [
+            (
+                "ProblemAwarenessStrategy",
+                "problemaware_",
+                "DISCOVERS_THE_PROBLEM_BY",
+                "HAS_PROBLEM_AWARENESS_STRATEGY",
+            ),
+            (
+                "BrandAwarenessStrategy",
+                "brandaware_",
+                "DISCOVERS_OUR_BRAND_BY",
+                "HAS_BRAND_AWARENESS_STRATEGY",
+            ),
+            (
+                "ConsiderationStrategy",
+                "consideration_",
+                "CONSIDERS_OUR_BRAND_BECAUSE",
+                "HAS_CONSIDERATION_STRATEGY",
+            ),
+            (
+                "ConversionStrategy",
+                "conversion_",
+                "PURCHASES_OUR_BRAND_BECAUSE",
+                "HAS_CONVERSION_STRATEGY",
+            ),
+            (
+                "LoyaltyStrategy",
+                "loyalty_",
+                "BECOMES_AN_ADVOCATE_BECAUSE",
+                "HAS_LOYALTY_STRATEGY",
+            ),
+        ]
+
+        for node_type, prefix, profile_rel, category_rel in strategy_configs:
+            node_id = f"{prefix}{product_category_id}_{customer_profile_id}"
+
+            node_data = {
+                "description": "No description provided yet. Click edit to add your strategy.",
+                "references": [],
+                "customer_profile_node_id": customer_profile_id,
+                "product_category_node_id": product_category_id,
+            }
+
+            await self._create_marketing_strategy_node(
+                node_id=node_id,
+                node_type=node_type,
+                node_data=node_data,
+                account_id=account_id,
+                customer_profile_id=customer_profile_id,
+                product_category_id=product_category_id,
+                user_id=user_id,
+                profile_relationship=profile_rel,
+                category_relationship=category_rel,
+            )
+
     async def unlink_product_category_from_customer_profile(
         self,
         account_id: str,
@@ -2982,13 +3038,16 @@ class GraphSyncService:
         1. Delete all 5 strategy nodes for this (CustomerProfile, ProductCategory) pair
         2. Delete the IS_MARKETED_TO relationship
 
+        Uses a single atomic query to delete all strategies in Neo4j, preventing partial
+        deletion issues on failure.
+
         Args:
             account_id: Account identifier
             customer_profile_id: CustomerProfile node_id
             product_category_id: ProductCategory node_id
             user_id: User performing deletion
         """
-        # Find all strategy nodes for this pair using a single atomic query
+        # Find all strategy nodes for this pair
         find_strategies_query = """
         MATCH (s)
         WHERE s.customer_profile_node_id = $customer_profile_id
@@ -2996,7 +3055,14 @@ class GraphSyncService:
           AND (s)-[:BELONGS_TO]->(:Account {account_id: $account_id})
           AND (s:ProblemAwarenessStrategy OR s:BrandAwarenessStrategy
                OR s:ConsiderationStrategy OR s:ConversionStrategy OR s:LoyaltyStrategy)
-        RETURN s.node_id as node_id, labels(s)[0] as strategy_type
+        RETURN s.node_id as node_id,
+               CASE
+                 WHEN s:ProblemAwarenessStrategy THEN 'ProblemAwarenessStrategy'
+                 WHEN s:BrandAwarenessStrategy THEN 'BrandAwarenessStrategy'
+                 WHEN s:ConsiderationStrategy THEN 'ConsiderationStrategy'
+                 WHEN s:ConversionStrategy THEN 'ConversionStrategy'
+                 WHEN s:LoyaltyStrategy THEN 'LoyaltyStrategy'
+               END as strategy_type
         """
         strategies = await self.neo4j.execute_query(
             find_strategies_query,
@@ -3007,36 +3073,61 @@ class GraphSyncService:
             },
         )
 
-        # Delete all strategies found
-        # Note: delete_node handles both Neo4j and Firestore with rollback on failure
-        for strategy in strategies:
-            strategy_node_id = strategy["node_id"]
-            strategy_type = strategy["strategy_type"]
-            await self.delete_node(
-                account_id=account_id,
-                node_id=strategy_node_id,
-                node_type=strategy_type,
-                user_id=user_id,
-                firestore_doc_type="marketing_strategy",
-                check_dependencies=False,
-            )
+        # Delete all strategies and relationship atomically in Neo4j
+        # This prevents partial deletion issues
+        delete_all_query = """
+        MATCH (s)
+        WHERE s.customer_profile_node_id = $customer_profile_id
+          AND s.product_category_node_id = $product_category_id
+          AND (s)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (s:ProblemAwarenessStrategy OR s:BrandAwarenessStrategy
+               OR s:ConsiderationStrategy OR s:ConversionStrategy OR s:LoyaltyStrategy)
+        DETACH DELETE s
 
-        # Delete the IS_MARKETED_TO relationship
-        delete_query = """
+        WITH 1 as dummy
         MATCH (pc:ProductCategory {node_id: $product_category_id})-[r:IS_MARKETED_TO]->(cp:CustomerProfile {node_id: $customer_profile_id})
         WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
           AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         DELETE r
         """
 
-        await self.neo4j.execute_write_query(
-            delete_query,
-            {
-                "product_category_id": product_category_id,
-                "customer_profile_id": customer_profile_id,
-                "account_id": account_id,
-            },
-        )
+        try:
+            # Execute atomic deletion in Neo4j
+            await self.neo4j.execute_write_query(
+                delete_all_query,
+                {
+                    "customer_profile_id": customer_profile_id,
+                    "product_category_id": product_category_id,
+                    "account_id": account_id,
+                },
+            )
+
+            # Sync each strategy deletion to Firestore
+            # Note: If Firestore sync fails, the Neo4j transaction already committed
+            # This is acceptable since Neo4j is source of truth
+            for strategy in strategies:
+                strategy_node_id = strategy["node_id"]
+                strategy_type = strategy["strategy_type"]
+                try:
+                    await self._sync_node_to_firestore(
+                        account_id=account_id,
+                        node_id=strategy_node_id,
+                        node_type=strategy_type,
+                        node_data={},
+                        firestore_doc_type="marketing_strategy",
+                        operation="delete",
+                    )
+                except Exception as firestore_error:
+                    # Log but don't fail - Neo4j is source of truth
+                    logger.warning(
+                        f"Failed to sync deletion of {strategy_node_id} to Firestore: {firestore_error}"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to unlink product category {product_category_id} from customer profile {customer_profile_id}: {e}"
+            )
+            raise
 
     async def list_linked_product_categories(
         self,
@@ -3111,6 +3202,62 @@ class GraphSyncService:
             categories.append(category_dict)
 
         return categories
+
+    async def list_linked_customer_profiles(
+        self,
+        account_id: str,
+        product_category_id: str,
+    ) -> list[dict]:
+        """List all customer profiles linked to a product category via IS_MARKETED_TO.
+
+        Args:
+            account_id: Account identifier
+            product_category_id: ProductCategory node_id
+
+        Returns:
+            List of CustomerProfile nodes
+        """
+        query = """
+        MATCH (pc:ProductCategory {node_id: $product_category_id})-[:IS_MARKETED_TO]->(cp:CustomerProfile)
+        WHERE (pc)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+          AND (cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})
+        RETURN cp.node_id as node_id,
+               $account_id as account_id,
+               cp.display_name as display_name,
+               cp.description as description,
+               cp.references as references,
+               cp.created_time as created_time,
+               cp.last_modified as last_modified,
+               cp.created_by as created_by,
+               cp.last_modified_by as last_modified_by
+        ORDER BY cp.display_name
+        """
+
+        results = await self.neo4j.execute_query(
+            query,
+            {
+                "product_category_id": product_category_id,
+                "account_id": account_id,
+            },
+        )
+
+        profiles = []
+        for record in results:
+            profile_dict = dict(record)
+            # Convert DateTime objects to ISO strings if needed
+            if profile_dict.get("created_time") and hasattr(
+                profile_dict["created_time"], "isoformat"
+            ):
+                profile_dict["created_time"] = profile_dict["created_time"].isoformat()
+            if profile_dict.get("last_modified") and hasattr(
+                profile_dict["last_modified"], "isoformat"
+            ):
+                profile_dict["last_modified"] = profile_dict["last_modified"].isoformat()
+            if not profile_dict.get("account_id"):
+                profile_dict["account_id"] = account_id
+            profiles.append(profile_dict)
+
+        return profiles
 
     async def create_problem_awareness_strategy(
         self,
@@ -3704,6 +3851,9 @@ class GraphSyncService:
         Marketing strategies are unique because they link to BOTH CustomerProfile AND
         ProductCategory through separate relationships.
 
+        This operation is idempotent - if the node already exists, it will be updated
+        with the new data and timestamps, preventing race conditions on retries.
+
         Args:
             node_id: Pre-generated node ID (format: {type}_{category_id}_{profile_id})
             node_type: Strategy node type
@@ -3720,19 +3870,18 @@ class GraphSyncService:
         """
         validate_node_type(node_type)
 
-        # Create strategy node with BELONGS_TO + dual parent relationships
+        # Use MERGE to make this operation idempotent (prevents race conditions on retries)
         query = f"""
         MATCH (acc:Account {{account_id: $account_id}})
         MATCH (cp:CustomerProfile {{node_id: $customer_profile_id}})
         MATCH (pc:ProductCategory {{node_id: $product_category_id}})
 
-        CREATE (node:{node_type}:Strategy)
+        MERGE (node:{node_type}:Strategy {{node_id: $node_id}})
         SET node += $node_data,
-            node.node_id = $node_id,
             node.account_id = $account_id,
-            node.created_time = datetime(),
+            node.created_time = COALESCE(node.created_time, datetime()),
             node.last_modified = datetime(),
-            node.created_by = $user_id,
+            node.created_by = COALESCE(node.created_by, $user_id),
             node.last_modified_by = $user_id,
             node.embedding = null
 
@@ -4401,7 +4550,8 @@ class GraphSyncService:
         RETURN hub, collect({type: type(r), node_id: rollup.node_id}) as linked_strategies
         """
 
-        result = await self.neo4j.execute_read_query(query, {"account_id": account_id})
+        # Note: execute_query uses session.execute_read internally (see database.py:81-134)
+        result = await self.neo4j.execute_query(query, {"account_id": account_id})
 
         if not result:
             return None
@@ -4571,7 +4721,7 @@ class GraphSyncService:
         OPTIONAL MATCH (strategy)-[:CAN_BE_CUSTOMIZED_BY]->(individual)
         WITH strategy, count(individual) as individual_count
         ORDER BY strategy.created_time DESC
-        WITH collect({{strategy: strategy, individual_count: individual_count}}) as all_strategies
+        WITH collect({strategy: strategy, individual_count: individual_count}) as all_strategies
         RETURN
             CASE
                 WHEN $limit IS NULL THEN all_strategies[$skip..]
@@ -4580,7 +4730,8 @@ class GraphSyncService:
             size(all_strategies) as total
         """
 
-        result = await self.neo4j.execute_read_query(
+        # Using execute_query for read-only list operations with pagination
+        result = await self.neo4j.execute_query(
             query,
             {
                 "account_id": account_id,
@@ -4641,7 +4792,8 @@ class GraphSyncService:
         RETURN rollup, collect(individual.node_id) as individual_ids
         """
 
-        result = await self.neo4j.execute_read_query(
+        # Using execute_query for read-only fetch of rollup strategy with individuals
+        result = await self.neo4j.execute_query(
             query,
             {
                 "node_id": node_id,
