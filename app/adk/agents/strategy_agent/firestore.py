@@ -48,7 +48,9 @@ class FirestoreClient:
 
             # Map numeric project IDs to project names
             numeric_id_mapping = {
-                "525657242938": "ken-e-dev"  # Development project numeric ID
+                "525657242938": "ken-e-dev",  # Development project numeric ID
+                "391472102753": "ken-e-staging",  # Staging project numeric ID
+                "395770269870": "ken-e-production",  # Production project numeric ID
             }
 
             if project_id in numeric_id_mapping:
