@@ -22,6 +22,9 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
+# Copy shared package (needed for shared.secrets)
+COPY ../shared /app/shared
+
 # COPY google-cloud-service-account-key.json ./google-cloud-service-account-key.json
 
 # Development stage
