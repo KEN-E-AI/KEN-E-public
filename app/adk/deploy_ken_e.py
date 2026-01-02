@@ -202,11 +202,33 @@ app = reasoning_engines.AdkApp(
             shutil.copy2("requirements.txt", temp_path / "requirements.txt")
             logger.info("Copied requirements.txt")
 
-        # Process .env file if exists (resolve Secret Manager references)
-        env_file = Path(".env")
+        # Copy shared package (contains secrets utility and other shared code)
+        shared_src = Path(__file__).parent.parent.parent / "shared"
+        if shared_src.exists():
+            shutil.copytree(shared_src, temp_path / "shared")
+            logger.info("Copied shared package")
+        else:
+            logger.warning("⚠️  shared package not found")
+
+        # Process environment-specific .env file (resolve sm:// references)
+        env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
+        env_name = env_mapping.get(os.getenv("_TARGET_ENV", "dev"), "dev")
+        env_file = Path(f".env.{env_name}")
+
+        if not env_file.exists():
+            logger.warning(f"⚠️  {env_file} not found, trying .env")
+            env_file = Path(".env")
+
         if env_file.exists():
+            logger.info(f"Using {env_file} for {os.getenv('_TARGET_ENV', 'dev')} environment")
             process_env_file(env_file, temp_path / ".env")
-            logger.info("Processed .env file with Secret Manager resolution")
+            logger.info("Processed and copied .env file to root")
+            # Also copy to agents directory for runtime loading
+            process_env_file(env_file, temp_path / "agents" / ".env")
+            logger.info("Copied .env file to agents/ directory for runtime loading")
+        else:
+            logger.error("❌ No .env file found")
+            sys.exit(1)
 
         # Generate deployment name with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
