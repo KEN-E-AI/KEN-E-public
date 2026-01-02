@@ -157,6 +157,16 @@ steps:
       - "--memory=1Gi"
       - "--project=${_STAGING_PROJECT_ID}"
 
+  # Copy shared package into api directory so Dockerfile can access it
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: copy-shared-to-api
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cp -r shared api/shared
+        echo "Copied shared/ package into api/ directory"
+
   - name: "gcr.io/cloud-builders/docker"
     id: build-api-image
     dir: api
