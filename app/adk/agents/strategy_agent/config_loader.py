@@ -75,8 +75,11 @@ def load_config_from_firestore(
         FirestoreConnectionError: If Firestore connection fails
     """
     try:
-        # Initialize Firestore client
-        db = firestore.Client(project=project_id)
+        # Initialize Firestore client with explicit ADC
+        # Agent Engine requires explicit credential configuration
+        from google.auth import default
+        credentials, _ = default()
+        db = firestore.Client(project=project_id, credentials=credentials)
 
         # Fetch config document
         doc_ref = db.collection("agent_configs").document(doc_id)
@@ -243,7 +246,10 @@ def get_current_config_metadata(
         Metadata dictionary
     """
     try:
-        db = firestore.Client(project=project_id)
+        # Use explicit credentials for Agent Engine compatibility
+        from google.auth import default
+        credentials, _ = default()
+        db = firestore.Client(project=project_id, credentials=credentials)
         doc_ref = db.collection("agent_configs").document(doc_id)
         doc = doc_ref.get()
 
