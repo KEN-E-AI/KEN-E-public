@@ -30,8 +30,10 @@ def init_weave_if_needed():
         import weave as weave_module
         # Only initialize if WANDB_API_KEY is available
         if os.getenv("WANDB_API_KEY"):
-            weave_module.init(project_name="ken-e-ga-agent")
-            logger.info("W&B Weave initialized for GA agent")
+            # Use environment-specific project name
+            project_name = os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+            weave_module.init(project_name=project_name)
+            logger.info(f"W&B Weave initialized for GA agent (project: {project_name})")
             WEAVE_ENABLED = True
             # Make weave available globally
             globals()['weave'] = weave_module

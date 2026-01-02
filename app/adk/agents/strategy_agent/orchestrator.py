@@ -110,8 +110,10 @@ def init_weave_if_needed():
 
         if wandb_api_key:
             try:
-                weave.init(project_name="ken-e-strategy-agent")
-                logger.info("✅ W&B Weave observability initialized successfully")
+                # Use environment-specific project name from .env
+                project_name = os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+                weave.init(project_name=project_name)
+                logger.info(f"✅ W&B Weave initialized (project: {project_name})")
                 WEAVE_INITIALIZED = True
             except Exception as e:
                 logger.warning(f"⚠️ Failed to initialize Weave: {e}")
