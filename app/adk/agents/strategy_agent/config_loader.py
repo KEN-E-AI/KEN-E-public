@@ -6,6 +6,7 @@ with full observability via Weave tracing.
 """
 
 import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -145,7 +146,7 @@ def create_agent_from_firestore_config(
     doc_id: str,
     google_search_agent: Any | None = None,
     output_schema: Any | None = None,
-    project_id: str = "ken-e-dev",
+    project_id: str | None = None,
 ) -> Agent:
     """
     Create an ADK agent from Firestore configuration.
@@ -168,6 +169,10 @@ def create_agent_from_firestore_config(
         ConfigValidationError: If config format invalid
         FirestoreConnectionError: If Firestore unavailable
     """
+    # Use environment-aware project ID if not provided
+    if not project_id:
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+
     # Load config from Firestore
     config, metadata = load_config_from_firestore(doc_id, project_id)
 
