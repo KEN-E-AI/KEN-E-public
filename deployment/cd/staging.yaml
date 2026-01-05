@@ -58,6 +58,8 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_STAGING_PROJECT_ID}'
+      - 'WANDB_API_KEY=${_WANDB_API_KEY_STAGING}'
+      - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-staging'
 
   # Deploy KEN-E Chat Agent to Staging
   # This must happen BEFORE API deployment so API gets the fresh engine ID
@@ -72,6 +74,8 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_STAGING_PROJECT_ID}'
+      - 'WANDB_API_KEY=${_WANDB_API_KEY_STAGING}'
+      - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-staging'
 
   - name: gcr.io/cloud-builders/gcloud
     id: fetch-auth-token

@@ -60,6 +60,8 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
+      - 'WANDB_API_KEY=${_WANDB_API_KEY_PROD}'
+      - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-production'
 
   # Deploy KEN-E Chat Agent to Production
   # This must happen BEFORE API deployment so API gets the fresh engine ID
@@ -74,6 +76,8 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
+      - 'WANDB_API_KEY=${_WANDB_API_KEY_PROD}'
+      - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-production'
 
   - name: "gcr.io/cloud-builders/docker"
     id: build-react-image
