@@ -43,6 +43,35 @@ steps:
 
   # CrewAI deployment removed - using ADK Agent Engine ID directly in API
 
+  # Deploy Strategy Supervisor Agent to Staging
+  # This must happen BEFORE API deployment so API gets the fresh engine ID
+  - name: "python:3.12-slim"
+    id: deploy-strategy-supervisor-staging
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cd app/adk
+        pip install uv --user
+        uv sync --frozen
+        uv run python deploy_with_sys_version.py --env staging
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+      - 'GOOGLE_CLOUD_PROJECT=${_STAGING_PROJECT_ID}'
+
+  # Deploy KEN-E Chat Agent to Staging
+  # This must happen BEFORE API deployment so API gets the fresh engine ID
+  - name: "python:3.12-slim"
+    id: deploy-ken-e-agent-staging
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cd app/adk
+        uv run python deploy_ken_e.py --env staging
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+      - 'GOOGLE_CLOUD_PROJECT=${_STAGING_PROJECT_ID}'
 
   - name: gcr.io/cloud-builders/gcloud
     id: fetch-auth-token

@@ -45,6 +45,36 @@ steps:
 
   # CrewAI deployment removed - using ADK Agent Engine ID directly in API
 
+  # Deploy Strategy Supervisor Agent to Production
+  # This must happen BEFORE API deployment so API gets the fresh engine ID
+  - name: "python:3.12-slim"
+    id: deploy-strategy-supervisor-prod
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cd app/adk
+        pip install uv --user
+        uv sync --frozen
+        uv run python deploy_with_sys_version.py --env prod
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+      - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
+
+  # Deploy KEN-E Chat Agent to Production
+  # This must happen BEFORE API deployment so API gets the fresh engine ID
+  - name: "python:3.12-slim"
+    id: deploy-ken-e-agent-prod
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cd app/adk
+        uv run python deploy_ken_e.py --env prod
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+      - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
+
   - name: "gcr.io/cloud-builders/docker"
     id: build-react-image
     args:
