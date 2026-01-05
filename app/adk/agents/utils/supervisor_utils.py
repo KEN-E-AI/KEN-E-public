@@ -118,7 +118,7 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
     """Wrapper to extract tenant context from the full input"""
 
     @functools.wraps(dispatch_func)
-    def wrapper(full_input: str) -> str:
+    def wrapper(full_input: str, **kwargs) -> str:
         logger.info(f"[DISPATCH-WRAPPER] Tool called: {dispatch_func.__name__}")
         logger.info(f"[DISPATCH-WRAPPER] Input length: {len(full_input)} chars")
         logger.info(f"[DISPATCH-WRAPPER] Input preview: {full_input[:200]}")
