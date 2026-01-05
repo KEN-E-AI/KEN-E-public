@@ -777,9 +777,18 @@ class AgentEngineClient:
                             logger.info(
                                 f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            logger.info(
+                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
+                            logger.info(f"[GA-INJECT] Enhanced message keys: {list(enhanced_message.keys())}")
+                            logger.info(f"[GA-INJECT] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            logger.info(f"[GA-INJECT] default_property_id: {enhanced_message.get('default_property_id')}")
                             print(
                                 f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            print(f"[DEBUG] Enhanced message keys: {list(enhanced_message.keys())}")
+                            print(f"[DEBUG] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            print(f"[DEBUG] default_property_id: {enhanced_message.get('default_property_id')}")
                         else:
                             logger.warning(
                                 f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
@@ -1246,9 +1255,18 @@ class AgentEngineClient:
                             logger.info(
                                 f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            logger.info(
+                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
+                            logger.info(f"[GA-INJECT] Enhanced message keys: {list(enhanced_message.keys())}")
+                            logger.info(f"[GA-INJECT] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            logger.info(f"[GA-INJECT] default_property_id: {enhanced_message.get('default_property_id')}")
                             print(
                                 f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            print(f"[DEBUG] Enhanced message keys: {list(enhanced_message.keys())}")
+                            print(f"[DEBUG] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            print(f"[DEBUG] default_property_id: {enhanced_message.get('default_property_id')}")
                         else:
                             logger.warning(
                                 f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
