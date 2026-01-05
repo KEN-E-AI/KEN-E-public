@@ -30,15 +30,29 @@ from kene_api.auth.models import UserContext
 
 @pytest.fixture
 def mock_vertexai():
-    """Mock the Vertex AI initialization."""
+    """Mock the Vertex AI initialization and Client."""
     with patch("kene_api.routers.chat.vertexai") as mock:
+        # Mock vertexai.init
         mock.init = MagicMock()
+
+        # Create a mock Client instance
+        mock_client = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.name = "test-agent-engine"
+        mock_engine.display_name = "Test Agent Engine"
+
+        # Set up client.agent_engines.get(name=...) to return mock engine
+        mock_client.agent_engines.get = MagicMock(return_value=mock_engine)
+
+        # Mock vertexai.Client() to return our mock client
+        mock.Client = MagicMock(return_value=mock_client)
+
         yield mock
 
 
 @pytest.fixture
 def mock_agent_engines():
-    """Mock the agent_engines module."""
+    """Mock the agent_engines module (legacy - kept for backward compatibility)."""
     with patch("kene_api.routers.chat.agent_engines") as mock:
         # Create a mock agent engine
         mock_engine = MagicMock()
@@ -79,7 +93,17 @@ def test_agent_engine_initialization(mock_vertexai, mock_agent_engines):
             "VERTEX_AI_LOCATION": "us-central1",
             "VERTEX_AI_AGENT_ENGINE_ID": "projects/test/locations/us-central1/reasoningEngines/test-id",
         },
-    ):
+    ), patch("shared.secrets.get_env_or_secret") as mock_get_env:
+        # Mock get_env_or_secret to return the test engine ID
+        def side_effect(key):
+            if key == "KEN_E_ENGINE_ID":
+                return None  # Fallback to VERTEX_AI_AGENT_ENGINE_ID
+            elif key == "VERTEX_AI_AGENT_ENGINE_ID":
+                return "projects/test/locations/us-central1/reasoningEngines/test-id"
+            return None
+
+        mock_get_env.side_effect = side_effect
+
         client = AgentEngineClient()
 
         # Trigger lazy loading of agent engine
@@ -90,7 +114,17 @@ def test_agent_engine_initialization(mock_vertexai, mock_agent_engines):
         mock_vertexai.init.assert_called_once_with(
             project="test-project", location="us-central1"
         )
-        mock_agent_engines.get.assert_called_once()
+
+        # Verify Client was created with correct parameters
+        mock_vertexai.Client.assert_called_once_with(
+            project="test-project", location="us-central1"
+        )
+
+        # Verify client.agent_engines.get() was called with the full resource name
+        mock_client = mock_vertexai.Client.return_value
+        mock_client.agent_engines.get.assert_called_once_with(
+            name="projects/test/locations/us-central1/reasoningEngines/test-id"
+        )
 
 
 def test_session_service_initialization(
