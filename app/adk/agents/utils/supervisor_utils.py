@@ -133,14 +133,22 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
 
     @functools.wraps(dispatch_func)
     def wrapper(query: str, **kwargs) -> str:
+        print(f"[DISPATCH-WRAPPER] Tool called: {dispatch_func.__name__}")
+        print(f"[DISPATCH-WRAPPER] Input length: {len(query)} chars")
+        print(f"[DISPATCH-WRAPPER] Input preview: {query[:200]}")
+        print(f"[DISPATCH-WRAPPER] kwargs: {list(kwargs.keys()) if kwargs else 'none'}")
         logger.info(f"[DISPATCH-WRAPPER] Tool called: {dispatch_func.__name__}")
         logger.info(f"[DISPATCH-WRAPPER] Input length: {len(query)} chars")
         logger.info(f"[DISPATCH-WRAPPER] Input preview: {query[:200]}")
+        logger.info(f"[DISPATCH-WRAPPER] kwargs: {list(kwargs.keys()) if kwargs else 'none'}")
 
         # Try to parse as JSON first (for structured input from web service)
         try:
             input_data = json.loads(query)
             tenant_id, tenant_context, message = extract_tenant_context(input_data)
+            print(f"[DISPATCH-WRAPPER] Successfully parsed JSON")
+            print(f"[DISPATCH-WRAPPER] Extracted message length: {len(message)}")
+            print(f"[DISPATCH-WRAPPER] Tenant context: {tenant_context}")
             logger.info(
                 f"[DISPATCH-WRAPPER] Parsed JSON input, extracted message length: {len(message)}"
             )
