@@ -175,5 +175,5 @@ def _fetch_secret_from_full_path(full_path: str) -> str:
     # Access the secret
     response = client.access_secret_version(request={"name": full_path})
 
-    # Return the decoded payload
-    return response.payload.data.decode("UTF-8")
+    # Return the decoded payload, stripping any trailing whitespace/newlines
+    return response.payload.data.decode("UTF-8").strip()

@@ -61,6 +61,8 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
       - 'WANDB_API_KEY=${_WANDB_API_KEY_PROD}'
+      - 'WANDB_ENTITY=ken-e'
+      - 'WANDB_PROJECT=ken-e-strategy-agent-production'
       - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-production'
 
   # Deploy KEN-E Chat Agent to Production
@@ -77,6 +79,8 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
       - 'WANDB_API_KEY=${_WANDB_API_KEY_PROD}'
+      - 'WANDB_ENTITY=ken-e'
+      - 'WANDB_PROJECT=ken-e-strategy-agent-production'
       - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-production'
 
   - name: "gcr.io/cloud-builders/docker"

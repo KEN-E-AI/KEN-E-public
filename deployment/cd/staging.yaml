@@ -59,6 +59,8 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_STAGING_PROJECT_ID}'
       - 'WANDB_API_KEY=${_WANDB_API_KEY_STAGING}'
+      - 'WANDB_ENTITY=ken-e'
+      - 'WANDB_PROJECT=ken-e-strategy-agent-staging'
       - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-staging'
 
   # Deploy KEN-E Chat Agent to Staging
@@ -75,6 +77,8 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_STAGING_PROJECT_ID}'
       - 'WANDB_API_KEY=${_WANDB_API_KEY_STAGING}'
+      - 'WANDB_ENTITY=ken-e'
+      - 'WANDB_PROJECT=ken-e-strategy-agent-staging'
       - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-staging'
 
   - name: gcr.io/cloud-builders/gcloud
