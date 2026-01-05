@@ -563,8 +563,11 @@ def _execute_single_strategy(
             try:
                 from .config_loader import load_config_from_firestore
 
+                # Use environment-specific project ID
+                formatter_project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
                 config, _ = load_config_from_firestore(
-                    strategy_config["formatter_doc_id"]
+                    strategy_config["formatter_doc_id"],
+                    project_id=formatter_project_id
                 )
                 firestore_instructions = getattr(
                     config, "instruction", None
