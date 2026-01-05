@@ -20,18 +20,22 @@ _weave_initialized = False
 def init_weave_if_needed():
     """Initialize Weave lazily with proper error handling."""
     global WEAVE_ENABLED, _weave_initialized
-    
+
     if _weave_initialized:
         return
-    
+
     _weave_initialized = True
-    
+
     try:
         import weave as weave_module
+        # Use get_env_or_secret to support sm:// format during deployment
+        from shared.secrets import get_env_or_secret
+        wandb_api_key = get_env_or_secret("WANDB_API_KEY")
+
         # Only initialize if WANDB_API_KEY is available
-        if os.getenv("WANDB_API_KEY"):
+        if wandb_api_key:
             # Use environment-specific project name
-            project_name = os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+            project_name = get_env_or_secret("WEAVE_PROJECT_NAME") or os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
             weave_module.init(project_name=project_name)
             logger.info(f"W&B Weave initialized for GA agent (project: {project_name})")
             WEAVE_ENABLED = True
@@ -65,9 +69,11 @@ class LazyWeave:
 weave = LazyWeave()
 
 # Configuration - reads from environment (set in .env files)
+# Use get_env_or_secret to support sm:// format during deployment
 # These are optional - GA agent won't work without them but won't break deployment
-GA_MCP_SERVER_URL = os.getenv("GA_MCP_SERVER_URL", "")
-MCP_API_KEY = os.getenv("MCP_API_KEY", "")
+from shared.secrets import get_env_or_secret
+GA_MCP_SERVER_URL = get_env_or_secret("GA_MCP_SERVER_URL") or ""
+MCP_API_KEY = get_env_or_secret("MCP_API_KEY") or ""
 
 
 class GAMCPClient:
