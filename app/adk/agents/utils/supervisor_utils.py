@@ -20,19 +20,19 @@ from google.genai.types import Content, Part
 logger = logging.getLogger(__name__)
 
 
-def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[str], str]:
+def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[Dict[str, Any]], str]:
     """
     Extract tenant context from various input formats.
 
     Expected formats:
     1. String: "message"
-    2. Dict: {"message": "...", "tenant_id": "...", "tenant_credentials": "..."}
+    2. Dict: {"message": "...", "tenant_id": "...", "tenant_credentials": "...", "selected_property_ids": [...]}
     3. Dict: {"query": "...", "tenant_id": "...", "tenant_credentials": "..."}
 
-    Returns: (tenant_id, tenant_credentials, message)
+    Returns: (tenant_id, tenant_context_dict, message)
     """
     tenant_id = None
-    tenant_credentials = None
+    tenant_context = None
     message = ""
 
     if isinstance(input_data, str):
@@ -41,13 +41,27 @@ def extract_tenant_context(input_data: Any) -> Tuple[Optional[str], Optional[str
         # Extract message
         message = input_data.get("message", input_data.get("query", str(input_data)))
 
-        # Extract tenant context
+        # Extract tenant context (including credentials and property IDs)
         tenant_id = input_data.get("tenant_id")
         tenant_credentials = input_data.get("tenant_credentials")
+
+        if tenant_id or tenant_credentials:
+            tenant_context = {
+                "tenant_id": tenant_id,
+                "tenant_credentials": tenant_credentials,
+            }
+
+            # Include property IDs if provided
+            if "selected_property_ids" in input_data:
+                tenant_context["selected_property_ids"] = input_data["selected_property_ids"]
+            if "selected_properties" in input_data:
+                tenant_context["selected_properties"] = input_data["selected_properties"]
+            if "default_property_id" in input_data:
+                tenant_context["default_property_id"] = input_data["default_property_id"]
     else:
         message = str(input_data)
 
-    return tenant_id, tenant_credentials, message
+    return tenant_id, tenant_context, message
 
 
 def invoke_agent_sync(
@@ -118,23 +132,20 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
     """Wrapper to extract tenant context from the full input"""
 
     @functools.wraps(dispatch_func)
-    def wrapper(full_input: str, **kwargs) -> str:
+    def wrapper(query: str, **kwargs) -> str:
         logger.info(f"[DISPATCH-WRAPPER] Tool called: {dispatch_func.__name__}")
-        logger.info(f"[DISPATCH-WRAPPER] Input length: {len(full_input)} chars")
-        logger.info(f"[DISPATCH-WRAPPER] Input preview: {full_input[:200]}")
+        logger.info(f"[DISPATCH-WRAPPER] Input length: {len(query)} chars")
+        logger.info(f"[DISPATCH-WRAPPER] Input preview: {query[:200]}")
 
         # Try to parse as JSON first (for structured input from web service)
         try:
-            input_data = json.loads(full_input)
-            tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
-            tenant_context = (
-                {"tenant_id": tenant_id, "tenant_credentials": tenant_credentials}
-                if tenant_id and tenant_credentials
-                else None
-            )
+            input_data = json.loads(query)
+            tenant_id, tenant_context, message = extract_tenant_context(input_data)
             logger.info(
                 f"[DISPATCH-WRAPPER] Parsed JSON input, extracted message length: {len(message)}"
             )
+            if tenant_context:
+                logger.info(f"[DISPATCH-WRAPPER] Tenant context keys: {list(tenant_context.keys())}")
             result = dispatch_func(message, tenant_context)
             # Return just the result string, not the full dict
             if isinstance(result, dict) and "result" in result:
@@ -143,7 +154,7 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
         except json.JSONDecodeError:
             # Fall back to string input
             logger.info("[DISPATCH-WRAPPER] Using raw string input")
-            result = dispatch_func(full_input, None)
+            result = dispatch_func(query, None)
             # Return just the result string, not the full dict
             if isinstance(result, dict) and "result" in result:
                 return result["result"]

@@ -366,11 +366,13 @@ def create_google_analytics_agent():
 3. Run custom analytics reports
 4. Access real-time user data
 
-**Important: OAuth Authentication**
-You will receive queries with OAuth credentials embedded:
-- Look for TENANT_ID:<value> in the message
-- Look for TENANT_CREDS:<value> in the message (contains OAuth tokens)
+**Important: OAuth Authentication & Auto-Injected Context**
+You will receive queries with OAuth credentials and property information embedded:
+- TENANT_ID:<value> - The organization/account identifier
+- TENANT_CREDS:<value> - OAuth tokens (access_token, refresh_token)
+- PROPERTY_ID:<value> - The GA4 property ID (auto-injected when user has selected a property)
 - Extract these values and use them in all tool calls
+- NEVER ask for property_id if PROPERTY_ID is already in the message!
 
 **Tool Usage:**
 
@@ -401,10 +403,12 @@ You will receive queries with OAuth credentials embedded:
 - For date ranges, use formats like "7daysAgo", "yesterday", "today"
 
 **Example Query Processing:**
-User: "TENANT_ID:org-123 TENANT_CREDS:abc... Show me website traffic for last week"
-1. Extract: tenant_id="org-123", tenant_credentials="abc..."
-2. Ask for property_id if not provided
-3. Run report with activeUsers, sessions for 7daysAgo to today""",
+User: "TENANT_ID:org-123 TENANT_CREDS:abc... PROPERTY_ID:123456 Show me website traffic for last week"
+1. Extract: tenant_id="org-123", tenant_credentials="abc...", property_id="123456"
+2. Run report with activeUsers, sessions for 7daysAgo to today
+3. Present results clearly
+
+If PROPERTY_ID is missing from the message, ONLY THEN ask the user for it.""",
         tools=[
             list_ga_accounts,
             get_ga_property_details,
