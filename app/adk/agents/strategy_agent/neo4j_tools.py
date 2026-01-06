@@ -19,15 +19,19 @@ load_dotenv(env_path)
 logger = logging.getLogger(__name__)
 
 
-def _get_secret(secret_name: str, project_id: str = "ken-e-dev") -> str:
-    """Load secret from GCP Secret Manager."""
-    try:
-        from google.cloud import secretmanager
+def _get_secret(secret_name: str) -> str | None:
+    """Load secret using shared secrets utility.
 
-        client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
-        response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("UTF-8")
+    Args:
+        secret_name: Environment variable name to resolve
+
+    Returns:
+        The secret value or None if not found
+    """
+    try:
+        from shared.secrets import get_env_or_secret
+
+        return get_env_or_secret(secret_name)
     except Exception as e:
         logger.warning(f"Could not load secret {secret_name}: {e}")
         return None

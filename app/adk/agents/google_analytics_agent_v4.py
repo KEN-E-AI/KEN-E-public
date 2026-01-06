@@ -20,18 +20,24 @@ _weave_initialized = False
 def init_weave_if_needed():
     """Initialize Weave lazily with proper error handling."""
     global WEAVE_ENABLED, _weave_initialized
-    
+
     if _weave_initialized:
         return
-    
+
     _weave_initialized = True
-    
+
     try:
         import weave as weave_module
+        # Use get_env_or_secret to support sm:// format during deployment
+        from shared.secrets import get_env_or_secret
+        wandb_api_key = get_env_or_secret("WANDB_API_KEY")
+
         # Only initialize if WANDB_API_KEY is available
-        if os.getenv("WANDB_API_KEY"):
-            weave_module.init(project_name="ken-e-ga-agent")
-            logger.info("W&B Weave initialized for GA agent")
+        if wandb_api_key:
+            # Use environment-specific project name
+            project_name = get_env_or_secret("WEAVE_PROJECT_NAME") or os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+            weave_module.init(project_name=project_name)
+            logger.info(f"W&B Weave initialized for GA agent (project: {project_name})")
             WEAVE_ENABLED = True
             # Make weave available globally
             globals()['weave'] = weave_module
@@ -62,11 +68,12 @@ class LazyWeave:
 
 weave = LazyWeave()
 
-# Configuration
-GA_MCP_SERVER_URL = os.getenv(
-    "GA_MCP_SERVER_URL", "https://google-analytics-mcp-395770269870.us-central1.run.app"
-)
-MCP_API_KEY = os.getenv("MCP_API_KEY", "")  # API key for MCP server authentication
+# Configuration - reads from environment (set in .env files)
+# Use get_env_or_secret to support sm:// format during deployment
+# These are optional - GA agent won't work without them but won't break deployment
+from shared.secrets import get_env_or_secret
+GA_MCP_SERVER_URL = get_env_or_secret("GA_MCP_SERVER_URL") or ""
+MCP_API_KEY = get_env_or_secret("MCP_API_KEY") or ""
 
 
 class GAMCPClient:
@@ -359,11 +366,13 @@ def create_google_analytics_agent():
 3. Run custom analytics reports
 4. Access real-time user data
 
-**Important: OAuth Authentication**
-You will receive queries with OAuth credentials embedded:
-- Look for TENANT_ID:<value> in the message
-- Look for TENANT_CREDS:<value> in the message (contains OAuth tokens)
+**Important: OAuth Authentication & Auto-Injected Context**
+You will receive queries with OAuth credentials and property information embedded:
+- TENANT_ID:<value> - The organization/account identifier
+- TENANT_CREDS:<value> - OAuth tokens (access_token, refresh_token)
+- PROPERTY_ID:<value> - The GA4 property ID (auto-injected when user has selected a property)
 - Extract these values and use them in all tool calls
+- NEVER ask for property_id if PROPERTY_ID is already in the message!
 
 **Tool Usage:**
 
@@ -394,10 +403,12 @@ You will receive queries with OAuth credentials embedded:
 - For date ranges, use formats like "7daysAgo", "yesterday", "today"
 
 **Example Query Processing:**
-User: "TENANT_ID:org-123 TENANT_CREDS:abc... Show me website traffic for last week"
-1. Extract: tenant_id="org-123", tenant_credentials="abc..."
-2. Ask for property_id if not provided
-3. Run report with activeUsers, sessions for 7daysAgo to today""",
+User: "TENANT_ID:org-123 TENANT_CREDS:abc... PROPERTY_ID:123456 Show me website traffic for last week"
+1. Extract: tenant_id="org-123", tenant_credentials="abc...", property_id="123456"
+2. Run report with activeUsers, sessions for 7daysAgo to today
+3. Present results clearly
+
+If PROPERTY_ID is missing from the message, ONLY THEN ask the user for it.""",
         tools=[
             list_ga_accounts,
             get_ga_property_details,

@@ -20,11 +20,19 @@ def create_ken_e_agent():
     # Create dispatch functions with context handling
     search_company_news = dispatch_with_context(dispatch_to_company_news)
     search_company_news.__name__ = "search_company_news"
-    search_company_news.__doc__ = "Search for company news, financial updates, earnings reports, market analysis, and business announcements"
+    search_company_news.__doc__ = """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
+
+Args:
+    query: The user's question about company news, earnings, market updates, or business intelligence
+"""
 
     query_google_analytics = dispatch_with_context(dispatch_to_google_analytics)
     query_google_analytics.__name__ = "query_google_analytics"
-    query_google_analytics.__doc__ = "Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties"
+    query_google_analytics.__doc__ = """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
+
+Args:
+    query: The user's question about website analytics, traffic, user behavior, or GA4 data
+"""
 
     ken_e = Agent(
         name="ken_e",

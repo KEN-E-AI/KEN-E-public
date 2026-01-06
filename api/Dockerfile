@@ -19,6 +19,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 # Create app directory
 WORKDIR /app
 
+# Copy shared package (Cloud Build copies it into api/ first)
+COPY shared /app/shared
+
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 

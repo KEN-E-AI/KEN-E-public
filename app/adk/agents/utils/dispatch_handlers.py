@@ -57,6 +57,10 @@ def dispatch_to_google_analytics(
     Dispatch Google Analytics queries with tenant context.
     In production, tenant context comes from the authenticated user's session.
     For testing, we use environment variables.
+
+    Args:
+        query: The Google Analytics query or question from the user
+        tenant_context: Optional tenant credentials (auto-injected in production)
     """
     # Import here to avoid circular dependencies
     from ..google_analytics_agent_v4 import google_analytics_agent_v4
@@ -83,7 +87,20 @@ def dispatch_to_google_analytics(
             and tenant_context.get("tenant_credentials")
         ):
             # Inject tenant context into the query for the GA agent
-            enhanced_query = f"TENANT_ID:{tenant_context['tenant_id']} TENANT_CREDS:{tenant_context['tenant_credentials']} {query}"
+            enhanced_query = f"TENANT_ID:{tenant_context['tenant_id']} TENANT_CREDS:{tenant_context['tenant_credentials']}"
+
+            # Include property IDs if available
+            if tenant_context.get("default_property_id"):
+                enhanced_query += f" PROPERTY_ID:{tenant_context['default_property_id']}"
+            elif tenant_context.get("selected_property_ids"):
+                # If multiple properties, include the list
+                property_ids = tenant_context['selected_property_ids']
+                if len(property_ids) == 1:
+                    enhanced_query += f" PROPERTY_ID:{property_ids[0]}"
+                else:
+                    enhanced_query += f" PROPERTY_IDS:{','.join(property_ids)}"
+
+            enhanced_query += f" {query}"
         else:
             # No credentials available
             enhanced_query = query

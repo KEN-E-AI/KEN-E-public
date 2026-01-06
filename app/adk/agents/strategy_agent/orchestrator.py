@@ -72,6 +72,12 @@ try:
     if env_path.exists():
         load_dotenv(env_path, override=False)
         logging.info(f"Loaded environment variables from {env_path}")
+    else:
+        # Try alternate location (agents/.env)
+        alt_path = Path(__file__).parent.parent / ".env"
+        if alt_path.exists():
+            load_dotenv(alt_path, override=False)
+            logging.info(f"Loaded environment variables from {alt_path}")
 except ImportError:
     logging.warning("python-dotenv not available")
 except Exception as e:
@@ -88,26 +94,26 @@ def init_weave_if_needed():
     """Initialize W&B Weave if not already initialized and API key is available."""
     global WEAVE_INITIALIZED
     if not WEAVE_INITIALIZED:
-        # Fetch W&B API key directly from Secret Manager
+        # Get W&B API key using shared secrets utility
         wandb_api_key = None
         try:
-            from google.cloud import secretmanager
+            from shared.secrets import get_env_or_secret
 
-            client = secretmanager.SecretManagerServiceClient()
-            # Use project number for consistency with other components
-            secret_name = "projects/525657242938/secrets/wandb_api_key/versions/latest"
-            response = client.access_secret_version(request={"name": secret_name})
-            wandb_api_key = response.payload.data.decode("UTF-8")
-            # Set in environment for weave to use
-            os.environ["WANDB_API_KEY"] = wandb_api_key
-            logger.info("✅ Fetched WANDB_API_KEY from Secret Manager")
+            wandb_api_key = get_env_or_secret("WANDB_API_KEY")
+            if wandb_api_key:
+                os.environ["WANDB_API_KEY"] = wandb_api_key
+                logger.info("✅ Retrieved WANDB_API_KEY")
+            else:
+                logger.warning("⚠️ WANDB_API_KEY not found in environment or Secret Manager")
         except Exception as e:
-            logger.warning(f"⚠️ Failed to fetch WANDB_API_KEY from Secret Manager: {e}")
+            logger.warning(f"⚠️ Failed to retrieve WANDB_API_KEY: {e}")
 
         if wandb_api_key:
             try:
-                weave.init(project_name="ken-e-strategy-agent")
-                logger.info("✅ W&B Weave observability initialized successfully")
+                # Use environment-specific project name from .env
+                project_name = os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+                weave.init(project_name=project_name)
+                logger.info(f"✅ W&B Weave initialized (project: {project_name})")
                 WEAVE_INITIALIZED = True
             except Exception as e:
                 logger.warning(f"⚠️ Failed to initialize Weave: {e}")
@@ -557,8 +563,11 @@ def _execute_single_strategy(
             try:
                 from .config_loader import load_config_from_firestore
 
+                # Use environment-specific project ID
+                formatter_project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
                 config, _ = load_config_from_firestore(
-                    strategy_config["formatter_doc_id"]
+                    strategy_config["formatter_doc_id"],
+                    project_id=formatter_project_id
                 )
                 firestore_instructions = getattr(
                     config, "instruction", None

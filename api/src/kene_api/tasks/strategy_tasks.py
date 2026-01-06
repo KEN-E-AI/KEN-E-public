@@ -135,7 +135,7 @@ async def trigger_strategy_generation(
         import os
 
         from ..routers.chat import AgentEngineClient
-        from ..utils.secrets import get_env_or_secret
+        from shared.secrets import get_env_or_secret
 
         # Get project ID based on environment
         environment = os.getenv("ENVIRONMENT", "development").lower()

@@ -54,10 +54,10 @@ def test_sendgrid_directly():
             continue
         
         # Try to retrieve the actual key
-        from src.kene_api.secret_manager import get_env_var_or_secret
-        
+        from shared.secrets import get_env_or_secret
+
         try:
-            api_key = get_env_var_or_secret("SENDGRID_API_KEY")
+            api_key = get_env_or_secret("SENDGRID_API_KEY")
             if not api_key:
                 logger.error("Failed to retrieve SendGrid API key from Secret Manager")
                 continue

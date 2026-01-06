@@ -15,23 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _get_openai_key() -> str:
-    """Load OpenAI API key from env or Secret Manager."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        return api_key
+    """Load OpenAI API key using shared secrets utility."""
+    from shared.secrets import get_env_or_secret
 
-    # Load from Secret Manager
-    try:
-        from google.cloud import secretmanager
-
-        client = secretmanager.SecretManagerServiceClient()
-        name = "projects/ken-e-dev/secrets/OPENAI_API_KEY/versions/latest"
-        response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("UTF-8")
-    except Exception as e:
-        raise ValueError(
-            f"OPENAI_API_KEY not found in environment or Secret Manager: {e}"
-        ) from e
+    api_key = get_env_or_secret("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment or Secret Manager")
+    return api_key
 
 
 @weave.op(name="openai_formatter")

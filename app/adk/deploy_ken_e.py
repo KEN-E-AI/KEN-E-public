@@ -2,30 +2,54 @@
 """
 Deployment script for KEN-E chat agent.
 Deploys the frontend-facing agent for company news and analytics.
+
+Usage:
+    python deploy_ken_e.py --env dev
+    python deploy_ken_e.py --env staging
+    python deploy_ken_e.py --env prod
 """
 
+import argparse
 import logging
 import os
-import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import vertexai
+from google.cloud import secretmanager
+from vertexai.preview import reasoning_engines
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add API source to path to access the secrets utility
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "api" / "src"))
+# Add shared package to path for secret resolution
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
-    from kene_api.utils.secrets import get_env_or_secret
+    from shared.secrets import get_env_or_secret
 except ImportError:
-    logger.warning("Could not import secrets utility, will copy .env as-is")
+    logger.warning("Could not import shared secrets utility, will copy .env as-is")
     get_env_or_secret = None
+
+# Environment to GCP project mapping
+ENV_CONFIG = {
+    "dev": {
+        "project_id": "ken-e-dev",
+        "project_number": "525657242938",
+    },
+    "staging": {
+        "project_id": "ken-e-staging",
+        "project_number": "391472102753",
+    },
+    "prod": {
+        "project_id": "ken-e-production",
+        "project_number": "395770269870",
+    },
+}
 
 
 def update_secret_manager(secret_name: str, secret_value: str, project_id: str) -> bool:
@@ -99,7 +123,7 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
                 # Check if this value needs Secret Manager resolution
                 if value.startswith("sm://"):
                     try:
-                        # Set the environment variable temporarily to use get_env_or_secret
+                        # Set env var temporarily to use get_env_or_secret
                         os.environ[key] = value
                         resolved_value = get_env_or_secret(key)
                         if resolved_value:
@@ -147,55 +171,135 @@ def deploy_ken_e() -> str | None:
             logger.error("agents directory not found")
             return None
 
-        # Create a proper agent.py that imports and exports the KEN-E agent
-        agent_content = """
-# This file makes the KEN-E agent available for deployment
-from agents.ken_e_agent import ken_e_agent
-
-# ADK looks for 'root_agent' or the agent name directly
-root_agent = ken_e_agent
-
-# Also export with the original name
-__all__ = ['ken_e_agent', 'root_agent']
-"""
-        with open(temp_path / "agent.py", "w") as f:
-            f.write(agent_content)
-        logger.info("Created agent.py wrapper")
-
-        # Create agent_engine_app.py that imports from agent.py
-        app_content = """from vertexai.preview import reasoning_engines
-from agent import root_agent
-
-app = reasoning_engines.AdkApp(
-    agent=root_agent,
-    enable_tracing=True
-)
-"""
-        with open(temp_path / "agent_engine_app.py", "w") as f:
-            f.write(app_content)
-        logger.info("Created agent_engine_app.py")
+        # No need to create wrapper files anymore - using direct API
 
         # Copy requirements.txt
         if Path("requirements.txt").exists():
             shutil.copy2("requirements.txt", temp_path / "requirements.txt")
             logger.info("Copied requirements.txt")
 
-        # Process .env file if exists (resolve Secret Manager references)
-        env_file = Path(".env")
+        # Copy shared package (contains secrets utility and other shared code)
+        shared_src = Path(__file__).parent.parent.parent / "shared"
+        if shared_src.exists():
+            shutil.copytree(shared_src, temp_path / "shared")
+            logger.info("Copied shared package")
+        else:
+            logger.warning("⚠️  shared package not found")
+
+        # Process environment-specific .env file (resolve sm:// references)
+        env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
+        env_name = env_mapping.get(os.getenv("_TARGET_ENV", "dev"), "dev")
+        env_file = Path(f".env.{env_name}")
+
+        if not env_file.exists():
+            logger.warning(f"⚠️  {env_file} not found, trying .env")
+            env_file = Path(".env")
+
         if env_file.exists():
+            logger.info(f"Using {env_file} for {os.getenv('_TARGET_ENV', 'dev')} environment")
             process_env_file(env_file, temp_path / ".env")
-            logger.info("Processed .env file with Secret Manager resolution")
+            logger.info("Processed and copied .env file to root")
+            # Also copy to agents directory for runtime loading
+            process_env_file(env_file, temp_path / "agents" / ".env")
+            logger.info("Copied .env file to agents/ directory for runtime loading")
+        else:
+            logger.error("❌ No .env file found")
+            sys.exit(1)
+
+        # Change to temp directory for deployment
+        os.chdir(temp_path)
+
+        # Initialize Vertex AI
+        project_id = os.getenv("VERTEX_AI_PROJECT_ID", "ken-e-dev")
+        location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+        staging_bucket = f"gs://{project_id}-adk-staging"
+
+        vertexai.init(
+            project=project_id,
+            location=location,
+            staging_bucket=staging_bucket,
+        )
+
+        # Import the KEN-E agent
+        sys.path.insert(0, str(Path.cwd()))
+        from agents.ken_e_agent import ken_e_agent
+
+        if ken_e_agent is None:
+            logger.error("❌ Failed to import ken_e_agent")
+            return None
+
+        logger.info(f"✅ Loaded agent: {type(ken_e_agent)}")
+
+        # Wrap with AdkApp for deployment
+        app = reasoning_engines.AdkApp(agent=ken_e_agent, enable_tracing=True)
+        logger.info(f"✅ Created AdkApp: {type(app)}")
 
         # Generate deployment name with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         deployment_name = f"ken-e-chat-agent-{timestamp}"
 
-        logger.info(f"Deploying as: {deployment_name}")
+        # Deploy using Python API (same approach as Strategy Supervisor)
+        logger.info(f"📦 Deploying {deployment_name}...")
 
-        # Change to temp directory for deployment
-        os.chdir(temp_path)
+        try:
+            deployed_engine = reasoning_engines.ReasoningEngine.create(
+                reasoning_engine=app,
+                requirements="requirements.txt",
+                display_name=deployment_name,
+                description="KEN-E chat agent for company news and analytics",
+                extra_packages=["agents", "shared"],
+            )
 
-        # Log the directory structure
+            logger.info("✅ Deployment successful!")
+            logger.info(f"Engine ID: {deployed_engine.resource_name}")
+
+            engine_id = deployed_engine.resource_name
+
+            # Save deployment info
+            deployment_info = f"""Deployment: {deployment_name}
+Timestamp: {timestamp}
+Engine ID: {engine_id}
+Project: {project_id}
+Location: {location}
+"""
+
+            # Write to deployment log in logs directory
+            logs_dir = Path(original_dir) / "agents" / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_file = logs_dir / "ken_e_deployment.txt"
+            with open(log_file, "w") as f:
+                f.write(deployment_info)
+
+            logger.info(f"Deployment info saved to: {log_file}")
+
+            # Update Secret Manager with the new engine ID
+            logger.info("📝 Updating Secret Manager...")
+            project_number = os.getenv("_PROJECT_NUMBER", "525657242938")
+            secret_updated = update_secret_manager(
+                secret_name="ken-e-engine-id",
+                secret_value=engine_id,
+                project_id=project_number,
+            )
+
+            if secret_updated:
+                logger.info("✅ Secret Manager updated successfully")
+            else:
+                logger.warning("⚠️  Failed to update Secret Manager")
+
+            print("\n" + "=" * 70)
+            print("🎉 KEN-E CHAT AGENT DEPLOYMENT SUCCESSFUL!")
+            print("=" * 70)
+            print(f"Engine ID: {engine_id}")
+            print(f"Python Version: 3.12")
+            print("=" * 70)
+
+            return engine_id
+
+        except Exception as e:
+            logger.error(f"❌ Deployment failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
         logger.info("Deployment directory structure:")
         for root, _dirs, files in os.walk("."):
             level = root.replace(".", "", 1).count(os.sep)
@@ -317,10 +421,12 @@ Location: {location}
 
                 # Update Secret Manager with the new engine ID
                 print("\n📝 Updating Secret Manager...")
+                # Get project number from environment (set in main)
+                project_number = os.getenv("_PROJECT_NUMBER", "525657242938")
                 secret_updated = update_secret_manager(
                     secret_name="ken-e-engine-id",
                     secret_value=engine_id,
-                    project_id="525657242938",  # Using the project ID from the secrets
+                    project_id=project_number,
                 )
 
                 if secret_updated:
@@ -351,20 +457,37 @@ Location: {location}
 
 
 if __name__ == "__main__":
-    # Set environment variables if provided as arguments
-    if len(sys.argv) > 1:
-        import argparse
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Deploy KEN-E agent to Vertex AI")
+    parser.add_argument(
+        "--env",
+        choices=["dev", "staging", "prod"],
+        default="dev",
+        help="Target environment (dev, staging, or prod). Default: dev",
+    )
+    parser.add_argument(
+        "--location",
+        default="us-central1",
+        help="Vertex AI location (default: us-central1)",
+    )
+    args = parser.parse_args()
 
-        parser = argparse.ArgumentParser(description="Deploy KEN-E agent to Vertex AI")
-        parser.add_argument("--project", help="GCP project ID")
-        parser.add_argument("--location", help="Vertex AI location")
-        args = parser.parse_args()
+    # Get configuration for target environment
+    env_config = ENV_CONFIG[args.env]
 
-        if args.project:
-            os.environ["VERTEX_AI_PROJECT_ID"] = args.project
-            os.environ["GOOGLE_CLOUD_PROJECT_ID"] = args.project
-        if args.location:
-            os.environ["VERTEX_AI_LOCATION"] = args.location
+    # Set environment variables from config
+    os.environ["VERTEX_AI_PROJECT_ID"] = env_config["project_id"]
+    os.environ["GOOGLE_CLOUD_PROJECT_ID"] = env_config["project_id"]
+    os.environ["VERTEX_AI_LOCATION"] = args.location
+    os.environ["_TARGET_ENV"] = args.env
+    os.environ["_PROJECT_NUMBER"] = env_config["project_number"]
+
+    logger.info("=" * 70)
+    logger.info("Deploying KEN-E Chat Agent")
+    logger.info(f"Environment: {args.env.upper()}")
+    logger.info(f"Project: {env_config['project_id']} ({env_config['project_number']})")
+    logger.info(f"Location: {args.location}")
+    logger.info("=" * 70)
 
     result = deploy_ken_e()
     sys.exit(0 if result else 1)

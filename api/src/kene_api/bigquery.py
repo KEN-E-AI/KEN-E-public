@@ -1,5 +1,6 @@
 """BigQuery service for data operations."""
 
+import json
 import os
 from typing import Any
 
@@ -9,7 +10,7 @@ from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 from google.oauth2 import service_account
 
-from .secret_manager import get_env_var_or_secret_json
+from shared.secrets import get_env_or_secret
 
 # Load environment variables
 load_dotenv()
@@ -54,7 +55,7 @@ class BigQueryService:
             if use_adc or not credentials_path:
                 print("Using Application Default Credentials for BigQuery")
                 try:
-                    credentials, detected_project = default()
+                    credentials, _detected_project = default()
                     self._client = bigquery.Client(
                         project=project_id,
                         credentials=credentials,
@@ -76,32 +77,41 @@ class BigQueryService:
             if credentials_path:
                 credentials = None
 
-                # Check if credentials_path is a Secret Manager path
-                if (
+                # Check if credentials_path is a secret reference
+                # (sm:// or projects/...). get_env_or_secret handles both
+                if credentials_path.startswith("sm://") or (
                     credentials_path.startswith("projects/")
                     and "/secrets/" in credentials_path
                     and "/versions/" in credentials_path
                 ):
                     print(
-                        f"Loading service account credentials from Secret Manager: {credentials_path}"
+                        "Loading service account credentials from "
+                        f"Secret Manager: {credentials_path}"
                     )
                     try:
                         # Get service account JSON from Secret Manager
-                        service_account_info = get_env_var_or_secret_json(
+                        credentials_json_str = get_env_or_secret(
                             "GOOGLE_APPLICATION_CREDENTIALS"
                         )
-                        if service_account_info:
-                            credentials = (
-                                service_account.Credentials.from_service_account_info(
+                        if credentials_json_str:
+                            try:
+                                service_account_info = json.loads(credentials_json_str)
+                                credentials = service_account.Credentials.from_service_account_info(
                                     service_account_info
                                 )
-                            )
-                            print(
-                                "Successfully loaded service account credentials from Secret Manager"
-                            )
+                                print(
+                                    "Successfully loaded service account "
+                                    "credentials from Secret Manager"
+                                )
+                            except json.JSONDecodeError as e:
+                                raise ValueError(
+                                    "Failed to parse service account JSON "
+                                    f"from Secret Manager: {e}"
+                                ) from e
                         else:
                             raise ValueError(
-                                "Failed to retrieve service account JSON from Secret Manager"
+                                "Failed to retrieve service account JSON "
+                                "from Secret Manager"
                             )
                     except Exception as e:
                         print(f"Failed to load credentials from Secret Manager: {e}")

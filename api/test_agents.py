@@ -22,7 +22,7 @@ async def test_agents():
     print("=" * 60)
 
     # Test loading environment variables
-    from src.kene_api.utils.secrets import get_env_or_secret
+    from shared.secrets import get_env_or_secret
 
     print("\n1. Testing Secret Manager Integration:")
     print("-" * 40)

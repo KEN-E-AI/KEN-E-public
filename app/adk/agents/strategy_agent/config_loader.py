@@ -6,6 +6,7 @@ with full observability via Weave tracing.
 """
 
 import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -75,8 +76,11 @@ def load_config_from_firestore(
         FirestoreConnectionError: If Firestore connection fails
     """
     try:
-        # Initialize Firestore client
-        db = firestore.Client(project=project_id)
+        # Initialize Firestore client with explicit ADC
+        # Agent Engine requires explicit credential configuration
+        from google.auth import default
+        credentials, _ = default()
+        db = firestore.Client(project=project_id, credentials=credentials)
 
         # Fetch config document
         doc_ref = db.collection("agent_configs").document(doc_id)
@@ -142,7 +146,7 @@ def create_agent_from_firestore_config(
     doc_id: str,
     google_search_agent: Any | None = None,
     output_schema: Any | None = None,
-    project_id: str = "ken-e-dev",
+    project_id: str | None = None,
 ) -> Agent:
     """
     Create an ADK agent from Firestore configuration.
@@ -165,6 +169,10 @@ def create_agent_from_firestore_config(
         ConfigValidationError: If config format invalid
         FirestoreConnectionError: If Firestore unavailable
     """
+    # Use environment-aware project ID if not provided
+    if not project_id:
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+
     # Load config from Firestore
     config, metadata = load_config_from_firestore(doc_id, project_id)
 
@@ -243,7 +251,10 @@ def get_current_config_metadata(
         Metadata dictionary
     """
     try:
-        db = firestore.Client(project=project_id)
+        # Use explicit credentials for Agent Engine compatibility
+        from google.auth import default
+        credentials, _ = default()
+        db = firestore.Client(project=project_id, credentials=credentials)
         doc_ref = db.collection("agent_configs").document(doc_id)
         doc = doc_ref.get()
 

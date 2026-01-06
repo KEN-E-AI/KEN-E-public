@@ -109,14 +109,31 @@ class AgentEngineClient:
         self.location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
         # Use KEN_E_ENGINE_ID if available, fall back to VERTEX_AI_AGENT_ENGINE_ID for backward compatibility
-        self.agent_engine_id = os.getenv("KEN_E_ENGINE_ID") or os.getenv(
+        # Use get_env_or_secret to resolve Secret Manager paths
+        from shared.secrets import get_env_or_secret
+        engine_id_full = get_env_or_secret("KEN_E_ENGINE_ID") or get_env_or_secret(
             "VERTEX_AI_AGENT_ENGINE_ID"
         )
 
-        if not self.agent_engine_id:
+        if not engine_id_full:
+            print(f"[CHAT INIT] KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set")
             logger.warning(
                 "KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set. Chat functionality will be limited."
             )
+            self.agent_engine_id_full = None
+            self.agent_engine_id = None
+        else:
+            # Strip any whitespace/newlines from Secret Manager values
+            engine_id_full = engine_id_full.strip()
+
+            # Store the full resource path for logging
+            self.agent_engine_id_full = engine_id_full
+            # Extract just the numeric ID from the resource path for API calls
+            # Handles both formats: "projects/.../reasoningEngines/12345" and "12345"
+            self.agent_engine_id = engine_id_full.split("/")[-1]
+            print(f"[CHAT INIT] Full engine ID: {engine_id_full}")
+            print(f"[CHAT INIT] Extracted numeric ID: {self.agent_engine_id}")
+            logger.info(f"Resolved Agent Engine ID: {self.agent_engine_id} (from {engine_id_full})")
 
         # Initialize Vertex AI
         vertexai.init(project=self.project_id, location=self.location)
@@ -130,15 +147,25 @@ class AgentEngineClient:
         """Lazy-load the agent engine using agent_engines.get()."""
         if self._agent_engine is None and self.agent_engine_id:
             try:
+                print(f"[AGENT_ENGINE] About to call agent_engines.get()")
+                print(f"[AGENT_ENGINE] agent_engine_id_full: {self.agent_engine_id_full}")
+                print(f"[AGENT_ENGINE] agent_engine_id (numeric): {self.agent_engine_id}")
                 logger.info(
-                    f"Attempting to connect to Agent Engine: {self.agent_engine_id}"
+                    f"Attempting to connect to Agent Engine: {self.agent_engine_id_full or self.agent_engine_id}"
                 )
                 logger.info(
                     f"Using project: {self.project_id}, location: {self.location}"
                 )
 
-                # Use agent_engines.get() to get the deployed agent engine
-                self._agent_engine = agent_engines.get(self.agent_engine_id)
+                # Use vertexai.Client to get the deployed agent engine
+                # The correct API requires using a Client instance
+                resource_name = self.agent_engine_id_full
+                print(f"[AGENT_ENGINE] Creating vertexai.Client with project={self.project_id}, location={self.location}")
+                print(f"[AGENT_ENGINE] Calling client.agent_engines.get(name={resource_name})")
+                logger.info(f"Calling agent_engines.get with name parameter: {resource_name}")
+
+                client = vertexai.Client(project=self.project_id, location=self.location)
+                self._agent_engine = client.agent_engines.get(name=resource_name)
 
                 # Log the available methods for debugging
                 available_methods = [
@@ -149,7 +176,7 @@ class AgentEngineClient:
                 logger.info(f"Available methods on agent engine: {available_methods}")
 
                 logger.info(
-                    f"Successfully connected to Agent Engine: {self.agent_engine_id}"
+                    f"Successfully connected to Agent Engine: {self.agent_engine_id_full or self.agent_engine_id}"
                 )
             except Exception as e:
                 logger.error(f"Failed to connect to Agent Engine: {e}")
@@ -169,9 +196,7 @@ class AgentEngineClient:
                 self._session_service = VertexAiSessionService(
                     project=self.project_id,
                     location=self.location,
-                    agent_engine_id=self.agent_engine_id.split("/")[
-                        -1
-                    ],  # Extract just the ID part
+                    agent_engine_id=self.agent_engine_id,  # Already extracted in __init__
                 )
                 logger.info("Successfully initialized VertexAiSessionService")
             except Exception as e:
@@ -752,9 +777,18 @@ class AgentEngineClient:
                             logger.info(
                                 f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            logger.info(
+                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
+                            logger.info(f"[GA-INJECT] Enhanced message keys: {list(enhanced_message.keys())}")
+                            logger.info(f"[GA-INJECT] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            logger.info(f"[GA-INJECT] default_property_id: {enhanced_message.get('default_property_id')}")
                             print(
                                 f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            print(f"[DEBUG] Enhanced message keys: {list(enhanced_message.keys())}")
+                            print(f"[DEBUG] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            print(f"[DEBUG] default_property_id: {enhanced_message.get('default_property_id')}")
                         else:
                             logger.warning(
                                 f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
@@ -1221,9 +1255,18 @@ class AgentEngineClient:
                             logger.info(
                                 f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            logger.info(
+                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
+                            )
+                            logger.info(f"[GA-INJECT] Enhanced message keys: {list(enhanced_message.keys())}")
+                            logger.info(f"[GA-INJECT] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            logger.info(f"[GA-INJECT] default_property_id: {enhanced_message.get('default_property_id')}")
                             print(
                                 f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
                             )
+                            print(f"[DEBUG] Enhanced message keys: {list(enhanced_message.keys())}")
+                            print(f"[DEBUG] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
+                            print(f"[DEBUG] default_property_id: {enhanced_message.get('default_property_id')}")
                         else:
                             logger.warning(
                                 f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"

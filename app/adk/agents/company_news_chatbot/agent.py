@@ -1,17 +1,41 @@
 """
 Simple Company News Chatbot - Proper ADK Pattern
 Following official ADK samples structure
+
+Environment-aware: Uses GOOGLE_CLOUD_PROJECT and VERTEX_AI_NEWS_DATASTORE_ID from .env
 """
 
 import os
+from pathlib import Path
 import vertexai
 from google.adk.agents import Agent
 from google.adk.tools import VertexAiSearchTool
 
-# Configuration - these should match your actual Vertex AI Search setup
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-staging")
-LOCATION = "global"  # Datastore location
-VERTEX_LOCATION = "us-central1"  # Vertex AI location
+# Load environment variables from .env file if it exists
+# This must happen before reading config to ensure env vars are available
+try:
+    from dotenv import load_dotenv
+
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+    else:
+        # Try alternate location (agents/.env)
+        alt_path = Path(__file__).parent.parent / ".env"
+        if alt_path.exists():
+            load_dotenv(alt_path, override=False)
+except Exception:
+    pass  # Continue without .env if loading fails
+
+# Configuration - reads from environment variables set in .env files
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+if not PROJECT_ID:
+    raise ValueError(
+        "GOOGLE_CLOUD_PROJECT not set. Ensure .env file is loaded with project configuration."
+    )
+
+LOCATION = os.getenv("VERTEX_AI_SEARCH_LOCATION", "global")
+VERTEX_LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
 # Initialize Vertex AI
 vertexai.init(project=PROJECT_ID, location=VERTEX_LOCATION)
@@ -63,11 +87,23 @@ company_agents = create_company_agents()
 
 # Main router agent that can access all companies
 def create_main_agent():
-    """Create the main router agent that can handle any company."""
+    """Create the main router agent that can handle any company.
 
-    # Use the actual datastore that contains our news data
-    # This is the general multi-company datastore we've been populating
-    datastore_path = f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/dataStores/ken-e-staging-test-news-search-connecto_1753269093831_gcs_store"
+    Uses environment-specific Vertex AI Search datastore configured via VERTEX_AI_NEWS_DATASTORE_ID.
+    """
+    # Get datastore ID from environment (set per environment in .env files)
+    datastore_id = os.getenv("VERTEX_AI_NEWS_DATASTORE_ID")
+    if not datastore_id:
+        raise ValueError(
+            "VERTEX_AI_NEWS_DATASTORE_ID not set. "
+            "Add to .env file (e.g., VERTEX_AI_NEWS_DATASTORE_ID=ken-e-dev-news-search-datastore)"
+        )
+
+    # Build full datastore path using environment configuration
+    datastore_path = (
+        f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/"
+        f"dataStores/{datastore_id}"
+    )
 
     search_tool = VertexAiSearchTool(data_store_id=datastore_path, max_results=10)
 
