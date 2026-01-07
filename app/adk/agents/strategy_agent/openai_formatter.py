@@ -5,7 +5,6 @@ Provides fallback when Gemini formatter fails with complex schemas.
 
 import json
 import logging
-import os
 from typing import Any
 
 import weave
@@ -31,6 +30,7 @@ def format_with_openai(
     strategy_type: str,
     source_urls: list | None = None,
     custom_instructions: str | None = None,
+    model: str = "gpt-4o-2024-08-06",
 ) -> dict[str, Any]:
     """
     Use OpenAI to format research data into structured strategy.
@@ -45,6 +45,7 @@ def format_with_openai(
         source_urls: List of source URLs from grounding metadata
         custom_instructions: Optional custom instructions from Firestore config.
                            If provided, these will be used instead of hardcoded instructions.
+        model: OpenAI model to use (default: gpt-4o-2024-08-06)
 
     Returns:
         Dictionary matching the Pydantic model schema
@@ -81,7 +82,7 @@ def format_with_openai(
 
         # Use OpenAI's structured output parsing
         completion = client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",
+            model=model,
             messages=[
                 {
                     "role": "system",
