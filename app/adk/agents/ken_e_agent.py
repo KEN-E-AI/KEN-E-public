@@ -2,20 +2,43 @@
 KEN-E Agent: Frontend-facing chat agent for company news and analytics.
 """
 
+import logging
+
 from google.adk.agents import Agent
 
+from .strategy_agent.config_loader import load_config_from_firestore
 from .utils.dispatch_handlers import (
     dispatch_to_company_news,
     dispatch_to_google_analytics,
 )
 from .utils.supervisor_utils import dispatch_with_context
 
+logger = logging.getLogger(__name__)
 
-def create_ken_e_agent():
+
+def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     """
     Create the KEN-E chat agent for frontend interactions.
     Handles company news and Google Analytics queries only.
+
+    Args:
+        config_doc_id: Firestore document ID for agent configuration (default: "ken_e_chatbot")
     """
+
+    # Load configuration from Firestore with fallback to hardcoded values
+    try:
+        config, metadata = load_config_from_firestore(config_doc_id)
+        model = config.model
+        logger.info(
+            f"Loaded KEN-E chatbot config from Firestore: {config_doc_id} "
+            f"(version: {metadata.get('version', 'unknown')}, model: {model})"
+        )
+    except Exception as e:
+        logger.warning(
+            f"Failed to load KEN-E chatbot config from Firestore ({config_doc_id}): {e}. "
+            f"Falling back to hardcoded model: gemini-2.0-flash"
+        )
+        model = "gemini-2.0-flash"
 
     # Create dispatch functions with context handling
     search_company_news = dispatch_with_context(dispatch_to_company_news)
@@ -36,7 +59,7 @@ Args:
 
     ken_e = Agent(
         name="ken_e",
-        model="gemini-2.0-flash",
+        model=model,
         instruction="""You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.
 
 **CRITICAL: When you call a tool, the tool's response contains the answer. You MUST present that response to the user. Never just acknowledge that you called the tool - always share what the tool returned.**

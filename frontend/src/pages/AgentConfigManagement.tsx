@@ -31,6 +31,42 @@ import {
 } from "@/services/agentConfigService";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+// Helper function to get model options based on agent type
+const getModelOptionsForAgent = (
+  configName: string,
+): Array<{ value: string; label: string }> => {
+  if (configName.includes("researcher") || configName === "ken_e_chatbot") {
+    // Gemini models for researchers and chatbot
+    return [
+      { value: "gemini-3-flash-preview", label: "Gemini 3.0 Flash (Preview)" },
+      { value: "gemini-3-pro-preview", label: "Gemini 3.0 Pro (Preview)" },
+      { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+      {
+        value: "gemini-2.0-flash-exp",
+        label: "Gemini 2.0 Flash (Experimental)",
+      },
+      { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+      { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+      { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+    ];
+  } else if (configName.includes("formatter")) {
+    // OpenAI models for formatters
+    return [
+      { value: "gpt-4o", label: "GPT-4o (Latest)" },
+      { value: "gpt-4o-2024-08-06", label: "GPT-4o (Aug 2024)" },
+      { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+      { value: "o1-preview", label: "O1 Preview (Reasoning)" },
+      { value: "o1-mini", label: "O1 Mini (Reasoning)" },
+    ];
+  }
+  // Default fallback
+  return [
+    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  ];
+};
+
 const AgentConfigManagement = () => {
   const navigate = useNavigate();
   const { isSuperAdmin, user } = useAuth();
@@ -172,8 +208,13 @@ const AgentConfigManagement = () => {
           <Info className="h-4 w-4" />
           <AlertTitle>Agent Config Management</AlertTitle>
           <AlertDescription>
-            Edit strategy agent configurations for instant iteration without
-            redeployment. All changes are versioned and logged to Weave.
+            Edit agent configurations including model selection, instructions,
+            and generation parameters. All changes are saved to Firestore and
+            versioned in Weave.
+            <br />
+            <br />
+            <strong>Note:</strong> For the KEN-E Chatbot agent, restart the API
+            server locally or redeploy to apply changes.
           </AlertDescription>
         </Alert>
 
@@ -234,6 +275,30 @@ const AgentConfigManagement = () => {
                       </div>
                     ),
                   )
+                )}
+
+                {/* Chatbot Agent Section */}
+                {categorizedConfigs.chatbot?.chatbot && (
+                  <div className="space-y-1 mt-4">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1">
+                      Chatbot
+                    </div>
+                    <Button
+                      variant={
+                        selectedConfigId === categorizedConfigs.chatbot.chatbot
+                          ? "default"
+                          : "ghost"
+                      }
+                      className="w-full justify-start text-sm"
+                      size="sm"
+                      onClick={() =>
+                        handleSelectConfig(categorizedConfigs.chatbot.chatbot!)
+                      }
+                    >
+                      <Bot className="h-4 w-4 mr-2" />
+                      KEN-E Chatbot
+                    </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -337,15 +402,16 @@ const AgentConfigManagement = () => {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="gemini-2.0-flash">
-                                Gemini 2.0 Flash
-                              </SelectItem>
-                              <SelectItem value="gemini-2.5-flash">
-                                Gemini 2.5 Flash
-                              </SelectItem>
-                              <SelectItem value="gemini-2.5-pro">
-                                Gemini 2.5 Pro
-                              </SelectItem>
+                              {getModelOptionsForAgent(
+                                selectedConfigId || "",
+                              ).map((option) => (
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                >
+                                  {option.label}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>

@@ -181,14 +181,21 @@ class AgentConfigService {
    */
   categorizeConfigs(
     configIds: string[],
-  ): Record<string, { researcher: string; formatter: string }> {
+  ): Record<
+    string,
+    { researcher?: string; formatter?: string; chatbot?: string }
+  > {
     const categories: Record<
       string,
-      { researcher: string; formatter: string }
+      { researcher?: string; formatter?: string; chatbot?: string }
     > = {};
 
     for (const id of configIds) {
-      if (id.includes("business")) {
+      if (id === "ken_e_chatbot") {
+        // Special handling for chatbot config
+        if (!categories.chatbot) categories.chatbot = {};
+        categories.chatbot.chatbot = id;
+      } else if (id.includes("business")) {
         if (!categories.business)
           categories.business = { researcher: "", formatter: "" };
         if (id.includes("researcher")) categories.business.researcher = id;

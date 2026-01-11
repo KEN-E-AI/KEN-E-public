@@ -30,6 +30,7 @@ ALLOWED_CONFIG_IDS = {
     "marketing_formatter",
     "brand_researcher",
     "brand_formatter",
+    "ken_e_chatbot",
 }
 
 
@@ -77,8 +78,8 @@ class AgentConfigUpdate(BaseModel):
 
     model: str | None = Field(
         None,
-        pattern=r"^gemini-[\d\.]+-\w+$",
-        description="Vertex AI model identifier (must be valid Gemini model)",
+        pattern=r"^(gemini-[\d]+-[\w-]+|gemini-[\d\.]+[-\w]+|gpt-[\w-]+|o1-[\w-]+)$",
+        description="Model identifier (Gemini or OpenAI model)",
     )
 
     description: str | None = Field(
@@ -134,24 +135,42 @@ class AgentConfigUpdate(BaseModel):
     @field_validator("model")
     @classmethod
     def validate_model_exists(cls, v: str | None) -> str | None:
-        """Validate model ID is a known Vertex AI model."""
+        """Validate model ID is a known Gemini or OpenAI model."""
         if v is None:
             return v
 
         # List of supported models (update as new models are released)
         SUPPORTED_MODELS = {
+            # Gemini 3 models (latest, preview)
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+            # Gemini 2.x models (current stable)
             "gemini-2.0-flash",
+            "gemini-2.0-flash-exp",
             "gemini-2.5-flash",
             "gemini-2.5-pro",
+            # Gemini 1.5 models (stable fallback)
             "gemini-1.5-pro",
             "gemini-1.5-flash",
+            # OpenAI models (for formatters)
+            "gpt-4o",
+            "gpt-4o-2024-08-06",
+            "gpt-4o-mini",
+            "o1-preview",
+            "o1-mini",
         }
 
         if v not in SUPPORTED_MODELS:
-            raise ValueError(
-                f"Model '{v}' is not supported. "
-                f"Supported models: {', '.join(sorted(SUPPORTED_MODELS))}"
+            # Separate Gemini and OpenAI models for better error message
+            gemini_models = {m for m in SUPPORTED_MODELS if m.startswith("gemini")}
+            openai_models = {m for m in SUPPORTED_MODELS if not m.startswith("gemini")}
+
+            error_msg = (
+                f"Model '{v}' is not supported.\n"
+                f"Supported Gemini models: {', '.join(sorted(gemini_models))}\n"
+                f"Supported OpenAI models: {', '.join(sorted(openai_models))}"
             )
+            raise ValueError(error_msg)
 
         return v
 
@@ -190,9 +209,7 @@ def _increment_version(current_version: str) -> str:
 
         return f"v{major}.{minor + 1}"
     except (ValueError, IndexError) as e:
-        logger.warning(
-            f"Invalid version format {current_version}: {e}, using fallback"
-        )
+        logger.warning(f"Invalid version format {current_version}: {e}, using fallback")
         return "v1.1"
 
 
@@ -261,7 +278,9 @@ def _build_firestore_updates(
         updates["description"] = description
 
     if temperature is not None or max_output_tokens is not None:
-        gen_config: dict[str, int | float] = current_gen_config.copy() if current_gen_config else {}
+        gen_config: dict[str, int | float] = (
+            current_gen_config.copy() if current_gen_config else {}
+        )
         if temperature is not None:
             gen_config["temperature"] = temperature
         if max_output_tokens is not None:
