@@ -10,11 +10,13 @@
 
 This guide explains how to configure Claude Code to work with our Notion workspace for product development. Once set up, Claude Code will be able to:
 
-- Retrieve feature descriptions and user stories from Notion
-- Update story status during development
-- Log session progress for continuity between sessions
-- Create new user stories when scope is too large
-- Add notes when features are ready for testing
+- **Understand sprint context** - Know which sprint is active and what stories are planned
+- **Continue from prior sessions** - Review previous session logs for continuity
+- **Retrieve feature and story context** - Load acceptance criteria and architecture references
+- **Update story status** during development
+- **Log session progress** for continuity between sessions
+- **Create new user stories** when scope is too large
+- **Reference architecture decisions** from the design documentation
 
 ---
 
@@ -50,19 +52,18 @@ The first time you use Claude Code in a repository with the Notion MCP configure
 
 You only need to do this once per machine. Your authentication persists across sessions.
 
-### Step 3: Install the PM Workflow Skill
+### Step 3: Verify the PM Workflow Skill
 
 The skill files should already be in your repository at:
 
 ```
 .claude/skills/notion-pm-workflow/
+├── skill.md                      # Workflow instructions for Claude Code
+└── references/
+    └── notion-schema.md          # Database IDs, sprint schedule, property definitions
 ```
 
-If not present, create the directory and add the skill files from the team shared drive.
-
-The skill contains:
-- `SKILL.md` - Workflow instructions for Claude Code
-- `references/notion-schema.md` - Database IDs and property definitions
+The skill references the architecture document at `docs/KEN-E-Agentic-Harness-Design.md` for technical context.
 
 ---
 
@@ -70,17 +71,73 @@ The skill contains:
 
 ### Starting a Coding Session
 
-When you begin work, tell Claude Code which story you're working on:
+When you begin work, invoke the skill or simply tell Claude Code you're starting:
 
 ```
-"I'm starting work on story 1.2.3 - API Authentication in the ken-e-api repo"
+"/notion-pm-workflow"
+```
+
+Or:
+
+```
+"I'm starting a coding session"
+```
+
+Claude Code will automatically:
+
+1. **Check session continuity** - Search recent Session Logs to show what was worked on previously, including:
+   - Work completed in the last session
+   - Next steps that were planned
+   - Any outstanding blockers
+
+2. **Determine the current sprint** - Based on today's date, identify which sprint is active and fetch its stories
+
+3. **Suggest work items** - Either:
+   - Continue from the previous session's "Next Steps"
+   - Suggest stories from the current sprint in `Backlog` status
+   - Ask which story you want to work on
+
+4. **Load full context** once you select a story:
+   - Fetch the story details (acceptance criteria, definition of done)
+   - Fetch the parent Feature for broader context
+   - Reference the relevant architecture section from the design doc
+
+5. **Create a Session Log** with sprint context and your initial plan
+
+### Example: Starting Fresh
+
+```
+"I'm starting a new session. What should I work on?"
+```
+
+Claude Code responds with:
+- Summary of last session's work and next steps
+- Current sprint info (e.g., "Sprint 1: Context & Sessions, Jan 19 - Feb 1")
+- Stories available in the current sprint
+
+### Example: Continuing Previous Work
+
+```
+"Continue where I left off"
 ```
 
 Claude Code will:
-- Search Notion for the story
-- Display the acceptance criteria and definition of done
-- Create a Session Log entry to track progress
-- Update the story status to "In progress"
+- Find your last Session Log
+- Show what you completed and what was planned next
+- Load the story context and create a new Session Log
+
+### Example: Picking a Specific Story
+
+```
+"I'm picking up story 1.1.1 - Organization Context Loading"
+```
+
+Claude Code will:
+- Fetch the story from Notion
+- Show acceptance criteria and definition of done
+- Load the Context Manager feature context
+- Reference Section 3 of the architecture doc (Context Management Strategy)
+- Create a Session Log
 
 ### During Development
 
@@ -89,6 +146,7 @@ You can ask Claude Code to update Notion at any time:
 - `"Update the story status to Blocked - waiting on API credentials"`
 - `"Add a comment to the story: Discovered we need a new endpoint"`
 - `"This story is too big. Break it into smaller stories."`
+- `"Update my session log: completed the Firestore integration"`
 
 ### Ending a Session
 
@@ -108,6 +166,38 @@ Claude Code will:
 
 ---
 
+## Sprint Workflow
+
+### Current Release: 1.0 - Foundation
+
+The Foundation release runs from **January 19 - May 10, 2026** across 8 sprints.
+
+| Sprint | Dates | Goal |
+|--------|-------|------|
+| Sprint 1 | Jan 19 - Feb 1 | Context & Sessions |
+| Sprint 2 | Feb 2 - Feb 15 | Context & Tool Registry |
+| Sprint 3 | Feb 16 - Mar 1 | Tool Security & MCP Foundation |
+| Sprint 4 | Mar 2 - Mar 15 | MCP Completion & Session Features |
+| Sprint 5 | Mar 16 - Mar 29 | Web UI Foundation |
+| Sprint 6 | Mar 30 - Apr 12 | Web UI Completion |
+| Sprint 7 | Apr 13 - Apr 26 | Orchestrator |
+| Sprint 8 | Apr 27 - May 10 | Integration & Polish |
+
+### Sprint Transitions
+
+At the end of a sprint, tell Claude Code:
+
+```
+"We're transitioning from Sprint 1 to Sprint 2"
+```
+
+Claude Code will:
+- Update Sprint 1 status to `Completed`
+- Move any incomplete stories to Sprint 2
+- Update Sprint 2 status to `In progress`
+
+---
+
 ## Reference: Status Values
 
 ### User Story Status
@@ -120,6 +210,15 @@ Claude Code will:
 | **Blocked** | Cannot proceed due to external dependency |
 | **Done** | Story is complete, tested, and accepted |
 
+### Sprint Status
+
+| Status | When to Use |
+|--------|-------------|
+| **Planning** | Sprint is being planned (future sprint) |
+| **In progress** | Sprint is currently active |
+| **Completed** | Sprint has ended |
+| **Retrospective** | Sprint review in progress |
+
 ### Session Log Status
 
 | Status | When to Use |
@@ -130,22 +229,58 @@ Claude Code will:
 
 ---
 
-## Example Prompts
+## Architecture Reference
 
-Here are examples of how to interact with Claude Code for common tasks:
+When working on stories, Claude Code will reference the relevant sections of `docs/KEN-E-Agentic-Harness-Design.md`:
+
+| Feature Area | Architecture Section |
+|--------------|---------------------|
+| Context Manager (1.1.x) | Section 3: Context Management Strategy |
+| Tool Registry (1.2.x) | Section 5: MCP Server Architecture |
+| MCP Manager (1.3.x) | Section 5: MCP Server Architecture |
+| Session Service (1.4.x) | Section 3: Context Management Strategy |
+| Web Channel (1.5.x) | Section 6: Multi-Channel Support |
+| Primary Orchestrator (1.6.x) | Section 4: Agent Definitions |
+| Basic Monitoring (1.7.x) | Section 8: Integration with Evaluation Framework |
+
+---
+
+## Example Prompts
 
 ### Finding and Starting Work
 
 ```
-"What stories are ready for development in the MVP release?"
+"What's in the current sprint?"
 ```
 
 ```
-"Show me the details for story 1.1.2"
+"Show me the stories for Sprint 1"
 ```
 
 ```
-"I'm picking up story 1.3.1 in the ken-e-web repo. Create a session log."
+"What did I work on last time?"
+```
+
+```
+"Continue from my last session"
+```
+
+```
+"I'm picking up story 1.3.1 - Lazy Server Initialization"
+```
+
+### Understanding Context
+
+```
+"What's the sprint goal for this sprint?"
+```
+
+```
+"Show me the parent feature for this story"
+```
+
+```
+"What does the architecture doc say about MCP server management?"
 ```
 
 ### Updating Progress
@@ -169,13 +304,15 @@ Here are examples of how to interact with Claude Code for common tasks:
 ```
 
 ```
-"Add a new story to feature 1.2: As a user, I want to reset my password"
+"Add a new story to feature 1.2: As a developer, I want rate limiting on tool calls"
 ```
 
 ### Ending Sessions
 
 ```
-"End session. Completed: user auth API, unit tests. Next steps: integration tests, error messages. Blocker: need test credentials from DevOps."
+"End session. Completed: Firestore session persistence, unit tests.
+Next steps: session recovery endpoint, integration tests.
+Blocker: need Firestore emulator setup docs."
 ```
 
 ---
@@ -192,11 +329,30 @@ Run `/mcp` in Claude Code and re-authenticate with Notion. Ensure you're using y
 
 ### "Database not found" or "Page not found"
 
-Verify the database IDs in `references/notion-schema.md` match your Notion workspace. Check that your Notion account has access to the KEN-E Product Development workspace.
+Verify the database IDs in `.claude/skills/notion-pm-workflow/references/notion-schema.md` match your Notion workspace. Check that your Notion account has access to the KEN-E Product Development workspace.
 
-### Claude Code doesn't follow the workflow
+### Claude Code doesn't know the current sprint
 
-Ensure the skill is installed at `.claude/skills/notion-pm-workflow/` and contains both `SKILL.md` and `references/notion-schema.md`.
+The sprint schedule is in `references/notion-schema.md`. Verify the dates are correct and that today's date falls within a sprint range.
+
+### Claude Code doesn't show previous session context
+
+Ensure your previous sessions created Session Log entries in Notion. Check that the Session Logs database is accessible.
+
+### Claude Code doesn't reference the architecture doc
+
+Ensure `docs/KEN-E-Agentic-Harness-Design.md` exists in your repository. The skill references this file for technical context.
+
+---
+
+## Files Reference
+
+| File | Purpose |
+|------|---------|
+| `.claude/skills/notion-pm-workflow/skill.md` | Main workflow instructions |
+| `.claude/skills/notion-pm-workflow/references/notion-schema.md` | Database IDs, sprint schedule, page IDs |
+| `docs/KEN-E-Agentic-Harness-Design.md` | Architecture and technical context |
+| `docs/claude-code-notion-setup-guide.md` | This guide |
 
 ---
 
