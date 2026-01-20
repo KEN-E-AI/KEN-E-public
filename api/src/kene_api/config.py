@@ -1,7 +1,6 @@
 import os
 import sys
 from pathlib import Path
-from typing import ClassVar
 
 from dotenv import load_dotenv
 
@@ -38,9 +37,9 @@ class Settings:
     superset_database_id: int = int(os.getenv("SUPERSET_DATABASE_ID", "2"))
 
     # CORS settings
-    allowed_origins: ClassVar[list[str]] = ["*"]  # Configure for production
-    allowed_methods: ClassVar[list[str]] = ["*"]
-    allowed_headers: ClassVar[list[str]] = ["*"]
+    cors_origins: str = os.getenv("CORS_ORIGINS", "*")
+    cors_methods: str = os.getenv("CORS_METHODS", "*")
+    cors_headers: str = os.getenv("CORS_HEADERS", "*")
 
     # reCAPTCHA settings
     RECAPTCHA_SITE_KEY: str = get_env_or_secret("RECAPTCHA_SITE_KEY", "")

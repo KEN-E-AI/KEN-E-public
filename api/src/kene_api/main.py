@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Load environment variables from .env file
 load_dotenv()
 
+from .config import settings
 from .database import neo4j_service
 from .firestore import get_firestore_service
 from .routers import (
@@ -98,13 +99,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def parse_cors_setting(value: str, default: list[str] | None = None) -> list[str]:
+    """Parse comma-separated CORS configuration string into a list.
+
+    Args:
+        value: Comma-separated string of CORS values
+        default: Default list to return if value is empty (defaults to ["*"])
+
+    Returns:
+        List of parsed and stripped values
+    """
+    if default is None:
+        default = ["*"]
+    return [item.strip() for item in value.split(",")] if value else default
+
+
 # Configure CORS
+# Parse CORS settings from environment (comma-separated strings)
+cors_origins = parse_cors_setting(settings.cors_origins)
+cors_methods = parse_cors_setting(settings.cors_methods)
+cors_headers = parse_cors_setting(settings.cors_headers)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=cors_methods,
+    allow_headers=cors_headers,
 )
 
 # Include routers
