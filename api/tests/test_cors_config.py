@@ -40,9 +40,14 @@ def test_cors_methods_can_be_split():
 
 def test_cors_headers_valid():
     """Test that CORS headers setting is valid."""
-    assert settings.cors_headers == "*" or "," in settings.cors_headers or len(
-        settings.cors_headers
-    ) > 0
+    # Headers should either be wildcard or a valid comma-separated list
+    assert settings.cors_headers is not None
+    assert len(settings.cors_headers) > 0
+
+    # If not wildcard, should be parseable into a list
+    if settings.cors_headers != "*":
+        headers_list = [h.strip() for h in settings.cors_headers.split(",")]
+        assert all(len(h) > 0 for h in headers_list)
 
 
 def test_cors_settings_use_os_getenv():
@@ -61,3 +66,32 @@ def test_cors_settings_use_os_getenv():
     assert isinstance(test_settings.cors_origins, str)
     assert isinstance(test_settings.cors_methods, str)
     assert isinstance(test_settings.cors_headers, str)
+
+
+def test_parse_cors_setting():
+    """Test the parse_cors_setting helper function."""
+    from src.kene_api.main import parse_cors_setting
+
+    # Test normal comma-separated values
+    assert parse_cors_setting("a,b,c") == ["a", "b", "c"]
+
+    # Test with whitespace
+    assert parse_cors_setting("a, b , c") == ["a", "b", "c"]
+
+    # Test with empty string
+    assert parse_cors_setting("") == ["*"]
+
+    # Test with custom default
+    assert parse_cors_setting("", ["custom"]) == ["custom"]
+
+    # Test single value
+    assert parse_cors_setting("single") == ["single"]
+
+    # Test wildcard
+    assert parse_cors_setting("*") == ["*"]
+
+    # Test real-world URLs
+    assert parse_cors_setting("https://app.ken-e.ai,https://staging.app.ken-e.ai") == [
+        "https://app.ken-e.ai",
+        "https://staging.app.ken-e.ai",
+    ]

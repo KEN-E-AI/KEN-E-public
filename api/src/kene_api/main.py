@@ -99,23 +99,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def parse_cors_setting(value: str, default: list[str] | None = None) -> list[str]:
+    """Parse comma-separated CORS configuration string into a list.
+
+    Args:
+        value: Comma-separated string of CORS values
+        default: Default list to return if value is empty (defaults to ["*"])
+
+    Returns:
+        List of parsed and stripped values
+    """
+    if default is None:
+        default = ["*"]
+    return [item.strip() for item in value.split(",")] if value else default
+
+
 # Configure CORS
 # Parse CORS settings from environment (comma-separated strings)
-cors_origins = (
-    [origin.strip() for origin in settings.cors_origins.split(",")]
-    if settings.cors_origins
-    else ["*"]
-)
-cors_methods = (
-    [method.strip() for method in settings.cors_methods.split(",")]
-    if settings.cors_methods
-    else ["*"]
-)
-cors_headers = (
-    [header.strip() for header in settings.cors_headers.split(",")]
-    if settings.cors_headers
-    else ["*"]
-)
+cors_origins = parse_cors_setting(settings.cors_origins)
+cors_methods = parse_cors_setting(settings.cors_methods)
+cors_headers = parse_cors_setting(settings.cors_headers)
 
 app.add_middleware(
     CORSMiddleware,
