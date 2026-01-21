@@ -6,28 +6,62 @@ import logging
 import os
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
+from google.adk.tools import ToolContext
 from pydantic import ValidationError
 
 from ..models.strategy_models import StrategyParameters, parse_strategy_query
 from .agent_retry import invoke_agent_with_retry
-from .supervisor_utils import invoke_agent_sync
 
 logger = logging.getLogger(__name__)
 
 
 def dispatch_to_company_news(
-    query: str, tenant_context: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    query: str,
+    tool_context: ToolContext | None = None,
+    tenant_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Dispatch company news queries to the specialized news agent.
     News agent doesn't need tenant context as it uses public data.
+
+    Args:
+        query: User's question about company news
+        tool_context: ADK ToolContext with session state (auto-injected)
+        tenant_context: Legacy parameter for backward compatibility
     """
     # Import here to avoid circular dependencies
     from ..company_news_chatbot.agent import root_agent as news_agent
+    from .context_loader import inject_organization_context
 
     try:
+        logger.info("[NEWS-DISPATCH] ========== DISPATCH START ==========")
+        logger.info(f"[NEWS-DISPATCH] Query: {query[:200]}")
+        logger.info(f"[NEWS-DISPATCH] tool_context present: {tool_context is not None}")
+
+        # Extract account_id from session state
+        account_id = None
+        if tool_context and hasattr(tool_context, 'state'):
+            account_id = tool_context.state.get("account_id")
+            logger.info(f"[NEWS-DISPATCH] Retrieved account_id from session state: {account_id}")
+        elif tenant_context:
+            account_id = tenant_context.get("account_id")
+            logger.info(f"[NEWS-DISPATCH] Retrieved account_id from tenant_context: {account_id}")
+
+        # Inject pre-loaded organization context from session state
+        # Context is loaded in API layer (which has Neo4j access) and stored in session state
+        org_context = None
+        if tool_context and hasattr(tool_context, 'state'):
+            org_context = tool_context.state.get("organization_context")
+            if org_context:
+                query = inject_organization_context(query, org_context)
+                logger.info(f"[NEWS-DISPATCH] ✅ Injected org context from session state, new query length: {len(query)}")
+            else:
+                logger.info("[NEWS-DISPATCH] No org context in session state")
+        else:
+            logger.info("[NEWS-DISPATCH] No tool_context available for org context")
+
         logger.info("🔄 Routing company news query to specialized agent...")
         # Use retry logic for robust agent invocation
         result = invoke_agent_with_retry(news_agent, query, max_attempts=3)
@@ -51,27 +85,66 @@ def dispatch_to_company_news(
 
 
 def dispatch_to_google_analytics(
-    query: str, tenant_context: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    query: str,
+    tool_context: ToolContext | None = None,
+    tenant_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
-    Dispatch Google Analytics queries with tenant context.
-    In production, tenant context comes from the authenticated user's session.
-    For testing, we use environment variables.
+    Dispatch Google Analytics queries with tenant context from session state.
 
     Args:
         query: The Google Analytics query or question from the user
-        tenant_context: Optional tenant credentials (auto-injected in production)
+        tool_context: ADK ToolContext with session state (auto-injected by ADK)
+        tenant_context: Legacy parameter for backward compatibility
     """
     # Import here to avoid circular dependencies
     from ..google_analytics_agent_v4 import google_analytics_agent_v4
+    from .context_loader import inject_organization_context
+    from .supervisor_utils import encode_ga_credentials
 
     try:
         logger.info("🔄 Routing Google Analytics query to specialized agent...")
 
-        # In production, credentials would come from the KEN-E app's user session
-        # For testing/development, use environment variables
+        # Strategy 1: Extract from session state (preferred)
+        account_id = None
+        ga_credentials = None
+
+        if tool_context and hasattr(tool_context, 'state'):
+            account_id = tool_context.state.get("account_id")
+            ga_credentials = tool_context.state.get("ga_credentials")
+            logger.info(f"Retrieved credentials from session state for account: {account_id}")
+
+            # Build tenant_context from session state
+            if ga_credentials:
+                selected_property_ids = ga_credentials.get("selected_property_ids", [])
+
+                tenant_context = {
+                    "tenant_id": ga_credentials["tenant_id"],
+                    "tenant_credentials": encode_ga_credentials(ga_credentials),
+                    "selected_property_ids": selected_property_ids,
+                    "account_id": account_id,
+                }
+                # Set default property ID if only one property
+                if len(selected_property_ids) == 1:
+                    tenant_context["default_property_id"] = selected_property_ids[0]
+
+                logger.info(f"Built tenant_context with {len(selected_property_ids)} properties")
+        elif tenant_context:
+            # Strategy 2: Fallback to passed tenant_context
+            account_id = tenant_context.get("account_id")
+            logger.info("Using tenant_context from parameter (fallback)")
+
+        # Inject pre-loaded organization context from session state
+        # Context is loaded in API layer (which has Neo4j access) and stored in session state
+        org_context = None
+        if tool_context and hasattr(tool_context, 'state'):
+            org_context = tool_context.state.get("organization_context")
+            if org_context:
+                query = inject_organization_context(query, org_context)
+                logger.info(f"Injected organization context, new query length: {len(query)}")
+
+        # Fallback: use environment credentials for testing
         if not tenant_context or not tenant_context.get("tenant_credentials"):
-            # Testing mode: use environment credentials
             env_creds = os.getenv("GA_PERSONAL_CREDENTIALS")
             if env_creds:
                 tenant_context = {
@@ -80,7 +153,7 @@ def dispatch_to_google_analytics(
                 }
                 logger.info("Using test credentials from environment")
 
-        # Prepare query with tenant context
+        # Prepare query with tenant context for GA agent
         if (
             tenant_context
             and tenant_context.get("tenant_id")
@@ -93,7 +166,6 @@ def dispatch_to_google_analytics(
             if tenant_context.get("default_property_id"):
                 enhanced_query += f" PROPERTY_ID:{tenant_context['default_property_id']}"
             elif tenant_context.get("selected_property_ids"):
-                # If multiple properties, include the list
                 property_ids = tenant_context['selected_property_ids']
                 if len(property_ids) == 1:
                     enhanced_query += f" PROPERTY_ID:{property_ids[0]}"
@@ -102,8 +174,8 @@ def dispatch_to_google_analytics(
 
             enhanced_query += f" {query}"
         else:
-            # No credentials available
             enhanced_query = query
+            logger.warning("No credentials available for GA query")
 
         # Use retry logic for robust agent invocation
         result = invoke_agent_with_retry(
@@ -119,7 +191,7 @@ def dispatch_to_google_analytics(
             "tenant_id": tenant_context.get("tenant_id") if tenant_context else None,
         }
     except Exception as e:
-        logger.error(f"Error in analytics agent dispatch: {e}")
+        logger.error(f"[GA-DISPATCH] Error in analytics agent dispatch: {e}")
         return {
             "status": "error",
             "query": query,
@@ -130,8 +202,8 @@ def dispatch_to_google_analytics(
 
 
 def dispatch_to_strategy(
-    query: str, tenant_context: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    query: str, tenant_context: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """
     Dispatch strategy queries to the iterative strategy agent.
     Strategy agent needs account context for document persistence.
@@ -178,7 +250,7 @@ def dispatch_to_strategy(
         # Validate and parse parameters using Pydantic
         try:
             params = StrategyParameters(**raw_params)
-            logger.info(f"[SUPERVISOR] Successfully validated strategy parameters")
+            logger.info("[SUPERVISOR] Successfully validated strategy parameters")
             supervisor_logger.log_token_usage(
                 phase="parameter_validation",
                 tokens={"params_validated": 1},
@@ -201,7 +273,7 @@ def dispatch_to_strategy(
             params = StrategyParameters(**raw_params)
 
         logger.info(
-            f"[SUPERVISOR] Calling execute_strategy_generation with validated params"
+            "[SUPERVISOR] Calling execute_strategy_generation with validated params"
         )
         supervisor_logger.log_token_usage(
             phase="pre_strategy_invocation",

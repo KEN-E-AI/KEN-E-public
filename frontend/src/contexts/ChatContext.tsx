@@ -11,6 +11,7 @@ import {
   type ChatMessage,
   type ConversationInfo,
 } from "@/services/chatService";
+import { useAuth } from "./AuthContext";
 
 interface DisplayMessage {
   id: string;
@@ -52,6 +53,7 @@ interface ChatProviderProps {
 }
 
 export const ChatProvider = ({ children }: ChatProviderProps) => {
+  const { selectedOrgAccount } = useAuth();
   const [currentTab, setCurrentTab] = useState("Awareness");
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -100,8 +102,10 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
   const createNewChat = useCallback(async () => {
     try {
       setIsLoading(true);
-      const newConversation =
-        await chatService.createConversation("Dashboard Chat");
+      const newConversation = await chatService.createConversation(
+        "Dashboard Chat",
+        selectedOrgAccount?.accountId,
+      );
 
       setConversations((prev) => [newConversation, ...prev]);
       setCurrentConversation(newConversation);
@@ -120,7 +124,7 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentTab]);
+  }, [currentTab, selectedOrgAccount]);
 
   // Switch to an existing conversation
   const switchToConversation = useCallback(
@@ -224,7 +228,11 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
         }),
       );
 
-      const response = await chatService.sendMessage(chatMessages, sessionId);
+      const response = await chatService.sendMessage(
+        chatMessages,
+        sessionId,
+        selectedOrgAccount?.accountId,
+      );
 
       const assistantMessage = {
         id: (Date.now() + 1).toString(),
@@ -248,7 +256,7 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     } finally {
       setIsLoading(false);
     }
-  }, [newMessage, messages, isLoading, sessionId]);
+  }, [newMessage, messages, isLoading, sessionId, selectedOrgAccount]);
 
   // Handle key press for chat input
   const handleKeyPress = (e: React.KeyboardEvent) => {
