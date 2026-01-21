@@ -317,7 +317,17 @@ class AgentEngineClient:
             # Add account context if user_context provided
             if user_context and user_context.accessible_accounts:
                 # Use provided account_id if given, otherwise use first accessible account
-                selected_account_id = account_id if account_id else user_context.accessible_accounts[0]
+                if account_id:
+                    # SECURITY: Validate user has access to requested account
+                    if not user_context.has_account_access(account_id):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"Access denied to account {account_id}",
+                        )
+                    selected_account_id = account_id
+                else:
+                    selected_account_id = user_context.accessible_accounts[0]
+
                 initial_state["account_id"] = selected_account_id
                 initial_state["accessible_accounts"] = user_context.accessible_accounts
                 logger.info(
@@ -1487,6 +1497,12 @@ async def chat_completion(
     and returns a response from the deployed Agent Engine.
     """
     try:
+        # SECURITY: Validate account access if account_id provided
+        if request.account_id and not user_context.has_account_access(request.account_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {request.account_id}",
+            )
         if request.stream:
             # Return streaming response
             async def generate_response():
@@ -1560,6 +1576,13 @@ async def create_conversation(
     Create a new conversation/session with initial state.
     """
     try:
+        # SECURITY: Validate account access if account_id provided
+        if request.account_id and not user_context.has_account_access(request.account_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {request.account_id}",
+            )
+
         logger.info(f"Creating conversation for user: {user_context.user_id}, account: {request.account_id}")
 
         session_id = await agent_client.create_conversation(
