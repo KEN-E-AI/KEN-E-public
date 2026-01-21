@@ -15,17 +15,95 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
-from vertexai import agent_engines
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
+from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
 from ..services.ga_credential_helper import GACredentialHelper
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+async def load_organization_context_from_neo4j(account_id: str) -> str | None:
+    """Load organization context from Neo4j using API's Neo4j service.
+
+    Loads Account info and Brand Voice/Tone, formats as markdown.
+
+    Args:
+        account_id: Account identifier
+
+    Returns:
+        Formatted markdown context string, or None if loading fails
+    """
+    query = """
+    MATCH (acc:Account {account_id: $account_id})
+
+    // Brand Guidelines
+    OPTIONAL MATCH (acc)-[:FOLLOWS_THESE_BRAND_GUIDELINES]->(brand:BrandIdentity)
+    OPTIONAL MATCH (brand)-[:USES_COMMUNICATION_STYLE]->(voice:VoiceAndTone)
+    OPTIONAL MATCH (brand)-[:HAS_TRAITS_AND_CHARACTERISTICS]->(personality:BrandPersonality)
+    OPTIONAL MATCH (brand)-[:HAS_MISSION]->(mission:MissionAndValues)
+
+    RETURN {
+      account: {
+        account_id: acc.account_id,
+        company_name: acc.company_name,
+        company_overview: acc.company_overview,
+        industry: acc.industry,
+        websites: acc.websites,
+        customer_regions: acc.customer_regions
+      },
+      brand: {
+        voice_tone: voice.tone_attributes,
+        do_list: voice.do_list,
+        dont_list: voice.dont_list,
+        personality_traits: personality.traits,
+        mission: mission.mission_statement,
+        values: mission.core_values[..5]
+      }
+    } as context
+    """
+
+    try:
+        neo4j_service = await get_neo4j_service()
+        result = await neo4j_service.execute_query(query, {"account_id": account_id})
+
+        if not result or not result[0]:
+            logger.warning(f"No Neo4j results for account_id: {account_id}")
+            return None
+
+        context_data = result[0]["context"]
+
+        # Format as markdown (simplified version)
+        account = context_data.get("account", {})
+        brand = context_data.get("brand", {})
+
+        markdown_parts = ["---"]
+        if account.get("account_id"):
+            markdown_parts.append(f"account_id: {account['account_id']}")
+        if account.get("company_name"):
+            markdown_parts.append(f"company: {account['company_name']}")
+        markdown_parts.append("---\n")
+
+        markdown_parts.append("# Company Context\n")
+        if account.get("company_overview"):
+            markdown_parts.append(f"{account['company_overview']}\n")
+
+        if brand and any(brand.values()):
+            markdown_parts.append("\n## Brand Voice & Communication Style\n")
+            if brand.get("voice_tone"):
+                tone = ", ".join(brand["voice_tone"]) if isinstance(brand["voice_tone"], list) else brand["voice_tone"]
+                markdown_parts.append(f"\n**Tone:** {tone}\n")
+
+        return "".join(markdown_parts)
+
+    except Exception as e:
+        logger.error(f"Failed to load org context from Neo4j: {e}", exc_info=True)
+        return None
 
 
 class ChatMessage(BaseModel):
@@ -46,6 +124,12 @@ class ChatRequest(BaseModel):
     )
     conversation_name: str | None = Field(
         None, description="Optional name for the conversation"
+    )
+    account_id: str | None = Field(
+        None,
+        description="Account ID for the selected account context",
+        min_length=10,
+        max_length=100,
     )
 
 
@@ -90,6 +174,12 @@ class CreateConversationRequest(BaseModel):
 
     conversation_name: str | None = Field(
         None, description="Optional name for the conversation"
+    )
+    account_id: str | None = Field(
+        None,
+        description="Account ID for the conversation context",
+        min_length=10,
+        max_length=100,
     )
 
 
@@ -208,11 +298,113 @@ class AgentEngineClient:
         return self._session_service
 
     async def create_conversation(
-        self, user_id: str, conversation_name: str | None = None
+        self,
+        user_id: str,
+        user_context: UserContext | None = None,
+        conversation_name: str | None = None,
+        account_id: str | None = None,
     ) -> str:
-        """Create a new conversation using ADK session service."""
+        """Create a new conversation using ADK session service with initial state.
+
+        Args:
+            user_id: User identifier
+            user_context: User context containing account access and credentials (optional)
+            conversation_name: Optional name for the conversation
+
+        Returns:
+            Session ID for the created conversation
+        """
         try:
             logger.info(f"Creating new conversation for user {user_id}")
+
+            # Prepare initial session state
+            initial_state: dict[str, Any] = {}
+
+            # Add account context if user_context provided
+            if user_context and user_context.accessible_accounts:
+                # Use provided account_id if given, otherwise use first accessible account
+                if account_id:
+                    # SECURITY: Validate user has access to requested account
+                    if not user_context.has_account_access(account_id):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"Access denied to account {account_id}",
+                        )
+                    selected_account_id = account_id
+                else:
+                    selected_account_id = user_context.accessible_accounts[0]
+
+                initial_state["account_id"] = selected_account_id
+                initial_state["accessible_accounts"] = user_context.accessible_accounts
+                logger.info(
+                    f"Setting session state with account_id: {selected_account_id}"
+                )
+
+                # Load organization context from Neo4j (API has access)
+                # NOTE: Organization context may be None if:
+                # - Account doesn't have brand guidelines configured yet
+                # - Neo4j query fails (connection issues)
+                # - Account has incomplete data (missing brand nodes)
+                # Agents will function without org context, just without brand voice/tone
+                try:
+                    logger.info(f"Loading organization context for account: {initial_state['account_id']}")
+                    org_context = await load_organization_context_from_neo4j(
+                        account_id=initial_state["account_id"]
+                    )
+                    if org_context:
+                        initial_state["organization_context"] = org_context
+                        logger.info(f"Loaded organization context: {len(org_context)} chars")
+                    else:
+                        logger.warning(f"No organization context found for account: {initial_state['account_id']}")
+                except Exception as e:
+                    logger.error(f"Failed to load organization context: {e}")
+                    # Continue without org context - graceful degradation
+
+                # Prefetch GA credentials for the selected account
+                try:
+                    firestore_service = get_firestore_service()
+                    db = firestore_service.get_client()
+                    ga_helper = GACredentialHelper(db)
+
+                    # Use the selected account directly
+                    logger.info(f"Loading GA credentials for account: {selected_account_id}")
+                    ga_creds = await ga_helper.get_and_format_credentials(selected_account_id)
+
+                    if ga_creds:
+                        # Get raw credentials for storage in state
+                        raw_creds = await ga_helper.get_oauth_credentials(selected_account_id)
+                        if raw_creds:
+                            raw_creds = await ga_helper.refresh_if_expired(
+                                selected_account_id, raw_creds
+                            )
+
+                        # Store in session state (NOT in message)
+                        property_ids_to_store = ga_creds.get("selected_property_ids", [])
+
+                        initial_state["ga_credentials"] = {
+                            "access_token": raw_creds.get("access_token")
+                            if raw_creds
+                            else None,
+                            "refresh_token": raw_creds.get("refresh_token")
+                            if raw_creds
+                            else None,
+                            "tenant_id": ga_creds["tenant_id"],
+                            "selected_property_ids": property_ids_to_store,
+                            "selected_properties": ga_creds.get(
+                                "selected_properties", []
+                            ),
+                            "expires_at": raw_creds.get("expires_at")
+                            if raw_creds
+                            else None,
+                        }
+                        logger.info(
+                            f"Stored GA credentials with {len(property_ids_to_store)} properties for account: {selected_account_id}"
+                        )
+                    else:
+                        logger.warning(f"No GA credentials found for account: {selected_account_id}")
+                except Exception as e:
+                    logger.error(f"Failed to prefetch GA credentials: {e}")
+                    # Continue without GA credentials
 
             # Create ADK session
             try:
@@ -221,18 +413,21 @@ class AgentEngineClient:
                     f"Session service initialized: {self._session_service is not None}"
                 )
                 logger.info(f"Agent engine ID: {self.agent_engine_id}")
+                if initial_state:
+                    logger.info(
+                        f"Initial state keys: {list(initial_state.keys())}"
+                    )
 
+                logger.info(f"Creating session with state keys: {list(initial_state.keys())}")
                 session_result = await self.session_service.create_session(
-                    app_name="ken-e-chatbot", user_id=user_id
+                    app_name="ken-e-chatbot", user_id=user_id, state=initial_state
                 )
                 session_id = (
                     session_result.id
                     if hasattr(session_result, "id")
                     else str(session_result)
                 )
-                logger.info(
-                    f"Successfully created ADK session: {session_id} for user: {user_id}"
-                )
+                logger.info(f"Successfully created ADK session: {session_id} for user: {user_id}")
             except Exception as async_error:
                 logger.error(
                     f"Failed to create ADK session for user {user_id}: {async_error}"
@@ -282,10 +477,22 @@ class AgentEngineClient:
     async def get_or_create_session(
         self,
         user_id: str,
+        user_context: UserContext | None = None,
         session_id: str | None = None,
         conversation_name: str | None = None,
+        account_id: str | None = None,
     ) -> str:
-        """Get an existing session or create a new one."""
+        """Get an existing session or create a new one.
+
+        Args:
+            user_id: User identifier
+            user_context: User context for initializing new sessions
+            session_id: Existing session ID (optional)
+            conversation_name: Name for new conversation (optional)
+
+        Returns:
+            Session ID (existing or newly created)
+        """
         if session_id:
             session_key = f"{user_id}:{session_id}"
 
@@ -355,8 +562,8 @@ class AgentEngineClient:
                 logger.info(
                     f"Creating new conversation for user {user_id} (original session {session_id} not found or invalid)"
                 )
-        # Create new conversation
-        return await self.create_conversation(user_id, conversation_name)
+        # Create new conversation with user_context and account_id
+        return await self.create_conversation(user_id, user_context, conversation_name, account_id)
 
     def update_conversation_metadata(
         self, user_id: str, session_id: str, conversation_name: str | None = None
@@ -628,6 +835,7 @@ class AgentEngineClient:
         user_context: UserContext,
         session_id: str | None = None,
         conversation_name: str | None = None,
+        account_id: str | None = None,
     ) -> tuple[str, str]:
         """Get a chat completion from the Agent Engine using agent_engines API with session management."""
         if not self.agent_engine:
@@ -669,149 +877,13 @@ class AgentEngineClient:
                 f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
             )
 
-            # Check if this might be a Google Analytics query and inject OAuth credentials
-            ga_keywords = [
-                "analytics",
-                "traffic",
-                "users",
-                "sessions",
-                "pageviews",
-                "bounce rate",
-                "ga4",
-                "google analytics",
-                "website visitors",
-                "conversion",
-                "acquisition",
-                "real-time",
-                "realtime",
-                "property",
-            ]
-
-            is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
-
-            # Also check if this is a follow-up in a GA conversation
-            session_key = f"{user_id}:{session_id}" if session_id else None
-            is_ga_followup = False
-            if session_key and session_key in self._user_sessions:
-                is_ga_followup = self._user_sessions[session_key].get(
-                    "is_ga_conversation", False
-                )
-
-            logger.info(
-                f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
-            )
-            print(
-                f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
-            )
-
-            if is_ga_query or is_ga_followup:
-                # Try to get GA OAuth credentials from any accessible account that has them
-                logger.info(
-                    f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}"
-                )
-                print(
-                    f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}"
-                )
-                if user_context.accessible_accounts:
-                    try:
-                        firestore_service = get_firestore_service()
-                        db = firestore_service.get_client()
-                        ga_helper = GACredentialHelper(db)
-
-                        # Try each accessible account until we find one with GA credentials
-                        ga_creds = None
-                        for account_id in user_context.accessible_accounts:
-                            # Get and format GA credentials
-                            ga_creds = await ga_helper.get_and_format_credentials(
-                                account_id
-                            )
-                            if ga_creds:
-                                logger.info(
-                                    f"Found GA OAuth credentials in account {account_id}"
-                                )
-                                print(
-                                    f"[DEBUG] Found GA OAuth credentials in account {account_id}"
-                                )
-                                break
-                            else:
-                                logger.debug(
-                                    f"No GA credentials in account {account_id}, trying next..."
-                                )
-                                print(
-                                    f"[DEBUG] No GA credentials in account {account_id}, trying next..."
-                                )
-
-                        if ga_creds:
-                            # Create a structured message with credentials embedded
-                            # Use formatted_input which includes conversation context
-                            enhanced_message = {
-                                "message": formatted_input,
-                                "tenant_id": ga_creds["tenant_id"],
-                                "tenant_credentials": ga_creds["tenant_credentials"],
-                                "selected_property_ids": ga_creds.get(
-                                    "selected_property_ids", []
-                                ),
-                                "selected_properties": ga_creds.get(
-                                    "selected_properties", []
-                                ),
-                            }
-
-                            # Add context about available properties to help the agent
-                            if ga_creds.get("selected_properties"):
-                                properties_info = "\n\nAvailable GA Properties:"
-                                for prop in ga_creds["selected_properties"]:
-                                    properties_info += f"\n- {prop.get('display_name', 'Unknown')} (ID: {prop.get('property_id', 'Unknown')})"
-
-                                # Add property context to the formatted input if only one property
-                                if len(ga_creds["selected_property_ids"]) == 1:
-                                    enhanced_message["default_property_id"] = ga_creds[
-                                        "selected_property_ids"
-                                    ][0]
-                                    logger.info(
-                                        f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}"
-                                    )
-                            # Convert to JSON string for the agent
-                            import json
-
-                            formatted_input = json.dumps(enhanced_message)
-                            logger.info(
-                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
-                            )
-                            logger.info(
-                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
-                            )
-                            logger.info(f"[GA-INJECT] Enhanced message keys: {list(enhanced_message.keys())}")
-                            logger.info(f"[GA-INJECT] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
-                            logger.info(f"[GA-INJECT] default_property_id: {enhanced_message.get('default_property_id')}")
-                            print(
-                                f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
-                            )
-                            print(f"[DEBUG] Enhanced message keys: {list(enhanced_message.keys())}")
-                            print(f"[DEBUG] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
-                            print(f"[DEBUG] default_property_id: {enhanced_message.get('default_property_id')}")
-                        else:
-                            logger.warning(
-                                f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
-                            )
-                            print(
-                                "[DEBUG] Failed to find GA credentials in any accessible account"
-                            )
-                    except Exception as e:
-                        logger.error(f"Failed to inject GA credentials: {e}")
-                        # Continue with original message if credential injection fails
-
-            # Get or create session for this user
+            # Get or create session for this user (credentials now passed via session state)
             actual_session_id = await self.get_or_create_session(
-                user_id, session_id, conversation_name
+                user_id, user_context, session_id, conversation_name, account_id
             )
-
-            # Mark session as GA conversation if needed
-            session_key = f"{user_id}:{actual_session_id}"
-            if is_ga_query and session_key in self._user_sessions:
-                self._user_sessions[session_key]["is_ga_conversation"] = True
-                logger.info(f"Marked session {actual_session_id} as GA conversation")
 
             # Check if this is the first message and we need to generate a conversation name
+            session_key = f"{user_id}:{actual_session_id}"
             if (
                 session_key in self._user_sessions
                 and self._user_sessions[session_key]["message_count"] == 0
@@ -831,7 +903,7 @@ class AgentEngineClient:
                 f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}"
             )
             logger.info(
-                f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}..."
+                f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
             )
             logger.info(f"Session ID being passed to Agent Engine: {actual_session_id}")
 
@@ -1107,6 +1179,7 @@ class AgentEngineClient:
         user_context: UserContext,
         session_id: str | None = None,
         conversation_name: str | None = None,
+        account_id: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream a chat completion from the Agent Engine using agent_engines API."""
         if not self.agent_engine:
@@ -1147,149 +1220,13 @@ class AgentEngineClient:
                 f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
             )
 
-            # Check if this might be a Google Analytics query and inject OAuth credentials
-            ga_keywords = [
-                "analytics",
-                "traffic",
-                "users",
-                "sessions",
-                "pageviews",
-                "bounce rate",
-                "ga4",
-                "google analytics",
-                "website visitors",
-                "conversion",
-                "acquisition",
-                "real-time",
-                "realtime",
-                "property",
-            ]
-
-            is_ga_query = any(keyword in user_input.lower() for keyword in ga_keywords)
-
-            # Also check if this is a follow-up in a GA conversation
-            session_key = f"{user_id}:{session_id}" if session_id else None
-            is_ga_followup = False
-            if session_key and session_key in self._user_sessions:
-                is_ga_followup = self._user_sessions[session_key].get(
-                    "is_ga_conversation", False
-                )
-
-            logger.info(
-                f"GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
-            )
-            print(
-                f"[DEBUG] GA query detection: {is_ga_query} or follow-up: {is_ga_followup} for input: {user_input[:100]}"
-            )
-
-            if is_ga_query or is_ga_followup:
-                # Try to get GA OAuth credentials from any accessible account that has them
-                logger.info(
-                    f"User has {len(user_context.accessible_accounts)} accessible accounts: {user_context.accessible_accounts}"
-                )
-                print(
-                    f"[DEBUG] User has {len(user_context.accessible_accounts) if user_context.accessible_accounts else 0} accessible accounts: {user_context.accessible_accounts}"
-                )
-                if user_context.accessible_accounts:
-                    try:
-                        firestore_service = get_firestore_service()
-                        db = firestore_service.get_client()
-                        ga_helper = GACredentialHelper(db)
-
-                        # Try each accessible account until we find one with GA credentials
-                        ga_creds = None
-                        for account_id in user_context.accessible_accounts:
-                            # Get and format GA credentials
-                            ga_creds = await ga_helper.get_and_format_credentials(
-                                account_id
-                            )
-                            if ga_creds:
-                                logger.info(
-                                    f"Found GA OAuth credentials in account {account_id}"
-                                )
-                                print(
-                                    f"[DEBUG] Found GA OAuth credentials in account {account_id}"
-                                )
-                                break
-                            else:
-                                logger.debug(
-                                    f"No GA credentials in account {account_id}, trying next..."
-                                )
-                                print(
-                                    f"[DEBUG] No GA credentials in account {account_id}, trying next..."
-                                )
-
-                        if ga_creds:
-                            # Create a structured message with credentials embedded
-                            # Use formatted_input which includes conversation context
-                            enhanced_message = {
-                                "message": formatted_input,
-                                "tenant_id": ga_creds["tenant_id"],
-                                "tenant_credentials": ga_creds["tenant_credentials"],
-                                "selected_property_ids": ga_creds.get(
-                                    "selected_property_ids", []
-                                ),
-                                "selected_properties": ga_creds.get(
-                                    "selected_properties", []
-                                ),
-                            }
-
-                            # Add context about available properties to help the agent
-                            if ga_creds.get("selected_properties"):
-                                properties_info = "\n\nAvailable GA Properties:"
-                                for prop in ga_creds["selected_properties"]:
-                                    properties_info += f"\n- {prop.get('display_name', 'Unknown')} (ID: {prop.get('property_id', 'Unknown')})"
-
-                                # Add property context to the formatted input if only one property
-                                if len(ga_creds["selected_property_ids"]) == 1:
-                                    enhanced_message["default_property_id"] = ga_creds[
-                                        "selected_property_ids"
-                                    ][0]
-                                    logger.info(
-                                        f"Auto-selected single property: {ga_creds['selected_property_ids'][0]}"
-                                    )
-                            # Convert to JSON string for the agent
-                            import json
-
-                            formatted_input = json.dumps(enhanced_message)
-                            logger.info(
-                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
-                            )
-                            logger.info(
-                                f"Injected GA OAuth credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
-                            )
-                            logger.info(f"[GA-INJECT] Enhanced message keys: {list(enhanced_message.keys())}")
-                            logger.info(f"[GA-INJECT] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
-                            logger.info(f"[GA-INJECT] default_property_id: {enhanced_message.get('default_property_id')}")
-                            print(
-                                f"[DEBUG] Successfully injected GA credentials with {len(ga_creds.get('selected_property_ids', []))} properties"
-                            )
-                            print(f"[DEBUG] Enhanced message keys: {list(enhanced_message.keys())}")
-                            print(f"[DEBUG] selected_property_ids: {enhanced_message.get('selected_property_ids')}")
-                            print(f"[DEBUG] default_property_id: {enhanced_message.get('default_property_id')}")
-                        else:
-                            logger.warning(
-                                f"No GA OAuth credentials found in any of the {len(user_context.accessible_accounts)} accessible accounts"
-                            )
-                            print(
-                                "[DEBUG] Failed to find GA credentials in any accessible account"
-                            )
-                    except Exception as e:
-                        logger.error(f"Failed to inject GA credentials: {e}")
-                        # Continue with original message if credential injection fails
-
-            # Get or create session for this user
+            # Get or create session for this user (credentials now passed via session state)
             actual_session_id = await self.get_or_create_session(
-                user_id, session_id, conversation_name
+                user_id, user_context, session_id, conversation_name, account_id
             )
-
-            # Mark session as GA conversation if needed
-            session_key = f"{user_id}:{actual_session_id}"
-            if is_ga_query and session_key in self._user_sessions:
-                self._user_sessions[session_key]["is_ga_conversation"] = True
-                logger.info(f"Marked session {actual_session_id} as GA conversation")
 
             # Check if this is the first message and we need to generate a conversation name
+            session_key = f"{user_id}:{actual_session_id}"
             if (
                 session_key in self._user_sessions
                 and self._user_sessions[session_key]["message_count"] == 0
@@ -1309,7 +1246,7 @@ class AgentEngineClient:
                 f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}"
             )
             logger.info(
-                f"Query: {formatted_input[:100] if isinstance(formatted_input, str) else 'JSON message'}..."
+                f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
             )
             logger.info(
                 f"Session ID being passed to Agent Engine for streaming: {actual_session_id}"
@@ -1571,6 +1508,12 @@ async def chat_completion(
     and returns a response from the deployed Agent Engine.
     """
     try:
+        # SECURITY: Validate account access if account_id provided
+        if request.account_id and not user_context.has_account_access(request.account_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {request.account_id}",
+            )
         if request.stream:
             # Return streaming response
             async def generate_response():
@@ -1579,6 +1522,7 @@ async def chat_completion(
                     user_context=user_context,
                     session_id=request.session_id,
                     conversation_name=request.conversation_name,
+                    account_id=request.account_id,
                 ):
                     # Format as Server-Sent Events
                     yield f"data: {chunk}\n\n"
@@ -1599,6 +1543,7 @@ async def chat_completion(
                 user_context=user_context,
                 session_id=request.session_id,
                 conversation_name=request.conversation_name,
+                account_id=request.account_id,
             )
 
             return ChatResponse(
@@ -1629,21 +1574,36 @@ async def chat_health():
         "agent_engine_status": agent_status,
         "project_id": agent_client.project_id,
         "location": agent_client.location,
+        "code_version": "session_state_v2_20260120",  # Debug: verify code loaded
     }
 
 
 @router.post("/conversations", response_model=ConversationInfo)
 async def create_conversation(
     request: CreateConversationRequest,
-    user_context: UserContext = Depends(get_current_user),
+    user_context: UserContext = Depends(get_current_user_context),
 ):
     """
-    Create a new conversation/session.
+    Create a new conversation/session with initial state.
     """
     try:
+        # SECURITY: Validate account access if account_id provided
+        if request.account_id and not user_context.has_account_access(request.account_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {request.account_id}",
+            )
+
+        logger.info(f"Creating conversation for user: {user_context.user_id}, account: {request.account_id}")
+
         session_id = await agent_client.create_conversation(
-            user_id=user_context.user_id, conversation_name=request.conversation_name
+            user_id=user_context.user_id,
+            user_context=user_context,
+            conversation_name=request.conversation_name,
+            account_id=request.account_id,
         )
+
+        logger.info(f"Created session: {session_id}")
 
         # Get the conversation info to return
         conversations = await agent_client.get_user_conversations(user_context.user_id)
@@ -1660,6 +1620,8 @@ async def create_conversation(
             message_count=0,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
         raise HTTPException(

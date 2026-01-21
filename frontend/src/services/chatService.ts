@@ -17,6 +17,7 @@ export interface ChatRequest {
   messages: ChatMessage[];
   stream?: boolean;
   session_id?: string;
+  account_id?: string;
 }
 
 export interface ChatResponse {
@@ -79,12 +80,14 @@ class ChatService {
   async sendMessage(
     messages: ChatMessage[],
     sessionId?: string,
+    accountId?: string,
   ): Promise<ChatResponse> {
     try {
       const request: ChatRequest = {
         messages,
         stream: false,
         session_id: sessionId || this.generateSessionId(),
+        account_id: accountId,
       };
 
       const response = await this.apiClient.post<ChatResponse>(
@@ -113,12 +116,14 @@ class ChatService {
   async *streamMessage(
     messages: ChatMessage[],
     sessionId?: string,
+    accountId?: string,
   ): AsyncGenerator<string, void, unknown> {
     try {
       const request: ChatRequest = {
         messages,
         stream: true,
         session_id: sessionId || this.generateSessionId(),
+        account_id: accountId,
       };
 
       const response = await this.apiClient.post(
@@ -215,11 +220,15 @@ class ChatService {
    */
   async createConversation(
     conversationName?: string,
+    accountId?: string,
   ): Promise<ConversationInfo> {
     try {
       const response = await this.apiClient.post<ConversationInfo>(
         "/api/v1/chat/conversations",
-        { conversation_name: conversationName },
+        {
+          conversation_name: conversationName,
+          account_id: accountId,
+        },
       );
       return response.data;
     } catch (error) {

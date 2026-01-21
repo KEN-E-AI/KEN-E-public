@@ -5,13 +5,13 @@ KEN-E Agent: Frontend-facing chat agent for company news and analytics.
 import logging
 
 from google.adk.agents import Agent
+from google.adk.tools import ToolContext
 
 from .strategy_agent.config_loader import load_config_from_firestore
 from .utils.dispatch_handlers import (
     dispatch_to_company_news,
     dispatch_to_google_analytics,
 )
-from .utils.supervisor_utils import dispatch_with_context
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +40,24 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         )
         model = "gemini-2.0-flash"
 
-    # Create dispatch functions with context handling
-    search_company_news = dispatch_with_context(dispatch_to_company_news)
-    search_company_news.__name__ = "search_company_news"
-    search_company_news.__doc__ = """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
+    # Create tool wrappers that expose ToolContext and return strings
+    def search_company_news(query: str, tool_context: ToolContext | None = None) -> str:
+        """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
 
-Args:
-    query: The user's question about company news, earnings, market updates, or business intelligence
-"""
+        Args:
+            query: The user's question about company news, earnings, market updates, or business intelligence
+        """
+        result = dispatch_to_company_news(query, tool_context)
+        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
 
-    query_google_analytics = dispatch_with_context(dispatch_to_google_analytics)
-    query_google_analytics.__name__ = "query_google_analytics"
-    query_google_analytics.__doc__ = """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
+    def query_google_analytics(query: str, tool_context: ToolContext | None = None) -> str:
+        """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
 
-Args:
-    query: The user's question about website analytics, traffic, user behavior, or GA4 data
-"""
+        Args:
+            query: The user's question about website analytics, traffic, user behavior, or GA4 data
+        """
+        result = dispatch_to_google_analytics(query, tool_context)
+        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
 
     ken_e = Agent(
         name="ken_e",
@@ -63,6 +65,19 @@ Args:
         instruction="""You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.
 
 **CRITICAL: When you call a tool, the tool's response contains the answer. You MUST present that response to the user. Never just acknowledge that you called the tool - always share what the tool returned.**
+
+**ORGANIZATION CONTEXT:**
+Every message includes [ORGANIZATION CONTEXT] with your company's information and brand guidelines.
+
+CRITICAL - When formulating responses, ALWAYS:
+- Match the brand's tone and communication style (see "DO" and "DON'T" lists in context)
+- Use the personality traits as a guide for your voice and approach
+- Reference the company's mission when explaining capabilities or providing recommendations
+- Stay aligned with the company's core values in your responses
+
+Example: If the brand voice says "DO: Use data-driven language", then include metrics and evidence in your responses. If it says "DON'T: Use jargon", then explain technical concepts in plain language.
+
+The context ensures all responses are contextually appropriate for your organization.
 
 **CAPABILITY 1 - Company News & Business Intelligence:**
 Use `search_company_news` for queries about:
@@ -88,7 +103,9 @@ Use `query_google_analytics` for queries about:
    - Company/business/market focus → search_company_news
    - Website/traffic/analytics focus → query_google_analytics
 
-3. When routing, ALWAYS pass the COMPLETE user input to the tool
+3. When routing, pass the user's question to the appropriate tool
+   - Extract the actual question from the message
+   - Pass it as a clear, natural language query
 
 4. Handle ambiguous queries:
    - If unclear, ask for clarification about which capability they need

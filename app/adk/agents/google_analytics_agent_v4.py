@@ -3,15 +3,37 @@ Google Analytics Agent V4 - OAuth Integration
 Uses OAuth credentials to interact with the GA MCP server via JSON-RPC
 """
 
-import os
-import json
-import base64
 import logging
-from typing import Dict, Any, List, Optional
+import os
+from pathlib import Path
+from typing import Any
+
 import httpx
 from google.adk.agents import Agent
 
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file BEFORE reading any env vars
+try:
+    from dotenv import load_dotenv
+
+    # Try to find .env file (deployed with agent)
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+        logger.info(f"[GA-AGENT] Loaded .env from {env_path}")
+    else:
+        # Try alternate location
+        alt_path = Path(__file__).parent / ".env"
+        if alt_path.exists():
+            load_dotenv(alt_path, override=False)
+            logger.info(f"[GA-AGENT] Loaded .env from {alt_path}")
+        else:
+            logger.warning("[GA-AGENT] No .env file found")
+except ImportError:
+    logger.warning("[GA-AGENT] python-dotenv not available")
+except Exception as e:
+    logger.warning(f"[GA-AGENT] Failed to load .env: {e}")
 
 # Lazy initialization of Weave for tracing
 WEAVE_ENABLED = False
@@ -28,6 +50,7 @@ def init_weave_if_needed():
 
     try:
         import weave as weave_module
+
         # Use get_env_or_secret to support sm:// format during deployment
         from shared.secrets import get_env_or_secret
         wandb_api_key = get_env_or_secret("WANDB_API_KEY")
@@ -47,16 +70,16 @@ def init_weave_if_needed():
     except Exception as e:
         logger.warning(f"Weave not available or failed to initialize for GA agent: {e}")
         WEAVE_ENABLED = False
-        
+
         # Create dummy decorator if Weave is not available
         def weave_op(func):
             return func
-        
+
         class DummyWeave:
             @staticmethod
             def op():
                 return weave_op
-        
+
         globals()['weave'] = DummyWeave()
 
 # Create a placeholder for weave that will be replaced on first use
@@ -71,9 +94,17 @@ weave = LazyWeave()
 # Configuration - reads from environment (set in .env files)
 # Use get_env_or_secret to support sm:// format during deployment
 # These are optional - GA agent won't work without them but won't break deployment
-from shared.secrets import get_env_or_secret
+from shared.secrets import get_env_or_secret  # noqa: E402
+
 GA_MCP_SERVER_URL = get_env_or_secret("GA_MCP_SERVER_URL") or ""
 MCP_API_KEY = get_env_or_secret("MCP_API_KEY") or ""
+
+# Fallback: Try reading directly from os.getenv if get_env_or_secret returns empty
+if not GA_MCP_SERVER_URL:
+    GA_MCP_SERVER_URL = os.getenv("GA_MCP_SERVER_URL", "")
+
+if not MCP_API_KEY:
+    MCP_API_KEY = os.getenv("MCP_API_KEY", "")
 
 
 class GAMCPClient:
@@ -83,7 +114,7 @@ class GAMCPClient:
         self.server_url = server_url
         self._request_id = 0
 
-    def _make_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Make a synchronous JSON-RPC request"""
         self._request_id += 1
 
@@ -160,7 +191,8 @@ def list_ga_accounts(tenant_id: str, tenant_credentials: str) -> str:
 
         return output
     except Exception as e:
-        return f"Error accessing Google Analytics: {str(e)}"
+        logger.error(f"Error accessing Google Analytics accounts: {e}")
+        return f"Error accessing Google Analytics: {e!s}"
 
 
 def get_ga_property_details(
@@ -198,18 +230,18 @@ def get_ga_property_details(
 
         return output
     except Exception as e:
-        return f"Error getting property details: {str(e)}"
+        return f"Error getting property details: {e!s}"
 
 
 def run_ga_report(
     tenant_id: str,
     tenant_credentials: str,
     property_id: str,
-    date_ranges: List[Dict[str, str]],
-    metrics: List[str],
-    dimensions: Optional[List[str]] = None,
-    dimension_filter: Optional[Dict[str, Any]] = None,
-    order_bys: Optional[List[Dict[str, Any]]] = None,
+    date_ranges: list[dict[str, str]],
+    metrics: list[str],
+    dimensions: list[str] | None = None,
+    dimension_filter: dict[str, Any] | None = None,
+    order_bys: list[dict[str, Any]] | None = None,
     limit: int = 100,
 ) -> str:
     """
@@ -277,16 +309,16 @@ def run_ga_report(
 
         return output
     except Exception as e:
-        return f"Error running report: {str(e)}"
+        return f"Error running report: {e!s}"
 
 
 def run_ga_realtime_report(
     tenant_id: str,
     tenant_credentials: str,
     property_id: str,
-    metrics: List[str],
-    dimensions: Optional[List[str]] = None,
-    dimension_filter: Optional[Dict[str, Any]] = None,
+    metrics: list[str],
+    dimensions: list[str] | None = None,
+    dimension_filter: dict[str, Any] | None = None,
     limit: int = 50,
 ) -> str:
     """
@@ -323,7 +355,7 @@ def run_ga_realtime_report(
         # Format real-time results
         output = f"Real-Time Google Analytics (Organization: {tenant_id}):\n"
         output += f"📊 Property: {property_id}\n"
-        output += f"🔴 Live data from last 30 minutes\n\n"
+        output += "🔴 Live data from last 30 minutes\n\n"
 
         # Headers
         headers = (dimensions or []) + metrics
@@ -349,7 +381,7 @@ def run_ga_realtime_report(
 
         return output
     except Exception as e:
-        return f"Error running realtime report: {str(e)}"
+        return f"Error running realtime report: {e!s}"
 
 
 def create_google_analytics_agent():
