@@ -126,7 +126,10 @@ class ChatRequest(BaseModel):
         None, description="Optional name for the conversation"
     )
     account_id: str | None = Field(
-        None, description="Account ID for the selected account context"
+        None,
+        description="Account ID for the selected account context",
+        min_length=10,
+        max_length=100,
     )
 
 
@@ -173,7 +176,10 @@ class CreateConversationRequest(BaseModel):
         None, description="Optional name for the conversation"
     )
     account_id: str | None = Field(
-        None, description="Account ID for the conversation context"
+        None,
+        description="Account ID for the conversation context",
+        min_length=10,
+        max_length=100,
     )
 
 
@@ -335,6 +341,11 @@ class AgentEngineClient:
                 )
 
                 # Load organization context from Neo4j (API has access)
+                # NOTE: Organization context may be None if:
+                # - Account doesn't have brand guidelines configured yet
+                # - Neo4j query fails (connection issues)
+                # - Account has incomplete data (missing brand nodes)
+                # Agents will function without org context, just without brand voice/tone
                 try:
                     logger.info(f"Loading organization context for account: {initial_state['account_id']}")
                     org_context = await load_organization_context_from_neo4j(
@@ -347,7 +358,7 @@ class AgentEngineClient:
                         logger.warning(f"No organization context found for account: {initial_state['account_id']}")
                 except Exception as e:
                     logger.error(f"Failed to load organization context: {e}")
-                    # Continue without org context
+                    # Continue without org context - graceful degradation
 
                 # Prefetch GA credentials for the selected account
                 try:
@@ -1609,6 +1620,8 @@ async def create_conversation(
             message_count=0,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
         raise HTTPException(
