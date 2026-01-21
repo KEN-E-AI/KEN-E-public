@@ -9,7 +9,7 @@ Tests cover:
 """
 
 from typing import Any, Optional
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 import pytest
 
@@ -21,6 +21,14 @@ from pathlib import Path
 # Add the app directory to the path
 app_dir = Path(__file__).parents[4] / "app"
 sys.path.insert(0, str(app_dir))
+
+# Mock the neo4j dependency before importing context_loader
+neo4j_mock = MagicMock()
+neo4j_mock.exceptions = MagicMock()
+neo4j_mock.exceptions.ServiceUnavailable = Exception
+neo4j_mock.exceptions.SessionExpired = Exception
+sys.modules["neo4j"] = neo4j_mock
+sys.modules["neo4j.exceptions"] = neo4j_mock.exceptions
 
 # Now import directly from the module file
 from adk.agents.utils.context_loader import (
@@ -83,8 +91,8 @@ def mock_token_estimator() -> Mock:
 
 
 # Test: load_organization_context with complete data
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
-@patch("app.adk.agents.utils.context_loader.TokenEstimator")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.TokenEstimator")
 def test_load_organization_context_with_complete_data(
     mock_token_estimator_class: Mock, mock_neo4j_class: Mock
 ) -> None:
@@ -123,8 +131,8 @@ def test_load_organization_context_with_complete_data(
 
 
 # Test: load_organization_context with minimal data (no brand)
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
-@patch("app.adk.agents.utils.context_loader.TokenEstimator")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.TokenEstimator")
 def test_load_organization_context_with_minimal_data(
     mock_token_estimator_class: Mock, mock_neo4j_class: Mock
 ) -> None:
@@ -156,7 +164,7 @@ def test_load_organization_context_with_minimal_data(
 
 
 # Test: load_organization_context returns None on Neo4j failure
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
 def test_load_organization_context_neo4j_failure(mock_neo4j_class: Mock) -> None:
     """Test error handling when Neo4j query fails."""
     # Setup mock to raise exception
@@ -172,7 +180,7 @@ def test_load_organization_context_neo4j_failure(mock_neo4j_class: Mock) -> None
 
 
 # Test: load_organization_context returns None when no data found
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
 def test_load_organization_context_no_data(mock_neo4j_class: Mock) -> None:
     """Test graceful degradation when no data found for account."""
     # Setup mock to return empty result
@@ -188,7 +196,7 @@ def test_load_organization_context_no_data(mock_neo4j_class: Mock) -> None:
 
 
 # Test: _fetch_context_from_neo4j with valid data
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
 def test_fetch_context_from_neo4j_success(mock_neo4j_class: Mock) -> None:
     """Test Neo4j query execution with valid data."""
     # Setup mock
@@ -205,7 +213,7 @@ def test_fetch_context_from_neo4j_success(mock_neo4j_class: Mock) -> None:
 
 
 # Test: _fetch_context_from_neo4j returns None on empty result
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
 def test_fetch_context_from_neo4j_empty_result(mock_neo4j_class: Mock) -> None:
     """Test Neo4j query with empty result."""
     # Setup mock
@@ -221,7 +229,7 @@ def test_fetch_context_from_neo4j_empty_result(mock_neo4j_class: Mock) -> None:
 
 
 # Test: _fetch_context_from_neo4j returns None on exception
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
 def test_fetch_context_from_neo4j_exception(mock_neo4j_class: Mock) -> None:
     """Test Neo4j query exception handling."""
     # Setup mock to raise exception
@@ -360,8 +368,8 @@ def test_inject_organization_context_preserves_message() -> None:
 
 
 # Test: Token estimation for complete context
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
-@patch("app.adk.agents.utils.context_loader.TokenEstimator")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.TokenEstimator")
 def test_token_estimation_within_budget(
     mock_token_estimator_class: Mock, mock_neo4j_class: Mock
 ) -> None:
@@ -391,8 +399,8 @@ def test_token_estimation_within_budget(
 
 
 # Test: Token estimation exceeds budget (warning logged but still returned)
-@patch("app.adk.agents.utils.context_loader.Neo4jConnection")
-@patch("app.adk.agents.utils.context_loader.TokenEstimator")
+@patch("adk.agents.utils.context_loader.Neo4jConnection")
+@patch("adk.agents.utils.context_loader.TokenEstimator")
 def test_token_estimation_exceeds_budget(
     mock_token_estimator_class: Mock, mock_neo4j_class: Mock
 ) -> None:
