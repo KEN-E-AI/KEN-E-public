@@ -52,17 +52,13 @@ def mock_vertexai():
 
 @pytest.fixture
 def mock_agent_engines():
-    """Mock the agent_engines module (legacy - kept for backward compatibility)."""
-    with patch("kene_api.routers.chat.agent_engines") as mock:
-        # Create a mock agent engine
-        mock_engine = MagicMock()
-        mock_engine.name = "test-agent-engine"
-        mock_engine.display_name = "Test Agent Engine"
+    """Mock the agent_engines module (legacy - kept for backward compatibility).
 
-        # Mock the get method to return our mock engine
-        mock.get = MagicMock(return_value=mock_engine)
-
-        yield mock
+    NOTE: agent_engines import was removed from chat.py in session state refactor.
+    This fixture is now a no-op but kept for backward compatibility with existing tests.
+    """
+    # No-op fixture - agent_engines no longer used in chat.py
+    yield None
 
 
 @pytest.fixture
@@ -285,23 +281,27 @@ def test_missing_agent_engine_handling():
     """
     Test handling when no agent engine is configured.
     """
-    # Clear VERTEX_AI_AGENT_ENGINE_ID to ensure it's not set
-    env_patch = {
-        "GOOGLE_CLOUD_PROJECT_ID": "test-project",
-        "VERTEX_AI_LOCATION": "us-central1",
-    }
+    # Mock get_env_or_secret to return None for engine IDs
+    with patch("shared.secrets.get_env_or_secret") as mock_get_secret:
+        mock_get_secret.return_value = None
 
-    # Remove VERTEX_AI_AGENT_ENGINE_ID if it exists
-    with patch.dict(os.environ, env_patch, clear=False):
-        if "VERTEX_AI_AGENT_ENGINE_ID" in os.environ:
-            del os.environ["VERTEX_AI_AGENT_ENGINE_ID"]
+        env_patch = {
+            "GOOGLE_CLOUD_PROJECT_ID": "test-project",
+            "VERTEX_AI_LOCATION": "us-central1",
+        }
 
-        client = AgentEngineClient()
+        # Clear engine ID environment variables
+        with patch.dict(os.environ, env_patch, clear=False):
+            for key in ["VERTEX_AI_AGENT_ENGINE_ID", "KEN_E_ENGINE_ID"]:
+                if key in os.environ:
+                    del os.environ[key]
 
-        # Agent engine should be None
-        assert client.agent_engine is None, (
-            "Agent engine should be None when not configured"
-        )
+            client = AgentEngineClient()
+
+            # Agent engine should be None
+            assert client.agent_engine is None, (
+                "Agent engine should be None when not configured"
+            )
 
 
 @pytest.mark.asyncio
@@ -318,8 +318,12 @@ async def test_error_handling():
         },
     ):
         # Test with agent engine that raises an error
-        with patch("kene_api.routers.chat.agent_engines.get") as mock_get:
-            mock_get.side_effect = Exception("Failed to connect to Agent Engine")
+        # NOTE: agent_engines import removed in session state refactor
+        # Now using vertexai.Client().agent_engines.get() pattern
+        with patch("vertexai.Client") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.agent_engines.get.side_effect = Exception("Failed to connect to Agent Engine")
+            mock_client_class.return_value = mock_client
 
             client = AgentEngineClient()
 
