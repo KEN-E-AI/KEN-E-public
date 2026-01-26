@@ -19,17 +19,39 @@ async def test_read_root():
 
 @pytest.mark.asyncio
 async def test_health_check():
-    """Test the health check endpoint."""
+    """Test the health check endpoint returns appropriate status code."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/health")
-    assert response.status_code == 200
     data = response.json()
-    # In test environment, Neo4j might not be available, so status could be degraded
+    # In test environment, Neo4j/Firestore not available, so status is degraded (503)
+    # In production with healthy deps, status is healthy (200)
+    assert response.status_code in [200, 503]
     assert data["status"] in ["healthy", "degraded"]
+    # Status code should match the status field
+    if data["status"] == "healthy":
+        assert response.status_code == 200
+    else:
+        assert response.status_code == 503
     assert data["message"] == "API is running"
     assert "services" in data
     assert "neo4j" in data["services"]
+    assert "firestore" in data["services"]
+    assert "redis" in data["services"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_check():
+    """Test the readiness probe endpoint."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/ready")
+    # In test environment, critical services not available, so returns 503
+    assert response.status_code in [200, 503]
+    if response.status_code == 200:
+        assert response.text == "Ready"
+    else:
+        assert response.text == "Not Ready"
 
 
 @pytest.mark.asyncio
