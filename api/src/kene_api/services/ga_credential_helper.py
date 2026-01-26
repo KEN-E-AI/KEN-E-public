@@ -22,31 +22,27 @@ class GACredentialHelper:
 
     def __init__(self, db: firestore.Client):
         """Initialize the GA credential helper.
-        
+
         Args:
             db: Firestore client instance
         """
         self.db = db
         self.creds_service = IntegrationCredentialsService(db)
 
-    async def get_oauth_credentials(
-        self,
-        account_id: str
-    ) -> dict[str, Any] | None:
+    async def get_oauth_credentials(self, account_id: str) -> dict[str, Any] | None:
         """
         Retrieve Google Analytics OAuth credentials for an account.
-        
+
         Args:
             account_id: The account ID to retrieve credentials for
-            
+
         Returns:
             Dictionary containing OAuth tokens or None if not found
         """
         try:
             # Retrieve stored OAuth credentials
             credentials = await self.creds_service.get_credentials(
-                account_id=account_id,
-                integration_type="google_analytics"
+                account_id=account_id, integration_type="google_analytics"
             )
 
             if not credentials:
@@ -65,17 +61,15 @@ class GACredentialHelper:
             return None
 
     async def refresh_if_expired(
-        self,
-        account_id: str,
-        credentials: dict[str, Any]
+        self, account_id: str, credentials: dict[str, Any]
     ) -> dict[str, Any] | None:
         """
         Check if access token is expired and refresh if needed.
-        
+
         Args:
             account_id: The account ID
             credentials: Current OAuth credentials
-            
+
         Returns:
             Updated credentials with new access token or None if refresh fails
         """
@@ -86,16 +80,24 @@ class GACredentialHelper:
 
             # Log full credentials structure (without sensitive data) for debugging
             cred_keys = list(credentials.keys()) if credentials else []
-            logger.info(f"Credentials structure for account {account_id}: keys={cred_keys}")
-            logger.info(f"Token expiry check for account {account_id}: expires_at={expires_at}, current_time={current_time}, diff={(expires_at - current_time) if expires_at else 'N/A'}")
+            logger.info(
+                f"Credentials structure for account {account_id}: keys={cred_keys}"
+            )
+            logger.info(
+                f"Token expiry check for account {account_id}: expires_at={expires_at}, current_time={current_time}, diff={(expires_at - current_time) if expires_at else 'N/A'}"
+            )
 
             # If expires_at is 0 or missing, consider token expired
             if expires_at == 0:
-                logger.warning(f"No expires_at timestamp for account {account_id}, treating as expired")
+                logger.warning(
+                    f"No expires_at timestamp for account {account_id}, treating as expired"
+                )
 
             # Add 5-minute buffer before expiry
             if expires_at == 0 or current_time >= (expires_at - 300):
-                logger.info(f"Access token expired or expiring soon for account {account_id} (expires_at: {expires_at}, current: {current_time})")
+                logger.info(
+                    f"Access token expired or expiring soon for account {account_id} (expires_at: {expires_at}, current: {current_time})"
+                )
 
                 # Check if we have a refresh token
                 refresh_token = credentials.get("refresh_token")
@@ -105,18 +107,24 @@ class GACredentialHelper:
 
                 # Get OAuth client configuration from environment
                 import os
+
                 from shared.secrets import get_env_or_secret
+
                 client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
                 client_secret = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET")
 
-                logger.info(f"OAuth client ID found: {bool(client_id)}, Secret found: {bool(client_secret)}")
+                logger.info(
+                    f"OAuth client ID found: {bool(client_id)}, Secret found: {bool(client_secret)}"
+                )
 
                 if not client_id or not client_secret:
-                    logger.error(f"OAuth client configuration not found. CLIENT_ID present: {bool(client_id)}, SECRET present: {bool(client_secret)}")
+                    logger.error(
+                        f"OAuth client configuration not found. CLIENT_ID present: {bool(client_id)}, SECRET present: {bool(client_secret)}"
+                    )
                     return None
 
-                # Refresh the token
-                async with httpx.AsyncClient() as client:
+                # Refresh the token with 10s timeout to prevent indefinite hangs
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     refresh_response = await client.post(
                         "https://oauth2.googleapis.com/token",
                         data={
@@ -135,36 +143,41 @@ class GACredentialHelper:
 
                     # Update credentials with new access token
                     credentials["access_token"] = new_tokens.get("access_token")
-                    credentials["expires_at"] = datetime.now().timestamp() + new_tokens.get("expires_in", 3600)
+                    credentials["expires_at"] = (
+                        datetime.now().timestamp() + new_tokens.get("expires_in", 3600)
+                    )
 
                     # Store updated credentials
                     await self.creds_service.update_credentials(
                         account_id=account_id,
                         integration_type="google_analytics",
                         credentials=credentials,
-                        user_id="system"  # System-initiated refresh
+                        user_id="system",  # System-initiated refresh
                     )
 
-                    logger.info(f"Successfully refreshed access token for account {account_id}")
+                    logger.info(
+                        f"Successfully refreshed access token for account {account_id}"
+                    )
 
             return credentials
 
+        except httpx.TimeoutException:
+            logger.error(
+                f"OAuth token refresh timed out after 10s for account {account_id}"
+            )
+            return None
         except Exception as e:
             logger.error(f"Failed to refresh access token: {e}")
             return None
 
-    def format_for_agent(
-        self,
-        credentials: dict[str, Any],
-        account_id: str
-    ) -> str:
+    def format_for_agent(self, credentials: dict[str, Any], account_id: str) -> str:
         """
         Format OAuth credentials for consumption by the GA agent.
-        
+
         Args:
             credentials: OAuth credentials dictionary
             account_id: The account ID (used as tenant_id)
-            
+
         Returns:
             Base64-encoded JSON string containing OAuth tokens
         """
@@ -175,7 +188,7 @@ class GACredentialHelper:
                 "refresh_token": credentials.get("refresh_token"),
                 "tenant_id": account_id,
                 "selected_property_ids": credentials.get("selected_property_ids", []),
-                "selected_properties": credentials.get("selected_properties", [])
+                "selected_properties": credentials.get("selected_properties", []),
             }
 
             # Convert to JSON and encode to base64
@@ -189,15 +202,14 @@ class GACredentialHelper:
             raise
 
     async def get_and_format_credentials(
-        self,
-        account_id: str
+        self, account_id: str
     ) -> dict[str, str] | None:
         """
         Retrieve, refresh if needed, and format GA OAuth credentials.
-        
+
         Args:
             account_id: The account ID
-            
+
         Returns:
             Dictionary with tenant_id, formatted credentials, and property info, or None if not available
         """
@@ -223,7 +235,7 @@ class GACredentialHelper:
                 "tenant_id": account_id,
                 "tenant_credentials": formatted_creds,
                 "selected_property_ids": selected_property_ids,
-                "selected_properties": selected_properties
+                "selected_properties": selected_properties,
             }
 
         except Exception as e:

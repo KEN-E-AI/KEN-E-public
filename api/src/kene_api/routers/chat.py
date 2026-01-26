@@ -5,6 +5,8 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 import asyncio
 import logging
 import os
+import threading
+import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from typing import Any
@@ -96,7 +98,11 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         if brand and any(brand.values()):
             markdown_parts.append("\n## Brand Voice & Communication Style\n")
             if brand.get("voice_tone"):
-                tone = ", ".join(brand["voice_tone"]) if isinstance(brand["voice_tone"], list) else brand["voice_tone"]
+                tone = (
+                    ", ".join(brand["voice_tone"])
+                    if isinstance(brand["voice_tone"], list)
+                    else brand["voice_tone"]
+                )
                 markdown_parts.append(f"\n**Tone:** {tone}\n")
 
         return "".join(markdown_parts)
@@ -201,12 +207,13 @@ class AgentEngineClient:
         # Use KEN_E_ENGINE_ID if available, fall back to VERTEX_AI_AGENT_ENGINE_ID for backward compatibility
         # Use get_env_or_secret to resolve Secret Manager paths
         from shared.secrets import get_env_or_secret
+
         engine_id_full = get_env_or_secret("KEN_E_ENGINE_ID") or get_env_or_secret(
             "VERTEX_AI_AGENT_ENGINE_ID"
         )
 
         if not engine_id_full:
-            print(f"[CHAT INIT] KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set")
+            print("[CHAT INIT] KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set")
             logger.warning(
                 "KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set. Chat functionality will be limited."
             )
@@ -223,7 +230,9 @@ class AgentEngineClient:
             self.agent_engine_id = engine_id_full.split("/")[-1]
             print(f"[CHAT INIT] Full engine ID: {engine_id_full}")
             print(f"[CHAT INIT] Extracted numeric ID: {self.agent_engine_id}")
-            logger.info(f"Resolved Agent Engine ID: {self.agent_engine_id} (from {engine_id_full})")
+            logger.info(
+                f"Resolved Agent Engine ID: {self.agent_engine_id} (from {engine_id_full})"
+            )
 
         # Initialize Vertex AI
         vertexai.init(project=self.project_id, location=self.location)
@@ -237,9 +246,13 @@ class AgentEngineClient:
         """Lazy-load the agent engine using agent_engines.get()."""
         if self._agent_engine is None and self.agent_engine_id:
             try:
-                print(f"[AGENT_ENGINE] About to call agent_engines.get()")
-                print(f"[AGENT_ENGINE] agent_engine_id_full: {self.agent_engine_id_full}")
-                print(f"[AGENT_ENGINE] agent_engine_id (numeric): {self.agent_engine_id}")
+                print("[AGENT_ENGINE] About to call agent_engines.get()")
+                print(
+                    f"[AGENT_ENGINE] agent_engine_id_full: {self.agent_engine_id_full}"
+                )
+                print(
+                    f"[AGENT_ENGINE] agent_engine_id (numeric): {self.agent_engine_id}"
+                )
                 logger.info(
                     f"Attempting to connect to Agent Engine: {self.agent_engine_id_full or self.agent_engine_id}"
                 )
@@ -250,11 +263,19 @@ class AgentEngineClient:
                 # Use vertexai.Client to get the deployed agent engine
                 # The correct API requires using a Client instance
                 resource_name = self.agent_engine_id_full
-                print(f"[AGENT_ENGINE] Creating vertexai.Client with project={self.project_id}, location={self.location}")
-                print(f"[AGENT_ENGINE] Calling client.agent_engines.get(name={resource_name})")
-                logger.info(f"Calling agent_engines.get with name parameter: {resource_name}")
+                print(
+                    f"[AGENT_ENGINE] Creating vertexai.Client with project={self.project_id}, location={self.location}"
+                )
+                print(
+                    f"[AGENT_ENGINE] Calling client.agent_engines.get(name={resource_name})"
+                )
+                logger.info(
+                    f"Calling agent_engines.get with name parameter: {resource_name}"
+                )
 
-                client = vertexai.Client(project=self.project_id, location=self.location)
+                client = vertexai.Client(
+                    project=self.project_id, location=self.location
+                )
                 self._agent_engine = client.agent_engines.get(name=resource_name)
 
                 # Log the available methods for debugging
@@ -340,71 +361,146 @@ class AgentEngineClient:
                     f"Setting session state with account_id: {selected_account_id}"
                 )
 
-                # Load organization context from Neo4j (API has access)
-                # NOTE: Organization context may be None if:
-                # - Account doesn't have brand guidelines configured yet
-                # - Neo4j query fails (connection issues)
-                # - Account has incomplete data (missing brand nodes)
-                # Agents will function without org context, just without brand voice/tone
-                try:
-                    logger.info(f"Loading organization context for account: {initial_state['account_id']}")
-                    org_context = await load_organization_context_from_neo4j(
-                        account_id=initial_state["account_id"]
-                    )
-                    if org_context:
-                        initial_state["organization_context"] = org_context
-                        logger.info(f"Loaded organization context: {len(org_context)} chars")
-                    else:
-                        logger.warning(f"No organization context found for account: {initial_state['account_id']}")
-                except Exception as e:
-                    logger.error(f"Failed to load organization context: {e}")
-                    # Continue without org context - graceful degradation
+                # PERFORMANCE OPTIMIZATION: Parallelize Neo4j and Firestore operations
+                # These are independent and can run concurrently, reducing latency by ~50%
+                # PHASE 3: Add Redis caching with graceful fallback
+                async def load_org_context() -> str | None:
+                    """Load organization context from Neo4j with caching."""
+                    try:
+                        # Try cache first (Phase 3 optimization)
+                        from ..cache import org_context_key
+                        from ..redis_client import get_redis_service
 
-                # Prefetch GA credentials for the selected account
-                try:
-                    firestore_service = get_firestore_service()
-                    db = firestore_service.get_client()
-                    ga_helper = GACredentialHelper(db)
+                        redis_service = get_redis_service()
+                        if redis_service.is_available():
+                            cache_key = org_context_key(selected_account_id)
+                            cached_context = redis_service.get(cache_key)
 
-                    # Use the selected account directly
-                    logger.info(f"Loading GA credentials for account: {selected_account_id}")
-                    ga_creds = await ga_helper.get_and_format_credentials(selected_account_id)
+                            if cached_context:
+                                logger.info(
+                                    f"Cache HIT: Organization context for {selected_account_id} ({len(cached_context)} chars)"
+                                )
+                                return cached_context
 
-                    if ga_creds:
-                        # Get raw credentials for storage in state
-                        raw_creds = await ga_helper.get_oauth_credentials(selected_account_id)
-                        if raw_creds:
-                            raw_creds = await ga_helper.refresh_if_expired(
-                                selected_account_id, raw_creds
+                        # Cache miss or Redis unavailable - load from Neo4j
+                        logger.info(
+                            f"Loading organization context for account: {selected_account_id}"
+                        )
+                        org_context = await load_organization_context_from_neo4j(
+                            account_id=selected_account_id
+                        )
+
+                        if org_context:
+                            logger.info(
+                                f"Loaded organization context: {len(org_context)} chars"
+                            )
+                            # Cache for future requests (15 min TTL, non-blocking)
+                            if redis_service.is_available():
+                                cache_key = org_context_key(selected_account_id)
+                                redis_service.set(cache_key, org_context, ttl=900)
+                        else:
+                            logger.warning(
+                                f"No organization context found for account: {selected_account_id}"
                             )
 
-                        # Store in session state (NOT in message)
-                        property_ids_to_store = ga_creds.get("selected_property_ids", [])
+                        return org_context
+                    except Exception as e:
+                        logger.error(f"Failed to load organization context: {e}")
+                        return None
 
-                        initial_state["ga_credentials"] = {
-                            "access_token": raw_creds.get("access_token")
-                            if raw_creds
-                            else None,
-                            "refresh_token": raw_creds.get("refresh_token")
-                            if raw_creds
-                            else None,
-                            "tenant_id": ga_creds["tenant_id"],
-                            "selected_property_ids": property_ids_to_store,
-                            "selected_properties": ga_creds.get(
-                                "selected_properties", []
-                            ),
-                            "expires_at": raw_creds.get("expires_at")
-                            if raw_creds
-                            else None,
-                        }
+                async def load_ga_credentials() -> dict | None:
+                    """Load and format GA credentials from Firestore with caching."""
+                    try:
+                        # Try cache first (Phase 3 optimization)
+                        from ..cache import ga_credentials_key
+                        from ..redis_client import get_redis_service
+
+                        redis_service = get_redis_service()
+                        if redis_service.is_available():
+                            cache_key = ga_credentials_key(selected_account_id)
+                            cached_creds = redis_service.get_json(cache_key)
+
+                            if cached_creds:
+                                logger.info(
+                                    f"Cache HIT: GA credentials for {selected_account_id}"
+                                )
+                                return cached_creds
+
+                        # Cache miss or Redis unavailable - load from Firestore
+                        firestore_service = get_firestore_service()
+                        db = firestore_service.get_client()
+                        ga_helper = GACredentialHelper(db)
+
                         logger.info(
-                            f"Stored GA credentials with {len(property_ids_to_store)} properties for account: {selected_account_id}"
+                            f"Loading GA credentials for account: {selected_account_id}"
                         )
-                    else:
-                        logger.warning(f"No GA credentials found for account: {selected_account_id}")
-                except Exception as e:
-                    logger.error(f"Failed to prefetch GA credentials: {e}")
-                    # Continue without GA credentials
+                        ga_creds = await ga_helper.get_and_format_credentials(
+                            selected_account_id
+                        )
+
+                        if ga_creds:
+                            # Get raw credentials for storage in state
+                            raw_creds = await ga_helper.get_oauth_credentials(
+                                selected_account_id
+                            )
+                            if raw_creds:
+                                raw_creds = await ga_helper.refresh_if_expired(
+                                    selected_account_id, raw_creds
+                                )
+
+                            property_ids_to_store = ga_creds.get(
+                                "selected_property_ids", []
+                            )
+                            logger.info(
+                                f"Loaded GA credentials with {len(property_ids_to_store)} properties for account: {selected_account_id}"
+                            )
+
+                            credentials_dict = {
+                                "access_token": raw_creds.get("access_token")
+                                if raw_creds
+                                else None,
+                                "refresh_token": raw_creds.get("refresh_token")
+                                if raw_creds
+                                else None,
+                                "tenant_id": ga_creds["tenant_id"],
+                                "selected_property_ids": property_ids_to_store,
+                                "selected_properties": ga_creds.get(
+                                    "selected_properties", []
+                                ),
+                                "expires_at": raw_creds.get("expires_at")
+                                if raw_creds
+                                else None,
+                            }
+
+                            # Cache for future requests (10 min TTL, non-blocking)
+                            if redis_service.is_available():
+                                cache_key = ga_credentials_key(selected_account_id)
+                                redis_service.set_json(
+                                    cache_key, credentials_dict, ttl=600
+                                )
+
+                            return credentials_dict
+                        else:
+                            logger.warning(
+                                f"No GA credentials found for account: {selected_account_id}"
+                            )
+                            return None
+                    except Exception as e:
+                        logger.error(f"Failed to load GA credentials: {e}")
+                        return None
+
+                # Execute both operations in parallel
+                org_context, ga_credentials = await asyncio.gather(
+                    load_org_context(),
+                    load_ga_credentials(),
+                )
+
+                # Store results in session state
+                if org_context:
+                    initial_state["organization_context"] = org_context
+
+                if ga_credentials:
+                    initial_state["ga_credentials"] = ga_credentials
 
             # Create ADK session
             try:
@@ -414,11 +510,11 @@ class AgentEngineClient:
                 )
                 logger.info(f"Agent engine ID: {self.agent_engine_id}")
                 if initial_state:
-                    logger.info(
-                        f"Initial state keys: {list(initial_state.keys())}"
-                    )
+                    logger.info(f"Initial state keys: {list(initial_state.keys())}")
 
-                logger.info(f"Creating session with state keys: {list(initial_state.keys())}")
+                logger.info(
+                    f"Creating session with state keys: {list(initial_state.keys())}"
+                )
                 session_result = await self.session_service.create_session(
                     app_name="ken-e-chatbot", user_id=user_id, state=initial_state
                 )
@@ -427,7 +523,9 @@ class AgentEngineClient:
                     if hasattr(session_result, "id")
                     else str(session_result)
                 )
-                logger.info(f"Successfully created ADK session: {session_id} for user: {user_id}")
+                logger.info(
+                    f"Successfully created ADK session: {session_id} for user: {user_id}"
+                )
             except Exception as async_error:
                 logger.error(
                     f"Failed to create ADK session for user {user_id}: {async_error}"
@@ -456,6 +554,27 @@ class AgentEngineClient:
             logger.info(
                 f"Created conversation with session {session_id} for user {user_id}"
             )
+
+            # Cache session metadata to Redis (survives API restarts)
+            try:
+                from ..cache import session_metadata_key
+                from ..redis_client import get_redis_service
+
+                redis_service = get_redis_service()
+                if redis_service.is_available():
+                    # Convert datetime objects to ISO strings for JSON serialization
+                    cache_data = {
+                        **conversation_info,
+                        "created_at": conversation_info["created_at"].isoformat(),
+                        "last_updated": conversation_info["last_updated"].isoformat(),
+                    }
+                    cache_key = session_metadata_key(user_id, session_id)
+                    redis_service.set_json(cache_key, cache_data, ttl=86400)  # 24 hours
+                    logger.info(
+                        f"Cached new session metadata to Redis for {session_id}"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to cache new session to Redis: {e}")
 
             return session_id
 
@@ -499,9 +618,43 @@ class AgentEngineClient:
             # First check in-memory cache
             if session_key in self._user_sessions:
                 logger.info(
-                    f"Using existing session {session_id} from cache for user {user_id}"
+                    f"Using existing session {session_id} from in-memory cache for user {user_id}"
                 )
                 return session_id
+
+            # Check Redis cache (survives API restarts)
+            try:
+                from ..cache import session_metadata_key
+                from ..redis_client import get_redis_service
+
+                redis_service = get_redis_service()
+                if redis_service.is_available():
+                    cache_key = session_metadata_key(user_id, session_id)
+                    cached_session = redis_service.get_json(cache_key)
+
+                    if cached_session:
+                        logger.info(
+                            f"Using existing session {session_id} from Redis cache for user {user_id}"
+                        )
+                        # Convert ISO datetime strings back to datetime objects
+                        from datetime import datetime as dt_class
+
+                        if isinstance(cached_session.get("created_at"), str):
+                            cached_session["created_at"] = dt_class.fromisoformat(
+                                cached_session["created_at"]
+                            )
+                        if isinstance(cached_session.get("last_updated"), str):
+                            cached_session["last_updated"] = dt_class.fromisoformat(
+                                cached_session["last_updated"]
+                            )
+
+                        # Restore to in-memory cache
+                        self._user_sessions[session_key] = cached_session
+                        return session_id
+            except Exception as e:
+                logger.warning(f"Failed to check Redis for session {session_id}: {e}")
+
+            # Not in cache - proceed with validation
             else:
                 # Cache miss - check if this is a valid ADK session format before querying ADK
                 # Skip ADK validation for frontend-generated or fallback session IDs
@@ -545,6 +698,27 @@ class AgentEngineClient:
                                 ),
                             }
                             self._user_sessions[session_key] = conversation_info
+
+                            # Also cache to Redis (survives API restarts)
+                            try:
+                                from ..cache import session_metadata_key
+                                from ..redis_client import get_redis_service
+
+                                redis_service = get_redis_service()
+                                if redis_service.is_available():
+                                    cache_key = session_metadata_key(
+                                        user_id, session_id
+                                    )
+                                    # TTL: 24 hours
+                                    redis_service.set_json(
+                                        cache_key, conversation_info, ttl=86400
+                                    )
+                                    logger.info(
+                                        f"Cached session metadata to Redis for {session_id}"
+                                    )
+                            except Exception as e:
+                                logger.warning(f"Failed to cache session to Redis: {e}")
+
                             return session_id
                         else:
                             logger.warning(
@@ -555,15 +729,20 @@ class AgentEngineClient:
                             f"Error checking ADK session {session_id} for user {user_id}: {e}"
                         )
                 else:
+                    # Non-ADK format session (chat_*, fallback_*, manual_*)
+                    # If not in cache, this might be a frontend-generated ID on first message
+                    # Don't pass invalid session IDs to Agent Engine - create proper ADK session instead
                     logger.info(
-                        f"Session {session_id} has non-ADK format, skipping ADK validation"
+                        f"Session {session_id} has non-ADK format and not in cache - creating proper ADK session"
                     )
 
                 logger.info(
                     f"Creating new conversation for user {user_id} (original session {session_id} not found or invalid)"
                 )
         # Create new conversation with user_context and account_id
-        return await self.create_conversation(user_id, user_context, conversation_name, account_id)
+        return await self.create_conversation(
+            user_id, user_context, conversation_name, account_id
+        )
 
     def update_conversation_metadata(
         self, user_id: str, session_id: str, conversation_name: str | None = None
@@ -654,8 +833,22 @@ class AgentEngineClient:
             except Exception as e:
                 logger.warning(f"Failed to delete ADK session {session_id}: {e}")
 
-            # Remove from our cache
+            # Remove from in-memory cache
             del self._user_sessions[session_key]
+
+            # Remove from Redis cache
+            try:
+                from ..cache import session_metadata_key
+                from ..redis_client import get_redis_service
+
+                redis_service = get_redis_service()
+                if redis_service.is_available():
+                    cache_key = session_metadata_key(user_id, session_id)
+                    redis_service.delete(cache_key)
+                    logger.info(f"Deleted session from Redis cache: {session_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete session from Redis: {e}")
+
             logger.info(f"Deleted conversation {session_id} for user {user_id}")
             return True
         return False
@@ -899,8 +1092,9 @@ class AgentEngineClient:
             # Increment message count
             self.increment_message_count(user_id, actual_session_id)
 
+            # PERFORMANCE: Log when we're about to send to Agent Engine
             logger.info(
-                f"Sending query to Agent Engine for user {user_id}, session {actual_session_id}"
+                f"[PERF] SENDING to Agent Engine at {time.time():.3f} for user {user_id}, session {actual_session_id}"
             )
             logger.info(
                 f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
@@ -1497,6 +1691,24 @@ class AgentEngineClient:
 agent_client = AgentEngineClient()
 
 
+# Pre-load agent engine connection on module import to avoid 3s lazy-load on first request
+# This is done in a non-blocking way - if it fails, lazy-loading will still work
+def _preload_agent_engine():
+    """Pre-load agent engine connection to avoid lazy-loading delay on first chat request."""
+    try:
+        # Trigger the property to initialize the connection
+        _ = agent_client.agent_engine
+        logger.info("Agent Engine pre-loaded successfully on startup")
+    except Exception as e:
+        logger.warning(
+            f"Failed to pre-load Agent Engine (will lazy-load on first request): {e}"
+        )
+
+
+# Call pre-load in background (non-blocking)
+threading.Thread(target=_preload_agent_engine, daemon=True).start()
+
+
 @router.post("/completions", response_model=ChatResponse)
 async def chat_completion(
     request: ChatRequest, user_context: UserContext = Depends(get_current_user_context)
@@ -1508,8 +1720,15 @@ async def chat_completion(
     and returns a response from the deployed Agent Engine.
     """
     try:
+        # PERFORMANCE: Log request arrival time for latency measurement
+        logger.info(
+            f"[PERF] POST /chat/completions RECEIVED at {time.time():.3f} for user {user_context.user_id}"
+        )
+
         # SECURITY: Validate account access if account_id provided
-        if request.account_id and not user_context.has_account_access(request.account_id):
+        if request.account_id and not user_context.has_account_access(
+            request.account_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied to account {request.account_id}",
@@ -1588,13 +1807,17 @@ async def create_conversation(
     """
     try:
         # SECURITY: Validate account access if account_id provided
-        if request.account_id and not user_context.has_account_access(request.account_id):
+        if request.account_id and not user_context.has_account_access(
+            request.account_id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied to account {request.account_id}",
             )
 
-        logger.info(f"Creating conversation for user: {user_context.user_id}, account: {request.account_id}")
+        logger.info(
+            f"Creating conversation for user: {user_context.user_id}, account: {request.account_id}"
+        )
 
         session_id = await agent_client.create_conversation(
             user_id=user_context.user_id,
@@ -1746,4 +1969,68 @@ async def delete_conversation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete conversation",
+        )
+
+
+@router.post("/cache/invalidate/{account_id}")
+async def invalidate_cache(
+    account_id: str, user_context: UserContext = Depends(get_current_user)
+):
+    """
+    Invalidate cached data for an account (Phase 3 performance optimization).
+
+    This endpoint clears cached organization context and GA credentials
+    for a specific account. Use when account data is updated.
+
+    SECURITY: Validates user has access to the account before invalidating cache.
+    """
+    try:
+        # SECURITY: Validate user has access to this account
+        if not user_context.has_account_access(account_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied to account {account_id}",
+            )
+
+        from ..cache import ga_credentials_key, org_context_key
+        from ..redis_client import get_redis_service
+
+        redis_service = get_redis_service()
+
+        if not redis_service.is_available():
+            return {
+                "message": "Redis cache not available - no action taken",
+                "account_id": account_id,
+                "invalidated": False,
+            }
+
+        # Invalidate org context
+        org_key = org_context_key(account_id)
+        org_deleted = redis_service.delete(org_key)
+
+        # Invalidate GA credentials
+        ga_key = ga_credentials_key(account_id)
+        ga_deleted = redis_service.delete(ga_key)
+
+        logger.info(
+            f"Cache invalidated for account {account_id}: "
+            f"org_context={org_deleted}, ga_creds={ga_deleted}"
+        )
+
+        return {
+            "message": "Cache invalidated successfully",
+            "account_id": account_id,
+            "invalidated": {
+                "organization_context": org_deleted,
+                "ga_credentials": ga_deleted,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error invalidating cache for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to invalidate cache",
         )
