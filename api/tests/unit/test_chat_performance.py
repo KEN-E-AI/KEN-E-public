@@ -59,10 +59,8 @@ class TestSessionReuseBugFix:
 
             # Assert
             assert result == session_id, "Should return existing session ID"
-            (
-                mock_create.assert_not_called(),
-                ("Should NOT create new session for non-ADK format session in cache"),
-            )
+            # Should NOT create new session for non-ADK format session in cache
+            mock_create.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_non_adk_session_not_in_cache_creates_proper_adk_session(self):
@@ -86,7 +84,7 @@ class TestSessionReuseBugFix:
                 "create_conversation",
                 new=AsyncMock(return_value="proper_adk_session_456"),
             ) as mock_create,
-            patch("src.kene_api.redis_client.get_redis_service") as mock_redis,
+            patch("src.kene_api.routers.chat.get_redis_service") as mock_redis,
         ):
             # Mock Redis to return cache miss
             mock_redis_instance = MagicMock()
@@ -107,10 +105,8 @@ class TestSessionReuseBugFix:
             assert result == "proper_adk_session_456", (
                 "Should create and return proper ADK session"
             )
-            (
-                mock_create.assert_called_once(),
-                ("Should create new ADK session instead of using invalid frontend ID"),
-            )
+            # Should create new ADK session instead of using invalid frontend ID
+            mock_create.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_adk_session_still_queries_adk_when_not_in_cache(self):
@@ -135,7 +131,7 @@ class TestSessionReuseBugFix:
         client._session_service = mock_session_service
 
         # Mock Redis to return None (cache miss)
-        with patch("src.kene_api.redis_client.get_redis_service") as mock_redis:
+        with patch("src.kene_api.routers.chat.get_redis_service") as mock_redis:
             mock_redis_instance = MagicMock()
             mock_redis_instance.is_available.return_value = True
             mock_redis_instance.get_json.return_value = None
@@ -152,10 +148,8 @@ class TestSessionReuseBugFix:
 
         # Assert
         assert result == session_id, "Should return the validated session ID"
-        (
-            mock_session_service.get_session.assert_called_once(),
-            ("Should query ADK service for genuine ADK session formats"),
-        )
+        # Should query ADK service for genuine ADK session formats
+        mock_session_service.get_session.assert_called_once()
 
 
 class TestParallelExecution:
@@ -222,7 +216,7 @@ class TestParallelExecution:
                 "refresh_if_expired",
                 return_value={"access_token": "token"},
             ),
-            patch("src.kene_api.redis_client.get_redis_service") as mock_redis,
+            patch("src.kene_api.routers.chat.get_redis_service") as mock_redis,
         ):
             # Mock Redis to return cache miss (so we actually load from DB)
             mock_redis_instance = MagicMock()
@@ -324,7 +318,7 @@ class TestParallelExecution:
                 "refresh_if_expired",
                 return_value={"access_token": "token"},
             ),
-            patch("src.kene_api.redis_client.get_redis_service") as mock_redis,
+            patch("src.kene_api.routers.chat.get_redis_service") as mock_redis,
         ):
             # Mock Redis to disable caching
             mock_redis_instance = MagicMock()
@@ -475,10 +469,8 @@ class TestOAuthTimeout:
             assert result == credentials, (
                 "Should return original credentials if not expired"
             )
-            (
-                mock_client_class.assert_not_called(),
-                "Should NOT attempt refresh if token valid",
-            )
+            # Should NOT attempt refresh if token valid
+            mock_client_class.assert_not_called()
 
 
 class TestPerformanceMetrics:

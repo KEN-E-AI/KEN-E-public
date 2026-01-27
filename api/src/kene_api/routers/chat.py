@@ -5,7 +5,6 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 import asyncio
 import logging
 import os
-import threading
 import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
@@ -21,11 +20,18 @@ from pydantic import BaseModel, Field
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
+from ..cache import ga_credentials_key, org_context_key, session_metadata_key
 from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
+from ..redis_client import get_redis_service
 from ..services.ga_credential_helper import GACredentialHelper
 
 logger = logging.getLogger(__name__)
+
+# Cache TTL constants (seconds)
+ORG_CONTEXT_TTL_SECONDS = 900  # 15 minutes
+GA_CREDENTIALS_TTL_SECONDS = 600  # 10 minutes
+SESSION_METADATA_TTL_SECONDS = 86400  # 24 hours
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -368,9 +374,6 @@ class AgentEngineClient:
                     """Load organization context from Neo4j with caching."""
                     try:
                         # Try cache first (Phase 3 optimization)
-                        from ..cache import org_context_key
-                        from ..redis_client import get_redis_service
-
                         redis_service = get_redis_service()
                         if redis_service.is_available():
                             cache_key = org_context_key(selected_account_id)
@@ -394,10 +397,12 @@ class AgentEngineClient:
                             logger.info(
                                 f"Loaded organization context: {len(org_context)} chars"
                             )
-                            # Cache for future requests (15 min TTL, non-blocking)
+                            # Cache for future requests (non-blocking)
                             if redis_service.is_available():
                                 cache_key = org_context_key(selected_account_id)
-                                redis_service.set(cache_key, org_context, ttl=900)
+                                redis_service.set(
+                                    cache_key, org_context, ttl=ORG_CONTEXT_TTL_SECONDS
+                                )
                         else:
                             logger.warning(
                                 f"No organization context found for account: {selected_account_id}"
@@ -412,9 +417,6 @@ class AgentEngineClient:
                     """Load and format GA credentials from Firestore with caching."""
                     try:
                         # Try cache first (Phase 3 optimization)
-                        from ..cache import ga_credentials_key
-                        from ..redis_client import get_redis_service
-
                         redis_service = get_redis_service()
                         if redis_service.is_available():
                             cache_key = ga_credentials_key(selected_account_id)
@@ -472,11 +474,13 @@ class AgentEngineClient:
                                 else None,
                             }
 
-                            # Cache for future requests (10 min TTL, non-blocking)
+                            # Cache for future requests (non-blocking)
                             if redis_service.is_available():
                                 cache_key = ga_credentials_key(selected_account_id)
                                 redis_service.set_json(
-                                    cache_key, credentials_dict, ttl=600
+                                    cache_key,
+                                    credentials_dict,
+                                    ttl=GA_CREDENTIALS_TTL_SECONDS,
                                 )
 
                             return credentials_dict
@@ -557,9 +561,6 @@ class AgentEngineClient:
 
             # Cache session metadata to Redis (survives API restarts)
             try:
-                from ..cache import session_metadata_key
-                from ..redis_client import get_redis_service
-
                 redis_service = get_redis_service()
                 if redis_service.is_available():
                     # Convert datetime objects to ISO strings for JSON serialization
@@ -569,7 +570,9 @@ class AgentEngineClient:
                         "last_updated": conversation_info["last_updated"].isoformat(),
                     }
                     cache_key = session_metadata_key(user_id, session_id)
-                    redis_service.set_json(cache_key, cache_data, ttl=86400)  # 24 hours
+                    redis_service.set_json(
+                        cache_key, cache_data, ttl=SESSION_METADATA_TTL_SECONDS
+                    )
                     logger.info(
                         f"Cached new session metadata to Redis for {session_id}"
                     )
@@ -624,9 +627,6 @@ class AgentEngineClient:
 
             # Check Redis cache (survives API restarts)
             try:
-                from ..cache import session_metadata_key
-                from ..redis_client import get_redis_service
-
                 redis_service = get_redis_service()
                 if redis_service.is_available():
                     cache_key = session_metadata_key(user_id, session_id)
@@ -654,91 +654,83 @@ class AgentEngineClient:
             except Exception as e:
                 logger.warning(f"Failed to check Redis for session {session_id}: {e}")
 
-            # Not in cache - proceed with validation
-            else:
-                # Cache miss - check if this is a valid ADK session format before querying ADK
-                # Skip ADK validation for frontend-generated or fallback session IDs
-                is_adk_session = not (
-                    session_id.startswith("chat_")
-                    or session_id.startswith("fallback_")
-                    or session_id.startswith("manual_")
-                )
+            # Not in cache - check if this is a valid ADK session format before querying ADK
+            # Skip ADK validation for frontend-generated or fallback session IDs
+            is_adk_session = not (
+                session_id.startswith("chat_")
+                or session_id.startswith("fallback_")
+                or session_id.startswith("manual_")
+            )
 
-                if is_adk_session:
-                    logger.info(
-                        f"Session {session_id} not in cache, checking ADK for user {user_id}"
-                    )
-                    try:
-                        session_data = await self.session_service.get_session(
-                            app_name="ken-e-chatbot",
-                            user_id=user_id,
-                            session_id=session_id,
-                        )
-                        if session_data:
-                            logger.info(
-                                f"Found existing ADK session {session_id} for user {user_id}"
-                            )
-                            # Restore session info to cache
-                            conversation_info = {
-                                "session_id": session_id,
-                                "user_id": user_id,
-                                "conversation_name": conversation_name,
-                                "created_at": getattr(
-                                    session_data,
-                                    "create_time",
-                                    datetime.now(timezone.utc),
-                                ),
-                                "last_updated": getattr(
-                                    session_data,
-                                    "update_time",
-                                    datetime.now(timezone.utc),
-                                ),
-                                "message_count": len(
-                                    getattr(session_data, "events", [])
-                                ),
-                            }
-                            self._user_sessions[session_key] = conversation_info
-
-                            # Also cache to Redis (survives API restarts)
-                            try:
-                                from ..cache import session_metadata_key
-                                from ..redis_client import get_redis_service
-
-                                redis_service = get_redis_service()
-                                if redis_service.is_available():
-                                    cache_key = session_metadata_key(
-                                        user_id, session_id
-                                    )
-                                    # TTL: 24 hours
-                                    redis_service.set_json(
-                                        cache_key, conversation_info, ttl=86400
-                                    )
-                                    logger.info(
-                                        f"Cached session metadata to Redis for {session_id}"
-                                    )
-                            except Exception as e:
-                                logger.warning(f"Failed to cache session to Redis: {e}")
-
-                            return session_id
-                        else:
-                            logger.warning(
-                                f"ADK session {session_id} not found for user {user_id}"
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Error checking ADK session {session_id} for user {user_id}: {e}"
-                        )
-                else:
-                    # Non-ADK format session (chat_*, fallback_*, manual_*)
-                    # If not in cache, this might be a frontend-generated ID on first message
-                    # Don't pass invalid session IDs to Agent Engine - create proper ADK session instead
-                    logger.info(
-                        f"Session {session_id} has non-ADK format and not in cache - creating proper ADK session"
-                    )
-
+            if is_adk_session:
                 logger.info(
-                    f"Creating new conversation for user {user_id} (original session {session_id} not found or invalid)"
+                    f"Session {session_id} not in cache, checking ADK for user {user_id}"
                 )
+                try:
+                    session_data = await self.session_service.get_session(
+                        app_name="ken-e-chatbot",
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
+                    if session_data:
+                        logger.info(
+                            f"Found existing ADK session {session_id} for user {user_id}"
+                        )
+                        # Restore session info to cache
+                        conversation_info = {
+                            "session_id": session_id,
+                            "user_id": user_id,
+                            "conversation_name": conversation_name,
+                            "created_at": getattr(
+                                session_data,
+                                "create_time",
+                                datetime.now(timezone.utc),
+                            ),
+                            "last_updated": getattr(
+                                session_data,
+                                "update_time",
+                                datetime.now(timezone.utc),
+                            ),
+                            "message_count": len(getattr(session_data, "events", [])),
+                        }
+                        self._user_sessions[session_key] = conversation_info
+
+                        # Also cache to Redis (survives API restarts)
+                        try:
+                            redis_service = get_redis_service()
+                            if redis_service.is_available():
+                                cache_key = session_metadata_key(user_id, session_id)
+                                redis_service.set_json(
+                                    cache_key,
+                                    conversation_info,
+                                    ttl=SESSION_METADATA_TTL_SECONDS,
+                                )
+                                logger.info(
+                                    f"Cached session metadata to Redis for {session_id}"
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to cache session to Redis: {e}")
+
+                        return session_id
+                    else:
+                        logger.warning(
+                            f"ADK session {session_id} not found for user {user_id}"
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Error checking ADK session {session_id} for user {user_id}: {e}"
+                    )
+            else:
+                # Non-ADK format session (chat_*, fallback_*, manual_*)
+                # If not in cache, this might be a frontend-generated ID on first message
+                # Don't pass invalid session IDs to Agent Engine - create proper ADK session instead
+                logger.info(
+                    f"Session {session_id} has non-ADK format and not in cache - creating proper ADK session"
+                )
+
+            logger.info(
+                f"Creating new conversation for user {user_id} (original session {session_id} not found or invalid)"
+            )
         # Create new conversation with user_context and account_id
         return await self.create_conversation(
             user_id, user_context, conversation_name, account_id
@@ -838,9 +830,6 @@ class AgentEngineClient:
 
             # Remove from Redis cache
             try:
-                from ..cache import session_metadata_key
-                from ..redis_client import get_redis_service
-
                 redis_service = get_redis_service()
                 if redis_service.is_available():
                     cache_key = session_metadata_key(user_id, session_id)
@@ -1691,10 +1680,11 @@ class AgentEngineClient:
 agent_client = AgentEngineClient()
 
 
-# Pre-load agent engine connection on module import to avoid 3s lazy-load on first request
-# This is done in a non-blocking way - if it fails, lazy-loading will still work
-def _preload_agent_engine():
-    """Pre-load agent engine connection to avoid lazy-loading delay on first chat request."""
+def _preload_agent_engine() -> None:
+    """Pre-load agent engine connection to avoid lazy-loading delay on first chat request.
+
+    Called from FastAPI startup event in main.py.
+    """
     try:
         # Trigger the property to initialize the connection
         _ = agent_client.agent_engine
@@ -1703,10 +1693,6 @@ def _preload_agent_engine():
         logger.warning(
             f"Failed to pre-load Agent Engine (will lazy-load on first request): {e}"
         )
-
-
-# Call pre-load in background (non-blocking)
-threading.Thread(target=_preload_agent_engine, daemon=True).start()
 
 
 @router.post("/completions", response_model=ChatResponse)
@@ -1991,9 +1977,6 @@ async def invalidate_cache(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied to account {account_id}",
             )
-
-        from ..cache import ga_credentials_key, org_context_key
-        from ..redis_client import get_redis_service
 
         redis_service = get_redis_service()
 

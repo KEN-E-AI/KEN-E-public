@@ -1,6 +1,7 @@
 """Kene API - FastAPI main application."""
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -82,6 +83,16 @@ async def lifespan(app: FastAPI):
             logger.info("Redis cache not available - running without caching")
     except Exception as e:
         logger.warning(f"Redis initialization check failed: {e}")
+
+    # Pre-load agent engine connection to avoid 3s lazy-load on first request
+    # This is done in a non-blocking background thread
+    try:
+        from .routers.chat import _preload_agent_engine
+
+        threading.Thread(target=_preload_agent_engine, daemon=True).start()
+        logger.info("Agent Engine pre-loading started in background")
+    except Exception as e:
+        logger.warning(f"Failed to start Agent Engine pre-loading: {e}")
 
     yield
 
@@ -184,7 +195,9 @@ app.include_router(
     prefix="/api/v1",
     tags=["industry-templates"],
 )
-app.include_router(knowledge_graph.router)  # Knowledge graph router already has its prefix
+app.include_router(
+    knowledge_graph.router
+)  # Knowledge graph router already has its prefix
 
 
 # Health and root endpoints below routers
