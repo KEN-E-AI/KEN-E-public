@@ -266,7 +266,7 @@ def deploy_ken_e() -> str | None:
         logger.info("✅ Created App with EventsCompactionConfig and ContextCacheConfig")
 
         # Wrap with AdkApp for deployment (pass App object, not agent directly)
-        app = reasoning_engines.AdkApp(app=adk_app, enable_tracing=False)
+        app = agent_engines.AdkApp(app=adk_app, enable_tracing=False)
         logger.info(f"✅ Created AdkApp: {type(app)}")
 
         # Generate deployment name with timestamp
@@ -277,8 +277,8 @@ def deploy_ken_e() -> str | None:
         logger.info(f"📦 Deploying {deployment_name}...")
 
         try:
-            deployed_engine = reasoning_engines.ReasoningEngine.create(
-                reasoning_engine=app,
+            deployed_engine = agent_engines.create(
+                agent_engine=app,
                 requirements="requirements.txt",
                 display_name=deployment_name,
                 description="KEN-E chat agent for company news and analytics",

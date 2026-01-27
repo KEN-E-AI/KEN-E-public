@@ -5,8 +5,10 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 import asyncio
 import logging
 import os
+import sys
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -16,14 +18,27 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
-from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
 from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
 from ..services.ga_credential_helper import GACredentialHelper
 
-logger = logging.getLogger(__name__)
+# Add project root to path for app module imports
+_project_root = Path(__file__).parent.parent.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# Import structured logging and Sprint 2 context utilities
+from app.adk.agents.utils.structured_logging import get_structured_logger, log_context
+from app.adk.agents.utils.context_loader import (
+    CAMPAIGN_KEYWORDS,
+    should_load_campaigns,
+    load_campaign_context,
+    inject_campaign_context,
+)
+
+logger = get_structured_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -73,7 +88,16 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         result = await neo4j_service.execute_query(query, {"account_id": account_id})
 
         if not result or not result[0]:
-            logger.warning(f"No Neo4j results for account_id: {account_id}")
+            logger.warning(
+                "No organization context found",
+                extra=log_context(
+                    component="organization_context",
+                    action="load",
+                    account_id=account_id,
+                    success=False,
+                    error_message="No Neo4j results",
+                ),
+            )
             return None
 
         context_data = result[0]["context"]
@@ -93,16 +117,45 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         if account.get("company_overview"):
             markdown_parts.append(f"{account['company_overview']}\n")
 
+        has_brand_guidelines = False
         if brand and any(brand.values()):
+            has_brand_guidelines = True
             markdown_parts.append("\n## Brand Voice & Communication Style\n")
             if brand.get("voice_tone"):
                 tone = ", ".join(brand["voice_tone"]) if isinstance(brand["voice_tone"], list) else brand["voice_tone"]
                 markdown_parts.append(f"\n**Tone:** {tone}\n")
 
-        return "".join(markdown_parts)
+        context_str = "".join(markdown_parts)
+
+        # Structured logging for production visibility
+        logger.info(
+            "Organization context loaded",
+            extra=log_context(
+                component="organization_context",
+                action="load",
+                account_id=account_id,
+                success=True,
+                extra={
+                    "company_name": account.get("company_name", "unknown"),
+                    "has_brand_guidelines": has_brand_guidelines,
+                    "context_length": len(context_str),
+                },
+            ),
+        )
+
+        return context_str
 
     except Exception as e:
-        logger.error(f"Failed to load org context from Neo4j: {e}", exc_info=True)
+        logger.error(
+            "Failed to load organization context",
+            extra=log_context(
+                component="organization_context",
+                action="load",
+                account_id=account_id,
+                success=False,
+                error_message=str(e),
+            ),
+        )
         return None
 
 
@@ -420,7 +473,7 @@ class AgentEngineClient:
 
                 logger.info(f"Creating session with state keys: {list(initial_state.keys())}")
                 session_result = await self.session_service.create_session(
-                    app_name="ken-e-chatbot", user_id=user_id, state=initial_state
+                    app_name="ken_e_chatbot", user_id=user_id, state=initial_state
                 )
                 session_id = (
                     session_result.id
@@ -517,7 +570,7 @@ class AgentEngineClient:
                     )
                     try:
                         session_data = await self.session_service.get_session(
-                            app_name="ken-e-chatbot",
+                            app_name="ken_e_chatbot",
                             user_id=user_id,
                             session_id=session_id,
                         )
@@ -593,7 +646,7 @@ class AgentEngineClient:
 
             # Get sessions from ADK session service
             sessions = await self.session_service.list_sessions(
-                app_name="ken-e-chatbot", user_id=user_id
+                app_name="ken_e_chatbot", user_id=user_id
             )
 
             # Handle ListSessionsResponse - it might have a sessions attribute
@@ -648,7 +701,7 @@ class AgentEngineClient:
             try:
                 # Try to delete the ADK session
                 await self.session_service.delete_session(
-                    app_name="ken-e-chatbot", user_id=user_id, session_id=session_id
+                    app_name="ken_e_chatbot", user_id=user_id, session_id=session_id
                 )
                 logger.info(f"Deleted ADK session {session_id}")
             except Exception as e:
@@ -779,7 +832,7 @@ class AgentEngineClient:
             )
 
             session_data = await self.session_service.get_session(
-                app_name="ken-e-chatbot", user_id=user_id, session_id=session_id
+                app_name="ken_e_chatbot", user_id=user_id, session_id=session_id
             )
 
             if session_data and hasattr(session_data, "events"):
@@ -881,6 +934,45 @@ class AgentEngineClient:
             actual_session_id = await self.get_or_create_session(
                 user_id, user_context, session_id, conversation_name, account_id
             )
+
+            # Check if user message mentions campaigns and load campaign context on-demand
+            if should_load_campaigns(user_input):
+                try:
+                    # Get account_id from user_context or the provided account_id
+                    context_account_id = account_id
+                    if not context_account_id and user_context and user_context.accessible_accounts:
+                        context_account_id = user_context.accessible_accounts[0]
+
+                    if context_account_id:
+                        campaign_context = load_campaign_context(context_account_id)
+                        if campaign_context:
+                            # Inject campaign context into the message
+                            formatted_input = inject_campaign_context(formatted_input, campaign_context)
+                            logger.info(
+                                "Campaign context injected",
+                                extra=log_context(
+                                    component="campaign_context",
+                                    action="inject",
+                                    account_id=context_account_id,
+                                    session_id=actual_session_id,
+                                    success=True,
+                                    extra={
+                                        "context_length": len(campaign_context),
+                                        "trigger_keywords": [kw for kw in CAMPAIGN_KEYWORDS if kw in user_input.lower()][:3],
+                                    },
+                                ),
+                            )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to load campaign context",
+                        extra=log_context(
+                            component="campaign_context",
+                            action="inject",
+                            success=False,
+                            error_message=str(e),
+                        ),
+                    )
+                    # Continue without campaign context - graceful degradation
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"
@@ -1224,6 +1316,45 @@ class AgentEngineClient:
             actual_session_id = await self.get_or_create_session(
                 user_id, user_context, session_id, conversation_name, account_id
             )
+
+            # Check if user message mentions campaigns and load campaign context on-demand
+            if should_load_campaigns(user_input):
+                try:
+                    # Get account_id from user_context or the provided account_id
+                    context_account_id = account_id
+                    if not context_account_id and user_context and user_context.accessible_accounts:
+                        context_account_id = user_context.accessible_accounts[0]
+
+                    if context_account_id:
+                        campaign_context = load_campaign_context(context_account_id)
+                        if campaign_context:
+                            # Inject campaign context into the message
+                            formatted_input = inject_campaign_context(formatted_input, campaign_context)
+                            logger.info(
+                                "Campaign context injected (streaming)",
+                                extra=log_context(
+                                    component="campaign_context",
+                                    action="inject",
+                                    account_id=context_account_id,
+                                    session_id=actual_session_id,
+                                    success=True,
+                                    extra={
+                                        "context_length": len(campaign_context),
+                                        "trigger_keywords": [kw for kw in CAMPAIGN_KEYWORDS if kw in user_input.lower()][:3],
+                                    },
+                                ),
+                            )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to load campaign context (streaming)",
+                        extra=log_context(
+                            component="campaign_context",
+                            action="inject",
+                            success=False,
+                            error_message=str(e),
+                        ),
+                    )
+                    # Continue without campaign context - graceful degradation
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"
@@ -1631,7 +1762,7 @@ async def create_conversation(
 
 
 @router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(user_context: UserContext = Depends(get_current_user)):
+async def list_conversations(user_context: UserContext = Depends(get_current_user_context)):
     """
     List all conversations for the current user.
     """
@@ -1654,7 +1785,7 @@ async def list_conversations(user_context: UserContext = Depends(get_current_use
 async def update_conversation(
     session_id: str,
     request: UpdateConversationRequest,
-    user_context: UserContext = Depends(get_current_user),
+    user_context: UserContext = Depends(get_current_user_context),
 ):
     """
     Update conversation metadata (e.g., rename conversation).
@@ -1694,7 +1825,7 @@ async def update_conversation(
 
 @router.get("/conversations/{session_id}/history")
 async def get_conversation_history(
-    session_id: str, user_context: UserContext = Depends(get_current_user)
+    session_id: str, user_context: UserContext = Depends(get_current_user_context)
 ):
     """
     Get the message history for a specific conversation.
@@ -1722,7 +1853,7 @@ async def get_conversation_history(
 
 @router.delete("/conversations/{session_id}")
 async def delete_conversation(
-    session_id: str, user_context: UserContext = Depends(get_current_user)
+    session_id: str, user_context: UserContext = Depends(get_current_user_context)
 ):
     """
     Delete a conversation and its associated session.

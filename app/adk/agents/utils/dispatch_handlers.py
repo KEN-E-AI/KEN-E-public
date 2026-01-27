@@ -99,7 +99,7 @@ def dispatch_to_google_analytics(
     """
     # Import here to avoid circular dependencies
     from ..google_analytics_agent_v4 import google_analytics_agent_v4
-    from .context_loader import inject_organization_context
+    from .context_loader import inject_campaign_context, inject_organization_context
     from .supervisor_utils import encode_ga_credentials
 
     try:
@@ -142,6 +142,13 @@ def dispatch_to_google_analytics(
             if org_context:
                 query = inject_organization_context(query, org_context)
                 logger.info(f"Injected organization context, new query length: {len(query)}")
+
+        # Inject campaign context if available in session state (on-demand loaded)
+        if tool_context and hasattr(tool_context, 'state'):
+            campaign_context = tool_context.state.get("campaign_context")
+            if campaign_context:
+                query = inject_campaign_context(query, campaign_context)
+                logger.info(f"Injected campaign context, new query length: {len(query)}")
 
         # Fallback: use environment credentials for testing
         if not tenant_context or not tenant_context.get("tenant_credentials"):

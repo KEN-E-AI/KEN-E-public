@@ -1,0 +1,299 @@
+# Tool Registry Configuration
+# Sprint 2 Scope: Google Analytics tools only
+# Additional tools will be added in future sprints
+
+tools:
+  # ============================================================================
+  # Google Analytics Tools
+  # ============================================================================
+
+  - name: list_ga_accounts
+    description: List Google Analytics accounts and properties the user has access to
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: account_id
+        type: string
+        description: KEN-E account ID for credential lookup
+        required: true
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - accounts
+      - properties
+      - list
+      - google
+    estimated_tokens: 150
+    examples:
+      - "List my GA accounts"
+      - "Show me my analytics properties"
+      - "What GA4 properties do I have access to?"
+
+  - name: get_ga_property_details
+    description: Get configuration details for a specific GA4 property including settings, data streams, and conversion events
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID (e.g., "123456789")
+        required: true
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - property
+      - configuration
+      - settings
+      - details
+    estimated_tokens: 180
+    examples:
+      - "Get details for property 123456789"
+      - "Show me the configuration of my GA4 property"
+
+  - name: query_ga_report
+    description: Query Google Analytics for traffic, engagement, and conversion metrics with customizable date ranges and dimensions
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID
+        required: true
+      - name: date_range
+        type: object
+        description: Start and end dates for the report (YYYY-MM-DD format)
+        required: true
+      - name: metrics
+        type: array
+        description: Metrics to retrieve (e.g., sessions, users, pageviews, conversions)
+        required: true
+      - name: dimensions
+        type: array
+        description: Dimensions to group by (e.g., date, source, medium, country)
+        required: false
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - traffic
+      - users
+      - sessions
+      - pageviews
+      - report
+      - metrics
+      - data
+      - performance
+    estimated_tokens: 250
+    examples:
+      - "Show me website traffic for the last 30 days"
+      - "What are my top traffic sources this month?"
+      - "How many users visited my site last week?"
+
+  - name: get_ga_realtime
+    description: Get real-time analytics data including active users, current page views, and traffic sources
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID
+        required: true
+      - name: metrics
+        type: array
+        description: Real-time metrics to retrieve (e.g., activeUsers, screenPageViews)
+        required: false
+        default: ["activeUsers"]
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - realtime
+      - real-time
+      - active
+      - users
+      - live
+      - current
+    estimated_tokens: 180
+    examples:
+      - "How many users are on my site right now?"
+      - "Show me real-time traffic"
+      - "What's the current activity on my website?"
+
+  - name: compare_ga_periods
+    description: Compare analytics metrics between two time periods to identify trends and changes
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID
+        required: true
+      - name: current_period
+        type: object
+        description: Current period date range (start_date, end_date)
+        required: true
+      - name: comparison_period
+        type: object
+        description: Comparison period date range (start_date, end_date)
+        required: true
+      - name: metrics
+        type: array
+        description: Metrics to compare
+        required: true
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - compare
+      - comparison
+      - trend
+      - period
+      - growth
+      - change
+      - performance
+    estimated_tokens: 280
+    examples:
+      - "Compare traffic this month vs last month"
+      - "How does this week's performance compare to last week?"
+      - "Show me year-over-year growth"
+
+  - name: get_ga_top_pages
+    description: Get the top performing pages by page views, engagement, or conversions
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID
+        required: true
+      - name: date_range
+        type: object
+        description: Date range for the report
+        required: true
+      - name: sort_by
+        type: string
+        description: Metric to sort by (pageViews, engagementRate, conversions)
+        required: false
+        default: pageViews
+      - name: limit
+        type: integer
+        description: Number of pages to return
+        required: false
+        default: 10
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - pages
+      - top
+      - content
+      - popular
+      - best
+      - performing
+    estimated_tokens: 200
+    examples:
+      - "What are my top 10 pages?"
+      - "Which content is most popular?"
+      - "Show me best performing pages this month"
+
+  - name: get_ga_audience
+    description: Get audience demographics and interests including age, gender, location, and interests
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID
+        required: true
+      - name: date_range
+        type: object
+        description: Date range for the report
+        required: true
+      - name: dimension
+        type: string
+        description: Audience dimension (age, gender, country, interests)
+        required: true
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - audience
+      - demographics
+      - users
+      - age
+      - gender
+      - location
+      - interests
+    estimated_tokens: 220
+    examples:
+      - "Who is my audience?"
+      - "Show me user demographics"
+      - "Where are my users located?"
+
+  - name: get_ga_conversions
+    description: Get conversion data including goals, events, and e-commerce transactions
+    category: analytics
+    mcp_server: google_analytics_mcp
+    parameters:
+      - name: property_id
+        type: string
+        description: GA4 property ID
+        required: true
+      - name: date_range
+        type: object
+        description: Date range for the report
+        required: true
+      - name: conversion_events
+        type: array
+        description: Specific conversion events to analyze
+        required: false
+    permissions:
+      - scope: analytics:read
+        required: true
+    keywords:
+      - analytics
+      - ga4
+      - conversions
+      - goals
+      - events
+      - ecommerce
+      - revenue
+      - transactions
+    estimated_tokens: 230
+    examples:
+      - "Show me my conversion rates"
+      - "How many conversions did I get this month?"
+      - "What's my e-commerce revenue?"
+
+# ============================================================================
+# Placeholder for future tools (Sprint 3+)
+# ============================================================================
+
+# Google Ads tools (Sprint 3)
+# - list_google_ads_campaigns
+# - get_ads_performance
+# - get_ads_keywords
+
+# Meta Ads tools (Sprint 3+)
+# - list_meta_campaigns
+# - get_meta_insights
+
+# HubSpot tools (Sprint 4+)
+# - list_hubspot_contacts
+# - get_hubspot_deals

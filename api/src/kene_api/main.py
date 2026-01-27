@@ -1,7 +1,10 @@
 """Kene API - FastAPI main application."""
 
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -10,6 +13,24 @@ from fastapi.middleware.cors import CORSMiddleware
 # Load environment variables from .env file
 load_dotenv()
 
+# Add parent directory to path for app module imports
+# main.py -> kene_api -> src -> api -> KEN-E (project root)
+_project_root = Path(__file__).parent.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# Configure structured logging for Google Cloud
+# Import after load_dotenv so environment is available
+from app.adk.agents.utils.structured_logging import configure_logging
+
+# Get log level from environment (default INFO)
+_log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+configure_logging(level=_log_level)
+
+# Configure ADK logging to match
+logging.getLogger("google.adk").setLevel(_log_level)
+
+# ruff: noqa: E402 - imports must come after load_dotenv() and logging configuration
 from .config import settings
 from .database import neo4j_service
 from .firestore import get_firestore_service
@@ -39,9 +60,11 @@ from .routers import (
     strategy,
     subscription_plans,
     superset_saved_queries,
+    tools,
     usage,
     users,
 )
+
 # Separated import to avoid circular dependency:
 # notifications_v2 imports from other routers that import from main
 from .routers import (
@@ -184,6 +207,7 @@ app.include_router(
     tags=["industry-templates"],
 )
 app.include_router(knowledge_graph.router)  # Knowledge graph router already has its prefix
+app.include_router(tools.router)  # Tools router already has its prefix
 
 
 # Health and root endpoints below routers
