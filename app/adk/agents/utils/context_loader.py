@@ -7,10 +7,14 @@ This module loads context from Neo4j and formats it for injection into agent mes
 Phase 1 scope: Account Info + Brand Voice/Tone (~1,500 tokens)
 Phase 2 scope: Campaign context with mock data (~3,000 tokens)
 Future: Will expand to include Strategy, Competitors, Customer Profiles
+
+New in Sprint 2: HierarchicalContextManager class for managing context hierarchy
+with 3 levels (executive summary, sections, details).
 """
 
+import warnings
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from ..strategy_agent.neo4j_tools import Neo4jConnection
 from ..strategy_agent.token_utils import TokenEstimator
@@ -23,6 +27,276 @@ MAX_CONTEXT_TOKENS = 5_000
 
 # Token budget for campaign context
 MAX_CAMPAIGN_TOKENS = 3_000
+
+
+# =============================================================================
+# Section Keywords for Context Loading
+# =============================================================================
+
+# Keywords that trigger section loading for different context types
+SECTION_KEYWORDS: dict[str, list[str]] = {
+    "campaigns": [
+        "campaign", "campaigns", "ad", "ads", "advertising", "performance",
+        "roi", "roas", "ctr", "conversion", "conversions", "spend", "budget",
+        "impression", "impressions", "click", "clicks", "cpc", "cpm",
+    ],
+    "products": [
+        "product", "products", "service", "services", "offering", "offerings",
+        "solution", "solutions", "feature", "features",
+    ],
+    "icps": [
+        "icp", "icps", "ideal customer", "customer profile", "target audience",
+        "persona", "personas", "buyer", "buyers", "segment", "segments",
+    ],
+    "competitors": [
+        "competitor", "competitors", "competition", "competitive", "rival",
+        "rivals", "alternative", "alternatives", "market share",
+    ],
+    "strategies": [
+        "strategy", "strategies", "strategic", "plan", "plans", "roadmap",
+        "initiative", "initiatives", "goal", "goals", "objective", "objectives",
+    ],
+    "brand": [
+        "brand", "branding", "voice", "tone", "messaging", "identity",
+        "guidelines", "style", "personality",
+    ],
+    "performance": [
+        "kpi", "kpis", "metric", "metrics", "analytics", "report", "reports",
+        "dashboard", "data", "trend", "trends", "growth",
+    ],
+    "calendar": [
+        "calendar", "schedule", "timeline", "deadline", "deadlines", "event",
+        "events", "launch", "launches", "date", "dates",
+    ],
+}
+
+
+class HierarchicalContextManager:
+    """Manages hierarchical loading of company context to optimize token usage.
+
+    Implements 3-level hierarchy:
+    - Level 1: Executive Summary (~5,000 tokens) - Always loaded
+    - Level 2: Section Summaries (~10,000 tokens each) - Loaded on request
+    - Level 3: Full Detail (~20,000 tokens each) - Loaded for specific tasks
+
+    Example:
+        >>> manager = HierarchicalContextManager("account_123")
+        >>> manager.load_executive_summary()
+        >>> if manager.should_load_section(user_message, "campaigns"):
+        ...     manager.load_section("campaigns")
+        >>> formatted_input = manager.inject_context(user_message)
+    """
+
+    AVAILABLE_SECTIONS: ClassVar[list[str]] = [
+        "products", "icps", "competitors", "campaigns",
+        "strategies", "brand", "performance", "calendar"
+    ]
+
+    MAX_EXECUTIVE_TOKENS: ClassVar[int] = 5_000
+    MAX_SECTION_TOKENS: ClassVar[int] = 10_000
+    MAX_DETAIL_TOKENS: ClassVar[int] = 20_000
+
+    def __init__(self, account_id: str) -> None:
+        """Initialize context manager for an account.
+
+        Args:
+            account_id: Account identifier for loading context
+        """
+        self.account_id = account_id
+        self._executive_summary: str | None = None
+        self._loaded_sections: dict[str, str] = {}
+        self._loaded_details: dict[str, str] = {}
+        self._total_tokens = 0
+
+    def load_executive_summary(self) -> str | None:
+        """Load Level 1 context (org + brand). Always call this first.
+
+        Returns:
+            Formatted markdown context string, or None if loading fails
+        """
+        try:
+            # Fetch from Neo4j
+            context_data = _fetch_context_from_neo4j(self.account_id)
+
+            if not context_data:
+                logger.warning(
+                    "No executive summary data found",
+                    extra=log_context(
+                        component="hierarchical_context",
+                        action="load_executive_summary",
+                        account_id=self.account_id,
+                        success=False,
+                        error_message="No data in Neo4j",
+                    ),
+                )
+                return None
+
+            # Format as markdown
+            context_markdown = _format_context_markdown(context_data)
+
+            # Estimate tokens
+            token_info = TokenEstimator.check_input_limit(
+                context_markdown, raise_on_exceed=False
+            )
+
+            self._executive_summary = context_markdown
+            self._total_tokens = token_info["estimated_tokens"]
+
+            logger.info(
+                "Loaded executive summary",
+                extra=log_context(
+                    component="hierarchical_context",
+                    action="load_executive_summary",
+                    account_id=self.account_id,
+                    token_count=self._total_tokens,
+                    success=True,
+                ),
+            )
+
+            return context_markdown
+
+        except Exception as e:
+            logger.error(
+                f"Failed to load executive summary: {e}",
+                exc_info=True,
+            )
+            return None
+
+    def load_section(self, section_name: str) -> str | None:
+        """Load Level 2 section on demand (e.g., 'campaigns', 'products').
+
+        Args:
+            section_name: One of AVAILABLE_SECTIONS
+
+        Returns:
+            Formatted section context, or None if invalid/unavailable
+        """
+        if section_name not in self.AVAILABLE_SECTIONS:
+            logger.warning(f"Invalid section name: {section_name}")
+            return None
+
+        # Currently only campaigns section is implemented
+        if section_name == "campaigns":
+            campaign_data = _fetch_campaigns_from_neo4j(self.account_id)
+            if campaign_data:
+                context = _format_campaign_markdown(campaign_data)
+                self._loaded_sections[section_name] = context
+
+                # Update token count
+                token_info = TokenEstimator.check_input_limit(
+                    context, raise_on_exceed=False
+                )
+                self._total_tokens += token_info["estimated_tokens"]
+
+                logger.info(
+                    f"Loaded section: {section_name}",
+                    extra=log_context(
+                        component="hierarchical_context",
+                        action="load_section",
+                        account_id=self.account_id,
+                        success=True,
+                        extra={"section": section_name},
+                    ),
+                )
+                return context
+
+        # Other sections not yet implemented - return None
+        logger.info(f"Section {section_name} not yet implemented")
+        return None
+
+    def load_detail(self, detail_key: str) -> str | None:
+        """Load Level 3 full detail for specific entity.
+
+        Args:
+            detail_key: Identifier for the detail (e.g., campaign_id)
+
+        Returns:
+            Detailed context, or None if unavailable
+
+        Note:
+            Level 3 loading requires Neo4j schema for detailed entities.
+            Currently returns None - to be implemented in future sprints.
+        """
+        # Not yet implemented - requires Neo4j schema for detailed entities
+        logger.info(f"Detail loading not yet implemented for: {detail_key}")
+        return None
+
+    def unload_section(self, section_name: str) -> None:
+        """Unload section to free tokens.
+
+        Args:
+            section_name: Name of section to unload
+        """
+        if section_name in self._loaded_sections:
+            del self._loaded_sections[section_name]
+            logger.debug(f"Unloaded section: {section_name}")
+
+    def unload_all_sections(self) -> None:
+        """Unload all sections, keep only executive summary."""
+        self._loaded_sections.clear()
+        self._loaded_details.clear()
+        logger.debug("Unloaded all sections and details")
+
+    def get_total_tokens(self) -> int:
+        """Get current token usage across all loaded context.
+
+        Returns:
+            Estimated total tokens for all loaded context
+        """
+        return self._total_tokens
+
+    def get_context_for_agent(self) -> str:
+        """Get all currently loaded context formatted for agent injection.
+
+        Returns:
+            Combined context string (executive summary + loaded sections)
+        """
+        parts = []
+
+        if self._executive_summary:
+            parts.append(self._executive_summary)
+
+        for section_name in sorted(self._loaded_sections.keys()):
+            parts.append(self._loaded_sections[section_name])
+
+        for detail_key in sorted(self._loaded_details.keys()):
+            parts.append(self._loaded_details[detail_key])
+
+        return "\n\n".join(parts)
+
+    def inject_context(self, message: str) -> str:
+        """Inject all loaded context into a message.
+
+        Args:
+            message: Original user message
+
+        Returns:
+            Message with context injected, or original message if no context
+        """
+        context = self.get_context_for_agent()
+        if not context:
+            return message
+
+        return inject_organization_context.__wrapped__(message, context)
+
+    @staticmethod
+    def should_load_section(message: str, section: str) -> bool:
+        """Check if message references a section that should be loaded.
+
+        Args:
+            message: User message to analyze
+            section: Section name to check for
+
+        Returns:
+            True if message contains keywords for the section
+        """
+        if section not in SECTION_KEYWORDS:
+            return False
+
+        message_lower = message.lower()
+        keywords = SECTION_KEYWORDS[section]
+
+        return any(keyword in message_lower for keyword in keywords)
 
 # Keywords that trigger campaign context loading
 CAMPAIGN_KEYWORDS = [
@@ -48,20 +322,14 @@ CAMPAIGN_KEYWORDS = [
 ]
 
 
-def load_organization_context(account_id: str) -> str | None:
-    """Load and validate organization context for an account.
-
-    Loads Account info and Brand Voice/Tone from Neo4j, formats as markdown,
-    and validates token budget.
+def _load_organization_context_impl(account_id: str) -> str | None:
+    """Internal implementation of load_organization_context.
 
     Args:
         account_id: Account identifier
 
     Returns:
         Formatted markdown context string, or None if loading fails
-
-    Raises:
-        Does not raise exceptions - logs errors and returns None for graceful degradation
     """
     try:
         # 1. Fetch from Neo4j
@@ -127,6 +395,33 @@ def load_organization_context(account_id: str) -> str | None:
             f"Failed to load organization context for {account_id}: {e}", exc_info=True
         )
         return None
+
+
+def load_organization_context(account_id: str) -> str | None:
+    """Load and validate organization context for an account.
+
+    .. deprecated::
+        Use :class:`HierarchicalContextManager.load_executive_summary` instead.
+
+    Loads Account info and Brand Voice/Tone from Neo4j, formats as markdown,
+    and validates token budget.
+
+    Args:
+        account_id: Account identifier
+
+    Returns:
+        Formatted markdown context string, or None if loading fails
+
+    Raises:
+        Does not raise exceptions - logs errors and returns None for graceful degradation
+    """
+    warnings.warn(
+        "load_organization_context is deprecated. "
+        "Use HierarchicalContextManager.load_executive_summary() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _load_organization_context_impl(account_id)
 
 
 def _fetch_context_from_neo4j(account_id: str) -> dict | None:
@@ -291,8 +586,20 @@ def _format_context_markdown(data: dict) -> str:
     return "".join(markdown_parts)
 
 
+def _inject_organization_context_impl(message: str, context: str) -> str:
+    """Internal implementation of inject_organization_context."""
+    return f"""[ORGANIZATION CONTEXT]
+{context}
+[END CONTEXT]
+
+{message}"""
+
+
 def inject_organization_context(message: str, context: str) -> str:
     """Prepend organization context to user message.
+
+    .. deprecated::
+        Use :meth:`HierarchicalContextManager.inject_context` instead.
 
     Wraps context in clear delimiters for easy parsing by agents.
 
@@ -303,11 +610,17 @@ def inject_organization_context(message: str, context: str) -> str:
     Returns:
         Message with context injected
     """
-    return f"""[ORGANIZATION CONTEXT]
-{context}
-[END CONTEXT]
+    warnings.warn(
+        "inject_organization_context is deprecated. "
+        "Use HierarchicalContextManager.inject_context() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _inject_organization_context_impl(message, context)
 
-{message}"""
+
+# Store original implementation for internal use
+inject_organization_context.__wrapped__ = _inject_organization_context_impl
 
 
 # =============================================================================

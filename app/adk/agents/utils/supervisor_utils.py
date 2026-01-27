@@ -20,7 +20,7 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import ToolContext
 from google.genai.types import Content, Part
 
-from .context_loader import inject_organization_context, load_organization_context
+from .context_loader import HierarchicalContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +244,8 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                     logger.info(
                         f"[DISPATCH-WRAPPER] Loading org context for: {account_id}"
                     )
-                    org_context = load_organization_context(account_id=account_id)
+                    context_manager = HierarchicalContextManager(account_id)
+                    org_context = context_manager.load_executive_summary()
 
                     if org_context:
                         # DEBUG logging
@@ -256,10 +257,13 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                             f"[ORG-CONTEXT-DEBUG] Context length: {len(org_context)} chars"
                         )
                         logger.info(
+                            f"[ORG-CONTEXT-DEBUG] Token count: {context_manager.get_total_tokens()}"
+                        )
+                        logger.info(
                             "[ORG-CONTEXT-DEBUG] ========== CONTEXT END =========="
                         )
 
-                        query = inject_organization_context(query, org_context)
+                        query = context_manager.inject_context(query)
                         logger.info(
                             f"[DISPATCH-WRAPPER] Org context injected, new length: {len(query)}"
                         )
@@ -287,11 +291,12 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                         logger.info(
                             f"[DISPATCH-WRAPPER] Loading org context for: {tenant_context['account_id']}"
                         )
-                        org_context = load_organization_context(
-                            account_id=tenant_context["account_id"]
+                        context_manager = HierarchicalContextManager(
+                            tenant_context["account_id"]
                         )
+                        org_context = context_manager.load_executive_summary()
                         if org_context:
-                            message = inject_organization_context(message, org_context)
+                            message = context_manager.inject_context(message)
                             logger.info(
                                 f"[DISPATCH-WRAPPER] Org context injected (JSON path), new length: {len(message)}"
                             )

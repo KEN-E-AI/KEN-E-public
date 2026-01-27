@@ -414,6 +414,137 @@ class TestLoadFromConfig:
             registry.load_from_config("/nonexistent/path.yaml")
 
 
+class TestGetIndexForContext:
+    """Tests for get_index_for_context method."""
+
+    @pytest.fixture
+    def registry_with_tools(self) -> ToolRegistry:
+        """Create a registry with multiple tools across categories."""
+        registry = ToolRegistry()
+
+        # Analytics tools
+        registry.register_tool(
+            ToolDefinition(
+                name="query_ga_report",
+                description="Query Google Analytics for website traffic metrics and user behavior data",
+                category="analytics",
+                keywords=["analytics", "ga4", "traffic"],
+            )
+        )
+        registry.register_tool(
+            ToolDefinition(
+                name="list_ga_accounts",
+                description="List all Google Analytics accounts and properties",
+                category="analytics",
+                keywords=["analytics", "accounts"],
+            )
+        )
+
+        # Advertising tools
+        registry.register_tool(
+            ToolDefinition(
+                name="get_ads_performance",
+                description="Get performance metrics for advertising campaigns including CTR and conversions",
+                category="advertising",
+                keywords=["ads", "performance", "campaigns"],
+            )
+        )
+
+        # Content tools
+        registry.register_tool(
+            ToolDefinition(
+                name="generate_content",
+                description="Generate marketing content for various channels",
+                category="content",
+                keywords=["content", "generation", "marketing"],
+            )
+        )
+
+        return registry
+
+    def test_get_index_for_context_returns_string(
+        self, registry_with_tools: ToolRegistry
+    ):
+        """Test that get_index_for_context returns a non-empty string."""
+        index = registry_with_tools.get_index_for_context()
+
+        assert isinstance(index, str)
+        assert len(index) > 0
+
+    def test_get_index_for_context_contains_categories(
+        self, registry_with_tools: ToolRegistry
+    ):
+        """Test that index contains category headers."""
+        index = registry_with_tools.get_index_for_context()
+
+        assert "### Advertising" in index
+        assert "### Analytics" in index
+        assert "### Content" in index
+
+    def test_get_index_for_context_contains_tool_names(
+        self, registry_with_tools: ToolRegistry
+    ):
+        """Test that index contains tool names."""
+        index = registry_with_tools.get_index_for_context()
+
+        assert "query_ga_report" in index
+        assert "list_ga_accounts" in index
+        assert "get_ads_performance" in index
+        assert "generate_content" in index
+
+    def test_get_index_for_context_truncates_long_descriptions(
+        self, registry_with_tools: ToolRegistry
+    ):
+        """Test that descriptions longer than 80 chars are truncated."""
+        # Add tool with very long description
+        long_desc = "A" * 200  # 200 character description
+        registry_with_tools.register_tool(
+            ToolDefinition(
+                name="long_desc_tool",
+                description=long_desc,
+                category="testing",
+            )
+        )
+
+        index = registry_with_tools.get_index_for_context()
+
+        # Should contain truncated version with ...
+        assert "..." in index
+        # Should NOT contain full 200 char description
+        assert long_desc not in index
+
+    def test_get_index_for_context_sorted_categories(
+        self, registry_with_tools: ToolRegistry
+    ):
+        """Test that categories are sorted alphabetically."""
+        index = registry_with_tools.get_index_for_context()
+
+        # Find positions of category headers
+        advertising_pos = index.find("### Advertising")
+        analytics_pos = index.find("### Analytics")
+        content_pos = index.find("### Content")
+
+        # Verify alphabetical order
+        assert advertising_pos < analytics_pos < content_pos
+
+    def test_get_index_for_context_empty_registry(self):
+        """Test get_index_for_context with empty registry."""
+        registry = ToolRegistry()
+
+        index = registry.get_index_for_context()
+
+        assert "## Available Tool Categories" in index
+        assert "Use `search_tools`" in index
+
+    def test_get_index_for_context_includes_usage_hint(
+        self, registry_with_tools: ToolRegistry
+    ):
+        """Test that index includes hint about search_tools."""
+        index = registry_with_tools.get_index_for_context()
+
+        assert "Use `search_tools` to find specific tools by keyword" in index
+
+
 class TestDefaultRegistry:
     """Tests for default registry singleton."""
 

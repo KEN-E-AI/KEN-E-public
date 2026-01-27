@@ -322,6 +322,33 @@ class ToolRegistry:
         """
         return list(self._categories.keys())
 
+    def get_index_for_context(self) -> str:
+        """Generate compact text representation for agent context.
+
+        Creates a ~2,000 token index of available tools organized by category,
+        suitable for inclusion in Tool Discovery Agent prompts.
+
+        Returns:
+            Markdown-formatted string listing tools by category
+        """
+        lines = ["## Available Tool Categories\n"]
+
+        for category in sorted(self._categories.keys()):
+            tool_names = self._categories[category]
+            tools = [self._tools[name] for name in tool_names]
+
+            lines.append(f"\n### {category.title()}")
+            for tool in tools:
+                desc = (
+                    tool.description[:80] + "..."
+                    if len(tool.description) > 80
+                    else tool.description
+                )
+                lines.append(f"- **{tool.name}**: {desc}")
+
+        lines.append("\n\nUse `search_tools` to find specific tools by keyword.")
+        return "\n".join(lines)
+
     def count(self) -> int:
         """Get total number of registered tools.
 

@@ -140,11 +140,15 @@ class TestDispatchWithContext:
             },
         }
 
-        # Mock organization context loading
+        # Mock HierarchicalContextManager
         with patch(
-            "adk.agents.utils.supervisor_utils.load_organization_context"
-        ) as mock_load:
-            mock_load.return_value = "# Company Context\nTest Company"
+            "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
+            mock_manager.load_executive_summary.return_value = "# Company Context\nTest Company"
+            mock_manager.inject_context.return_value = "[ORGANIZATION CONTEXT]\n# Company Context\nTest Company\n[END CONTEXT]\n\nGet my analytics"
+            mock_manager.get_total_tokens.return_value = 100
 
             # Call wrapper
             result = wrapped("Get my analytics", tool_context=mock_tool_context)
@@ -165,8 +169,10 @@ class TestDispatchWithContext:
             assert "tenant_credentials" in tenant_context_arg
             assert tenant_context_arg["account_id"] == "acc_123"
 
-            # Verify organization context was loaded
-            mock_load.assert_called_once_with(account_id="acc_123")
+            # Verify HierarchicalContextManager was used correctly
+            mock_manager_class.assert_called_once_with("acc_123")
+            mock_manager.load_executive_summary.assert_called_once()
+            mock_manager.inject_context.assert_called_once_with("Get my analytics")
 
             # Result should be the dispatch function's return value
             assert result == "GA analytics result"
@@ -182,10 +188,15 @@ class TestDispatchWithContext:
             "account_id": "acc_123",
         }
 
+        # Mock HierarchicalContextManager
         with patch(
-            "adk.agents.utils.supervisor_utils.load_organization_context"
-        ) as mock_load:
-            mock_load.return_value = "# Company Context\nTest Company"
+            "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
+            mock_manager.load_executive_summary.return_value = "# Company Context\nTest Company"
+            mock_manager.inject_context.return_value = "[ORGANIZATION CONTEXT]\n# Company Context\n[END CONTEXT]\n\nGet latest news"
+            mock_manager.get_total_tokens.return_value = 100
 
             result = wrapped("Get latest news", tool_context=mock_tool_context)
 
@@ -207,10 +218,13 @@ class TestDispatchWithContext:
             "account_id": "acc_123",
         })
 
+        # Mock HierarchicalContextManager
         with patch(
-            "adk.agents.utils.supervisor_utils.load_organization_context"
-        ) as mock_load:
-            mock_load.return_value = None  # No org context
+            "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
+        ) as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager_class.return_value = mock_manager
+            mock_manager.load_executive_summary.return_value = None  # No org context
 
             result = wrapped(json_input, tool_context=None)
 
@@ -254,10 +268,11 @@ class TestDispatchWithContext:
         mock_tool_context = MagicMock()
         mock_tool_context.state = {"account_id": "acc_123"}
 
+        # Mock HierarchicalContextManager to raise an error
         with patch(
-            "adk.agents.utils.supervisor_utils.load_organization_context"
-        ) as mock_load:
-            mock_load.side_effect = Exception("Neo4j connection error")
+            "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
+        ) as mock_manager_class:
+            mock_manager_class.side_effect = Exception("Neo4j connection error")
 
             # Should not raise, should continue without org context
             result = wrapped("Query", tool_context=mock_tool_context)
