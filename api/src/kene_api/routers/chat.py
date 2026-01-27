@@ -3,7 +3,6 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 """
 
 import asyncio
-import logging
 import os
 import sys
 from collections.abc import AsyncGenerator
@@ -30,12 +29,19 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # Import structured logging and Sprint 2 context utilities
-from app.adk.agents.utils.structured_logging import get_structured_logger, log_context
-from app.adk.agents.utils.context_loader import (
+# Note: These imports are after sys.path modification (E402) - required for app module access
+from app.adk.agents.utils.context_loader import (  # noqa: E402
     CAMPAIGN_KEYWORDS,
-    should_load_campaigns,
-    load_campaign_context,
     inject_campaign_context,
+    load_campaign_context,
+    should_load_campaigns,
+)
+from app.adk.agents.utils.context_loader import (  # noqa: E402
+    _inject_organization_context_impl as inject_organization_context,
+)
+from app.adk.agents.utils.structured_logging import (  # noqa: E402
+    get_structured_logger,
+    log_context,
 )
 
 logger = get_structured_logger(__name__)
@@ -73,12 +79,9 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         customer_regions: acc.customer_regions
       },
       brand: {
-        voice_tone: voice.tone_attributes,
-        do_list: voice.do_list,
-        dont_list: voice.dont_list,
-        personality_traits: personality.traits,
-        mission: mission.mission_statement,
-        values: mission.core_values[..5]
+        voice_tone_description: voice.description,
+        personality_description: personality.description,
+        mission_description: mission.description
       }
     } as context
     """
@@ -102,7 +105,7 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
 
         context_data = result[0]["context"]
 
-        # Format as markdown (simplified version)
+        # Format as markdown
         account = context_data.get("account", {})
         brand = context_data.get("brand", {})
 
@@ -111,19 +114,28 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
             markdown_parts.append(f"account_id: {account['account_id']}")
         if account.get("company_name"):
             markdown_parts.append(f"company: {account['company_name']}")
+        if account.get("industry"):
+            markdown_parts.append(f"industry: {account['industry']}")
         markdown_parts.append("---\n")
 
         markdown_parts.append("# Company Context\n")
         if account.get("company_overview"):
             markdown_parts.append(f"{account['company_overview']}\n")
 
+        # Brand guidelines section
         has_brand_guidelines = False
         if brand and any(brand.values()):
             has_brand_guidelines = True
             markdown_parts.append("\n## Brand Voice & Communication Style\n")
-            if brand.get("voice_tone"):
-                tone = ", ".join(brand["voice_tone"]) if isinstance(brand["voice_tone"], list) else brand["voice_tone"]
-                markdown_parts.append(f"\n**Tone:** {tone}\n")
+
+            if brand.get("voice_tone_description"):
+                markdown_parts.append(f"\n**Voice & Tone:**\n{brand['voice_tone_description']}\n")
+
+            if brand.get("personality_description"):
+                markdown_parts.append(f"\n**Brand Personality:**\n{brand['personality_description']}\n")
+
+            if brand.get("mission_description"):
+                markdown_parts.append(f"\n**Mission & Values:**\n{brand['mission_description']}\n")
 
         context_str = "".join(markdown_parts)
 
@@ -157,6 +169,99 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
             ),
         )
         return None
+
+
+async def inject_context_into_message(
+    formatted_input: str,
+    user_input: str,
+    account_id: str | None,
+    session_id: str,
+    streaming: bool = False,
+) -> str:
+    """Inject organization and campaign context into the user message.
+
+    This helper function consolidates context injection logic used by both
+    streaming and non-streaming chat endpoints.
+
+    Args:
+        formatted_input: The formatted user message (may include conversation history)
+        user_input: The raw user input (for keyword detection)
+        account_id: Account ID for context loading
+        session_id: Session ID for logging
+        streaming: Whether this is called from a streaming endpoint (for log messages)
+
+    Returns:
+        The formatted_input with context injected
+    """
+    if not account_id:
+        return formatted_input
+
+    suffix = " (streaming)" if streaming else ""
+
+    # Always inject organization context (Level 1 - always loaded per design doc)
+    # This ensures brand voice, tone, and company info are available to all agents
+    try:
+        org_context = await load_organization_context_from_neo4j(account_id)
+        if org_context:
+            formatted_input = inject_organization_context(formatted_input, org_context)
+            logger.info(
+                f"Organization context injected{suffix}",
+                extra=log_context(
+                    component="organization_context",
+                    action="inject",
+                    account_id=account_id,
+                    session_id=session_id,
+                    success=True,
+                    extra={"context_length": len(org_context)},
+                ),
+            )
+    except Exception as e:
+        logger.warning(
+            f"Failed to inject organization context{suffix}",
+            extra=log_context(
+                component="organization_context",
+                action="inject",
+                success=False,
+                error_message=str(e),
+            ),
+        )
+        # Continue without org context - graceful degradation
+
+    # Check if user message mentions campaigns and load campaign context on-demand
+    if should_load_campaigns(user_input):
+        try:
+            campaign_context = load_campaign_context(account_id)
+            if campaign_context:
+                formatted_input = inject_campaign_context(formatted_input, campaign_context)
+                logger.info(
+                    f"Campaign context injected{suffix}",
+                    extra=log_context(
+                        component="campaign_context",
+                        action="inject",
+                        account_id=account_id,
+                        session_id=session_id,
+                        success=True,
+                        extra={
+                            "context_length": len(campaign_context),
+                            "trigger_keywords": [
+                                kw for kw in CAMPAIGN_KEYWORDS if kw in user_input.lower()
+                            ][:3],
+                        },
+                    ),
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to load campaign context{suffix}",
+                extra=log_context(
+                    component="campaign_context",
+                    action="inject",
+                    success=False,
+                    error_message=str(e),
+                ),
+            )
+            # Continue without campaign context - graceful degradation
+
+    return formatted_input
 
 
 class ChatMessage(BaseModel):
@@ -259,7 +364,7 @@ class AgentEngineClient:
         )
 
         if not engine_id_full:
-            print(f"[CHAT INIT] KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set")
+            print("[CHAT INIT] KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set")
             logger.warning(
                 "KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID not set. Chat functionality will be limited."
             )
@@ -290,7 +395,7 @@ class AgentEngineClient:
         """Lazy-load the agent engine using agent_engines.get()."""
         if self._agent_engine is None and self.agent_engine_id:
             try:
-                print(f"[AGENT_ENGINE] About to call agent_engines.get()")
+                print("[AGENT_ENGINE] About to call agent_engines.get()")
                 print(f"[AGENT_ENGINE] agent_engine_id_full: {self.agent_engine_id_full}")
                 print(f"[AGENT_ENGINE] agent_engine_id (numeric): {self.agent_engine_id}")
                 logger.info(
@@ -935,44 +1040,19 @@ class AgentEngineClient:
                 user_id, user_context, session_id, conversation_name, account_id
             )
 
-            # Check if user message mentions campaigns and load campaign context on-demand
-            if should_load_campaigns(user_input):
-                try:
-                    # Get account_id from user_context or the provided account_id
-                    context_account_id = account_id
-                    if not context_account_id and user_context and user_context.accessible_accounts:
-                        context_account_id = user_context.accessible_accounts[0]
+            # Determine account_id for context injection
+            context_account_id = account_id
+            if not context_account_id and user_context and user_context.accessible_accounts:
+                context_account_id = user_context.accessible_accounts[0]
 
-                    if context_account_id:
-                        campaign_context = load_campaign_context(context_account_id)
-                        if campaign_context:
-                            # Inject campaign context into the message
-                            formatted_input = inject_campaign_context(formatted_input, campaign_context)
-                            logger.info(
-                                "Campaign context injected",
-                                extra=log_context(
-                                    component="campaign_context",
-                                    action="inject",
-                                    account_id=context_account_id,
-                                    session_id=actual_session_id,
-                                    success=True,
-                                    extra={
-                                        "context_length": len(campaign_context),
-                                        "trigger_keywords": [kw for kw in CAMPAIGN_KEYWORDS if kw in user_input.lower()][:3],
-                                    },
-                                ),
-                            )
-                except Exception as e:
-                    logger.warning(
-                        "Failed to load campaign context",
-                        extra=log_context(
-                            component="campaign_context",
-                            action="inject",
-                            success=False,
-                            error_message=str(e),
-                        ),
-                    )
-                    # Continue without campaign context - graceful degradation
+            # Inject organization and campaign context
+            formatted_input = await inject_context_into_message(
+                formatted_input=formatted_input,
+                user_input=user_input,
+                account_id=context_account_id,
+                session_id=actual_session_id,
+                streaming=False,
+            )
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"
@@ -1317,44 +1397,19 @@ class AgentEngineClient:
                 user_id, user_context, session_id, conversation_name, account_id
             )
 
-            # Check if user message mentions campaigns and load campaign context on-demand
-            if should_load_campaigns(user_input):
-                try:
-                    # Get account_id from user_context or the provided account_id
-                    context_account_id = account_id
-                    if not context_account_id and user_context and user_context.accessible_accounts:
-                        context_account_id = user_context.accessible_accounts[0]
+            # Determine account_id for context injection
+            context_account_id = account_id
+            if not context_account_id and user_context and user_context.accessible_accounts:
+                context_account_id = user_context.accessible_accounts[0]
 
-                    if context_account_id:
-                        campaign_context = load_campaign_context(context_account_id)
-                        if campaign_context:
-                            # Inject campaign context into the message
-                            formatted_input = inject_campaign_context(formatted_input, campaign_context)
-                            logger.info(
-                                "Campaign context injected (streaming)",
-                                extra=log_context(
-                                    component="campaign_context",
-                                    action="inject",
-                                    account_id=context_account_id,
-                                    session_id=actual_session_id,
-                                    success=True,
-                                    extra={
-                                        "context_length": len(campaign_context),
-                                        "trigger_keywords": [kw for kw in CAMPAIGN_KEYWORDS if kw in user_input.lower()][:3],
-                                    },
-                                ),
-                            )
-                except Exception as e:
-                    logger.warning(
-                        "Failed to load campaign context (streaming)",
-                        extra=log_context(
-                            component="campaign_context",
-                            action="inject",
-                            success=False,
-                            error_message=str(e),
-                        ),
-                    )
-                    # Continue without campaign context - graceful degradation
+            # Inject organization and campaign context
+            formatted_input = await inject_context_into_message(
+                formatted_input=formatted_input,
+                user_input=user_input,
+                account_id=context_account_id,
+                session_id=actual_session_id,
+                streaming=True,
+            )
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"
