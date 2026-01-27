@@ -37,7 +37,7 @@ from app.adk.agents.utils.context_loader import (  # noqa: E402
     should_load_campaigns,
 )
 from app.adk.agents.utils.context_loader import (  # noqa: E402
-    _inject_organization_context_impl as inject_organization_context,
+    inject_organization_context,
 )
 from app.adk.agents.utils.structured_logging import (  # noqa: E402
     get_structured_logger,

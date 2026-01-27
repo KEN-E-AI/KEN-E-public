@@ -12,7 +12,6 @@ New in Sprint 2: HierarchicalContextManager class for managing context hierarchy
 with 3 levels (executive summary, sections, details).
 """
 
-import warnings
 from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
@@ -277,7 +276,7 @@ class HierarchicalContextManager:
         if not context:
             return message
 
-        return inject_organization_context.__wrapped__(message, context)
+        return inject_organization_context(message, context)
 
     @staticmethod
     def should_load_section(message: str, section: str) -> bool:
@@ -322,14 +321,24 @@ CAMPAIGN_KEYWORDS = [
 ]
 
 
-def _load_organization_context_impl(account_id: str) -> str | None:
-    """Internal implementation of load_organization_context.
+def load_organization_context(account_id: str) -> str | None:
+    """Load and validate organization context for an account.
+
+    Loads Account info and Brand Voice/Tone from Neo4j, formats as markdown,
+    and validates token budget.
+
+    Note:
+        For new code, prefer using HierarchicalContextManager.load_executive_summary()
+        which provides better token management and section-based loading.
 
     Args:
         account_id: Account identifier
 
     Returns:
         Formatted markdown context string, or None if loading fails
+
+    Raises:
+        Does not raise exceptions - logs errors and returns None for graceful degradation
     """
     try:
         # 1. Fetch from Neo4j
@@ -395,33 +404,6 @@ def _load_organization_context_impl(account_id: str) -> str | None:
             f"Failed to load organization context for {account_id}: {e}", exc_info=True
         )
         return None
-
-
-def load_organization_context(account_id: str) -> str | None:
-    """Load and validate organization context for an account.
-
-    .. deprecated::
-        Use :class:`HierarchicalContextManager.load_executive_summary` instead.
-
-    Loads Account info and Brand Voice/Tone from Neo4j, formats as markdown,
-    and validates token budget.
-
-    Args:
-        account_id: Account identifier
-
-    Returns:
-        Formatted markdown context string, or None if loading fails
-
-    Raises:
-        Does not raise exceptions - logs errors and returns None for graceful degradation
-    """
-    warnings.warn(
-        "load_organization_context is deprecated. "
-        "Use HierarchicalContextManager.load_executive_summary() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _load_organization_context_impl(account_id)
 
 
 def _fetch_context_from_neo4j(account_id: str) -> dict | None:
@@ -586,22 +568,14 @@ def _format_context_markdown(data: dict) -> str:
     return "".join(markdown_parts)
 
 
-def _inject_organization_context_impl(message: str, context: str) -> str:
-    """Internal implementation of inject_organization_context."""
-    return f"""[ORGANIZATION CONTEXT]
-{context}
-[END CONTEXT]
-
-{message}"""
-
-
 def inject_organization_context(message: str, context: str) -> str:
     """Prepend organization context to user message.
 
-    .. deprecated::
-        Use :meth:`HierarchicalContextManager.inject_context` instead.
-
     Wraps context in clear delimiters for easy parsing by agents.
+
+    Note:
+        For new code, prefer using HierarchicalContextManager.inject_context()
+        which provides better token management.
 
     Args:
         message: Original user message
@@ -610,17 +584,11 @@ def inject_organization_context(message: str, context: str) -> str:
     Returns:
         Message with context injected
     """
-    warnings.warn(
-        "inject_organization_context is deprecated. "
-        "Use HierarchicalContextManager.inject_context() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _inject_organization_context_impl(message, context)
+    return f"""[ORGANIZATION CONTEXT]
+{context}
+[END CONTEXT]
 
-
-# Store original implementation for internal use
-inject_organization_context.__wrapped__ = _inject_organization_context_impl
+{message}"""
 
 
 # =============================================================================

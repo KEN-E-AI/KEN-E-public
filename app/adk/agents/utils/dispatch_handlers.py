@@ -34,7 +34,7 @@ def dispatch_to_company_news(
     # Import here to avoid circular dependencies
     # Use internal impl to avoid deprecation warning - context is already loaded from session state
     from ..company_news_chatbot.agent import root_agent as news_agent
-    from .context_loader import _inject_organization_context_impl
+    from .context_loader import inject_organization_context
 
     try:
         logger.info("[NEWS-DISPATCH] ========== DISPATCH START ==========")
@@ -56,7 +56,7 @@ def dispatch_to_company_news(
         if tool_context and hasattr(tool_context, 'state'):
             org_context = tool_context.state.get("organization_context")
             if org_context:
-                query = _inject_organization_context_impl(query, org_context)
+                query = inject_organization_context(query, org_context)
                 logger.info(f"[NEWS-DISPATCH] ✅ Injected org context from session state, new query length: {len(query)}")
             else:
                 logger.info("[NEWS-DISPATCH] No org context in session state")
@@ -102,7 +102,7 @@ def dispatch_to_google_analytics(
     # Use internal impl to avoid deprecation warning - context is already loaded from session state
     from ..google_analytics_agent_v4 import google_analytics_agent_v4
     from .context_loader import (
-        _inject_organization_context_impl,
+        inject_organization_context,
         inject_campaign_context,
     )
     from .supervisor_utils import encode_ga_credentials
@@ -145,7 +145,7 @@ def dispatch_to_google_analytics(
         if tool_context and hasattr(tool_context, 'state'):
             org_context = tool_context.state.get("organization_context")
             if org_context:
-                query = _inject_organization_context_impl(query, org_context)
+                query = inject_organization_context(query, org_context)
                 logger.info(f"Injected organization context, new query length: {len(query)}")
 
         # Inject campaign context if available in session state (on-demand loaded)

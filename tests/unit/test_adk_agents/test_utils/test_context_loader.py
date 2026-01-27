@@ -9,7 +9,6 @@ Tests cover:
 - HierarchicalContextManager class methods
 """
 
-import warnings
 from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
@@ -737,25 +736,3 @@ class TestHierarchicalContextManagerShouldLoadSection:
         assert HierarchicalContextManager.should_load_section(
             "Our PRODUCTS are great", "products"
         ) is True
-
-
-class TestDeprecationWarnings:
-    """Tests for deprecation warnings on old functions."""
-
-    def test_load_organization_context_deprecation_warning(self) -> None:
-        """Test that load_organization_context emits deprecation warning."""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-
-            # Mock to avoid actual Neo4j call
-            with patch("adk.agents.utils.context_loader._fetch_context_from_neo4j") as mock_fetch:
-                mock_fetch.return_value = None
-                load_organization_context("test_account")
-
-            # Check that deprecation warning was issued
-            deprecation_warnings = [
-                warning for warning in w
-                if issubclass(warning.category, DeprecationWarning)
-            ]
-            assert len(deprecation_warnings) >= 1
-            assert "HierarchicalContextManager" in str(deprecation_warnings[0].message)
