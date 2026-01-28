@@ -2,8 +2,9 @@
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable, Optional
+from typing import Any
 
 from redis import Redis
 from redis.exceptions import RedisError
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class CacheService:
     """Service for caching data using Redis."""
 
-    def __init__(self, redis_client: Optional[Redis] = None):
+    def __init__(self, redis_client: Redis | None = None):
         """Initialize cache service.
 
         Args:
@@ -28,7 +29,7 @@ class CacheService:
         """Check if caching is enabled."""
         return self._enabled
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache.
 
         Args:
@@ -46,7 +47,7 @@ class CacheService:
                 return json.loads(value)
             return None
         except (RedisError, json.JSONDecodeError) as e:
-            logger.error(f"Error getting cache key {key}: {str(e)}")
+            logger.error(f"Error getting cache key {key}: {e!s}")
             return None
 
     def set(self, key: str, value: Any, ttl_seconds: int = 3600) -> bool:
@@ -68,7 +69,7 @@ class CacheService:
             self.redis.setex(key, ttl_seconds, serialized)
             return True
         except (RedisError, json.JSONDecodeError, TypeError) as e:
-            logger.error(f"Error setting cache key {key}: {str(e)}")
+            logger.error(f"Error setting cache key {key}: {e!s}")
             return False
 
     def delete(self, key: str) -> bool:
@@ -87,7 +88,7 @@ class CacheService:
             self.redis.delete(key)
             return True
         except RedisError as e:
-            logger.error(f"Error deleting cache key {key}: {str(e)}")
+            logger.error(f"Error deleting cache key {key}: {e!s}")
             return False
 
     def delete_pattern(self, pattern: str) -> int:
@@ -108,45 +109,45 @@ class CacheService:
                 return self.redis.delete(*keys)
             return 0
         except RedisError as e:
-            logger.error(f"Error deleting cache pattern {pattern}: {str(e)}")
+            logger.error(f"Error deleting cache pattern {pattern}: {e!s}")
             return 0
-    
+
     def increment(self, key: str) -> bool:
         """Increment a counter in cache.
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self.enabled:
             return False
-        
+
         try:
             self.redis.incr(key)
             return True
         except RedisError as e:
-            logger.error(f"Error incrementing cache key {key}: {str(e)}")
+            logger.error(f"Error incrementing cache key {key}: {e!s}")
             return False
-    
-    def ttl(self, key: str) -> Optional[int]:
+
+    def ttl(self, key: str) -> int | None:
         """Get time-to-live for a key in seconds.
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             TTL in seconds, or None if key doesn't exist or error
         """
         if not self.enabled:
             return None
-        
+
         try:
             ttl = self.redis.ttl(key)
             return ttl if ttl > 0 else None
         except RedisError as e:
-            logger.error(f"Error getting TTL for cache key {key}: {str(e)}")
+            logger.error(f"Error getting TTL for cache key {key}: {e!s}")
             return None
 
 
@@ -156,7 +157,7 @@ class InMemoryCache:
     def __init__(self):
         self._cache: dict[str, tuple[Any, datetime]] = {}
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache."""
         if key in self._cache:
             value, expiry = self._cache[key]
@@ -206,11 +207,44 @@ def monitoring_topics_key(account_id: str) -> str:
     return f"monitoring_topics:{account_id}"
 
 
+# Phase 3 Performance Optimization: Chat performance cache keys
+def org_context_key(account_id: str) -> str:
+    """Generate cache key for organization context (Neo4j data).
+
+    Phase 3 Performance Optimization - caches org context loaded from Neo4j
+    to reduce session creation time from 1-2s to <10ms on cache hits.
+
+    Future-proof: This is the "summary" level for future hierarchical context loading.
+    """
+    return f"chat:org_context:{account_id}"
+
+
+def ga_credentials_key(account_id: str) -> str:
+    """Generate cache key for GA credentials (Firestore data).
+
+    Phase 3 Performance Optimization - caches GA OAuth credentials
+    to avoid repeated Firestore queries during session creation.
+    """
+    return f"chat:ga_creds:{account_id}"
+
+
+def session_metadata_key(user_id: str, session_id: str) -> str:
+    """Generate cache key for session metadata.
+
+    Phase 3 Performance Optimization - caches session metadata to avoid
+    3-second ADK validation on every API restart. This eliminates the need
+    to query ADK service (GET session + GET events) for known sessions.
+
+    TTL: 24 hours (matches typical session lifetime)
+    """
+    return f"chat:session:{user_id}:{session_id}"
+
+
 # Cache decorators
 def cache_result(
     key_func: Callable[..., str],
     ttl_seconds: int = 3600,
-    cache_service: Optional[CacheService] = None,
+    cache_service: CacheService | None = None,
 ):
     """Decorator to cache function results.
 

@@ -3,12 +3,14 @@
 import logging
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -104,6 +106,16 @@ async def lifespan(app: FastAPI):
             logger.info("Redis cache not available - running without caching")
     except Exception as e:
         logger.warning(f"Redis initialization check failed: {e}")
+
+    # Pre-load agent engine connection to avoid 3s lazy-load on first request
+    # This is done in a non-blocking background thread
+    try:
+        from .routers.chat import _preload_agent_engine
+
+        threading.Thread(target=_preload_agent_engine, daemon=True).start()
+        logger.info("Agent Engine pre-loading started in background")
+    except Exception as e:
+        logger.warning(f"Failed to start Agent Engine pre-loading: {e}")
 
     yield
 
@@ -226,7 +238,11 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint for liveness probes.
+
+    Returns 200 with healthy status when all critical services are up.
+    Returns 503 with degraded status when any critical service is down.
+    """
     try:
         neo4j_healthy = await neo4j_service.health_check()
     except Exception:
@@ -249,13 +265,42 @@ async def health_check():
     # Overall health is true if critical services are healthy
     # Redis is not critical - system works without it
     overall_healthy = neo4j_healthy and firestore_healthy
+    status = "healthy" if overall_healthy else "degraded"
+    status_code = 200 if overall_healthy else 503
 
-    return {
-        "status": "healthy" if overall_healthy else "degraded",
-        "message": "API is running",
-        "services": {
-            "neo4j": "healthy" if neo4j_healthy else "unhealthy",
-            "firestore": "healthy" if firestore_healthy else "unhealthy",
-            "redis": "healthy" if redis_healthy else "unavailable",
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": status,
+            "message": "API is running",
+            "services": {
+                "neo4j": "healthy" if neo4j_healthy else "unhealthy",
+                "firestore": "healthy" if firestore_healthy else "unhealthy",
+                "redis": "healthy" if redis_healthy else "unavailable",
+            },
         },
-    }
+    )
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe for Kubernetes.
+
+    Returns 200 only when ALL critical dependencies are available.
+    Returns 503 when not ready to serve traffic.
+    """
+    try:
+        neo4j_healthy = await neo4j_service.health_check()
+    except Exception:
+        neo4j_healthy = False
+
+    try:
+        firestore_healthy = get_firestore_service().health_check()
+    except Exception:
+        firestore_healthy = False
+
+    # Both critical services must be healthy for readiness
+    if neo4j_healthy and firestore_healthy:
+        return PlainTextResponse(status_code=200, content="Ready")
+    else:
+        return PlainTextResponse(status_code=503, content="Not Ready")
