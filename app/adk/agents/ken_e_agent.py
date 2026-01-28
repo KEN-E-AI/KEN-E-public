@@ -3,6 +3,7 @@ KEN-E Agent: Frontend-facing chat agent for company news and analytics.
 """
 
 import logging
+import os
 
 from google.adk.agents import Agent
 from google.adk.tools import ToolContext
@@ -13,7 +14,13 @@ from .utils.dispatch_handlers import (
     dispatch_to_google_analytics,
 )
 
-logger = logging.getLogger(__name__)
+# Configure structured logging for Google Cloud
+from .utils.structured_logging import configure_logging, get_structured_logger
+
+_log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+configure_logging(level=_log_level)
+
+logger = get_structured_logger(__name__)
 
 
 def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):

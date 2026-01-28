@@ -53,7 +53,7 @@ interface ChatProviderProps {
 }
 
 export const ChatProvider = ({ children }: ChatProviderProps) => {
-  const { selectedOrgAccount } = useAuth();
+  const { selectedOrgAccount, isAuthenticated } = useAuth();
   const [currentTab, setCurrentTab] = useState("Awareness");
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -70,8 +70,12 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     },
   ]);
 
-  // Load conversations on component mount
+  // Load conversations when authenticated
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
     const loadConversations = async () => {
       try {
         const userConversations = await chatService.getConversations();
@@ -96,7 +100,7 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
 
     loadConversations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount, not when sessionId changes
+  }, [isAuthenticated]); // Run when auth state changes
 
   // Create a new chat conversation
   const createNewChat = useCallback(async () => {

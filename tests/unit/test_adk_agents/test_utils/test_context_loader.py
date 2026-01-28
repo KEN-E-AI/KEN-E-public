@@ -1,4 +1,4 @@
-"""Unit tests for organization context loading.
+"""Unit tests for organization context loading and HierarchicalContextManager.
 
 Tests cover:
 - Context loading with complete/minimal data
@@ -6,10 +6,11 @@ Tests cover:
 - Token budget validation
 - Context injection
 - Error handling and graceful degradation
+- HierarchicalContextManager class methods
 """
 
-from typing import Any, Optional
-from unittest.mock import Mock, MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -33,6 +34,7 @@ sys.modules["neo4j.exceptions"] = neo4j_mock.exceptions
 # Now import directly from the module file
 from adk.agents.utils.context_loader import (
     MAX_CONTEXT_TOKENS,
+    HierarchicalContextManager,
     _fetch_context_from_neo4j,
     _format_context_markdown,
     inject_organization_context,
@@ -464,3 +466,273 @@ def test_load_organization_context_integration() -> None:
     # Assert
     # Adjust assertions based on actual dev data
     assert result is not None or result is None  # Either success or graceful failure
+
+
+# =============================================================================
+# HierarchicalContextManager Tests
+# =============================================================================
+
+
+class TestHierarchicalContextManagerInit:
+    """Tests for HierarchicalContextManager initialization."""
+
+    def test_init_sets_account_id(self) -> None:
+        """Test that __init__ stores account_id."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        assert manager.account_id == "test_account_123"
+
+    def test_init_starts_with_empty_context(self) -> None:
+        """Test that manager starts with no loaded context."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        assert manager._executive_summary is None
+        assert manager._loaded_sections == {}
+        assert manager._loaded_details == {}
+        assert manager._total_tokens == 0
+
+
+class TestHierarchicalContextManagerConstants:
+    """Tests for HierarchicalContextManager class constants."""
+
+    def test_available_sections_defined(self) -> None:
+        """Test that AVAILABLE_SECTIONS contains expected sections."""
+        expected_sections = [
+            "products", "icps", "competitors", "campaigns",
+            "strategies", "brand", "performance", "calendar"
+        ]
+
+        assert HierarchicalContextManager.AVAILABLE_SECTIONS == expected_sections
+
+    def test_token_limits_defined(self) -> None:
+        """Test that token limits are properly defined."""
+        assert HierarchicalContextManager.MAX_EXECUTIVE_TOKENS == 5_000
+        assert HierarchicalContextManager.MAX_SECTION_TOKENS == 10_000
+        assert HierarchicalContextManager.MAX_DETAIL_TOKENS == 20_000
+
+
+class TestHierarchicalContextManagerLoadExecutiveSummary:
+    """Tests for load_executive_summary method."""
+
+    @patch("adk.agents.utils.context_loader.Neo4jConnection")
+    @patch("adk.agents.utils.context_loader.TokenEstimator")
+    def test_load_executive_summary_success(
+        self, mock_token_estimator_class: Mock, mock_neo4j_class: Mock
+    ) -> None:
+        """Test loading executive summary from Neo4j."""
+        # Setup mocks
+        mock_connection = Mock()
+        mock_neo4j_class.return_value = mock_connection
+        mock_connection.execute_query.return_value = [{"context": SAMPLE_COMPLETE_CONTEXT}]
+
+        mock_token_estimator_class.check_input_limit.return_value = {
+            "estimated_tokens": 1500,
+            "max_tokens": 2_097_152,
+            "percentage": 0.07,
+            "within_limit": True,
+            "warning": False,
+            "error": False,
+        }
+
+        manager = HierarchicalContextManager("test_account_123")
+
+        # Execute
+        result = manager.load_executive_summary()
+
+        # Assert
+        assert result is not None
+        assert "# Company Context" in result
+        assert manager._executive_summary == result
+        assert manager._total_tokens > 0
+
+    @patch("adk.agents.utils.context_loader.Neo4jConnection")
+    def test_load_executive_summary_failure_returns_none(
+        self, mock_neo4j_class: Mock
+    ) -> None:
+        """Test graceful degradation when Neo4j fails."""
+        mock_connection = Mock()
+        mock_neo4j_class.return_value = mock_connection
+        mock_connection.execute_query.side_effect = Exception("Neo4j connection failed")
+
+        manager = HierarchicalContextManager("test_account_123")
+
+        # Execute
+        result = manager.load_executive_summary()
+
+        # Assert
+        assert result is None
+        assert manager._executive_summary is None
+
+
+class TestHierarchicalContextManagerLoadSection:
+    """Tests for load_section method."""
+
+    def test_load_section_invalid_section_returns_none(self) -> None:
+        """Test that loading invalid section returns None."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        result = manager.load_section("invalid_section")
+
+        assert result is None
+
+    def test_load_section_valid_section_name(self) -> None:
+        """Test that valid section names are accepted."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        # Campaigns is a valid section - will return None without Neo4j
+        # but should not raise an error
+        with patch("adk.agents.utils.context_loader._fetch_campaigns_from_neo4j") as mock_fetch:
+            mock_fetch.return_value = None
+            result = manager.load_section("campaigns")
+            # Currently returns None as section loading not fully implemented
+            # but the method should accept valid section names
+
+
+class TestHierarchicalContextManagerUnload:
+    """Tests for unload methods."""
+
+    def test_unload_section_removes_section(self) -> None:
+        """Test that unload_section removes a loaded section."""
+        manager = HierarchicalContextManager("test_account_123")
+        manager._loaded_sections["campaigns"] = "Campaign context data"
+        manager._total_tokens = 1000
+
+        manager.unload_section("campaigns")
+
+        assert "campaigns" not in manager._loaded_sections
+
+    def test_unload_section_nonexistent_no_error(self) -> None:
+        """Test that unloading nonexistent section doesn't raise error."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        # Should not raise
+        manager.unload_section("nonexistent")
+
+    def test_unload_all_sections(self) -> None:
+        """Test that unload_all_sections clears all sections."""
+        manager = HierarchicalContextManager("test_account_123")
+        manager._loaded_sections["campaigns"] = "Campaign data"
+        manager._loaded_sections["products"] = "Product data"
+        manager._loaded_details["detail_1"] = "Detail data"
+        manager._executive_summary = "Executive summary"
+
+        manager.unload_all_sections()
+
+        assert manager._loaded_sections == {}
+        assert manager._loaded_details == {}
+        # Executive summary should be preserved
+        assert manager._executive_summary == "Executive summary"
+
+
+class TestHierarchicalContextManagerTokens:
+    """Tests for token management."""
+
+    def test_get_total_tokens_initial_zero(self) -> None:
+        """Test that initial token count is zero."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        assert manager.get_total_tokens() == 0
+
+    def test_get_total_tokens_after_loading(self) -> None:
+        """Test token count after loading context."""
+        manager = HierarchicalContextManager("test_account_123")
+        manager._total_tokens = 2500
+
+        assert manager.get_total_tokens() == 2500
+
+
+class TestHierarchicalContextManagerGetContext:
+    """Tests for get_context_for_agent method."""
+
+    def test_get_context_for_agent_empty(self) -> None:
+        """Test get_context_for_agent with no loaded context."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        result = manager.get_context_for_agent()
+
+        assert result == ""
+
+    def test_get_context_for_agent_with_executive_summary(self) -> None:
+        """Test get_context_for_agent with executive summary loaded."""
+        manager = HierarchicalContextManager("test_account_123")
+        manager._executive_summary = "# Executive Summary\n\nCompany overview here."
+
+        result = manager.get_context_for_agent()
+
+        assert "# Executive Summary" in result
+        assert "Company overview here" in result
+
+    def test_get_context_for_agent_with_sections(self) -> None:
+        """Test get_context_for_agent with sections loaded."""
+        manager = HierarchicalContextManager("test_account_123")
+        manager._executive_summary = "# Executive Summary"
+        manager._loaded_sections["campaigns"] = "## Campaigns\n\nCampaign data."
+
+        result = manager.get_context_for_agent()
+
+        assert "# Executive Summary" in result
+        assert "## Campaigns" in result
+
+
+class TestHierarchicalContextManagerInject:
+    """Tests for inject_context method."""
+
+    def test_inject_context_with_content(self) -> None:
+        """Test injecting context into a message."""
+        manager = HierarchicalContextManager("test_account_123")
+        manager._executive_summary = "# Company Context"
+
+        result = manager.inject_context("Tell me about our campaigns")
+
+        assert "[ORGANIZATION CONTEXT]" in result
+        assert "# Company Context" in result
+        assert "[END CONTEXT]" in result
+        assert "Tell me about our campaigns" in result
+
+    def test_inject_context_empty_context(self) -> None:
+        """Test injecting empty context returns original message."""
+        manager = HierarchicalContextManager("test_account_123")
+
+        result = manager.inject_context("Tell me about our campaigns")
+
+        assert result == "Tell me about our campaigns"
+
+
+class TestHierarchicalContextManagerShouldLoadSection:
+    """Tests for should_load_section static method."""
+
+    def test_should_load_section_campaign_keywords(self) -> None:
+        """Test detection of campaign-related messages."""
+        assert HierarchicalContextManager.should_load_section(
+            "How are our campaigns performing?", "campaigns"
+        ) is True
+        assert HierarchicalContextManager.should_load_section(
+            "What's our ad spend?", "campaigns"
+        ) is True
+
+    def test_should_load_section_product_keywords(self) -> None:
+        """Test detection of product-related messages."""
+        assert HierarchicalContextManager.should_load_section(
+            "Tell me about our products", "products"
+        ) is True
+        assert HierarchicalContextManager.should_load_section(
+            "What services do we offer?", "products"
+        ) is True
+
+    def test_should_load_section_no_match(self) -> None:
+        """Test no match for unrelated messages."""
+        assert HierarchicalContextManager.should_load_section(
+            "Hello, how are you?", "campaigns"
+        ) is False
+        assert HierarchicalContextManager.should_load_section(
+            "What's the weather?", "products"
+        ) is False
+
+    def test_should_load_section_case_insensitive(self) -> None:
+        """Test that matching is case insensitive."""
+        assert HierarchicalContextManager.should_load_section(
+            "CAMPAIGNS PERFORMANCE", "campaigns"
+        ) is True
+        assert HierarchicalContextManager.should_load_section(
+            "Our PRODUCTS are great", "products"
+        ) is True

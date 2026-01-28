@@ -20,7 +20,13 @@ from pathlib import Path
 
 import vertexai
 from google.cloud import secretmanager
-from vertexai.preview import reasoning_engines
+from vertexai import agent_engines
+
+# ADK App configuration imports
+from google.adk.apps.app import App, EventsCompactionConfig
+from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+from google.adk.agents.context_cache_config import ContextCacheConfig
+from google.adk.models import Gemini
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -230,8 +236,37 @@ def deploy_ken_e() -> str | None:
 
         logger.info(f"✅ Loaded agent: {type(ken_e_agent)}")
 
-        # Wrap with AdkApp for deployment
-        app = reasoning_engines.AdkApp(agent=ken_e_agent, enable_tracing=True)
+        # Create App with context compaction and caching enabled
+        # - Compaction: Summarizes older conversation events to stay within token limits
+        #   See: https://google.github.io/adk-docs/context/compaction/
+        # - Caching: Caches static content (instructions, tools) for cost/latency savings
+        #   See: https://google.github.io/adk-docs/context/caching/
+        #
+        # TODO: If ADK's EventsCompactionConfig works well, remove the unused
+        # ConversationSummarizer class at app/adk/agents/utils/conversation_summarizer.py
+        # which was built as a fallback before we discovered AdkApp accepts App objects.
+        logger.info("Configuring context compaction and caching...")
+        compaction_summarizer = LlmEventSummarizer(
+            llm=Gemini(model="gemini-2.5-flash")
+        )
+        adk_app = App(
+            name="ken_e_chatbot",
+            root_agent=ken_e_agent,
+            events_compaction_config=EventsCompactionConfig(
+                summarizer=compaction_summarizer,  # Required: orchestrator agents lack canonical_model
+                compaction_interval=5,  # Compact every 5 user invocations
+                overlap_size=1,  # Include 1 prior invocation for context continuity
+            ),
+            context_cache_config=ContextCacheConfig(
+                min_tokens=2048,  # Cache if static content exceeds this threshold
+                ttl_seconds=600,  # 10 min cache lifetime (good for chat sessions)
+                cache_intervals=5,  # Max reuses before cache refresh
+            ),
+        )
+        logger.info("✅ Created App with EventsCompactionConfig and ContextCacheConfig")
+
+        # Wrap with AdkApp for deployment (pass App object, not agent directly)
+        app = agent_engines.AdkApp(app=adk_app, enable_tracing=False)
         logger.info(f"✅ Created AdkApp: {type(app)}")
 
         # Generate deployment name with timestamp
@@ -242,8 +277,8 @@ def deploy_ken_e() -> str | None:
         logger.info(f"📦 Deploying {deployment_name}...")
 
         try:
-            deployed_engine = reasoning_engines.ReasoningEngine.create(
-                reasoning_engine=app,
+            deployed_engine = agent_engines.create(
+                agent_engine=app,
                 requirements="requirements.txt",
                 display_name=deployment_name,
                 description="KEN-E chat agent for company news and analytics",

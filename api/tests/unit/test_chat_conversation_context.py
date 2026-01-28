@@ -37,7 +37,7 @@ class TestConversationContext:
 
         user_context = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
             organization_permissions={},
         )
 
@@ -77,7 +77,7 @@ class TestConversationContext:
 
         user_context = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
             organization_permissions={},
         )
 
@@ -126,7 +126,7 @@ class TestConversationContext:
 
         user_context = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
             organization_permissions={},
         )
 
