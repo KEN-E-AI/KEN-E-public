@@ -33,8 +33,9 @@ def dispatch_to_company_news(
     """
     # Import here to avoid circular dependencies
     # Use internal impl to avoid deprecation warning - context is already loaded from session state
+    from shared.context_utils import inject_organization_context
+
     from ..company_news_chatbot.agent import root_agent as news_agent
-    from .context_loader import inject_organization_context
 
     try:
         logger.info("[NEWS-DISPATCH] ========== DISPATCH START ==========")
@@ -100,11 +101,12 @@ def dispatch_to_google_analytics(
     """
     # Import here to avoid circular dependencies
     # Use internal impl to avoid deprecation warning - context is already loaded from session state
-    from ..google_analytics_agent_v4 import google_analytics_agent_v4
-    from .context_loader import (
-        inject_organization_context,
+    from shared.context_utils import (
         inject_campaign_context,
+        inject_organization_context,
     )
+
+    from ..google_analytics_agent_v4 import google_analytics_agent_v4
     from .supervisor_utils import encode_ga_credentials
 
     try:
@@ -221,9 +223,10 @@ def dispatch_to_strategy(
     Strategy agent needs account context for document persistence.
     """
     # Import here to avoid circular dependencies
+    from shared.token_utils import check_and_log_tokens
+
     from ..strategy_agent.logging_config import StrategyAgentLogger
     from ..strategy_agent.orchestrator import execute_strategy_generation
-    from ..strategy_agent.token_utils import check_and_log_tokens
 
     execution_id = str(uuid.uuid4())
     supervisor_logger = StrategyAgentLogger("strategy_dispatch")

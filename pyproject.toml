@@ -58,7 +58,7 @@ select = [
 ignore = ["E501", "C901", "B008"] # ignore line too long, too complex, function call in arg defaults (FastAPI pattern)
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "frontend"]
+known-first-party = ["app", "frontend", "shared"]
 
 [tool.mypy]
 disallow_untyped_calls = true

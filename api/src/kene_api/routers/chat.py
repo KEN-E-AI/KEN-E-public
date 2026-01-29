@@ -4,11 +4,9 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 
 import asyncio
 import os
-import sys
 import time
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -18,6 +16,15 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
+from shared.context_utils import (
+    CAMPAIGN_KEYWORDS,
+    format_campaign_markdown,
+    inject_campaign_context,
+    inject_organization_context,
+    should_load_campaigns,
+)
+from shared.structured_logging import get_structured_logger, log_context
+
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
@@ -26,25 +33,6 @@ from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
 from ..redis_client import get_redis_service
 from ..services.ga_credential_helper import GACredentialHelper
-
-# Add project root to path for app module imports
-_project_root = Path(__file__).parent.parent.parent.parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-# Import structured logging and Sprint 2 context utilities
-# Note: These imports are after sys.path modification (E402) - required for app module access
-from app.adk.agents.utils.context_loader import (  # noqa: E402  # noqa: E402
-    CAMPAIGN_KEYWORDS,
-    inject_campaign_context,
-    inject_organization_context,
-    load_campaign_context,
-    should_load_campaigns,
-)
-from app.adk.agents.utils.structured_logging import (  # noqa: E402
-    get_structured_logger,
-    log_context,
-)
 
 logger = get_structured_logger(__name__)
 
@@ -177,6 +165,164 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         return None
 
 
+async def load_campaign_context(account_id: str) -> str | None:
+    """Load campaign context for an account (async, API-side).
+
+    For Sprint 2, returns mock data until Campaign nodes exist in Neo4j.
+    Mirrors the agent's sync version but uses the API's async Neo4jService.
+
+    Args:
+        account_id: Account identifier
+
+    Returns:
+        Formatted markdown campaign context, or None if loading fails
+    """
+    try:
+        now = datetime.now()
+        mock_campaigns: list[dict[str, Any]] = [
+            {
+                "campaign_id": f"camp_{account_id[:8]}_001",
+                "name": "Q1 Brand Awareness Campaign",
+                "status": "active",
+                "channel": "google_ads",
+                "objective": "Brand awareness",
+                "budget": {
+                    "total": 5000.00,
+                    "spent": 3250.00,
+                    "remaining": 1750.00,
+                    "currency": "USD",
+                },
+                "date_range": {
+                    "start_date": (now - timedelta(days=30)).strftime("%Y-%m-%d"),
+                    "end_date": (now + timedelta(days=30)).strftime("%Y-%m-%d"),
+                },
+                "performance": {
+                    "impressions": 125000,
+                    "clicks": 3200,
+                    "ctr": 2.56,
+                    "conversions": 145,
+                    "conversion_rate": 4.53,
+                    "cost_per_click": 1.02,
+                    "cost_per_conversion": 22.41,
+                    "roas": 3.2,
+                },
+            },
+            {
+                "campaign_id": f"camp_{account_id[:8]}_002",
+                "name": "Product Launch - Spring Collection",
+                "status": "active",
+                "channel": "meta_ads",
+                "objective": "Conversions",
+                "budget": {
+                    "total": 8000.00,
+                    "spent": 4500.00,
+                    "remaining": 3500.00,
+                    "currency": "USD",
+                },
+                "date_range": {
+                    "start_date": (now - timedelta(days=14)).strftime("%Y-%m-%d"),
+                    "end_date": (now + timedelta(days=45)).strftime("%Y-%m-%d"),
+                },
+                "performance": {
+                    "impressions": 95000,
+                    "clicks": 4750,
+                    "ctr": 5.0,
+                    "conversions": 285,
+                    "conversion_rate": 6.0,
+                    "cost_per_click": 0.95,
+                    "cost_per_conversion": 15.79,
+                    "roas": 4.5,
+                },
+            },
+            {
+                "campaign_id": f"camp_{account_id[:8]}_003",
+                "name": "Retargeting - Cart Abandoners",
+                "status": "active",
+                "channel": "google_ads",
+                "objective": "Conversions",
+                "budget": {
+                    "total": 2000.00,
+                    "spent": 1200.00,
+                    "remaining": 800.00,
+                    "currency": "USD",
+                },
+                "date_range": {
+                    "start_date": (now - timedelta(days=45)).strftime("%Y-%m-%d"),
+                    "end_date": (now + timedelta(days=15)).strftime("%Y-%m-%d"),
+                },
+                "performance": {
+                    "impressions": 35000,
+                    "clicks": 2100,
+                    "ctr": 6.0,
+                    "conversions": 168,
+                    "conversion_rate": 8.0,
+                    "cost_per_click": 0.57,
+                    "cost_per_conversion": 7.14,
+                    "roas": 6.8,
+                },
+            },
+            {
+                "campaign_id": f"camp_{account_id[:8]}_004",
+                "name": "Email Newsletter Promotion",
+                "status": "paused",
+                "channel": "google_ads",
+                "objective": "Lead generation",
+                "budget": {
+                    "total": 1500.00,
+                    "spent": 1500.00,
+                    "remaining": 0.00,
+                    "currency": "USD",
+                },
+                "date_range": {
+                    "start_date": (now - timedelta(days=60)).strftime("%Y-%m-%d"),
+                    "end_date": (now - timedelta(days=15)).strftime("%Y-%m-%d"),
+                },
+                "performance": {
+                    "impressions": 42000,
+                    "clicks": 1890,
+                    "ctr": 4.5,
+                    "conversions": 378,
+                    "conversion_rate": 20.0,
+                    "cost_per_click": 0.79,
+                    "cost_per_conversion": 3.97,
+                    "roas": None,
+                },
+            },
+        ]
+
+        context_markdown = format_campaign_markdown(mock_campaigns)
+
+        logger.info(
+            "Loaded campaign context",
+            extra=log_context(
+                component="campaign_context",
+                action="load",
+                account_id=account_id,
+                success=True,
+                extra={
+                    "campaign_count": len(mock_campaigns),
+                    "context_length": len(context_markdown),
+                },
+            ),
+        )
+
+        return context_markdown
+
+    except Exception as e:
+        logger.error(
+            "Failed to load campaign context",
+            extra=log_context(
+                component="campaign_context",
+                action="load",
+                account_id=account_id,
+                success=False,
+                error_message=str(e),
+            ),
+            exc_info=True,
+        )
+        return None
+
+
 async def inject_context_into_message(
     formatted_input: str,
     user_input: str,
@@ -236,7 +382,7 @@ async def inject_context_into_message(
     # Check if user message mentions campaigns and load campaign context on-demand
     if should_load_campaigns(user_input):
         try:
-            campaign_context = load_campaign_context(account_id)
+            campaign_context = await load_campaign_context(account_id)
             if campaign_context:
                 formatted_input = inject_campaign_context(formatted_input, campaign_context)
                 logger.info(

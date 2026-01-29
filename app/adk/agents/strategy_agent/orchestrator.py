@@ -44,9 +44,11 @@ try:
     from agents.strategy_agent.firestore import FirestoreClient
     from agents.strategy_agent.models import StrategyContext
     from agents.strategy_agent.performance_profiler import PerformanceProfiler
-    from agents.strategy_agent.token_utils import TokenEstimator
+    from shared.token_utils import TokenEstimator
 except ImportError:
     # Relative imports for local testing
+    from shared.token_utils import TokenEstimator
+
     from .alert_manager import AlertManager
 
     # Import analytics components
@@ -61,7 +63,6 @@ except ImportError:
     from .firestore import FirestoreClient
     from .models import StrategyContext
     from .performance_profiler import PerformanceProfiler
-    from .token_utils import TokenEstimator
 
 # Load environment variables from .env file if it exists
 # The .env file is deployed with the agent and loaded at runtime

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch, MagicMock, call
 from datetime import datetime, timedelta, timezone
 
 from ..alert_manager import AlertManager, AlertSeverity, AlertChannel, AlertThreshold
-from ..token_utils import TokenEstimator
+from shared.token_utils import TokenEstimator
 
 
 @pytest.fixture

@@ -19,7 +19,7 @@ try:
 except ImportError:
     HAS_CLOUD_LOGGING = False
 
-from .token_utils import TokenEstimator
+from shared.token_utils import TokenEstimator
 
 # Configure module logger
 logger = logging.getLogger(__name__)

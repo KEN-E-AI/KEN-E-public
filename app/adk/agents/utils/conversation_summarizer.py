@@ -12,10 +12,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-# Try relative import first (when used as part of package)
-# Fall back to standard logging (when imported directly in tests)
+# Try shared import first, fall back to standard logging (when imported directly in tests)
 try:
-    from .structured_logging import get_structured_logger, log_context
+    from shared.structured_logging import get_structured_logger, log_context
 except ImportError:
     # Fallback for direct imports (e.g., in tests)
     def get_structured_logger(name: str) -> logging.Logger:

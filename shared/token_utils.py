@@ -6,7 +6,7 @@ and preventing token overflow errors in LLM calls.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class TokenEstimator:
     @classmethod
     def check_input_limit(
         cls, content: Any, raise_on_exceed: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Check if content is within input token limits.
 
         Args:
@@ -106,11 +106,11 @@ class TokenEstimator:
     @classmethod
     def estimate_agent_input(
         cls,
-        state: Dict[str, Any],
-        best_practices: Optional[str] = None,
-        business_info: Optional[Dict] = None,
-        documents: Optional[List[Dict]] = None,
-    ) -> Dict[str, Any]:
+        state: dict[str, Any],
+        best_practices: str | None = None,
+        business_info: dict | None = None,
+        documents: list[dict] | None = None,
+    ) -> dict[str, Any]:
         """Estimate total tokens for a strategy agent input.
 
         Args:
@@ -160,7 +160,7 @@ class TokenEstimator:
         return breakdown
 
     @classmethod
-    def chunk_content(cls, content: str, max_chunk_tokens: int = 500_000) -> List[str]:
+    def chunk_content(cls, content: str, max_chunk_tokens: int = 500_000) -> list[str]:
         """Split content into chunks that fit within token limits.
 
         Args:
@@ -216,7 +216,7 @@ class TokenEstimator:
 
 def check_and_log_tokens(
     content: Any, context: str, raise_on_exceed: bool = True
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convenience function to check tokens and log the result.
 
     Args:

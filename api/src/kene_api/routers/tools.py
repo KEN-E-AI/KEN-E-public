@@ -1,8 +1,6 @@
 """API endpoints for tool discovery and management."""
 
 import logging
-import sys
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -20,11 +18,6 @@ from ..models.tool_models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/tools", tags=["tools"])
-
-# Add app path to enable importing from app.adk.tools
-app_path = Path(__file__).parents[5] / "app" / "adk"
-if str(app_path) not in sys.path:
-    sys.path.insert(0, str(app_path.parent.parent))
 
 # Lazy import to avoid circular dependencies
 _discovery_service = None
