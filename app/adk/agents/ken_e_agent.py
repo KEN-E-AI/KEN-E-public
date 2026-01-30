@@ -8,14 +8,14 @@ import os
 from google.adk.agents import Agent
 from google.adk.tools import ToolContext
 
+# Configure structured logging for Google Cloud
+from shared.structured_logging import configure_logging, get_structured_logger
+
 from .strategy_agent.config_loader import load_config_from_firestore
 from .utils.dispatch_handlers import (
     dispatch_to_company_news,
     dispatch_to_google_analytics,
 )
-
-# Configure structured logging for Google Cloud
-from .utils.structured_logging import configure_logging, get_structured_logger
 
 _log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 configure_logging(level=_log_level)

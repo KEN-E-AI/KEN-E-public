@@ -10,13 +10,14 @@ improves agent performance by reducing latency from ~50-100ms to ~1ms per analyt
 import logging
 import os
 import time
-from typing import Optional, Tuple, Any
+from typing import Any, Optional, Tuple
 
-from .analytics_service import AnalyticsService
-from .performance_profiler import PerformanceProfiler
+from shared.token_utils import TokenEstimator
+
 from .alert_manager import AlertManager
+from .analytics_service import AnalyticsService
 from .optimization_analyzer import OptimizationAnalyzer
-from .token_utils import TokenEstimator
+from .performance_profiler import PerformanceProfiler
 
 logger = logging.getLogger(__name__)
 

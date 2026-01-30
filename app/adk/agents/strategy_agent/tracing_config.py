@@ -8,12 +8,13 @@ import functools
 import json
 import logging
 import os
+
+# Set up SSL and network configuration for W&B
+import ssl
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-# Set up SSL and network configuration for W&B
-import ssl
 import certifi
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
@@ -64,7 +65,8 @@ except ImportError:
 
     weave = DummyWeave()
 
-from .token_utils import TokenEstimator, TokenLimitError
+from shared.token_utils import TokenEstimator, TokenLimitError
+
 from .logging_config import StrategyAgentLogger
 
 logger = logging.getLogger(__name__)

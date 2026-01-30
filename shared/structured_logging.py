@@ -1,10 +1,10 @@
-"""Structured logging utilities for ADK agents.
+"""Structured logging utilities for KEN-E application.
 
 This module provides structured logging that integrates with Google Cloud Logging.
 It follows GCP best practices for structured logs with JSON payloads.
 
 Usage:
-    from .structured_logging import get_structured_logger, LogContext
+    from shared.structured_logging import get_structured_logger, LogContext
 
     logger = get_structured_logger(__name__)
     logger.info("Processing request", extra=LogContext(
