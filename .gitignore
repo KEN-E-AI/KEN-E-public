@@ -206,6 +206,9 @@ my_env.tfvars
 **/.env.backup.*
 **/.env.bak*
 
+# Claude Code local settings
+.claude/settings.local.json
+
 #secrets
 deployment/terraform/keys/*.json
 firebase-key.json
