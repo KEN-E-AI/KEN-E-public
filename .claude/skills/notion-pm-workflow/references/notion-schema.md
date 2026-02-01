@@ -4,8 +4,8 @@
 
 | Database | Database ID | Data Source ID |
 |----------|-------------|----------------|
-| Products | `2f230fd6530280ed8638d08cce017c37` | `2f230fd6-5302-80ed-8638-d08cce017c37` |
-| Releases | `1c130fd653028078b55ecfef294a0c5c` | `1c130fd6-5302-8078-b55e-cfef294a0c5c` |
+| Products | `2f230fd6530280ed8638d08cce017c37` | `2f230fd6-5302-8022-9267-000b5519fb1f` |
+| Releases | `1c130fd653028078b55ecfef294a0c5c` | `1c130fd6-5302-80b9-9ea5-000b8b9b655f` |
 | Features | `1ba30fd6530280f98ff2f9b91bf8d588` | `1ba30fd6-5302-8093-877f-000b545e5e3f` |
 | User Stories | `1ba30fd6530280c8be86fbe0b85f09ca` | `1ba30fd6-5302-8000-9407-000b4fe01ba7` |
 | Sprints | `1ba30fd653028072b0edcd90ee8748be` | `1ba30fd6-5302-80ed-9373-000bee60c1b9` |
@@ -36,7 +36,7 @@ Design Decisions (1) ────> (many) Features [Affected features]
 |----------|------|--------------|
 | Name | title | "KEN-E", "MER-E" |
 | Description | rich_text | Product description |
-| Status | select | `Active`, `Planning`, `Archived` |
+| Status | status | `Not started`, `Planning`, `In development`, `Live` |
 | Owner | person | Product lead |
 | Repository | rich_text | Primary GitHub repo |
 
@@ -50,7 +50,7 @@ Design Decisions (1) ────> (many) Features [Affected features]
 | Description | rich_text | - |
 | Release Date | date | ISO-8601 format |
 | Features | relation | Links to Features |
-| Product | relation | Links to Products (KEN-E or MER-E) |
+| Products | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -60,14 +60,17 @@ Design Decisions (1) ────> (many) Features [Affected features]
 |----------|------|--------------|
 | Name | title | e.g., "1.1. Create Strategy Docs" |
 | Description | rich_text | - |
-| Status | select | `In development`, `Planned`, `Backlog` |
-| Priority | select | `🔴 High`, (empty = normal) |
+| Status | status | `Backlog`, `Planned`, `In development`, `Live` |
+| Priority | select | `🟢 Low`, `🟡 Medium`, `🔴 High` |
 | User Stories | relation | Links to User Stories |
 | Sprints | relation | Links to Sprints |
 | Owner | person | - |
-| Release Date | date | ISO-8601 format |
+| Release Date | rollup | Rolled up from Releases |
+| Target Release | date | ISO-8601 format |
+| Feature Details | rich_text | Additional feature details |
+| Creation Date | created_time | Auto-set on creation |
 | Releases | relation | Links to Releases |
-| Product | relation | Links to Products (KEN-E or MER-E) |
+| Products | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -86,7 +89,7 @@ Design Decisions (1) ────> (many) Features [Affected features]
 | Features | relation | Links to parent Feature |
 | Sprints | relation | Links to Sprint(s) |
 | Repository | select | GitHub repository name |
-| Product | relation | Links to Products (KEN-E or MER-E) |
+| Products | relation | Links to Products (KEN-E or MER-E) |
 | Dependencies | relation | Links to User Stories this story depends on (self-referential) |
 | Blocked By | relation | Links to User Stories blocking this story (self-referential) |
 | Design Decisions | relation | Links to Design Decisions affecting this story |
@@ -101,13 +104,14 @@ Design Decisions (1) ────> (many) Features [Affected features]
 | Sprint Number | number | - |
 | Start Date | date | ISO-8601 format |
 | End Date | date | ISO-8601 format |
-| Status | select | `In progress` |
+| Status | status | `Planning`, `In progress`, `Completed`, `Retrospective` |
 | User Stories | relation | Links to User Stories |
 | Sprint Goal | rich_text | - |
 | Velocity (Story Points) | number | - |
-| Team Members | person | - |
+| Team Members | rollup | Rolled up from User Stories |
+| SCRUM Team | select | `Customer Success`, `User Interface`, `DevOps`, `Core AI`, `Business Intelligence`, `Data Warehouse` |
 | Retrospective Notes | rich_text | - |
-| Product | relation | Links to Products (KEN-E or MER-E) |
+| Products | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -123,9 +127,9 @@ Design Decisions (1) ────> (many) Features [Affected features]
 | Work Completed | rich_text | What was actually completed |
 | Next Steps | rich_text | Actionable items for next session |
 | Blockers | rich_text | Any blockers or open questions |
-| Status | select | `In Progress`, `Completed`, `Blocked` |
+| Status | status | `Not started`, `In progress`, `Blocked`, `Completed` |
 | Repository | rich_text | GitHub repository being worked on |
-| Product | relation | Links to Products (KEN-E or MER-E) |
+| Products | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -143,12 +147,11 @@ Track architectural and design decisions made during development.
 | Consequences | rich_text | Impact on the system |
 | Status | select | `Proposed`, `Accepted`, `Superseded`, `Deprecated` |
 | Impact Level | select | `Low`, `Medium`, `High`, `Critical` |
-| Triggering Story | relation | User Story where this decision was made |
-| Affected Stories | relation | User Stories impacted by this decision |
-| Affected Features | relation | Features impacted by this decision |
-| Product | relation | Links to Products (KEN-E or MER-E) |
-
-**Note:** The relation properties (Triggering Story, Affected Stories, Affected Features, Product) need to be added manually in Notion due to API limitations with cross-database relations.
+**Note:** The following relation properties are not yet in the Notion schema and need to be added manually:
+- Triggering Story → User Story where this decision was made
+- Affected Stories → User Stories impacted by this decision
+- Affected Features → Features impacted by this decision
+- Products → Links to Products (KEN-E or MER-E)
 
 ---
 
@@ -192,7 +195,7 @@ notion-create-pages:
         date:Session Date:start: "2025-01-15"
         date:Session Date:is_datetime: 1
         Plan: "1. [First task]\n2. [Second task]"
-        Status: "In Progress"
+        Status: "In progress"
         Repository: "[repo-name]"
 ```
 
