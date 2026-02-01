@@ -1,63 +1,44 @@
-# KEN-E Notion Database Schema Reference
+# Notion Database Schema Reference
 
 ## Database IDs
 
 | Database | Database ID | Data Source ID |
 |----------|-------------|----------------|
-| Releases | `1c130fd653028078b55ecfef294a0c5c` | `1c130fd6-5302-80b9-9ea5-000b8b9b655f` |
+| Products | `2f230fd6530280ed8638d08cce017c37` | `2f230fd6-5302-80ed-8638-d08cce017c37` |
+| Releases | `1c130fd653028078b55ecfef294a0c5c` | `1c130fd6-5302-8078-b55e-cfef294a0c5c` |
 | Features | `1ba30fd6530280f98ff2f9b91bf8d588` | `1ba30fd6-5302-8093-877f-000b545e5e3f` |
 | User Stories | `1ba30fd6530280c8be86fbe0b85f09ca` | `1ba30fd6-5302-8000-9407-000b4fe01ba7` |
 | Sprints | `1ba30fd653028072b0edcd90ee8748be` | `1ba30fd6-5302-80ed-9373-000bee60c1b9` |
-| Session Logs | `d83fc5bae1db403ea1294a87ea71dff0` | `9a4b21b6-36fe-46b4-980d-2628261411e3` |
-
----
-
-## Current Release Roadmap
-
-| Release | Page ID | Description |
-|---------|---------|-------------|
-| 1.0 - Foundation | `2ec30fd6-5302-813e-a35d-f3614c2c24a2` | Core infrastructure (Context Manager, Tool Registry, MCP Manager, Session Service, Web Channel, Primary Orchestrator, Basic Monitoring) |
-| 2.0 - Prepare MVP | `2ec30fd6-5302-81b6-87b7-c03f818a5b1b` | Production readiness with billing and subscription management |
-| 3.0 - Core Agents | `2ec30fd6-5302-81d0-9bd7-c2a7dfb688db` | Specialist AI agents, Slack integration, Workflow Manager |
-| 4.0 - Automation | `2ec30fd6-5302-81f6-8774-fd0151eb5183` | n8n Integration, Scheduled Workflows, Content Calendar |
-| 5.0 - Advanced | `2ec30fd6-5302-81cc-ab41-e11fbeabd404` | Voice Channel, A/B Testing, Self-Optimization |
-
-## Release 1 Sprint Schedule
-
-| Sprint | Page ID | Dates | Goal | Points |
-|--------|---------|-------|------|--------|
-| Sprint 1 | `2ec30fd6-5302-81ce-95e3-c2c82a63f6a3` | Jan 19 - Feb 1, 2026 | Context & Sessions | 13 |
-| Sprint 2 | `2ec30fd6-5302-8175-9b8b-de0abfe23732` | Feb 2 - Feb 15, 2026 | Context & Tool Registry | 14 |
-| Sprint 3 | `2ec30fd6-5302-8199-af55-d3f0c2c5fa06` | Feb 16 - Mar 1, 2026 | Tool Security & MCP Foundation | 13 |
-| Sprint 4 | `2ec30fd6-5302-81e5-97fe-c4fa8118a147` | Mar 2 - Mar 15, 2026 | MCP Completion & Session Features | 14 |
-| Sprint 5 | `2ec30fd6-5302-8131-8402-e651a60f2dfd` | Mar 16 - Mar 29, 2026 | Web UI Foundation | 13 |
-| Sprint 6 | `2ec30fd6-5302-8151-971e-fb64b9c60cef` | Mar 30 - Apr 12, 2026 | Web UI Completion | 14 |
-| Sprint 7 | `2ec30fd6-5302-8138-be00-f964011ecf87` | Apr 13 - Apr 26, 2026 | Orchestrator | 15 |
-| Sprint 8 | `2ec30fd6-5302-8128-b302-ca19fc2aaada` | Apr 27 - May 10, 2026 | Integration & Polish | 6 |
-
-## Release 1 Features
-
-| Feature | Page ID | Stories |
-|---------|---------|---------|
-| 1.1 - Context Manager | `2ec30fd6-5302-81a4-93a9-e8a6da8229a0` | 4 |
-| 1.2 - Tool Registry | `2ec30fd6-5302-81bc-97de-ed7e565540ce` | 4 |
-| 1.3 - MCP Manager | `2ec30fd6-5302-810a-ae7a-e6a4f0dfdb25` | 4 |
-| 1.4 - Session Service | `2ec30fd6-5302-812e-8996-d335892cbe98` | 4 |
-| 1.5 - Web Channel | `2ec30fd6-5302-8162-a294-dff9119b64fa` | 4 |
-| 1.6 - Primary Orchestrator | `2ec30fd6-5302-81b3-b3fb-e216982890f7` | 4 |
-| 1.7 - Basic Monitoring | `2ec30fd6-5302-817a-9a2c-df7a4061e829` | 4 |
-
----
+| Session Logs | `2f230fd653028074aaffd8bed7b3d32b` | `2f230fd6-5302-80b3-a026-000be20a8517` |
+| Design Decisions | `0b49b51c9ea04b1e9e828531512844fb` | `a88ce7c8-1ebb-4634-a422-2c1abcd2daf9` |
 
 ## Database Relationships
 
 ```
+Products (1) ────> (many) Releases, Features, User Stories, Sprints, Session Logs, Design Decisions
 Releases (1) ────> (many) Features
 Features (1) ────> (many) User Stories
 Features (many) <───> (many) Sprints
 User Stories (many) <───> (many) Sprints
+User Stories (many) <───> (many) User Stories [Dependencies - self-referential]
+User Stories (many) <───> (many) Design Decisions [Affected by decisions]
 Session Logs (many) ───> (1) User Story
+Design Decisions (1) ───> (1) User Story [Triggering story]
+Design Decisions (1) ────> (many) User Stories [Affected stories]
+Design Decisions (1) ────> (many) Features [Affected features]
 ```
+
+---
+
+## 0. Products Database
+
+| Property | Type | Valid Values |
+|----------|------|--------------|
+| Name | title | "KEN-E", "MER-E" |
+| Description | rich_text | Product description |
+| Status | select | `Active`, `Planning`, `Archived` |
+| Owner | person | Product lead |
+| Repository | rich_text | Primary GitHub repo |
 
 ---
 
@@ -69,6 +50,7 @@ Session Logs (many) ───> (1) User Story
 | Description | rich_text | - |
 | Release Date | date | ISO-8601 format |
 | Features | relation | Links to Features |
+| Product | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -85,6 +67,7 @@ Session Logs (many) ───> (1) User Story
 | Owner | person | - |
 | Release Date | date | ISO-8601 format |
 | Releases | relation | Links to Releases |
+| Product | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -103,6 +86,10 @@ Session Logs (many) ───> (1) User Story
 | Features | relation | Links to parent Feature |
 | Sprints | relation | Links to Sprint(s) |
 | Repository | select | GitHub repository name |
+| Product | relation | Links to Products (KEN-E or MER-E) |
+| Dependencies | relation | Links to User Stories this story depends on (self-referential) |
+| Blocked By | relation | Links to User Stories blocking this story (self-referential) |
+| Design Decisions | relation | Links to Design Decisions affecting this story |
 
 ---
 
@@ -120,6 +107,7 @@ Session Logs (many) ───> (1) User Story
 | Velocity (Story Points) | number | - |
 | Team Members | person | - |
 | Retrospective Notes | rich_text | - |
+| Product | relation | Links to Products (KEN-E or MER-E) |
 
 ---
 
@@ -137,6 +125,30 @@ Session Logs (many) ───> (1) User Story
 | Blockers | rich_text | Any blockers or open questions |
 | Status | select | `In Progress`, `Completed`, `Blocked` |
 | Repository | rich_text | GitHub repository being worked on |
+| Product | relation | Links to Products (KEN-E or MER-E) |
+
+---
+
+## 6. Design Decisions Database
+
+Track architectural and design decisions made during development.
+
+| Property | Type | Valid Values |
+|----------|------|--------------|
+| Title | title | Brief description of the decision |
+| Decision Date | date | ISO-8601 format |
+| Context | rich_text | Why this decision was needed |
+| Decision | rich_text | What was decided |
+| Alternatives Considered | rich_text | Other options that were rejected |
+| Consequences | rich_text | Impact on the system |
+| Status | select | `Proposed`, `Accepted`, `Superseded`, `Deprecated` |
+| Impact Level | select | `Low`, `Medium`, `High`, `Critical` |
+| Triggering Story | relation | User Story where this decision was made |
+| Affected Stories | relation | User Stories impacted by this decision |
+| Affected Features | relation | Features impacted by this decision |
+| Product | relation | Links to Products (KEN-E or MER-E) |
+
+**Note:** The relation properties (Triggering Story, Affected Stories, Affected Features, Product) need to be added manually in Notion due to API limitations with cross-database relations.
 
 ---
 
@@ -173,7 +185,7 @@ notion-update-page:
 ```
 notion-create-pages:
   parent:
-    data_source_id: "9a4b21b6-36fe-46b4-980d-2628261411e3"
+    data_source_id: "2f230fd6-5302-80b3-a026-000be20a8517"
   pages:
     - properties:
         Name: "Session - [Story Title] - [Date]"
@@ -234,6 +246,70 @@ notion-update-page:
     command: "insert_content_after"
     selection_with_ellipsis: "Definition of Done..."
     new_str: "\n\n## Testing Notes\n- [Note 1]\n- [Note 2]"
+```
+
+### Create Design Decision
+
+```
+notion-create-pages:
+  parent:
+    data_source_id: "a88ce7c8-1ebb-4634-a422-2c1abcd2daf9"
+  pages:
+    - properties:
+        Title: "[Brief decision title]"
+        date:Decision Date:start: "[YYYY-MM-DD]"
+        date:Decision Date:is_datetime: 0
+        Context: "[Why this decision was needed]"
+        Decision: "[What was decided]"
+        Alternatives Considered: "[Other options]"
+        Consequences: "[Impact on the system]"
+        Status: "Accepted"
+        Impact Level: "[Low/Medium/High/Critical]"
+      content: |
+        ## Decision Record
+
+        ### Context
+        [Detailed context]
+
+        ### Decision
+        [The decision]
+
+        ### Rationale
+        [Why this over alternatives]
+
+        ### Consequences
+        [Impacts]
+```
+
+**Note:** After creating the decision, add relation properties manually in Notion:
+- Triggering Story → link to the User Story where decision was made
+- Affected Stories → link to impacted User Stories
+- Affected Features → link to impacted Features
+- Product → link to MER-E or KEN-E
+
+### Link Design Decision to Affected Stories
+
+After creating the decision, update each affected story:
+
+```
+notion-update-page:
+  data:
+    page_id: "[Affected Story page ID]"
+    command: "update_properties"
+    properties:
+      Design Decisions: "[Decision Page URL]"
+```
+
+### Add Design Change Comment to Story
+
+```
+notion-create-comment:
+  parent:
+    page_id: "[Affected Story page ID]"
+  rich_text:
+    - type: "text"
+      text:
+        content: "⚠️ DESIGN CHANGE: This story is affected by [Decision Title].\n\nSee: [Decision URL]\n\nImpact: [How this story needs to change]"
 ```
 
 ---
