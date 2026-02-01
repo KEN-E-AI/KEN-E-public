@@ -1,239 +1,581 @@
-# Design Document Section Mapping
+# KEN-E Design Document Mapping
 
-This reference maps MER-E features to relevant sections in `docs/MER-E_Design.md`.
+This file maps KEN-E features (tracked in Notion) to sections in the design document at `docs/KEN-E-Agentic-Harness-Design.md`. Use this mapping to quickly find the architectural context for any feature or user story you're working on.
 
-## How to Use This Mapping
+---
 
-When working on a user story:
-1. Identify the parent Feature number (e.g., "1.1" from "1.1.1 - Fetch Human Evaluations")
-2. Look up the Feature in the table below
-3. Read the **Primary Sections** for essential context
-4. Read **Supporting Sections** if you need deeper understanding
+## Design Document Section Index
 
-## Feature to Design Document Section Mapping
+| Section | Title | Lines |
+|---------|-------|-------|
+| §1 | Executive Summary | 28–108 |
+| §1.1 | Purpose | 30–32 |
+| §1.2 | Critical Design Challenges | 34–42 |
+| §1.3 | Solution Overview | 44–87 |
+| §1.4 | Key Design Decisions | 89–98 |
+| §1.5 | Expected Outcomes | 100–108 |
+| §2 | Architecture Overview | 111–376 |
+| §2.1 | System Architecture | 113–245 |
+| §2.2 | Component Responsibilities | 247–278 |
+| §2.3 | Request Flow | 280–360 |
+| §2.4 | Agent Type Selection (Google ADK) | 362–376 |
+| §3 | Context Management Strategy | 379–796 |
+| §3.1 | The Context Challenge | 381–415 |
+| §3.2 | Hierarchical Context Loading (HCL) | 417–509 |
+| §3.3 | Context Loading Implementation | 511–605 |
+| §3.4 | Context-Aware Agent Instructions | 607–655 |
+| §3.5 | Dynamic Context Compression | 657–732 |
+| §3.6 | Context State Management (ADK Integration) | 734–796 |
+| §4 | Agent Definitions | 800–1570 |
+| §4.1 | Agent Hierarchy Overview | 802–840 |
+| §4.2 | Primary Orchestrator Agent | 842–1048 |
+| §4.3 | Tool Discovery Agent | 1050–1167 |
+| §4.4 | Strategy Specialist Agent | 1169–1238 |
+| §4.5 | Content Specialist Agent | 1240–1307 |
+| §4.6 | Analytics Specialist Agent | 1309–1409 |
+| §4.7 | Execution Specialist Agent | 1411–1492 |
+| §4.8 | Automation Specialist Agent | 1494–1557 |
+| §4.9 | Agent Summary Table | 1559–1570 |
+| §5 | MCP Server Architecture | 1573–1983 |
+| §5.1 | Lazy-Loading Recommendation | 1575–1584 |
+| §5.2 | Tool Registry Architecture | 1586–1661 |
+| §5.3 | Tool Registry Implementation | 1663–1797 |
+| §5.4 | MCP Server Manager | 1799–1928 |
+| §5.5 | MCP Server Configuration Examples | 1930–1983 |
+| §6 | Multi-Channel Support | 1987–2435 |
+| §6.1 | Unified Channel Architecture | 1989–2065 |
+| §6.2 | Unified Message Format | 2067–2128 |
+| §6.3 | Channel Adapters | 2130–2409 |
+| §6.4 | Voice Channel Implementation Notes | 2411–2435 |
+| §7 | Workflow Management | 2438–2777 |
+| §7.1 | Multi-Step Workflow Handling | 2440–2497 |
+| §7.2 | Workflow Data Model | 2499–2684 |
+| §7.3 | Scheduled Workflow Integration | 2686–2777 |
+| §8 | Integration with Evaluation Framework | 2781–3042 |
+| §8.1 | Overview | 2783–2789 |
+| §8.2 | Trace Instrumentation | 2791–2869 |
+| §8.3 | Output Type Classification | 2871–2925 |
+| §8.4 | Feedback Collection Integration | 2927–2985 |
+| §8.5 | A/B Testing Support | 2987–3042 |
+| §9 | Infrastructure Requirements | 3046–3159 |
+| §9.1 | Compute Requirements | 3048–3056 |
+| §9.2 | Memory Estimates | 3058–3077 |
+| §9.3 | Cost Estimates | 3079–3094 |
+| §9.4 | Architecture Diagram | 3096–3159 |
+| §10 | Risks and Testing Requirements | 3163–3471 |
+| §10.1 | Risk Assessment Matrix | 3165–3178 |
+| §10.2 | Critical Test Scenarios | 3180–3422 |
+| §10.3 | Performance Benchmarks | 3424–3435 |
+| §10.4 | Monitoring Requirements | 3437–3471 |
+| §11 | Prioritized Feature Roadmap | 3475–3663 |
+| §11.1 | Phase Overview | 3477–3510 |
+| §11.2 | Phase 1: Foundation (Critical Path) | 3512–3531 |
+| §11.3 | Phase 2: Core Agents | 3533–3552 |
+| §11.4 | Phase 3: Automation | 3554–3573 |
+| §11.5 | Phase 4: Advanced Features | 3575–3594 |
+| §11.6 | Dependencies Graph | 3596–3645 |
+| §11.7 | Success Metrics by Phase | 3647–3663 |
+| §12 | Appendices | 3666–3771 |
 
-### Release 1: Foundation (Features 1.1 - 1.6)
+---
 
-| Feature | Feature Name | Primary Sections | Supporting Sections |
-|---------|--------------|------------------|---------------------|
-| **1.1** | Evaluation Results Module | §4.2 Firestore Schema (lines 374-567), §4.5 W&B Weave Data Model (lines 754-787), §6.1-6.2 Trace Structure (lines 1187-1227) | §3.2 Component Responsibilities (lines 254-287), §4.6 Data Flow Diagram (lines 787-858) |
-| **1.2** | Tool Call Extractor | §6.4 Tool Call Trace Extraction (lines 1284-1332), §11.6 Tool Call Evaluation Enhancement (lines 3341-3393) | §6.3 Trace Enrichment Pipeline (lines 1227-1284), §11.7 Combined Tool + Output Scoring (lines 3393-3457) |
-| **1.3** | KEN-E Trace Enhancements | §10.2 Trace Instrumentation Enhancements (lines 2921-2998), §6.2 Trace Structure Requirements (lines 1191-1227) | §10.1 Agent Configuration Changes (lines 2825-2921), §6.3 Trace Enrichment (lines 1227-1284) |
-| **1.4** | Enhanced Agent Config Schema | §4.2.1 agent_configs Collection (within §4.2), §4.2.2 agent_config_history Collection | §10.1 Agent Configuration Changes (lines 2825-2921), §8.2-8.3 Deployment Stages (lines 1950-2015) |
-| **1.5** | Database Schema Setup | §4.2 Firestore Schema (lines 374-567), §4.3 BigQuery Schema (lines 567-722), §4.4 GCS Structure (lines 722-754) | §4.1 Storage Strategy Overview (lines 339-374), §4.6 Data Flow Diagram (lines 787-858) |
-| **1.6** | Basic API Endpoints | §10.3 API Endpoints for Evaluation Framework (lines 2998-3041) | §3.3 Integration Points (lines 287-323), §9.9 Technical Implementation Notes (lines 2806-2821) |
+## Feature-to-Section Mapping
 
-### Release 2: Core Loop (Features 2.1 - 2.8)
+### Release 1 — Foundation
 
-| Feature | Feature Name | Primary Sections | Supporting Sections |
-|---------|--------------|------------------|---------------------|
-| **2.1** | Enhanced Evaluation UI | §5.4 Evaluation Interface Design (lines 990-1074), §9.3 Evaluation Queue View (lines 2418-2469) | §5.2 Evaluation Workflow (lines 879-900), §5.5 Evaluation Factor Management (lines 1074-1130) |
-| **2.2** | Priority Queue System | §5.3 Queue Management System (lines 900-990) | §7.8 Human Feedback Request Generation (lines 1887-1940), §5.6 Bulk Evaluation Features (lines 1130-1142) |
-| **2.3** | Dashboard View | §9.2 Dashboard View (lines 2355-2418) | §7.7 Automatic Issue Detection (lines 1833-1887), §9.1 Application Structure (lines 2323-2355) |
-| **2.4** | Deployment Pipeline - Staging | §8.2-8.3 Deployment Stages (lines 1950-2015), §8.4 Deployment Workflow (lines 2015-2124) | §8.1 Deployment Philosophy (lines 1942-1950), §8.6 Cloud Build Integration (lines 2218-2266) |
-| **2.5** | Version History & Rollback | §8.5 Rollback System (lines 2124-2218) | §4.2.2 agent_config_history Collection, §8.4 Deployment Workflow (lines 2015-2124) |
-| **2.6** | Agent Detail View | §9.4 Agent Detail View (lines 2469-2537) | §9.7 Configuration Editor View (lines 2717-2789), §10.1 Agent Configuration Changes (lines 2825-2921) |
-| **2.7** | Recommendation Review UI | §9.5 Recommendation Review View (lines 2537-2648) | §7.6 Recommendation Aggregation (lines 1748-1833), §9.6 Deployment Management View (lines 2648-2717) |
-| **2.8** | Firestore-BigQuery Sync | §4.3 BigQuery Schema (lines 567-722), §4.6 Data Flow Diagram (lines 787-858) | §4.1 Storage Strategy Overview (lines 339-374) |
+#### 1.1 - Context Manager
 
-### Release 3: Automated Analysis (Features 3.1 - 3.8)
+Centralized context management system with Hierarchical Context Loading (HCL) for efficient token usage.
 
-| Feature | Feature Name | Primary Sections | Supporting Sections |
-|---------|--------------|------------------|---------------------|
-| **3.1** | Alignment Analyzer | §7.2 Analysis Module: Alignment Analyzer (lines 1411-1515) | §7.1 Engine Overview (lines 1360-1411), §7.6 Recommendation Aggregation (lines 1748-1833) |
-| **3.2** | Prompt Improvement Generator | §7.2 Alignment Analyzer (prompt improvement within), §7.6 Recommendation Aggregation (lines 1748-1833) | §7.1 Engine Overview (lines 1360-1411), §1.3 What the System Can Optimize (lines 59-80) |
-| **3.3** | Recommendation Aggregator | §7.6 Recommendation Aggregation (lines 1748-1833) | §7.7 Automatic Issue Detection (lines 1833-1887), §9.5 Recommendation Review View (lines 2537-2648) |
-| **3.4** | Pattern Detector | §7.3 Analysis Module: Pattern Detector (lines 1515-1591) | §7.1 Engine Overview (lines 1360-1411), §12 Human Edit Distance Tracking (lines 3457-3775) |
-| **3.5** | Tool Usage Analyzer | §7.4 Analysis Module: Tool Usage Analyzer (lines 1591-1663) | §6.4 Tool Call Trace Extraction (lines 1284-1332), §11.6 Tool Call Evaluation Enhancement (lines 3341-3393) |
-| **3.6** | Canary Deployment Support | §8.7 A/B Testing Infrastructure (lines 2266-2308), §8.2-8.3 Deployment Stages (lines 1950-2015) | §8.4 Deployment Workflow (lines 2015-2124), §3.7 Automated Monitoring |
-| **3.7** | Automated Monitoring | §7.7 Automatic Issue Detection (lines 1833-1887), §8.7 A/B Testing Infrastructure (lines 2266-2308) | §9.2 Dashboard View (lines 2355-2418), §15.6 Benchmark Dashboard (lines 4929-4956) |
-| **3.8** | Notification System | §8.8 Deployment Notifications (lines 2308-2321) | §7.7 Automatic Issue Detection (lines 1833-1887), §7.6 Recommendation Aggregation (lines 1748-1833) |
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §3.1 The Context Challenge | 381–415 |
+| **Primary** | §3.2 Hierarchical Context Loading (HCL) | 417–509 |
+| **Primary** | §3.3 Context Loading Implementation | 511–605 |
+| **Primary** | §3.4 Context-Aware Agent Instructions | 607–655 |
+| **Primary** | §3.6 Context State Management (ADK Integration) | 734–796 |
+| Supporting | §1.2 Critical Design Challenges | 34–42 |
+| Supporting | §1.4 Key Design Decisions | 89–98 |
+| Supporting | §2.2 Component Responsibilities | 247–278 |
+| Supporting | §10.2.1 Context Management Tests | 3184–3233 |
 
-### Release 4: Advanced Intelligence (Features 4.1 - 4.8)
+---
 
-| Feature | Feature Name | Primary Sections | Supporting Sections |
-|---------|--------------|------------------|---------------------|
-| **4.1** | Configuration Optimizer | §7.5 Analysis Module: Configuration Optimizer (lines 1663-1748), §8.7 A/B Testing Infrastructure (lines 2266-2308) | §1.3 What the System Can Optimize (lines 59-80), §7.1 Engine Overview (lines 1360-1411) |
-| **4.2** | Experiment Management UI | §8.7 A/B Testing Infrastructure (lines 2266-2308), §9.6 Deployment Management View (lines 2648-2717) | §7.5 Configuration Optimizer (lines 1663-1748) |
-| **4.3** | Factor Suggestion System | §5.5 Evaluation Factor Management (lines 1074-1130), §11.3 Evaluation Factors by Output Category (lines 3156-3193) | §7.6 Recommendation Aggregation (lines 1748-1833) |
-| **4.4** | Anomaly Detection | §7.7 Automatic Issue Detection (lines 1833-1887), §3.7 Automated Monitoring | §15.4 Account Percentile Ranking (lines 4772-4857), §7.3 Pattern Detector (lines 1515-1591) |
-| **4.5** | Feedback Request Generator | §7.8 Human Feedback Request Generation (lines 1887-1940) | §5.3 Queue Management System (lines 900-990), §7.7 Automatic Issue Detection (lines 1833-1887) |
-| **4.6** | Structural Issue Detection | §7.4 Tool Usage Analyzer (lines 1591-1663), §1.3 What the System Can Optimize - Recommendation-Only (lines 73-80) | §11.4 Agent-Specific Evaluation Considerations (lines 3193-3326), §13 Multi-Step Workflow Evaluation (lines 3775-4202) |
-| **4.7** | Historical Trend Analysis | §15.6 Benchmark Dashboard (lines 4929-4956), §4.3 BigQuery Schema (lines 567-722) | §15.3 Aggregation Pipeline (lines 4668-4772), §9.2 Dashboard View (lines 2355-2418) |
-| **4.8** | Multi-Provider LLM Support | §1.3 What the System Can Optimize (lines 59-80), §10.4 Environment Configuration (lines 3041-3069) | §7.5 Configuration Optimizer (lines 1663-1748) |
+#### 1.2 - Tool Registry
+
+Searchable tool index with lightweight metadata for on-demand tool discovery.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §5.2 Tool Registry Architecture | 1586–1661 |
+| **Primary** | §5.3 Tool Registry Implementation | 1663–1797 |
+| Supporting | §1.4 Key Design Decisions | 89–98 |
+| Supporting | §2.2 Component Responsibilities (Data & Integration Layer) | 269–278 |
+| Supporting | §4.3 Tool Discovery Agent | 1050–1167 |
+| Supporting | §12 Appendix A: Tool Categories Reference | 3668–3681 |
+
+---
+
+#### 1.3 - MCP Manager
+
+Lazy-loading MCP server manager with LRU eviction to manage Model Context Protocol server connections.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §5.1 Lazy-Loading Recommendation | 1575–1584 |
+| **Primary** | §5.4 MCP Server Manager | 1799–1928 |
+| **Primary** | §5.5 MCP Server Configuration Examples | 1930–1983 |
+| Supporting | §1.4 Key Design Decisions | 89–98 |
+| Supporting | §2.1 System Architecture (Tool & Integration Layer) | 113–245 |
+| Supporting | §10.2.2 Tool Discovery Tests | 3236–3300 |
+
+---
+
+#### 1.4 - Session Service
+
+State management using ADK patterns with session-level, user-level, and app-level state.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §3.6 Context State Management (ADK Integration) | 734–796 |
+| **Primary** | §2.3 Request Flow (Session Manager step) | 280–360 |
+| Supporting | §3.5 Dynamic Context Compression | 657–732 |
+| Supporting | §6.1 Unified Channel Architecture (Session Manager) | 2036–2040 |
+| Supporting | §7.2 Workflow Data Model | 2499–2684 |
+| Supporting | §12 Appendix C: Configuration Reference | 3694–3747 |
+
+---
+
+#### 1.5 - Web Channel
+
+React-based web chat interface with real-time streaming, file uploads, and rich message rendering.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §6.1 Unified Channel Architecture | 1989–2065 |
+| **Primary** | §6.2 Unified Message Format | 2067–2128 |
+| **Primary** | §6.3.1 Web Channel Adapter | 2132–2196 |
+| Supporting | §2.1 System Architecture (Client Interfaces) | 113–140 |
+| Supporting | §2.3 Request Flow (Channel Adapter & Response Delivery) | 296–353 |
+
+---
+
+#### 1.6 - Primary Orchestrator
+
+Main LangGraph orchestrator agent that routes requests, coordinates specialist agents, and manages conversation flow.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.1 Agent Hierarchy Overview | 802–840 |
+| **Primary** | §4.2 Primary Orchestrator Agent | 842–1048 |
+| Supporting | §2.2.1 Orchestrator Layer | 249–256 |
+| Supporting | §2.3 Request Flow | 280–360 |
+| Supporting | §2.4 Agent Type Selection (Google ADK) | 362–376 |
+| Supporting | §4.9 Agent Summary Table | 1559–1570 |
+| Supporting | §12 Appendix C: Configuration Reference (agents section) | 3712–3730 |
+
+---
+
+#### 1.7 - Basic Monitoring
+
+Token usage, latency metrics, and core observability for the agentic harness.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §10.4 Monitoring Requirements | 3437–3471 |
+| **Primary** | §10.3 Performance Benchmarks | 3424–3435 |
+| Supporting | §1.5 Expected Outcomes | 100–108 |
+| Supporting | §9.3 Cost Estimates | 3079–3094 |
+| Supporting | §11.7 Success Metrics by Phase | 3647–3663 |
+
+---
+
+### Release 2 — Billing
+
+#### 2.1 - Enable Billing
+
+Subscription and payment infrastructure for KEN-E accounts.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| Supporting | §9.3 Cost Estimates | 3079–3094 |
+| Supporting | §2.2 Component Responsibilities (Firestore) | 269–278 |
+
+> **Note:** The design document does not include a dedicated billing section. This feature is primarily implementation-driven without specific architectural guidance in the design doc.
+
+---
+
+### Release 3 — Core Agents
+
+#### 3.1 - Strategy Specialist
+
+Research, ICP creation, competitor analysis, and campaign planning agent.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.4 Strategy Specialist Agent | 1169–1238 |
+| Supporting | §2.2.2 Specialist Agent Layer | 258–267 |
+| Supporting | §4.1 Agent Hierarchy Overview | 802–840 |
+| Supporting | §4.9 Agent Summary Table | 1559–1570 |
+| Supporting | §8.3 Output Type Classification | 2871–2925 |
+| Supporting | §12 Appendix B: Output Types for Evaluation | 3683–3691 |
+
+---
+
+#### 3.2 - Content Specialist
+
+Multi-format content generation agent for blog, social, email, video, and landing pages.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.5 Content Specialist Agent | 1240–1307 |
+| Supporting | §2.2.2 Specialist Agent Layer | 258–267 |
+| Supporting | §4.1 Agent Hierarchy Overview | 802–840 |
+| Supporting | §4.9 Agent Summary Table | 1559–1570 |
+| Supporting | §8.3 Output Type Classification | 2871–2925 |
+
+---
+
+#### 3.3 - Analytics Specialist
+
+Sequential agent for data queries, analysis, visualization, and reporting.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.6 Analytics Specialist Agent | 1309–1409 |
+| Supporting | §2.2.2 Specialist Agent Layer | 258–267 |
+| Supporting | §2.4 Agent Type Selection (SequentialAgent rationale) | 362–376 |
+| Supporting | §4.9 Agent Summary Table | 1559–1570 |
+| Supporting | §12 Appendix A: Tool Categories Reference (Analytics) | 3668–3681 |
+
+---
+
+#### 3.4 - Execution Specialist
+
+Content deployment with validate-execute-verify sequential pattern.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.7 Execution Specialist Agent | 1411–1492 |
+| Supporting | §2.2.2 Specialist Agent Layer | 258–267 |
+| Supporting | §2.4 Agent Type Selection (SequentialAgent rationale) | 362–376 |
+| Supporting | §4.9 Agent Summary Table | 1559–1570 |
+
+---
+
+#### 3.5 - Slack Channel
+
+Slack bot integration using Bolt SDK with DM and channel mention support.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §6.3.2 Slack Channel Adapter | 2198–2291 |
+| **Primary** | §6.1 Unified Channel Architecture | 1989–2065 |
+| Supporting | §6.2 Unified Message Format | 2067–2128 |
+| Supporting | §2.1 System Architecture (Client Interfaces) | 113–140 |
+| Supporting | §10.2.3 Multi-Channel Tests | 3302–3353 |
+
+---
+
+#### 3.6 - Workflow Manager & Tool Discovery
+
+Multi-step workflow tracking with persistent state, user approval gates, and intelligent semantic tool discovery.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §7.1 Multi-Step Workflow Handling | 2440–2497 |
+| **Primary** | §7.2 Workflow Data Model | 2499–2684 |
+| **Primary** | §4.3 Tool Discovery Agent | 1050–1167 |
+| Supporting | §2.2.1 Orchestrator Layer (Workflow Router) | 249–256 |
+| Supporting | §8.2 Trace Instrumentation | 2791–2869 |
+| Supporting | §10.2.4 Workflow Tests | 3355–3422 |
+| Supporting | §11.6 Dependencies Graph | 3596–3645 |
+
+---
+
+### Release 4 — Automation
+
+#### 4.1 - n8n Integration & Automation Specialist
+
+n8n workflow automation engine with a specialized Automation Agent.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.8 Automation Specialist Agent | 1494–1557 |
+| **Primary** | §7.3 Scheduled Workflow Integration | 2686–2777 |
+| Supporting | §2.1 System Architecture (Automation Platform) | 236–242 |
+| Supporting | §2.2.2 Specialist Agent Layer (Automation Specialist) | 258–267 |
+| Supporting | §2.2.3 Data & Integration Layer (Automation Platform) | 269–278 |
+| Supporting | §4.9 Agent Summary Table | 1559–1570 |
+| Supporting | §12 Appendix A: Tool Categories Reference (Automation) | 3668–3681 |
+
+---
+
+#### 4.2 - Scheduled Workflows & Reporting
+
+Scheduled workflow execution, automated content calendar reviews, and report generation.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §7.3 Scheduled Workflow Integration | 2686–2777 |
+| Supporting | §4.8 Automation Specialist Agent (Workflow Types) | 1500–1536 |
+| Supporting | §7.1 Multi-Step Workflow Handling | 2440–2497 |
+| Supporting | §12 Appendix C: Configuration Reference (automation section) | 3742–3747 |
+
+---
+
+#### 4.3 - Approval Queue
+
+Content approval workflow integrated into KEN-E for review before deployment.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §7.1 Multi-Step Workflow Handling (AWAITING_APPROVAL state) | 2440–2497 |
+| **Primary** | §7.2 Workflow Data Model (WorkflowStatus, TaskStatus) | 2499–2560 |
+| Supporting | §4.7 Execution Specialist Agent (validation step) | 1411–1424 |
+| Supporting | §8.4 Feedback Collection Integration | 2927–2985 |
+
+---
+
+#### 4.4 - KPI Monitoring & Notifications
+
+Automated KPI monitoring with intelligent notifications for performance changes.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §10.4 Monitoring Requirements | 3437–3471 |
+| Supporting | §4.8 Automation Specialist Agent (KPI Monitoring workflow type) | 1500–1536 |
+| Supporting | §7.3 Scheduled Workflow Integration | 2686–2777 |
+| Supporting | §10.3 Performance Benchmarks | 3424–3435 |
+
+---
+
+### Release 5 — Advanced
+
+#### 5.1 - Voice Channel
+
+Voice interaction through Pipecat and Meeting BaaS for meeting participation.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §6.3.3 Voice Channel Adapter | 2293–2409 |
+| **Primary** | §6.4 Voice Channel Implementation Notes | 2411–2435 |
+| Supporting | §6.1 Unified Channel Architecture | 1989–2065 |
+| Supporting | §6.2 Unified Message Format | 2067–2128 |
+| Supporting | §9.1 Compute Requirements (Voice Pipeline) | 3048–3056 |
+| Supporting | §9.3 Cost Estimates (Voice costs) | 3079–3094 |
+| Supporting | §10.1 Risk Assessment Matrix (Voice latency) | 3165–3178 |
+| Supporting | §10.2.3 Multi-Channel Tests (Voice tests) | 3335–3353 |
+
+---
+
+#### 5.2 - A/B Testing Support
+
+Experiment infrastructure for testing agent configurations with traffic splitting.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §8.5 A/B Testing Support | 2987–3042 |
+| Supporting | §8.2 Trace Instrumentation (experiment_id metadata) | 2791–2869 |
+| Supporting | §11.5 Phase 4: Advanced Features | 3575–3594 |
+
+---
+
+#### 5.3 - Self-Optimization & Advanced Analytics
+
+MER-E evaluation framework integration for continuous improvement and predictive analytics.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §8 Integration with Evaluation Framework | 2781–3042 |
+| **Primary** | §8.2 Trace Instrumentation | 2791–2869 |
+| **Primary** | §8.3 Output Type Classification | 2871–2925 |
+| **Primary** | §8.4 Feedback Collection Integration | 2927–2985 |
+| Supporting | §4.6 Analytics Specialist Agent (forecasting) | 1309–1409 |
+| Supporting | §12 Appendix B: Output Types for Evaluation | 3683–3691 |
+
+---
+
+#### 5.4 - Custom Report Builder
+
+Natural language report creation with user-defined templates and scheduling.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| **Primary** | §4.6 Analytics Specialist Agent | 1309–1409 |
+| Supporting | §7.3 Scheduled Workflow Integration | 2686–2777 |
+| Supporting | §4.8 Automation Specialist Agent (Performance Reports) | 1500–1536 |
+
+---
+
+#### 5.5 - Cross-Account Learning & Proactive Suggestions
+
+Anonymized pattern sharing across accounts and AI-initiated proactive recommendations.
+
+| Type | Section | Lines |
+|------|---------|-------|
+| Supporting | §11.5 Phase 4: Advanced Features (Cross-Account Learning, Proactive Suggestions) | 3575–3594 |
+| Supporting | §8.3 Output Type Classification | 2871–2925 |
+
+> **Note:** The design document provides minimal architectural detail for this feature. It is listed in the roadmap (§11.5) but lacks a dedicated design section.
+
+---
 
 ## Special Topic Sections
 
-For stories that touch cross-cutting concerns, also read these sections:
+These sections cover cross-cutting concerns relevant to multiple features.
 
-| Topic | Relevant Sections |
-|-------|-------------------|
-| **Weave/W&B Integration** | §4.5 W&B Weave Data Model, §5.7 Integration with W&B Weave, §6 Trace Collection & W&B Integration |
-| **Firestore Design** | §4.2 Firestore Schema, §4.1 Storage Strategy Overview |
-| **Security & Auth** | §3.4 Security & Access Control |
-| **KEN-E Integration** | §10 KEN-E Application Modifications |
-| **Agentic Harness** | §11 Agentic Harness Integration |
-| **Edit Distance Tracking** | §12 Human Edit Distance Tracking |
-| **Multi-Step Workflows** | §13 Multi-Step Workflow Evaluation |
-| **n8n Workflows** | §14 n8n Workflow Evaluation |
-| **Cross-Account Features** | §15 Cross-Account Benchmarking |
+| Topic | Section | Lines | Relevant Features |
+|-------|---------|-------|-------------------|
+| **Google ADK integration** | §2.4 Agent Type Selection | 362–376 | 1.6, 3.1–3.4, 3.6 |
+| **Token budget management** | §3.1 The Context Challenge | 381–415 | 1.1, 1.2, 1.3 |
+| **Agent hierarchy & delegation** | §4.1 Agent Hierarchy Overview | 802–840 | 1.6, 3.1–3.4, 3.6 |
+| **Channel-agnostic message format** | §6.2 Unified Message Format | 2067–2128 | 1.5, 3.5, 5.1 |
+| **Evaluation & tracing** | §8.2 Trace Instrumentation | 2791–2869 | 1.7, 5.2, 5.3 |
+| **Infrastructure & scaling** | §9 Infrastructure Requirements | 3046–3159 | All features |
+| **Risk assessment** | §10.1 Risk Assessment Matrix | 3165–3178 | All features |
+| **Feature dependencies** | §11.6 Dependencies Graph | 3596–3645 | All features |
+| **Configuration reference** | §12 Appendix C | 3694–3747 | 1.1, 1.3, 1.6, 5.1 |
+
+---
 
 ## Quick Reference: Line Ranges by Section
 
-| Section | Start Line | End Line |
-|---------|------------|----------|
-| §1 Executive Summary | 35 | 102 |
-| §2 Vision & Objectives | 103 | 192 |
-| §3 System Architecture | 193 | 336 |
-| §4 Data Storage Design | 337 | 857 |
-| §5 Human Feedback System | 858 | 1184 |
-| §6 Trace Collection | 1185 | 1357 |
-| §7 Analysis & Recommendation | 1358 | 1939 |
-| §8 Deployment Pipeline | 1940 | 2320 |
-| §9 User Interface Design | 2321 | 2820 |
-| §10 KEN-E Modifications | 2821 | 3082 |
-| §11 Agentic Harness | 3083 | 3456 |
-| §12 Edit Distance Tracking | 3457 | 3774 |
-| §13 Multi-Step Workflow | 3775 | 4201 |
-| §14 n8n Workflow Evaluation | 4202 | 4586 |
-| §15 Cross-Account Benchmarking | 4587 | 5045 |
-| §16 Feature Roadmap | 5046 | 5287 |
-| §17 Appendices | 5288 | EOF |
+```
+§1  Executive Summary ........................ 28–108
+§2  Architecture Overview .................... 111–376
+§3  Context Management Strategy .............. 379–796
+§4  Agent Definitions ........................ 800–1570
+§5  MCP Server Architecture .................. 1573–1983
+§6  Multi-Channel Support .................... 1987–2435
+§7  Workflow Management ...................... 2438–2777
+§8  Integration with Evaluation Framework .... 2781–3042
+§9  Infrastructure Requirements .............. 3046–3159
+§10 Risks and Testing Requirements ........... 3163–3471
+§11 Prioritized Feature Roadmap .............. 3475–3663
+§12 Appendices ............................... 3666–3771
+```
 
 ---
 
 ## Keyword Search Index
 
-Use this index to find relevant sections when you know the concept but not the feature number.
+Use these keywords to quickly find relevant sections when working on a task.
 
-### Data & Storage Keywords
+### Architecture & Framework
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Firestore | §4.2 (374-567), §4.1 (339-374) |
-| BigQuery | §4.3 (567-722), §2.8 Feature |
-| GCS / Cloud Storage | §4.4 (722-754) |
-| Schema | §4.2, §4.3, §4.5 |
-| Collection | §4.2 (Firestore collections) |
-| Data model | §4.2, §4.3, §4.5, §4.6 |
-| Migration | §4.2, §4.3 |
+| Keyword | Sections |
+|---------|----------|
+| ADK, Agent Development Kit | §2.4 (362), §4.1 (802), §12 Glossary (3749) |
+| LangGraph, orchestration | §4.2 (842), §2.3 (280) |
+| hierarchical agents | §4.1 (802), §2.2.1 (249) |
+| LlmAgent, SequentialAgent, LoopAgent | §2.4 (362), §4.2–4.8 |
 
-### Weave & W&B Keywords
+### Context Management
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Weave | §4.5 (754-787), §5.7 (1142-1185), §6 (1185-1357) |
-| W&B / Weights & Biases | §4.5, §5.7, §6 |
-| Trace | §6 (1185-1357), §10.2 (2921-2998) |
-| Scorer | §7.2 (1411-1515), §3.1-3.2 Features |
-| Evaluation | §5 (858-1184), §4.5, §7.2 |
-| Dataset | §4.5, §6.5 (1332-1347) |
+| Keyword | Sections |
+|---------|----------|
+| HCL, hierarchical context loading | §3.2 (417), §12 Glossary (3749) |
+| DCL, dynamic context loading | §3.1 (381), §12 Glossary (3749) |
+| token budget, context budget | §3.1 (381), §3.3 (511), §3.6 (734) |
+| context compression | §3.5 (657) |
+| executive summary, Level 1 context | §3.2 (417), §3.4 (607) |
+| section summary, Level 2 context | §3.2 (445), §3.3 (544) |
+| full detail, Level 3 context | §3.2 (475), §3.3 (570) |
+| Neo4j, knowledge graph | §2.2.3 (269), §3.3 (519) |
 
-### UI & Frontend Keywords
+### Tool Discovery & MCP
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Dashboard | §9.2 (2355-2418), §2.3 Feature |
-| Evaluation UI | §5.4 (990-1074), §9.3 (2418-2469), §2.1 Feature |
-| Queue | §5.3 (900-990), §9.3, §2.2 Feature |
-| Form | §5.4, §9.3 |
-| Component | §9.8 (2789-2806) |
-| View | §9.2-9.7 |
-| Agent detail | §9.4 (2469-2537), §2.6 Feature |
-| Recommendation review | §9.5 (2537-2648), §2.7 Feature |
-| Deployment management | §9.6 (2648-2717) |
-| Configuration editor | §9.7 (2717-2789) |
+| Keyword | Sections |
+|---------|----------|
+| MCP, Model Context Protocol | §5 (1573), §12 Glossary (3749) |
+| lazy loading, on-demand | §5.1 (1575), §1.4 (89) |
+| LRU eviction | §5.4 (1799), §12 Glossary (3749) |
+| tool registry, tool index | §5.2 (1586), §5.3 (1663) |
+| tool discovery, search tools | §4.3 (1050), §5.3 (1719) |
+| MCPToolset, StdioConnectionParams | §5.4 (1802) |
+| server configs, connection types | §5.5 (1930) |
 
-### Analysis & Recommendation Keywords
+### Specialist Agents
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Alignment | §7.2 (1411-1515), §3.1 Feature |
-| Prompt improvement | §7.2, §3.2 Feature |
-| Pattern detection | §7.3 (1515-1591), §3.4 Feature |
-| Tool usage | §7.4 (1591-1663), §3.5 Feature |
-| Configuration optimizer | §7.5 (1663-1748), §4.1 Feature |
-| Recommendation | §7.6 (1748-1833), §3.3 Feature |
-| Anomaly | §7.7 (1833-1887), §4.4 Feature |
-| Notification | §8.8 (2308-2321), §3.8 Feature |
+| Keyword | Sections |
+|---------|----------|
+| strategy agent, ICP, competitor | §4.4 (1169) |
+| content agent, blog, social, email | §4.5 (1240) |
+| analytics agent, reports, visualization | §4.6 (1309) |
+| execution agent, deploy, publish | §4.7 (1411) |
+| automation agent, n8n, workflows | §4.8 (1494) |
+| delegate_to_specialist | §4.2 (919) |
 
-### Deployment Keywords
+### Channels
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Deployment | §8 (1940-2320) |
-| Staging | §8.2-8.3 (1950-2015), §2.4 Feature |
-| Canary | §8.7 (2266-2308), §3.6 Feature |
-| Rollback | §8.5 (2124-2218), §2.5 Feature |
-| A/B testing | §8.7, §4.1-4.2 Features |
-| Version | §8.5, §4.2.2 |
-| Cloud Build | §8.6 (2218-2266) |
+| Keyword | Sections |
+|---------|----------|
+| web channel, WebSocket, React | §6.3.1 (2132), §6.1 (1989) |
+| Slack, Bolt SDK, Block Kit | §6.3.2 (2198) |
+| voice, Pipecat, STT, TTS | §6.3.3 (2293), §6.4 (2411) |
+| Recall.ai, Meeting BaaS, Deepgram | §6.3.3 (2293), §6.4 (2411) |
+| channel adapter, message normalizer | §6.1 (2017), §6.2 (2067) |
+| UnifiedMessage, UnifiedResponse | §6.2 (2080), §6.2 (2109) |
 
-### KEN-E Integration Keywords
+### Workflows & Automation
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Agent config | §10.1 (2825-2921), §4.2.1, §1.4 Feature |
-| Trace instrumentation | §10.2 (2921-2998), §1.3 Feature |
-| API endpoint | §10.3 (2998-3041), §1.6 Feature |
-| Environment | §10.4 (3041-3069) |
+| Keyword | Sections |
+|---------|----------|
+| workflow, multi-step, task tracking | §7.1 (2440), §7.2 (2499) |
+| WorkflowStatus, TaskStatus | §7.2 (2507) |
+| scheduled workflows, n8n | §7.3 (2686) |
+| approval, AWAITING_APPROVAL | §7.1 (2464), §7.2 (2510) |
+| workflow persistence, Firestore | §7.2 (2561) |
 
-### Advanced Features Keywords
+### Evaluation & Testing
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Agentic harness | §11 (3083-3456) |
-| Edit distance | §12 (3457-3774) |
-| Multi-step workflow | §13 (3775-4201) |
-| n8n | §14 (4202-4586) |
-| Cross-account | §15 (4587-5045) |
-| Benchmark | §15.4-15.6 |
-| Privacy | §15.7 (4956-5015) |
+| Keyword | Sections |
+|---------|----------|
+| Weave, tracing, instrumentation | §8.2 (2791) |
+| output type, classification | §8.3 (2871) |
+| feedback, human evaluation | §8.4 (2927) |
+| A/B testing, experiment, variant | §8.5 (2987) |
+| alignment, self-optimization | §8.1 (2783) |
 
-### Evaluation & Scoring Keywords
+### Infrastructure
 
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Factor | §5.5 (1074-1130), §11.3 (3156-3193), §4.3 Feature |
-| Rubric | §5.5, §4.3 Feature |
-| Score | §5.4, §7.2 |
-| Human evaluation | §5 (858-1184), §4.2.3 |
-| LLM evaluation | §7.2, §4.5 |
-| Agreement | §7.2, §1.1 Feature |
-| Quality | §7.7, §15.5 |
-
-### Security & Access Keywords
-
-| Keyword | Relevant Sections |
-|---------|-------------------|
-| Security | §3.4 (323-337), §15.7 |
-| Access control | §3.4 |
-| Authentication | §3.4 |
-| Privacy | §15.7 (4956-5015) |
-| Anonymization | §15.2 (4599-4668) |
+| Keyword | Sections |
+|---------|----------|
+| Cloud Run, GCP, scaling | §9.1 (3048), §9.4 (3096) |
+| Firestore, BigQuery | §2.2.3 (269), §9.4 (3096) |
+| Secret Manager | §9.4 (3138) |
+| cost estimates, pricing | §9.3 (3079) |
+| performance benchmarks, latency | §10.3 (3424) |
+| monitoring metrics | §10.4 (3437) |
 
 ---
 
-## How to Use the Keyword Index
+## Usage Examples
 
-1. **Identify the concept** you're working with (e.g., "Firestore query")
-2. **Find relevant keywords** in the index (e.g., "Firestore", "Schema", "Collection")
-3. **Note the section numbers** and line ranges
-4. **Read those sections** from `docs/MER-E_Design.md`
+### Example 1: Starting work on "1.1 - Context Manager"
 
-### Example Usage
+1. Look up Feature 1.1 in the mapping table above
+2. Read primary sections first:
+   - `docs/KEN-E-Agentic-Harness-Design.md` lines 381–415 (The Context Challenge)
+   - `docs/KEN-E-Agentic-Harness-Design.md` lines 417–509 (HCL design)
+   - `docs/KEN-E-Agentic-Harness-Design.md` lines 511–605 (Implementation)
+3. Check supporting sections for broader context:
+   - Lines 34–42 for the design challenges driving this feature
+   - Lines 3184–3233 for the expected test scenarios
 
-**Task:** Implement a function to fetch human evaluations from Firestore
+### Example 2: Starting work on "3.5 - Slack Channel"
 
-**Keywords to search:** Firestore, human evaluation, schema
+1. Look up Feature 3.5 in the mapping table above
+2. Read primary sections:
+   - `docs/KEN-E-Agentic-Harness-Design.md` lines 2198–2291 (Slack Adapter implementation)
+   - `docs/KEN-E-Agentic-Harness-Design.md` lines 1989–2065 (Unified Channel Architecture)
+3. Check the unified message format at lines 2067–2128
+4. Review cross-channel test scenarios at lines 3302–3353
 
-**Relevant sections:**
-- §4.2 Firestore Schema (lines 374-567) - for collection structure
-- §5 Human Feedback System (lines 858-1184) - for evaluation workflow
-- §4.2.3 human_evaluations Collection - for specific fields
+### Example 3: Searching by keyword
 
-**Read command:**
-```
-Read docs/MER-E_Design.md lines 374-567  # Firestore schema
-Read docs/MER-E_Design.md lines 858-990  # Human feedback overview
-```
+If a user story mentions "tool discovery":
+1. Check the Keyword Search Index under "Tool Discovery & MCP"
+2. Find: §4.3 (1050), §5.3 (1719)
+3. Read those sections for architectural intent
