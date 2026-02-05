@@ -17,19 +17,28 @@ logger = logging.getLogger(__name__)
 try:
     from dotenv import load_dotenv
 
-    # Try to find .env file (deployed with agent)
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path, override=False)
-        logger.info(f"[GA-AGENT] Loaded .env from {env_path}")
-    else:
-        # Try alternate location
-        alt_path = Path(__file__).parent / ".env"
-        if alt_path.exists():
-            load_dotenv(alt_path, override=False)
-            logger.info(f"[GA-AGENT] Loaded .env from {alt_path}")
-        else:
-            logger.warning("[GA-AGENT] No .env file found")
+    # Use resolve() for absolute paths - critical for Agent Engine runtime
+    # where cwd may differ from package extraction path
+    base_path = Path(__file__).resolve().parent  # /abs/path/to/agents/
+
+    possible_paths = [
+        base_path.parent / ".env",  # root/.env (1 level from agents)
+        base_path / ".env",  # agents/.env (same level)
+    ]
+
+    env_loaded = False
+    for env_path in possible_paths:
+        logger.info(f"[GA-AGENT] Checking: {env_path} (exists: {env_path.exists()})")
+        if env_path.exists():
+            load_dotenv(env_path, override=False)
+            logger.info(f"[GA-AGENT] ✅ Loaded from {env_path}")
+            env_loaded = True
+            break
+
+    if not env_loaded:
+        logger.warning(
+            f"[GA-AGENT] ⚠️ No .env file found. Checked: {[str(p) for p in possible_paths]}"
+        )
 except ImportError:
     logger.warning("[GA-AGENT] python-dotenv not available")
 except Exception as e:
@@ -38,6 +47,7 @@ except Exception as e:
 # Lazy initialization of Weave for tracing
 WEAVE_ENABLED = False
 _weave_initialized = False
+
 
 def init_weave_if_needed():
     """Initialize Weave lazily with proper error handling."""
@@ -53,17 +63,20 @@ def init_weave_if_needed():
 
         # Use get_env_or_secret to support sm:// format during deployment
         from shared.secrets import get_env_or_secret
+
         wandb_api_key = get_env_or_secret("WANDB_API_KEY")
 
         # Only initialize if WANDB_API_KEY is available
         if wandb_api_key:
             # Use environment-specific project name
-            project_name = get_env_or_secret("WEAVE_PROJECT_NAME") or os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+            project_name = get_env_or_secret("WEAVE_PROJECT_NAME") or os.getenv(
+                "WEAVE_PROJECT_NAME", "ken-e-dev"
+            )
             weave_module.init(project_name=project_name)
             logger.info(f"W&B Weave initialized for GA agent (project: {project_name})")
             WEAVE_ENABLED = True
             # Make weave available globally
-            globals()['weave'] = weave_module
+            globals()["weave"] = weave_module
         else:
             logger.info("WANDB_API_KEY not set, Weave tracing disabled for GA agent")
             raise ImportError("WANDB_API_KEY not available")
@@ -80,7 +93,8 @@ def init_weave_if_needed():
             def op():
                 return weave_op
 
-        globals()['weave'] = DummyWeave()
+        globals()["weave"] = DummyWeave()
+
 
 # Create a placeholder for weave that will be replaced on first use
 class LazyWeave:
@@ -88,6 +102,7 @@ class LazyWeave:
     def op():
         init_weave_if_needed()
         return weave.op()
+
 
 weave = LazyWeave()
 

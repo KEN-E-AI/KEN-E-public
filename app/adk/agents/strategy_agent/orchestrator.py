@@ -69,20 +69,32 @@ except ImportError:
 try:
     from dotenv import load_dotenv
 
-    env_path = Path(__file__).parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path, override=False)
-        logging.info(f"Loaded environment variables from {env_path}")
-    else:
-        # Try alternate location (agents/.env)
-        alt_path = Path(__file__).parent.parent / ".env"
-        if alt_path.exists():
-            load_dotenv(alt_path, override=False)
-            logging.info(f"Loaded environment variables from {alt_path}")
+    # Use resolve() to get absolute paths - critical for Agent Engine runtime
+    # where cwd may differ from package extraction path
+    base_path = Path(__file__).resolve().parent  # /abs/path/to/agents/strategy_agent/
+
+    possible_paths = [
+        base_path.parent.parent / ".env",  # root/.env (2 levels from strategy_agent)
+        base_path.parent / ".env",  # agents/.env (1 level from strategy_agent)
+    ]
+
+    env_loaded = False
+    for env_path in possible_paths:
+        logging.info(f"[ENV] Checking: {env_path} (exists: {env_path.exists()})")
+        if env_path.exists():
+            load_dotenv(env_path, override=False)
+            logging.info(f"[ENV] ✅ Loaded from {env_path}")
+            env_loaded = True
+            break
+
+    if not env_loaded:
+        logging.warning(
+            f"[ENV] ⚠️ No .env file found. Checked: {[str(p) for p in possible_paths]}"
+        )
 except ImportError:
-    logging.warning("python-dotenv not available")
+    logging.warning("[ENV] python-dotenv not available")
 except Exception as e:
-    logging.warning(f"Failed to load .env file: {e}")
+    logging.warning(f"[ENV] Failed to load .env: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +117,9 @@ def init_weave_if_needed():
                 os.environ["WANDB_API_KEY"] = wandb_api_key
                 logger.info("✅ Retrieved WANDB_API_KEY")
             else:
-                logger.warning("⚠️ WANDB_API_KEY not found in environment or Secret Manager")
+                logger.warning(
+                    "⚠️ WANDB_API_KEY not found in environment or Secret Manager"
+                )
         except Exception as e:
             logger.warning(f"⚠️ Failed to retrieve WANDB_API_KEY: {e}")
 
@@ -567,8 +581,7 @@ def _execute_single_strategy(
                 # Use environment-specific project ID
                 formatter_project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
                 config, _ = load_config_from_firestore(
-                    strategy_config["formatter_doc_id"],
-                    project_id=formatter_project_id
+                    strategy_config["formatter_doc_id"], project_id=formatter_project_id
                 )
                 firestore_instructions = getattr(
                     config, "instruction", None
