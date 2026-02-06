@@ -41,6 +41,10 @@ ORG_CONTEXT_TTL_SECONDS = 900  # 15 minutes
 GA_CREDENTIALS_TTL_SECONDS = 600  # 10 minutes
 SESSION_METADATA_TTL_SECONDS = 86400  # 24 hours
 
+# CRITICAL: Use this constant for all ADK session operations
+# Bug fix: Previously line 965 used "ken-e-chatbot" while others used "ken_e_chatbot"
+APP_NAME = "ken_e_chatbot"
+
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
@@ -814,7 +818,7 @@ class AgentEngineClient:
                     f"Creating session with state keys: {list(initial_state.keys())}"
                 )
                 session_result = await self.session_service.create_session(
-                    app_name="ken_e_chatbot", user_id=user_id, state=initial_state
+                    app_name=APP_NAME, user_id=user_id, state=initial_state
                 )
                 session_id = (
                     session_result.id
@@ -962,7 +966,7 @@ class AgentEngineClient:
                 )
                 try:
                     session_data = await self.session_service.get_session(
-                        app_name="ken-e-chatbot",
+                        app_name=APP_NAME,
                         user_id=user_id,
                         session_id=session_id,
                     )
@@ -1033,7 +1037,7 @@ class AgentEngineClient:
     def update_conversation_metadata(
         self, user_id: str, session_id: str, conversation_name: str | None = None
     ) -> bool:
-        """Update conversation metadata."""
+        """Update conversation metadata and sync to Redis."""
         session_key = f"{user_id}:{session_id}"
         if session_key in self._user_sessions:
             if conversation_name is not None:
@@ -1043,6 +1047,20 @@ class AgentEngineClient:
             self._user_sessions[session_key]["last_updated"] = datetime.now(
                 timezone.utc
             )
+
+            # Sync to Redis for persistence across API restarts
+            try:
+                redis_service = get_redis_service()
+                if redis_service.is_available():
+                    cache_key = session_metadata_key(user_id, session_id)
+                    redis_service.set_json(
+                        cache_key,
+                        self._user_sessions[session_key],
+                        ttl_seconds=SESSION_METADATA_TTL_SECONDS,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to sync session metadata to Redis: {e}")
+
             return True
         return False
 
@@ -1058,7 +1076,7 @@ class AgentEngineClient:
 
             # Get sessions from ADK session service
             sessions = await self.session_service.list_sessions(
-                app_name="ken_e_chatbot", user_id=user_id
+                app_name=APP_NAME, user_id=user_id
             )
 
             # Handle ListSessionsResponse - it might have a sessions attribute
@@ -1113,7 +1131,7 @@ class AgentEngineClient:
             try:
                 # Try to delete the ADK session
                 await self.session_service.delete_session(
-                    app_name="ken_e_chatbot", user_id=user_id, session_id=session_id
+                    app_name=APP_NAME, user_id=user_id, session_id=session_id
                 )
                 logger.info(f"Deleted ADK session {session_id}")
             except Exception as e:
@@ -1255,7 +1273,7 @@ class AgentEngineClient:
             )
 
             session_data = await self.session_service.get_session(
-                app_name="ken_e_chatbot", user_id=user_id, session_id=session_id
+                app_name=APP_NAME, user_id=user_id, session_id=session_id
             )
 
             if session_data and hasattr(session_data, "events"):

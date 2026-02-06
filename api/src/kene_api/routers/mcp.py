@@ -1,0 +1,627 @@
+"""MCP Server Management API endpoints.
+
+Provides admin visibility into MCP server status, health, and management.
+Includes tool execution usage tracking and session status monitoring.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from ..auth.dependencies import get_current_user
+from ..auth.models import UserContext
+
+router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
+
+
+class MCPServerInfo(BaseModel):
+    """Information about a loaded MCP server."""
+
+    name: str
+    tool_count: int
+    tokens: int
+    loaded_at: str
+    last_used: str
+    health_status: str
+
+
+class MCPStatusResponse(BaseModel):
+    """Status of all MCP servers."""
+
+    loaded_count: int = Field(..., description="Number of currently loaded servers")
+    max_servers: int = Field(..., description="Maximum allowed concurrent servers")
+    total_tokens: int = Field(..., description="Total estimated tokens across all servers")
+    max_tokens: int = Field(..., description="Maximum allowed total tokens")
+    servers: list[MCPServerInfo] = Field(..., description="Details of loaded servers")
+
+
+class MCPHealthResponse(BaseModel):
+    """Health status of MCP servers."""
+
+    overall_status: str = Field(..., description="Overall health: healthy, degraded, unhealthy")
+    total_servers: int
+    healthy_count: int
+    degraded_count: int
+    unhealthy_count: int
+    servers: list[MCPServerInfo]
+
+
+class MCPLoadRequest(BaseModel):
+    """Request to manually load an MCP server."""
+
+    server_name: str = Field(..., description="Name of the server to load")
+
+
+class MCPLoadResponse(BaseModel):
+    """Response from loading an MCP server."""
+
+    status: str
+    server_name: str
+    tool_count: int
+
+
+class MCPConfigInfo(BaseModel):
+    """Information about configured MCP servers."""
+
+    name: str
+    description: str
+    category: str
+    tool_count: int
+    estimated_tokens: int
+    enabled: bool
+    connection_type: str
+
+
+class MCPConfigListResponse(BaseModel):
+    """List of all configured MCP servers."""
+
+    total: int
+    enabled_count: int
+    servers: list[MCPConfigInfo]
+
+
+def _get_mcp_manager():
+    """Lazy import to avoid circular dependencies."""
+    from app.adk.mcp import get_mcp_manager
+
+    return get_mcp_manager()
+
+
+def _get_mcp_config_loader():
+    """Lazy import to avoid circular dependencies."""
+    from app.adk.mcp import get_mcp_config_loader
+
+    return get_mcp_config_loader()
+
+
+@router.get("/status", response_model=MCPStatusResponse)
+async def get_mcp_status(
+    user: UserContext = Depends(get_current_user),
+) -> MCPStatusResponse:
+    """Get status of all loaded MCP servers.
+
+    Returns current server load, token usage, and individual server details.
+    Useful for monitoring resource usage and debugging connection issues.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    manager = _get_mcp_manager()
+    status = manager.get_status()
+
+    return MCPStatusResponse(
+        loaded_count=status["loaded_count"],
+        max_servers=status["max_servers"],
+        total_tokens=status["total_tokens"],
+        max_tokens=status["max_tokens"],
+        servers=[
+            MCPServerInfo(
+                name=s["name"],
+                tool_count=s["tool_count"],
+                tokens=s["tokens"],
+                loaded_at=s["loaded_at"],
+                last_used=s["last_used"],
+                health_status=s["health_status"],
+            )
+            for s in status["servers"]
+        ],
+    )
+
+
+@router.get("/health", response_model=MCPHealthResponse)
+async def get_mcp_health(
+    user: UserContext = Depends(get_current_user),
+) -> MCPHealthResponse:
+    """Get health status of MCP servers.
+
+    Returns aggregated health metrics and per-server health status.
+    Use this to identify unhealthy connections that may need attention.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    manager = _get_mcp_manager()
+    status = manager.get_status()
+
+    servers = status["servers"]
+    unhealthy_count = sum(1 for s in servers if s["health_status"] == "unhealthy")
+    degraded_count = sum(1 for s in servers if s["health_status"] == "degraded")
+    healthy_count = status["loaded_count"] - unhealthy_count - degraded_count
+
+    overall = "healthy"
+    if unhealthy_count > 0:
+        overall = "unhealthy"
+    elif degraded_count > 0:
+        overall = "degraded"
+
+    return MCPHealthResponse(
+        overall_status=overall,
+        total_servers=status["loaded_count"],
+        healthy_count=healthy_count,
+        degraded_count=degraded_count,
+        unhealthy_count=unhealthy_count,
+        servers=[
+            MCPServerInfo(
+                name=s["name"],
+                tool_count=s["tool_count"],
+                tokens=s["tokens"],
+                loaded_at=s["loaded_at"],
+                last_used=s["last_used"],
+                health_status=s["health_status"],
+            )
+            for s in servers
+        ],
+    )
+
+
+@router.get("/config", response_model=MCPConfigListResponse)
+async def get_mcp_config(
+    user: UserContext = Depends(get_current_user),
+) -> MCPConfigListResponse:
+    """Get list of all configured MCP servers.
+
+    Shows all servers defined in configuration, whether enabled or not.
+    Useful for understanding available integrations.
+
+    Requires: Authenticated user
+    """
+    loader = _get_mcp_config_loader()
+    configs = loader._configs
+
+    servers = []
+    enabled_count = 0
+    for name, config in configs.items():
+        if config.enabled:
+            enabled_count += 1
+        servers.append(
+            MCPConfigInfo(
+                name=name,
+                description=config.description,
+                category=config.category,
+                tool_count=config.tool_count,
+                estimated_tokens=config.estimated_tokens,
+                enabled=config.enabled,
+                connection_type=config.connection.connection_type,
+            )
+        )
+
+    return MCPConfigListResponse(
+        total=len(servers),
+        enabled_count=enabled_count,
+        servers=servers,
+    )
+
+
+@router.post("/load", response_model=MCPLoadResponse)
+async def load_mcp_server(
+    request: MCPLoadRequest,
+    user: UserContext = Depends(get_current_user),
+) -> MCPLoadResponse:
+    """Manually load an MCP server.
+
+    Triggers lazy initialization of the specified server.
+    Useful for pre-warming connections or testing configuration.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    manager = _get_mcp_manager()
+
+    try:
+        tools = await manager.load_server(request.server_name)
+        return MCPLoadResponse(
+            status="loaded",
+            server_name=request.server_name,
+            tool_count=len(tools),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except TimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e)) from e
+
+
+@router.post("/unload/{server_name}")
+async def unload_mcp_server(
+    server_name: str,
+    user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Manually unload an MCP server.
+
+    Gracefully closes the connection and frees resources.
+    Useful for forcing reconnection or freeing resources.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    manager = _get_mcp_manager()
+
+    if not manager.is_loaded(server_name):
+        raise HTTPException(status_code=404, detail=f"Server '{server_name}' is not loaded")
+
+    await manager.unload_server(server_name)
+    return {"status": "unloaded", "server_name": server_name}
+
+
+# ============================================================================
+# Tool Execution Usage Tracking Endpoints
+# ============================================================================
+
+
+class ToolUsageResponse(BaseModel):
+    """Tool execution usage statistics."""
+
+    period_start: datetime = Field(..., description="Start of the reporting period")
+    period_end: datetime = Field(..., description="End of the reporting period")
+    total_calls: int = Field(..., description="Total tool calls in period")
+    success_count: int = Field(..., description="Successful executions")
+    failure_count: int = Field(..., description="Failed executions")
+    success_rate: float = Field(..., description="Success rate (0.0-1.0)")
+    avg_duration_ms: float | None = Field(None, description="Average execution duration in ms")
+    total_tokens: int = Field(..., description="Total tokens consumed")
+    by_tool: dict[str, int] = Field(..., description="Call counts by tool name")
+    by_user: dict[str, int] = Field(..., description="Call counts by user")
+    by_status: dict[str, int] = Field(..., description="Call counts by status")
+
+
+class ToolUsagePendingResponse(BaseModel):
+    """Information about pending (unbatched) usage events."""
+
+    pending_count: int = Field(..., description="Events waiting to be flushed")
+    stored_count: int = Field(..., description="Events already stored (in-memory)")
+    using_firestore: bool = Field(..., description="Whether Firestore is being used")
+
+
+def _get_usage_tracker():
+    """Lazy import to avoid circular dependencies."""
+    from app.adk.tracking.usage import get_usage_tracker
+
+    return get_usage_tracker()
+
+
+@router.get("/tools/usage", response_model=ToolUsageResponse)
+async def get_tool_usage(
+    account_id: str = Query(..., description="Account to get usage for"),
+    days: int = Query(7, ge=1, le=90, description="Number of days to query"),
+    user: UserContext = Depends(get_current_user),
+) -> ToolUsageResponse:
+    """Get tool execution usage statistics for an account.
+
+    Returns aggregated statistics including:
+    - Total calls, success/failure counts
+    - Average execution duration
+    - Breakdown by tool, user, and status
+
+    Requires: Admin access to the specified account
+    """
+    # Permission check
+    if not user.is_super_admin and not user.has_account_access(account_id, ["edit"]):
+        raise HTTPException(status_code=403, detail="Admin access required for account usage")
+
+    tracker = _get_usage_tracker()
+
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days)
+
+    try:
+        # Flush pending events before querying
+        await tracker.flush()
+
+        agg = await tracker.get_usage_aggregation(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return ToolUsageResponse(
+            period_start=agg.period_start,
+            period_end=agg.period_end,
+            total_calls=agg.total_calls,
+            success_count=agg.success_count,
+            failure_count=agg.failure_count,
+            success_rate=agg.success_rate,
+            avg_duration_ms=agg.avg_duration_ms,
+            total_tokens=agg.total_tokens,
+            by_tool=agg.by_tool,
+            by_user=agg.by_user,
+            by_status=agg.by_status,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve usage: {e}") from e
+
+
+@router.get("/tools/usage/pending", response_model=ToolUsagePendingResponse)
+async def get_tool_usage_pending(
+    user: UserContext = Depends(get_current_user),
+) -> ToolUsagePendingResponse:
+    """Get information about pending usage events.
+
+    Shows how many events are waiting to be flushed to storage.
+    Useful for debugging and monitoring the usage tracking system.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    tracker = _get_usage_tracker()
+
+    return ToolUsagePendingResponse(
+        pending_count=tracker.get_pending_count(),
+        stored_count=tracker.get_stored_count(),
+        using_firestore=tracker._use_firestore,
+    )
+
+
+@router.post("/tools/usage/flush")
+async def flush_tool_usage(
+    user: UserContext = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Force flush pending usage events to storage.
+
+    Normally events are batched and flushed periodically.
+    Use this to force immediate persistence.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    tracker = _get_usage_tracker()
+
+    pending_before = tracker.get_pending_count()
+    await tracker.flush()
+    pending_after = tracker.get_pending_count()
+
+    return {
+        "status": "flushed",
+        "events_flushed": pending_before - pending_after,
+        "pending_remaining": pending_after,
+    }
+
+
+# ============================================================================
+# Session Status Endpoints
+# ============================================================================
+
+
+class SessionTimeoutConfig(BaseModel):
+    """Session timeout configuration."""
+
+    warning_minutes: int = Field(..., description="Minutes before timeout warning")
+    timeout_minutes: int = Field(..., description="Minutes until session times out")
+    check_interval_seconds: int = Field(..., description="How often timeout is checked")
+
+
+class SessionStatusResponse(BaseModel):
+    """Overall session management status."""
+
+    timeout_config: SessionTimeoutConfig = Field(..., description="Timeout configuration")
+    active_sessions_tracked: int = Field(..., description="Sessions being tracked for timeout")
+    sessions_warned: int = Field(..., description="Sessions that have received timeout warning")
+    recovery_window_days: int = Field(..., description="Days sessions are recoverable")
+
+
+def _get_timeout_manager():
+    """Lazy import to avoid circular dependencies."""
+    from app.adk.session.timeout import get_timeout_manager
+
+    return get_timeout_manager()
+
+
+def _get_recovery_service():
+    """Lazy import to avoid circular dependencies."""
+    from app.adk.session.recovery import get_recovery_service
+
+    return get_recovery_service()
+
+
+@router.get("/sessions/status", response_model=SessionStatusResponse)
+async def get_session_status(
+    user: UserContext = Depends(get_current_user),
+) -> SessionStatusResponse:
+    """Get session management system status.
+
+    Returns information about timeout configuration and active tracking.
+    Useful for understanding session lifecycle management.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    try:
+        timeout_mgr = _get_timeout_manager()
+        recovery_svc = _get_recovery_service()
+
+        return SessionStatusResponse(
+            timeout_config=SessionTimeoutConfig(
+                warning_minutes=timeout_mgr.config.warning_minutes,
+                timeout_minutes=timeout_mgr.config.timeout_minutes,
+                check_interval_seconds=timeout_mgr.config.check_interval_seconds,
+            ),
+            active_sessions_tracked=len(timeout_mgr._activity),
+            sessions_warned=len(timeout_mgr._warned),
+            recovery_window_days=recovery_svc.RECOVERY_WINDOW_DAYS,
+        )
+    except Exception:
+        # Return defaults if services not initialized
+        return SessionStatusResponse(
+            timeout_config=SessionTimeoutConfig(
+                warning_minutes=25,
+                timeout_minutes=30,
+                check_interval_seconds=60,
+            ),
+            active_sessions_tracked=0,
+            sessions_warned=0,
+            recovery_window_days=7,
+        )
+
+
+class RecoverableSessionInfo(BaseModel):
+    """Information about a recoverable session."""
+
+    session_id: str
+    conversation_name: str | None
+    created_at: datetime
+    last_updated: datetime
+    message_count: int
+    preview: str | None = Field(None, description="Preview of last message")
+
+
+@router.get("/sessions/recoverable", response_model=list[RecoverableSessionInfo])
+async def get_recoverable_sessions(
+    limit: int = Query(10, ge=1, le=50, description="Max sessions to return"),
+    user: UserContext = Depends(get_current_user),
+) -> list[RecoverableSessionInfo]:
+    """List recoverable sessions for the current user.
+
+    Returns sessions from the last 7 days that can be recovered.
+    Sessions are sorted by last updated time (most recent first).
+
+    Requires: Authenticated user
+    """
+    try:
+        recovery_svc = _get_recovery_service()
+        sessions = await recovery_svc.list_recoverable_sessions(
+            user_id=user.user_id,
+            limit=limit,
+        )
+
+        return [
+            RecoverableSessionInfo(
+                session_id=s.session_id,
+                conversation_name=s.conversation_name,
+                created_at=s.created_at,
+                last_updated=s.last_updated,
+                message_count=s.message_count,
+                preview=s.preview,
+            )
+            for s in sessions
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list recoverable sessions: {e}"
+        ) from e
+
+
+# ============================================================================
+# Admin Dashboard Summary Endpoint
+# ============================================================================
+
+
+class Sprint3StatusResponse(BaseModel):
+    """Complete Sprint 3 system status for admin dashboard."""
+
+    mcp_servers: MCPStatusResponse = Field(..., description="MCP server status")
+    mcp_health: MCPHealthResponse = Field(..., description="MCP health status")
+    tool_usage_pending: ToolUsagePendingResponse = Field(
+        ..., description="Pending usage events"
+    )
+    session_status: SessionStatusResponse = Field(..., description="Session management status")
+    features_enabled: dict[str, bool] = Field(..., description="Sprint 3 features status")
+
+
+@router.get("/admin/dashboard", response_model=Sprint3StatusResponse)
+async def get_admin_dashboard(
+    user: UserContext = Depends(get_current_user),
+) -> Sprint3StatusResponse:
+    """Get complete Sprint 3 system status.
+
+    Combines all monitoring endpoints into a single admin dashboard view.
+    Shows MCP servers, health, usage tracking, and session management.
+
+    Requires: Authenticated user (admin recommended)
+    """
+    # Get MCP status
+    manager = _get_mcp_manager()
+    status = manager.get_status()
+
+    mcp_status = MCPStatusResponse(
+        loaded_count=status["loaded_count"],
+        max_servers=status["max_servers"],
+        total_tokens=status["total_tokens"],
+        max_tokens=status["max_tokens"],
+        servers=[
+            MCPServerInfo(
+                name=s["name"],
+                tool_count=s["tool_count"],
+                tokens=s["tokens"],
+                loaded_at=s["loaded_at"],
+                last_used=s["last_used"],
+                health_status=s["health_status"],
+            )
+            for s in status["servers"]
+        ],
+    )
+
+    # Get health status
+    servers = status["servers"]
+    unhealthy_count = sum(1 for s in servers if s["health_status"] == "unhealthy")
+    degraded_count = sum(1 for s in servers if s["health_status"] == "degraded")
+    healthy_count = status["loaded_count"] - unhealthy_count - degraded_count
+
+    overall = "healthy"
+    if unhealthy_count > 0:
+        overall = "unhealthy"
+    elif degraded_count > 0:
+        overall = "degraded"
+
+    mcp_health = MCPHealthResponse(
+        overall_status=overall,
+        total_servers=status["loaded_count"],
+        healthy_count=healthy_count,
+        degraded_count=degraded_count,
+        unhealthy_count=unhealthy_count,
+        servers=[
+            MCPServerInfo(
+                name=s["name"],
+                tool_count=s["tool_count"],
+                tokens=s["tokens"],
+                loaded_at=s["loaded_at"],
+                last_used=s["last_used"],
+                health_status=s["health_status"],
+            )
+            for s in servers
+        ],
+    )
+
+    # Get usage tracker status
+    tracker = _get_usage_tracker()
+    usage_pending = ToolUsagePendingResponse(
+        pending_count=tracker.get_pending_count(),
+        stored_count=tracker.get_stored_count(),
+        using_firestore=tracker._use_firestore,
+    )
+
+    # Get session status
+    session_status = await get_session_status(user)
+
+    # Check which features are enabled
+    features_enabled = {
+        "mcp_lazy_loading": True,  # Always enabled in Sprint 3
+        "mcp_lru_eviction": True,
+        "mcp_health_monitoring": True,
+        "oauth_header_auth": True,
+        "tool_usage_tracking": True,
+        "session_recovery": True,
+        "session_timeout": True,
+    }
+
+    return Sprint3StatusResponse(
+        mcp_servers=mcp_status,
+        mcp_health=mcp_health,
+        tool_usage_pending=usage_pending,
+        session_status=session_status,
+        features_enabled=features_enabled,
+    )

@@ -45,6 +45,7 @@ from .routers import (
     intuitions,
     items,
     knowledge_graph,
+    mcp,
     metrics,
     monitoring,
     monitoring_topics,
@@ -212,6 +213,7 @@ app.include_router(
 )
 app.include_router(knowledge_graph.router)  # Knowledge graph router already has its prefix
 app.include_router(tools.router)  # Tools router already has its prefix
+app.include_router(mcp.router)  # MCP server management router already has its prefix
 
 
 # Health and root endpoints below routers
