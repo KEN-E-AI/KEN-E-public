@@ -120,6 +120,7 @@ def invoke_agent_with_retry(
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
     max_attempts: int = 3,
+    state: Optional[dict[str, Any]] = None,
 ) -> str:
     """
     Invoke an agent with automatic retry on failure.
@@ -132,6 +133,7 @@ def invoke_agent_with_retry(
         user_id: Optional user ID for context
         session_id: Optional session ID for context
         max_attempts: Maximum number of retry attempts
+        state: Optional initial session state for the child agent
 
     Returns:
         The agent's response
@@ -143,7 +145,7 @@ def invoke_agent_with_retry(
 
     @retry_with_exponential_backoff(max_attempts=max_attempts)
     def _invoke() -> str:
-        return invoke_agent_sync(agent, query, user_id, session_id)
+        return invoke_agent_sync(agent, query, user_id, session_id, state=state)
 
     return _invoke()
 

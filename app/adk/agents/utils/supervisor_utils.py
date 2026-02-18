@@ -4,7 +4,6 @@ Extracted from create_strategy_docs_supervisor.py to promote reuse.
 """
 
 import asyncio
-import base64
 import concurrent.futures
 import functools
 import json
@@ -87,6 +86,7 @@ def invoke_agent_sync(
     query: str,
     user_id: str | None = None,
     session_id: str | None = None,
+    state: dict[str, Any] | None = None,
 ) -> str:
     """
     Synchronous wrapper for agent invocation with proper async handling.
@@ -109,7 +109,7 @@ def invoke_agent_sync(
         )
 
         await session_service.create_session(
-            app_name=agent.name, user_id=user_id, session_id=session_id
+            app_name=agent.name, user_id=user_id, session_id=session_id, state=state
         )
 
         user_message = Content(role="user", parts=[Part.from_text(text=query)])
@@ -144,32 +144,6 @@ def invoke_agent_sync(
     except Exception as e:
         logger.error(f"Error in sync agent invocation: {e!s}")
         return f"Error: Failed to complete the request - {e!s}"
-
-
-def encode_ga_credentials(ga_creds: dict[str, Any]) -> str:
-    """Encode GA credentials for passing to GA agent.
-
-    Args:
-        ga_creds: Dictionary containing GA credentials with keys:
-            - access_token
-            - refresh_token
-            - tenant_id
-            - selected_property_ids (optional)
-            - selected_properties (optional)
-
-    Returns:
-        Base64-encoded JSON string containing credentials
-    """
-    creds_json = json.dumps(
-        {
-            "access_token": ga_creds["access_token"],
-            "refresh_token": ga_creds["refresh_token"],
-            "tenant_id": ga_creds["tenant_id"],
-            "selected_property_ids": ga_creds.get("selected_property_ids", []),
-            "selected_properties": ga_creds.get("selected_properties", []),
-        }
-    )
-    return base64.b64encode(creds_json.encode()).decode()
 
 
 def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
@@ -218,10 +192,10 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
             logger.info(f"  - ga_credentials: {'present' if ga_credentials else 'none'}")
 
             # Build tenant_context from session state
+            # Credentials flow via McpToolset header_provider (no encoding needed)
             if ga_credentials:
                 tenant_context = {
-                    "tenant_id": ga_credentials["tenant_id"],
-                    "tenant_credentials": encode_ga_credentials(ga_credentials),
+                    "tenant_id": ga_credentials.get("tenant_id"),
                     "selected_property_ids": ga_credentials.get(
                         "selected_property_ids", []
                     ),

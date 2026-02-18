@@ -241,6 +241,92 @@ class TestOAuthCallback:
         finally:
             pass  # No cleanup needed with mocked service
 
+    def test_google_oauth_callback_preserves_refresh_token_on_reauth(self):
+        """Test that re-authorization preserves the existing refresh token when Google omits it."""
+        from datetime import timezone
+
+        from src.kene_api.models.oauth_models import OAuthState
+
+        client = TestClient(app, follow_redirects=False)
+
+        mock_oauth_state = OAuthState(
+            state_token="test_state",
+            user_id="test_user",
+            account_id="test_account",
+            created_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+            integration_type="google_analytics",
+        )
+
+        with patch(
+            "src.kene_api.routers.oauth_integrations.OAuthStateService"
+        ) as MockOAuthStateService:
+            mock_oauth_service = Mock()
+            mock_oauth_service.get_state = AsyncMock(return_value=mock_oauth_state)
+            mock_oauth_service.delete_state = AsyncMock(return_value=True)
+            MockOAuthStateService.return_value = mock_oauth_service
+
+            with patch("httpx.AsyncClient") as MockAsyncClient:
+                mock_client = MockAsyncClient.return_value.__aenter__.return_value
+
+                # Google re-auth response: no refresh_token
+                mock_token_response = Mock()
+                mock_token_response.status_code = 200
+                mock_token_response.json.return_value = {
+                    "access_token": "new_access_token",
+                    "expires_in": 3600,
+                    "scope": "test_scope",
+                }
+                mock_client.post = AsyncMock(return_value=mock_token_response)
+
+                mock_user_response = Mock()
+                mock_user_response.status_code = 200
+                mock_user_response.json.return_value = {
+                    "email": "test@example.com",
+                    "id": "12345",
+                }
+                mock_client.get = AsyncMock(return_value=mock_user_response)
+
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.get_firestore_service"
+                ):
+                    with patch(
+                        "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+                    ) as mock_service:
+                        mock_service_instance = Mock()
+                        # Existing credentials with a valid refresh token
+                        mock_service_instance.get_credentials = AsyncMock(
+                            return_value={
+                                "access_token": "old_access_token",
+                                "refresh_token": "existing_refresh_token",
+                            }
+                        )
+                        mock_service_instance.store_credentials = AsyncMock()
+                        mock_service.return_value = mock_service_instance
+
+                        with patch(
+                            "src.kene_api.routers.oauth_integrations.get_frontend_url",
+                            return_value="http://frontend.example.com",
+                        ):
+                            with patch(
+                                "src.kene_api.routers.oauth_integrations.get_google_redirect_uri",
+                                return_value="http://localhost:8000/api/oauth/callback/google",
+                            ):
+                                response = client.get(
+                                    "/api/oauth/callback/google",
+                                    params={
+                                        "code": "test_auth_code",
+                                        "state": "test_state",
+                                    },
+                                )
+
+                        assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+
+                        # Verify stored credentials preserved the existing refresh token
+                        stored_creds = mock_service_instance.store_credentials.call_args
+                        assert stored_creds.kwargs["credentials"]["refresh_token"] == "existing_refresh_token"
+                        assert stored_creds.kwargs["credentials"]["access_token"] == "new_access_token"
+
     def test_google_oauth_callback_invalid_state(self, client):
         """Test OAuth callback with invalid state token."""
         # Create client with follow_redirects=False to handle redirect response
@@ -403,10 +489,45 @@ class TestStatus:
         finally:
             app.dependency_overrides.clear()
 
+    def test_get_google_analytics_status_configured_despite_expired_access_token(
+        self, client, mock_user_context, mock_firestore_service
+    ):
+        """Test that expired access token with valid refresh token still shows CONFIGURED."""
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+
+        try:
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService"
+            ) as mock_service:
+                mock_service_instance = Mock()
+                mock_service_instance.get_credentials = AsyncMock(
+                    return_value={
+                        "access_token": "test_token",
+                        "refresh_token": "valid_refresh_token",
+                        "expires_at": (
+                            datetime.now() - timedelta(hours=1)
+                        ).timestamp(),  # Access token expired
+                        "user_email": "test@example.com",
+                    }
+                )
+                mock_service.return_value = mock_service_instance
+
+                response = client.get(
+                    "/api/oauth/status/test_account_id/google-analytics",
+                )
+
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert data["status"] == IntegrationStatus.CONFIGURED.value
+            assert data["error_message"] is None
+        finally:
+            app.dependency_overrides.clear()
+
     def test_get_google_analytics_status_expired(
         self, client, mock_user_context, mock_firestore_service
     ):
-        """Test checking status of expired Google Analytics integration."""
+        """Test checking status of expired Google Analytics integration when no refresh token."""
         app.dependency_overrides[get_current_user_context] = lambda: mock_user_context
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 

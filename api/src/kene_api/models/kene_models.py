@@ -106,6 +106,16 @@ REGION_TO_HOLIDAY_ACTIVITY_ID = {
 }
 
 
+class RecoverableSessionInfo(BaseModel):
+    """Info about a recoverable session."""
+
+    session_id: str
+    conversation_name: str | None = None
+    last_updated: str
+    message_count: int = 0
+    preview: str | None = None
+
+
 class RelationshipType(str, Enum):
     """Enum for relationship types."""
 

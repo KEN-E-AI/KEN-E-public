@@ -42,6 +42,7 @@ import Settings from "./pages/Settings";
 import AdminSettings from "./pages/AdminSettings";
 import AdminIndustryKeywords from "./pages/AdminIndustryKeywords";
 import AgentConfigManagement from "./pages/AgentConfigManagement";
+import ToolUsageDashboard from "./pages/ToolUsageDashboard";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
@@ -327,6 +328,14 @@ const App = () => (
                     element={
                       <ProtectedRoute>
                         <AgentConfigManagement />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings/admin/tool-usage"
+                    element={
+                      <ProtectedRoute>
+                        <ToolUsageDashboard />
                       </ProtectedRoute>
                     }
                   />

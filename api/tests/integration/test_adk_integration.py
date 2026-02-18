@@ -17,6 +17,8 @@
 import os
 import sys
 import logging
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any
@@ -182,18 +184,19 @@ async def test_conversation_listing(
     Test listing conversations functionality.
     """
     # Mock session list response with async function
+    now = datetime.now(timezone.utc)
     mock_sessions = [
         MagicMock(
             id="session-1",
             display_name="Test Conversation 1",
-            create_time=MagicMock(timestamp=lambda: 1234567890),
-            update_time=MagicMock(timestamp=lambda: 1234567890),
+            create_time=now,
+            update_time=now,
         ),
         MagicMock(
             id="session-2",
             display_name="Test Conversation 2",
-            create_time=MagicMock(timestamp=lambda: 1234567891),
-            update_time=MagicMock(timestamp=lambda: 1234567891),
+            create_time=now,
+            update_time=now,
         ),
     ]
 

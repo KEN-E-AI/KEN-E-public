@@ -91,109 +91,70 @@ def dispatch_to_google_analytics(
     tool_context: ToolContext | None = None,
     tenant_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """
-    Dispatch Google Analytics queries with tenant context from session state.
+    """Dispatch Google Analytics queries to the specialized agent.
+
+    Credentials flow automatically via session state -> McpToolset header_provider
+    -> HTTP headers. No credential encoding or query injection needed.
 
     Args:
         query: The Google Analytics query or question from the user
         tool_context: ADK ToolContext with session state (auto-injected by ADK)
         tenant_context: Legacy parameter for backward compatibility
     """
-    # Import here to avoid circular dependencies
-    # Use internal impl to avoid deprecation warning - context is already loaded from session state
     from shared.context_utils import (
         inject_campaign_context,
         inject_organization_context,
     )
 
     from ..google_analytics_agent_v4 import google_analytics_agent_v4
-    from .supervisor_utils import encode_ga_credentials
 
     try:
-        logger.info("🔄 Routing Google Analytics query to specialized agent...")
+        logger.info("Routing Google Analytics query to specialized agent...")
 
-        # Strategy 1: Extract from session state (preferred)
         account_id = None
         ga_credentials = None
+        tenant_id = None
 
         if tool_context and hasattr(tool_context, 'state'):
             account_id = tool_context.state.get("account_id")
             ga_credentials = tool_context.state.get("ga_credentials")
-            logger.info(f"Retrieved credentials from session state for account: {account_id}")
-
-            # Build tenant_context from session state
             if ga_credentials:
+                tenant_id = ga_credentials.get("tenant_id")
                 selected_property_ids = ga_credentials.get("selected_property_ids", [])
+                logger.info(
+                    f"GA credentials in session state for account: {account_id}, "
+                    f"properties: {len(selected_property_ids)}"
+                )
 
-                tenant_context = {
-                    "tenant_id": ga_credentials["tenant_id"],
-                    "tenant_credentials": encode_ga_credentials(ga_credentials),
-                    "selected_property_ids": selected_property_ids,
-                    "account_id": account_id,
-                }
-                # Set default property ID if only one property
+                # Include property ID context in the query so the agent knows which property to use
                 if len(selected_property_ids) == 1:
-                    tenant_context["default_property_id"] = selected_property_ids[0]
-
-                logger.info(f"Built tenant_context with {len(selected_property_ids)} properties")
+                    query = f"[Property ID: {selected_property_ids[0]}] {query}"
+                elif selected_property_ids:
+                    query = f"[Available Property IDs: {', '.join(selected_property_ids)}] {query}"
+            else:
+                logger.info(f"No GA credentials in session state for account: {account_id}")
         elif tenant_context:
-            # Strategy 2: Fallback to passed tenant_context
             account_id = tenant_context.get("account_id")
-            logger.info("Using tenant_context from parameter (fallback)")
+            tenant_id = tenant_context.get("tenant_id")
 
-        # Inject pre-loaded organization context from session state
-        # Context is loaded in API layer (which has Neo4j access) and stored in session state
-        org_context = None
+        # Inject organization context from session state
         if tool_context and hasattr(tool_context, 'state'):
             org_context = tool_context.state.get("organization_context")
             if org_context:
                 query = inject_organization_context(query, org_context)
                 logger.info(f"Injected organization context, new query length: {len(query)}")
 
-        # Inject campaign context if available in session state (on-demand loaded)
-        if tool_context and hasattr(tool_context, 'state'):
             campaign_context = tool_context.state.get("campaign_context")
             if campaign_context:
                 query = inject_campaign_context(query, campaign_context)
                 logger.info(f"Injected campaign context, new query length: {len(query)}")
 
-        # Fallback: use environment credentials for testing
-        if not tenant_context or not tenant_context.get("tenant_credentials"):
-            env_creds = os.getenv("GA_PERSONAL_CREDENTIALS")
-            if env_creds:
-                tenant_context = {
-                    "tenant_id": os.getenv("GA_TENANT_ID", "test-org"),
-                    "tenant_credentials": env_creds,
-                }
-                logger.info("Using test credentials from environment")
+        initial_state: dict[str, Any] | None = None
+        if ga_credentials:
+            initial_state = {"ga_credentials": ga_credentials}
 
-        # Prepare query with tenant context for GA agent
-        if (
-            tenant_context
-            and tenant_context.get("tenant_id")
-            and tenant_context.get("tenant_credentials")
-        ):
-            # Inject tenant context into the query for the GA agent
-            enhanced_query = f"TENANT_ID:{tenant_context['tenant_id']} TENANT_CREDS:{tenant_context['tenant_credentials']}"
-
-            # Include property IDs if available
-            if tenant_context.get("default_property_id"):
-                enhanced_query += f" PROPERTY_ID:{tenant_context['default_property_id']}"
-            elif tenant_context.get("selected_property_ids"):
-                property_ids = tenant_context['selected_property_ids']
-                if len(property_ids) == 1:
-                    enhanced_query += f" PROPERTY_ID:{property_ids[0]}"
-                else:
-                    enhanced_query += f" PROPERTY_IDS:{','.join(property_ids)}"
-
-            enhanced_query += f" {query}"
-        else:
-            enhanced_query = query
-            logger.warning("No credentials available for GA query")
-
-        # Use retry logic for robust agent invocation
         result = invoke_agent_with_retry(
-            google_analytics_agent_v4, enhanced_query, max_attempts=3
+            google_analytics_agent_v4, query, max_attempts=3, state=initial_state
         )
 
         return {
@@ -202,7 +163,7 @@ def dispatch_to_google_analytics(
             "result": result,
             "source": "google_analytics_specialist",
             "agent": "analytics",
-            "tenant_id": tenant_context.get("tenant_id") if tenant_context else None,
+            "tenant_id": tenant_id,
         }
     except Exception as e:
         logger.error(f"[GA-DISPATCH] Error in analytics agent dispatch: {e}")

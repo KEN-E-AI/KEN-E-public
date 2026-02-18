@@ -24,6 +24,7 @@ export interface ChatResponse {
   role: "assistant";
   content: string;
   session_id: string;
+  metadata?: { requires_reauth?: boolean; service?: string };
 }
 
 export interface ConversationInfo {
@@ -32,11 +33,32 @@ export interface ConversationInfo {
   created_at: string;
   last_updated: string;
   message_count: number;
+  preview?: string;
 }
 
 export interface ConversationListResponse {
   conversations: ConversationInfo[];
   total_count: number;
+}
+
+export interface RecoverableSessionInfo {
+  session_id: string;
+  conversation_name?: string;
+  last_updated: string;
+  message_count: number;
+  preview?: string;
+}
+
+export interface SessionRecoveryResponse {
+  success: boolean;
+  session_id: string | null;
+  conversation_history: Array<Record<string, unknown>> | null;
+  message_count: number;
+}
+
+export interface SessionActivityResponse {
+  status: string;
+  remaining_seconds: number | null;
 }
 
 class ChatService {
@@ -302,6 +324,47 @@ class ChatService {
     } catch (error) {
       console.error("Error deleting conversation:", error);
       return false;
+    }
+  }
+
+  /**
+   * Get sessions available for recovery (last 7 days).
+   */
+  async getRecoverableSessions(limit = 10): Promise<RecoverableSessionInfo[]> {
+    try {
+      const response = await this.apiClient.get<RecoverableSessionInfo[]>(
+        "/api/v1/chat/sessions/recoverable",
+        { params: { limit } },
+      );
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Error fetching recoverable sessions:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Recover a previous session, restoring state and conversation history.
+   */
+  async recoverSession(sessionId: string): Promise<SessionRecoveryResponse> {
+    const response = await this.apiClient.post<SessionRecoveryResponse>(
+      `/api/v1/chat/sessions/${sessionId}/recover`,
+    );
+    return response.data;
+  }
+
+  /**
+   * Record user activity to reset session timeout timer.
+   */
+  async recordActivity(sessionId: string): Promise<SessionActivityResponse> {
+    try {
+      const response = await this.apiClient.post<SessionActivityResponse>(
+        `/api/v1/chat/sessions/${sessionId}/activity`,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Error recording activity:", error);
+      return { status: "error", remaining_seconds: null };
     }
   }
 }

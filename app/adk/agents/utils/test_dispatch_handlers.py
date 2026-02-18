@@ -317,3 +317,54 @@ class TestRetryIntegration:
         mock_invoke.assert_called_once()
         kwargs = mock_invoke.call_args[1]
         assert kwargs["max_attempts"] == 3
+
+
+class TestDispatchToGoogleAnalyticsState:
+    """Test that dispatch_to_google_analytics passes session state to child agent."""
+
+    @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_passes_ga_credentials_as_initial_state(self, mock_invoke):
+        """Should pass ga_credentials as initial state when present in tool_context."""
+        mock_invoke.return_value = "Analytics data"
+
+        ga_creds = {
+            "access_token": "tok_abc",
+            "refresh_token": "ref_xyz",
+            "tenant_id": "acc_123",
+            "selected_property_ids": ["prop_1"],
+            "selected_properties": [],
+        }
+
+        mock_tool_context = MagicMock()
+        mock_tool_context.state = {
+            "account_id": "acc_123",
+            "ga_credentials": ga_creds,
+        }
+
+        dispatch_to_google_analytics("Get sessions", tool_context=mock_tool_context)
+
+        kwargs = mock_invoke.call_args[1]
+        assert kwargs["state"] == {"ga_credentials": ga_creds}
+
+    @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_passes_none_state_when_no_credentials(self, mock_invoke):
+        """Should pass state=None when no ga_credentials in tool_context."""
+        mock_invoke.return_value = "Limited response"
+
+        mock_tool_context = MagicMock()
+        mock_tool_context.state = {"account_id": "acc_123"}
+
+        dispatch_to_google_analytics("Get sessions", tool_context=mock_tool_context)
+
+        kwargs = mock_invoke.call_args[1]
+        assert kwargs["state"] is None
+
+    @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_passes_none_state_when_no_tool_context(self, mock_invoke):
+        """Should pass state=None when no tool_context at all."""
+        mock_invoke.return_value = "Response"
+
+        dispatch_to_google_analytics("Get sessions")
+
+        kwargs = mock_invoke.call_args[1]
+        assert kwargs["state"] is None

@@ -1,0 +1,144 @@
+# MCP Server Configurations for KEN-E
+#
+# Environment variables use ${VAR_NAME} syntax and are resolved at load time.
+# Supports:
+# - Raw values: ${MY_VAR} where MY_VAR=some_value
+# - Secret Manager: ${MY_VAR} where MY_VAR=sm://project/secret_name
+# - Full GCP paths: ${MY_VAR} where MY_VAR=projects/123/secrets/name/versions/latest
+#
+# Connection types:
+# - stdio: Local process communication via stdin/stdout (e.g., npx packages)
+# - sse: Remote server communication via Server-Sent Events
+
+servers:
+  google_analytics_mcp:
+    description: "Google Analytics 4 data access, reports, and audiences"
+    category: "analytics"
+    tool_count: 4
+    estimated_tokens: 1800
+    keywords:
+      - analytics
+      - ga4
+      - traffic
+      - users
+      - sessions
+      - pageviews
+      - metrics
+      - dimensions
+      - reports
+    connection:
+      connection_type: sse
+      url: "${GA_MCP_SERVER_URL}/mcp/sse"
+      headers:
+        Content-Type: "application/json"
+      timeout_seconds: 30
+    auth_type: "ga_oauth"
+    enabled: true
+
+  hubspot_mcp:
+    description: "HubSpot CRM contacts, deals, and marketing automation"
+    category: "crm"
+    tool_count: 18
+    estimated_tokens: 2700
+    keywords:
+      - crm
+      - contacts
+      - deals
+      - pipeline
+      - marketing
+      - hubspot
+      - leads
+      - companies
+    connection:
+      connection_type: sse
+      url: "${HUBSPOT_MCP_URL}"
+      headers:
+        Authorization: "Bearer ${HUBSPOT_API_KEY}"
+      timeout_seconds: 30
+    enabled: false  # Enable when HubSpot integration is ready
+
+  meta_ads_mcp:
+    description: "Meta (Facebook/Instagram) advertising campaigns and insights"
+    category: "advertising"
+    tool_count: 15
+    estimated_tokens: 2200
+    keywords:
+      - meta
+      - facebook
+      - instagram
+      - ads
+      - campaigns
+      - audiences
+      - insights
+      - social
+    connection:
+      connection_type: sse
+      url: "${META_MCP_URL}"
+      headers:
+        Authorization: "Bearer ${META_ACCESS_TOKEN}"
+      timeout_seconds: 45
+    enabled: false  # Enable when Meta integration is ready
+
+  google_ads_mcp:
+    description: "Google Ads campaigns, keywords, and performance data"
+    category: "advertising"
+    tool_count: 20
+    estimated_tokens: 3000
+    keywords:
+      - google
+      - ads
+      - campaigns
+      - keywords
+      - ppc
+      - sem
+      - performance
+      - conversions
+    connection:
+      connection_type: sse
+      url: "${GOOGLE_ADS_MCP_URL}"
+      headers:
+        Authorization: "Bearer ${GOOGLE_ADS_TOKEN}"
+      timeout_seconds: 30
+    enabled: false  # Enable when Google Ads integration is ready
+
+  slack_mcp:
+    description: "Slack messaging and channel management"
+    category: "communication"
+    tool_count: 10
+    estimated_tokens: 1500
+    keywords:
+      - slack
+      - messaging
+      - channels
+      - notifications
+      - team
+    connection:
+      connection_type: stdio
+      command: "npx"
+      args:
+        - "-y"
+        - "@anthropic/mcp-server-slack"
+      env:
+        SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}"
+        SLACK_APP_TOKEN: "${SLACK_APP_TOKEN}"
+    enabled: false  # Enable when Slack integration is configured
+
+  notion_mcp:
+    description: "Notion workspace, pages, and database access"
+    category: "productivity"
+    tool_count: 8
+    estimated_tokens: 1200
+    keywords:
+      - notion
+      - workspace
+      - pages
+      - databases
+      - notes
+      - docs
+    connection:
+      connection_type: sse
+      url: "https://mcp.notion.com/mcp"
+      headers:
+        Authorization: "Bearer ${NOTION_API_KEY}"
+      timeout_seconds: 30
+    enabled: false  # Enable when Notion integration is configured

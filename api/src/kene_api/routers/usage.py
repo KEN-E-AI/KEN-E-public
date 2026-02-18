@@ -389,3 +389,69 @@ def calculate_usage_summary(
 
 
 from uuid import uuid4  # Add this import at the top
+
+
+class ToolBreakdownResponse(BaseModel):
+    """Per-tool usage breakdown."""
+    calls: int
+    success: int
+    failure: int
+    success_rate: float
+    avg_duration_ms: Optional[float] = None
+
+
+class UserBreakdownResponse(BaseModel):
+    """Per-user usage breakdown."""
+    calls: int
+    success: int
+    failure: int
+    success_rate: float
+
+
+class ToolUsageResponse(BaseModel):
+    """Response model for tool usage aggregation."""
+    period_start: datetime = Field(..., description="Start of period")
+    period_end: datetime = Field(..., description="End of period")
+    total_calls: int = Field(..., description="Total tool calls")
+    success_count: int = Field(..., description="Successful calls")
+    failure_count: int = Field(..., description="Failed calls")
+    success_rate: float = Field(..., description="Success rate (0-1)")
+    avg_duration_ms: Optional[float] = Field(None, description="Average duration in ms")
+    total_tokens: int = Field(..., description="Total tokens used")
+    by_tool: Dict[str, ToolBreakdownResponse] = Field(..., description="Breakdown by tool")
+    by_user: Dict[str, UserBreakdownResponse] = Field(..., description="Breakdown by user")
+    by_status: Dict[str, int] = Field(..., description="Calls by status")
+
+
+@router.get("/tool-usage", response_model=ToolUsageResponse)
+async def get_tool_usage(
+    days: int = Query(30, ge=1, le=365, description="Number of days to aggregate"),
+    user: UserContext = Depends(get_current_user),
+) -> ToolUsageResponse:
+    """
+    Get aggregated tool usage statistics across all accounts.
+
+    Super-admin only. Returns usage aggregated by tool, user, and status
+    as required by Story 1.2.4 AC2.
+    """
+    if not user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin access required to view tool usage",
+        )
+
+    try:
+        from app.adk.tracking import get_usage_tracker
+
+        tracker = get_usage_tracker()
+        end = datetime.utcnow()
+        start = end - timedelta(days=days)
+        aggregation = await tracker.get_usage_aggregation(start, end)
+
+        return ToolUsageResponse(**aggregation.model_dump())
+    except Exception as e:
+        logger.error(f"Error retrieving tool usage: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve tool usage data",
+        )
