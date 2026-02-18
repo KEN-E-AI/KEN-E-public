@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -32,7 +32,7 @@ class TestOAuthCredentials:
 
     def test_full_credentials(self):
         """Test creating credentials with all fields."""
-        expires = datetime.utcnow() + timedelta(hours=1)
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
         creds = OAuthCredentials(
             access_token="access",
             refresh_token="refresh",
@@ -52,6 +52,14 @@ class TestOAuthCredentials:
         assert creds.provider == "google"
 
 
+def _make_request(headers: dict[str, str] | None = None) -> MagicMock:
+    """Create a mock request with proper headers dict."""
+    request = MagicMock()
+    request.headers = headers or {}
+    request.json = AsyncMock(side_effect=Exception("No body"))
+    return request
+
+
 class TestAuthHeaderMiddleware:
     """Tests for AuthHeaderMiddleware."""
 
@@ -63,9 +71,7 @@ class TestAuthHeaderMiddleware:
     @pytest.mark.asyncio
     async def test_simple_bearer_token(self, middleware):
         """Test extraction of simple bearer token."""
-        request = MagicMock()
-        request.json = AsyncMock(side_effect=Exception("No body"))
-
+        request = _make_request()
         auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials="my_access_token")
 
         credentials, source = await middleware.extract_credentials(request, auth)
@@ -75,11 +81,8 @@ class TestAuthHeaderMiddleware:
         assert credentials.refresh_token is None
 
     @pytest.mark.asyncio
-    async def test_base64_encoded_bearer_token(self, middleware):
-        """Test extraction of base64-encoded full credentials."""
-        request = MagicMock()
-        request.json = AsyncMock(side_effect=Exception("No body"))
-
+    async def test_x_oauth_credentials_header(self, middleware):
+        """Test extraction of full credentials via X-OAuth-Credentials header."""
         full_creds = {
             "access_token": "token123",
             "refresh_token": "refresh456",
@@ -87,9 +90,9 @@ class TestAuthHeaderMiddleware:
             "scopes": ["analytics.readonly"],
         }
         encoded = base64.b64encode(json.dumps(full_creds).encode()).decode()
-        auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials=encoded)
+        request = _make_request(headers={"X-OAuth-Credentials": encoded})
 
-        credentials, source = await middleware.extract_credentials(request, auth)
+        credentials, source = await middleware.extract_credentials(request, None)
 
         assert credentials.access_token == "token123"
         assert credentials.refresh_token == "refresh456"
@@ -98,30 +101,39 @@ class TestAuthHeaderMiddleware:
         assert source == "header"
 
     @pytest.mark.asyncio
-    async def test_base64_with_expiry_timestamp(self, middleware):
-        """Test base64 credentials with numeric timestamp expiry."""
-        request = MagicMock()
-        request.json = AsyncMock(side_effect=Exception("No body"))
-
-        expires_timestamp = datetime.utcnow().timestamp() + 3600
+    async def test_x_oauth_credentials_with_expiry(self, middleware):
+        """Test X-OAuth-Credentials with numeric timestamp expiry."""
+        expires_timestamp = datetime.now(timezone.utc).timestamp() + 3600
         full_creds = {
             "access_token": "token",
             "expires_at": expires_timestamp,
         }
         encoded = base64.b64encode(json.dumps(full_creds).encode()).decode()
-        auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials=encoded)
+        request = _make_request(headers={"X-OAuth-Credentials": encoded})
 
-        credentials, source = await middleware.extract_credentials(request, auth)
+        credentials, source = await middleware.extract_credentials(request, None)
 
         assert credentials.access_token == "token"
         assert credentials.expires_at is not None
-        # Should be within 1 hour from now
-        assert credentials.expires_at > datetime.utcnow()
+        assert credentials.expires_at > datetime.now(timezone.utc)
+
+    @pytest.mark.asyncio
+    async def test_x_oauth_credentials_preferred_over_bearer(self, middleware):
+        """Test that X-OAuth-Credentials takes priority over Authorization header."""
+        full_creds = {"access_token": "oauth_creds_token"}
+        encoded = base64.b64encode(json.dumps(full_creds).encode()).decode()
+        request = _make_request(headers={"X-OAuth-Credentials": encoded})
+        auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bearer_token")
+
+        credentials, source = await middleware.extract_credentials(request, auth)
+
+        assert credentials.access_token == "oauth_creds_token"
 
     @pytest.mark.asyncio
     async def test_legacy_body_credentials(self, middleware):
         """Test extraction of legacy body-based credentials."""
         request = MagicMock()
+        request.headers = {}
 
         body_creds = {
             "access_token": "old_token",
@@ -141,7 +153,8 @@ class TestAuthHeaderMiddleware:
     async def test_no_credentials_raises_401(self, middleware):
         """Test that missing credentials raises 401."""
         request = MagicMock()
-        request.json = AsyncMock(return_value={})  # No tenant_credentials
+        request.headers = {}
+        request.json = AsyncMock(return_value={})
 
         with pytest.raises(HTTPException) as exc_info:
             await middleware.extract_credentials(request, None)
@@ -154,18 +167,16 @@ class TestAuthHeaderMiddleware:
     async def test_header_preferred_over_body(self, middleware):
         """Test that header credentials are preferred over body."""
         request = MagicMock()
+        request.headers = {}
 
-        # Body credentials available
         body_creds = {"access_token": "body_token"}
         encoded = base64.b64encode(json.dumps(body_creds).encode()).decode()
         request.json = AsyncMock(return_value={"tenant_credentials": encoded})
 
-        # Header credentials also available
         auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials="header_token")
 
         credentials, source = await middleware.extract_credentials(request, auth)
 
-        # Should use header, not body
         assert credentials.access_token == "header_token"
         assert source == "header"
 
@@ -173,6 +184,7 @@ class TestAuthHeaderMiddleware:
     async def test_invalid_body_credentials_raises_400(self, middleware):
         """Test that invalid body credentials raise 400."""
         request = MagicMock()
+        request.headers = {}
         request.json = AsyncMock(
             return_value={"tenant_credentials": "not_valid_base64!!"}
         )
@@ -198,15 +210,24 @@ class TestParseBearerToken:
         assert creds.access_token == "simple_token"
         assert creds.refresh_token is None
 
-    def test_invalid_base64_treated_as_simple(self, middleware):
-        """Test that invalid base64 is treated as simple token."""
-        # This isn't valid base64/JSON
-        token = "not-base64-json-123"
-        creds = middleware._parse_bearer_token(token)
+    def test_base64_treated_as_simple_token(self, middleware):
+        """Bearer tokens are always treated as simple tokens (no base64 decoding)."""
+        full_creds = {"access_token": "inner_token"}
+        encoded = base64.b64encode(json.dumps(full_creds).encode()).decode()
 
-        assert creds.access_token == token
+        creds = middleware._parse_bearer_token(encoded)
 
-    def test_valid_base64_with_full_creds(self, middleware):
+        assert creds.access_token == encoded
+
+
+class TestParseCredentialBundle:
+    """Tests for _parse_credential_bundle method."""
+
+    @pytest.fixture
+    def middleware(self):
+        return AuthHeaderMiddleware()
+
+    def test_full_credential_bundle(self, middleware):
         """Test parsing base64-encoded full credentials."""
         full_creds = {
             "access_token": "access123",
@@ -217,7 +238,7 @@ class TestParseBearerToken:
         }
         encoded = base64.b64encode(json.dumps(full_creds).encode()).decode()
 
-        creds = middleware._parse_bearer_token(encoded)
+        creds = middleware._parse_credential_bundle(encoded)
 
         assert creds.access_token == "access123"
         assert creds.refresh_token == "refresh456"
@@ -233,12 +254,28 @@ class TestParseBearerToken:
         }
         encoded = base64.b64encode(json.dumps(full_creds).encode()).decode()
 
-        creds = middleware._parse_bearer_token(encoded)
+        creds = middleware._parse_credential_bundle(encoded)
 
         assert creds.expires_at is not None
         assert creds.expires_at.year == 2024
         assert creds.expires_at.month == 12
         assert creds.expires_at.day == 31
+
+    def test_invalid_base64_raises_400(self, middleware):
+        """Test that invalid base64 raises HTTPException."""
+        with pytest.raises(HTTPException) as exc_info:
+            middleware._parse_credential_bundle("not-valid-base64!!")
+
+        assert exc_info.value.status_code == 400
+
+    def test_invalid_json_raises_400(self, middleware):
+        """Test that valid base64 but invalid JSON raises 400."""
+        encoded = base64.b64encode(b"not json").decode()
+
+        with pytest.raises(HTTPException) as exc_info:
+            middleware._parse_credential_bundle(encoded)
+
+        assert exc_info.value.status_code == 400
 
 
 class TestParseBodyCredentials:
@@ -274,7 +311,6 @@ class TestParseBodyCredentials:
 
     def test_invalid_json_raises(self, middleware):
         """Test that valid base64 but invalid JSON raises."""
-        # Valid base64, but not JSON
         encoded = base64.b64encode(b"not json").decode()
 
         with pytest.raises(HTTPException) as exc_info:

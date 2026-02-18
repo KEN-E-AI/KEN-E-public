@@ -1212,6 +1212,14 @@ class AgentEngineClient:
                 timezone.utc
             )
 
+    def update_session_preview(self, user_id: str, session_id: str, preview: str) -> dict | None:
+        """Update the preview for a session and return the session metadata for caching."""
+        session_key = f"{user_id}:{session_id}"
+        if session_key in self._user_sessions:
+            self._user_sessions[session_key]["preview"] = preview
+            return self._user_sessions[session_key]
+        return None
+
     def generate_conversation_name(self, user_message: str) -> str:
         """Generate a meaningful conversation name from the user's message (1-2 words max)."""
         try:
@@ -2156,9 +2164,10 @@ async def chat_completion(
                 if len(response_content) > 100
                 else response_content
             )
-            session_key = f"{user_context.user_id}:{actual_session_id}"
-            if session_key in agent_client._user_sessions:
-                agent_client._user_sessions[session_key]["preview"] = preview
+            session_metadata = agent_client.update_session_preview(
+                user_context.user_id, actual_session_id, preview
+            )
+            if session_metadata:
                 try:
                     redis_service = get_redis_service()
                     if redis_service.is_available():
@@ -2167,7 +2176,7 @@ async def chat_completion(
                         )
                         redis_service.set_json(
                             cache_key,
-                            agent_client._user_sessions[session_key],
+                            session_metadata,
                             ttl_seconds=SESSION_METADATA_TTL_SECONDS,
                         )
                 except Exception:
@@ -2180,7 +2189,7 @@ async def chat_completion(
 
                 _recovery = _get_recovery()
                 _session = await _recovery._session_service.get_session(
-                    app_name="kene",
+                    app_name=APP_NAME,
                     user_id=user_context.user_id,
                     session_id=actual_session_id,
                 )

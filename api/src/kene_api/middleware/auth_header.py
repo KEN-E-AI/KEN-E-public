@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request
@@ -174,7 +174,7 @@ class AuthHeaderMiddleware:
             expires_at = None
             if creds_dict.get("expires_at"):
                 if isinstance(creds_dict["expires_at"], (int, float)):
-                    expires_at = datetime.fromtimestamp(creds_dict["expires_at"])
+                    expires_at = datetime.fromtimestamp(creds_dict["expires_at"], tz=timezone.utc)
                 elif isinstance(creds_dict["expires_at"], str):
                     expires_at = datetime.fromisoformat(
                         creds_dict["expires_at"].replace("Z", "+00:00")
@@ -219,7 +219,7 @@ class AuthHeaderMiddleware:
             expires_at = None
             if creds_dict.get("expires_at"):
                 if isinstance(creds_dict["expires_at"], (int, float)):
-                    expires_at = datetime.fromtimestamp(creds_dict["expires_at"])
+                    expires_at = datetime.fromtimestamp(creds_dict["expires_at"], tz=timezone.utc)
                 elif isinstance(creds_dict["expires_at"], str):
                     expires_at = datetime.fromisoformat(
                         creds_dict["expires_at"].replace("Z", "+00:00")

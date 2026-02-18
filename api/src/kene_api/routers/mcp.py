@@ -284,7 +284,7 @@ async def unload_mcp_server(
 # ============================================================================
 
 
-class ToolUsageResponse(BaseModel):
+class AccountToolUsageResponse(BaseModel):
     """Tool execution usage statistics."""
 
     period_start: datetime = Field(..., description="Start of the reporting period")
@@ -315,12 +315,12 @@ def _get_usage_tracker():
     return get_usage_tracker()
 
 
-@router.get("/tools/usage", response_model=ToolUsageResponse)
+@router.get("/tools/usage", response_model=AccountToolUsageResponse)
 async def get_tool_usage(
     account_id: str = Query(..., description="Account to get usage for"),
     days: int = Query(7, ge=1, le=90, description="Number of days to query"),
     user: UserContext = Depends(get_current_user),
-) -> ToolUsageResponse:
+) -> AccountToolUsageResponse:
     """Get tool execution usage statistics for an account.
 
     Returns aggregated statistics including:
@@ -349,7 +349,7 @@ async def get_tool_usage(
             end_date=end_date,
         )
 
-        return ToolUsageResponse(
+        return AccountToolUsageResponse(
             period_start=agg.period_start,
             period_end=agg.period_end,
             total_calls=agg.total_calls,
