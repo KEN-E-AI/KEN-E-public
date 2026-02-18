@@ -27,6 +27,7 @@ from shared.structured_logging import get_structured_logger, log_context
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
+from ..models.kene_models import RecoverableSessionInfo
 from ..auth.user_context import get_current_user_context
 from ..cache import ga_credentials_key, org_context_key, session_metadata_key
 from ..database import get_neo4j_service
@@ -2172,15 +2173,29 @@ async def chat_completion(
                 except Exception:
                     pass
 
-            # Detect re-auth requirement
+            # Check session state for re-auth requirement (set by before_tool_callback)
             metadata = None
-            reauth_markers = [
-                "authentication_required",
-                "requires_reauth",
-                "token has expired",
-            ]
-            if any(m in response_content.lower() for m in reauth_markers):
-                metadata = {"requires_reauth": True, "service": "google-analytics"}
+            try:
+                from app.adk.session.recovery import get_recovery_service as _get_recovery
+
+                _recovery = _get_recovery()
+                _session = await _recovery._session_service.get_session(
+                    app_name="kene",
+                    user_id=user_context.user_id,
+                    session_id=actual_session_id,
+                )
+                if _session and _session.state.get("_requires_reauth"):
+                    metadata = {
+                        "requires_reauth": True,
+                        "service": _session.state.get(
+                            "_reauth_service", "google-analytics"
+                        ),
+                    }
+                    # Clear the flag so it doesn't persist
+                    _session.state.pop("_requires_reauth", None)
+                    _session.state.pop("_reauth_service", None)
+            except Exception:
+                pass
 
             return ChatResponse(
                 content=response_content,
@@ -2422,16 +2437,6 @@ class SessionActivityResponse(BaseModel):
 
     status: str = "ok"
     remaining_seconds: int | None = None
-
-
-class RecoverableSessionInfo(BaseModel):
-    """Info about a recoverable session."""
-
-    session_id: str
-    conversation_name: str | None = None
-    last_updated: str
-    message_count: int = 0
-    preview: str | None = None
 
 
 @router.get("/sessions/recoverable")

@@ -151,6 +151,11 @@ class UsageTracker:
         self._use_firestore = True  # Will be set to False if Firestore unavailable
 
     @property
+    def is_using_firestore(self) -> bool:
+        """Whether Firestore backend is active."""
+        return self._use_firestore
+
+    @property
     def client(self) -> firestore.Client | None:
         """Lazy-load Firestore client.
 

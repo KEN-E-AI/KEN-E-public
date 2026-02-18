@@ -9,13 +9,25 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
+from ..models.kene_models import RecoverableSessionInfo
+
+logger = __import__("logging").getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
+
+
+def _require_admin(user: UserContext) -> None:
+    """Raise 403 if the user is not a super admin."""
+    if not user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
 
 
 class MCPServerInfo(BaseModel):
@@ -107,16 +119,17 @@ async def get_mcp_status(
     Returns current server load, token usage, and individual server details.
     Useful for monitoring resource usage and debugging connection issues.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     manager = _get_mcp_manager()
-    status = manager.get_status()
+    mcp_status = manager.get_status()
 
     return MCPStatusResponse(
-        loaded_count=status["loaded_count"],
-        max_servers=status["max_servers"],
-        total_tokens=status["total_tokens"],
-        max_tokens=status["max_tokens"],
+        loaded_count=mcp_status["loaded_count"],
+        max_servers=mcp_status["max_servers"],
+        total_tokens=mcp_status["total_tokens"],
+        max_tokens=mcp_status["max_tokens"],
         servers=[
             MCPServerInfo(
                 name=s["name"],
@@ -126,7 +139,7 @@ async def get_mcp_status(
                 last_used=s["last_used"],
                 health_status=s["health_status"],
             )
-            for s in status["servers"]
+            for s in mcp_status["servers"]
         ],
     )
 
@@ -140,15 +153,16 @@ async def get_mcp_health(
     Returns aggregated health metrics and per-server health status.
     Use this to identify unhealthy connections that may need attention.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     manager = _get_mcp_manager()
-    status = manager.get_status()
+    mcp_status = manager.get_status()
 
-    servers = status["servers"]
+    servers = mcp_status["servers"]
     unhealthy_count = sum(1 for s in servers if s["health_status"] == "unhealthy")
     degraded_count = sum(1 for s in servers if s["health_status"] == "degraded")
-    healthy_count = status["loaded_count"] - unhealthy_count - degraded_count
+    healthy_count = mcp_status["loaded_count"] - unhealthy_count - degraded_count
 
     overall = "healthy"
     if unhealthy_count > 0:
@@ -158,7 +172,7 @@ async def get_mcp_health(
 
     return MCPHealthResponse(
         overall_status=overall,
-        total_servers=status["loaded_count"],
+        total_servers=mcp_status["loaded_count"],
         healthy_count=healthy_count,
         degraded_count=degraded_count,
         unhealthy_count=unhealthy_count,
@@ -185,10 +199,11 @@ async def get_mcp_config(
     Shows all servers defined in configuration, whether enabled or not.
     Useful for understanding available integrations.
 
-    Requires: Authenticated user
+    Requires: Admin access
     """
+    _require_admin(user)
     loader = _get_mcp_config_loader()
-    configs = loader._configs
+    configs = loader.configs
 
     servers = []
     enabled_count = 0
@@ -224,8 +239,9 @@ async def load_mcp_server(
     Triggers lazy initialization of the specified server.
     Useful for pre-warming connections or testing configuration.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     manager = _get_mcp_manager()
 
     try:
@@ -251,8 +267,9 @@ async def unload_mcp_server(
     Gracefully closes the connection and frees resources.
     Useful for forcing reconnection or freeing resources.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     manager = _get_mcp_manager()
 
     if not manager.is_loaded(server_name):
@@ -345,8 +362,9 @@ async def get_tool_usage(
             by_user=agg.by_user,
             by_status=agg.by_status,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve usage: {e}") from e
+    except Exception:
+        logger.exception("Failed to retrieve tool usage")
+        raise HTTPException(status_code=500, detail="Failed to retrieve usage") from None
 
 
 @router.get("/tools/usage/pending", response_model=ToolUsagePendingResponse)
@@ -358,14 +376,15 @@ async def get_tool_usage_pending(
     Shows how many events are waiting to be flushed to storage.
     Useful for debugging and monitoring the usage tracking system.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     tracker = _get_usage_tracker()
 
     return ToolUsagePendingResponse(
         pending_count=tracker.get_pending_count(),
         stored_count=tracker.get_stored_count(),
-        using_firestore=tracker._use_firestore,
+        using_firestore=tracker.is_using_firestore,
     )
 
 
@@ -378,8 +397,9 @@ async def flush_tool_usage(
     Normally events are batched and flushed periodically.
     Use this to force immediate persistence.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     tracker = _get_usage_tracker()
 
     pending_before = tracker.get_pending_count()
@@ -438,8 +458,9 @@ async def get_session_status(
     Returns information about timeout configuration and active tracking.
     Useful for understanding session lifecycle management.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     try:
         timeout_mgr = _get_timeout_manager()
         recovery_svc = _get_recovery_service()
@@ -450,8 +471,8 @@ async def get_session_status(
                 timeout_minutes=timeout_mgr.config.timeout_minutes,
                 check_interval_seconds=timeout_mgr.config.check_interval_seconds,
             ),
-            active_sessions_tracked=len(timeout_mgr._activity),
-            sessions_warned=len(timeout_mgr._warned),
+            active_sessions_tracked=timeout_mgr.active_session_count,
+            sessions_warned=timeout_mgr.get_warned_session_count(),
             recovery_window_days=recovery_svc.RECOVERY_WINDOW_DAYS,
         )
     except Exception:
@@ -466,17 +487,6 @@ async def get_session_status(
             sessions_warned=0,
             recovery_window_days=7,
         )
-
-
-class RecoverableSessionInfo(BaseModel):
-    """Information about a recoverable session."""
-
-    session_id: str
-    conversation_name: str | None
-    created_at: datetime
-    last_updated: datetime
-    message_count: int
-    preview: str | None = Field(None, description="Preview of last message")
 
 
 @router.get("/sessions/recoverable", response_model=list[RecoverableSessionInfo])
@@ -502,17 +512,17 @@ async def get_recoverable_sessions(
             RecoverableSessionInfo(
                 session_id=s.session_id,
                 conversation_name=s.conversation_name,
-                created_at=s.created_at,
-                last_updated=s.last_updated,
+                last_updated=s.last_updated.isoformat() if hasattr(s.last_updated, "isoformat") else str(s.last_updated),
                 message_count=s.message_count,
                 preview=s.preview,
             )
             for s in sessions
         ]
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to list recoverable sessions")
         raise HTTPException(
-            status_code=500, detail=f"Failed to list recoverable sessions: {e}"
-        ) from e
+            status_code=500, detail="Failed to list recoverable sessions"
+        ) from None
 
 
 # ============================================================================
@@ -541,17 +551,18 @@ async def get_admin_dashboard(
     Combines all monitoring endpoints into a single admin dashboard view.
     Shows MCP servers, health, usage tracking, and session management.
 
-    Requires: Authenticated user (admin recommended)
+    Requires: Admin access
     """
+    _require_admin(user)
     # Get MCP status
     manager = _get_mcp_manager()
-    status = manager.get_status()
+    raw_status = manager.get_status()
 
     mcp_status = MCPStatusResponse(
-        loaded_count=status["loaded_count"],
-        max_servers=status["max_servers"],
-        total_tokens=status["total_tokens"],
-        max_tokens=status["max_tokens"],
+        loaded_count=raw_status["loaded_count"],
+        max_servers=raw_status["max_servers"],
+        total_tokens=raw_status["total_tokens"],
+        max_tokens=raw_status["max_tokens"],
         servers=[
             MCPServerInfo(
                 name=s["name"],
@@ -561,15 +572,15 @@ async def get_admin_dashboard(
                 last_used=s["last_used"],
                 health_status=s["health_status"],
             )
-            for s in status["servers"]
+            for s in raw_status["servers"]
         ],
     )
 
     # Get health status
-    servers = status["servers"]
+    servers = raw_status["servers"]
     unhealthy_count = sum(1 for s in servers if s["health_status"] == "unhealthy")
     degraded_count = sum(1 for s in servers if s["health_status"] == "degraded")
-    healthy_count = status["loaded_count"] - unhealthy_count - degraded_count
+    healthy_count = raw_status["loaded_count"] - unhealthy_count - degraded_count
 
     overall = "healthy"
     if unhealthy_count > 0:
@@ -579,7 +590,7 @@ async def get_admin_dashboard(
 
     mcp_health = MCPHealthResponse(
         overall_status=overall,
-        total_servers=status["loaded_count"],
+        total_servers=raw_status["loaded_count"],
         healthy_count=healthy_count,
         degraded_count=degraded_count,
         unhealthy_count=unhealthy_count,
@@ -601,7 +612,7 @@ async def get_admin_dashboard(
     usage_pending = ToolUsagePendingResponse(
         pending_count=tracker.get_pending_count(),
         stored_count=tracker.get_stored_count(),
-        using_firestore=tracker._use_firestore,
+        using_firestore=tracker.is_using_firestore,
     )
 
     # Get session status

@@ -110,10 +110,10 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
           const recoverable: RecoverableSessionInfo[] = userConversations.map(
             (c) => ({
               session_id: c.session_id,
-              conversation_name: c.conversation_name ?? null,
+              conversation_name: c.conversation_name,
               last_updated: c.last_updated,
               message_count: c.message_count,
-              preview: c.preview ?? null,
+              preview: c.preview,
             }),
           );
           setRecoverableSessions(recoverable);
@@ -376,14 +376,14 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
   const handleExpiredRecover = useCallback(async () => {
     const expired = expiredSessionRef.current;
     if (expired) {
-      // Restore the session that just timed out
-      setSessionId(expired.sessionId);
       if (expired.conversation) {
-        setCurrentConversation(expired.conversation);
+        await switchToConversation(expired.conversation);
+      } else {
+        setSessionId(expired.sessionId);
       }
       expiredSessionRef.current = null;
     }
-  }, []);
+  }, [switchToConversation]);
 
   const value = {
     messages,
@@ -413,12 +413,7 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
         onRecover={handleRecoverSession}
         onDismiss={() => {
           setShowRecoveryDialog(false);
-          // Auto-load most recent conversation when user dismisses
-          if (!sessionId && conversations.length > 0) {
-            const mostRecent = conversations[0];
-            setCurrentConversation(mostRecent);
-            setSessionId(mostRecent.session_id);
-          }
+          createNewChat();
         }}
       />
       <SessionTimeoutWarning

@@ -1,7 +1,4 @@
-import axios from "axios";
-import { auth } from "@/lib/firebase";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { apiClient } from "./apiClient";
 
 export type ToolBreakdown = {
   calls: number;
@@ -31,17 +28,6 @@ export type ToolUsageAggregation = {
   by_user: Record<string, UserBreakdown>;
   by_status: Record<string, number>;
 };
-
-const apiClient = axios.create({ baseURL: API_BASE_URL });
-
-apiClient.interceptors.request.use(async (config) => {
-  const user = auth.currentUser;
-  if (user) {
-    const token = await user.getIdToken();
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
 export async function getToolUsage(
   days: number = 30,

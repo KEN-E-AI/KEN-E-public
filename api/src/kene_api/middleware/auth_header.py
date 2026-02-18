@@ -5,7 +5,7 @@ to ADK's standard McpToolset (header-based credentials).
 
 Supports:
 1. Standard Bearer token: Authorization: Bearer {access_token}
-2. Base64-encoded full credentials in Bearer token (for refresh support)
+2. X-OAuth-Credentials header: Base64-encoded full credential bundle
 3. Legacy body-based auth (deprecated, with warning)
 
 This follows OAuth2/HTTP authentication standards and enables ADK MCPToolset integration.
@@ -39,7 +39,7 @@ class OAuthCredentials(BaseModel):
     This model represents the credentials needed for OAuth-protected
     MCP server access. It can be populated from either:
     - A simple Bearer token (access_token only)
-    - A base64-encoded JSON blob with full credentials
+    - A base64-encoded JSON blob via X-OAuth-Credentials header
     - Legacy body-based tenant_credentials (deprecated)
     """
 
@@ -55,11 +55,11 @@ class OAuthCredentials(BaseModel):
 
 
 class AuthHeaderMiddleware:
-    """Middleware to extract OAuth credentials from Authorization header.
+    """Middleware to extract OAuth credentials from request.
 
     Supports:
-    1. Standard Bearer token: Authorization: Bearer {access_token}
-    2. Base64-encoded full credentials for refresh token support
+    1. X-OAuth-Credentials header: Base64-encoded full credential bundle
+    2. Standard Bearer token: Authorization: Bearer {access_token}
     3. Legacy body-based auth (with deprecation warning)
 
     This enables migration from custom GAMCPClient to ADK McpToolset.
@@ -80,8 +80,9 @@ class AuthHeaderMiddleware:
         """Extract OAuth credentials from request.
 
         Priority:
-        1. Authorization header (preferred, standard)
-        2. Request body tenant_credentials (legacy, deprecated)
+        1. X-OAuth-Credentials header (full credential bundle)
+        2. Authorization header (simple token)
+        3. Request body tenant_credentials (legacy, deprecated)
 
         Args:
             request: FastAPI request object
@@ -93,7 +94,18 @@ class AuthHeaderMiddleware:
         Raises:
             HTTPException: If no valid credentials found (401)
         """
-        # Try header-based auth first (preferred)
+        # 1. Check X-OAuth-Credentials header (full credential bundle)
+        oauth_creds_header = request.headers.get("X-OAuth-Credentials")
+        if oauth_creds_header:
+            logger.debug(
+                "Extracting credentials from X-OAuth-Credentials header",
+                extra=log_context(
+                    component="auth_middleware", action="extract_oauth_header"
+                ),
+            )
+            return self._parse_credential_bundle(oauth_creds_header), "header"
+
+        # 2. Authorization header (simple token)
         if authorization and authorization.credentials:
             logger.debug(
                 "Extracting credentials from Authorization header",
@@ -101,7 +113,7 @@ class AuthHeaderMiddleware:
             )
             return self._parse_bearer_token(authorization.credentials), "header"
 
-        # Fall back to body-based auth (legacy)
+        # 3. Fall back to body-based auth (legacy)
         try:
             body = await request.json()
             if "tenant_credentials" in body:
@@ -132,26 +144,33 @@ class AuthHeaderMiddleware:
         )
 
     def _parse_bearer_token(self, token: str) -> OAuthCredentials:
-        """Parse a bearer token into credentials.
-
-        The token can be:
-        1. Simple access token string
-        2. Base64-encoded JSON with full credentials (for refresh support)
+        """Parse a simple bearer token into credentials.
 
         Args:
             token: Bearer token string
 
         Returns:
-            Parsed OAuth credentials
+            Parsed OAuth credentials with access_token only
         """
-        # First, try to decode as base64 JSON (full credentials)
+        return OAuthCredentials(access_token=token)
+
+    def _parse_credential_bundle(self, encoded: str) -> OAuthCredentials:
+        """Parse a base64-encoded credential bundle from X-OAuth-Credentials header.
+
+        Args:
+            encoded: Base64-encoded JSON string with full OAuth credentials
+
+        Returns:
+            Parsed OAuth credentials
+
+        Raises:
+            HTTPException: If credential format is invalid
+        """
         try:
-            # Add padding if needed for base64
-            padded = token + "=" * (4 - len(token) % 4)
+            padded = encoded + "=" * (4 - len(encoded) % 4)
             decoded = base64.b64decode(padded).decode()
             creds_dict = json.loads(decoded)
 
-            # Parse expires_at if present
             expires_at = None
             if creds_dict.get("expires_at"):
                 if isinstance(creds_dict["expires_at"], (int, float)):
@@ -162,7 +181,7 @@ class AuthHeaderMiddleware:
                     )
 
             return OAuthCredentials(
-                access_token=creds_dict.get("access_token", token),
+                access_token=creds_dict.get("access_token", ""),
                 refresh_token=creds_dict.get("refresh_token"),
                 token_type=creds_dict.get("token_type", "Bearer"),
                 expires_at=expires_at,
@@ -172,12 +191,11 @@ class AuthHeaderMiddleware:
                 client_secret=creds_dict.get("client_secret"),
                 token_uri=creds_dict.get("token_uri"),
             )
-        except Exception:
-            # Not valid base64 JSON - treat as simple access token
-            pass
-
-        # Simple access token
-        return OAuthCredentials(access_token=token)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid credential bundle format",
+            ) from e
 
     def _parse_body_credentials(self, encoded_creds: str) -> OAuthCredentials:
         """Parse legacy body-based credentials (tenant_credentials).
@@ -223,7 +241,7 @@ class AuthHeaderMiddleware:
         except Exception as e:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid credentials format: {e}",
+                detail="Invalid credentials format",
             ) from e
 
 

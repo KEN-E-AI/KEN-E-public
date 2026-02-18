@@ -257,13 +257,18 @@ class SessionTimeoutManager:
         key = f"{user_id}:{session_id}"
         return key in self._warned
 
+    @property
+    def active_session_count(self) -> int:
+        """Number of active sessions being monitored."""
+        return len(self._activity)
+
     def get_active_session_count(self) -> int:
         """Get number of tracked sessions.
 
         Returns:
             Number of active sessions being monitored
         """
-        return len(self._activity)
+        return self.active_session_count
 
     def get_warned_session_count(self) -> int:
         """Get number of warned sessions.

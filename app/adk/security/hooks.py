@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from shared.structured_logging import get_structured_logger, log_context
@@ -31,6 +32,57 @@ if TYPE_CHECKING:
     from google.adk.tools import BaseTool, ToolContext
 
 logger = get_structured_logger(__name__)
+
+
+async def _refresh_ga_token_if_needed(tool_context: ToolContext) -> None:
+    """Refresh GA access token if expired, using stored refresh_token.
+
+    The refresh token stays in session state and never crosses HTTP.
+    """
+    state = _get_state_dict(tool_context)
+    ga_creds = state.get("ga_credentials", {})
+    if not ga_creds.get("refresh_token") or not ga_creds.get("expires_at"):
+        return
+
+    expires_at = ga_creds["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+
+    # Refresh if token expires within 5 minutes
+    if datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
+        return
+
+    try:
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": ga_creds["refresh_token"],
+                    "client_id": ga_creds.get("client_id", ""),
+                    "client_secret": ga_creds.get("client_secret", ""),
+                },
+            )
+        if response.status_code == 200:
+            token_data = response.json()
+            ga_creds["access_token"] = token_data["access_token"]
+            ga_creds["expires_at"] = (
+                datetime.now(timezone.utc)
+                + timedelta(seconds=token_data.get("expires_in", 3600))
+            ).isoformat()
+            if hasattr(tool_context, "state") and hasattr(
+                tool_context.state, "__setitem__"
+            ):
+                tool_context.state["ga_credentials"] = ga_creds
+            logger.info("GA access token refreshed successfully")
+        else:
+            logger.warning(
+                f"GA token refresh failed with status {response.status_code}"
+            )
+    except Exception as e:
+        logger.warning(f"GA token refresh error: {e}")
 
 
 async def before_tool_execution_hook(
@@ -146,12 +198,19 @@ async def adk_before_tool_callback(
     if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
         tool_context.state["_tool_start_time"] = time.monotonic()
 
+    await _refresh_ga_token_if_needed(tool_context)
+
     result = await before_tool_execution_hook(tool.name, tool_context)
 
     if result.allowed:
         return None
 
     if result.requires_reauth:
+        if hasattr(tool_context, "state") and hasattr(
+            tool_context.state, "__setitem__"
+        ):
+            tool_context.state["_requires_reauth"] = True
+            tool_context.state["_reauth_service"] = "google-analytics"
         return {
             "error": "authentication_required",
             "message": result.reason,

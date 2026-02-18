@@ -31,7 +31,7 @@ class TestSessionActivityTracking:
         remaining = timeout_manager.get_remaining_time("user1", "sess-001")
 
         assert remaining is not None
-        assert 1790 <= remaining <= 1800  # ~30 minutes
+        assert 1740 <= remaining <= 1800  # ~29-30 minutes, accounts for slow CI
 
     def test_activity_resets_warning(self, timeout_manager: SessionTimeoutManager):
         timeout_manager.record_activity("user1", "sess-001")

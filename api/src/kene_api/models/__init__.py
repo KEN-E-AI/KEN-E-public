@@ -1,7 +1,7 @@
 """Models package for the Kene API."""
 
 # Import all classes from kene_models
-from .kene_models import (  # Constants; Enums; Base Models; Metric Models; Evidence Models; Activity Models; Insight Models; Notification Models; Analysis Models; Response Models; Organization Models
+from .kene_models import (  # Constants; Session Models; Enums; Base Models; Metric Models; Evidence Models; Activity Models; Insight Models; Notification Models; Analysis Models; Response Models; Organization Models
     ACCOUNT_ID_DESCRIPTION,
     ACTIVITY_ID_CREATE_DESCRIPTION,
     ACTIVITY_ID_DESCRIPTION,
@@ -18,6 +18,7 @@ from .kene_models import (  # Constants; Enums; Base Models; Metric Models; Evid
     AccountListResponse,
     AccountRequest,
     ActiveConfidenceLevel,
+    RecoverableSessionInfo,
     ActiveEvidence,
     Activity,
     ActivityListResponse,
@@ -86,6 +87,8 @@ __all__ = [
     "ACTIVITY_ID_FILTER_DESCRIPTION",
     "METRIC_ID_EDIT_DELETE_DESCRIPTION",
     "METRIC_ID_FILTER_DESCRIPTION",
+    # Session Models
+    "RecoverableSessionInfo",
     # Enums
     "RelationshipType",
     "DirectionType",

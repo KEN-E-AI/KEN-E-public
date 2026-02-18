@@ -168,6 +168,13 @@ class MCPConfigLoader:
         self.config_path = config_path or Path(__file__).parent / "config" / "mcp_servers.yaml"
         self._configs: dict[str, MCPServerConfig] = {}
 
+    @property
+    def configs(self) -> dict[str, MCPServerConfig]:
+        """Get loaded server configurations."""
+        if not self._configs:
+            self.load()
+        return dict(self._configs)
+
     def load(self) -> dict[str, MCPServerConfig]:
         """Load configurations from YAML file.
 

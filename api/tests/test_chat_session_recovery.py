@@ -42,10 +42,11 @@ class TestListRecoverableSessions:
             "message_count": 12,
             "account_id": "acct1",
         }
-        mock_session.last_update_time = datetime(
-            2026, 2, 10, 14, 30, tzinfo=timezone.utc
+        mock_session.update_time = datetime(
+            2026, 2, 17, 14, 30, tzinfo=timezone.utc
         )
-        mock_session.create_time = datetime(2026, 2, 10, 10, 0, tzinfo=timezone.utc)
+        mock_session.create_time = datetime(2026, 2, 17, 10, 0, tzinfo=timezone.utc)
+        mock_session.events = []
 
         mock_session_service.list_sessions.return_value = AsyncMock()
         mock_session_service.list_sessions.return_value.sessions = [mock_session]
@@ -54,7 +55,8 @@ class TestListRecoverableSessions:
             user_id="user1", limit=10
         )
 
-        assert len(sessions) >= 0  # May be 0 if parsing fails, or 1 if it succeeds
+        assert len(sessions) == 1
+        assert sessions[0].session_id == "sess-001"
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(

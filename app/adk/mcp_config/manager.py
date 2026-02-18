@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from shared.structured_logging import get_structured_logger, log_context
@@ -139,7 +139,7 @@ class MCPServerManager:
             # Return cached if already loaded
             if server_name in self._loaded_servers:
                 loaded = self._loaded_servers[server_name]
-                loaded.last_used = datetime.utcnow()
+                loaded.last_used = datetime.now(timezone.utc)
                 logger.info(
                     "MCP server cache hit",
                     extra=log_context(
@@ -176,7 +176,7 @@ class MCPServerManager:
                 ),
             )
 
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
             try:
                 tools, toolset = await asyncio.wait_for(
                     self._connect_server(config),
@@ -196,10 +196,10 @@ class MCPServerManager:
                     f"within {self.init_timeout}s"
                 ) from None
 
-            init_duration = (datetime.utcnow() - start_time).total_seconds()
+            init_duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
             # Store loaded server
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             self._loaded_servers[server_name] = LoadedServer(
                 name=server_name,
                 config=config,
@@ -317,8 +317,6 @@ class MCPServerManager:
                     headers["Authorization"] = f"Bearer {token}"
                 if tenant_id := ga_creds.get("tenant_id", ""):
                     headers["X-Tenant-ID"] = tenant_id
-                if refresh := ga_creds.get("refresh_token", ""):
-                    headers["X-Refresh-Token"] = refresh
                 return headers
 
             return ga_oauth_header_provider
@@ -523,7 +521,7 @@ class MCPServerManager:
 
     async def _evict_idle_servers(self) -> None:
         """Evict servers that have been idle beyond timeout."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         servers_to_evict = []
 
         async with self._lock:

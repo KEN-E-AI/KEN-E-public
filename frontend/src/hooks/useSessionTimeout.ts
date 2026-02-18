@@ -44,10 +44,13 @@ export function useSessionTimeout({
     setRemainingSeconds(timeoutMinutes * 60);
   }, [timeoutMinutes]);
 
-  const extendSession = useCallback(() => {
+  const extendSession = useCallback(async () => {
     resetTimer();
     if (sessionId) {
-      chatService.recordActivity(sessionId).catch(() => {});
+      const response = await chatService.recordActivity(sessionId);
+      if (response.remaining_seconds != null) {
+        setRemainingSeconds(response.remaining_seconds);
+      }
     }
   }, [sessionId, resetTimer]);
 
@@ -102,7 +105,14 @@ export function useSessionTimeout({
       }
 
       debounceTimerRef.current = setTimeout(() => {
-        chatService.recordActivity(sessionId).catch(() => {});
+        chatService
+          .recordActivity(sessionId)
+          .then((response) => {
+            if (response.remaining_seconds != null) {
+              setRemainingSeconds(response.remaining_seconds);
+            }
+          })
+          .catch(() => {});
       }, ACTIVITY_DEBOUNCE_MS);
     };
 

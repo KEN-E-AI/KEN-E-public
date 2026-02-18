@@ -68,8 +68,6 @@ def _ga_header_provider(context: ReadonlyContext) -> dict[str, str]:
         headers["Authorization"] = f"Bearer {token}"
     if tenant_id := ga_creds.get("tenant_id", ""):
         headers["X-Tenant-ID"] = tenant_id
-    if refresh := ga_creds.get("refresh_token", ""):
-        headers["X-Refresh-Token"] = refresh
     return headers
 
 

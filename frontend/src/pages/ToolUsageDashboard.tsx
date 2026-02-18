@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -34,16 +34,18 @@ const ToolUsageDashboard = () => {
   const { isSuperAdmin } = useAuth();
   const [days, setDays] = useState(30);
 
-  if (!isSuperAdmin) {
-    navigate("/settings");
-    return null;
-  }
-
   const { data, isLoading, error } = useQuery<ToolUsageAggregation>({
     queryKey: ["tool-usage", days],
     queryFn: () => getToolUsage(days),
     staleTime: 5 * 60 * 1000,
+    enabled: isSuperAdmin,
   });
+
+  useEffect(() => {
+    if (!isSuperAdmin) navigate("/settings");
+  }, [isSuperAdmin, navigate]);
+
+  if (!isSuperAdmin) return null;
 
   const toolRows: ToolRow[] = data
     ? Object.entries(data.by_tool)
