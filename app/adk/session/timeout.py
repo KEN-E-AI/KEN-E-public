@@ -36,7 +36,7 @@ class TimeoutConfig:
 
     warning_minutes: int = 25
     timeout_minutes: int = 30
-    check_interval_seconds: int = 60
+    check_interval_seconds: int = 30
 
 
 class SessionTimeoutManager:
@@ -276,6 +276,34 @@ class SessionTimeoutManager:
 
 # Singleton instance
 _timeout_manager: SessionTimeoutManager | None = None
+
+
+def configure_timeout_manager(
+    on_warning: Callable[[str, str, int], Awaitable[None]] | None = None,
+    on_timeout: Callable[[str, str], Awaitable[None]] | None = None,
+    config: TimeoutConfig | None = None,
+) -> SessionTimeoutManager:
+    """Configure and return the singleton timeout manager.
+
+    Creates the singleton with the given callbacks if it doesn't exist yet.
+    If already created, returns the existing instance (callbacks are not updated).
+
+    Args:
+        on_warning: Async callback for timeout warnings
+        on_timeout: Async callback when session times out
+        config: Optional timeout configuration
+
+    Returns:
+        Configured SessionTimeoutManager instance
+    """
+    global _timeout_manager
+    if _timeout_manager is None:
+        _timeout_manager = SessionTimeoutManager(
+            config=config,
+            on_warning=on_warning,
+            on_timeout=on_timeout,
+        )
+    return _timeout_manager
 
 
 def get_timeout_manager() -> SessionTimeoutManager:

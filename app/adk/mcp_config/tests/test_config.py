@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from app.adk.mcp.config import (
+from app.adk.mcp_config.config import (
     MCPConfigLoader,
     MCPServerConfig,
     SseConnectionConfig,

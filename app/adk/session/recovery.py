@@ -207,16 +207,31 @@ class SessionRecoveryService:
         state = getattr(session, "state", {}) or {}
         events = getattr(session, "events", []) or []
 
-        # Count user messages
-        message_count = len([e for e in events if getattr(e, "role", None) == "user"])
+        # Count user messages (check both content.role and event author)
+        message_count = 0
+        for e in events:
+            content_obj = getattr(e, "content", None)
+            role = None
+            if content_obj and hasattr(content_obj, "role"):
+                role = content_obj.role
+            if role == "user" or getattr(e, "author", None) == "user":
+                message_count += 1
 
-        # Generate preview from last message
+        # Generate preview from last user/model message
         preview = None
-        if events:
-            last_event = events[-1]
-            content = getattr(last_event, "content", "")
-            if content:
-                preview = content[:100] + "..." if len(content) > 100 else content
+        for e in reversed(events):
+            content_obj = getattr(e, "content", None)
+            if not content_obj:
+                continue
+            if hasattr(content_obj, "parts") and content_obj.parts:
+                for part in content_obj.parts:
+                    if hasattr(part, "text") and part.text:
+                        text = part.text.strip()
+                        if text and not text.startswith("[ORGANIZATION CONTEXT]"):
+                            preview = text[:100] + "..." if len(text) > 100 else text
+                            break
+            if preview:
+                break
 
         # Get conversation name from state
         conversation_name = state.get("conversation_name")
@@ -275,21 +290,57 @@ class SessionRecoveryService:
                 )
                 state = self._repair_state(state)
 
-            # Extract conversation history
+            # Extract conversation history, matching the format from
+            # AgentEngineClient.get_conversation_history so the frontend
+            # can parse it the same way.
             events = getattr(session, "events", []) or []
-            conversation_history = [
-                {
-                    "role": getattr(e, "role", "unknown"),
-                    "content": getattr(e, "content", ""),
+            conversation_history = []
+            for e in events:
+                content_obj = getattr(e, "content", None)
+                if not content_obj:
+                    continue
+
+                # Determine role from content.role or event.author
+                role = "assistant"
+                if hasattr(content_obj, "role"):
+                    role = content_obj.role or "assistant"
+                elif hasattr(e, "author"):
+                    role = getattr(e, "author", "assistant")
+
+                # Map ADK roles to frontend roles
+                if role == "model":
+                    role = "assistant"
+                # Skip system/tool events — only keep user and assistant
+                if role not in ("user", "assistant"):
+                    continue
+
+                # Extract text from content.parts
+                text = ""
+                if hasattr(content_obj, "parts") and content_obj.parts:
+                    text_parts = []
+                    for part in content_obj.parts:
+                        if hasattr(part, "text") and part.text:
+                            text_parts.append(part.text)
+                    text = "\n".join(text_parts)
+                elif isinstance(content_obj, str):
+                    text = content_obj
+
+                if not text or not text.strip():
+                    continue
+
+                # Skip internal context-setting messages
+                if text.strip().startswith("[ORGANIZATION CONTEXT]"):
+                    continue
+
+                conversation_history.append({
+                    "role": role,
+                    "content": text,
                     "timestamp": (
                         getattr(e, "timestamp", None).isoformat()
                         if getattr(e, "timestamp", None)
                         else None
                     ),
-                }
-                for e in events
-                if getattr(e, "content", None)
-            ]
+                })
 
             # Update cache for faster subsequent access
             if self._redis:
@@ -397,11 +448,10 @@ def get_recovery_service() -> SessionRecoveryService:
     """
     global _recovery_service
     if _recovery_service is None:
-        # Lazy import to avoid circular dependencies
         from api.src.kene_api.redis_client import get_redis_service
-        from api.src.kene_api.routers.chat import get_or_create_session_service
+        from api.src.kene_api.routers.chat import agent_client
 
-        session_service = get_or_create_session_service()
+        session_service = agent_client.session_service
         redis_service = get_redis_service()
 
         _recovery_service = SessionRecoveryService(

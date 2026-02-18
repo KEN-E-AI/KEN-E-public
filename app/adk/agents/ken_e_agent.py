@@ -11,6 +11,9 @@ from google.adk.tools import ToolContext
 # Configure structured logging for Google Cloud
 from shared.structured_logging import configure_logging, get_structured_logger
 
+from app.adk.security.hooks import adk_before_tool_callback
+from app.adk.tracking.callbacks import adk_after_tool_callback
+
 from .strategy_agent.config_loader import load_config_from_firestore
 from .utils.dispatch_handlers import (
     dispatch_to_company_news,
@@ -69,6 +72,8 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     ken_e = Agent(
         name="ken_e",
         model=model,
+        before_tool_callback=adk_before_tool_callback,
+        after_tool_callback=adk_after_tool_callback,
         instruction="""You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.
 
 **CRITICAL: When you call a tool, the tool's response contains the answer. You MUST present that response to the user. Never just acknowledge that you called the tool - always share what the tool returned.**

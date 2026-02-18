@@ -26,7 +26,9 @@ from .config import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from google.adk.agents.readonly_context import ReadonlyContext
+    from google.adk.tools.mcp_tool.mcp_session_manager import SseConnectionParams, StdioConnectionParams
+    from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 
 logger = get_structured_logger(__name__)
 
@@ -55,6 +57,7 @@ class LoadedServer:
     health_status: str = "healthy"
     consecutive_failures: int = 0
     _connection: Any = None  # Store the actual MCP connection
+    _toolset: Any = None  # McpToolset instance for agent use
 
 
 class MCPServerManager:
@@ -85,7 +88,7 @@ class MCPServerManager:
         self,
         max_loaded_servers: int = 10,
         max_total_tokens: int = 15000,
-        init_timeout_seconds: float = 5.0,
+        init_timeout_seconds: float = 30.0,
         idle_timeout_minutes: int = 10,
         health_check_interval_seconds: int = 30,
         max_consecutive_failures: int = 3,
@@ -175,7 +178,7 @@ class MCPServerManager:
 
             start_time = datetime.utcnow()
             try:
-                tools, connection = await asyncio.wait_for(
+                tools, toolset = await asyncio.wait_for(
                     self._connect_server(config),
                     timeout=self.init_timeout,
                 )
@@ -204,7 +207,8 @@ class MCPServerManager:
                 loaded_at=now,
                 last_used=now,
                 token_estimate=config.estimated_tokens,
-                _connection=connection,
+                _connection=toolset,
+                _toolset=toolset,
             )
 
             logger.info(
@@ -225,59 +229,101 @@ class MCPServerManager:
     async def _connect_server(
         self, config: MCPServerConfig
     ) -> tuple[list[dict[str, Any]], Any]:
-        """Create connection to MCP server based on config type.
-
-        This method handles the actual MCP protocol connection.
-        Currently returns mock tools - will integrate with ADK MCPToolset
-        when available.
+        """Create connection to MCP server using ADK McpToolset.
 
         Args:
             config: Server configuration
 
         Returns:
-            Tuple of (tools list, connection object)
+            Tuple of (tools metadata list, McpToolset instance)
         """
-        # For now, create placeholder tools based on config
-        # This will be replaced with actual ADK MCPToolset integration
-        tools = self._create_placeholder_tools(config)
+        from google.adk.tools.mcp_tool.mcp_toolset import McpToolset as _McpToolset
 
-        # Connection object placeholder - will be MCPToolset instance
-        connection = {
-            "type": config.connection.connection_type,
-            "connected_at": datetime.utcnow().isoformat(),
-        }
+        connection_params = self._build_connection_params(config)
+        header_provider = self._build_header_provider(config)
+
+        toolset = _McpToolset(
+            connection_params=connection_params,
+            header_provider=header_provider,
+        )
+
+        adk_tools = await toolset.get_tools()
+        tools_metadata = [
+            {
+                "name": t.name,
+                "description": t.description,
+                "server": config.name,
+            }
+            for t in adk_tools
+        ]
+
+        return tools_metadata, toolset
+
+    def _build_connection_params(self, config: MCPServerConfig) -> Any:
+        """Build ADK connection params from server config.
+
+        Args:
+            config: Server configuration
+
+        Returns:
+            SseConnectionParams or StdioConnectionParams
+        """
+        from google.adk.tools.mcp_tool.mcp_session_manager import SseConnectionParams as _SseParams
+        from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams as _StdioParams
 
         if isinstance(config.connection, SseConnectionConfig):
-            connection["url"] = config.connection.url
+            return _SseParams(
+                url=config.connection.url,
+                headers=config.connection.headers or None,
+                timeout=float(config.connection.timeout_seconds),
+            )
         elif isinstance(config.connection, StdioConnectionConfig):
-            connection["command"] = config.connection.command
+            from mcp.client.stdio import StdioServerParameters as _StdioServerParams
 
-        return tools, connection
+            return _StdioParams(
+                server_params=_StdioServerParams(
+                    command=config.connection.command,
+                    args=config.connection.args,
+                    env=config.connection.env or None,
+                ),
+                timeout=5.0,
+            )
+        raise ValueError(
+            f"Unsupported connection type: {type(config.connection)}"
+        )
 
-    def _create_placeholder_tools(self, config: MCPServerConfig) -> list[dict[str, Any]]:
-        """Create placeholder tool definitions based on config.
+    def _build_header_provider(
+        self, config: MCPServerConfig
+    ) -> Any:
+        """Build a header_provider callback for per-user auth.
 
-        This is a temporary implementation until ADK MCPToolset is integrated.
-        Returns tool definitions based on server metadata.
+        For GA OAuth, returns a function that reads ga_credentials from
+        ADK ReadonlyContext.state and returns Authorization + tenant headers.
 
         Args:
             config: Server configuration
 
         Returns:
-            List of tool definition dictionaries
+            Callable or None
         """
-        tools = []
-        for i in range(config.tool_count):
-            tools.append(
-                {
-                    "name": f"{config.name}_tool_{i + 1}",
-                    "description": f"Tool {i + 1} from {config.description}",
-                    "category": config.category,
-                    "server": config.name,
-                    "parameters": {},
-                }
-            )
-        return tools
+        if config.auth_type == "ga_oauth":
+
+            def ga_oauth_header_provider(
+                context: ReadonlyContext,
+            ) -> dict[str, str]:
+                ga_creds = context.state.get("ga_credentials", {})
+                headers: dict[str, str] = {}
+                if token := ga_creds.get("access_token", ""):
+                    headers["Authorization"] = f"Bearer {token}"
+                if tenant_id := ga_creds.get("tenant_id", ""):
+                    headers["X-Tenant-ID"] = tenant_id
+                if refresh := ga_creds.get("refresh_token", ""):
+                    headers["X-Refresh-Token"] = refresh
+                return headers
+
+            return ga_oauth_header_provider
+
+        return None
 
     async def _ensure_capacity(self, needed_tokens: int) -> None:
         """Ensure capacity for new server by evicting LRU if needed.
@@ -343,9 +389,9 @@ class MCPServerManager:
         loaded = self._loaded_servers[server_name]
 
         try:
-            # Close the MCP connection gracefully
-            # When ADK MCPToolset is integrated, call toolset.close()
-            if loaded._connection and hasattr(loaded._connection, "close"):
+            if loaded._toolset is not None:
+                await loaded._toolset.close()
+            elif loaded._connection and hasattr(loaded._connection, "close"):
                 await loaded._connection.close()
         except Exception as e:
             logger.warning(
@@ -392,6 +438,21 @@ class MCPServerManager:
         for loaded in self._loaded_servers.values():
             all_tools.extend(loaded.tools)
         return all_tools
+
+    def get_toolset(self, server_name: str) -> Any:
+        """Get the McpToolset instance for a loaded server.
+
+        Used by agents to include the toolset in their tool list.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            McpToolset instance or None if not loaded
+        """
+        if server_name in self._loaded_servers:
+            return self._loaded_servers[server_name]._toolset
+        return None
 
     def get_status(self) -> dict[str, Any]:
         """Get current server loading status for monitoring.
@@ -556,7 +617,7 @@ class MCPServerManager:
                     loaded.consecutive_failures += 1
 
     async def _check_server_health(self, loaded: LoadedServer) -> bool:
-        """Check if a single server is healthy.
+        """Check if a single server is healthy by listing its tools.
 
         Args:
             loaded: The loaded server to check
@@ -564,16 +625,14 @@ class MCPServerManager:
         Returns:
             True if server is healthy
         """
-        # Placeholder health check - will use MCPToolset.get_tools() when integrated
-        # For now, check if connection exists and has expected structure
-        if loaded._connection is None:
+        if loaded._toolset is None:
             return False
 
-        # With real MCPToolset, we would do:
-        # tools = await asyncio.wait_for(loaded._connection.get_tools(), timeout=5.0)
-        # return len(tools) > 0
-
-        return True  # Placeholder
+        try:
+            tools = await asyncio.wait_for(loaded._toolset.get_tools(), timeout=5.0)
+            return len(tools) > 0
+        except Exception:
+            return False
 
     async def _attempt_reconnection(self, server_name: str) -> None:
         """Attempt to reconnect an unhealthy server.

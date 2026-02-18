@@ -264,10 +264,34 @@ async def google_oauth_callback(
             db = firestore_service.get_client()
             creds_service = IntegrationCredentialsService(db)
 
-            # Prepare credentials data
+            # Google only returns a refresh_token on the first consent grant.
+            # On subsequent re-authorizations it may be absent.  Preserve the
+            # existing refresh_token so the integration stays connected.
+            new_refresh_token = tokens.get("refresh_token")
+            if not new_refresh_token:
+                try:
+                    existing = await creds_service.get_credentials(
+                        account_id=account_id,
+                        integration_type="google_analytics",
+                    )
+                    if existing:
+                        new_refresh_token = existing.get("refresh_token")
+                        if new_refresh_token:
+                            logger.info(
+                                f"[OAUTH_CALLBACK] Preserved existing refresh token for account {account_id}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[OAUTH_CALLBACK] No refresh token from Google and none stored for account {account_id}"
+                            )
+                except Exception as e:
+                    logger.warning(
+                        f"[OAUTH_CALLBACK] Could not read existing credentials for account {account_id}: {e}"
+                    )
+
             credentials_data = {
                 "access_token": tokens.get("access_token"),
-                "refresh_token": tokens.get("refresh_token"),
+                "refresh_token": new_refresh_token,
                 "token_type": tokens.get("token_type", "Bearer"),
                 "expires_at": datetime.now().timestamp() + tokens.get("expires_in", 3600),
                 "scope": tokens.get("scope", ""),
@@ -744,19 +768,32 @@ async def get_google_analytics_status(
         )
 
         if credentials:
-            # Check if token is expired
+            # The access token expires after ~1 hour, but that doesn't mean
+            # the integration is broken — the refresh token lets us obtain
+            # a new access token automatically.  Only report EXPIRED when
+            # there is no refresh token to recover with.
+            has_refresh_token = bool(credentials.get("refresh_token"))
             expires_at = credentials.get("expires_at", 0)
-            is_expired = datetime.now().timestamp() > expires_at
+            access_token_expired = datetime.now().timestamp() > expires_at
 
-            # Get selected properties count
+            if has_refresh_token:
+                integration_status = IntegrationStatus.CONFIGURED
+                error_message = None
+            elif access_token_expired:
+                integration_status = IntegrationStatus.EXPIRED
+                error_message = "Integration expired. Please reconnect Google Analytics."
+            else:
+                integration_status = IntegrationStatus.CONFIGURED
+                error_message = None
+
             selected_properties = credentials.get("selected_properties", [])
             property_count = len(selected_properties) if selected_properties else 0
 
             return IntegrationStatusResponse(
                 integration_type=IntegrationType.GOOGLE_ANALYTICS,
-                status=IntegrationStatus.EXPIRED if is_expired else IntegrationStatus.CONFIGURED,
-                configured_at=None,  # You could store this in the credentials
-                error_message="Access token expired. Please refresh." if is_expired else None,
+                status=integration_status,
+                configured_at=None,
+                error_message=error_message,
                 user_email=credentials.get("user_email"),
                 property_count=property_count,
             )

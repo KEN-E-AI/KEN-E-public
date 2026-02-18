@@ -15,6 +15,7 @@ from .recovery import (
 from .timeout import (
     SessionTimeoutManager,
     TimeoutConfig,
+    configure_timeout_manager,
     get_timeout_manager,
     reset_timeout_manager,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "SessionRecoveryService",
     "SessionTimeoutManager",
     "TimeoutConfig",
+    "configure_timeout_manager",
     "get_recovery_service",
     "get_timeout_manager",
     "reset_recovery_service",

@@ -19,7 +19,6 @@ from datetime import datetime
 from pathlib import Path
 
 import vertexai
-from google.cloud import secretmanager
 from vertexai import agent_engines
 
 # ADK App configuration imports
@@ -192,6 +191,28 @@ def deploy_ken_e() -> str | None:
         else:
             logger.warning("⚠️  shared package not found")
 
+        # Copy app.adk sub-packages needed by agent callbacks
+        # (security hooks, usage tracking). These are imported as
+        # `from app.adk.security.hooks import ...` so we replicate
+        # the package structure.
+        adk_root = Path(__file__).parent  # app/adk/
+        app_adk_dest = temp_path / "app" / "adk"
+        app_adk_dest.mkdir(parents=True)
+        (temp_path / "app" / "__init__.py").touch()
+        (app_adk_dest / "__init__.py").touch()
+
+        for subpkg in ("security", "tracking"):
+            src = adk_root / subpkg
+            if src.exists():
+                shutil.copytree(
+                    src,
+                    app_adk_dest / subpkg,
+                    ignore=shutil.ignore_patterns("tests", "__pycache__"),
+                )
+                logger.info(f"Copied app.adk.{subpkg} package")
+            else:
+                logger.warning(f"⚠️  app/adk/{subpkg} not found")
+
         # Process environment-specific .env file (resolve sm:// references)
         env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
         env_name = env_mapping.get(os.getenv("_TARGET_ENV", "dev"), "dev")
@@ -273,19 +294,52 @@ def deploy_ken_e() -> str | None:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         deployment_name = f"ken-e-chat-agent-{timestamp}"
 
-        # Deploy using Python API (same approach as Strategy Supervisor)
+        # Deploy: update existing engine (preserves sessions) or create new one
         logger.info(f"📦 Deploying {deployment_name}...")
 
         try:
-            deployed_engine = agent_engines.create(
-                agent_engine=app,
-                requirements="requirements.txt",
-                display_name=deployment_name,
-                description="KEN-E chat agent for company news and analytics",
-                extra_packages=["agents", "shared"],
+            # Resolve existing engine ID from Secret Manager using target env's project
+            target_env = os.getenv("_TARGET_ENV", "dev")
+            project_number = ENV_CONFIG[target_env]["project_number"]
+            os.environ.setdefault(
+                "KEN_E_ENGINE_ID", f"sm://{project_number}/ken-e-engine-id"
             )
 
-            logger.info("✅ Deployment successful!")
+            existing_engine_id = None
+            if get_env_or_secret:
+                existing_engine_id = get_env_or_secret("KEN_E_ENGINE_ID")
+
+            deployed_engine = None
+            if existing_engine_id:
+                existing_engine_id = existing_engine_id.strip()
+                logger.info(f"Found existing engine: {existing_engine_id}, updating in place...")
+                try:
+                    deployed_engine = agent_engines.update(
+                        resource_name=existing_engine_id,
+                        agent_engine=app,
+                        requirements="requirements.txt",
+                        display_name=deployment_name,
+                        description="KEN-E chat agent for company news and analytics",
+                        extra_packages=["agents", "shared", "app"],
+                    )
+                    logger.info("✅ Updated existing engine (sessions preserved)")
+                except Exception as update_error:
+                    logger.warning(
+                        f"Failed to update existing engine: {update_error}. "
+                        "Falling back to creating a new engine."
+                    )
+
+            if deployed_engine is None:
+                logger.info("Creating new engine...")
+                deployed_engine = agent_engines.create(
+                    agent_engine=app,
+                    requirements="requirements.txt",
+                    display_name=deployment_name,
+                    description="KEN-E chat agent for company news and analytics",
+                    extra_packages=["agents", "shared", "app"],
+                )
+                logger.info("✅ Created new engine")
+
             logger.info(f"Engine ID: {deployed_engine.resource_name}")
 
             engine_id = deployed_engine.resource_name
@@ -307,9 +361,8 @@ Location: {location}
 
             logger.info(f"Deployment info saved to: {log_file}")
 
-            # Update Secret Manager with the new engine ID
+            # Update Secret Manager with the engine ID
             logger.info("📝 Updating Secret Manager...")
-            project_number = os.getenv("_PROJECT_NUMBER", "525657242938")
             secret_updated = update_secret_manager(
                 secret_name="ken-e-engine-id",
                 secret_value=engine_id,
@@ -335,159 +388,7 @@ Location: {location}
             import traceback
             traceback.print_exc()
             return None
-        logger.info("Deployment directory structure:")
-        for root, _dirs, files in os.walk("."):
-            level = root.replace(".", "", 1).count(os.sep)
-            indent = " " * 2 * level
-            logger.info(f"{indent}{os.path.basename(root)}/")
-            subindent = " " * 2 * (level + 1)
-            for file in files[:10]:  # Limit to first 10 files per directory
-                logger.info(f"{subindent}{file}")
-
-        # Deploy using ADK CLI
-        project_id = os.getenv("VERTEX_AI_PROJECT_ID", "ken-e-dev")
-        location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
-        staging_bucket = f"gs://{project_id}-adk-staging"
-
-        cmd = [
-            "uv",
-            "run",
-            "adk",
-            "deploy",
-            "agent_engine",
-            "--project",
-            project_id,
-            "--region",
-            location,
-            "--staging_bucket",
-            staging_bucket,
-            "--display_name",
-            deployment_name,
-            "--description",
-            "KEN-E chat agent for company news and analytics",
-            "--trace_to_cloud",
-            ".",  # Deploy from current directory
-        ]
-
-        logger.info(f"Running command: {' '.join(cmd)}")
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,  # Don't raise on non-zero exit
-            )
-
-            logger.info("Deployment stdout:")
-            logger.info(result.stdout)
-
-            if result.stderr:
-                logger.info("Deployment stderr:")
-                logger.info(result.stderr)
-
-            # Try to extract engine ID or operation name
-            # Look for operation pattern first
-            operation_match = re.search(
-                r"operations/(\d+)", result.stdout + (result.stderr or "")
-            )
-
-            if operation_match:
-                operation_id = operation_match.group(0)
-                logger.info(f"Deployment operation started: {operation_id}")
-
-                # Try to get the operation status
-                check_cmd = [
-                    "gcloud",
-                    "ai",
-                    "operations",
-                    "describe",
-                    operation_id,
-                    "--project",
-                    project_id,
-                    "--region",
-                    location,
-                ]
-
-                logger.info(f"Checking operation status: {' '.join(check_cmd)}")
-                check_result = subprocess.run(
-                    check_cmd, capture_output=True, text=True, check=False
-                )
-
-                if check_result.stdout:
-                    logger.info("Operation status:")
-                    logger.info(check_result.stdout)
-
-            # Look for engine ID
-            engine_id_match = re.search(
-                r"projects/\d+/locations/[^/]+/reasoningEngines/\d+", result.stdout
-            )
-
-            if engine_id_match:
-                engine_id = engine_id_match.group()
-                logger.info("✅ Deployment successful!")
-                logger.info(f"Engine ID: {engine_id}")
-
-                # Save deployment info
-                deployment_info = f"""Deployment: {deployment_name}
-Timestamp: {timestamp}
-Engine ID: {engine_id}
-Project: {project_id}
-Location: {location}
-"""
-
-                # Write to deployment log in logs directory
-                logs_dir = Path(original_dir) / "agents" / "logs"
-                logs_dir.mkdir(parents=True, exist_ok=True)
-                log_file = logs_dir / "ken_e_deployment.txt"
-                with open(log_file, "w") as f:
-                    f.write(deployment_info)
-
-                logger.info(f"Deployment info saved to: {log_file}")
-
-                # Print instructions
-                print("\n" + "=" * 60)
-                print("🎉 KEN-E DEPLOYMENT SUCCESSFUL!")
-                print("=" * 60)
-                print(f"\nDeployment Name: {deployment_name}")
-                print(f"Engine ID: {engine_id}")
-                print("\n⚠️  Update your .env files with:")
-                print(f"KEN_E_ENGINE_ID={engine_id}")
-
-                # Update Secret Manager with the new engine ID
-                print("\n📝 Updating Secret Manager...")
-                # Get project number from environment (set in main)
-                project_number = os.getenv("_PROJECT_NUMBER", "525657242938")
-                secret_updated = update_secret_manager(
-                    secret_name="ken-e-engine-id",
-                    secret_value=engine_id,
-                    project_id=project_number,
-                )
-
-                if secret_updated:
-                    print("✅ Secret Manager updated with new engine ID")
-                else:
-                    print("⚠️  Failed to update Secret Manager - please update manually")
-
-                print("=" * 60)
-
-                return engine_id
-            else:
-                logger.warning(
-                    "Deployment may have started but no engine ID found in output"
-                )
-                logger.info("Check the GCP console for deployment status")
-                return None
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Deployment command failed: {e}")
-            logger.error(f"Error output: {e.stderr}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return None
         finally:
-            # Return to original directory
             os.chdir(original_dir)
 
 
@@ -515,7 +416,6 @@ if __name__ == "__main__":
     os.environ["GOOGLE_CLOUD_PROJECT_ID"] = env_config["project_id"]
     os.environ["VERTEX_AI_LOCATION"] = args.location
     os.environ["_TARGET_ENV"] = args.env
-    os.environ["_PROJECT_NUMBER"] = env_config["project_number"]
 
     logger.info("=" * 70)
     logger.info("Deploying KEN-E Chat Agent")

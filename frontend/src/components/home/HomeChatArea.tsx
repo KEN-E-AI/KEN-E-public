@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MessageContent } from "./MessageContent";
+import { ReauthPrompt } from "@/components/chat/ReauthPrompt";
 
 const HomeChatArea = () => {
   const {
@@ -144,6 +145,11 @@ const HomeChatArea = () => {
                   isAssistant={message.role === "assistant"}
                 />
               </div>
+              {message.metadata?.requires_reauth && (
+                <ReauthPrompt
+                  service={message.metadata.service ?? "google-analytics"}
+                />
+              )}
             </div>
           </div>
         ))}

@@ -4,18 +4,19 @@ This module provides hooks that integrate with ADK's callback system
 to enforce security before tool execution.
 
 Usage:
-    from google.adk.agents import LlmAgent
-    from app.adk.security.hooks import before_tool_execution_hook
+    from google.adk.agents import Agent
+    from app.adk.security.hooks import adk_before_tool_callback
 
-    agent = LlmAgent(
+    agent = Agent(
         model='gemini-2.0-flash',
-        name='ken_e_orchestrator',
-        before_tool_callback=before_tool_execution_hook,
+        name='ken_e',
+        before_tool_callback=adk_before_tool_callback,
     )
 """
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
 from shared.structured_logging import get_structured_logger, log_context
@@ -27,7 +28,7 @@ from .permissions import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from google.adk.tools import BaseTool, ToolContext
 
 logger = get_structured_logger(__name__)
 
@@ -119,6 +120,46 @@ async def before_tool_execution_hook(
         )
 
     return result
+
+
+async def adk_before_tool_callback(
+    tool: BaseTool,
+    args: dict[str, Any],
+    tool_context: ToolContext,
+) -> dict[str, Any] | None:
+    """ADK-compatible before_tool_callback adapter.
+
+    Wraps the existing permission verification hook to match ADK's
+    expected callback signature: (BaseTool, dict, ToolContext) -> Optional[dict].
+
+    Returns None to allow execution, or a dict with error details to block.
+    Also stores _tool_start_time in state for usage tracking duration.
+
+    Args:
+        tool: ADK BaseTool being executed
+        args: Tool arguments
+        tool_context: ADK ToolContext with session state
+
+    Returns:
+        None if allowed, dict with error info if blocked
+    """
+    if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
+        tool_context.state["_tool_start_time"] = time.monotonic()
+
+    result = await before_tool_execution_hook(tool.name, tool_context)
+
+    if result.allowed:
+        return None
+
+    if result.requires_reauth:
+        return {
+            "error": "authentication_required",
+            "message": result.reason,
+            "requires_reauth": True,
+            "missing_scopes": result.missing_scopes or [],
+        }
+
+    return {"error": "permission_denied", "message": result.reason}
 
 
 def _get_state_dict(tool_context: Any) -> dict[str, Any]:

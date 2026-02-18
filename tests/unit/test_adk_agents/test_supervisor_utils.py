@@ -3,7 +3,6 @@
 Tests the new session state integration for credentials and organization context.
 """
 
-import base64
 import json
 import sys
 from pathlib import Path
@@ -26,65 +25,9 @@ sys.modules["neo4j.exceptions"] = neo4j_mock.exceptions
 # Import directly from the module file to avoid triggering full import chain
 from adk.agents.utils.supervisor_utils import (
     dispatch_with_context,
-    encode_ga_credentials,
     extract_tenant_context,
+    invoke_agent_sync,
 )
-
-
-class TestEncodeGaCredentials:
-    """Test the encode_ga_credentials helper function."""
-
-    def test_encode_basic_credentials(self):
-        """Should encode basic GA credentials to base64 JSON."""
-        ga_creds = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "tenant_id": "acc_123",
-        }
-
-        result = encode_ga_credentials(ga_creds)
-
-        # Decode and verify
-        decoded = json.loads(base64.b64decode(result).decode())
-        assert decoded["access_token"] == "test_access_token"
-        assert decoded["refresh_token"] == "test_refresh_token"
-        assert decoded["tenant_id"] == "acc_123"
-        assert decoded["selected_property_ids"] == []
-        assert decoded["selected_properties"] == []
-
-    def test_encode_with_property_ids(self):
-        """Should include property IDs when present."""
-        ga_creds = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "tenant_id": "acc_123",
-            "selected_property_ids": ["property_1", "property_2"],
-            "selected_properties": [
-                {"property_id": "property_1", "display_name": "Website 1"},
-                {"property_id": "property_2", "display_name": "Website 2"},
-            ],
-        }
-
-        result = encode_ga_credentials(ga_creds)
-
-        decoded = json.loads(base64.b64decode(result).decode())
-        assert decoded["selected_property_ids"] == ["property_1", "property_2"]
-        assert len(decoded["selected_properties"]) == 2
-        assert decoded["selected_properties"][0]["property_id"] == "property_1"
-
-    def test_encode_returns_string(self):
-        """Should return a string that's base64 encoded."""
-        ga_creds = {
-            "access_token": "token",
-            "refresh_token": "refresh",
-            "tenant_id": "acc_123",
-        }
-
-        result = encode_ga_credentials(ga_creds)
-
-        assert isinstance(result, str)
-        # Should be valid base64
-        base64.b64decode(result)  # Will raise if invalid
 
 
 class TestExtractTenantContext:
@@ -123,11 +66,9 @@ class TestDispatchWithContext:
 
     def test_dispatch_with_tool_context_and_credentials(self):
         """Should read credentials from tool_context.state and build tenant_context."""
-        # Mock dispatch function
         mock_dispatch = MagicMock(__name__="mock_dispatch", return_value="GA analytics result")
         wrapped = dispatch_with_context(mock_dispatch)
 
-        # Mock ToolContext with session state
         mock_tool_context = MagicMock()
         mock_tool_context.state = {
             "account_id": "acc_123",
@@ -140,7 +81,6 @@ class TestDispatchWithContext:
             },
         }
 
-        # Mock HierarchicalContextManager
         with patch(
             "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
         ) as mock_manager_class:
@@ -150,31 +90,28 @@ class TestDispatchWithContext:
             mock_manager.inject_context.return_value = "[ORGANIZATION CONTEXT]\n# Company Context\nTest Company\n[END CONTEXT]\n\nGet my analytics"
             mock_manager.get_total_tokens.return_value = 100
 
-            # Call wrapper
             result = wrapped("Get my analytics", tool_context=mock_tool_context)
 
-            # Verify dispatch was called with injected context
             assert mock_dispatch.called
             call_args = mock_dispatch.call_args
 
-            # First arg should be the query (with org context injected)
             query_arg = call_args[0][0]
             assert "[ORGANIZATION CONTEXT]" in query_arg
             assert "Get my analytics" in query_arg
 
-            # Second arg should be tenant_context with encoded credentials
+            # Credentials flow via McpToolset header_provider now, not encoded in tenant_context
             tenant_context_arg = call_args[0][1]
             assert tenant_context_arg is not None
             assert tenant_context_arg["tenant_id"] == "acc_123"
-            assert "tenant_credentials" in tenant_context_arg
             assert tenant_context_arg["account_id"] == "acc_123"
+            assert tenant_context_arg["selected_property_ids"] == ["prop_1"]
+            # tenant_credentials key no longer present (credentials flow via headers)
+            assert "tenant_credentials" not in tenant_context_arg
 
-            # Verify HierarchicalContextManager was used correctly
             mock_manager_class.assert_called_once_with("acc_123")
             mock_manager.load_executive_summary.assert_called_once()
             mock_manager.inject_context.assert_called_once_with("Get my analytics")
 
-            # Result should be the dispatch function's return value
             assert result == "GA analytics result"
 
     def test_dispatch_with_tool_context_no_credentials(self):
@@ -280,3 +217,57 @@ class TestDispatchWithContext:
             assert result == "Result"
             # Dispatch should still be called
             assert mock_dispatch.called
+
+
+class TestInvokeAgentSyncState:
+    """Test that invoke_agent_sync passes initial state to child session."""
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_create_session_called_with_state(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """Should pass state dict to create_session when provided."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async.return_value = iter([])
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_agent"
+
+        ga_state = {"ga_credentials": {"access_token": "tok_123"}}
+
+        invoke_agent_sync(
+            mock_agent, "test query", state=ga_state
+        )
+
+        mock_session_service.create_session.assert_called_once()
+        call_kwargs = mock_session_service.create_session.call_args[1]
+        assert call_kwargs["state"] == ga_state
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_create_session_called_without_state(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """Should pass state=None to create_session when not provided."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async.return_value = iter([])
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_agent"
+
+        invoke_agent_sync(mock_agent, "test query")
+
+        mock_session_service.create_session.assert_called_once()
+        call_kwargs = mock_session_service.create_session.call_args[1]
+        assert call_kwargs["state"] is None

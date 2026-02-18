@@ -196,9 +196,9 @@ class TestUsageAggregation:
         end = now + timedelta(hours=1)
 
         agg = await tracker.get_usage_aggregation(
-            account_id="acct1",
             start_date=start,
             end_date=end,
+            account_id="acct1",
         )
 
         assert agg.total_calls == 3
@@ -230,13 +230,15 @@ class TestUsageAggregation:
 
         now = datetime.now(timezone.utc)
         agg = await tracker.get_usage_aggregation(
-            account_id="acct1",
             start_date=now - timedelta(hours=1),
             end_date=now + timedelta(hours=1),
+            account_id="acct1",
         )
 
-        assert agg.by_tool["analytics"] == 2
-        assert agg.by_tool["crm"] == 1
+        assert agg.by_tool["analytics"].calls == 2
+        assert agg.by_tool["analytics"].success == 2
+        assert agg.by_tool["analytics"].success_rate == 1.0
+        assert agg.by_tool["crm"].calls == 1
 
     @pytest.mark.asyncio
     async def test_aggregation_by_user(self, tracker):
@@ -262,13 +264,60 @@ class TestUsageAggregation:
 
         now = datetime.now(timezone.utc)
         agg = await tracker.get_usage_aggregation(
+            start_date=now - timedelta(hours=1),
+            end_date=now + timedelta(hours=1),
             account_id="acct1",
+        )
+
+        assert agg.by_user["user1"].calls == 2
+        assert agg.by_user["user1"].success == 2
+        assert agg.by_user["user1"].success_rate == 1.0
+        assert agg.by_user["user2"].calls == 1
+
+    @pytest.mark.asyncio
+    async def test_aggregation_per_tool_success_failure_rates(self, tracker):
+        """Test that per-tool success/failure rates are computed (AC2)."""
+        await tracker.track_execution(
+            tool_name="ga_report",
+            user_id="u1",
+            account_id="a1",
+            status=ExecutionStatus.SUCCESS,
+            duration_ms=120,
+        )
+        await tracker.track_execution(
+            tool_name="ga_report",
+            user_id="u1",
+            account_id="a1",
+            status=ExecutionStatus.FAILURE,
+            duration_ms=80,
+        )
+        await tracker.track_execution(
+            tool_name="news_search",
+            user_id="u2",
+            account_id="a1",
+            status=ExecutionStatus.SUCCESS,
+            duration_ms=200,
+        )
+
+        now = datetime.now(timezone.utc)
+        agg = await tracker.get_usage_aggregation(
             start_date=now - timedelta(hours=1),
             end_date=now + timedelta(hours=1),
         )
 
-        assert agg.by_user["user1"] == 2
-        assert agg.by_user["user2"] == 1
+        ga = agg.by_tool["ga_report"]
+        assert ga.calls == 2
+        assert ga.success == 1
+        assert ga.failure == 1
+        assert ga.success_rate == pytest.approx(0.5)
+        assert ga.avg_duration_ms == pytest.approx(100.0)
+
+        news = agg.by_tool["news_search"]
+        assert news.calls == 1
+        assert news.success == 1
+        assert news.failure == 0
+        assert news.success_rate == pytest.approx(1.0)
+        assert news.avg_duration_ms == pytest.approx(200.0)
 
     @pytest.mark.asyncio
     async def test_aggregation_filters_by_account(self, tracker):
@@ -288,12 +337,36 @@ class TestUsageAggregation:
 
         now = datetime.now(timezone.utc)
         agg = await tracker.get_usage_aggregation(
+            start_date=now - timedelta(hours=1),
+            end_date=now + timedelta(hours=1),
             account_id="acct1",
+        )
+
+        assert agg.total_calls == 1  # Only acct1
+
+    @pytest.mark.asyncio
+    async def test_aggregation_without_account_filter(self, tracker):
+        """Test that omitting account_id returns all accounts."""
+        await tracker.track_execution(
+            tool_name="tool",
+            user_id="user1",
+            account_id="acct1",
+            status=ExecutionStatus.SUCCESS,
+        )
+        await tracker.track_execution(
+            tool_name="tool",
+            user_id="user1",
+            account_id="acct2",
+            status=ExecutionStatus.SUCCESS,
+        )
+
+        now = datetime.now(timezone.utc)
+        agg = await tracker.get_usage_aggregation(
             start_date=now - timedelta(hours=1),
             end_date=now + timedelta(hours=1),
         )
 
-        assert agg.total_calls == 1  # Only acct1
+        assert agg.total_calls == 2  # Both accounts
 
     @pytest.mark.asyncio
     async def test_aggregation_filters_by_date_range(self, tracker):
@@ -320,9 +393,9 @@ class TestUsageAggregation:
 
         # Query only last day
         agg = await tracker.get_usage_aggregation(
-            account_id="acct1",
             start_date=now - timedelta(days=1),
             end_date=now + timedelta(hours=1),
+            account_id="acct1",
         )
 
         assert agg.total_calls == 1  # Only recent
@@ -347,9 +420,9 @@ class TestUsageAggregation:
 
         now = datetime.now(timezone.utc)
         agg = await tracker.get_usage_aggregation(
-            account_id="acct1",
             start_date=now - timedelta(hours=1),
             end_date=now + timedelta(hours=1),
+            account_id="acct1",
         )
 
         assert agg.avg_duration_ms == 150.0
@@ -376,9 +449,9 @@ class TestUsageAggregation:
 
         now = datetime.now(timezone.utc)
         agg = await tracker.get_usage_aggregation(
-            account_id="acct1",
             start_date=now - timedelta(hours=1),
             end_date=now + timedelta(hours=1),
+            account_id="acct1",
         )
 
         assert agg.total_tokens == 450  # (100+50) + (200+100)

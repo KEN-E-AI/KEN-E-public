@@ -42,6 +42,14 @@ const AdminSettings = () => {
       implemented: true,
     },
     {
+      id: "tool-usage",
+      title: "Tool Usage",
+      description: "View aggregated tool usage and success rates",
+      icon: BarChart3,
+      route: "/settings/admin/tool-usage",
+      implemented: true,
+    },
+    {
       id: "initial-activities",
       title: "Initial Activities",
       description: "Manage default activities for new accounts",

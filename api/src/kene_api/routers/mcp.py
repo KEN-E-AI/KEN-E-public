@@ -86,14 +86,14 @@ class MCPConfigListResponse(BaseModel):
 
 def _get_mcp_manager():
     """Lazy import to avoid circular dependencies."""
-    from app.adk.mcp import get_mcp_manager
+    from app.adk.mcp_config import get_mcp_manager
 
     return get_mcp_manager()
 
 
 def _get_mcp_config_loader():
     """Lazy import to avoid circular dependencies."""
-    from app.adk.mcp import get_mcp_config_loader
+    from app.adk.mcp_config import get_mcp_config_loader
 
     return get_mcp_config_loader()
 

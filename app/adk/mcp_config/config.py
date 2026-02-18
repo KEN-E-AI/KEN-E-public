@@ -133,6 +133,9 @@ class MCPServerConfig(BaseModel):
         ..., discriminator="connection_type"
     )
     enabled: bool = Field(True, description="Whether server is enabled")
+    auth_type: str | None = Field(
+        None, description="Auth type: 'ga_oauth' for per-user OAuth via header_provider"
+    )
 
     @model_validator(mode="after")
     def validate_config(self) -> MCPServerConfig:

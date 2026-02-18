@@ -14,7 +14,7 @@ servers:
   google_analytics_mcp:
     description: "Google Analytics 4 data access, reports, and audiences"
     category: "analytics"
-    tool_count: 12
+    tool_count: 4
     estimated_tokens: 1800
     keywords:
       - analytics
@@ -28,10 +28,11 @@ servers:
       - reports
     connection:
       connection_type: sse
-      url: "${GA_MCP_SERVER_URL}"
+      url: "${GA_MCP_SERVER_URL}/mcp/sse"
       headers:
         Content-Type: "application/json"
       timeout_seconds: 30
+    auth_type: "ga_oauth"
     enabled: true
 
   hubspot_mcp:

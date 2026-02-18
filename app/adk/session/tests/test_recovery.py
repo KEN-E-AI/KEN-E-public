@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,6 +13,19 @@ from app.adk.session.recovery import (
     SessionRecoveryResult,
     SessionRecoveryService,
 )
+
+
+def _make_adk_event(
+    role: str, text: str, *, timestamp: datetime | None = None
+) -> SimpleNamespace:
+    """Create an ADK-like session event with content.parts structure."""
+    part = SimpleNamespace(text=text)
+    content = SimpleNamespace(role=role, parts=[part])
+    return SimpleNamespace(
+        content=content,
+        author=role,
+        timestamp=timestamp or datetime.now(timezone.utc),
+    )
 
 
 class TestRecoverableSession:
@@ -87,13 +101,13 @@ class TestSessionRecoveryService:
     ):
         """Create a mock session object."""
         now = datetime.now(timezone.utc)
-        session = MagicMock()
-        session.id = session_id
-        session.create_time = created_at or now
-        session.update_time = updated_at or created_at or now
-        session.state = state or {"account_id": "acct1"}
-        session.events = events or []
-        return session
+        return SimpleNamespace(
+            id=session_id,
+            create_time=created_at or now,
+            update_time=updated_at or created_at or now,
+            state=state if state is not None else {"account_id": "acct1"},
+            events=events or [],
+        )
 
     @pytest.mark.asyncio
     async def test_list_recoverable_sessions(self, service, mock_session_service):
@@ -112,14 +126,12 @@ class TestSessionRecoveryService:
             ),
         ]
 
-        mock_response = MagicMock()
-        mock_response.sessions = sessions
+        mock_response = SimpleNamespace(sessions=sessions)
         mock_session_service.list_sessions = AsyncMock(return_value=mock_response)
 
         recoverable = await service.list_recoverable_sessions("user1")
 
         assert len(recoverable) == 2
-        # Should be sorted by last_updated (newest first)
         assert recoverable[0].session_id == "sess2"
         assert recoverable[1].session_id == "sess1"
 
@@ -139,8 +151,7 @@ class TestSessionRecoveryService:
             ),
         ]
 
-        mock_response = MagicMock()
-        mock_response.sessions = sessions
+        mock_response = SimpleNamespace(sessions=sessions)
         mock_session_service.list_sessions = AsyncMock(return_value=mock_response)
 
         recoverable = await service.list_recoverable_sessions("user1")
@@ -161,17 +172,17 @@ class TestSessionRecoveryService:
 
     @pytest.mark.asyncio
     async def test_recover_session_success(self, service, mock_session_service):
-        """Test successful session recovery."""
+        """Test successful session recovery with ADK-style events."""
         now = datetime.now(timezone.utc)
-        mock_event = MagicMock()
-        mock_event.role = "user"
-        mock_event.content = "Hello"
-        mock_event.timestamp = now
+        events = [
+            _make_adk_event("user", "Hello", timestamp=now),
+            _make_adk_event("model", "Hi there! How can I help?", timestamp=now),
+        ]
 
         session = self._create_mock_session(
             "sess1",
             state={"account_id": "acct1", "conversation_name": "My Chat"},
-            events=[mock_event],
+            events=events,
         )
 
         mock_session_service.get_session = AsyncMock(return_value=session)
@@ -181,9 +192,80 @@ class TestSessionRecoveryService:
         assert result.success is True
         assert result.session_id == "sess1"
         assert result.state["account_id"] == "acct1"
+        assert len(result.conversation_history) == 2
+        assert result.conversation_history[0] == {
+            "role": "user",
+            "content": "Hello",
+            "timestamp": now.isoformat(),
+        }
+        assert result.conversation_history[1] == {
+            "role": "assistant",
+            "content": "Hi there! How can I help?",
+            "timestamp": now.isoformat(),
+        }
+
+    @pytest.mark.asyncio
+    async def test_recover_session_filters_system_events(
+        self, service, mock_session_service
+    ):
+        """Test that system context events are excluded from history."""
+        now = datetime.now(timezone.utc)
+        system_event = SimpleNamespace(
+            content=SimpleNamespace(
+                role="user",
+                parts=[SimpleNamespace(text="[ORGANIZATION CONTEXT]\nOrg: Acme Corp")],
+            ),
+            author="user",
+            timestamp=now,
+        )
+        user_event = _make_adk_event("user", "What is our GA traffic?", timestamp=now)
+        model_event = _make_adk_event(
+            "model", "Let me check your GA data.", timestamp=now
+        )
+
+        session = self._create_mock_session(
+            "sess1",
+            state={"account_id": "acct1"},
+            events=[system_event, user_event, model_event],
+        )
+
+        mock_session_service.get_session = AsyncMock(return_value=session)
+
+        result = await service.recover_session("user1", "sess1")
+
+        assert len(result.conversation_history) == 2
+        assert result.conversation_history[0]["content"] == "What is our GA traffic?"
+        assert result.conversation_history[1]["content"] == "Let me check your GA data."
+
+    @pytest.mark.asyncio
+    async def test_recover_session_skips_tool_events(
+        self, service, mock_session_service
+    ):
+        """Test that tool/function events are excluded from history."""
+        now = datetime.now(timezone.utc)
+        # Tool event has a role that's neither "user" nor "model"
+        tool_event = SimpleNamespace(
+            content=SimpleNamespace(
+                role="tool",
+                parts=[SimpleNamespace(text='{"result": "data"}')],
+            ),
+            author="tool",
+            timestamp=now,
+        )
+        user_event = _make_adk_event("user", "Show me traffic", timestamp=now)
+
+        session = self._create_mock_session(
+            "sess1",
+            state={"account_id": "acct1"},
+            events=[user_event, tool_event],
+        )
+
+        mock_session_service.get_session = AsyncMock(return_value=session)
+
+        result = await service.recover_session("user1", "sess1")
+
         assert len(result.conversation_history) == 1
         assert result.conversation_history[0]["role"] == "user"
-        assert result.conversation_history[0]["content"] == "Hello"
 
     @pytest.mark.asyncio
     async def test_recover_session_not_found(self, service, mock_session_service):
@@ -200,13 +282,10 @@ class TestSessionRecoveryService:
         self, service, mock_session_service
     ):
         """Test that incomplete state is repaired."""
-        # Create a session with genuinely empty state (no account_id)
-        session = MagicMock()
-        session.id = "sess1"
-        session.create_time = datetime.now(timezone.utc)
-        session.update_time = session.create_time
-        session.state = {}  # Truly empty state
-        session.events = []
+        session = self._create_mock_session(
+            "sess1",
+            state={},
+        )
 
         mock_session_service.get_session = AsyncMock(return_value=session)
 
@@ -214,7 +293,6 @@ class TestSessionRecoveryService:
 
         assert result.success is True
         assert result.state is not None
-        # account_id should be None (needs selection) but present
         assert "account_id" in result.state
         assert "accessible_accounts" in result.state
 
@@ -229,6 +307,35 @@ class TestSessionRecoveryService:
 
         assert result.success is False
         assert "API Error" in result.error
+
+    @pytest.mark.asyncio
+    async def test_list_session_preview_from_last_message(
+        self, service, mock_session_service
+    ):
+        """Test that session preview comes from last real message, not system context."""
+        now = datetime.now(timezone.utc)
+        events = [
+            _make_adk_event("user", "[ORGANIZATION CONTEXT]\nOrg info", timestamp=now),
+            _make_adk_event("user", "Analyze my GA traffic", timestamp=now),
+            _make_adk_event("model", "Here are your GA insights...", timestamp=now),
+        ]
+
+        sessions = [
+            self._create_mock_session(
+                "sess1",
+                state={"account_id": "acct1", "conversation_name": "GA Analysis"},
+                events=events,
+            ),
+        ]
+
+        mock_response = SimpleNamespace(sessions=sessions)
+        mock_session_service.list_sessions = AsyncMock(return_value=mock_response)
+
+        recoverable = await service.list_recoverable_sessions("user1")
+
+        assert len(recoverable) == 1
+        assert recoverable[0].preview == "Here are your GA insights..."
+        assert recoverable[0].message_count == 2  # Both "user" role events
 
 
 class TestSessionRecoveryServiceValidation:

@@ -74,22 +74,27 @@ class UsageEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class UsageAggregation(BaseModel):
-    """Aggregated usage statistics for a time period.
+class ToolBreakdown(BaseModel):
+    """Per-tool usage breakdown with success/failure rates."""
 
-    Attributes:
-        period_start: Start of the aggregation period
-        period_end: End of the aggregation period
-        total_calls: Total number of tool calls
-        success_count: Number of successful calls
-        failure_count: Number of failed calls
-        success_rate: Percentage of successful calls (0-1)
-        avg_duration_ms: Average execution duration
-        total_tokens: Total tokens used
-        by_tool: Call counts by tool name
-        by_user: Call counts by user
-        by_status: Call counts by status
-    """
+    calls: int
+    success: int
+    failure: int
+    success_rate: float
+    avg_duration_ms: float | None
+
+
+class UserBreakdown(BaseModel):
+    """Per-user usage breakdown."""
+
+    calls: int
+    success: int
+    failure: int
+    success_rate: float
+
+
+class UsageAggregation(BaseModel):
+    """Aggregated usage statistics for a time period."""
 
     period_start: datetime
     period_end: datetime
@@ -99,8 +104,8 @@ class UsageAggregation(BaseModel):
     success_rate: float
     avg_duration_ms: float | None
     total_tokens: int
-    by_tool: dict[str, int]
-    by_user: dict[str, int]
+    by_tool: dict[str, ToolBreakdown]
+    by_user: dict[str, UserBreakdown]
     by_status: dict[str, int]
 
 
@@ -147,13 +152,20 @@ class UsageTracker:
 
     @property
     def client(self) -> firestore.Client | None:
-        """Lazy-load Firestore client."""
+        """Lazy-load Firestore client.
+
+        Uses direct google.cloud.firestore with ADC so it works both in the
+        local API process and when running on Vertex AI Agent Engine.
+        """
         if self._client is None and self._use_firestore:
             try:
-                from api.src.kene_api.firestore import get_firestore_service
+                from google.auth import default as auth_default
+                from google.cloud import firestore as fs
 
-                service = get_firestore_service()
-                self._client = service.get_client()
+                credentials, project = auth_default()
+                self._client = fs.Client(
+                    project=project, credentials=credentials
+                )
             except Exception as e:
                 logger.warning(
                     f"Firestore unavailable, using in-memory storage: {e}"
@@ -303,17 +315,17 @@ class UsageTracker:
 
     async def get_usage_aggregation(
         self,
-        account_id: str,
         start_date: datetime,
         end_date: datetime,
+        account_id: str | None = None,
         organization_id: str | None = None,
     ) -> UsageAggregation:
         """Get aggregated usage statistics for a time period.
 
         Args:
-            account_id: Account to query
             start_date: Start of period
             end_date: End of period
+            account_id: Optional account filter (omit for all accounts)
             organization_id: Optional org filter
 
         Returns:
@@ -323,24 +335,24 @@ class UsageTracker:
         await self.flush()
 
         events = await self._query_events(
-            account_id, start_date, end_date, organization_id
+            start_date, end_date, account_id, organization_id
         )
 
         return self._aggregate_events(events, start_date, end_date)
 
     async def _query_events(
         self,
-        account_id: str,
         start_date: datetime,
         end_date: datetime,
+        account_id: str | None,
         organization_id: str | None,
     ) -> list[dict[str, Any]]:
         """Query events from storage.
 
         Args:
-            account_id: Account to query
             start_date: Start of period
             end_date: End of period
+            account_id: Optional account filter
             organization_id: Optional org filter
 
         Returns:
@@ -350,36 +362,40 @@ class UsageTracker:
             try:
                 collection = self.client.collection(self.COLLECTION_NAME)
 
-                # Build query
-                query = collection.where("account_id", "==", account_id)
-                query = query.where("timestamp", ">=", start_date)
-                query = query.where("timestamp", "<=", end_date)
+                query = collection.where(
+                    "timestamp", ">=", start_date.isoformat()
+                )
+                query = query.where(
+                    "timestamp", "<=", end_date.isoformat()
+                )
+
+                if account_id:
+                    query = query.where("account_id", "==", account_id)
 
                 if organization_id:
                     query = query.where("organization_id", "==", organization_id)
 
-                # Execute query
                 docs = query.stream()
                 return [doc.to_dict() for doc in docs]
             except Exception as e:
                 logger.error(f"Firestore query failed: {e}")
 
         # Fall back to in-memory
-        return self._query_in_memory(account_id, start_date, end_date, organization_id)
+        return self._query_in_memory(start_date, end_date, account_id, organization_id)
 
     def _query_in_memory(
         self,
-        account_id: str,
         start_date: datetime,
         end_date: datetime,
+        account_id: str | None,
         organization_id: str | None,
     ) -> list[dict[str, Any]]:
         """Query events from in-memory store.
 
         Args:
-            account_id: Account to filter
             start_date: Start of period
             end_date: End of period
+            account_id: Optional account filter
             organization_id: Optional org filter
 
         Returns:
@@ -387,9 +403,9 @@ class UsageTracker:
         """
         results = []
         for event in self._in_memory_store:
-            if event.account_id != account_id:
-                continue
             if event.timestamp < start_date or event.timestamp > end_date:
+                continue
+            if account_id and event.account_id != account_id:
                 continue
             if organization_id and event.organization_id != organization_id:
                 continue
@@ -418,31 +434,64 @@ class UsageTracker:
         total_duration = 0
         duration_count = 0
         total_tokens = 0
-        by_tool: dict[str, int] = {}
-        by_user: dict[str, int] = {}
         by_status: dict[str, int] = {}
+
+        tool_stats: dict[str, dict[str, Any]] = {}
+        user_stats: dict[str, dict[str, int]] = {}
 
         for event in events:
             status = event.get("status", "unknown")
+            is_success = status == ExecutionStatus.SUCCESS.value
             by_status[status] = by_status.get(status, 0) + 1
 
-            if status == ExecutionStatus.SUCCESS.value:
+            if is_success:
                 success_count += 1
             else:
                 failure_count += 1
 
-            if event.get("duration_ms"):
-                total_duration += event["duration_ms"]
+            dur = event.get("duration_ms")
+            if dur:
+                total_duration += dur
                 duration_count += 1
 
             tokens = (event.get("input_tokens") or 0) + (event.get("output_tokens") or 0)
             total_tokens += tokens
 
             tool = event.get("tool_name", "unknown")
-            by_tool[tool] = by_tool.get(tool, 0) + 1
+            ts = tool_stats.setdefault(
+                tool, {"calls": 0, "success": 0, "failure": 0, "dur_total": 0, "dur_count": 0}
+            )
+            ts["calls"] += 1
+            ts["success" if is_success else "failure"] += 1
+            if dur:
+                ts["dur_total"] += dur
+                ts["dur_count"] += 1
 
             user = event.get("user_id", "unknown")
-            by_user[user] = by_user.get(user, 0) + 1
+            us = user_stats.setdefault(user, {"calls": 0, "success": 0, "failure": 0})
+            us["calls"] += 1
+            us["success" if is_success else "failure"] += 1
+
+        by_tool = {
+            name: ToolBreakdown(
+                calls=s["calls"],
+                success=s["success"],
+                failure=s["failure"],
+                success_rate=s["success"] / s["calls"] if s["calls"] > 0 else 0.0,
+                avg_duration_ms=s["dur_total"] / s["dur_count"] if s["dur_count"] > 0 else None,
+            )
+            for name, s in tool_stats.items()
+        }
+
+        by_user = {
+            uid: UserBreakdown(
+                calls=s["calls"],
+                success=s["success"],
+                failure=s["failure"],
+                success_rate=s["success"] / s["calls"] if s["calls"] > 0 else 0.0,
+            )
+            for uid, s in user_stats.items()
+        }
 
         return UsageAggregation(
             period_start=start_date,

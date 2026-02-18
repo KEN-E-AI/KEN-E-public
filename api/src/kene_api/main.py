@@ -100,6 +100,40 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Redis initialization check failed: {e}")
 
+    # Start usage tracker auto-flush
+    try:
+        from app.adk.tracking.usage import get_usage_tracker
+
+        usage_tracker = get_usage_tracker()
+        await usage_tracker.start_auto_flush()
+        logger.info("Usage tracker auto-flush started")
+    except Exception as e:
+        logger.warning(f"Failed to start usage tracker auto-flush: {e}")
+
+    # Start session timeout monitor
+    try:
+        from app.adk.session.timeout import configure_timeout_manager
+
+        async def _on_session_timeout(user_id: str, session_id: str) -> None:
+            logger.info(f"Session timed out: user={user_id}, session={session_id}")
+
+        async def _on_session_warning(
+            user_id: str, session_id: str, remaining_minutes: int
+        ) -> None:
+            logger.info(
+                f"Session warning: user={user_id}, session={session_id}, "
+                f"{remaining_minutes}min left"
+            )
+
+        timeout_mgr = configure_timeout_manager(
+            on_warning=_on_session_warning,
+            on_timeout=_on_session_timeout,
+        )
+        await timeout_mgr.start_monitor()
+        logger.info("Session timeout monitor started")
+    except Exception as e:
+        logger.warning(f"Failed to start session timeout monitor: {e}")
+
     # Pre-load agent engine connection to avoid 3s lazy-load on first request
     # This is done in a non-blocking background thread
     try:
@@ -114,6 +148,27 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down Kene API...")
+
+    # Stop usage tracker
+    try:
+        from app.adk.tracking.usage import get_usage_tracker
+
+        usage_tracker = get_usage_tracker()
+        await usage_tracker.stop_auto_flush()
+        logger.info("Usage tracker auto-flush stopped")
+    except Exception as e:
+        logger.warning(f"Failed to stop usage tracker: {e}")
+
+    # Stop session timeout monitor
+    try:
+        from app.adk.session.timeout import get_timeout_manager
+
+        timeout_mgr = get_timeout_manager()
+        await timeout_mgr.stop_monitor()
+        logger.info("Session timeout monitor stopped")
+    except Exception as e:
+        logger.warning(f"Failed to stop session timeout monitor: {e}")
+
     await neo4j_service.close()
     logger.info("Neo4j connection closed")
 

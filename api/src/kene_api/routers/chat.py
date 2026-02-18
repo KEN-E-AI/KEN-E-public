@@ -456,6 +456,7 @@ class ChatResponse(BaseModel):
     conversation_name: str | None = Field(
         None, description="Conversation name if provided"
     )
+    metadata: dict[str, Any] | None = Field(None, description="Response metadata")
 
 
 class ConversationInfo(BaseModel):
@@ -472,6 +473,7 @@ class ConversationInfo(BaseModel):
     message_count: int = Field(
         ..., description="Number of messages in the conversation"
     )
+    preview: str | None = Field(None, description="Preview of last message")
 
 
 class ConversationListResponse(BaseModel):
@@ -1065,8 +1067,9 @@ class AgentEngineClient:
         return False
 
     async def get_user_conversations(self, user_id: str) -> list[ConversationInfo]:
-        """Get all conversations for a user from ADK session service."""
+        """Get conversations for a user from the last 7 days."""
         conversations = []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
 
         try:
             logger.info(f"Getting conversations for user: {user_id}")
@@ -1084,13 +1087,52 @@ class AgentEngineClient:
                 sessions.sessions if hasattr(sessions, "sessions") else sessions
             )
 
+            redis_service = None
+            try:
+                redis_service = get_redis_service()
+                if not redis_service.is_available():
+                    redis_service = None
+            except Exception:
+                pass
+
             for session in session_list:
-                # Try to get metadata from our cache first, fallback to session data
                 session_id = getattr(session, "id", None) or getattr(
                     session, "session_id", str(session)
                 )
                 session_key = f"{user_id}:{session_id}"
-                cached_info = self._user_sessions.get(session_key, {})
+                cached_info = self._user_sessions.get(session_key)
+
+                # Try Redis when in-memory cache is empty (e.g. after restart)
+                if not cached_info and redis_service:
+                    try:
+                        cache_key = session_metadata_key(user_id, session_id)
+                        redis_data = redis_service.get_json(cache_key)
+                        if redis_data:
+                            if isinstance(redis_data.get("created_at"), str):
+                                redis_data["created_at"] = datetime.fromisoformat(
+                                    redis_data["created_at"]
+                                )
+                            if isinstance(redis_data.get("last_updated"), str):
+                                redis_data["last_updated"] = datetime.fromisoformat(
+                                    redis_data["last_updated"]
+                                )
+                            self._user_sessions[session_key] = redis_data
+                            cached_info = redis_data
+                    except Exception as e:
+                        logger.warning(f"Failed to load session {session_id} from Redis: {e}")
+
+                cached_info = cached_info or {}
+
+                last_updated = (
+                    getattr(session, "update_time", None)
+                    or cached_info.get("last_updated", datetime.now(timezone.utc))
+                )
+                if isinstance(last_updated, str):
+                    last_updated = datetime.fromisoformat(last_updated)
+
+                # Skip sessions older than 7 days
+                if last_updated < cutoff:
+                    continue
 
                 conversations.append(
                     ConversationInfo(
@@ -1099,9 +1141,9 @@ class AgentEngineClient:
                         or f"Chat {session_id[-8:]}",
                         created_at=getattr(session, "create_time", None)
                         or cached_info.get("created_at", datetime.now(timezone.utc)),
-                        last_updated=getattr(session, "update_time", None)
-                        or cached_info.get("last_updated", datetime.now(timezone.utc)),
+                        last_updated=last_updated,
                         message_count=cached_info.get("message_count", 0),
+                        preview=cached_info.get("preview"),
                     )
                 )
 
@@ -1110,13 +1152,19 @@ class AgentEngineClient:
             # Fallback to cached sessions if ADK service fails
             for session_key, info in self._user_sessions.items():
                 if session_key.startswith(f"{user_id}:"):
+                    last_updated = info["last_updated"]
+                    if isinstance(last_updated, str):
+                        last_updated = datetime.fromisoformat(last_updated)
+                    if last_updated < cutoff:
+                        continue
                     conversations.append(
                         ConversationInfo(
                             session_id=info["session_id"],
                             conversation_name=info.get("conversation_name"),
                             created_at=info["created_at"],
-                            last_updated=info["last_updated"],
+                            last_updated=last_updated,
                             message_count=info["message_count"],
+                            preview=info.get("preview"),
                         )
                     )
 
@@ -2059,6 +2107,16 @@ async def chat_completion(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied to account {request.account_id}",
             )
+        # Record session activity for timeout tracking
+        if request.session_id:
+            try:
+                from app.adk.session.timeout import get_timeout_manager
+
+                timeout_mgr = get_timeout_manager()
+                timeout_mgr.record_activity(user_context.user_id, request.session_id)
+            except Exception:
+                pass  # Non-critical
+
         if request.stream:
             # Return streaming response
             async def generate_response():
@@ -2091,10 +2149,44 @@ async def chat_completion(
                 account_id=request.account_id,
             )
 
+            # Store a preview of the response for session recovery
+            preview = (
+                response_content[:100] + "..."
+                if len(response_content) > 100
+                else response_content
+            )
+            session_key = f"{user_context.user_id}:{actual_session_id}"
+            if session_key in agent_client._user_sessions:
+                agent_client._user_sessions[session_key]["preview"] = preview
+                try:
+                    redis_service = get_redis_service()
+                    if redis_service.is_available():
+                        cache_key = session_metadata_key(
+                            user_context.user_id, actual_session_id
+                        )
+                        redis_service.set_json(
+                            cache_key,
+                            agent_client._user_sessions[session_key],
+                            ttl_seconds=SESSION_METADATA_TTL_SECONDS,
+                        )
+                except Exception:
+                    pass
+
+            # Detect re-auth requirement
+            metadata = None
+            reauth_markers = [
+                "authentication_required",
+                "requires_reauth",
+                "token has expired",
+            ]
+            if any(m in response_content.lower() for m in reauth_markers):
+                metadata = {"requires_reauth": True, "service": "google-analytics"}
+
             return ChatResponse(
                 content=response_content,
                 session_id=actual_session_id,
                 conversation_name=request.conversation_name,
+                metadata=metadata,
             )
 
     except HTTPException:
@@ -2153,6 +2245,15 @@ async def create_conversation(
         )
 
         logger.info(f"Created session: {session_id}")
+
+        # Record session activity for timeout tracking
+        try:
+            from app.adk.session.timeout import get_timeout_manager
+
+            timeout_mgr = get_timeout_manager()
+            timeout_mgr.record_activity(user_context.user_id, session_id)
+        except Exception:
+            pass  # Non-critical
 
         # Get the conversation info to return
         conversations = await agent_client.get_user_conversations(user_context.user_id)
@@ -2249,6 +2350,15 @@ async def get_conversation_history(
     Get the message history for a specific conversation.
     """
     try:
+        # Record session activity for timeout tracking
+        try:
+            from app.adk.session.timeout import get_timeout_manager
+
+            timeout_mgr = get_timeout_manager()
+            timeout_mgr.record_activity(user_context.user_id, session_id)
+        except Exception:
+            pass  # Non-critical
+
         history = await agent_client.get_conversation_history(
             user_id=user_context.user_id, session_id=session_id
         )
@@ -2296,6 +2406,122 @@ async def delete_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete conversation",
         )
+
+
+class SessionRecoveryResponse(BaseModel):
+    """Response for session recovery."""
+
+    success: bool
+    session_id: str | None = None
+    conversation_history: list[dict[str, Any]] | None = None
+    message_count: int = 0
+
+
+class SessionActivityResponse(BaseModel):
+    """Response for session activity recording."""
+
+    status: str = "ok"
+    remaining_seconds: int | None = None
+
+
+class RecoverableSessionInfo(BaseModel):
+    """Info about a recoverable session."""
+
+    session_id: str
+    conversation_name: str | None = None
+    last_updated: str
+    message_count: int = 0
+    preview: str | None = None
+
+
+@router.get("/sessions/recoverable")
+async def get_recoverable_sessions(
+    limit: int = 10,
+    user_context: UserContext = Depends(get_current_user_context),
+) -> list[RecoverableSessionInfo]:
+    """List sessions available for recovery.
+
+    Returns sessions from the last 7 days that can be resumed.
+    """
+    try:
+        from app.adk.session.recovery import get_recovery_service
+
+        recovery_svc = get_recovery_service()
+        sessions = await recovery_svc.list_recoverable_sessions(
+            user_id=user_context.user_id, limit=limit
+        )
+        return [
+            RecoverableSessionInfo(
+                session_id=s.session_id,
+                conversation_name=s.conversation_name,
+                last_updated=s.last_updated.isoformat() if s.last_updated else "",
+                message_count=s.message_count,
+                preview=s.preview,
+            )
+            for s in sessions
+        ]
+    except Exception as e:
+        logger.error(f"Error listing recoverable sessions: {e}")
+        return []
+
+
+@router.post("/sessions/{session_id}/recover")
+async def recover_session(
+    session_id: str,
+    user_context: UserContext = Depends(get_current_user_context),
+) -> SessionRecoveryResponse:
+    """Recover a previous session, restoring state and conversation history."""
+    try:
+        from app.adk.session.recovery import get_recovery_service
+
+        recovery_svc = get_recovery_service()
+        result = await recovery_svc.recover_session(
+            user_id=user_context.user_id, session_id=session_id
+        )
+
+        if not result.success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result.error or "Session not found",
+            )
+
+        history = result.conversation_history or []
+        return SessionRecoveryResponse(
+            success=True,
+            session_id=result.session_id,
+            conversation_history=history,
+            message_count=len(history),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recovering session {session_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to recover session",
+        )
+
+
+@router.post("/sessions/{session_id}/activity")
+async def record_session_activity(
+    session_id: str,
+    user_context: UserContext = Depends(get_current_user_context),
+) -> SessionActivityResponse:
+    """Record user activity to reset session timeout timer.
+
+    Called by the frontend as a keep-alive when the user is active.
+    """
+    try:
+        from app.adk.session.timeout import get_timeout_manager
+
+        timeout_mgr = get_timeout_manager()
+        timeout_mgr.record_activity(user_context.user_id, session_id)
+        remaining = timeout_mgr.get_remaining_time(user_context.user_id, session_id)
+
+        return SessionActivityResponse(status="ok", remaining_seconds=remaining)
+    except Exception as e:
+        logger.error(f"Error recording session activity: {e}")
+        return SessionActivityResponse(status="ok", remaining_seconds=None)
 
 
 @router.post("/cache/invalidate/{account_id}")

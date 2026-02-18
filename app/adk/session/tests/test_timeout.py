@@ -10,6 +10,8 @@ import pytest
 from app.adk.session.timeout import (
     SessionTimeoutManager,
     TimeoutConfig,
+    configure_timeout_manager,
+    reset_timeout_manager,
 )
 
 
@@ -22,7 +24,7 @@ class TestTimeoutConfig:
 
         assert config.warning_minutes == 25
         assert config.timeout_minutes == 30
-        assert config.check_interval_seconds == 60
+        assert config.check_interval_seconds == 30
 
     def test_custom_values(self):
         """Test custom configuration values."""
@@ -286,3 +288,49 @@ class TestSessionCounts:
         manager._warned.add("user1:sess2")
 
         assert manager.get_warned_session_count() == 2
+
+
+class TestConfigureTimeoutManager:
+    """Tests for configure_timeout_manager factory."""
+
+    @pytest.mark.asyncio
+    async def test_creates_manager_with_callbacks(self):
+        await reset_timeout_manager()
+        try:
+            async def on_warning(user_id: str, session_id: str, remaining: int) -> None:
+                pass
+
+            async def on_timeout(user_id: str, session_id: str) -> None:
+                pass
+
+            mgr = configure_timeout_manager(
+                on_warning=on_warning, on_timeout=on_timeout
+            )
+
+            assert mgr._on_warning is on_warning
+            assert mgr._on_timeout is on_timeout
+        finally:
+            await reset_timeout_manager()
+
+    @pytest.mark.asyncio
+    async def test_creates_manager_with_custom_config(self):
+        await reset_timeout_manager()
+        try:
+            config = TimeoutConfig(warning_minutes=5, timeout_minutes=10)
+            mgr = configure_timeout_manager(config=config)
+
+            assert mgr.config.warning_minutes == 5
+            assert mgr.config.timeout_minutes == 10
+        finally:
+            await reset_timeout_manager()
+
+    @pytest.mark.asyncio
+    async def test_returns_existing_instance_on_second_call(self):
+        await reset_timeout_manager()
+        try:
+            mgr1 = configure_timeout_manager()
+            mgr2 = configure_timeout_manager()
+
+            assert mgr1 is mgr2
+        finally:
+            await reset_timeout_manager()
