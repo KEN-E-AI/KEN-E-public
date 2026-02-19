@@ -85,7 +85,7 @@ def mock_config_loader():
     config2.enabled = False
     config2.connection.connection_type = "sse"
 
-    loader._configs = {
+    loader.configs = {
         "test_server_1": config1,
         "test_server_2": config2,
     }
