@@ -26,6 +26,7 @@ dev = [
     "pytest-asyncio>=0.23.8",
     "nest-asyncio>=1.6.0",
     "codespell>=2.2.6",
+    "mypy>=1.15.0",
 ]
 
 [project.optional-dependencies]

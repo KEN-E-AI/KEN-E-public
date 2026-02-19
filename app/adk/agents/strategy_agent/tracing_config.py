@@ -5,15 +5,14 @@ using W&B Weave for better observability.
 """
 
 import functools
-import json
 import logging
 import os
 
 # Set up SSL and network configuration for W&B
-import ssl
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 import certifi
 
@@ -31,7 +30,7 @@ if "WANDB_API_KEY" not in os.environ:
     # Try to load from .env file
     env_path = os.path.join(os.path.dirname(__file__), "../../.env")
     if os.path.exists(env_path):
-        with open(env_path, "r") as f:
+        with open(env_path) as f:
             for line in f:
                 line = line.strip()
                 if line.startswith("WANDB_API_KEY="):
@@ -169,8 +168,8 @@ def sanitize_for_logging(data: Any, max_length: int = 1000) -> Any:
 
 @weave.op(name="strategy_agent_execution")
 def traced_agent_execution(
-    agent_name: str, state: Dict[str, Any], **kwargs: Any
-) -> Dict[str, Any]:
+    agent_name: str, state: dict[str, Any], **kwargs: Any
+) -> dict[str, Any]:
     """Traced wrapper for strategy agent execution.
 
     Args:
@@ -247,7 +246,6 @@ def safe_llm_call(model: Any, prompt: str, max_retries: int = 3, **kwargs: Any) 
         raise
 
     retry_count = 0
-    last_error = None
 
     while retry_count < max_retries:
         try:
@@ -279,7 +277,6 @@ def safe_llm_call(model: Any, prompt: str, max_retries: int = 3, **kwargs: Any) 
 
         except Exception as e:
             retry_count += 1
-            last_error = e
 
             # Log error details
             error_key = f"error_attempt_{retry_count}"
@@ -312,7 +309,7 @@ def safe_llm_call(model: Any, prompt: str, max_retries: int = 3, **kwargs: Any) 
 
 
 @weave.op(name="document_processing")
-def trace_document_processing(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+def trace_document_processing(documents: list[dict[str, Any]]) -> dict[str, Any]:
     """Trace document processing with token tracking.
 
     Args:
@@ -420,7 +417,7 @@ def check_token_budget(
 
 
 def weave_traced(
-    name: Optional[str] = None, track_tokens: bool = True, track_time: bool = True
+    name: str | None = None, track_tokens: bool = True, track_time: bool = True
 ) -> Callable:
     """Decorator to add Weave tracing to any function.
 
