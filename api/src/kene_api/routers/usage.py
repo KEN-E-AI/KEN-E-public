@@ -3,7 +3,7 @@ Usage and cost tracking API endpoints with admin-only access.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
+from ..models.tool_models import ToolBreakdownResponse, UserBreakdownResponse
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +117,9 @@ async def get_user_costs(
     try:
         # Set date range
         if not date_from:
-            date_from = datetime.utcnow() - timedelta(days=30)
+            date_from = datetime.now(timezone.utc) - timedelta(days=30)
         if not date_to:
-            date_to = datetime.utcnow()
+            date_to = datetime.now(timezone.utc)
 
         # Query usage records
         usage_ref = db.collection("usage_records")
@@ -179,9 +180,9 @@ async def get_account_costs(
     try:
         # Set date range
         if not date_from:
-            date_from = datetime.utcnow() - timedelta(days=30)
+            date_from = datetime.now(timezone.utc) - timedelta(days=30)
         if not date_to:
-            date_to = datetime.utcnow()
+            date_to = datetime.now(timezone.utc)
 
         # Query usage records
         usage_ref = db.collection("usage_records")
@@ -252,7 +253,7 @@ async def record_usage(
         # Save to Firestore
         doc_id = f"{usage_record.user_id}_{usage_record.timestamp.isoformat()}_{uuid4().hex[:8]}"
         doc_ref = db.document(f"usage_records/{doc_id}")
-        doc_ref.set(usage_record.dict())
+        doc_ref.set(usage_record.model_dump())
 
         logger.info(
             f"Usage recorded: {usage_record.agent} by {usage_record.user_id} "
@@ -288,9 +289,9 @@ async def get_usage_summary(
     try:
         # Set date range
         if not date_from:
-            date_from = datetime.utcnow() - timedelta(days=30)
+            date_from = datetime.now(timezone.utc) - timedelta(days=30)
         if not date_to:
-            date_to = datetime.utcnow()
+            date_to = datetime.now(timezone.utc)
 
         # Query all usage records
         usage_ref = db.collection("usage_records")
@@ -388,23 +389,6 @@ def calculate_usage_summary(
     )
 
 
-class ToolBreakdownResponse(BaseModel):
-    """Per-tool usage breakdown."""
-    calls: int
-    success: int
-    failure: int
-    success_rate: float
-    avg_duration_ms: float | None = None
-
-
-class UserBreakdownResponse(BaseModel):
-    """Per-user usage breakdown."""
-    calls: int
-    success: int
-    failure: int
-    success_rate: float
-
-
 class ToolUsageResponse(BaseModel):
     """Response model for tool usage aggregation."""
     period_start: datetime = Field(..., description="Start of period")
@@ -441,7 +425,7 @@ async def get_tool_usage(
         from app.adk.tracking import get_usage_tracker
 
         tracker = get_usage_tracker()
-        end = datetime.utcnow()
+        end = datetime.now(timezone.utc)
         start = end - timedelta(days=days)
         aggregation = await tracker.get_usage_aggregation(start, end)
 

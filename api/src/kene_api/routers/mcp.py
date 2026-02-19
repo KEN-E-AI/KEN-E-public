@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..models.kene_models import RecoverableSessionInfo
+from ..models.tool_models import ToolBreakdownResponse, UserBreakdownResponse
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -258,12 +259,12 @@ async def load_mcp_server(
     except ConnectionError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to connect to MCP server '{request.server_name}': {e}",
+            detail=f"Failed to connect to MCP server '{request.server_name}'",
         ) from e
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Unexpected error loading MCP server '{request.server_name}': {e}",
+            detail=f"Unexpected error loading MCP server '{request.server_name}'",
         ) from e
 
 
@@ -292,25 +293,6 @@ async def unload_mcp_server(
 # ============================================================================
 # Tool Execution Usage Tracking Endpoints
 # ============================================================================
-
-
-class ToolBreakdownResponse(BaseModel):
-    """Per-tool usage breakdown."""
-
-    calls: int
-    success: int
-    failure: int
-    success_rate: float
-    avg_duration_ms: float | None = None
-
-
-class UserBreakdownResponse(BaseModel):
-    """Per-user usage breakdown."""
-
-    calls: int
-    success: int
-    failure: int
-    success_rate: float
 
 
 class AccountToolUsageResponse(BaseModel):
@@ -381,7 +363,7 @@ async def get_tool_usage(
         return AccountToolUsageResponse(**agg.model_dump())
     except Exception as e:
         logger.exception("Failed to retrieve tool usage")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve usage: {e}") from e
+        raise HTTPException(status_code=500, detail="Failed to retrieve usage") from e
 
 
 @router.get("/tools/usage/pending", response_model=ToolUsagePendingResponse)

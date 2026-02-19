@@ -1,6 +1,25 @@
-"""API models for tool discovery endpoints."""
+"""API models for tool discovery and usage endpoints."""
 
 from pydantic import BaseModel, Field
+
+
+class ToolBreakdownResponse(BaseModel):
+    """Per-tool usage breakdown."""
+
+    calls: int
+    success: int
+    failure: int
+    success_rate: float
+    avg_duration_ms: float | None = None
+
+
+class UserBreakdownResponse(BaseModel):
+    """Per-user usage breakdown."""
+
+    calls: int
+    success: int
+    failure: int
+    success_rate: float
 
 
 class ToolParameterResponse(BaseModel):

@@ -131,7 +131,6 @@ docs/
    ```bash
    # Option 1: Using uv directly (recommended)
    uv run -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
-   uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 8000
 
    # Option 2: Using the Python script
    python run_dev.py
