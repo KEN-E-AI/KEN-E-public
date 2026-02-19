@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => {
     for (const line of resolvedLines) {
       if (line.trim() && !line.startsWith("#")) {
         const [key, ...valueParts] = line.split("=");
-        const value = valueParts.join("=");
+        const value = valueParts.join("=").replace(/^["']|["']$/g, "");
         if (key && value) {
           env[key] = value;
         }
