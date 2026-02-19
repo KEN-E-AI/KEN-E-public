@@ -27,8 +27,6 @@ from .config import (
 
 if TYPE_CHECKING:
     from google.adk.agents.readonly_context import ReadonlyContext
-    from google.adk.tools.mcp_tool.mcp_session_manager import SseConnectionParams, StdioConnectionParams
-    from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 
 logger = get_structured_logger(__name__)
 
@@ -268,8 +266,12 @@ class MCPServerManager:
         Returns:
             SseConnectionParams or StdioConnectionParams
         """
-        from google.adk.tools.mcp_tool.mcp_session_manager import SseConnectionParams as _SseParams
-        from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams as _StdioParams
+        from google.adk.tools.mcp_tool.mcp_session_manager import (
+            SseConnectionParams as _SseParams,
+        )
+        from google.adk.tools.mcp_tool.mcp_session_manager import (
+            StdioConnectionParams as _StdioParams,
+        )
 
         if isinstance(config.connection, SseConnectionConfig):
             return _SseParams(

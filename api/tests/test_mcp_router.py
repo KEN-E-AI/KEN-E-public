@@ -98,22 +98,31 @@ def mock_usage_tracker():
     tracker = MagicMock()
     tracker.get_pending_count.return_value = 5
     tracker.get_stored_count.return_value = 100
-    tracker._use_firestore = False
+    tracker.is_using_firestore = False
     tracker.flush = AsyncMock()
 
-    # Mock aggregation result
+    # Mock aggregation result with model_dump support
+    agg_data = {
+        "period_start": datetime(2026, 2, 1, tzinfo=timezone.utc),
+        "period_end": datetime(2026, 2, 6, tzinfo=timezone.utc),
+        "total_calls": 50,
+        "success_count": 45,
+        "failure_count": 5,
+        "success_rate": 0.9,
+        "avg_duration_ms": 150.0,
+        "total_tokens": 1000,
+        "by_tool": {
+            "analytics": {"calls": 30, "success": 28, "failure": 2, "success_rate": 0.93, "avg_duration_ms": 120.0},
+            "crm": {"calls": 20, "success": 17, "failure": 3, "success_rate": 0.85, "avg_duration_ms": 200.0},
+        },
+        "by_user": {
+            "user1": {"calls": 25, "success": 23, "failure": 2, "success_rate": 0.92},
+            "user2": {"calls": 25, "success": 22, "failure": 3, "success_rate": 0.88},
+        },
+        "by_status": {"success": 45, "failure": 5},
+    }
     agg = MagicMock()
-    agg.period_start = datetime(2026, 2, 1, tzinfo=timezone.utc)
-    agg.period_end = datetime(2026, 2, 6, tzinfo=timezone.utc)
-    agg.total_calls = 50
-    agg.success_count = 45
-    agg.failure_count = 5
-    agg.success_rate = 0.9
-    agg.avg_duration_ms = 150.0
-    agg.total_tokens = 1000
-    agg.by_tool = {"analytics": 30, "crm": 20}
-    agg.by_user = {"user1": 25, "user2": 25}
-    agg.by_status = {"success": 45, "failure": 5}
+    agg.model_dump.return_value = agg_data
     tracker.get_usage_aggregation = AsyncMock(return_value=agg)
 
     return tracker
@@ -304,7 +313,7 @@ class TestToolUsageEndpoints:
         data = response.json()
         assert data["total_calls"] == 50
         assert data["success_rate"] == 0.9
-        assert data["by_tool"]["analytics"] == 30
+        assert data["by_tool"]["analytics"]["calls"] == 30
 
     def test_get_tool_usage_pending(
         self,
