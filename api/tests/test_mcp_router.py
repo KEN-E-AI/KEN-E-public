@@ -258,6 +258,50 @@ class TestMCPLoadEndpoints:
 
         assert response.status_code == 404
 
+    def test_load_server_connection_error(
+        self,
+        test_client,
+        mock_mcp_manager,
+    ):
+        """Test POST /api/v1/mcp/load returns 502 on connection failure."""
+        mock_mcp_manager.load_server.side_effect = ConnectionError(
+            "Failed to create MCP session: SSE server returned text/html"
+        )
+
+        with patch(
+            "src.kene_api.routers.mcp._get_mcp_manager",
+            return_value=mock_mcp_manager,
+        ):
+            response = test_client.post(
+                "/api/v1/mcp/load",
+                json={"server_name": "broken_server"},
+            )
+
+        assert response.status_code == 502
+        assert "Failed to connect" in response.json()["detail"]
+        assert "broken_server" in response.json()["detail"]
+
+    def test_load_server_unexpected_error(
+        self,
+        test_client,
+        mock_mcp_manager,
+    ):
+        """Test POST /api/v1/mcp/load returns 500 with clear message on unexpected error."""
+        mock_mcp_manager.load_server.side_effect = RuntimeError("something unexpected")
+
+        with patch(
+            "src.kene_api.routers.mcp._get_mcp_manager",
+            return_value=mock_mcp_manager,
+        ):
+            response = test_client.post(
+                "/api/v1/mcp/load",
+                json={"server_name": "error_server"},
+            )
+
+        assert response.status_code == 500
+        assert "Unexpected error" in response.json()["detail"]
+        assert "error_server" in response.json()["detail"]
+
     def test_unload_server_success(
         self,
         test_client,

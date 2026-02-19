@@ -255,6 +255,16 @@ async def load_mcp_server(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e)) from e
+    except ConnectionError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to connect to MCP server '{request.server_name}': {e}",
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error loading MCP server '{request.server_name}': {e}",
+        ) from e
 
 
 @router.post("/unload/{server_name}")
