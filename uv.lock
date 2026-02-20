@@ -2149,6 +2149,7 @@ lint = [
 [package.dev-dependencies]
 dev = [
     { name = "codespell" },
+    { name = "mypy" },
     { name = "nest-asyncio" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2178,6 +2179,7 @@ provides-extras = ["jupyter", "lint"]
 [package.metadata.requires-dev]
 dev = [
     { name = "codespell", specifier = ">=2.2.6" },
+    { name = "mypy", specifier = ">=1.15.0" },
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.23.8" },

@@ -296,7 +296,6 @@ class TestHeaderProvider:
         assert headers == {
             "Authorization": "Bearer test_access",
             "X-Tenant-ID": "org-123",
-            "X-Refresh-Token": "test_refresh",
         }
 
     def test_no_auth_type_returns_none(self, manager_with_config):

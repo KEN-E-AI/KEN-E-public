@@ -175,8 +175,9 @@ class SessionRecoveryService:
             RecoverableSession or None if not recoverable
         """
         # Extract session ID
-        session_id = getattr(session, "id", None) or getattr(
-            session, "session_id", str(session)
+        session_id = str(
+            getattr(session, "id", None)
+            or getattr(session, "session_id", session)
         )
 
         # Get timestamps
@@ -336,8 +337,8 @@ class SessionRecoveryService:
                     "role": role,
                     "content": text,
                     "timestamp": (
-                        getattr(e, "timestamp", None).isoformat()
-                        if getattr(e, "timestamp", None)
+                        ts.isoformat()
+                        if (ts := getattr(e, "timestamp", None))
                         else None
                     ),
                 })

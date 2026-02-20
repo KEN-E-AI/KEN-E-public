@@ -367,12 +367,11 @@ class UsageTracker:
             try:
                 collection = self.client.collection(self.COLLECTION_NAME)
 
-                query = collection.where(
-                    "timestamp", ">=", start_date.isoformat()
-                )
-                query = query.where(
-                    "timestamp", "<=", end_date.isoformat()
-                )
+                start_str = start_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                end_str = end_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+                query = collection.where("timestamp", ">=", start_str)
+                query = query.where("timestamp", "<=", end_str)
 
                 if account_id:
                     query = query.where("account_id", "==", account_id)
@@ -383,7 +382,14 @@ class UsageTracker:
                 docs = query.stream()
                 return [doc.to_dict() for doc in docs]
             except Exception as e:
-                logger.error(f"Firestore query failed: {e}")
+                logger.error(
+                    f"Firestore query failed: {e}",
+                    extra=log_context(
+                        component="usage_tracker",
+                        action="query_error",
+                        extra={"account_id": account_id, "error": str(e)},
+                    ),
+                )
 
         # Fall back to in-memory
         return self._query_in_memory(start_date, end_date, account_id, organization_id)

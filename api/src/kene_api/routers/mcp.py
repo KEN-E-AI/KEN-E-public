@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..models.kene_models import RecoverableSessionInfo
+from ..models.tool_models import ToolBreakdownResponse, UserBreakdownResponse
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -255,6 +256,16 @@ async def load_mcp_server(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e)) from e
+    except ConnectionError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to connect to MCP server '{request.server_name}'",
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error loading MCP server '{request.server_name}'",
+        ) from e
 
 
 @router.post("/unload/{server_name}")
@@ -295,8 +306,8 @@ class AccountToolUsageResponse(BaseModel):
     success_rate: float = Field(..., description="Success rate (0.0-1.0)")
     avg_duration_ms: float | None = Field(None, description="Average execution duration in ms")
     total_tokens: int = Field(..., description="Total tokens consumed")
-    by_tool: dict[str, int] = Field(..., description="Call counts by tool name")
-    by_user: dict[str, int] = Field(..., description="Call counts by user")
+    by_tool: dict[str, ToolBreakdownResponse] = Field(..., description="Breakdown by tool name")
+    by_user: dict[str, UserBreakdownResponse] = Field(..., description="Breakdown by user")
     by_status: dict[str, int] = Field(..., description="Call counts by status")
 
 
@@ -349,22 +360,10 @@ async def get_tool_usage(
             end_date=end_date,
         )
 
-        return AccountToolUsageResponse(
-            period_start=agg.period_start,
-            period_end=agg.period_end,
-            total_calls=agg.total_calls,
-            success_count=agg.success_count,
-            failure_count=agg.failure_count,
-            success_rate=agg.success_rate,
-            avg_duration_ms=agg.avg_duration_ms,
-            total_tokens=agg.total_tokens,
-            by_tool=agg.by_tool,
-            by_user=agg.by_user,
-            by_status=agg.by_status,
-        )
-    except Exception:
+        return AccountToolUsageResponse(**agg.model_dump())
+    except Exception as e:
         logger.exception("Failed to retrieve tool usage")
-        raise HTTPException(status_code=500, detail="Failed to retrieve usage") from None
+        raise HTTPException(status_code=500, detail="Failed to retrieve usage") from e
 
 
 @router.get("/tools/usage/pending", response_model=ToolUsagePendingResponse)

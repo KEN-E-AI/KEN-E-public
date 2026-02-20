@@ -1,10 +1,10 @@
 """Audit logging for security events."""
 
-import logging
 import json
+import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from google.cloud import firestore
 
@@ -53,11 +53,11 @@ class AuditLogger:
     async def log_event(
         self,
         event_type: SecurityEventType,
-        user_id: Optional[str] = None,
-        email: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
+        user_id: str | None = None,
+        email: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        details: dict[str, Any] | None = None,
         severity: str = "INFO",
     ) -> None:
         """Log a security event.
@@ -125,8 +125,8 @@ class AuditLogger:
         self,
         user_id: str,
         email: str,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         """Log successful login."""
         await self.log_event(
@@ -140,10 +140,10 @@ class AuditLogger:
 
     async def log_login_failure(
         self,
-        email: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        reason: Optional[str] = None,
+        email: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        reason: str | None = None,
     ) -> None:
         """Log failed login attempt."""
         await self.log_event(
@@ -160,8 +160,8 @@ class AuditLogger:
         user_id: str,
         resource_type: str,
         resource_id: str,
-        required_permission: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        required_permission: str | None = None,
+        ip_address: str | None = None,
     ) -> None:
         """Log access denied event."""
         await self.log_event(
@@ -179,8 +179,8 @@ class AuditLogger:
     async def log_rate_limit_exceeded(
         self,
         ip_address: str,
-        endpoint: Optional[str] = None,
-        user_id: Optional[str] = None,
+        endpoint: str | None = None,
+        user_id: str | None = None,
     ) -> None:
         """Log rate limit exceeded event."""
         await self.log_event(
@@ -195,8 +195,8 @@ class AuditLogger:
         self,
         user_id: str,
         token_id: str,
-        reason: Optional[str] = None,
-        revoked_by: Optional[str] = None,
+        reason: str | None = None,
+        revoked_by: str | None = None,
     ) -> None:
         """Log token revocation event."""
         await self.log_event(

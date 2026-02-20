@@ -35,6 +35,11 @@ export function useSessionTimeout({
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutFiredRef = useRef(false);
+  const onTimeoutRef = useRef(onTimeout);
+
+  useEffect(() => {
+    onTimeoutRef.current = onTimeout;
+  }, [onTimeout]);
 
   const resetTimer = useCallback(() => {
     lastActivityRef.current = Date.now();
@@ -69,7 +74,7 @@ export function useSessionTimeout({
         timeoutFiredRef.current = true;
         setIsExpired(true);
         setIsWarningShown(false);
-        onTimeout?.();
+        onTimeoutRef.current?.();
       } else if (remaining > 0 && elapsed >= warningMinutes * 60) {
         setIsWarningShown(true);
       }
@@ -80,14 +85,7 @@ export function useSessionTimeout({
         clearInterval(tickIntervalRef.current);
       }
     };
-  }, [
-    enabled,
-    sessionId,
-    warningMinutes,
-    timeoutMinutes,
-    onTimeout,
-    resetTimer,
-  ]);
+  }, [enabled, sessionId, warningMinutes, timeoutMinutes, resetTimer]);
 
   // Listen for user activity events (debounced)
   useEffect(() => {

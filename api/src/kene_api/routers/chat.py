@@ -27,11 +27,11 @@ from shared.structured_logging import get_structured_logger, log_context
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
-from ..models.kene_models import RecoverableSessionInfo
 from ..auth.user_context import get_current_user_context
 from ..cache import ga_credentials_key, org_context_key, session_metadata_key
 from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
+from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
 from ..services.ga_credential_helper import GACredentialHelper
 
@@ -602,7 +602,7 @@ class AgentEngineClient:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=f"Agent Engine is currently unavailable: {e!s}",
-                )
+                ) from e
         return self._agent_engine
 
     @property
@@ -622,7 +622,7 @@ class AgentEngineClient:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=f"Session service is currently unavailable: {e!s}",
-                )
+                ) from e
         return self._session_service
 
     async def create_conversation(
@@ -1737,7 +1737,7 @@ class AgentEngineClient:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"An unexpected error occurred: {e!s}",
-            )
+            ) from e
 
     async def stream_chat_completion(
         self,
@@ -2185,7 +2185,9 @@ async def chat_completion(
             # Check session state for re-auth requirement (set by before_tool_callback)
             metadata = None
             try:
-                from app.adk.session.recovery import get_recovery_service as _get_recovery
+                from app.adk.session.recovery import (
+                    get_recovery_service as _get_recovery,
+                )
 
                 _recovery = _get_recovery()
                 _session = await _recovery._session_service.get_session(
@@ -2220,7 +2222,7 @@ async def chat_completion(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred",
-        )
+        ) from e
 
 
 @router.get("/health")
@@ -2301,7 +2303,7 @@ async def create_conversation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create conversation",
-        )
+        ) from e
 
 
 @router.get("/conversations", response_model=ConversationListResponse)
@@ -2321,7 +2323,7 @@ async def list_conversations(user_context: UserContext = Depends(get_current_use
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list conversations",
-        )
+        ) from e
 
 
 @router.put("/conversations/{session_id}", response_model=ConversationInfo)
@@ -2363,7 +2365,7 @@ async def update_conversation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update conversation",
-        )
+        ) from e
 
 
 @router.get("/conversations/{session_id}/history")
@@ -2400,7 +2402,7 @@ async def get_conversation_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get conversation history",
-        )
+        ) from e
 
 
 @router.delete("/conversations/{session_id}")
@@ -2429,7 +2431,7 @@ async def delete_conversation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete conversation",
-        )
+        ) from e
 
 
 class SessionRecoveryResponse(BaseModel):
@@ -2513,7 +2515,7 @@ async def recover_session(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to recover session",
-        )
+        ) from e
 
 
 @router.post("/sessions/{session_id}/activity")
@@ -2596,4 +2598,4 @@ async def invalidate_cache(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to invalidate cache",
-        )
+        ) from e
