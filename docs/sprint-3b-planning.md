@@ -6,7 +6,7 @@
 
 **Sprint Number:** 3.5
 **SCRUM Team:** Core AI
-**Velocity:** 31 story points (7 stories)
+**Velocity:** 37 story points (9 stories)
 
 ---
 
@@ -117,13 +117,13 @@ The `organization_context` and `ga_credentials` are loaded in parallel via `asyn
 
 ## 3. Problems Identified
 
-### 3.1 Hardcoded Agent Configuration
+### 3.1 No Single Source of Truth for Agents
 
-**Impact:** Any change to the agent's instruction, name, or generation parameters requires a code change and redeployment.
+**Impact:** Adding a new agent requires updating 5 separate locations (agent file, Firestore document, `ALLOWED_CONFIG_IDS` allowlist, `__init__.py` exports, upload script). There is no single source of truth for what agents exist, and no validation to catch missing Firestore configs.
 
-The `create_ken_e_agent()` function loads the Firestore `ken_e_chatbot` document but only reads `config.model`. The `instruction`, `name`, `description`, and `generate_content_config` fields are all present in Firestore but ignored — the agent's system prompt is hardcoded as a 72-line string literal in `ken_e_agent.py` (lines 77-149).
+KEN-E has ~13 agents scattered across multiple files with inconsistent configuration patterns. Some use Firestore config, others are fully hardcoded. The API security allowlist (`ALLOWED_CONFIG_IDS` in `agent_configs.py`) is a manually maintained hardcoded set that must be kept in sync with agent definitions. As the system scales to dozens of agents, this becomes a significant developer experience and reliability problem.
 
-A fully functional `create_agent_from_firestore_config()` already exists in `config_loader.py` (line 144) and is used by other agents, but the KEN-E agent does not use it.
+Additionally, the `create_ken_e_agent()` function loads the Firestore `ken_e_chatbot` document but only reads `config.model`. The `instruction`, `name`, `description`, and `generate_content_config` fields are all present in Firestore but ignored — the agent's system prompt is hardcoded as a 72-line string literal in `ken_e_agent.py` (lines 77-149). A fully functional `create_agent_from_firestore_config()` already exists in `config_loader.py` (line 144) and is used by other agents, but the KEN-E agent does not use it.
 
 ### 3.2 Redundant Context Injection (Triple Injection)
 
@@ -189,7 +189,9 @@ There is currently no structured latency tracking for the end-to-end chat reques
 
 | ID | Title | Points | Priority | Solves Problem |
 |---|---|---|---|---|
-| 1.16.1 | Use Full Firestore Agent Config | 5 | High | 3.1 Hardcoded Config |
+| 1.16.3 | Create Agent Registry | 5 | High | 3.1 No Source of Truth |
+| 1.16.4 | Derive API Allowlist from Agent Registry | 3 | High | 3.1 No Source of Truth |
+| 1.16.5 | Add Agent Registry CI Validation Tests | 3 | High | 3.1 No Source of Truth |
 | 1.1.4 | Eliminate Per-Message Context Injection | 8 | High | 3.2 Triple Injection |
 | 1.1.5 | Consolidate Duplicate Context Loaders | 5 | Medium | 3.3 Duplicate Loaders |
 | 1.3.6 | Fix MCP Session Cancel Scope Crash | 5 | High | 3.4 MCP Crash |
@@ -204,18 +206,59 @@ There is currently no structured latency tracking for the end-to-end chat reques
 
 ### 4.3 Story Details
 
-**1.16.1 — Use Full Firestore Agent Config** (Feature: 1.16 - Agent Configuration Management)
+**1.16.3 — Create Agent Registry** (Feature: 1.16 - Agent Configuration Management)
 
-*As a developer, I want the KEN-E agent to read its full configuration (instruction, name, description, generate_content_config) from Firestore so that I can update agent behavior without redeploying.*
+*As a developer, I want a centralized agent registry that declares every agent in the system so that there is a single source of truth for what agents exist, their categories, Firestore config doc IDs, and module paths.*
 
 Acceptance Criteria:
-- `create_ken_e_agent()` uses `config.instruction` from Firestore instead of hardcoded instruction
-- `config.name`, `config.description`, and `config.generate_content_config` are applied to the Agent
-- Fallback to hardcoded values if Firestore load fails
-- Existing agent behavior is unchanged when Firestore config matches current hardcoded values
-- Unit tests verify Firestore config is applied and fallback works
+- `agent_registry.py` exists at `app/adk/agents/agent_registry.py` with zero external dependencies (stdlib only: `dataclasses`, `enum`)
+- `AgentCategory` enum defined with values: CHAT, ANALYTICS, NEWS, STRATEGY_RESEARCHER, STRATEGY_FORMATTER, SEARCH, SUPERVISOR, ORCHESTRATOR
+- `AgentEntry` dataclass defined with fields: `name`, `config_doc_id` (str | None), `category`, `description`, `module_path`, `factory_function`, `is_top_level` (default False)
+- `AGENT_REGISTRY` is an immutable `tuple[AgentEntry, ...]` containing all 13 current agents
+- Helper functions exist: `get_all_config_doc_ids()`, `get_agents_by_category()`, `get_top_level_entries()`, `get_agents_missing_firestore_config()`
+- `make lint` passes with new code
 
-Key files: `app/adk/agents/ken_e_agent.py` lines 38-51, 72-151
+Key files: `app/adk/agents/agent_registry.py` (new)
+
+---
+
+**1.16.4 — Derive API Allowlist from Agent Registry** (Feature: 1.16 - Agent Configuration Management)
+
+*As a developer, I want the API security allowlist (ALLOWED_CONFIG_IDS) to be automatically derived from the agent registry so that adding a new agent with a Firestore config automatically makes it accessible via the API without manually updating the allowlist.*
+
+Acceptance Criteria:
+- `ALLOWED_CONFIG_IDS` in `api/src/kene_api/routers/agent_configs.py` is replaced with `get_all_config_doc_ids()` from the registry (no more hardcoded set)
+- API startup logs a validation message from the registry (warnings for agents without Firestore configs, not errors)
+- `validate_registry_at_startup()` is called in the FastAPI lifespan in `api/src/kene_api/main.py`
+- Existing API tests (`api/tests/test_agent_configs.py`) still pass with derived allowlist
+- `GET /api/v1/agent-configs/` returns the same list of config IDs as before
+- `make lint` passes
+
+Depends on: 1.16.3
+
+Key files: `api/src/kene_api/routers/agent_configs.py` lines 24-34; `api/src/kene_api/main.py`
+
+---
+
+**1.16.5 — Add Agent Registry CI Validation Tests** (Feature: 1.16 - Agent Configuration Management)
+
+*As a developer, I want CI tests that validate the agent registry is consistent with the rest of the codebase so that adding a new agent without updating the registry or missing a Firestore config is caught automatically before merge.*
+
+Acceptance Criteria:
+- `test_agent_registry.py` exists at `app/adk/agents/tests/test_agent_registry.py`
+- Test: no duplicate agent names in registry
+- Test: no duplicate config_doc_ids (excluding None)
+- Test: `ALLOWED_CONFIG_IDS` in API router equals registry-derived set
+- Test: every `is_top_level=True` agent appears in `__init__.py.__all__`
+- Test: all STRATEGY_RESEARCHER and STRATEGY_FORMATTER agents have a `config_doc_id`
+- Test: no empty descriptions in any registry entry
+- Test: each `module_path` is importable (or at least exists as a file)
+- All tests pass with `pytest app/adk/agents/tests/test_agent_registry.py -v`
+- `make lint` passes
+
+Depends on: 1.16.3
+
+Key files: `app/adk/agents/tests/test_agent_registry.py` (new)
 
 ---
 
@@ -300,6 +343,8 @@ Key files: `google/adk/apps/compaction.py` line 338; `google/adk/runners.py` lin
 | File | Role |
 |---|---|
 | `app/adk/agents/ken_e_agent.py` | Agent definition (hardcoded instructions, tools, callbacks) |
+| `app/adk/agents/agent_registry.py` | Central agent registry — single source of truth for all 13 agents |
+| `app/adk/agents/tests/test_agent_registry.py` | CI validation tests for registry consistency |
 | `app/adk/agents/strategy_agent/config_loader.py` | Firestore config loader (only `model` used by KEN-E; `create_agent_from_firestore_config()` exists but unused) |
 | `api/src/kene_api/routers/chat.py` | Session creation (lines 648-808), context injection (lines 331-400, 1442, 1800) |
 | `app/adk/agents/utils/dispatch_handlers.py` | Tool dispatch to sub-agents, reads session state for context re-injection |
@@ -315,5 +360,5 @@ This sprint is complete when:
 1. **Strategy discussion works** — A user can ask KEN-E about their company strategy and receive a contextually relevant response informed by their organization's brand voice, industry, and business overview.
 2. **Response time < 5 seconds** — End-to-end chat response latency is measurably under 5 seconds for typical queries, verified by the latency metrics instrumentation added in this sprint.
 3. **Google Analytics data retrieval works** — A user can ask "How many website visitors did we have last week?" and receive actual GA4 data in response, without cancel scope crashes or misleading error messages.
-4. **Agent config is manageable** — Agent instructions and parameters can be updated in Firestore without redeployment.
+4. **Agent config is manageable** — A centralized agent registry serves as the single source of truth for all agents; the API allowlist is derived automatically and CI tests enforce consistency.
 5. **No token waste** — Organization context appears once in the LLM context per invocation, not repeated in every message in the conversation history.
