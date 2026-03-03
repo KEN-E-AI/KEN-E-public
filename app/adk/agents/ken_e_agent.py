@@ -4,15 +4,32 @@ KEN-E Agent: Frontend-facing chat agent for company news and analytics.
 
 import logging
 import os
+from pathlib import Path
 
 from google.adk.agents import Agent
 from google.adk.tools import ToolContext
 
-# Configure structured logging for Google Cloud
-from shared.structured_logging import configure_logging, get_structured_logger
+# Load environment variables from .env file BEFORE reading any env vars.
+# On Agent Engine the .env is deployed alongside the agent code.
+try:
+    from dotenv import load_dotenv
+
+    base_path = Path(__file__).resolve().parent
+    possible_paths = [
+        base_path.parent / ".env",
+        base_path / ".env",
+    ]
+    for env_path in possible_paths:
+        if env_path.exists():
+            load_dotenv(env_path, override=False)
+            break
+except ImportError:
+    pass
 
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import adk_after_tool_callback
+from app.utils.weave_observability import init_weave_if_needed
+from shared.structured_logging import configure_logging, get_structured_logger
 
 from .strategy_agent.config_loader import load_config_from_firestore
 from .utils.dispatch_handlers import (
@@ -34,6 +51,14 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     Args:
         config_doc_id: Firestore document ID for agent configuration (default: "ken_e_chatbot")
     """
+
+    # Initialize Weave tracing — log loudly on failure but don't block agent
+    weave_ok = init_weave_if_needed()
+    if not weave_ok:
+        logger.error(
+            "WEAVE INITIALIZATION FAILED — traces will NOT be captured. "
+            "Check that WANDB_API_KEY is set in .env and the weave package is installed."
+        )
 
     # Load configuration from Firestore with fallback to hardcoded values
     try:

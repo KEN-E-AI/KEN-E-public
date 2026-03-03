@@ -17,3 +17,24 @@ DEFAULT_PRODUCT_CATEGORIES = [
     "Professional Solutions",
     "Digital Products",
 ]
+
+# Semantic output_category labels for each strategy agent's phases.
+# Used by Weave attributes for MER-E trace-rule matching.
+OUTPUT_CATEGORIES: dict[str, dict[str, str]] = {
+    "business_strategy": {
+        "research": "business_strategy.google_search",
+        "report": "business_strategy.research_report",
+    },
+    "competitive_strategy": {
+        "research": "competitive_strategy.google_search",
+        "report": "competitive_strategy.research_report",
+    },
+    "marketing_strategy": {
+        "research": "marketing_strategy.google_search",
+        "report": "marketing_strategy.research_report",
+    },
+    "brand_guidelines": {
+        "research": "brand_guidelines.google_search",
+        "report": "brand_guidelines.research_report",
+    },
+}

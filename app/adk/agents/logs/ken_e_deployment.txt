@@ -1,5 +1,5 @@
-Deployment: ken-e-chat-agent-20260218-160917
-Timestamp: 20260218-160917
+Deployment: ken-e-chat-agent-20260303-132254
+Timestamp: 20260303-132254
 Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/5831337983235588096
 Project: ken-e-dev
 Location: us-central1

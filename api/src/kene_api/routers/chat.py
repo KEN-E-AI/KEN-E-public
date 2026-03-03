@@ -3,6 +3,7 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 """
 
 import asyncio
+import json
 import os
 import time
 from collections.abc import AsyncGenerator
@@ -16,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
+from app.utils.weave_observability import WEAVE_AVAILABLE
 from shared.context_utils import (
     CAMPAIGN_KEYWORDS,
     format_campaign_markdown,
@@ -24,6 +26,9 @@ from shared.context_utils import (
     should_load_campaigns,
 )
 from shared.structured_logging import get_structured_logger, log_context
+
+if WEAVE_AVAILABLE:
+    import weave
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
@@ -1544,6 +1549,13 @@ class AgentEngineClient:
                                                     f"Extracted text from nested structure: {part['text'][:50]}..."
                                                 )
                                                 response_parts.append(part["text"])
+                                            elif isinstance(part, dict) and (
+                                                "function_call" in part
+                                                or "function_response" in part
+                                            ):
+                                                logger.info(
+                                                    "Skipping function_call/function_response part"
+                                                )
                                             else:
                                                 response_parts.append(str(part))
                                     else:
@@ -1558,6 +1570,13 @@ class AgentEngineClient:
                                                 f"Extracted text from direct structure: {part['text'][:50]}..."
                                             )
                                             response_parts.append(part["text"])
+                                        elif isinstance(part, dict) and (
+                                            "function_call" in part
+                                            or "function_response" in part
+                                        ):
+                                            logger.info(
+                                                "Skipping function_call/function_response part"
+                                            )
                                         else:
                                             response_parts.append(str(part))
                                 # Handle string content
@@ -1577,6 +1596,24 @@ class AgentEngineClient:
                             elif isinstance(chunk, str):
                                 # Handle string representation of dictionary
                                 logger.info(f"Processing string chunk: {chunk[:50]}...")
+
+                                # Skip JSON-format function events (double-quoted keys)
+                                # Agent Engine may return these as JSON strings, not Python dicts
+                                _stripped = chunk.strip()
+                                if _stripped.startswith("{"):
+                                    try:
+                                        _parsed = json.loads(_stripped)
+                                        if isinstance(_parsed, dict) and (
+                                            "function_call" in _parsed
+                                            or "function_response" in _parsed
+                                        ):
+                                            logger.info(
+                                                "Skipping JSON function event data"
+                                            )
+                                            continue
+                                    except (json.JSONDecodeError, ValueError):
+                                        pass
+
                                 if chunk.startswith("{'parts'") and "'text':" in chunk:
                                     logger.info(
                                         "Attempting to parse chunk as dictionary"
@@ -1657,6 +1694,8 @@ class AgentEngineClient:
                         if full_response and (
                             "{'function_call'" in full_response
                             or "{'function_response'" in full_response
+                            or '{"function_call"' in full_response
+                            or '{"function_response"' in full_response
                         ):
                             logger.info(
                                 f"Cleaning function data from response (length: {len(full_response)})"
@@ -1900,6 +1939,13 @@ class AgentEngineClient:
                                     for part in content["parts"]:
                                         if isinstance(part, dict) and "text" in part:
                                             yield part["text"]
+                                        elif isinstance(part, dict) and (
+                                            "function_call" in part
+                                            or "function_response" in part
+                                        ):
+                                            logger.debug(
+                                                "Skipping function_call/function_response part in stream"
+                                            )
                                         else:
                                             yield str(part)
                                 else:
@@ -1909,6 +1955,13 @@ class AgentEngineClient:
                                 for part in chunk["parts"]:
                                     if isinstance(part, dict) and "text" in part:
                                         yield part["text"]
+                                    elif isinstance(part, dict) and (
+                                        "function_call" in part
+                                        or "function_response" in part
+                                    ):
+                                        logger.debug(
+                                            "Skipping function_call/function_response part in stream"
+                                        )
                                     else:
                                         yield str(part)
                             elif "content" in chunk:
@@ -1926,6 +1979,23 @@ class AgentEngineClient:
                             logger.debug(
                                 f"Raw chunk received (first 200 chars): {chunk[:200]}..."
                             )
+
+                            # Skip JSON-format function events (double-quoted keys)
+                            # Agent Engine may return these as JSON strings, not Python dicts
+                            _stripped = chunk.strip()
+                            if _stripped.startswith("{"):
+                                try:
+                                    _parsed = json.loads(_stripped)
+                                    if isinstance(_parsed, dict) and (
+                                        "function_call" in _parsed
+                                        or "function_response" in _parsed
+                                    ):
+                                        logger.debug(
+                                            "Skipping JSON function event data in stream"
+                                        )
+                                        continue
+                                except (json.JSONDecodeError, ValueError):
+                                    pass
 
                             # Parse and clean string chunks that might contain function data
                             # Check if this is a string representation of function_call/function_response
@@ -2125,6 +2195,20 @@ async def chat_completion(
                 timeout_mgr.record_activity(user_context.user_id, request.session_id)
             except Exception:
                 pass  # Non-critical
+
+        # Set Weave root span metadata for trace filtering (scoped via contextvars)
+        if WEAVE_AVAILABLE:
+            try:
+                _attrs_cm = weave.attributes({
+                    "account_id": request.account_id or "unknown",
+                    "session_id": request.session_id or "unknown",
+                    "user_id": user_context.user_id or "unknown",
+                    "environment": os.getenv("ENVIRONMENT", "development"),
+                    "agent": "ken_e_chatbot",
+                })
+                _attrs_cm.__enter__()
+            except Exception:
+                pass
 
         if request.stream:
             # Return streaming response

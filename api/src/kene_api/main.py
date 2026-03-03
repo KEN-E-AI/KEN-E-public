@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 from contextlib import asynccontextmanager
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -88,6 +89,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize Firestore: {e}")
         # Continue without Firestore if initialization fails
 
+    # Initialize Weave tracing (idempotent, graceful degradation)
+    try:
+        from app.utils.weave_observability import init_weave_if_needed
+
+        init_weave_if_needed()
+        logger.info("Weave tracing initialization attempted")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Weave tracing: {e}")
+
     # Initialize Redis (non-blocking - will work with or without Redis)
     try:
         from .redis_client import get_redis_service
@@ -144,6 +154,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start Agent Engine pre-loading: {e}")
 
+    # Start MCP health monitor
+    try:
+        from app.adk.mcp_config import get_mcp_manager
+
+        mcp_manager = get_mcp_manager()
+        await mcp_manager.start_health_monitor()
+        logger.info("MCP health monitor started")
+    except Exception as e:
+        logger.warning(f"Failed to start MCP health monitor: {e}")
+
     yield
 
     # Shutdown
@@ -168,6 +188,16 @@ async def lifespan(app: FastAPI):
         logger.info("Session timeout monitor stopped")
     except Exception as e:
         logger.warning(f"Failed to stop session timeout monitor: {e}")
+
+    # Stop MCP health monitor
+    try:
+        from app.adk.mcp_config import get_mcp_manager
+
+        mcp_manager = get_mcp_manager()
+        await mcp_manager.stop_health_monitor()
+        logger.info("MCP health monitor stopped")
+    except Exception as e:
+        logger.warning(f"Failed to stop MCP health monitor: {e}")
 
     await neo4j_service.close()
     logger.info("Neo4j connection closed")
@@ -211,6 +241,16 @@ app.add_middleware(
     allow_methods=cors_methods,
     allow_headers=cors_headers,
 )
+
+# Request ID middleware (generates correlation ID per request)
+from .middleware.request_id import RequestIdMiddleware
+
+app.add_middleware(RequestIdMiddleware)
+
+# Latency metrics middleware (Prometheus histogram per route)
+from .metrics.latency_metrics import LatencyMiddleware
+
+app.add_middleware(LatencyMiddleware)
 
 # Include routers
 app.include_router(auth.router)  # Auth router already has its prefix
@@ -311,8 +351,18 @@ async def health_check():
     except Exception:
         redis_healthy = False
 
+    # Check MCP health
+    mcp_status: dict[str, Any] = {}
+    try:
+        from app.adk.mcp_config import get_mcp_manager
+
+        mcp_mgr = get_mcp_manager()
+        mcp_status = mcp_mgr.get_status()
+    except Exception:
+        pass
+
     # Overall health is true if critical services are healthy
-    # Redis is not critical - system works without it
+    # Redis and MCP are not critical - system works without them
     overall_healthy = neo4j_healthy and firestore_healthy
     status = "healthy" if overall_healthy else "degraded"
     status_code = 200 if overall_healthy else 503
@@ -326,6 +376,15 @@ async def health_check():
                 "neo4j": "healthy" if neo4j_healthy else "unhealthy",
                 "firestore": "healthy" if firestore_healthy else "unhealthy",
                 "redis": "healthy" if redis_healthy else "unavailable",
+                "mcp": {
+                    "loaded_servers": mcp_status.get("loaded_count", 0),
+                    "servers": [
+                        {"name": s["name"], "health": s["health_status"]}
+                        for s in mcp_status.get("servers", [])
+                    ],
+                }
+                if mcp_status
+                else "unavailable",
             },
         },
     )

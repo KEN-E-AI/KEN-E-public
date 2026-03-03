@@ -6,7 +6,7 @@ This module provides:
 - YAML configuration for tool definitions
 """
 
-from .tool_registry import ToolRegistry
+from .tool_registry import ToolRegistry, get_default_registry
 from .tool_schema import (
     ToolDefinition,
     ToolParameter,
@@ -18,4 +18,5 @@ __all__ = [
     "ToolParameter",
     "ToolPermission",
     "ToolRegistry",
+    "get_default_registry",
 ]

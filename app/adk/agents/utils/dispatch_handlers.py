@@ -3,7 +3,6 @@ Dispatch handlers for routing to specialized agents.
 """
 
 import logging
-import os
 import time
 import uuid
 from typing import Any
@@ -11,12 +10,15 @@ from typing import Any
 from google.adk.tools import ToolContext
 from pydantic import ValidationError
 
+from app.utils.weave_observability import safe_weave_op
+
 from ..models.strategy_models import StrategyParameters, parse_strategy_query
 from .agent_retry import invoke_agent_with_retry
 
 logger = logging.getLogger(__name__)
 
 
+@safe_weave_op(name="dispatch_to_company_news")
 def dispatch_to_company_news(
     query: str,
     tool_context: ToolContext | None = None,
@@ -86,6 +88,7 @@ def dispatch_to_company_news(
         }
 
 
+@safe_weave_op(name="dispatch_to_google_analytics")
 def dispatch_to_google_analytics(
     query: str,
     tool_context: ToolContext | None = None,
@@ -176,6 +179,7 @@ def dispatch_to_google_analytics(
         }
 
 
+@safe_weave_op(name="dispatch_to_strategy")
 def dispatch_to_strategy(
     query: str, tenant_context: dict[str, Any] | None = None
 ) -> dict[str, Any]:
