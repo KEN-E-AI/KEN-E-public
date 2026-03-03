@@ -86,7 +86,30 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
   >([]);
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
 
-  // Load conversations and check for recoverable sessions when authenticated
+  // Track previous account to detect switches
+  const prevAccountIdRef = useRef(selectedOrgAccount?.accountId);
+
+  // Reset chat session when the selected account changes
+  useEffect(() => {
+    const prevAccountId = prevAccountIdRef.current;
+    const currentAccountId = selectedOrgAccount?.accountId;
+    prevAccountIdRef.current = currentAccountId;
+
+    if (prevAccountId && currentAccountId && prevAccountId !== currentAccountId) {
+      setSessionId(null);
+      setCurrentConversation(null);
+      setMessages([
+        {
+          id: "1",
+          role: "assistant",
+          content: `Hello! I'm here to help with your ${currentTab} strategy. What would you like to discuss?`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    }
+  }, [selectedOrgAccount?.accountId, currentTab]);
+
+  // Load conversations and check for recoverable sessions when authenticated or account changes
   useEffect(() => {
     if (!isAuthenticated) {
       return;
@@ -139,7 +162,7 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
 
     loadConversations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]); // Run when auth state changes
+  }, [isAuthenticated, selectedOrgAccount?.accountId]); // Re-run when auth state or account changes
 
   // Create a new chat conversation
   const createNewChat = useCallback(async () => {
