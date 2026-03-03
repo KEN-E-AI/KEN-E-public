@@ -98,9 +98,6 @@ class TestCachedNotificationRepository:
         user_id = "user_123"
         account_ids = ["acc_123", "acc_456"]
 
-        # Set up test data
-        base_repository._unread_count_cache.clear()  # Clear any existing cache
-
         # Mock the count method to track calls
         call_count = 0
         original_count_unread = base_repository.count_unread
@@ -189,3 +186,73 @@ class TestCachedNotificationRepository:
         assert any(
             k.startswith("user_2:") for k in cached_repository._unread_count_cache
         )
+
+    async def test_get_by_account_caching(self, cached_repository, base_repository):
+        """Test that get_by_account results are cached and served on repeat calls."""
+        account_ids = ["acc_123"]
+        call_count = 0
+        original_get_by_account = base_repository.get_by_account
+
+        async def tracking_get_by_account(aids, include_archived=False, limit=None, offset=0):
+            nonlocal call_count
+            call_count += 1
+            return await original_get_by_account(aids, include_archived, limit, offset)
+
+        base_repository.get_by_account = tracking_get_by_account
+
+        # First call — hits underlying repository
+        result1 = await cached_repository.get_by_account(account_ids)
+        assert call_count == 1
+
+        # Second call — served from cache
+        result2 = await cached_repository.get_by_account(account_ids)
+        assert call_count == 1
+        assert result1 == result2
+
+        # Wait for cache to expire
+        time.sleep(1.1)
+
+        # Third call — cache expired, hits repository again
+        await cached_repository.get_by_account(account_ids)
+        assert call_count == 2
+
+    async def test_get_by_account_cache_key_order_independent(self, cached_repository):
+        """Cache keys for get_by_account are consistent regardless of account order."""
+        key1 = cached_repository._make_account_cache_key(
+            ["acc_b", "acc_a"], False, 10, 0
+        )
+        key2 = cached_repository._make_account_cache_key(
+            ["acc_a", "acc_b"], False, 10, 0
+        )
+        assert key1 == key2
+
+    async def test_get_by_account_cache_invalidated_on_create(
+        self, cached_repository, base_repository
+    ):
+        """Creating a notification invalidates the get_by_account cache."""
+        from src.kene_api.models.kene_models import Notification, NotificationCategory
+
+        account_ids = ["acc_123"]
+        await cached_repository.get_by_account(account_ids)
+        assert len(cached_repository._account_notifications_cache) > 0
+
+        notification = Notification(
+            id="notif_new",
+            account_id="acc_123",
+            title="New",
+            description="Test notification",
+            category=NotificationCategory.KPI_PERFORMANCE,
+            created_at=datetime.now().isoformat(),
+        )
+        await cached_repository.create(notification)
+
+        assert len(cached_repository._account_notifications_cache) == 0
+
+    async def test_get_by_account_different_params_cached_separately(
+        self, cached_repository
+    ):
+        """Different pagination/filter params produce separate cache entries."""
+        await cached_repository.get_by_account(["acc_1"], limit=10, offset=0)
+        await cached_repository.get_by_account(["acc_1"], limit=20, offset=0)
+
+        assert len(cached_repository._account_notifications_cache) == 2

@@ -34,6 +34,9 @@ class CachedNotificationRepository(NotificationRepository):
             str, tuple[UserNotificationPreferences | None, float]
         ] = {}
         self._unread_count_cache: dict[str, tuple[int, float]] = {}
+        self._account_notifications_cache: dict[
+            str, tuple[list[Notification], float]
+        ] = {}
 
     def _is_cache_valid(self, timestamp: float) -> bool:
         """Check if a cache entry is still valid."""
@@ -41,17 +44,26 @@ class CachedNotificationRepository(NotificationRepository):
 
     def _make_count_cache_key(self, user_id: str, account_ids: list[str]) -> str:
         """Create a cache key for unread count."""
-        # Sort account IDs for consistent key
         sorted_accounts = sorted(account_ids)
         return f"{user_id}:{','.join(sorted_accounts)}"
+
+    def _make_account_cache_key(
+        self,
+        account_ids: list[str],
+        include_archived: bool,
+        limit: int | None,
+        offset: int,
+    ) -> str:
+        """Create a cache key for account notifications."""
+        sorted_accounts = sorted(account_ids)
+        return f"{','.join(sorted_accounts)}:{include_archived}:{limit}:{offset}"
 
     async def create(self, notification: Notification) -> str:
         """Create notification and invalidate relevant caches."""
         result = await self.repository.create(notification)
 
-        # Invalidate unread count cache for all users
-        # In production, you'd want to be more selective
         self._unread_count_cache.clear()
+        self._account_notifications_cache.clear()
 
         return result
 
@@ -66,10 +78,21 @@ class CachedNotificationRepository(NotificationRepository):
         limit: int | None = None,
         offset: int = 0,
     ) -> list[Notification]:
-        """Get notifications (no caching for lists)."""
-        return await self.repository.get_by_account(
+        """Get notifications with caching."""
+        cache_key = self._make_account_cache_key(
             account_ids, include_archived, limit, offset
         )
+
+        if cache_key in self._account_notifications_cache:
+            cached, timestamp = self._account_notifications_cache[cache_key]
+            if self._is_cache_valid(timestamp):
+                return cached
+
+        notifications = await self.repository.get_by_account(
+            account_ids, include_archived, limit, offset
+        )
+        self._account_notifications_cache[cache_key] = (notifications, time.time())
+        return notifications
 
     async def get_user_statuses(
         self,
@@ -170,7 +193,7 @@ class CachedNotificationRepository(NotificationRepository):
         """Archive old notifications and clear caches."""
         result = await self.repository.archive_old_notifications(days)
 
-        # Clear all caches since many notifications may have changed
         self._unread_count_cache.clear()
+        self._account_notifications_cache.clear()
 
         return result
