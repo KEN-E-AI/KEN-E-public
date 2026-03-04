@@ -27,7 +27,11 @@ except ImportError:
     pass
 
 from app.adk.security.hooks import adk_before_tool_callback
-from app.adk.tracking.callbacks import adk_after_tool_callback
+from app.adk.tracking.callbacks import (
+    adk_after_tool_callback,
+    weave_after_agent_callback,
+    weave_before_agent_callback,
+)
 from app.utils.weave_observability import init_weave_if_needed
 from shared.structured_logging import configure_logging, get_structured_logger
 
@@ -97,6 +101,8 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     ken_e = Agent(
         name="ken_e",
         model=model,
+        before_agent_callback=weave_before_agent_callback,
+        after_agent_callback=weave_after_agent_callback,
         before_tool_callback=adk_before_tool_callback,
         after_tool_callback=adk_after_tool_callback,
         instruction="""You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.

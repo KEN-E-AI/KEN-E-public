@@ -7,9 +7,9 @@ This version embeds all strategy agent code directly to ensure proper deployment
 import os
 import logging
 import asyncio
-import concurrent.futures
 from typing import Dict, Any, Optional, Tuple, List
 import uuid
+import weave
 import json
 import re
 from datetime import datetime
@@ -376,7 +376,7 @@ def invoke_agent_sync(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with weave.ThreadPoolExecutor() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
                 return future.result(timeout=300)
         else:
