@@ -57,7 +57,7 @@ COPY src/ ./src/
 # Create non-root user for security and set up permissions
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /tmp/uv-cache && \
-    chown -R appuser:appuser /app /tmp/uv-cache
+    chown -R appuser:appuser /app /shared /tmp/uv-cache
 USER appuser
 
 # Expose port
