@@ -7,6 +7,7 @@ import json
 import os
 import time
 from collections.abc import AsyncGenerator
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -2147,7 +2148,7 @@ async def chat_completion(
     This endpoint processes a conversation with the KEN-E marketing assistant
     and returns a response from the deployed Agent Engine.
     """
-    _attrs_cm = None
+    _exit_stack = ExitStack()
     try:
         # PERFORMANCE: Log request arrival time for latency measurement
         logger.info(
@@ -2175,16 +2176,15 @@ async def chat_completion(
         # Set Weave root span metadata for trace filtering (scoped via contextvars)
         if WEAVE_AVAILABLE:
             try:
-                _attrs_cm = weave.attributes({
+                _exit_stack.enter_context(weave.attributes({
                     "account_id": request.account_id or "unknown",
                     "session_id": request.session_id or "unknown",
                     "user_id": user_context.user_id or "unknown",
                     "environment": os.getenv("ENVIRONMENT", "development"),
                     "agent": "ken_e_chatbot",
-                })
-                _attrs_cm.__enter__()
+                }))
             except Exception:
-                _attrs_cm = None
+                pass
 
         if request.stream:
             # Return streaming response
@@ -2284,11 +2284,7 @@ async def chat_completion(
             detail="An unexpected error occurred",
         ) from e
     finally:
-        if _attrs_cm is not None:
-            try:
-                _attrs_cm.__exit__(None, None, None)
-            except Exception:
-                pass
+        _exit_stack.close()
 
 
 @router.get("/health")

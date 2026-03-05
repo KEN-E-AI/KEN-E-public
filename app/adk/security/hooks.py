@@ -20,7 +20,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
-from app.utils.weave_observability import init_weave_if_needed
+from app.utils.weave_observability import WEAVE_AVAILABLE, init_weave_if_needed
 from shared.structured_logging import get_structured_logger, log_context
 
 from .permissions import (
@@ -201,7 +201,10 @@ async def adk_before_tool_callback(
     # Initialize Weave on first tool call (idempotent). On Agent Engine,
     # module-level init in ken_e_agent.py doesn't re-execute after
     # deserialization, so this callback is the earliest runtime hook.
-    init_weave_if_needed()
+    # The WEAVE_AVAILABLE guard avoids entering the lock + secret-lookup
+    # path when the weave package isn't even installed.
+    if WEAVE_AVAILABLE:
+        init_weave_if_needed()
 
     if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
         tool_context.state["_tool_start_time"] = time.monotonic()

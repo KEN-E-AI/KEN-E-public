@@ -12,6 +12,7 @@ import os
 import time
 import uuid
 from concurrent.futures import as_completed
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -741,11 +742,11 @@ def execute_strategy_generation_direct(
         "rollout_percentage": 100,
     }
 
+    exit_stack = ExitStack()
     try:
-        _attrs_ctx = weave.attributes(root_attrs)
-        _attrs_ctx.__enter__()
+        exit_stack.enter_context(weave.attributes(root_attrs))
     except Exception:
-        _attrs_ctx = None
+        pass
 
     try:
         return _execute_strategy_generation_body(
@@ -759,11 +760,7 @@ def execute_strategy_generation_direct(
             dry_run=dry_run,
         )
     finally:
-        if _attrs_ctx is not None:
-            try:
-                _attrs_ctx.__exit__(None, None, None)
-            except Exception:
-                pass
+        exit_stack.close()
 
 
 def _execute_strategy_generation_body(

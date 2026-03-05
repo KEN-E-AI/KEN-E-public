@@ -25,8 +25,11 @@ from vertexai.preview import reasoning_engines
 
 try:
     import weave
+
+    HAS_WEAVE = True
 except ImportError:
     weave = None  # type: ignore[assignment]
+    HAS_WEAVE = False
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -381,7 +384,7 @@ def invoke_agent_sync(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            executor_cls = weave.ThreadPoolExecutor if weave is not None else concurrent.futures.ThreadPoolExecutor
+            executor_cls = weave.ThreadPoolExecutor if HAS_WEAVE else concurrent.futures.ThreadPoolExecutor
             with executor_cls() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
                 return future.result(timeout=300)

@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import os
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
@@ -19,12 +20,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _WEAVE_INITIALIZED = False
+_WEAVE_INIT_LOCK = threading.Lock()
 
 
 def init_weave_if_needed(*, required: bool = False) -> bool:
     """Initialize W&B Weave if not already initialized and API key is available.
 
-    Idempotent — safe to call multiple times.
+    Idempotent and thread-safe — safe to call multiple times from any thread.
 
     Args:
         required: When True, raise RuntimeError instead of returning False.
@@ -38,8 +40,21 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
         RuntimeError: If ``required=True`` and initialization fails.
     """
     global _WEAVE_INITIALIZED
+    # Fast path: already initialized — no lock needed
     if _WEAVE_INITIALIZED:
         return WEAVE_AVAILABLE
+
+    with _WEAVE_INIT_LOCK:
+        # Double-check after acquiring lock
+        if _WEAVE_INITIALIZED:
+            return WEAVE_AVAILABLE
+
+        return _init_weave_locked(required=required)
+
+
+def _init_weave_locked(*, required: bool) -> bool:
+    """Inner initialization logic, called while holding ``_WEAVE_INIT_LOCK``."""
+    global _WEAVE_INITIALIZED
 
     if not WEAVE_AVAILABLE:
         _WEAVE_INITIALIZED = True
