@@ -150,6 +150,8 @@ class TestModuleLevelRegistry:
         from ..registry import get_registry
         expected = {
             "ken_e_chatbot",
+            "google_analytics_agent",
+            "company_news_agent",
             "business_researcher",
             "business_formatter",
             "competitive_researcher",
@@ -167,8 +169,10 @@ class TestValidateRegistryAtStartup:
     def test_returns_config_ids(self):
         config_ids = validate_registry_at_startup()
         assert isinstance(config_ids, set)
-        assert len(config_ids) == 9
+        assert len(config_ids) == 11
         assert "ken_e_chatbot" in config_ids
+        assert "google_analytics_agent" in config_ids
+        assert "company_news_agent" in config_ids
 
     def test_raises_on_empty_registry(self, monkeypatch):
         empty_registry = AgentRegistry()

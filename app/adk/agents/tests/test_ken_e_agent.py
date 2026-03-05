@@ -1,9 +1,17 @@
 """Test KEN-E agent routing and InstructionProvider."""
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock
+import importlib
+from unittest.mock import MagicMock, patch
 
-from ..ken_e_agent import _BASE_INSTRUCTION, build_ken_e_instruction, create_ken_e_agent
+from google.adk.agents.llm_agent_config import LlmAgentConfig
+
+# Import the module directly (bypass __init__.py's __getattr__ which returns the agent instance)
+ken_e_module = importlib.import_module("app.adk.agents.ken_e_agent")
+
+_BASE_INSTRUCTION = ken_e_module._BASE_INSTRUCTION
+build_ken_e_instruction = ken_e_module.build_ken_e_instruction
+_make_instruction_provider = ken_e_module._make_instruction_provider
+create_ken_e_agent = ken_e_module.create_ken_e_agent
 
 
 def test_ken_e_has_correct_tools():
@@ -18,22 +26,97 @@ def test_ken_e_has_correct_tools():
 
 
 def test_ken_e_agent_name():
-    """Test agent has correct name."""
+    """Test agent has correct name regardless of config."""
     agent = create_ken_e_agent()
     assert agent.name == "ken_e"
-
-
-def test_ken_e_agent_model():
-    """Test agent uses correct model."""
-    agent = create_ken_e_agent()
-    assert agent.model == "gemini-2.0-flash"
 
 
 def test_ken_e_instruction_is_callable():
     """Test agent instruction is a callable (InstructionProvider pattern)."""
     agent = create_ken_e_agent()
     assert callable(agent.instruction)
-    assert agent.instruction is build_ken_e_instruction
+
+
+@patch.object(ken_e_module, "load_config_from_firestore")
+def test_firestore_config_applied(mock_load):
+    """Firestore config fields are applied to the Agent."""
+    mock_config = LlmAgentConfig(
+        name="ken_e_chatbot",
+        model="gemini-2.5-pro",
+        instruction="Custom instruction from Firestore",
+        description="Custom description",
+        generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
+    )
+    mock_load.return_value = (mock_config, {"version": "v2.0"})
+
+    agent = create_ken_e_agent()
+
+    assert agent.model == "gemini-2.5-pro"
+    assert agent.description == "Custom description"
+    assert agent.generate_content_config is not None
+    # Instruction should be a callable that uses the Firestore instruction
+    assert callable(agent.instruction)
+    ctx = MagicMock()
+    ctx.state = {}
+    result = agent.instruction(ctx)
+    assert result == "Custom instruction from Firestore"
+
+
+@patch.object(ken_e_module, "load_config_from_firestore")
+def test_firestore_fallback_on_failure(mock_load):
+    """Agent uses hardcoded defaults when Firestore loading fails."""
+    mock_load.side_effect = Exception("Firestore unavailable")
+
+    agent = create_ken_e_agent()
+
+    assert agent.model == "gemini-2.0-flash"
+    assert agent.description == ""
+    # Instruction should still be callable and use _BASE_INSTRUCTION
+    assert callable(agent.instruction)
+    ctx = MagicMock()
+    ctx.state = {}
+    result = agent.instruction(ctx)
+    assert result == _BASE_INSTRUCTION
+
+
+@patch.object(ken_e_module, "load_config_from_firestore")
+def test_instruction_provider_uses_firestore_instruction(mock_load):
+    """The closure-based instruction provider uses the loaded Firestore instruction, not _BASE_INSTRUCTION."""
+    custom_instruction = "You are a custom KEN-E agent."
+    mock_config = LlmAgentConfig(
+        name="ken_e_chatbot",
+        model="gemini-2.0-flash",
+        instruction=custom_instruction,
+    )
+    mock_load.return_value = (mock_config, {"version": "v1.1"})
+
+    agent = create_ken_e_agent()
+
+    # Without org context — should return custom instruction
+    ctx = MagicMock()
+    ctx.state = {}
+    assert agent.instruction(ctx) == custom_instruction
+
+    # With org context — should prepend org context before custom instruction
+    ctx.state = {"organization_context": "Acme Corp"}
+    result = agent.instruction(ctx)
+    assert "Acme Corp" in result
+    assert custom_instruction in result
+    assert _BASE_INSTRUCTION not in result
+
+
+@patch.object(ken_e_module, "load_config_from_firestore")
+def test_agent_name_stays_ken_e(mock_load):
+    """Agent name must be 'ken_e' regardless of Firestore config."""
+    mock_config = LlmAgentConfig(
+        name="some_other_name",
+        model="gemini-2.5-flash",
+        instruction="Some instruction",
+    )
+    mock_load.return_value = (mock_config, {"version": "v1.0"})
+
+    agent = create_ken_e_agent()
+    assert agent.name == "ken_e"
 
 
 class TestBuildKenEInstruction:
@@ -102,3 +185,32 @@ class TestBuildKenEInstruction:
         })
         result = build_ken_e_instruction(ctx)
         assert result == _BASE_INSTRUCTION
+
+
+class TestMakeInstructionProvider:
+    """Tests for the _make_instruction_provider closure factory."""
+
+    def _make_context(self, state: dict) -> MagicMock:
+        ctx = MagicMock()
+        ctx.state = state
+        return ctx
+
+    def test_returns_base_instruction_without_org_context(self):
+        provider = _make_instruction_provider("Custom base")
+        ctx = self._make_context({})
+        assert provider(ctx) == "Custom base"
+
+    def test_prepends_org_context(self):
+        provider = _make_instruction_provider("Custom base")
+        ctx = self._make_context({"organization_context": "Org info"})
+        result = provider(ctx)
+        assert "Org info" in result
+        assert "Custom base" in result
+        assert result.index("[ORGANIZATION CONTEXT]") < result.index("Custom base")
+
+    def test_different_base_instructions_produce_different_providers(self):
+        provider_a = _make_instruction_provider("Instruction A")
+        provider_b = _make_instruction_provider("Instruction B")
+        ctx = self._make_context({})
+        assert provider_a(ctx) == "Instruction A"
+        assert provider_b(ctx) == "Instruction B"

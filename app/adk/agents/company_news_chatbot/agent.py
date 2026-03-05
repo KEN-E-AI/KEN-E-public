@@ -5,11 +5,15 @@ Following official ADK samples structure
 Environment-aware: Uses GOOGLE_CLOUD_PROJECT and VERTEX_AI_NEWS_DATASTORE_ID from .env
 """
 
+import logging
 import os
 from pathlib import Path
+
 import vertexai
 from google.adk.agents import Agent
 from google.adk.tools import VertexAiSearchTool
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file if it exists
 # This must happen before reading config to ensure env vars are available
@@ -85,32 +89,7 @@ Always search for the most current and relevant information about {company.title
 company_agents = create_company_agents()
 
 
-# Main router agent that can access all companies
-def create_main_agent():
-    """Create the main router agent that can handle any company.
-
-    Uses environment-specific Vertex AI Search datastore configured via VERTEX_AI_NEWS_DATASTORE_ID.
-    """
-    # Get datastore ID from environment (set per environment in .env files)
-    datastore_id = os.getenv("VERTEX_AI_NEWS_DATASTORE_ID")
-    if not datastore_id:
-        raise ValueError(
-            "VERTEX_AI_NEWS_DATASTORE_ID not set. "
-            "Add to .env file (e.g., VERTEX_AI_NEWS_DATASTORE_ID=ken-e-dev-news-search-datastore)"
-        )
-
-    # Build full datastore path using environment configuration
-    datastore_path = (
-        f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/"
-        f"dataStores/{datastore_id}"
-    )
-
-    search_tool = VertexAiSearchTool(data_store_id=datastore_path, max_results=10)
-
-    agent = Agent(
-        name="company_news_chatbot",
-        model="gemini-2.0-flash",
-        instruction="""You are a company news assistant with access to curated news databases.
+NEWS_AGENT_INSTRUCTION = """You are a company news assistant with access to curated news databases.
 
 **CRITICAL GROUNDING RULES:**
 - You can ONLY provide information found through your Vertex AI Search tool
@@ -129,7 +108,7 @@ def create_main_agent():
   - "According to JP Morgan, 77% beat earnings" → This is JP Morgan's analysis of the market, NOT news about JP Morgan
   - "JP Morgan notes that tariffs..." → This is JP Morgan's opinion on tariffs, NOT news about JP Morgan
 
-✅ **VALID** - Actual news ABOUT the company itself:  
+✅ **VALID** - Actual news ABOUT the company itself:
   - "JP Morgan reports quarterly earnings"
   - "JP Morgan announces new CEO"
   - "JP Morgan faces regulatory investigation"
@@ -146,14 +125,70 @@ def create_main_agent():
 - Consider the source URL and document organization
 
 **RESPONSE FORMAT:**
-1. Search using your tool 
+1. Search using your tool
 2. For each result, analyze the title, content structure, and context
 3. Ask: "Is this article primarily ABOUT the requested company's business activities?"
 4. If the company only appears as a source of commentary about other topics, REJECT that result
 5. Only use results where the company is clearly the main business subject
 6. If no validated results: "I don't have any news about [Company] in my curated database"
 
-**KEY VALIDATION:** Before sharing any information, verify that the search results are discussing the company's own business activities, not the company providing analysis about other entities.""",
+**KEY VALIDATION:** Before sharing any information, verify that the search results are discussing the company's own business activities, not the company providing analysis about other entities."""
+
+
+# Main router agent that can access all companies
+def create_main_agent(config_doc_id: str = "company_news_agent"):
+    """Create the main router agent that can handle any company.
+
+    Uses environment-specific Vertex AI Search datastore configured via VERTEX_AI_NEWS_DATASTORE_ID.
+
+    Args:
+        config_doc_id: Firestore document ID for agent configuration
+    """
+    # Load configuration from Firestore with fallback to hardcoded values
+    try:
+        from app.adk.agents.strategy_agent.config_loader import load_config_from_firestore
+
+        config, metadata = load_config_from_firestore(config_doc_id)
+        model = config.model
+        instruction = config.instruction or NEWS_AGENT_INSTRUCTION
+        description = config.description or ""
+        generate_content_config = config.generate_content_config
+        logger.info(
+            f"Loaded News agent config from Firestore: {config_doc_id} "
+            f"(version: {metadata.get('version', 'unknown')}, model: {model})"
+        )
+    except Exception as e:
+        logger.warning(
+            f"Failed to load News agent config from Firestore ({config_doc_id}): {e}. "
+            f"Falling back to hardcoded defaults"
+        )
+        model = "gemini-2.0-flash"
+        instruction = NEWS_AGENT_INSTRUCTION
+        description = ""
+        generate_content_config = None
+
+    # Get datastore ID from environment (set per environment in .env files)
+    datastore_id = os.getenv("VERTEX_AI_NEWS_DATASTORE_ID")
+    if not datastore_id:
+        raise ValueError(
+            "VERTEX_AI_NEWS_DATASTORE_ID not set. "
+            "Add to .env file (e.g., VERTEX_AI_NEWS_DATASTORE_ID=ken-e-dev-news-search-datastore)"
+        )
+
+    # Build full datastore path using environment configuration
+    datastore_path = (
+        f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/"
+        f"dataStores/{datastore_id}"
+    )
+
+    search_tool = VertexAiSearchTool(data_store_id=datastore_path, max_results=10)
+
+    agent = Agent(
+        name="company_news_chatbot",
+        model=model,
+        description=description,
+        instruction=instruction,
+        generate_content_config=generate_content_config,
         tools=[search_tool],
     )
 

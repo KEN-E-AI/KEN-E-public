@@ -144,6 +144,7 @@ _registry.register(AgentEntry(
     attr_name="root_agent",
     description="Specialized agent for company news and financial data",
     capabilities=["news", "financial"],
+    config_doc_id="company_news_agent",
 ))
 
 _registry.register(AgentEntry(
@@ -152,6 +153,7 @@ _registry.register(AgentEntry(
     attr_name="google_analytics_agent_v4",
     description="Specialized agent for Google Analytics queries",
     capabilities=["analytics", "ga4"],
+    config_doc_id="google_analytics_agent",
 ))
 
 _registry.register(AgentEntry(

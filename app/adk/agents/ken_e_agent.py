@@ -4,6 +4,7 @@ KEN-E Agent: Frontend-facing chat agent for company news and analytics.
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from google.adk.agents import Agent
@@ -137,6 +138,24 @@ def build_ken_e_instruction(context: ReadonlyContext) -> str:
     return _BASE_INSTRUCTION
 
 
+def _make_instruction_provider(base_instruction: str) -> Callable[[ReadonlyContext], str]:
+    """Create a closure-based InstructionProvider that uses the given base instruction.
+
+    Args:
+        base_instruction: The base instruction text (from Firestore or hardcoded fallback)
+
+    Returns:
+        A callable that ADK invokes on each turn to get the instruction string
+    """
+    def instruction_provider(context: ReadonlyContext) -> str:
+        org_context = context.state.get("organization_context")
+        if org_context:
+            return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{base_instruction}"
+        return base_instruction
+
+    return instruction_provider
+
+
 def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     """
     Create the KEN-E chat agent for frontend interactions.
@@ -158,6 +177,9 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     try:
         config, metadata = load_config_from_firestore(config_doc_id)
         model = config.model
+        base_instruction = config.instruction or _BASE_INSTRUCTION
+        description = config.description or ""
+        generate_content_config = config.generate_content_config
         logger.info(
             f"Loaded KEN-E chatbot config from Firestore: {config_doc_id} "
             f"(version: {metadata.get('version', 'unknown')}, model: {model})"
@@ -165,9 +187,12 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     except Exception as e:
         logger.warning(
             f"Failed to load KEN-E chatbot config from Firestore ({config_doc_id}): {e}. "
-            f"Falling back to hardcoded model: gemini-2.0-flash"
+            f"Falling back to hardcoded defaults"
         )
         model = "gemini-2.0-flash"
+        base_instruction = _BASE_INSTRUCTION
+        description = ""
+        generate_content_config = None
 
     # Create tool wrappers that expose ToolContext and return strings
     def search_company_news(query: str, tool_context: ToolContext | None = None) -> str:
@@ -191,11 +216,13 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     ken_e = Agent(
         name="ken_e",
         model=model,
+        description=description,
+        instruction=_make_instruction_provider(base_instruction),
+        generate_content_config=generate_content_config,
         before_agent_callback=weave_before_agent_callback,
         after_agent_callback=weave_after_agent_callback,
         before_tool_callback=adk_before_tool_callback,
         after_tool_callback=adk_after_tool_callback,
-        instruction=build_ken_e_instruction,
         tools=[search_company_news, query_google_analytics],
     )
 
