@@ -21,6 +21,8 @@ class AgentEntry:
     attr_name: str  # Attribute to import, e.g. "ken_e_agent"
     description: str
     capabilities: list[str] = field(default_factory=list)
+    config_doc_id: str | None = None
+    sub_config_doc_ids: list[str] = field(default_factory=list)
 
 
 class AgentRegistry:
@@ -101,6 +103,19 @@ class AgentRegistry:
             if capability in entry.capabilities
         ]
 
+    def get_all_config_doc_ids(self) -> set[str]:
+        """Collect all Firestore config doc IDs across registered agents.
+
+        Returns:
+            Set of config doc ID strings
+        """
+        ids: set[str] = set()
+        for entry in self._entries.values():
+            if entry.config_doc_id:
+                ids.add(entry.config_doc_id)
+            ids.update(entry.sub_config_doc_ids)
+        return ids
+
     def list_agents(self) -> list[AgentEntry]:
         """List all registered agent entries.
 
@@ -120,6 +135,7 @@ _registry.register(AgentEntry(
     attr_name="ken_e_agent",
     description="Frontend-facing chat agent for company news and analytics",
     capabilities=["chat", "marketing", "news", "analytics"],
+    config_doc_id="ken_e_chatbot",
 ))
 
 _registry.register(AgentEntry(
@@ -144,6 +160,16 @@ _registry.register(AgentEntry(
     attr_name="create_strategy_docs_supervisor",
     description="Supervisor agent for strategy document generation",
     capabilities=["strategy", "documents"],
+    sub_config_doc_ids=[
+        "business_researcher",
+        "business_formatter",
+        "competitive_researcher",
+        "competitive_formatter",
+        "marketing_researcher",
+        "marketing_formatter",
+        "brand_researcher",
+        "brand_formatter",
+    ],
 ))
 
 # Backward-compatible aliases
@@ -154,3 +180,22 @@ _registry.alias("multi_agent_root", "strategy")
 def get_registry() -> AgentRegistry:
     """Get the module-level agent registry singleton."""
     return _registry
+
+
+def validate_registry_at_startup() -> set[str]:
+    """Validate that the registry contains config doc IDs and log them.
+
+    Returns:
+        Set of all config doc IDs found in the registry
+
+    Raises:
+        ValueError: If no config doc IDs are found
+    """
+    registry = get_registry()
+    config_ids = registry.get_all_config_doc_ids()
+    if not config_ids:
+        raise ValueError("No config doc IDs found in agent registry.")
+    logger.info(
+        f"Agent registry validated: {len(config_ids)} config doc IDs: {sorted(config_ids)}"
+    )
+    return config_ids

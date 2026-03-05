@@ -2,7 +2,8 @@
 
 import pytest
 
-from ..registry import AgentEntry, AgentRegistry
+from .. import registry as registry_module
+from ..registry import AgentEntry, AgentRegistry, validate_registry_at_startup
 
 
 @pytest.fixture()
@@ -63,6 +64,59 @@ class TestAgentRegistry:
         assert names == ["alpha", "beta"]
 
 
+class TestGetAllConfigDocIds:
+
+    def test_returns_all_config_doc_ids(self):
+        reg = AgentRegistry()
+        reg.register(AgentEntry(
+            name="main",
+            module_path="json",
+            attr_name="loads",
+            description="Main agent",
+            config_doc_id="main_config",
+            sub_config_doc_ids=["sub_a", "sub_b"],
+        ))
+        reg.register(AgentEntry(
+            name="helper",
+            module_path="json",
+            attr_name="dumps",
+            description="Helper agent",
+            config_doc_id="helper_config",
+        ))
+        assert reg.get_all_config_doc_ids() == {
+            "main_config", "sub_a", "sub_b", "helper_config",
+        }
+
+    def test_empty_when_no_configs(self):
+        reg = AgentRegistry()
+        reg.register(AgentEntry(
+            name="plain",
+            module_path="json",
+            attr_name="loads",
+            description="Plain agent with no configs",
+        ))
+        assert reg.get_all_config_doc_ids() == set()
+
+    def test_deduplicates_overlapping_ids(self):
+        reg = AgentRegistry()
+        reg.register(AgentEntry(
+            name="a",
+            module_path="json",
+            attr_name="loads",
+            description="Agent A",
+            config_doc_id="shared_id",
+            sub_config_doc_ids=["shared_id", "unique_a"],
+        ))
+        reg.register(AgentEntry(
+            name="b",
+            module_path="json",
+            attr_name="dumps",
+            description="Agent B",
+            sub_config_doc_ids=["shared_id"],
+        ))
+        assert reg.get_all_config_doc_ids() == {"shared_id", "unique_a"}
+
+
 class TestModuleLevelRegistry:
     """Test the pre-configured module-level registry."""
 
@@ -91,3 +145,35 @@ class TestModuleLevelRegistry:
         from ..registry import get_registry
         reg = get_registry()
         assert reg._aliases.get("multi_agent_root") == "strategy"
+
+    def test_all_config_doc_ids_matches_expected(self):
+        from ..registry import get_registry
+        expected = {
+            "ken_e_chatbot",
+            "business_researcher",
+            "business_formatter",
+            "competitive_researcher",
+            "competitive_formatter",
+            "marketing_researcher",
+            "marketing_formatter",
+            "brand_researcher",
+            "brand_formatter",
+        }
+        assert get_registry().get_all_config_doc_ids() == expected
+
+
+class TestValidateRegistryAtStartup:
+
+    def test_returns_config_ids(self):
+        config_ids = validate_registry_at_startup()
+        assert isinstance(config_ids, set)
+        assert len(config_ids) == 9
+        assert "ken_e_chatbot" in config_ids
+
+    def test_raises_on_empty_registry(self, monkeypatch):
+        empty_registry = AgentRegistry()
+        monkeypatch.setattr(
+            registry_module, "get_registry", lambda: empty_registry
+        )
+        with pytest.raises(ValueError, match="No config doc IDs"):
+            validate_registry_at_startup()

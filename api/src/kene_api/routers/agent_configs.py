@@ -20,18 +20,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agent-configs", tags=["agent-configs"])
 
-# Allowed agent config IDs (security: prevent path traversal and unauthorized access)
-ALLOWED_CONFIG_IDS = {
-    "business_researcher",
-    "business_formatter",
-    "competitive_researcher",
-    "competitive_formatter",
-    "marketing_researcher",
-    "marketing_formatter",
-    "brand_researcher",
-    "brand_formatter",
-    "ken_e_chatbot",
-}
+# Derive allowed config IDs from the agent registry (single source of truth)
+from app.adk.agents.registry import get_registry
+
+ALLOWED_CONFIG_IDS = get_registry().get_all_config_doc_ids()
 
 
 class AgentConfigMetadata(BaseModel):

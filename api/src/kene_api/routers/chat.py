@@ -59,6 +59,8 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
     """Load organization context from Neo4j using API's Neo4j service.
 
     Loads Account info and Brand Voice/Tone, formats as markdown.
+    Uses the canonical shared query (ORG_CONTEXT_QUERY) so API and agent
+    loaders always fetch the same fields.
 
     Args:
         account_id: Account identifier
@@ -66,37 +68,20 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
     Returns:
         Formatted markdown context string, or None if loading fails
     """
-    query = """
-    MATCH (acc:Account {account_id: $account_id})
-
-    // Brand Guidelines
-    OPTIONAL MATCH (acc)-[:FOLLOWS_THESE_BRAND_GUIDELINES]->(brand:BrandIdentity)
-    OPTIONAL MATCH (brand)-[:USES_COMMUNICATION_STYLE]->(voice:VoiceAndTone)
-    OPTIONAL MATCH (brand)-[:HAS_TRAITS_AND_CHARACTERISTICS]->(personality:BrandPersonality)
-    OPTIONAL MATCH (brand)-[:HAS_MISSION]->(mission:MissionAndValues)
-
-    RETURN {
-      account: {
-        account_id: acc.account_id,
-        company_name: acc.company_name,
-        company_overview: acc.company_overview,
-        industry: acc.industry,
-        websites: acc.websites,
-        customer_regions: acc.customer_regions
-      },
-      brand: {
-        voice_tone_description: voice.description,
-        personality_description: personality.description,
-        mission_description: mission.description
-      }
-    } as context
-    """
+    from shared.context_utils import (
+        ORG_CONTEXT_QUERY,
+        extract_context_from_result,
+        format_context_markdown,
+    )
 
     try:
         neo4j_service = await get_neo4j_service()
-        result = await neo4j_service.execute_query(query, {"account_id": account_id})
+        result = await neo4j_service.execute_query(
+            ORG_CONTEXT_QUERY, {"account_id": account_id}
+        )
 
-        if not result or not result[0]:
+        context_data = extract_context_from_result(result)
+        if not context_data:
             logger.warning(
                 "No organization context found",
                 extra=log_context(
@@ -109,42 +94,8 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
             )
             return None
 
-        context_data = result[0]["context"]
+        context_str = format_context_markdown(context_data)
 
-        # Format as markdown
-        account = context_data.get("account", {})
-        brand = context_data.get("brand", {})
-
-        markdown_parts = ["---"]
-        if account.get("account_id"):
-            markdown_parts.append(f"account_id: {account['account_id']}")
-        if account.get("company_name"):
-            markdown_parts.append(f"company: {account['company_name']}")
-        if account.get("industry"):
-            markdown_parts.append(f"industry: {account['industry']}")
-        markdown_parts.append("---\n")
-
-        markdown_parts.append("# Company Context\n")
-        if account.get("company_overview"):
-            markdown_parts.append(f"{account['company_overview']}\n")
-
-        # Brand guidelines section
-        has_brand_guidelines = False
-        if brand and any(brand.values()):
-            has_brand_guidelines = True
-            markdown_parts.append("\n## Brand Voice & Communication Style\n")
-            if brand.get("voice_tone_description"):
-                markdown_parts.append(f"\n**Voice & Tone:**\n{brand['voice_tone_description']}\n")
-
-            if brand.get("personality_description"):
-                markdown_parts.append(f"\n**Brand Personality:**\n{brand['personality_description']}\n")
-
-            if brand.get("mission_description"):
-                markdown_parts.append(f"\n**Mission & Values:**\n{brand['mission_description']}\n")
-
-        context_str = "".join(markdown_parts)
-
-        # Structured logging for production visibility
         logger.info(
             "Organization context loaded",
             extra=log_context(
@@ -153,8 +104,13 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
                 account_id=account_id,
                 success=True,
                 extra={
-                    "company_name": account.get("company_name", "unknown"),
-                    "has_brand_guidelines": has_brand_guidelines,
+                    "company_name": context_data.get("account", {}).get(
+                        "company_name", "unknown"
+                    ),
+                    "has_brand_guidelines": bool(
+                        context_data.get("brand")
+                        and any(context_data["brand"].values())
+                    ),
                     "context_length": len(context_str),
                 },
             ),

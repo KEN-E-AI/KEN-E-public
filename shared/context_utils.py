@@ -8,6 +8,49 @@ All functions in this module are pure — no database or logging dependencies.
 
 from typing import Any
 
+# Canonical Neo4j query for organization context (single source of truth).
+# Both API-side and agent-side loaders use this query.
+ORG_CONTEXT_QUERY = """
+MATCH (acc:Account {account_id: $account_id})
+OPTIONAL MATCH (acc)-[:FOLLOWS_THESE_BRAND_GUIDELINES]->(brand:BrandIdentity)
+OPTIONAL MATCH (brand)-[:USES_COMMUNICATION_STYLE]->(voice:VoiceAndTone)
+OPTIONAL MATCH (brand)-[:HAS_TRAITS_AND_CHARACTERISTICS]->(personality:BrandPersonality)
+OPTIONAL MATCH (brand)-[:HAS_MISSION]->(mission:MissionAndValues)
+RETURN {
+  account: {
+    account_id: acc.account_id,
+    company_name: acc.company_name,
+    company_overview: acc.company_overview,
+    industry: acc.industry,
+    websites: acc.websites,
+    customer_regions: acc.customer_regions
+  },
+  brand: {
+    voice_tone: voice.tone_attributes,
+    do_list: voice.do_list,
+    dont_list: voice.dont_list,
+    personality_traits: personality.traits,
+    mission: mission.mission_statement,
+    values: mission.core_values[..5]
+  }
+} as context
+"""
+
+
+def extract_context_from_result(result: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Extract context dict from a Neo4j query result.
+
+    Args:
+        result: List of result records from executing ORG_CONTEXT_QUERY
+
+    Returns:
+        Context dictionary with 'account' and 'brand' keys, or None if empty
+    """
+    if not result or not result[0]:
+        return None
+    return result[0]["context"]
+
+
 # Keywords that trigger section loading for different context types
 SECTION_KEYWORDS: dict[str, list[str]] = {
     "campaigns": [

@@ -339,8 +339,8 @@ def load_organization_context(account_id: str) -> str | None:
 def _fetch_context_from_neo4j(account_id: str) -> dict | None:
     """Fetch organization context from Neo4j.
 
-    Phase 1 query: Account + Brand Voice/Tone only
-    Uses OPTIONAL MATCH for graceful degradation when brand data missing.
+    Uses the canonical shared query (ORG_CONTEXT_QUERY) so API and agent
+    loaders always fetch the same fields.
 
     Args:
         account_id: Account identifier
@@ -348,45 +348,19 @@ def _fetch_context_from_neo4j(account_id: str) -> dict | None:
     Returns:
         Dictionary with account and brand data, or None if query fails
     """
-    query = """
-    MATCH (acc:Account {account_id: $account_id})
-
-    // Brand Guidelines (highest priority)
-    OPTIONAL MATCH (acc)-[:FOLLOWS_THESE_BRAND_GUIDELINES]->(brand:BrandIdentity)
-    OPTIONAL MATCH (brand)-[:USES_COMMUNICATION_STYLE]->(voice:VoiceAndTone)
-    OPTIONAL MATCH (brand)-[:HAS_TRAITS_AND_CHARACTERISTICS]->(personality:BrandPersonality)
-    OPTIONAL MATCH (brand)-[:HAS_MISSION]->(mission:MissionAndValues)
-
-    RETURN {
-      account: {
-        account_id: acc.account_id,
-        company_name: acc.company_name,
-        company_overview: acc.company_overview,
-        industry: acc.industry,
-        websites: acc.websites,
-        customer_regions: acc.customer_regions
-      },
-      brand: {
-        voice_tone: voice.tone_attributes,
-        do_list: voice.do_list,
-        dont_list: voice.dont_list,
-        personality_traits: personality.traits,
-        mission: mission.mission_statement,
-        values: mission.core_values[..5]
-      }
-    } as context
-    """
+    from shared.context_utils import ORG_CONTEXT_QUERY, extract_context_from_result
 
     try:
         connection = Neo4jConnection()
-        result = connection.execute_query(query, {"account_id": account_id})
+        result = connection.execute_query(
+            ORG_CONTEXT_QUERY, {"account_id": account_id}
+        )
         connection.close()
 
-        if not result or not result[0]:
+        context = extract_context_from_result(result)
+        if not context:
             logger.warning(f"No results from Neo4j for account_id: {account_id}")
-            return None
-
-        return result[0]["context"]
+        return context
 
     except Exception as e:
         logger.error(
