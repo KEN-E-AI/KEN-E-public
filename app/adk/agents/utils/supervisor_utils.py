@@ -12,7 +12,13 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-import weave
+try:
+    import weave
+
+    HAS_WEAVE = True
+except ImportError:
+    weave = None  # type: ignore[assignment]
+    HAS_WEAVE = False
 from google.adk import Runner
 from google.adk.agents import Agent
 from google.adk.artifacts import InMemoryArtifactService
@@ -131,8 +137,8 @@ def invoke_agent_sync(
         # Handle event loop scenarios (following ADK pattern)
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # Use weave.ThreadPoolExecutor to preserve trace context across threads
-            with weave.ThreadPoolExecutor() as executor:
+            executor_cls = weave.ThreadPoolExecutor if HAS_WEAVE else concurrent.futures.ThreadPoolExecutor
+            with executor_cls() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
                 return future.result(timeout=300)
         else:
@@ -160,7 +166,7 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
 
     @functools.wraps(dispatch_func)
     def wrapper(query: str, tool_context: ToolContext | None = None, **kwargs) -> str:
-        logger.info(f"[DISPATCH-WRAPPER] ========== TOOL CALL START ==========")
+        logger.info("[DISPATCH-WRAPPER] ========== TOOL CALL START ==========")
         logger.info(f"[DISPATCH-WRAPPER] Tool called: {dispatch_func.__name__}")
         logger.info(f"[DISPATCH-WRAPPER] Query length: {len(query)} chars")
         logger.info(f"[DISPATCH-WRAPPER] Query preview: {query[:200]}")
@@ -170,13 +176,13 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
 
         # CRITICAL DEBUG: Log if tool_context exists and what's in its state
         if tool_context:
-            logger.info(f"[DISPATCH-WRAPPER] ✅ ToolContext received!")
+            logger.info("[DISPATCH-WRAPPER] ✅ ToolContext received!")
             logger.info(f"[DISPATCH-WRAPPER] State keys: {list(tool_context.state.keys()) if hasattr(tool_context, 'state') else 'no state attr'}")
             if hasattr(tool_context, 'state'):
                 logger.info(f"[DISPATCH-WRAPPER] Full state: {tool_context.state}")
         else:
-            logger.warning(f"[DISPATCH-WRAPPER] ⚠️  NO ToolContext - will use fallback")
-        logger.info(f"[DISPATCH-WRAPPER] ========== TOOL CALL INFO END ==========")
+            logger.warning("[DISPATCH-WRAPPER] ⚠️  NO ToolContext - will use fallback")
+        logger.info("[DISPATCH-WRAPPER] ========== TOOL CALL INFO END ==========")
 
         # Initialize variables
         account_id = None
@@ -187,7 +193,7 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
         if tool_context:
             account_id = tool_context.state.get("account_id")
             ga_credentials = tool_context.state.get("ga_credentials")
-            logger.info(f"[DISPATCH-WRAPPER] Retrieved from session state:")
+            logger.info("[DISPATCH-WRAPPER] Retrieved from session state:")
             logger.info(f"  - account_id: {account_id}")
             logger.info(f"  - ga_credentials: {'present' if ga_credentials else 'none'}")
 

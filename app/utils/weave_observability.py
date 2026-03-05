@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import os
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
@@ -19,12 +20,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _WEAVE_INITIALIZED = False
+_WEAVE_INIT_LOCK = threading.Lock()
 
 
 def init_weave_if_needed(*, required: bool = False) -> bool:
     """Initialize W&B Weave if not already initialized and API key is available.
 
-    Idempotent — safe to call multiple times.
+    Idempotent and thread-safe — safe to call multiple times from any thread.
 
     Args:
         required: When True, raise RuntimeError instead of returning False.
@@ -38,19 +40,29 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
         RuntimeError: If ``required=True`` and initialization fails.
     """
     global _WEAVE_INITIALIZED
+    # Fast path: already initialized — no lock needed
     if _WEAVE_INITIALIZED:
         return WEAVE_AVAILABLE
 
-    def _fail(msg: str, *, permanent: bool = False) -> bool:
-        if permanent:
-            _WEAVE_INITIALIZED = True
+    with _WEAVE_INIT_LOCK:
+        # Double-check after acquiring lock
+        if _WEAVE_INITIALIZED:
+            return WEAVE_AVAILABLE
+
+        return _init_weave_locked(required=required)
+
+
+def _init_weave_locked(*, required: bool) -> bool:
+    """Inner initialization logic, called while holding ``_WEAVE_INIT_LOCK``."""
+    global _WEAVE_INITIALIZED
+
+    if not WEAVE_AVAILABLE:
+        _WEAVE_INITIALIZED = True
+        msg = "Weave package not installed — tracing cannot be enabled"
         if required:
             raise RuntimeError(msg)
         logger.warning(msg)
         return False
-
-    if not WEAVE_AVAILABLE:
-        return _fail("Weave package not installed — tracing cannot be enabled", permanent=True)
 
     wandb_api_key: str | None = None
     try:
@@ -86,7 +98,11 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
     if not wandb_api_key:
         # Don't mark as permanently initialized — retry on next call
         # in case .env becomes available after a redeploy.
-        return _fail("WANDB_API_KEY not available — Weave tracing cannot be enabled")
+        msg = "WANDB_API_KEY not available — Weave tracing cannot be enabled"
+        if required:
+            raise RuntimeError(msg)
+        logger.warning(msg)
+        return False
 
     os.environ["WANDB_API_KEY"] = wandb_api_key
 
@@ -97,7 +113,11 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
         _WEAVE_INITIALIZED = True
         return True
     except Exception as e:
-        return _fail(f"Failed to initialize Weave: {e}")
+        msg = f"Failed to initialize Weave: {e}"
+        if required:
+            raise RuntimeError(msg) from e
+        logger.warning(msg)
+        return False
 
 
 def safe_weave_op(

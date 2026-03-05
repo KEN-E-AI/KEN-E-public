@@ -19,8 +19,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 # Create app directory
 WORKDIR /app
 
-# Copy shared package (Cloud Build copies it into api/ first)
-COPY shared /app/shared
+# Copy shared package to /shared so uv resolves the path from pyproject.toml
+# (uv.lock records it as `directory = "../shared"`, relative to /app)
+COPY shared /shared
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
@@ -56,7 +57,7 @@ COPY src/ ./src/
 # Create non-root user for security and set up permissions
 RUN groupadd -r appuser && useradd -r -g appuser appuser && \
     mkdir -p /tmp/uv-cache && \
-    chown -R appuser:appuser /app /tmp/uv-cache
+    chown -R appuser:appuser /app /shared /tmp/uv-cache
 USER appuser
 
 # Expose port

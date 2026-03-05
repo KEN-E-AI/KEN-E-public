@@ -28,10 +28,17 @@ import contextvars
 import time
 from typing import TYPE_CHECKING, Any
 
-from weave.trace.api import get_client as _weave_get_client
-from weave.trace.context import call_context as _weave_call_context
-
 from app.utils.weave_observability import init_weave_if_needed
+
+try:
+    from weave.trace.api import get_client as _weave_get_client
+    from weave.trace.context import call_context as _weave_call_context
+
+    _WEAVE_TRACE_AVAILABLE = True
+except ImportError:
+    _WEAVE_TRACE_AVAILABLE = False
+    _weave_get_client = None  # type: ignore[assignment]
+    _weave_call_context = None  # type: ignore[assignment]
 from shared.structured_logging import get_structured_logger
 
 from .usage import ExecutionStatus, get_usage_tracker
@@ -63,6 +70,8 @@ def weave_before_agent_callback(
 
     Returns None so the agent proceeds normally.
     """
+    if not _WEAVE_TRACE_AVAILABLE:
+        return None
     try:
         # On Agent Engine, module-level weave.init() from ken_e_agent.py
         # doesn't re-execute after deserialization. This is the earliest
@@ -95,7 +104,7 @@ def weave_after_agent_callback(
     Returns None so the agent proceeds normally.
     """
     call = _current_agent_call.get(None)
-    if not call:
+    if not call or not _WEAVE_TRACE_AVAILABLE:
         return None
     try:
         client = _weave_get_client()

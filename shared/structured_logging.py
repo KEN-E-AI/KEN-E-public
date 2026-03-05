@@ -33,7 +33,6 @@ _request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
 _IS_CLOUD_ENVIRONMENT = bool(
     os.getenv("K_SERVICE")  # Cloud Run
     or os.getenv("GAE_APPLICATION")  # App Engine
-    or os.getenv("GOOGLE_CLOUD_PROJECT")  # General GCP
 )
 
 

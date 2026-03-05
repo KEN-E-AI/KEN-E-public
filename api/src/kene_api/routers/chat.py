@@ -7,6 +7,7 @@ import json
 import os
 import time
 from collections.abc import AsyncGenerator
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -53,6 +54,33 @@ APP_NAME = "ken_e_chatbot"
 _reauth_cache: dict[str, dict[str, Any]] = {}
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+def _is_function_event_part(part: dict) -> bool:
+    """Check if a dict part is a function_call/function_response event."""
+    return "function_call" in part or "function_response" in part
+
+
+def _is_function_event_json(chunk: str) -> bool:
+    """Check if a JSON string represents a function event."""
+    stripped = chunk.strip()
+    if not stripped.startswith("{"):
+        return False
+    try:
+        parsed = json.loads(stripped)
+        return isinstance(parsed, dict) and _is_function_event_part(parsed)
+    except (json.JSONDecodeError, ValueError):
+        return False
+
+
+def _contains_function_event_str(text: str) -> bool:
+    """Check if text contains function event data (Python repr or JSON)."""
+    return (
+        "{'function_call'" in text
+        or "{'function_response'" in text
+        or '{"function_call"' in text
+        or '{"function_response"' in text
+    )
 
 
 async def load_organization_context_from_neo4j(account_id: str) -> str | None:
@@ -1448,10 +1476,7 @@ class AgentEngineClient:
                                                 and "text" in part
                                             ):
                                                 response_parts.append(part["text"])
-                                            elif isinstance(part, dict) and (
-                                                "function_call" in part
-                                                or "function_response" in part
-                                            ):
+                                            elif isinstance(part, dict) and _is_function_event_part(part):
                                                 logger.debug(
                                                     "Skipping function_call/function_response part"
                                                 )
@@ -1466,10 +1491,7 @@ class AgentEngineClient:
                                     for part in chunk["parts"]:
                                         if isinstance(part, dict) and "text" in part:
                                             response_parts.append(part["text"])
-                                        elif isinstance(part, dict) and (
-                                            "function_call" in part
-                                            or "function_response" in part
-                                        ):
+                                        elif isinstance(part, dict) and _is_function_event_part(part):
                                             logger.debug(
                                                 "Skipping function_call/function_response part"
                                             )
@@ -1479,10 +1501,7 @@ class AgentEngineClient:
                                 elif "content" in chunk:
                                     response_parts.append(str(chunk["content"]))
                                 else:
-                                    if not (
-                                        "function_call" in chunk
-                                        or "function_response" in chunk
-                                    ):
+                                    if not _is_function_event_part(chunk):
                                         response_parts.append(str(chunk))
                                     else:
                                         logger.debug(
@@ -1493,20 +1512,11 @@ class AgentEngineClient:
 
                                 # Skip JSON-format function events (double-quoted keys)
                                 # Agent Engine may return these as JSON strings, not Python dicts
-                                _stripped = chunk.strip()
-                                if _stripped.startswith("{"):
-                                    try:
-                                        _parsed = json.loads(_stripped)
-                                        if isinstance(_parsed, dict) and (
-                                            "function_call" in _parsed
-                                            or "function_response" in _parsed
-                                        ):
-                                            logger.debug(
-                                                "Skipping JSON function event data"
-                                            )
-                                            continue
-                                    except (json.JSONDecodeError, ValueError):
-                                        pass
+                                if _is_function_event_json(chunk):
+                                    logger.debug(
+                                        "Skipping JSON function event data"
+                                    )
+                                    continue
 
                                 if chunk.startswith("{'parts'") and "'text':" in chunk:
                                     try:
@@ -1531,10 +1541,7 @@ class AgentEngineClient:
                                         )
                                         response_parts.append(chunk)
                                 else:
-                                    if (
-                                        "{'function_call'" in chunk
-                                        or "{'function_response'" in chunk
-                                    ):
+                                    if _contains_function_event_str(chunk):
                                         logger.debug(
                                             "Found function data in string chunk, extracting text"
                                         )
@@ -1554,12 +1561,7 @@ class AgentEngineClient:
                         full_response = "".join(response_parts).strip()
 
                         # Clean up function_call/function_response data from the final response
-                        if full_response and (
-                            "{'function_call'" in full_response
-                            or "{'function_response'" in full_response
-                            or '{"function_call"' in full_response
-                            or '{"function_response"' in full_response
-                        ):
+                        if full_response and _contains_function_event_str(full_response):
                             logger.debug(
                                 f"Cleaning function data from response (length: {len(full_response)})"
                             )
@@ -1763,10 +1765,7 @@ class AgentEngineClient:
                                     for part in content["parts"]:
                                         if isinstance(part, dict) and "text" in part:
                                             yield part["text"]
-                                        elif isinstance(part, dict) and (
-                                            "function_call" in part
-                                            or "function_response" in part
-                                        ):
+                                        elif isinstance(part, dict) and _is_function_event_part(part):
                                             logger.debug(
                                                 "Skipping function_call/function_response part in stream"
                                             )
@@ -1779,10 +1778,7 @@ class AgentEngineClient:
                                 for part in chunk["parts"]:
                                     if isinstance(part, dict) and "text" in part:
                                         yield part["text"]
-                                    elif isinstance(part, dict) and (
-                                        "function_call" in part
-                                        or "function_response" in part
-                                    ):
+                                    elif isinstance(part, dict) and _is_function_event_part(part):
                                         logger.debug(
                                             "Skipping function_call/function_response part in stream"
                                         )
@@ -1791,12 +1787,7 @@ class AgentEngineClient:
                             elif "content" in chunk:
                                 yield str(chunk["content"])
                             else:
-                                # Don't yield raw function_call or function_response data
-                                # These are debug/internal data, not user-facing content
-                                if not (
-                                    "function_call" in chunk
-                                    or "function_response" in chunk
-                                ):
+                                if not _is_function_event_part(chunk):
                                     yield str(chunk)
                         elif isinstance(chunk, str):
                             # Log the raw chunk for debugging
@@ -1806,23 +1797,13 @@ class AgentEngineClient:
 
                             # Skip JSON-format function events (double-quoted keys)
                             # Agent Engine may return these as JSON strings, not Python dicts
-                            _stripped = chunk.strip()
-                            if _stripped.startswith("{"):
-                                try:
-                                    _parsed = json.loads(_stripped)
-                                    if isinstance(_parsed, dict) and (
-                                        "function_call" in _parsed
-                                        or "function_response" in _parsed
-                                    ):
-                                        logger.debug(
-                                            "Skipping JSON function event data in stream"
-                                        )
-                                        continue
-                                except (json.JSONDecodeError, ValueError):
-                                    pass
+                            if _is_function_event_json(chunk):
+                                logger.debug(
+                                    "Skipping JSON function event data in stream"
+                                )
+                                continue
 
                             # Parse and clean string chunks that might contain function data
-                            # Check if this is a string representation of function_call/function_response
                             if chunk.startswith("{'function_call'") or chunk.startswith(
                                 "{'function_response'"
                             ):
@@ -1854,10 +1835,7 @@ class AgentEngineClient:
                                     yield chunk
 
                             # Check if the chunk contains both function data and text
-                            elif (
-                                "{'function_call'" in chunk
-                                or "{'function_response'" in chunk
-                            ):
+                            elif _contains_function_event_str(chunk):
                                 # Try to extract just the text after the function data
                                 # The pattern is: {'function_call': ...}{'function_response': ...}actual text
                                 import re
@@ -1996,6 +1974,7 @@ async def chat_completion(
     This endpoint processes a conversation with the KEN-E marketing assistant
     and returns a response from the deployed Agent Engine.
     """
+    _exit_stack = ExitStack()
     try:
         # PERFORMANCE: Log request arrival time for latency measurement
         logger.info(
@@ -2024,14 +2003,13 @@ async def chat_completion(
         _attrs_cm = None
         if WEAVE_AVAILABLE:
             try:
-                _attrs_cm = weave.attributes({
+                _exit_stack.enter_context(weave.attributes({
                     "account_id": request.account_id or "unknown",
                     "session_id": request.session_id or "unknown",
                     "user_id": user_context.user_id or "unknown",
                     "environment": os.getenv("ENVIRONMENT", "development"),
                     "agent": "ken_e_chatbot",
-                })
-                _attrs_cm.__enter__()
+                }))
             except Exception:
                 _attrs_cm = None
 
@@ -2152,11 +2130,7 @@ async def chat_completion(
             detail="An unexpected error occurred",
         ) from e
     finally:
-        if _attrs_cm is not None:
-            try:
-                _attrs_cm.__exit__(None, None, None)
-            except Exception:
-                pass
+        _exit_stack.close()
 
 
 @router.get("/health")

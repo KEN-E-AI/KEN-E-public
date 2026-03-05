@@ -5,8 +5,7 @@ import logging
 
 import pytest
 
-from shared.structured_logging import StructuredFormatter, log_context
-from shared.structured_logging import _request_id_ctx
+from shared.structured_logging import StructuredFormatter, _request_id_ctx, log_context
 
 
 @pytest.fixture(autouse=True)

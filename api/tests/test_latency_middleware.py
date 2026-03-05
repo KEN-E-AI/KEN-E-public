@@ -3,13 +3,12 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from src.kene_api.metrics.latency_metrics import LatencyMiddleware, _normalize_route
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
-from src.kene_api.metrics.latency_metrics import LatencyMiddleware, _normalize_route
 
 
 def _ok_handler(request: Request) -> PlainTextResponse:
