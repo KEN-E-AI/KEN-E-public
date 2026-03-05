@@ -6,7 +6,8 @@ import functools
 import logging
 import random
 import time
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +117,10 @@ def retry_with_exponential_backoff(
 def invoke_agent_with_retry(
     agent: Any,
     query: str,
-    user_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
     max_attempts: int = 3,
-    state: Optional[dict[str, Any]] = None,
+    state: dict[str, Any] | None = None,
     retry_config: Optional["AgentRetryConfig"] = None,
 ) -> str:
     """Invoke an agent with automatic retry on transient failures.

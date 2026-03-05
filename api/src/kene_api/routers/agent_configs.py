@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
 from pydantic import BaseModel, Field, field_validator
 
+from app.adk.agents.registry import get_registry
+
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
@@ -19,9 +21,6 @@ from ..dependencies import get_firestore
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agent-configs", tags=["agent-configs"])
-
-# Derive allowed config IDs from the agent registry (single source of truth)
-from app.adk.agents.registry import get_registry
 
 ALLOWED_CONFIG_IDS = get_registry().get_all_config_doc_ids()
 

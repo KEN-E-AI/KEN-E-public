@@ -19,14 +19,14 @@ from datetime import datetime
 from pathlib import Path
 
 import vertexai
-from vertexai import agent_engines
+from google.adk.agents.context_cache_config import ContextCacheConfig
 
 # ADK App configuration imports
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
-from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.models import Gemini
 from google.adk.plugins import ReflectAndRetryToolPlugin
+from vertexai import agent_engines
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -387,7 +387,7 @@ Location: {location}
             print("🎉 KEN-E CHAT AGENT DEPLOYMENT SUCCESSFUL!")
             print("=" * 70)
             print(f"Engine ID: {engine_id}")
-            print(f"Python Version: 3.12")
+            print("Python Version: 3.12")
             print("=" * 70)
 
             return engine_id

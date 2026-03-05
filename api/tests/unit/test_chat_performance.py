@@ -195,6 +195,11 @@ class TestParallelExecution:
             ),
             patch.object(
                 GACredentialHelper,
+                "__init__",
+                lambda self, db: None,
+            ),
+            patch.object(
+                GACredentialHelper,
                 "get_and_format_credentials",
                 side_effect=mock_get_and_format_credentials,
             ),
@@ -209,7 +214,13 @@ class TestParallelExecution:
                 return_value={"access_token": "token"},
             ),
             patch("src.kene_api.routers.chat.get_redis_service") as mock_redis,
+            patch("src.kene_api.routers.chat.get_firestore_service") as mock_firestore,
         ):
+            # Mock Firestore service (prevents real GCP auth blocking the event loop)
+            mock_firestore_instance = MagicMock()
+            mock_firestore_instance.get_client.return_value = MagicMock()
+            mock_firestore.return_value = mock_firestore_instance
+
             # Mock Redis to return cache miss (so we actually load from DB)
             mock_redis_instance = MagicMock()
             mock_redis_instance.is_available.return_value = False  # Disable cache
@@ -297,6 +308,11 @@ class TestParallelExecution:
             ),
             patch.object(
                 GACredentialHelper,
+                "__init__",
+                lambda self, db: None,
+            ),
+            patch.object(
+                GACredentialHelper,
                 "get_and_format_credentials",
                 side_effect=mock_get_credentials_success,
             ),
@@ -311,7 +327,13 @@ class TestParallelExecution:
                 return_value={"access_token": "token"},
             ),
             patch("src.kene_api.routers.chat.get_redis_service") as mock_redis,
+            patch("src.kene_api.routers.chat.get_firestore_service") as mock_firestore,
         ):
+            # Mock Firestore service (prevents real GCP auth blocking the event loop)
+            mock_firestore_instance = MagicMock()
+            mock_firestore_instance.get_client.return_value = MagicMock()
+            mock_firestore.return_value = mock_firestore_instance
+
             # Mock Redis to disable caching
             mock_redis_instance = MagicMock()
             mock_redis_instance.is_available.return_value = False

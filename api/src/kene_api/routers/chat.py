@@ -18,13 +18,6 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
-from shared.context_utils import (
-    CAMPAIGN_KEYWORDS,
-    format_campaign_markdown,
-    inject_campaign_context,
-    inject_organization_context,
-    should_load_campaigns,
-)
 from shared.structured_logging import get_structured_logger, log_context
 
 try:
@@ -62,6 +55,9 @@ APP_NAME = "ken_e_chatbot"
 
 # Background reauth check cache: populated by async task, consumed on next request
 _reauth_cache: dict[str, dict[str, Any]] = {}
+
+# Strong references for fire-and-forget tasks to prevent garbage collection (RUF006)
+_background_tasks: set[asyncio.Task[Any]] = set()
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -1072,9 +1068,11 @@ class AgentEngineClient:
                     f"Cleaning up {len(old_session_ids)} old sessions from Vertex AI"
                 )
                 for old_id in old_session_ids:
-                    asyncio.create_task(
+                    task = asyncio.create_task(
                         self._delete_old_session(user_id, old_id)
                     )
+                    _background_tasks.add(task)
+                    task.add_done_callback(_background_tasks.discard)
 
         except Exception as e:
             logger.error(f"Failed to get sessions from ADK service: {e}")
@@ -2083,13 +2081,15 @@ async def chat_completion(
                 except Exception:
                     logger.debug(f"Background session preview update failed for {sid}")
 
-            asyncio.create_task(
+            task = asyncio.create_task(
                 _post_response_writes(
                     user_context.user_id,
                     actual_session_id,
                     response_content,
                 )
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
             # Fire reauth check in background (non-blocking, result used on next request)
             async def _check_reauth_bg(uid: str, sid: str) -> None:
@@ -2116,9 +2116,11 @@ async def chat_completion(
                 except Exception:
                     pass
 
-            asyncio.create_task(
+            task = asyncio.create_task(
                 _check_reauth_bg(user_context.user_id, actual_session_id)
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
             # Use cached reauth result from previous request's background check
             reauth_key = f"{user_context.user_id}:{actual_session_id}"
