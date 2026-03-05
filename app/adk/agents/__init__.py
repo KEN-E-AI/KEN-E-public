@@ -2,10 +2,12 @@
 ADK Agents Package
 Exports multi-agent implementation with MCP integration
 
-Uses lazy loading to avoid initializing agents at import time,
-which improves test performance and allows tests to run without
+Uses AgentRegistry for lazy loading to avoid initializing agents at import
+time, which improves test performance and allows tests to run without
 all environment variables set.
 """
+
+from .registry import get_registry
 
 __all__ = [
     "create_strategy_docs_supervisor",
@@ -16,46 +18,22 @@ __all__ = [
     "root_agent",
 ]
 
-# Cache for lazy-loaded agents
-_agent_cache = {}
+# Map exported names to registry names.
+# "news_only_agent" is a legacy alias for the "news" agent.
+_EXPORT_TO_REGISTRY = {
+    "ken_e_agent": "ken_e",
+    "news_only_agent": "news",
+    "google_analytics_agent_v4": "google_analytics",
+    "create_strategy_docs_supervisor": "strategy",
+    "root_agent": "root_agent",          # alias -> ken_e
+    "multi_agent_root": "multi_agent_root",  # alias -> strategy
+}
 
 
 def __getattr__(name: str):
-    """Lazy load agents on first access.
-
-    This prevents all agents from initializing when the package is imported,
-    which allows tests to import utils modules without triggering agent
-    initialization that requires environment variables.
-    """
-    if name in _agent_cache:
-        return _agent_cache[name]
-
-    if name == "news_only_agent":
-        from .company_news_chatbot.agent import root_agent as news_only_agent
-        _agent_cache[name] = news_only_agent
-        return news_only_agent
-
-    elif name == "create_strategy_docs_supervisor":
-        from .create_strategy_docs_supervisor import create_strategy_docs_supervisor
-        _agent_cache[name] = create_strategy_docs_supervisor
-        return create_strategy_docs_supervisor
-
-    elif name == "ken_e_agent":
-        from .ken_e_agent import ken_e_agent
-        _agent_cache[name] = ken_e_agent
-        return ken_e_agent
-
-    elif name == "google_analytics_agent_v4":
-        from .google_analytics_agent_v4 import google_analytics_agent_v4
-        _agent_cache[name] = google_analytics_agent_v4
-        return google_analytics_agent_v4
-
-    elif name == "root_agent":
-        # Default export is KEN-E agent
-        return __getattr__("ken_e_agent")
-
-    elif name == "multi_agent_root":
-        # Alias for compatibility
-        return __getattr__("create_strategy_docs_supervisor")
+    """Lazy load agents via the registry on first access."""
+    registry_name = _EXPORT_TO_REGISTRY.get(name)
+    if registry_name is not None:
+        return get_registry().get(registry_name)
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

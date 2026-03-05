@@ -134,13 +134,13 @@ def invoke_agent_sync(
             # Use weave.ThreadPoolExecutor to preserve trace context across threads
             with weave.ThreadPoolExecutor() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
-                return future.result(timeout=1800)
+                return future.result(timeout=300)
         else:
             # If no event loop is running, create one
             return loop.run_until_complete(invoke_agent())
     except concurrent.futures.TimeoutError as e:
-        logger.error(f"Agent invocation timed out after 30 minutes: {e!s}")
-        return "Error: Request timed out after 30 minutes. Please try again with simpler requirements."
+        logger.error(f"Agent invocation timed out after 5 minutes: {e!s}")
+        return "Error: Request timed out after 5 minutes. Please try again with simpler requirements."
     except Exception as e:
         logger.error(f"Error in sync agent invocation: {e!s}")
         return f"Error: Failed to complete the request - {e!s}"
@@ -212,35 +212,28 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                     "[DISPATCH-WRAPPER] Built minimal tenant_context with account_id only"
                 )
 
-            # Load organization context if account_id available
+            # Inject organization context: prefer session state, fallback to Neo4j
             if account_id:
                 try:
-                    logger.info(
-                        f"[DISPATCH-WRAPPER] Loading org context for: {account_id}"
-                    )
-                    context_manager = HierarchicalContextManager(account_id)
-                    org_context = context_manager.load_executive_summary()
-
+                    org_context = tool_context.state.get("organization_context")
                     if org_context:
-                        # DEBUG logging
+                        from shared.context_utils import inject_organization_context
+                        query = inject_organization_context(query, org_context)
                         logger.info(
-                            "[ORG-CONTEXT-DEBUG] ========== CONTEXT START =========="
+                            f"[DISPATCH-WRAPPER] Org context injected from session state, length: {len(query)}"
                         )
-                        logger.info(f"[ORG-CONTEXT-DEBUG] Full context:\n{org_context}")
+                    else:
+                        # Fallback: load from Neo4j (standalone invocations or missing state)
                         logger.info(
-                            f"[ORG-CONTEXT-DEBUG] Context length: {len(org_context)} chars"
+                            f"[DISPATCH-WRAPPER] No org context in session state, falling back to Neo4j"
                         )
-                        logger.info(
-                            f"[ORG-CONTEXT-DEBUG] Token count: {context_manager.get_total_tokens()}"
-                        )
-                        logger.info(
-                            "[ORG-CONTEXT-DEBUG] ========== CONTEXT END =========="
-                        )
-
-                        query = context_manager.inject_context(query)
-                        logger.info(
-                            f"[DISPATCH-WRAPPER] Org context injected, new length: {len(query)}"
-                        )
+                        context_manager = HierarchicalContextManager(account_id)
+                        neo4j_context = context_manager.load_executive_summary()
+                        if neo4j_context:
+                            query = context_manager.inject_context(query)
+                            logger.info(
+                                f"[DISPATCH-WRAPPER] Org context injected from Neo4j, length: {len(query)}"
+                            )
                 except Exception as e:
                     logger.error(
                         f"[DISPATCH-WRAPPER] Failed to load org context: {e}",

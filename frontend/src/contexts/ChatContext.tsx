@@ -299,6 +299,11 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
         selectedOrgAccount?.accountId,
       );
 
+      // Sync session ID if the backend resolved a pending/new session
+      if (response.session_id && response.session_id !== sessionId) {
+        setSessionId(response.session_id);
+      }
+
       const assistantMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant" as const,

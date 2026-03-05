@@ -109,35 +109,25 @@ class TestSessionReuseBugFix:
             mock_create.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_adk_session_still_queries_adk_when_not_in_cache(self):
+    async def test_adk_session_optimistically_registered_when_not_in_cache(self):
         """
         Test that genuine ADK sessions (not chat_/fallback_/manual_ format)
-        still properly query the ADK service when not in cache.
-
-        This ensures the bug fix doesn't break legitimate ADK session validation.
+        are optimistically registered in-memory cache without a blocking
+        get_session() validation call. stream_query validates the session itself.
         """
-        # Setup
         client = AgentEngineClient()
         user_id = "test_user_789"
-        session_id = "adk_session_12345"  # Genuine ADK session format
+        session_id = "adk_session_12345"
 
-        # Mock session_service to return valid session data
-        mock_session_data = MagicMock()
-        mock_session_data.events = []
-        mock_session_data.create_time = "2025-01-01T00:00:00Z"
-        mock_session_data.update_time = "2025-01-01T00:00:00Z"
         mock_session_service = AsyncMock()
-        mock_session_service.get_session.return_value = mock_session_data
         client._session_service = mock_session_service
 
-        # Mock Redis to return None (cache miss)
         with patch("src.kene_api.routers.chat.get_redis_service") as mock_redis:
             mock_redis_instance = MagicMock()
             mock_redis_instance.is_available.return_value = True
             mock_redis_instance.get_json.return_value = None
             mock_redis.return_value = mock_redis_instance
 
-            # Execute
             result = await client.get_or_create_session(
                 user_id=user_id,
                 user_context=None,
@@ -146,10 +136,12 @@ class TestSessionReuseBugFix:
                 account_id=None,
             )
 
-        # Assert
-        assert result == session_id, "Should return the validated session ID"
-        # Should query ADK service for genuine ADK session formats
-        mock_session_service.get_session.assert_called_once()
+        assert result == session_id
+        # Should NOT call get_session — optimistic registration skips validation
+        mock_session_service.get_session.assert_not_called()
+        # Should be registered in in-memory cache
+        session_key = f"{user_id}:{session_id}"
+        assert session_key in client._user_sessions
 
 
 class TestParallelExecution:

@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from app.utils.weave_observability import safe_weave_op
 
 from ..models.strategy_models import StrategyParameters, parse_strategy_query
-from .agent_retry import invoke_agent_with_retry
+from .agent_retry import DEFAULT_RETRY_CONFIG, FAST_RETRY_CONFIG, invoke_agent_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,10 @@ def dispatch_to_company_news(
         tool_context: ADK ToolContext with session state (auto-injected)
         tenant_context: Legacy parameter for backward compatibility
     """
-    # Import here to avoid circular dependencies
-    # Use internal impl to avoid deprecation warning - context is already loaded from session state
     from shared.context_utils import inject_organization_context
 
-    from ..company_news_chatbot.agent import root_agent as news_agent
+    from ..registry import get_registry
+    news_agent = get_registry().get("news")
 
     try:
         logger.info("[NEWS-DISPATCH] ========== DISPATCH START ==========")
@@ -67,8 +66,7 @@ def dispatch_to_company_news(
             logger.info("[NEWS-DISPATCH] No tool_context available for org context")
 
         logger.info("🔄 Routing company news query to specialized agent...")
-        # Use retry logic for robust agent invocation
-        result = invoke_agent_with_retry(news_agent, query, max_attempts=3)
+        result = invoke_agent_with_retry(news_agent, query, retry_config=FAST_RETRY_CONFIG)
 
         return {
             "status": "success",
@@ -109,7 +107,8 @@ def dispatch_to_google_analytics(
         inject_organization_context,
     )
 
-    from ..google_analytics_agent_v4 import google_analytics_agent_v4
+    from ..registry import get_registry
+    google_analytics_agent_v4 = get_registry().get("google_analytics")
 
     try:
         logger.info("Routing Google Analytics query to specialized agent...")
@@ -157,7 +156,7 @@ def dispatch_to_google_analytics(
             initial_state = {"ga_credentials": ga_credentials}
 
         result = invoke_agent_with_retry(
-            google_analytics_agent_v4, query, max_attempts=3, state=initial_state
+            google_analytics_agent_v4, query, state=initial_state, retry_config=DEFAULT_RETRY_CONFIG
         )
 
         return {

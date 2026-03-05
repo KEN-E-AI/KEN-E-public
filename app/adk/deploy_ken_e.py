@@ -26,6 +26,7 @@ from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.models import Gemini
+from google.adk.plugins import ReflectAndRetryToolPlugin
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -267,41 +268,24 @@ def deploy_ken_e() -> str | None:
 
         logger.info(f"✅ Loaded agent: {type(ken_e_agent)}")
 
-        # Create App with context compaction and caching enabled
-        # - Compaction: Summarizes older conversation events to stay within token limits
-        #   See: https://google.github.io/adk-docs/context/compaction/
-        # - Caching: Caches static content (instructions, tools) for cost/latency savings
-        #   See: https://google.github.io/adk-docs/context/caching/
-        #
-        # KNOWN BUG: EventsCompactionConfig fails on Agent Engine with
-        # "RuntimeError: Event loop is closed" during async LLM summarization.
-        # Tracked at: https://github.com/google/adk-python/issues/4282
-        # The config is kept in place so it auto-activates once the ADK fix ships.
-        #
-        # TODO: If ADK's EventsCompactionConfig works well, remove the unused
-        # ConversationSummarizer class at app/adk/agents/utils/conversation_summarizer.py
-        # which was built as a fallback before we discovered AdkApp accepts App objects.
+        # Compaction: Summarizes older conversation events to stay within token limits
+        # Caching: Caches static content (instructions, tools) for cost/latency savings
         logger.info("Configuring context compaction and caching...")
         compaction_summarizer = LlmEventSummarizer(
             llm=Gemini(model="gemini-2.5-flash")
         )
         compaction_config = EventsCompactionConfig(
-            summarizer=compaction_summarizer,  # Required: orchestrator agents lack canonical_model
+            summarizer=compaction_summarizer,
             compaction_interval=5,  # Compact every 5 user invocations
             overlap_size=1,  # Include 1 prior invocation for context continuity
+            token_threshold=50000,  # Also compact when session exceeds 50K tokens
+            event_retention_size=10,  # Keep last 10 raw events un-compacted
         )
-        # Agent Engine's internal ADK build expects `token_threshold` and
-        # `event_retention_size` on EventsCompactionConfig that aren't in the
-        # public 1.26.0 release yet. Both must be present (both None or both
-        # set) to pass the _validate_token_params Pydantic validator. Without
-        # this, every query crashes with AttributeError before it even runs.
-        for attr in ("token_threshold", "event_retention_size"):
-            if not hasattr(compaction_config, attr):
-                object.__setattr__(compaction_config, attr, None)
 
         adk_app = App(
             name="ken_e_chatbot",
             root_agent=ken_e_agent,
+            plugins=[ReflectAndRetryToolPlugin(max_retries=2)],
             events_compaction_config=compaction_config,
             context_cache_config=ContextCacheConfig(
                 min_tokens=2048,  # Cache if static content exceeds this threshold

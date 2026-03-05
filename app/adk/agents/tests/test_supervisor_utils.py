@@ -8,10 +8,10 @@ from ..utils.supervisor_utils import dispatch_with_context, extract_tenant_conte
 def test_extract_tenant_context_from_string():
     """Test extracting tenant context from a plain string."""
     input_data = "This is a test message"
-    tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
+    tenant_id, tenant_context, message = extract_tenant_context(input_data)
 
     assert tenant_id is None
-    assert tenant_credentials is None
+    assert tenant_context is None
     assert message == "This is a test message"
 
 
@@ -22,10 +22,13 @@ def test_extract_tenant_context_from_dict_with_message():
         "tenant_id": "test-tenant",
         "tenant_credentials": "test-creds",
     }
-    tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
+    tenant_id, tenant_context, message = extract_tenant_context(input_data)
 
     assert tenant_id == "test-tenant"
-    assert tenant_credentials == "test-creds"
+    assert tenant_context == {
+        "tenant_id": "test-tenant",
+        "tenant_credentials": "test-creds",
+    }
     assert message == "Test message"
 
 
@@ -36,20 +39,23 @@ def test_extract_tenant_context_from_dict_with_query():
         "tenant_id": "test-tenant",
         "tenant_credentials": "test-creds",
     }
-    tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
+    tenant_id, tenant_context, message = extract_tenant_context(input_data)
 
     assert tenant_id == "test-tenant"
-    assert tenant_credentials == "test-creds"
+    assert tenant_context == {
+        "tenant_id": "test-tenant",
+        "tenant_credentials": "test-creds",
+    }
     assert message == "Test query"
 
 
 def test_extract_tenant_context_from_other_type():
     """Test extracting tenant context from non-string, non-dict type."""
     input_data = 12345
-    tenant_id, tenant_credentials, message = extract_tenant_context(input_data)
+    tenant_id, tenant_context, message = extract_tenant_context(input_data)
 
     assert tenant_id is None
-    assert tenant_credentials is None
+    assert tenant_context is None
     assert message == "12345"
 
 

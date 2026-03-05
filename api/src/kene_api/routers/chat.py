@@ -49,6 +49,9 @@ SESSION_METADATA_TTL_SECONDS = 86400  # 24 hours
 # Bug fix: Previously line 965 used "ken-e-chatbot" while others used "ken_e_chatbot"
 APP_NAME = "ken_e_chatbot"
 
+# Background reauth check cache: populated by async task, consumed on next request
+_reauth_cache: dict[str, dict[str, Any]] = {}
+
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
@@ -794,83 +797,31 @@ class AgentEngineClient:
             except Exception as e:
                 logger.warning(f"Failed to check Redis for session {session_id}: {e}")
 
-            # Not in cache - check if this is a valid ADK session format before querying ADK
-            # Skip ADK validation for frontend-generated or fallback session IDs
+            # Not in cache — determine session type
             is_adk_session = not (
                 session_id.startswith("chat_")
                 or session_id.startswith("fallback_")
                 or session_id.startswith("manual_")
+                or session_id.startswith("pending_")
             )
 
             if is_adk_session:
-                try:
-                    t0 = time.time()
-                    session_data = await self.session_service.get_session(
-                        app_name=APP_NAME,
-                        user_id=user_id,
-                        session_id=session_id,
-                    )
-                    logger.info(
-                        "Vertex AI get_session (validation) completed",
-                        extra=log_context(
-                            component="vertex_ai_session",
-                            action="get_session_validate",
-                            session_id=session_id,
-                            duration_ms=(time.time() - t0) * 1000,
-                        ),
-                    )
-                    if session_data:
-                        logger.info(
-                            f"Found existing ADK session {session_id} for user {user_id}"
-                        )
-                        # Restore session info to cache
-                        conversation_info = {
-                            "session_id": session_id,
-                            "user_id": user_id,
-                            "conversation_name": conversation_name,
-                            "created_at": getattr(
-                                session_data,
-                                "create_time",
-                                datetime.now(timezone.utc),
-                            ),
-                            "last_updated": getattr(
-                                session_data,
-                                "update_time",
-                                datetime.now(timezone.utc),
-                            ),
-                            "message_count": len(getattr(session_data, "events", [])),
-                        }
-                        self._user_sessions[session_key] = conversation_info
-
-                        # Also cache to Redis (survives API restarts)
-                        try:
-                            redis_service = get_redis_service()
-                            if redis_service.is_available():
-                                cache_key = session_metadata_key(user_id, session_id)
-                                redis_service.set_json(
-                                    cache_key,
-                                    conversation_info,
-                                    ttl=SESSION_METADATA_TTL_SECONDS,
-                                )
-                                logger.info(
-                                    f"Cached session metadata to Redis for {session_id}"
-                                )
-                        except Exception as e:
-                            logger.warning(f"Failed to cache session to Redis: {e}")
-
-                        return session_id
-                    else:
-                        logger.warning(
-                            f"ADK session {session_id} not found for user {user_id}"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Error checking ADK session {session_id} for user {user_id}: {e}"
-                    )
+                # Skip the blocking get_session() validation call — stream_query will
+                # validate the session itself. Register optimistically in-memory cache.
+                logger.info(
+                    f"Optimistically registering ADK session {session_id} for user {user_id} (skipping validation call)"
+                )
+                conversation_info = {
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "conversation_name": conversation_name,
+                    "created_at": datetime.now(timezone.utc),
+                    "last_updated": datetime.now(timezone.utc),
+                    "message_count": 0,
+                }
+                self._user_sessions[session_key] = conversation_info
+                return session_id
             else:
-                # Non-ADK format session (chat_*, fallback_*, manual_*)
-                # If not in cache, this might be a frontend-generated ID on first message
-                # Don't pass invalid session IDs to Agent Engine - create proper ADK session instead
                 logger.info(
                     f"Session {session_id} has non-ADK format and not in cache - creating proper ADK session"
                 )
@@ -1435,28 +1386,11 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
-            # Format conversation history if there are previous messages
-            if len(messages) > 1:
-                # Build conversation context from all messages
-                conversation_context = []
-                for msg in messages[:-1]:  # All messages except the latest
-                    role_label = "User" if msg.role == "user" else "Assistant"
-                    conversation_context.append(f"{role_label}: {msg.content}")
-
-                # Add conversation history as context to the current message
-                context_str = "\n".join(conversation_context)
-                formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
-                logger.info(
-                    f"[CHAT] Including {len(messages) - 1} previous messages in context"
-                )
-            else:
-                formatted_input = user_input
+            # ADK session already maintains conversation history — no need to re-inject
+            formatted_input = user_input
 
             logger.info(
                 f"[CHAT] Processing message for user {user_id}: {user_input[:100]}..."
-            )
-            logger.info(
-                f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
             )
 
             # Get or create session for this user (credentials now passed via session state)
@@ -1481,24 +1415,18 @@ class AgentEngineClient:
             # Increment message count
             self.increment_message_count(user_id, actual_session_id)
 
-            # PERFORMANCE: Log when we're about to send to Agent Engine
             logger.info(
-                f"[PERF] SENDING to Agent Engine at {time.time():.3f} for user {user_id}, session {actual_session_id}"
+                f"[PERF] Sending to Agent Engine for user {user_id}, session {actual_session_id}, query_len={len(formatted_input)}"
             )
-            logger.info(
-                f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
-            )
-            logger.info(f"Session ID being passed to Agent Engine: {actual_session_id}")
 
             # Use the agent_engines API with proper Queryable interface
             try:
-                # Log available methods for debugging
                 available_methods = [
                     method
                     for method in dir(self.agent_engine)
                     if not method.startswith("_")
                 ]
-                logger.info(f"Available methods on agent engine: {available_methods}")
+                logger.debug(f"Available methods on agent engine: {available_methods}")
 
                 # Try the agent_engines query patterns
                 response = None
@@ -1541,13 +1469,12 @@ class AgentEngineClient:
                                 actual_session_id,
                             )
                         for chunk in stream_iterator:
-                            logger.info(
+                            logger.debug(
                                 f"Received chunk type: {type(chunk)}, content preview: {str(chunk)[:100]}..."
                             )
 
                             if isinstance(chunk, dict):
-                                # Handle actual dictionary response
-                                logger.info(
+                                logger.debug(
                                     f"Processing dict chunk with keys: {list(chunk.keys())}"
                                 )
 
@@ -1564,15 +1491,12 @@ class AgentEngineClient:
                                                 isinstance(part, dict)
                                                 and "text" in part
                                             ):
-                                                logger.info(
-                                                    f"Extracted text from nested structure: {part['text'][:50]}..."
-                                                )
                                                 response_parts.append(part["text"])
                                             elif isinstance(part, dict) and (
                                                 "function_call" in part
                                                 or "function_response" in part
                                             ):
-                                                logger.info(
+                                                logger.debug(
                                                     "Skipping function_call/function_response part"
                                                 )
                                             else:
@@ -1585,15 +1509,12 @@ class AgentEngineClient:
                                 ):
                                     for part in chunk["parts"]:
                                         if isinstance(part, dict) and "text" in part:
-                                            logger.info(
-                                                f"Extracted text from direct structure: {part['text'][:50]}..."
-                                            )
                                             response_parts.append(part["text"])
                                         elif isinstance(part, dict) and (
                                             "function_call" in part
                                             or "function_response" in part
                                         ):
-                                            logger.info(
+                                            logger.debug(
                                                 "Skipping function_call/function_response part"
                                             )
                                         else:
@@ -1602,19 +1523,17 @@ class AgentEngineClient:
                                 elif "content" in chunk:
                                     response_parts.append(str(chunk["content"]))
                                 else:
-                                    # Don't append function_call or function_response data
                                     if not (
                                         "function_call" in chunk
                                         or "function_response" in chunk
                                     ):
                                         response_parts.append(str(chunk))
                                     else:
-                                        logger.info(
+                                        logger.debug(
                                             "Skipping function debug data in non-streaming response"
                                         )
                             elif isinstance(chunk, str):
-                                # Handle string representation of dictionary
-                                logger.info(f"Processing string chunk: {chunk[:50]}...")
+                                logger.debug(f"Processing string chunk: {chunk[:50]}...")
 
                                 # Skip JSON-format function events (double-quoted keys)
                                 # Agent Engine may return these as JSON strings, not Python dicts
@@ -1626,7 +1545,7 @@ class AgentEngineClient:
                                             "function_call" in _parsed
                                             or "function_response" in _parsed
                                         ):
-                                            logger.info(
+                                            logger.debug(
                                                 "Skipping JSON function event data"
                                             )
                                             continue
@@ -1634,16 +1553,10 @@ class AgentEngineClient:
                                         pass
 
                                 if chunk.startswith("{'parts'") and "'text':" in chunk:
-                                    logger.info(
-                                        "Attempting to parse chunk as dictionary"
-                                    )
                                     try:
                                         import ast
 
                                         parsed_chunk = ast.literal_eval(chunk)
-                                        logger.info(
-                                            f"Successfully parsed chunk: {type(parsed_chunk)}"
-                                        )
                                         if (
                                             isinstance(parsed_chunk, dict)
                                             and "parts" in parsed_chunk
@@ -1653,9 +1566,6 @@ class AgentEngineClient:
                                                     isinstance(part, dict)
                                                     and "text" in part
                                                 ):
-                                                    logger.info(
-                                                        f"Extracted text: {part['text'][:50]}..."
-                                                    )
                                                     response_parts.append(part["text"])
                                         else:
                                             response_parts.append(chunk)
@@ -1665,42 +1575,20 @@ class AgentEngineClient:
                                         )
                                         response_parts.append(chunk)
                                 else:
-                                    # Check if the chunk contains function_call or function_response
                                     if (
                                         "{'function_call'" in chunk
                                         or "{'function_response'" in chunk
                                     ):
-                                        # Try to extract just the text after the function data
-                                        logger.info(
-                                            "Found function data in string chunk, attempting to extract text"
+                                        logger.debug(
+                                            "Found function data in string chunk, extracting text"
                                         )
-
-                                        # Look for text after the last }}
                                         if "}}" in chunk:
                                             parts = chunk.rsplit("}}", 1)
                                             if len(parts) == 2 and parts[1].strip():
                                                 remaining = parts[1].strip()
                                                 if not remaining.startswith("{"):
-                                                    logger.info(
-                                                        f"Extracted text after function data: {remaining[:50]}..."
-                                                    )
                                                     response_parts.append(remaining)
-                                                else:
-                                                    logger.info(
-                                                        "Remaining part is another JSON object, skipping"
-                                                    )
-                                            else:
-                                                logger.info(
-                                                    "No text found after function data, skipping entire chunk"
-                                                )
-                                        else:
-                                            logger.info(
-                                                "No }} found in chunk with function data, skipping"
-                                            )
                                     else:
-                                        logger.info(
-                                            "Chunk doesn't match dictionary pattern, adding as-is"
-                                        )
                                         response_parts.append(chunk)
                             elif hasattr(chunk, "content"):
                                 response_parts.append(str(chunk.content))
@@ -1716,7 +1604,7 @@ class AgentEngineClient:
                             or '{"function_call"' in full_response
                             or '{"function_response"' in full_response
                         ):
-                            logger.info(
+                            logger.debug(
                                 f"Cleaning function data from response (length: {len(full_response)})"
                             )
                             # Try to extract only the text after function blocks
@@ -1751,7 +1639,7 @@ class AgentEngineClient:
                         actual_session_id,
                     )
 
-                logger.info(f"Response received: {type(response)}")
+                logger.debug(f"Response received: {type(response)}")
 
                 # Process the response
                 if isinstance(response, str):
@@ -1820,28 +1708,11 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
-            # Format conversation history if there are previous messages
-            if len(messages) > 1:
-                # Build conversation context from all messages
-                conversation_context = []
-                for msg in messages[:-1]:  # All messages except the latest
-                    role_label = "User" if msg.role == "user" else "Assistant"
-                    conversation_context.append(f"{role_label}: {msg.content}")
-
-                # Add conversation history as context to the current message
-                context_str = "\n".join(conversation_context)
-                formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
-                logger.info(
-                    f"[CHAT STREAM] Including {len(messages) - 1} previous messages in context"
-                )
-            else:
-                formatted_input = user_input
+            # ADK session already maintains conversation history — no need to re-inject
+            formatted_input = user_input
 
             logger.info(
-                f"[CHAT] Processing message for user {user_id}: {user_input[:100]}..."
-            )
-            logger.info(
-                f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
+                f"[CHAT] Processing stream message for user {user_id}: {user_input[:100]}..."
             )
 
             # Get or create session for this user (credentials now passed via session state)
@@ -1867,28 +1738,20 @@ class AgentEngineClient:
             self.increment_message_count(user_id, actual_session_id)
 
             logger.info(
-                f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}"
-            )
-            logger.info(
-                f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
-            )
-            logger.info(
-                f"Session ID being passed to Agent Engine for streaming: {actual_session_id}"
+                f"[PERF] Streaming to Agent Engine for user {user_id}, session {actual_session_id}, query_len={len(formatted_input)}"
             )
 
             # Try streaming with agent_engines API
             try:
-                # Log available methods for debugging
                 available_methods = [
                     method
                     for method in dir(self.agent_engine)
                     if not method.startswith("_")
                 ]
-                logger.info(f"Available methods on agent engine: {available_methods}")
+                logger.debug(f"Available methods on agent engine: {available_methods}")
 
                 # Use stream_query with correct parameters for deployed agent
                 if hasattr(self.agent_engine, "stream_query"):
-                    logger.info("Using stream_query method for streaming")
 
                     # Create an async generator that runs the blocking stream_query in a thread
                     import queue
@@ -2118,7 +1981,7 @@ class AgentEngineClient:
                     yield f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
                     return
 
-                logger.info(f"Streaming response received: {type(response)}")
+                logger.debug(f"Streaming response received: {type(response)}")
 
                 # Process and yield the response
                 if isinstance(response, str):
@@ -2248,55 +2111,74 @@ async def chat_completion(
                 account_id=request.account_id,
             )
 
-            # Store a preview of the response for session recovery
-            preview = (
-                response_content[:100] + "..."
-                if len(response_content) > 100
-                else response_content
-            )
-            session_metadata = agent_client.update_session_preview(
-                user_context.user_id, actual_session_id, preview
-            )
-            if session_metadata:
+            # Fire post-response writes in background (non-blocking)
+            async def _post_response_writes(
+                uid: str, sid: str, content: str
+            ) -> None:
                 try:
-                    redis_service = get_redis_service()
-                    if redis_service.is_available():
-                        cache_key = session_metadata_key(
-                            user_context.user_id, actual_session_id
-                        )
-                        redis_service.set_json(
-                            cache_key,
-                            session_metadata,
-                            ttl_seconds=SESSION_METADATA_TTL_SECONDS,
-                        )
+                    preview = (
+                        content[:100] + "..."
+                        if len(content) > 100
+                        else content
+                    )
+                    session_metadata = agent_client.update_session_preview(
+                        uid, sid, preview
+                    )
+                    if session_metadata:
+                        try:
+                            redis_svc = get_redis_service()
+                            if redis_svc.is_available():
+                                cache_key = session_metadata_key(uid, sid)
+                                redis_svc.set_json(
+                                    cache_key,
+                                    session_metadata,
+                                    ttl_seconds=SESSION_METADATA_TTL_SECONDS,
+                                )
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.debug(f"Background session preview update failed for {sid}")
+
+            asyncio.create_task(
+                _post_response_writes(
+                    user_context.user_id,
+                    actual_session_id,
+                    response_content,
+                )
+            )
+
+            # Fire reauth check in background (non-blocking, result used on next request)
+            async def _check_reauth_bg(uid: str, sid: str) -> None:
+                try:
+                    from app.adk.session.recovery import (
+                        get_recovery_service as _get_recovery,
+                    )
+
+                    _recovery = _get_recovery()
+                    _session = await _recovery._session_service.get_session(
+                        app_name=APP_NAME,
+                        user_id=uid,
+                        session_id=sid,
+                    )
+                    if _session and _session.state.get("_requires_reauth"):
+                        _reauth_cache[f"{uid}:{sid}"] = {
+                            "requires_reauth": True,
+                            "service": _session.state.get(
+                                "_reauth_service", "google-analytics"
+                            ),
+                        }
+                        _session.state.pop("_requires_reauth", None)
+                        _session.state.pop("_reauth_service", None)
                 except Exception:
                     pass
 
-            # Check session state for re-auth requirement (set by before_tool_callback)
-            metadata = None
-            try:
-                from app.adk.session.recovery import (
-                    get_recovery_service as _get_recovery,
-                )
+            asyncio.create_task(
+                _check_reauth_bg(user_context.user_id, actual_session_id)
+            )
 
-                _recovery = _get_recovery()
-                _session = await _recovery._session_service.get_session(
-                    app_name=APP_NAME,
-                    user_id=user_context.user_id,
-                    session_id=actual_session_id,
-                )
-                if _session and _session.state.get("_requires_reauth"):
-                    metadata = {
-                        "requires_reauth": True,
-                        "service": _session.state.get(
-                            "_reauth_service", "google-analytics"
-                        ),
-                    }
-                    # Clear the flag so it doesn't persist
-                    _session.state.pop("_requires_reauth", None)
-                    _session.state.pop("_reauth_service", None)
-            except Exception:
-                pass
+            # Use cached reauth result from previous request's background check
+            reauth_key = f"{user_context.user_id}:{actual_session_id}"
+            metadata = _reauth_cache.pop(reauth_key, None)
 
             return ChatResponse(
                 content=response_content,
