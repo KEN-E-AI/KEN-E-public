@@ -192,16 +192,16 @@ def deploy_ken_e() -> str | None:
             logger.warning("⚠️  shared package not found")
 
         # Copy app.adk sub-packages needed by agent callbacks
-        # (security hooks, usage tracking). These are imported as
-        # `from app.adk.security.hooks import ...` so we replicate
-        # the package structure.
+        # (security hooks, usage tracking, tool registry). These are
+        # imported as `from app.adk.security.hooks import ...` so we
+        # replicate the package structure.
         adk_root = Path(__file__).parent  # app/adk/
         app_adk_dest = temp_path / "app" / "adk"
         app_adk_dest.mkdir(parents=True)
         (temp_path / "app" / "__init__.py").touch()
         (app_adk_dest / "__init__.py").touch()
 
-        for subpkg in ("security", "tracking"):
+        for subpkg in ("security", "tracking", "tools"):
             src = adk_root / subpkg
             if src.exists():
                 shutil.copytree(
@@ -212,6 +212,16 @@ def deploy_ken_e() -> str | None:
                 logger.info(f"Copied app.adk.{subpkg} package")
             else:
                 logger.warning(f"⚠️  app/adk/{subpkg} not found")
+
+        # Copy app.utils (weave_observability, etc.) needed by ken_e_agent
+        app_utils_src = adk_root.parent / "utils"  # app/utils/
+        if app_utils_src.exists():
+            shutil.copytree(
+                app_utils_src,
+                temp_path / "app" / "utils",
+                ignore=shutil.ignore_patterns("tests", "__pycache__"),
+            )
+            logger.info("Copied app.utils package")
 
         # Process environment-specific .env file (resolve sm:// references)
         env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
@@ -263,6 +273,11 @@ def deploy_ken_e() -> str | None:
         # - Caching: Caches static content (instructions, tools) for cost/latency savings
         #   See: https://google.github.io/adk-docs/context/caching/
         #
+        # KNOWN BUG: EventsCompactionConfig fails on Agent Engine with
+        # "RuntimeError: Event loop is closed" during async LLM summarization.
+        # Tracked at: https://github.com/google/adk-python/issues/4282
+        # The config is kept in place so it auto-activates once the ADK fix ships.
+        #
         # TODO: If ADK's EventsCompactionConfig works well, remove the unused
         # ConversationSummarizer class at app/adk/agents/utils/conversation_summarizer.py
         # which was built as a fallback before we discovered AdkApp accepts App objects.
@@ -270,14 +285,24 @@ def deploy_ken_e() -> str | None:
         compaction_summarizer = LlmEventSummarizer(
             llm=Gemini(model="gemini-2.5-flash")
         )
+        compaction_config = EventsCompactionConfig(
+            summarizer=compaction_summarizer,  # Required: orchestrator agents lack canonical_model
+            compaction_interval=5,  # Compact every 5 user invocations
+            overlap_size=1,  # Include 1 prior invocation for context continuity
+        )
+        # Agent Engine's internal ADK build expects `token_threshold` and
+        # `event_retention_size` on EventsCompactionConfig that aren't in the
+        # public 1.26.0 release yet. Both must be present (both None or both
+        # set) to pass the _validate_token_params Pydantic validator. Without
+        # this, every query crashes with AttributeError before it even runs.
+        for attr in ("token_threshold", "event_retention_size"):
+            if not hasattr(compaction_config, attr):
+                object.__setattr__(compaction_config, attr, None)
+
         adk_app = App(
             name="ken_e_chatbot",
             root_agent=ken_e_agent,
-            events_compaction_config=EventsCompactionConfig(
-                summarizer=compaction_summarizer,  # Required: orchestrator agents lack canonical_model
-                compaction_interval=5,  # Compact every 5 user invocations
-                overlap_size=1,  # Include 1 prior invocation for context continuity
-            ),
+            events_compaction_config=compaction_config,
             context_cache_config=ContextCacheConfig(
                 min_tokens=2048,  # Cache if static content exceeds this threshold
                 ttl_seconds=600,  # 10 min cache lifetime (good for chat sessions)

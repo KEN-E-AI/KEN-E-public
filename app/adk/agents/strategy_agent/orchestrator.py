@@ -12,6 +12,7 @@ import os
 import time
 import uuid
 from concurrent.futures import as_completed
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -39,6 +40,7 @@ try:
     )
     from agents.strategy_agent.constants import (
         DEFAULT_PRODUCT_CATEGORIES,
+        OUTPUT_CATEGORIES,
         VALID_STRATEGY_TYPES,
     )
     from agents.strategy_agent.firestore import FirestoreClient
@@ -59,7 +61,7 @@ except ImportError:
     )
     from .analytics_service import AnalyticsService
     from .artifact_utils import load_uploaded_documents_as_artifacts
-    from .constants import VALID_STRATEGY_TYPES
+    from .constants import OUTPUT_CATEGORIES, VALID_STRATEGY_TYPES
     from .firestore import FirestoreClient
     from .models import StrategyContext
     from .performance_profiler import PerformanceProfiler
@@ -98,46 +100,28 @@ except Exception as e:
 
 logger = logging.getLogger(__name__)
 
-# W&B observability will be initialized lazily when needed
-# This prevents initialization failures during Engine startup
-WEAVE_INITIALIZED = False
+# Use consolidated init from weave_observability
+try:
+    from app.utils.weave_observability import (
+        init_weave_if_needed as _init_weave_central,
+    )
 
+    def init_weave_if_needed() -> None:
+        """Initialize W&B Weave via the consolidated init function."""
+        _init_weave_central()
 
-def init_weave_if_needed():
-    """Initialize W&B Weave if not already initialized and API key is available."""
-    global WEAVE_INITIALIZED
-    if not WEAVE_INITIALIZED:
-        # Get W&B API key using shared secrets utility
-        wandb_api_key = None
+except ImportError:
+    # Fallback for Agent Engine deployment (absolute import path)
+    def init_weave_if_needed() -> None:  # type: ignore[misc]
+        """Fallback Weave init when app.utils is not importable."""
         try:
-            from shared.secrets import get_env_or_secret
-
-            wandb_api_key = get_env_or_secret("WANDB_API_KEY")
+            project_name = os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
+            wandb_api_key = os.getenv("WANDB_API_KEY")
             if wandb_api_key:
-                os.environ["WANDB_API_KEY"] = wandb_api_key
-                logger.info("✅ Retrieved WANDB_API_KEY")
-            else:
-                logger.warning(
-                    "⚠️ WANDB_API_KEY not found in environment or Secret Manager"
-                )
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to retrieve WANDB_API_KEY: {e}")
-
-        if wandb_api_key:
-            try:
-                # Use environment-specific project name from .env
-                project_name = os.getenv("WEAVE_PROJECT_NAME", "ken-e-dev")
                 weave.init(project_name=project_name)
-                logger.info(f"✅ W&B Weave initialized (project: {project_name})")
-                WEAVE_INITIALIZED = True
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to initialize Weave: {e}")
-                WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
-        else:
-            logger.warning(
-                "⚠️ WANDB_API_KEY not available, W&B tracing will not be enabled"
-            )
-            WEAVE_INITIALIZED = True  # Mark as attempted to avoid retry
+                logger.info(f"Weave initialized (project: {project_name})")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Weave: {e}")
 
 
 # Define the mapping of output keys to document types
@@ -519,15 +503,21 @@ def _execute_single_strategy(
             f"[SPLIT AGENT] Sending research query (length: {len(research_query)} chars)"
         )
 
+        # Tag research phase with output_category for MER-E trace rules
+        _research_category = OUTPUT_CATEGORIES.get(strategy_name, {}).get(
+            "research", f"{strategy_name}.research"
+        )
+
         @weave.op(name=f"{strategy_name}_research")
         def run_research():
-            return list(
-                runner.run(
-                    user_id=strategy_context.user_id or "system",
-                    session_id=session_id,
-                    new_message=Content(parts=[{"text": research_query}]),
+            with weave.attributes({"output_category": _research_category}):
+                return list(
+                    runner.run(
+                        user_id=strategy_context.user_id or "system",
+                        session_id=session_id,
+                        new_message=Content(parts=[{"text": research_query}]),
+                    )
                 )
-            )
 
         events = run_research()
 
@@ -596,15 +586,21 @@ def _execute_single_strategy(
                     f"[SPLIT AGENT] ⚠️  Failed to load Firestore instructions: {e}"
                 )
 
+        # Tag format phase with output_category for MER-E trace rules
+        _report_category = OUTPUT_CATEGORIES.get(strategy_name, {}).get(
+            "report", f"{strategy_name}.report"
+        )
+
         @weave.op(name=f"{strategy_name}_format_openai")
         def run_openai_formatter():
-            return format_with_openai(
-                research_text,
-                strategy_config["model_class"],
-                strategy_name,
-                source_urls,
-                custom_instructions=firestore_instructions,
-            )
+            with weave.attributes({"output_category": _report_category}):
+                return format_with_openai(
+                    research_text,
+                    strategy_config["model_class"],
+                    strategy_name,
+                    source_urls,
+                    custom_instructions=firestore_instructions,
+                )
 
         openai_dict = run_openai_formatter()
         formatted_data = strategy_config["model_class"](**openai_dict)
@@ -736,6 +732,48 @@ def execute_strategy_generation_direct(
     Returns:
         Dictionary of generated documents
     """
+    # Set root span metadata for trace filtering in Weave UI
+    execution_id = uuid.uuid4().hex[:12]
+    root_attrs = {
+        "account_id": context.account_id,
+        "session_id": f"strategy_{context.account_id}_{execution_id}",
+        "user_id": context.user_id or "unknown",
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "rollout_percentage": 100,
+    }
+
+    exit_stack = ExitStack()
+    try:
+        exit_stack.enter_context(weave.attributes(root_attrs))
+    except Exception:
+        pass
+
+    try:
+        return _execute_strategy_generation_body(
+            context=context,
+            firestore_client=firestore_client,
+            analytics_service=analytics_service,
+            performance_profiler=performance_profiler,
+            alert_manager=alert_manager,
+            enabled_strategies=enabled_strategies,
+            override_product_categories=override_product_categories,
+            dry_run=dry_run,
+        )
+    finally:
+        exit_stack.close()
+
+
+def _execute_strategy_generation_body(
+    context: StrategyContext,
+    firestore_client: FirestoreClient,
+    analytics_service: AnalyticsService | None = None,
+    performance_profiler: PerformanceProfiler | None = None,
+    alert_manager: AlertManager | None = None,
+    enabled_strategies: list[str] | None = None,
+    override_product_categories: list[str] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Inner body of execute_strategy_generation_direct (separated for root span metadata)."""
     generated_documents = {}
 
     # Log dry-run mode if enabled

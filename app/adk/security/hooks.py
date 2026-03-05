@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
+from app.utils.weave_observability import WEAVE_AVAILABLE, init_weave_if_needed
 from shared.structured_logging import get_structured_logger, log_context
 
 from .permissions import (
@@ -45,7 +46,9 @@ async def _refresh_ga_token_if_needed(tool_context: ToolContext) -> None:
         return
 
     expires_at = ga_creds["expires_at"]
-    if isinstance(expires_at, str):
+    if isinstance(expires_at, (int, float)):
+        expires_at = datetime.fromtimestamp(expires_at, tz=timezone.utc)
+    elif isinstance(expires_at, str):
         expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
 
     # Refresh if token expires within 5 minutes
@@ -195,6 +198,14 @@ async def adk_before_tool_callback(
     Returns:
         None if allowed, dict with error info if blocked
     """
+    # Initialize Weave on first tool call (idempotent). On Agent Engine,
+    # module-level init in ken_e_agent.py doesn't re-execute after
+    # deserialization, so this callback is the earliest runtime hook.
+    # The WEAVE_AVAILABLE guard avoids entering the lock + secret-lookup
+    # path when the weave package isn't even installed.
+    if WEAVE_AVAILABLE:
+        init_weave_if_needed()
+
     if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
         tool_context.state["_tool_start_time"] = time.monotonic()
 

@@ -1,31 +1,125 @@
-"""ADK after_tool_callback for usage tracking.
+"""ADK callbacks for usage tracking and Weave trace hierarchy.
 
-Records tool execution events after tool completion using the UsageTracker.
-Integrates with ADK's callback system to capture execution metrics.
+Provides:
+- adk_after_tool_callback: Records tool execution events via UsageTracker.
+- weave_before_agent_callback / weave_after_agent_callback: Creates a parent
+  Weave span wrapping the entire agent invocation so that auto-instrumented
+  LLM calls and tool dispatches nest under one root trace.
 
 Usage:
     from google.adk.agents import Agent
-    from app.adk.tracking.callbacks import adk_after_tool_callback
+    from app.adk.tracking.callbacks import (
+        adk_after_tool_callback,
+        weave_before_agent_callback,
+        weave_after_agent_callback,
+    )
 
     agent = Agent(
         ...,
+        before_agent_callback=weave_before_agent_callback,
         after_tool_callback=adk_after_tool_callback,
+        after_agent_callback=weave_after_agent_callback,
     )
 """
 
 from __future__ import annotations
 
+import contextvars
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.utils.weave_observability import init_weave_if_needed
+
+try:
+    from weave.trace.api import get_client as _weave_get_client
+    from weave.trace.context import call_context as _weave_call_context
+
+    _WEAVE_TRACE_AVAILABLE = True
+except ImportError:
+    _WEAVE_TRACE_AVAILABLE = False
+    _weave_get_client = None  # type: ignore[assignment]
+    _weave_call_context = None  # type: ignore[assignment]
 from shared.structured_logging import get_structured_logger
 
 from .usage import ExecutionStatus, get_usage_tracker
 
 if TYPE_CHECKING:
+    from google.adk.agents.callback_context import CallbackContext
     from google.adk.tools import BaseTool, ToolContext
+    from google.genai import types
 
 logger = get_structured_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Weave agent-level span callbacks
+# ---------------------------------------------------------------------------
+
+_current_agent_call: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "_current_agent_call", default=None
+)
+
+
+def weave_before_agent_callback(
+    callback_context: CallbackContext,
+) -> types.Content | None:
+    """Create a parent Weave span for the entire agent invocation.
+
+    Pushes a call onto the Weave call stack so that subsequent
+    auto-instrumented LLM calls and @weave.op() tool dispatches
+    become children of this span.
+
+    Returns None so the agent proceeds normally.
+    """
+    if not _WEAVE_TRACE_AVAILABLE:
+        return None
+    try:
+        # On Agent Engine, module-level weave.init() from ken_e_agent.py
+        # doesn't re-execute after deserialization. This is the earliest
+        # runtime hook — initialize Weave here so the parent span wraps
+        # the LLM routing call and all tool dispatches.
+        init_weave_if_needed()
+
+        client = _weave_get_client()
+        if not client:
+            return None
+        call = client.create_call(
+            op="ken_e_agent",
+            inputs={"agent": "ken_e"},
+            use_stack=True,
+        )
+        _current_agent_call.set(call)
+    except Exception:
+        logger.warning("Failed to create Weave parent span", exc_info=True)
+    return None
+
+
+def weave_after_agent_callback(
+    callback_context: CallbackContext,
+) -> types.Content | None:
+    """Finish the parent Weave span created by weave_before_agent_callback.
+
+    Finalises the call, pops it from the Weave call stack, and clears
+    the ContextVar.
+
+    Returns None so the agent proceeds normally.
+    """
+    call = _current_agent_call.get(None)
+    if not call or not _WEAVE_TRACE_AVAILABLE:
+        return None
+    try:
+        client = _weave_get_client()
+        if client:
+            client.finish_call(call, output={"status": "completed"})
+        _weave_call_context.pop_call(call.id)
+    except Exception:
+        logger.warning("Failed to finish Weave parent span", exc_info=True)
+        try:
+            _weave_call_context.pop_call(call.id)
+        except Exception:
+            pass
+    finally:
+        _current_agent_call.set(None)
+    return None
 
 
 def _determine_status(tool_response: dict[str, Any] | str | Any) -> ExecutionStatus:

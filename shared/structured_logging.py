@@ -14,6 +14,7 @@ Usage:
     ).to_dict())
 """
 
+import contextvars
 import json
 import logging
 import os
@@ -22,11 +23,16 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
+# Re-export a module-level ContextVar so callers outside the API can still set
+# a request_id (e.g. background workers).  The API middleware sets the same var.
+_request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "request_id", default=""
+)
+
 # Check if running in Google Cloud environment
 _IS_CLOUD_ENVIRONMENT = bool(
     os.getenv("K_SERVICE")  # Cloud Run
     or os.getenv("GAE_APPLICATION")  # App Engine
-    or os.getenv("GOOGLE_CLOUD_PROJECT")  # General GCP
 )
 
 
@@ -112,6 +118,11 @@ class StructuredFormatter(logging.Formatter):
             "line": record.lineno,
             "function": record.funcName,
         }
+
+        # Auto-inject request_id from contextvars when present
+        rid = _request_id_ctx.get()
+        if rid:
+            log_entry["request_id"] = rid
 
         # Add structured fields from LogContext
         if hasattr(record, "json_fields"):
@@ -232,9 +243,23 @@ def get_structured_logger(name: str) -> logging.Logger:
 def log_context(**kwargs: Any) -> dict[str, Any]:
     """Create log context dict for the extra parameter.
 
-    Shorthand for LogContext(...).to_dict()
+    Shorthand for LogContext(...).to_dict().  Automatically fills ``request_id``
+    from the current contextvars value when not explicitly provided.
 
     Example:
         >>> logger.info("Message", extra=log_context(component="test", action="run"))
     """
+    if "request_id" not in kwargs or not kwargs["request_id"]:
+        rid = get_request_id()
+        if rid:
+            kwargs["request_id"] = rid
     return LogContext(**kwargs).to_dict()
+
+
+def get_request_id() -> str:
+    """Return the current request's correlation ID (empty string if not set).
+
+    Works both inside the API (via ``RequestIdMiddleware``) and in any context
+    where ``_request_id_ctx`` has been set.
+    """
+    return _request_id_ctx.get()
