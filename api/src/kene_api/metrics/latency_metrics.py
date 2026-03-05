@@ -20,7 +20,7 @@ def _get_or_create_histogram(
     for collector in list(REGISTRY._collector_to_names.keys()):
         registered_names = REGISTRY._collector_to_names.get(collector, [])
         if name in registered_names:
-            return collector  # type: ignore[return-value]
+            return collector
     try:
         return Histogram(name, documentation, labelnames, buckets=buckets)
     except ValueError as e:
@@ -28,7 +28,7 @@ def _get_or_create_histogram(
             for collector in list(REGISTRY._collector_to_names.keys()):
                 registered_names = REGISTRY._collector_to_names.get(collector, [])
                 if name in registered_names:
-                    return collector  # type: ignore[return-value]
+                    return collector
         raise
 
 

@@ -3,13 +3,12 @@
 import uuid
 
 import pytest
+from src.kene_api.middleware.request_id import RequestIdMiddleware, get_request_id
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
-from src.kene_api.middleware.request_id import RequestIdMiddleware, get_request_id
 
 
 def _echo_request_id(request: Request) -> PlainTextResponse:
