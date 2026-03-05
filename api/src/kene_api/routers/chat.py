@@ -18,11 +18,21 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
-from app.utils.weave_observability import WEAVE_AVAILABLE
+from shared.context_utils import (
+    CAMPAIGN_KEYWORDS,
+    format_campaign_markdown,
+    inject_campaign_context,
+    inject_organization_context,
+    should_load_campaigns,
+)
 from shared.structured_logging import get_structured_logger, log_context
 
-if WEAVE_AVAILABLE:
+try:
     import weave
+
+    WEAVE_AVAILABLE = True
+except ImportError:
+    WEAVE_AVAILABLE = False
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
