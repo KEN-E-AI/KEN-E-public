@@ -4,10 +4,11 @@ import logging
 import time
 
 from prometheus_client import REGISTRY, Histogram
-from shared.structured_logging import log_context
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+
+from shared.structured_logging import log_context
 
 logger = logging.getLogger(__name__)
 
