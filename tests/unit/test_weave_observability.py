@@ -1,7 +1,8 @@
 """Unit tests for app.utils.weave_observability."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 class TestInitWeaveIfNeeded:
