@@ -8,8 +8,8 @@ import os
 import logging
 import asyncio
 from typing import Dict, Any, Optional, Tuple, List
+import concurrent.futures
 import uuid
-import weave
 import json
 import re
 from datetime import datetime
@@ -22,6 +22,11 @@ from google.adk.artifacts import InMemoryArtifactService
 from google.genai.types import Content, Part
 from google.genai import types
 from vertexai.preview import reasoning_engines
+
+try:
+    import weave
+except ImportError:
+    weave = None  # type: ignore[assignment]
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -376,7 +381,8 @@ def invoke_agent_sync(
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            with weave.ThreadPoolExecutor() as executor:
+            executor_cls = weave.ThreadPoolExecutor if weave is not None else concurrent.futures.ThreadPoolExecutor
+            with executor_cls() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
                 return future.result(timeout=300)
         else:

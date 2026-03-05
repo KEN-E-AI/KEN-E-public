@@ -1,15 +1,12 @@
 """Request ID middleware for correlating log entries across a single request."""
 
-import contextvars
 import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
-_request_id_ctx: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "request_id", default=""
-)
+from shared.structured_logging import _request_id_ctx
 
 
 def get_request_id() -> str:

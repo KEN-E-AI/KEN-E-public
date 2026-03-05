@@ -12,7 +12,10 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-import weave
+try:
+    import weave
+except ImportError:
+    weave = None  # type: ignore[assignment]
 from google.adk import Runner
 from google.adk.agents import Agent
 from google.adk.artifacts import InMemoryArtifactService
@@ -131,8 +134,8 @@ def invoke_agent_sync(
         # Handle event loop scenarios (following ADK pattern)
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # Use weave.ThreadPoolExecutor to preserve trace context across threads
-            with weave.ThreadPoolExecutor() as executor:
+            executor_cls = weave.ThreadPoolExecutor if weave is not None else concurrent.futures.ThreadPoolExecutor
+            with executor_cls() as executor:
                 future = executor.submit(asyncio.run, invoke_agent())
                 return future.result(timeout=1800)
         else:

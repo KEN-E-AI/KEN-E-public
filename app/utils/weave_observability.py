@@ -41,16 +41,13 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
     if _WEAVE_INITIALIZED:
         return WEAVE_AVAILABLE
 
-    def _fail(msg: str, *, permanent: bool = False) -> bool:
-        if permanent:
-            _WEAVE_INITIALIZED = True
+    if not WEAVE_AVAILABLE:
+        _WEAVE_INITIALIZED = True
+        msg = "Weave package not installed — tracing cannot be enabled"
         if required:
             raise RuntimeError(msg)
         logger.warning(msg)
         return False
-
-    if not WEAVE_AVAILABLE:
-        return _fail("Weave package not installed — tracing cannot be enabled", permanent=True)
 
     wandb_api_key: str | None = None
     try:
@@ -86,7 +83,11 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
     if not wandb_api_key:
         # Don't mark as permanently initialized — retry on next call
         # in case .env becomes available after a redeploy.
-        return _fail("WANDB_API_KEY not available — Weave tracing cannot be enabled")
+        msg = "WANDB_API_KEY not available — Weave tracing cannot be enabled"
+        if required:
+            raise RuntimeError(msg)
+        logger.warning(msg)
+        return False
 
     os.environ["WANDB_API_KEY"] = wandb_api_key
 
@@ -97,7 +98,11 @@ def init_weave_if_needed(*, required: bool = False) -> bool:
         _WEAVE_INITIALIZED = True
         return True
     except Exception as e:
-        return _fail(f"Failed to initialize Weave: {e}")
+        msg = f"Failed to initialize Weave: {e}"
+        if required:
+            raise RuntimeError(msg) from e
+        logger.warning(msg)
+        return False
 
 
 def safe_weave_op(

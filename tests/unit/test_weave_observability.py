@@ -29,6 +29,19 @@ class TestInitWeaveIfNeeded:
         assert result is False
 
     @patch.dict("os.environ", {}, clear=True)
+    @patch("app.utils.weave_observability.WEAVE_AVAILABLE", False)
+    def test_weave_unavailable_permanently_short_circuits(self) -> None:
+        """After WEAVE_AVAILABLE=False, second call short-circuits via _WEAVE_INITIALIZED."""
+        import app.utils.weave_observability as mod
+        from app.utils.weave_observability import init_weave_if_needed
+
+        init_weave_if_needed()
+        assert mod._WEAVE_INITIALIZED is True
+        # Second call returns immediately without re-logging
+        result = init_weave_if_needed()
+        assert result is False
+
+    @patch.dict("os.environ", {}, clear=True)
     @patch("app.utils.weave_observability.WEAVE_AVAILABLE", True)
     def test_graceful_degradation_when_api_key_missing(self) -> None:
         from app.utils.weave_observability import init_weave_if_needed

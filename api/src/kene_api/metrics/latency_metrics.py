@@ -14,30 +14,18 @@ from starlette.responses import Response
 _LATENCY_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0)
 
 
-def _get_or_create_histogram(
-    name: str, documentation: str, labelnames: list[str], buckets: tuple[float, ...]
-) -> Histogram:
-    for collector in list(REGISTRY._collector_to_names.keys()):
-        registered_names = REGISTRY._collector_to_names.get(collector, [])
-        if name in registered_names:
-            return collector
-    try:
-        return Histogram(name, documentation, labelnames, buckets=buckets)
-    except ValueError as e:
-        if "Duplicated timeseries" in str(e):
-            for collector in list(REGISTRY._collector_to_names.keys()):
-                registered_names = REGISTRY._collector_to_names.get(collector, [])
-                if name in registered_names:
-                    return collector
-        raise
-
-
-http_request_duration_seconds = _get_or_create_histogram(
-    "http_request_duration_seconds",
-    "HTTP request latency in seconds",
-    ["method", "route", "status_code"],
-    _LATENCY_BUCKETS,
-)
+try:
+    http_request_duration_seconds = Histogram(
+        "http_request_duration_seconds",
+        "HTTP request latency in seconds",
+        ["method", "route", "status_code"],
+        buckets=_LATENCY_BUCKETS,
+    )
+except ValueError:
+    # Already registered (hot reload with --reload).
+    http_request_duration_seconds = REGISTRY._names_to_collectors[
+        "http_request_duration_seconds"
+    ]
 
 
 def _normalize_route(request: Request) -> str:
