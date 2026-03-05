@@ -13,7 +13,11 @@ from pydantic import ValidationError
 from app.utils.weave_observability import safe_weave_op
 
 from ..models.strategy_models import StrategyParameters, parse_strategy_query
-from .agent_retry import DEFAULT_RETRY_CONFIG, FAST_RETRY_CONFIG, invoke_agent_with_retry
+from .agent_retry import (
+    DEFAULT_RETRY_CONFIG,
+    FAST_RETRY_CONFIG,
+    invoke_agent_with_retry,
+)
 
 logger = logging.getLogger(__name__)
 

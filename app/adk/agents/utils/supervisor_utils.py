@@ -231,7 +231,7 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                     else:
                         # Fallback: load from Neo4j (standalone invocations or missing state)
                         logger.info(
-                            f"[DISPATCH-WRAPPER] No org context in session state, falling back to Neo4j"
+                            "[DISPATCH-WRAPPER] No org context in session state, falling back to Neo4j"
                         )
                         context_manager = HierarchicalContextManager(account_id)
                         neo4j_context = context_manager.load_executive_summary()
