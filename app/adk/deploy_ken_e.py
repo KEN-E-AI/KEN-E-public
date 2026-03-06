@@ -295,9 +295,20 @@ def deploy_ken_e() -> str | None:
         )
         logger.info("✅ Created App with EventsCompactionConfig and ContextCacheConfig")
 
+        # Enable GCP Agent Engine telemetry (traces, logs, prompt/response capture)
+        # See: https://docs.cloud.google.com/agent-builder/agent-engine/manage/tracing
+        os.environ.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
+        os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+
+        # Workaround for buggy google-genai OTEL instrumentation that crashes
+        # strategy agents using output_schema (calls model_dump() on Pydantic classes).
+        # Temporarily disabled to test if bug still triggers on ADK 1.26.0.
+        # See docs/spike-otel-pydantic-findings.md for details.
+        # os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")
+
         # Wrap with AdkApp for deployment (pass App object, not agent directly)
-        app = agent_engines.AdkApp(app=adk_app, enable_tracing=False)
-        logger.info(f"✅ Created AdkApp: {type(app)}")
+        app = agent_engines.AdkApp(app=adk_app, enable_tracing=True)
+        logger.info(f"✅ Created AdkApp with tracing enabled: {type(app)}")
 
         # Generate deployment name with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

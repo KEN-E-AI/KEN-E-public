@@ -52,6 +52,21 @@ class MCPStatusResponse(BaseModel):
     servers: list[MCPServerInfo] = Field(..., description="Details of loaded servers")
 
 
+class AgentEngineMCPServerHealth(BaseModel):
+    """Health status of an Agent Engine MCP server (e.g. GA MCP)."""
+
+    reachable: bool
+    latency_ms: float | None = None
+    url: str
+    error: str | None = None
+
+
+class AgentEngineMCPHealth(BaseModel):
+    """Aggregated health of Agent Engine MCP connections."""
+
+    ga_mcp_server: AgentEngineMCPServerHealth
+
+
 class MCPHealthResponse(BaseModel):
     """Health status of MCP servers."""
 
@@ -61,6 +76,9 @@ class MCPHealthResponse(BaseModel):
     degraded_count: int
     unhealthy_count: int
     servers: list[MCPServerInfo]
+    agent_engine_mcp: AgentEngineMCPHealth | None = Field(
+        None, description="Health of Agent Engine MCP connections (GA MCP server)"
+    )
 
 
 class MCPLoadRequest(BaseModel):
@@ -151,8 +169,8 @@ async def get_mcp_health(
 ) -> MCPHealthResponse:
     """Get health status of MCP servers.
 
-    Returns aggregated health metrics and per-server health status.
-    Use this to identify unhealthy connections that may need attention.
+    Returns aggregated health metrics and per-server health status,
+    including proactive reachability of the Agent Engine's GA MCP server.
 
     Requires: Admin access
     """
@@ -171,6 +189,18 @@ async def get_mcp_health(
     elif degraded_count > 0:
         overall = "degraded"
 
+    # Proactive ping of the GA MCP server used by Agent Engine
+    agent_engine_mcp = None
+    try:
+        from ..services.mcp_health_service import check_ga_mcp_health
+
+        ga_result = await check_ga_mcp_health()
+        agent_engine_mcp = AgentEngineMCPHealth(
+            ga_mcp_server=AgentEngineMCPServerHealth(**ga_result),
+        )
+    except Exception:
+        logger.exception("Failed to check Agent Engine MCP health")
+
     return MCPHealthResponse(
         overall_status=overall,
         total_servers=mcp_status["loaded_count"],
@@ -188,6 +218,7 @@ async def get_mcp_health(
             )
             for s in servers
         ],
+        agent_engine_mcp=agent_engine_mcp,
     )
 
 
@@ -587,6 +618,18 @@ async def get_admin_dashboard(
     elif degraded_count > 0:
         overall = "degraded"
 
+    # Proactive ping of the GA MCP server used by Agent Engine
+    agent_engine_mcp = None
+    try:
+        from ..services.mcp_health_service import check_ga_mcp_health
+
+        ga_result = await check_ga_mcp_health()
+        agent_engine_mcp = AgentEngineMCPHealth(
+            ga_mcp_server=AgentEngineMCPServerHealth(**ga_result),
+        )
+    except Exception:
+        logger.exception("Failed to check Agent Engine MCP health")
+
     mcp_health = MCPHealthResponse(
         overall_status=overall,
         total_servers=raw_status["loaded_count"],
@@ -604,6 +647,7 @@ async def get_admin_dashboard(
             )
             for s in servers
         ],
+        agent_engine_mcp=agent_engine_mcp,
     )
 
     # Get usage tracker status
