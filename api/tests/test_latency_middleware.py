@@ -1,5 +1,7 @@
 """Unit tests for LatencyMiddleware and _normalize_route."""
 
+import logging
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,9 +23,21 @@ def _ok_handler(request: Request) -> PlainTextResponse:
     return PlainTextResponse("ok")
 
 
+def _slow_handler(request: Request) -> PlainTextResponse:
+    time.sleep(1.1)
+    return PlainTextResponse("slow")
+
+
 @pytest.fixture()
 def client() -> TestClient:
     app = Starlette(routes=[Route("/api/v1/items/{item_id}", _ok_handler)])
+    app.add_middleware(LatencyMiddleware)
+    return TestClient(app)
+
+
+@pytest.fixture()
+def slow_client() -> TestClient:
+    app = Starlette(routes=[Route("/api/v1/slow", _slow_handler)])
     app.add_middleware(LatencyMiddleware)
     return TestClient(app)
 
@@ -166,3 +180,77 @@ class TestPrometheusMetricsExposure:
 
             route_value = mock_hist.labels.call_args.kwargs["route"]
             assert route_value != "", "Route label should be non-empty"
+
+
+class TestLatencyMiddlewareLogging:
+    """LatencyMiddleware should emit structured logs for Cloud Monitoring."""
+
+    def test_logs_every_request_at_info(
+        self, client: TestClient, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with patch(
+            "src.kene_api.metrics.latency_metrics.http_request_duration_seconds"
+        ) as mock_hist:
+            mock_hist.labels.return_value = MagicMock()
+
+            with caplog.at_level(logging.INFO):
+                client.get("/api/v1/items/1")
+
+        info_messages = [r for r in caplog.records if r.levelno == logging.INFO]
+        completed = [r for r in info_messages if r.message == "HTTP request completed"]
+        assert len(completed) == 1
+
+        record = completed[0]
+        fields = record.json_fields
+        assert fields["component"] == "http"
+        assert fields["action"] == "request_completed"
+        assert fields["duration_ms"] > 0
+        assert fields["method"] == "GET"
+        assert fields["status_code"] == 200
+        assert "route" in fields
+
+    def test_slow_request_emits_warning(
+        self, slow_client: TestClient, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with patch(
+            "src.kene_api.metrics.latency_metrics.http_request_duration_seconds"
+        ) as mock_hist:
+            mock_hist.labels.return_value = MagicMock()
+
+            with caplog.at_level(logging.WARNING):
+                slow_client.get("/api/v1/slow")
+
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.message == "Slow HTTP request"
+        ]
+        assert len(warnings) == 1
+
+    def test_log_format_matches_cloud_monitoring_expectations(
+        self, client: TestClient, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Verify log record has the fields the Terraform log-based metric expects:
+        jsonPayload.message, jsonPayload.duration_ms, jsonPayload.route, jsonPayload.method.
+        """
+        with patch(
+            "src.kene_api.metrics.latency_metrics.http_request_duration_seconds"
+        ) as mock_hist:
+            mock_hist.labels.return_value = MagicMock()
+
+            with caplog.at_level(logging.INFO):
+                client.get("/api/v1/items/99")
+
+        completed = [
+            r for r in caplog.records if r.message == "HTTP request completed"
+        ]
+        assert len(completed) == 1
+
+        record = completed[0]
+        assert record.message == "HTTP request completed"
+
+        fields = record.json_fields
+        assert isinstance(fields["duration_ms"], float)
+        assert isinstance(fields["method"], str)
+        assert isinstance(fields["route"], str)
+        assert isinstance(fields["status_code"], int)

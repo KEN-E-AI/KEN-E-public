@@ -59,7 +59,20 @@ class LatencyMiddleware(BaseHTTPMiddleware):
             status_code=response.status_code,
         ).observe(duration)
 
-        # Log slow requests (> 1s) with structured logging
+        logger.info(
+            "HTTP request completed",
+            extra=log_context(
+                component="http",
+                action="request_completed",
+                duration_ms=round(duration * 1000, 2),
+                extra={
+                    "method": request.method,
+                    "route": route,
+                    "status_code": response.status_code,
+                },
+            ),
+        )
+
         if duration > 1.0:
             logger.warning(
                 "Slow HTTP request",

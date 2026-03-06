@@ -32,7 +32,8 @@ locals {
     "bigquery.googleapis.com",
     "serviceusage.googleapis.com",
     "logging.googleapis.com",
-    "cloudtrace.googleapis.com"
+    "cloudtrace.googleapis.com",
+    "monitoring.googleapis.com"
   ]
 
   deploy_project_ids = {
