@@ -1,8 +1,8 @@
 # Agent Hierarchy & Registry
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** March 2026
-**Status:** Canonical — reflects Sprints 1-4 implementation
+**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10, 2026)
 
 ---
 
@@ -118,7 +118,27 @@ The ToolRegistry (`app/adk/tools/registry/tool_registry.py`) provides a **metada
 - Permission validation (required scopes)
 - Generate compact ~2,000-token index via `get_index_for_context()`
 
-Its role is **evolving from primary tool loading mechanism to supplementary discovery index**. Specialist routing is the primary mechanism for tool assignment; the ToolRegistry provides searchable catalog for on-the-fly tool identification.
+### Current Role: Discovery Index
+
+Specialist routing is the primary mechanism for tool assignment — each specialist agent has a fixed set of `McpToolset` instances. The ToolRegistry provides a searchable catalog across all tools.
+
+### Planned Role: `tool_filter` Driver
+
+The ToolRegistry becomes load-bearing as the driver for ADK's `tool_filter` mechanism. ADK's `BaseToolset` (parent of `McpToolset`) accepts a `tool_filter` that is evaluated on every LLM turn with `ReadonlyContext`:
+
+```python
+# Dynamic filter driven by ToolRegistry search results in session state
+McpToolset(
+    connection_params=SseConnectionParams(url="..."),
+    tool_filter=lambda tool, ctx: tool.name in ctx.state.get("relevant_tools", []),
+)
+```
+
+This enables per-turn tool selection: the root agent interprets user intent, queries the ToolRegistry for relevant tools, writes tool names to session state, and each specialist's `McpToolset` only exposes matching tools to the LLM. Tools not matching the filter are hidden from context without disconnecting from the MCP server.
+
+This preserves the v1.0 design's `ToolDiscoveryAgent` search capability (semantic tool search across ~400 tools) while using ADK-native mechanisms instead of custom server load/unload logic.
+
+See `docs/design/mcp-architecture.md` Section 5a for the full design.
 
 ## 7. [PLANNED] Specialist Agent Layer
 
@@ -144,15 +164,118 @@ See `docs/design/mcp-architecture.md` for platform integration decisions.
 
 ## 8. [PLANNED] Agent Factory
 
-The agent factory (Sprint 5-6) reads Firestore config and dynamically constructs the agent hierarchy:
+> **Status:** No factory exists. Current agent construction is per-file factory functions (`create_ken_e_agent()`, `create_google_analytics_agent()`). `deploy_ken_e.py` imports the root agent singleton and wraps it with `App`. The factory generalizes this pattern to config-driven assembly.
 
-1. Reads MCP server config from Firestore
-2. Creates `McpToolset` per enabled server (with `tool_filter`, `header_provider`)
-3. Creates `Agent` per server (with instruction, model, description from config)
-4. Generates dispatch functions (with `@weave.op()`) for KEN-E root
-5. Builds lightweight tool search index (~2,000 tokens)
+### 8.1 Current Agent Construction Pattern
 
-This replaces the current hardcoded agent definitions with config-driven assembly.
+Each agent follows a consistent pattern today:
+
+```python
+# 1. Load config from Firestore (with hardcoded fallback)
+config, metadata = load_config_from_firestore(config_doc_id)
+model = config.model
+
+# 2. Define tools (dispatch functions or McpToolset)
+tools = [search_company_news, query_google_analytics]  # or [ga_toolset]
+
+# 3. Create Agent
+agent = Agent(
+    name="agent_name",
+    model=model,
+    instruction=instruction_text_or_provider,
+    tools=tools,
+    before_agent_callback=weave_before_agent_callback,
+    after_agent_callback=weave_after_agent_callback,
+    before_tool_callback=adk_before_tool_callback,
+    after_tool_callback=adk_after_tool_callback,
+)
+```
+
+The factory must generalize this: config document → Agent instance, for N specialist agents.
+
+### 8.2 Proposed Factory Assembly Flow
+
+```
+deploy_ken_e.py calls agent_factory.build_hierarchy()
+  │
+  ├── 1. Read specialist configs from Firestore
+  │     mcp_servers/{server_id} → connection params, category, auth_type, enabled
+  │     agents/{agent_id}       → instruction, model, temperature, description
+  │
+  ├── 2. Group MCP servers by specialist category
+  │     analytics: [ga_mcp, google_ads_mcp]
+  │     content:   [hubspot_mcp]
+  │     execution: [google_ads_mcp]  (shared with analytics)
+  │
+  ├── 3. For each specialist category:
+  │     ├── Create McpToolset per server
+  │     │     McpToolset(
+  │     │       connection_params=SseConnectionParams(url=config.url),
+  │     │       header_provider=_make_header_provider(config.auth_type),
+  │     │       tool_filter=_make_tool_filter(),  # reads ctx.state["relevant_tools"]
+  │     │     )
+  │     ├── Create SDK function tools (Meta Ads, Mailchimp) from config
+  │     └── Create Agent with tools + config
+  │
+  ├── 4. Generate dispatch functions for root agent
+  │     For each specialist: create dispatch_to_{name}() with @safe_weave_op()
+  │
+  ├── 5. Build root agent with dispatch functions as tools
+  │
+  └── 6. Build ToolRegistry index from all tool metadata (~2,000 tokens)
+```
+
+### 8.3 Config-to-Constructor Mapping
+
+| Firestore Field | Agent Constructor Param | Notes |
+|----------------|------------------------|-------|
+| `agents/{id}.instruction` | `instruction=` | String or `InstructionProvider` callable |
+| `agents/{id}.model` | `model=` | e.g., `gemini-2.0-flash` |
+| `agents/{id}.temperature` | `generate_content_config=` | Wrapped in `GenerateContentConfig` |
+| `agents/{id}.description` | `description=` | Used by ADK for routing descriptions |
+| `mcp_servers/{id}.url` | `McpToolset(connection_params=SseConnectionParams(url=))` | SSE endpoint |
+| `mcp_servers/{id}.auth_type` | `McpToolset(header_provider=)` | Maps to credential key in session state |
+| `mcp_servers/{id}.enabled` | Include/exclude from specialist | Disabled servers are not wired |
+| `mcp_servers/{id}.specialist_categories` | Groups server into specialist(s) | A server can belong to multiple specialists |
+
+### 8.4 Header Provider Factory
+
+Each `auth_type` maps to a session state key and header format:
+
+```python
+def _make_header_provider(auth_type: str) -> Callable[[ReadonlyContext], dict[str, str]]:
+    """Create a header_provider closure for the given auth type."""
+    # Maps auth_type → session state key
+    CREDENTIAL_KEYS = {
+        "ga_oauth": "ga_credentials",
+        "google_ads_oauth": "google_ads_credentials",
+        "hubspot_oauth": "hubspot_credentials",
+    }
+    state_key = CREDENTIAL_KEYS[auth_type]
+
+    def header_provider(context: ReadonlyContext) -> dict[str, str]:
+        creds = context.state.get(state_key, {})
+        headers = {}
+        if token := creds.get("access_token"):
+            headers["Authorization"] = f"Bearer {token}"
+        if tenant_id := creds.get("tenant_id"):
+            headers["X-Tenant-ID"] = tenant_id
+        return headers
+    return header_provider
+```
+
+This generalizes the existing `_ga_header_provider()` pattern.
+
+### 8.5 Limitations & Open Questions
+
+| Concern | Current Answer |
+|---------|---------------|
+| **Assembly timing** | Deploy time (same as today). Factory runs in `deploy_ken_e.py`. |
+| **Config changes without redeploy** | Agent instructions and model can change via Firestore (already implemented — `InstructionProvider` reads config each turn). MCP server URLs and enabled/disabled require redeploy. |
+| **Hot-reload** | Not supported on Agent Engine. `agent_engines.update()` is the mechanism — preserves sessions but redeploys the agent. |
+| **Per-account server sets** | Not supported in this design. All accounts see the same specialist hierarchy. If needed, factory must run at session creation time — needs separate design. |
+| **Testing** | Config validation at factory build time (check all URLs resolve, auth_types map to known credential keys). Integration test: build hierarchy from test config, verify agent count and tool count. |
+| **Failure at build time** | If Firestore is unreachable, fall back to bundled config snapshot (not yet implemented). |
 
 ## References
 

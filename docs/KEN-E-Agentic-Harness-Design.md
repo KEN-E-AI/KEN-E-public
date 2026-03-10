@@ -1,15 +1,24 @@
 # KEN-E Agentic Harness Design Document
 
-**Version:** 2.0
+**Version:** 2.1
 **Date:** March 10, 2026
 **Author:** Development Team
-**Status:** Living document — updated to reflect Sprints 1-4 implementation
+
+> **v2.1 Revision Note (March 10, 2026):** Added `tool_filter` + ToolRegistry
+> architecture for dynamic per-turn tool selection (Section 4.3). Updated ADK
+> internals analysis with version-specific behavior. Added sprint-3b dependency
+> note.
 
 > **v2.0 Revision Note (March 2026):** This document has been updated to reflect
 > 4 sprints of implementation. Fictional code examples have been replaced with
 > references to actual implementations. Sections covering features not yet built
 > are marked `[PLANNED]` with architectural concepts preserved but fictional code
 > removed. See the Document History at the end for details.
+
+> **Dependency Note:** Several features described in this document (InstructionProvider
+> closure, agent registry, ReflectAndRetryToolPlugin, token_threshold in compaction
+> config) exist on the `feat/sprint-3b-agent-config-optimization` branch (PR #217)
+> but have not yet been merged to main. These are noted where relevant.
 
 ---
 
@@ -370,7 +379,7 @@ The API layer (`api/src/kene_api/routers/chat.py`) manages session state injecti
 
 ### 4.1 Agent Hierarchy
 
-For the full agent hierarchy including file paths, dispatch patterns, and the planned specialist layer, see `docs/design/agent-hierarchy.md`.
+The current agent hierarchy, dispatch patterns, and the planned specialist layer:
 
 ```
 CURRENT (Sprints 1-4):
@@ -419,20 +428,27 @@ ken_e = Agent(
 )
 ```
 
-### 4.3 Tool Discovery
+### 4.3 Tool Discovery & Dynamic Tool Selection
 
-Specialist routing is the primary mechanism for tool assignment — each specialist agent receives only its domain tools. The **ToolRegistry** (`app/adk/tools/registry/tool_registry.py`) provides a supplementary discovery index:
+Tool management operates at two levels:
 
-- Loads tool metadata from YAML (`app/adk/tools/registry/config/tools.yaml`)
-- Supports search by name, category, keyword with relevance scoring
-- Generates a compact ~2,000-token index via `get_index_for_context()`
-- Validates tool permissions (required OAuth scopes)
+**Level 1 — Specialist Routing (structural, deploy-time):** Each specialist agent receives only its domain MCP servers via `McpToolset` instances, wired at agent construction. This reduces the tool space from ~400 to ~10-30 per specialist.
 
-Its role is evolving: from primary tool loading mechanism to supplementary discovery index for on-the-fly tool identification when specialist routing doesn't cover a user's request.
+**Level 2 — `tool_filter` + ToolRegistry (dynamic, per-turn):** ADK's `BaseToolset` accepts a `tool_filter` predicate evaluated on every LLM turn. Combined with the ToolRegistry's search capabilities, this enables exposing only the relevant subset of a specialist's tools on any given turn.
+
+The **ToolRegistry** (`app/adk/tools/registry/tool_registry.py`) provides:
+
+- Tool metadata catalog loaded from YAML (`app/adk/tools/registry/config/tools.yaml`)
+- Search by name, category, keyword with relevance scoring
+- Compact ~2,000-token index via `get_index_for_context()`
+- Permission validation (required OAuth scopes)
+- **[PLANNED] `tool_filter` driver** — search results written to session state, read by `McpToolset` `tool_filter` predicates per-turn
+
+This architecture preserves the v1.0 design's `ToolDiscoveryAgent` capability (semantic search across ~400 tools, per-turn tool selection, token budget awareness) using ADK-native mechanisms rather than custom server load/unload logic. The key limitation is that MCP server connections are fixed at deploy time — only *which tools* are visible is dynamic per-turn.
 
 ### 4.4 [PLANNED] Specialist Agents
 
-The specialist layer (Sprint 5-6) partitions tools by domain. See `docs/design/mcp-architecture.md` for platform integration decisions.
+The specialist layer (Sprint 5-6) partitions tools by domain.
 
 | Specialist | Tool Sources | Integration Type | Key Capabilities |
 |-----------|-------------|-----------------|------------------|
@@ -441,7 +457,7 @@ The specialist layer (Sprint 5-6) partitions tools by domain. See `docs/design/m
 | **Execution** | Meta Ads SDK, Google Ads MCP | SDK + McpToolset | Campaign deployment, budget management |
 | **Automation** | n8n MCP | McpToolset | Workflow creation, scheduling |
 
-Each specialist will be assembled by the config-driven agent factory, reading from Firestore config. See `docs/design/agent-hierarchy.md` for details.
+Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
 
 ### 4.5 Agent Summary Table
 
@@ -459,8 +475,6 @@ Each specialist will be assembled by the config-driven agent factory, reading fr
 ---
 
 ## 5. MCP Server Architecture
-
-For the full MCP architecture including ADK internals verification, platform decisions, SDK function tools pattern, and infrastructure summary, see `docs/design/mcp-architecture.md`.
 
 ### 5.1 Lazy-Loading
 
@@ -482,7 +496,7 @@ The ToolRegistry (`app/adk/tools/registry/tool_registry.py`) is implemented infr
 - **Compact index** — `get_index_for_context()` generates ~2,000 token summary for agent context
 - **Permission validation** — checks required OAuth scopes
 
-Currently defines ~9 Google Analytics tools. Platform decisions for additional tools are in `docs/design/mcp-architecture.md`.
+Currently defines ~9 Google Analytics tools.
 
 ### 5.3 MCPServerManager
 
@@ -494,8 +508,6 @@ The `MCPServerManager` at `app/adk/mcp_config/manager.py` was built in Sprint 3 
 | Connection pooling | **Deprecated** — ADK `MCPSessionManager` pools by header hash |
 | LRU eviction logic | **Deprecated** — not applicable on serverless Agent Engine |
 | Config loading + auth helpers | **Reuse** — foundation for agent factory |
-
-See `docs/design/mcp-architecture.md` for the full disposition.
 
 ### 5.4 MCP Server Configuration
 
@@ -538,8 +550,6 @@ Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolv
 ---
 
 ## 6. Multi-Channel Support [PLANNED]
-
-For the full multi-channel architecture, see `docs/design/api-gateway-multi-channel.md`.
 
 ### 6.1 Architecture Overview
 
@@ -594,8 +604,8 @@ The target design uses a channel-agnostic message format internally. All channel
 
 Voice-enabled meeting participation is technically feasible using:
 - **Meeting Bot API**: Recall.ai or Meeting BaaS
-- **STT**: Deepgram (sub-200ms latency)
-- **TTS**: Cartesia or Deepgram Aura
+- **STT**: Deepgram (sub-300ms streaming latency)
+- **TTS**: Cartesia (sub-100ms TTFB) or Deepgram Aura (sub-200ms TTFB)
 - **Framework**: Pipecat for pipeline orchestration
 
 Key considerations: voice responses must be concise (< 30s), target < 2s end-to-end latency, need speaker diarization. Estimated cost: ~$1.20/hour per meeting.
@@ -603,6 +613,8 @@ Key considerations: voice responses must be concise (< 30s), target < 2s end-to-
 ---
 
 ## 7. Workflow Management [PLANNED]
+
+> **Status:** No workflow framework exists in the codebase today. The strategy agent's `execute_strategy_generation()` orchestrator is the closest pattern — it coordinates multiple sub-agents in sequence with Firestore persistence. No n8n, webhook, or cron infrastructure exists.
 
 ### 7.1 Multi-Step Workflow Pattern
 
@@ -612,33 +624,91 @@ KEN-E will handle complex, multi-step workflows with the pattern:
 3. **Get approval** at decision points
 4. **Resume** where left off if interrupted
 
+Example: "Launch a Q2 campaign for Product X"
+→ Research competitors (Analytics Specialist)
+→ Generate campaign strategy (Strategy Supervisor)
+→ Create ad copy variations (Content Specialist)
+→ **[Approval checkpoint]** — user reviews strategy + copy
+→ Deploy to Meta Ads (Execution Specialist)
+→ Set up weekly performance reporting (Automation Specialist)
+
 ### 7.2 Workflow State Machine
 
 ```
         CREATED → PLANNING → AWAITING_APPROVAL → IN_PROGRESS → COMPLETED
-                      ↑              │                  │
-                      └──────────────┘                  │
-                     (User requests changes)            │
-                                                        ↓
-                                              ┌─── Executing Step
-                                              ├─── Awaiting Input
-                                              └─── Error Handler
+            │         ↑              │                  │            │
+            │         └──────────────┘                  │            │
+            │        (User requests changes)            │            │
+            │                                           ↓            │
+            │                                 ┌─── Executing Step    │
+            │                                 ├─── Awaiting Input    │
+            │                                 └─── Step Failed       │
+            │                                          │             │
+            │                                          ▼             │
+            └────────────────────────────────── FAILED ◄─────────────┘
+                                              (after max retries)
 ```
 
 ### 7.3 Workflow Data Model
 
-The workflow system will use:
-- **Workflow** — multi-step task with status tracking, persisted in Firestore
-- **WorkflowTask** — individual step with dependencies, specialist assignment, inputs/outputs
-- **Status tracking** — PENDING → IN_PROGRESS → COMPLETED/FAILED
+```
+Firestore: workflows/{workflow_id}
+  |-- account_id: str
+  |-- user_id: str
+  |-- title: str
+  |-- status: CREATED | PLANNING | AWAITING_APPROVAL | IN_PROGRESS | COMPLETED | FAILED
+  |-- created_at: timestamp
+  |-- updated_at: timestamp
+  |-- session_id: str  (ADK session for conversation context)
+  |-- steps: [
+  |     {
+  |       step_id: str,
+  |       title: str,
+  |       specialist: "analytics" | "content" | "execution" | "automation",
+  |       status: PENDING | IN_PROGRESS | COMPLETED | FAILED | SKIPPED,
+  |       depends_on: [step_id, ...],
+  |       inputs: dict,
+  |       outputs: dict | null,
+  |       error: str | null,
+  |       attempts: int,
+  |       started_at: timestamp | null,
+  |       completed_at: timestamp | null,
+  |     }
+  |   ]
+  |-- approval_checkpoints: [step_id, ...]  (steps requiring user approval before proceeding)
+```
 
-### 7.4 [PLANNED] n8n Integration
+### 7.4 Persistence & Recovery
 
-Scheduled/recurring tasks will be delegated to n8n workflows via its API:
-- Create workflows from templates
-- Configure schedule triggers
-- Webhook to KEN-E API for task execution
-- Notification on completion
+| Concern | Approach |
+|---------|----------|
+| **Crash recovery** | Workflow state persisted to Firestore after each step transition. On recovery, resume from last completed step. |
+| **Idempotency** | Each step execution keyed by `(workflow_id, step_id, attempt)`. Before executing, check if output already exists for this attempt. |
+| **Partial failure** | Individual step failure marks step as FAILED, increments `attempts`. If `attempts < max_retries`, re-queue. If exhausted, mark workflow as FAILED with last error. |
+| **User interruption** | Steps in AWAITING_INPUT pause workflow. User response writes to `step.inputs` and transitions step to IN_PROGRESS. |
+| **Long-running steps** | Steps that take >30s (e.g., strategy generation) execute asynchronously. Workflow polls step status. Frontend shows progress. |
+
+### 7.5 [PLANNED] n8n Integration
+
+> **Status:** No n8n infrastructure exists. This is Sprint 8+ work.
+
+For scheduled/recurring tasks (e.g., "send me a weekly performance report every Monday"):
+
+```
+KEN-E creates workflow → n8n workflow created via n8n API
+                          |-- Schedule trigger (cron)
+                          |-- Webhook step → POST /api/v1/workflows/{id}/execute
+                          |-- KEN-E executes workflow steps
+                          |-- n8n sends notification on completion
+```
+
+| Concern | Approach |
+|---------|----------|
+| **Workflow templates** | n8n workflows created from KEN-E-defined templates (schedule → webhook → notify) |
+| **Webhook authentication** | n8n webhook calls KEN-E API with service account token (not user OAuth) |
+| **Callback mapping** | Webhook payload includes `workflow_id` and `step_id` → KEN-E looks up Firestore workflow and resumes |
+| **Per-account isolation** | Each account's n8n workflows scoped by `account_id`. One n8n instance, workflows isolated by credential. |
+| **Failure notification** | n8n error handler → Slack/email notification to user + mark workflow as FAILED in Firestore |
 
 ---
 
@@ -718,15 +788,38 @@ The harness will support A/B testing of agent configurations:
 
 ### 9.2 Cost Estimates
 
+#### Usage Tier Definitions
+
+| Tier | Accounts | Requests/Day | Specialist Calls/Request | Tokens/Request (est.) |
+|------|----------|-------------|-------------------------|----------------------|
+| **Light** | 1-5 | 50-100 | 1-2 | ~5,000 |
+| **Moderate** | 10-25 | 500-1,000 | 2-3 | ~8,000 |
+| **Heavy** | 50+ | 5,000+ | 3-5 | ~15,000 |
+
+#### Moderate Tier Cost Breakdown
+
 | Resource | Unit Cost | Est. Monthly Usage | Monthly Cost |
 |----------|-----------|-------------------|--------------|
-| **Gemini 2.0 Flash** | $0.075/1M input, $0.30/1M output | 500M tokens | ~$150 |
-| **Cloud Run** | $0.00002400/vCPU-second | 10,000 CPU-hours | ~$864 |
+| **Gemini 2.0 Flash** | $0.075/1M input, $0.30/1M output | ~240M tokens (1,000 req/day × 8K tokens × 30 days) | ~$90 |
+| **Cloud Run (API)** | $0.00002400/vCPU-second | 10,000 CPU-hours | ~$864 |
+| **Cloud Run (MCP servers)** | Same rate | 2 servers × 2,000 CPU-hours | ~$345 |
 | **Firestore** | $0.18/100K reads | 50M reads | ~$90 |
 | **Neo4j AuraDB** | $65/month (Professional) | 1 instance | $65 |
+| **Redis (Memorystore)** | ~$0.049/GB-hour | 1GB instance | ~$36 |
 | **Weave (W&B)** | $0/month (included) | Unlimited | $0 |
 
-**Estimated Total**: ~$1,170/month for moderate usage
+**Moderate tier total:** ~$1,490/month
+
+#### Scaling Considerations
+
+- **Token cost scales linearly** with requests × tools-per-request. With `tool_filter`, fewer tools in context reduces input tokens by ~30-50%.
+- **MCP server costs scale with server count**, not user count (multi-tenant). Adding Google Ads MCP + HubSpot MCP adds ~$345/month in Cloud Run.
+- **Voice channel** (Phase 4) adds: STT/TTS API costs (~$0.006/min for Deepgram) + Meeting BaaS ($50-100+/month per bot seat for Recall.ai). Not included in moderate tier estimate. Budget ~$500-1,500/month additional depending on meeting volume.
+- **Voice latency gap:** Current Agent Engine response time is ~7-13s. Voice requires <2s end-to-end. Voice may need a lightweight agent path or a streaming-optimized serving strategy — this is an unsolved prerequisite for Phase 4.
+
+#### Cost Monitoring
+
+The `UsageTracker` (`app/adk/tracking/usage.py`) records per-tool-call events in Firestore with batched writes (100 events or 30s flush). Alert support: `AlertData` model supports threshold-based alerts. **Scalability concern:** At heavy usage, individual Firestore documents per tool call create expensive aggregation queries. A time-bucketed rollup strategy (hourly/daily pre-aggregated counters) is recommended before production scale.
 
 ### 9.3 Architecture Diagram
 
@@ -775,18 +868,120 @@ The harness will support A/B testing of agent configurations:
 
 ---
 
-## 10. Risks and Testing Requirements
+## 10. Resilience, Error Handling & Security
 
-### 10.1 Risk Assessment Matrix
+### 10.1 Current Error Handling Patterns
+
+The codebase has multi-layer error handling. This section documents what exists and identifies gaps.
+
+#### 10.1.1 Implemented Patterns
+
+| Layer | Pattern | Key Files |
+|-------|---------|-----------|
+| **Dispatch handlers** | Try/catch → return `{status: "error", error: str}`. Never raises. | `dispatch_handlers.py` |
+| **Agent invocation** | Exponential backoff + jitter via `@retry_with_exponential_backoff()`. Retriable: `ConnectionError`, `TimeoutError`, `ValidationError`. 3 attempts, 1-30s delay. | `agent_retry.py` |
+| **MCP health monitoring** | Background health checks every 30s. Auto-reconnect with backoff (1s, 2s, 4s) after 3 consecutive failures. | `mcp_config/manager.py` |
+| **API context loading** | Parallel `asyncio.gather()` with per-source try/catch. Neo4j fails → skip org context. Firestore fails → skip GA creds. Redis miss → load from DB. | `routers/chat.py` |
+| **API session creation** | ADK session fails → generate `manual_*` fallback ID. Non-blocking. | `routers/chat.py` |
+| **Chat completion** | 1800s timeout on Agent Engine calls. `TimeoutError` → user-facing message. Stream errors caught and returned as text. | `routers/chat.py` |
+| **Tool execution tracking** | `adk_after_tool_callback` records `ExecutionStatus`: SUCCESS, FAILURE, TIMEOUT, PERMISSION_DENIED, RATE_LIMITED. Never blocks. | `tracking/callbacks.py`, `tracking/usage.py` |
+| **Security hooks** | `adk_before_tool_callback` checks token expiry (5-min buffer), refreshes via Google OAuth2 API. Permission denied → signals frontend reauth. | `security/hooks.py` |
+| **Firestore operations** | Retry decorators with exponential backoff + jitter. Retriable: `Aborted`, `DeadlineExceeded`, `ResourceExhausted`, `ServiceUnavailable`. Config: 3-5 attempts, 0.5-2s initial delay. | `strategy_agent/retry_utils.py` |
+
+#### 10.1.2 Gap: No Circuit Breaker Pattern
+
+Current retry logic always attempts up to `max_retries` even if a service is clearly down. Missing:
+- **Circuit breaker state machine** (CLOSED → OPEN → HALF-OPEN) for MCP servers and Agent Engine
+- **Failure rate threshold** — e.g., if >50% of calls to an MCP server fail in 60s, stop sending for 30s
+- **Cascading failure protection** — if GA MCP is down, GA agent should fail fast rather than retry 3x per dispatch
+
+**Recommendation:** Implement circuit breaker at the `McpToolset` or dispatch handler level. ADK's `before_tool_callback` could check circuit state before allowing tool execution.
+
+#### 10.1.3 Gap: Firestore Unavailability at Deploy Time
+
+If Firestore is unreachable during `deploy_ken_e.py` execution, `load_config_from_firestore()` raises `FirestoreConnectionError`. The deployment fails — there are no bundled fallback configs.
+
+**Recommendation:** Bundle last-known-good config snapshots in the deployment package. Deploy script should catch `FirestoreConnectionError` and fall back to bundled config with a warning.
+
+### 10.2 Credential Lifecycle & Security Model
+
+#### 10.2.1 Current OAuth Flow
+
+| Step | Implementation | Key File |
+|------|---------------|----------|
+| **Authorization** | Frontend initiates `GET /api/oauth/authorize/google-analytics`. Generates state token (15-min TTL in Firestore). Redirects to Google with `offline` + `consent` prompts. Scopes: `analytics.readonly`, `analytics.edit`. | `routers/oauth_integrations.py` |
+| **Callback** | Validates state token (CSRF protection). Exchanges auth code for tokens. Preserves existing refresh_token if Google doesn't return new one. Encrypts and stores in Firestore. | `routers/oauth_integrations.py` |
+| **Storage** | Credentials encrypted via `EncryptionService` (Fernet-based). Stored in Firestore via `IntegrationCredentialsService`. Keys: `access_token`, `refresh_token`, `expires_at`, `tenant_id`, `selected_property_ids`. | `ga_credential_helper.py`, `encryption_service.py` |
+| **Injection** | API loads creds from Firestore at session creation, refreshes if expired, writes to ADK session state as `ga_credentials`. Cached in Redis (10-min TTL). | `routers/chat.py` |
+| **Per-request auth** | `_ga_header_provider()` reads `ga_credentials` from `context.state`, builds `Authorization: Bearer` + `X-Tenant-ID` headers. Called per turn by McpToolset. | `google_analytics_agent_v4.py` |
+| **Token refresh** | On-demand: checks `expires_at` with 5-min buffer. Calls `https://oauth2.googleapis.com/token` with 10s timeout. Updates Firestore + returns refreshed creds. | `ga_credential_helper.py` |
+| **Reauth signal** | `adk_before_tool_callback` detects expired/revoked tokens → returns `{requires_reauth: true}` → frontend triggers re-authorization flow. | `security/hooks.py` |
+
+#### 10.2.2 Gaps in Credential Security
+
+| Gap | Risk | Recommendation |
+|-----|------|----------------|
+| **No proactive token refresh** | Tokens may expire mid-conversation if session is long | Add background refresh task or refresh during `InstructionProvider` (runs each turn) |
+| **No refresh token rotation tracking** | Can't detect if refresh token was revoked by user in Google | Track last successful refresh timestamp; if refresh fails, immediately signal reauth |
+| **Fernet encryption in dev, KMS TODO in prod** | Local encryption key management is not production-grade | Complete `EncryptionService` KMS integration before production launch |
+| **No credential expiry notifications** | Users discover broken credentials only when they try to use an agent | Add expiry monitoring: warn user in frontend when creds expire within 24h |
+| **No cross-tenant isolation checks** | Credential retrieval uses `account_id` but no additional tenant boundary enforcement | Add explicit tenant context validation in `IntegrationCredentialsService` |
+
+#### 10.2.3 Multi-Tenant Security for Specialist Agents
+
+When specialist agents connect to multiple MCP servers per user (Sprint 5-6), each `McpToolset` needs its own `header_provider` that reads the correct platform credentials from session state:
+
+```
+Session state keys (per-platform):
+  ga_credentials      → GA MCP header_provider
+  google_ads_credentials → Google Ads MCP header_provider
+  hubspot_credentials → HubSpot MCP header_provider
+  meta_ads_credentials → Meta Ads SDK tool_context.state
+```
+
+The API layer must load and refresh credentials for all connected platforms at session creation time. This is a linear scaling problem: N platforms = N credential loads. Mitigation: parallel loading (already implemented for GA), Redis caching per-platform.
+
+### 10.3 Rate Limiting & Platform Quota Management
+
+#### 10.3.1 Current Rate Limiting
+
+| Scope | Implementation | Key File |
+|-------|---------------|----------|
+| **Auth endpoints** | In-memory sliding window per IP. Login: 10/min, 50/hr. Token: 60/min, 1000/hr. Password reset: 3/min, 10/hr. | `auth/rate_limiting.py` |
+| **External APIs** | Redis-backed per-API limits. Wikipedia: 10/min. Wikidata: 10/min. Gemini: 5/min. Fail-open if cache unavailable. | `services/rate_limiter.py` |
+| **Firestore operations** | Retry with backoff on `ResourceExhausted` (Firestore's rate limit signal). | `strategy_agent/retry_utils.py` |
+
+#### 10.3.2 Gap: No Marketing Platform Quota Management
+
+Marketing platform APIs have aggressive rate limits that the specialist agents must respect:
+
+| Platform | Rate Limits | Impact |
+|----------|------------|--------|
+| **Google Ads API** | 15,000 operations/day (basic access), per-customer limits on mutate operations | Daily quota exhaustion blocks all Google Ads queries |
+| **Meta Marketing API** | Rate limits per ad account, sliding window with business use case rate limits | Account-level throttling; shared across all users accessing same ad account |
+| **HubSpot API** | 100-200 requests/10s depending on plan tier, daily limits | Per-app limits shared across all KEN-E users on same HubSpot portal |
+| **Google Analytics Data API** | 200 requests/min per property, 50,000 requests/day per project | Shared project quota across all KEN-E users |
+
+**Recommendation:** Implement per-platform quota tracking at the specialist agent level:
+
+1. **`before_tool_callback` quota check** — Before each tool call, check remaining quota from a shared counter (Redis). If quota is low, either throttle (add delay) or inform the user.
+2. **Response header parsing** — Extract `X-RateLimit-Remaining` and `Retry-After` headers from MCP server responses. Store in Redis for quota tracking.
+3. **Account-level quota isolation** — For platforms with per-account limits (Meta, HubSpot), track quota per `account_id`, not globally.
+4. **User-facing feedback** — When rate limited, the specialist agent should explain the constraint: "Google Ads daily quota is at 95%. I can run 3 more queries today."
+
+### 10.4 Risk Assessment Matrix
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| **Context overflow during complex tasks** | High | High | ADK compaction (interval=5, threshold=50K), hierarchical loading |
-| **MCP server connection failures** | Medium | High | ADK auto-reconnect, health monitoring, retry logic |
+| **Context overflow during complex tasks** | High | High | ADK compaction (interval=5, threshold=50K), hierarchical loading, `tool_filter` |
+| **MCP server connection failures** | Medium | High | ADK auto-reconnect, health monitoring, retry logic. Gap: no circuit breaker. |
 | **Agent hallucination in strategy outputs** | Medium | High | Require citations, fact-checking tools, human review queue |
 | **ADK version dependency** | Medium | Medium | Pin versions, test upgrades in staging before prod |
 | **Firestore config drift** | Low | Medium | Config validation at deploy time, registry consistency tests |
-| **Cost overrun from token usage** | Medium | Medium | Token budgets, usage monitoring via Weave, alerts |
+| **Cost overrun from token usage** | Medium | Medium | UsageTracker (token + cost metrics), Weave tracing, alerts via `AlertData` model |
+| **Platform API rate limit exhaustion** | Medium | Medium | Per-platform quota tracking (gap — not yet implemented) |
+| **OAuth token expiry mid-conversation** | Medium | Low | 5-min refresh buffer, reauth signal to frontend. Gap: no proactive refresh. |
+| **Credential encryption not prod-ready** | Low | High | Fernet in dev, KMS TODO in prod. Must complete before launch. |
 
 ### 10.2 Test Locations
 
@@ -856,8 +1051,6 @@ The harness will support A/B testing of agent configurations:
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` | Planned |
 | **Microsoft Ads** | Deferred | — | No current demand |
 
-See `docs/design/mcp-architecture.md` for decision rationale.
-
 ### Appendix B: Output Types for Evaluation
 
 | Category | Output Types |
@@ -897,6 +1090,8 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | **McpToolset** | ADK class that manages MCP server connections |
 | **InstructionProvider** | Callable that returns dynamic instructions per LLM turn |
 | **Agent Factory** | [PLANNED] Config-driven system that assembles agents from Firestore config |
+| **tool_filter** | ADK `BaseToolset` parameter — callable predicate evaluated per-turn to control which tools are visible to the LLM |
+| **ToolRegistry** | Searchable metadata catalog for ~400 tools; planned as driver for `tool_filter` predicates |
 
 ---
 
@@ -905,8 +1100,9 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-10 | Development Team | Initial design document |
-| 2.0 | 2026-03-10 | Development Team | Updated to reflect Sprints 1-4 implementation. Removed fictional code for unimplemented features (PrimaryOrchestrator, ContextCompressor, ContextStateManager, ToolDiscoveryAgent, WebChannelAdapter, SlackChannelAdapter, VoiceChannelAdapter, WorkflowManager, ScheduledWorkflowManager, FeedbackCollector, ExperimentManager). Replaced with references to actual implementations. Marked unbuilt features as [PLANNED]. Added standalone design docs for MCP architecture, agent hierarchy, and API gateway. |
+| 2.0 | 2026-03-10 | Development Team | Updated to reflect Sprints 1-4 implementation. Removed fictional code for unimplemented features (PrimaryOrchestrator, ContextCompressor, ContextStateManager, ToolDiscoveryAgent, WebChannelAdapter, SlackChannelAdapter, VoiceChannelAdapter, WorkflowManager, ScheduledWorkflowManager, FeedbackCollector, ExperimentManager). Replaced with actual implementations. Marked unbuilt features as [PLANNED]. |
+| 2.1 | 2026-03-10 | Development Team | Design review: Added `tool_filter` + ToolRegistry architecture for dynamic per-turn tool selection (preserves v1.0 ToolDiscoveryAgent capability via ADK-native mechanisms). Updated ADK internals analysis with version-specific behavior and issue references. Added sprint-3b dependency note. Fixed Deepgram latency claim. |
 
 ---
 
-*This document describes the architecture for the KEN-E agentic harness. It is updated as implementation progresses. For specific design details, see the referenced design documents in `docs/design/`.*
+*This document describes the architecture for the KEN-E agentic harness. It is updated as implementation progresses.*

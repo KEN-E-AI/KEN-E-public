@@ -99,8 +99,8 @@ The Slack service is a thin adapter — it authenticates the Slack user, maps to
 
 - **Framework:** Pipecat for voice pipeline orchestration
 - **Meeting access:** Recall.ai or Meeting BaaS for joining Zoom/Teams/Meet
-- **STT:** Deepgram (sub-200ms latency)
-- **TTS:** Cartesia or Deepgram Aura
+- **STT:** Deepgram (sub-300ms streaming latency)
+- **TTS:** Cartesia (sub-100ms TTFB) or Deepgram Aura (sub-200ms TTFB)
 - **Timeline:** Phase 4 — after core functionality is stable
 
 Key considerations:
