@@ -1,6 +1,6 @@
 # Design Review Log
 
-This file tracks design review discussions, findings, decisions, and open questions as we iterate on the KEN-E agentic harness architecture. Each entry captures the context, analysis, and outcome so future sessions can build on prior work.
+Hybrid decision log and document changelog. Tracks what changed in the design docs, when, and why. For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e).
 
 ---
 
@@ -50,60 +50,17 @@ Additional features that exist only on sprint-3b (not yet merged to main):
 
 **Action taken:** Fixed Deepgram latency claim in `api-gateway-multi-channel.md`.
 
-### 4. ADK Internals — Deep Dive
+### 4. ADK Internals — Key Findings
 
-This was the most consequential part of the review. We traced the ADK source code on the latest `main` branch to verify claims about `McpToolset` behavior.
+Traced ADK source code to verify `McpToolset` behavior. Key findings:
 
-#### 4a. `get_tools()` Per-Turn Resolution
+- `get_tools()` per-turn resolution is intentional (per-user permissions). A redundant-calls bug exists pre-v1.26.0 — we're on 1.23.0 and need to upgrade.
+- MCP server connections are fixed at agent construction time. Dynamic tool *selection* (not connection) is supported via `tool_filter` on `BaseToolset`.
+- Designed `tool_filter` + ToolRegistry architecture for per-turn dynamic tool selection.
 
-**Original doc claim:** "`McpToolset.get_tools()` called every LLM turn — tools are re-resolved fresh."
+See [Decision 7 (Token Budget)](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8 (ToolRegistry)](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) for full rationale.
 
-**What we found:** This is true and **intentional**. The ADK team explicitly confirmed on [issue #3237](https://github.com/google/adk-python/issues/3237) that `get_tools(readonly_context)` is designed for per-user permissions — different users should see different tools. Naive caching at the toolset level would break this security model.
-
-**The bug (fixed in v1.26.0):** In ADK v1.16.0, a grounding metadata check in `base_llm_flow.py` called `agent.canonical_tools()` 3-4 times per LLM response (for `google_search_agent` detection). This caused `get_tools()` to fire 4-5x per response instead of 1x. The fix ([PR #3299](https://github.com/google/adk-python/pull/3299), [commit 8f3c3bf](https://github.com/google/adk-python/commit/8f3c3bfda5e14f6a37979ad3030d3f2bbc0ae1a8)) caches resolved tools on `invocation_context.canonical_tools_cache` — so `get_tools()` is called once per turn, not once per token.
-
-**Our ADK version:** `google-adk==1.23.0` (floor `>=1.23.0`). The fix is in `1.26.0`. We're hitting the redundant calls bug.
-
-**Action taken:** Added ADK version note and upgrade recommendation to `mcp-architecture.md`. Added open question about bumping to `>=1.26.0`.
-
-#### 4b. Dynamic Tool Discovery — The Gap
-
-**The question:** The v1.0 design had a `ToolDiscoveryAgent` that could search ~400 tools and load MCP servers on-demand mid-conversation. The v2.0 design replaced this with specialist routing (fixed tool sets per specialist, assembled at deploy time). Does this lose important capability?
-
-**What we found:**
-
-`get_tools()` re-queries *already-connected* MCP servers each turn. This means:
-- **New tools on connected servers** — automatically visible next turn (no redeploy needed)
-- **New MCP server connections mid-conversation** — NOT supported. `McpToolset` instances are set on the agent at construction time.
-- **Cataloged-but-not-loaded tools** — NOT discoverable. The ToolRegistry has metadata for ~400 tools, but there's no mechanism for an agent to connect to a new MCP server based on ToolRegistry search results.
-
-**Discussion:** We debated whether this is acceptable. The conclusion was that we cannot defer dynamic tool selection — a CMO's cross-domain queries ("compare Google Ads spend with HubSpot conversions") and the growing tool inventory make static per-specialist assignment insufficient.
-
-#### 4c. The Solution: `tool_filter` + ToolRegistry
-
-**What we found in ADK source:** `BaseToolset` (parent of `McpToolset`) accepts a `tool_filter` parameter that can be a callable `(tool, ctx) -> bool`. It's evaluated on every `get_tools()` call with the current `ReadonlyContext`. This is the ADK-native mechanism for dynamic, per-turn tool selection.
-
-**Architecture we designed:**
-
-```
-Each LLM turn:
-  1. Root agent interprets user intent, writes relevant tool categories to session state
-  2. Dispatch to specialist agent
-  3. Specialist's McpToolset.get_tools(ctx) fires
-  4. tool_filter predicate checks ctx.state["relevant_tools"]
-  5. Only matching tools exposed to LLM — others hidden from context
-```
-
-This preserves v1.0 capabilities:
-- Semantic search across ~400 tools via ToolRegistry
-- Per-turn tool selection (only relevant tools in context)
-- Token budget awareness (fewer tools = fewer context tokens)
-
-Does NOT preserve:
-- Runtime MCP server connection/disconnection
-- If an entirely new MCP server is added, it requires config update + redeploy
-
-**Action taken:** Added Section 5a to `mcp-architecture.md`, updated `agent-hierarchy.md` Section 6 (ToolRegistry role) and Section 8 (Agent Factory), updated harness doc Section 4.3.
+**Action taken:** Added Section 5a to `mcp-architecture.md`, updated `agent-hierarchy.md` Section 6 and 8, updated harness doc Section 4.3.
 
 ### 5. Other Findings
 
@@ -115,83 +72,17 @@ The ~$1.20/hour per meeting estimate for voice doesn't account for Recall.ai/Mee
 
 ### 6. Architecture Gaps Identified
 
-These are structural gaps in the design docs — areas where the happy-path architecture is described but important concerns are not addressed. None were fixed in this review; they are tracked here for future design work.
+Structural gaps found and tracked. Most were addressed in Review 2 (see below).
 
-#### 6a. No Error Handling / Resilience Design
-
-The docs describe what happens when everything works but not what happens when it doesn't. Missing:
-- What happens when an MCP server is unreachable mid-conversation?
-- What happens when a specialist agent times out?
-- What happens when Firestore config is corrupt or unavailable at startup?
-- Graceful degradation strategy (e.g., fall back to a subset of tools, inform the user, retry?)
-
-**Recommendation:** Add a resilience section to the harness doc or create `docs/design/error-handling-resilience.md`.
-
-#### 6b. No Security Model for MCP
-
-The docs mention `header_provider` for per-user OAuth but don't describe the full token lifecycle. Missing:
-- How are per-user OAuth tokens stored? (Secret Manager? Firestore? ADK session state?)
-- How are tokens rotated when they expire?
-- How are tokens scoped per-user in a multi-tenant system where one MCP server instance serves all accounts?
-- What happens if a token is revoked?
-
-This is critical for a system handling CMO ad account credentials (Google Ads, Meta Ads, HubSpot).
-
-**Recommendation:** Create `docs/design/security-and-auth.md` covering OAuth token lifecycle, per-user credential scoping, Secret Manager integration, and token rotation strategy.
-
-#### 6c. Missing Cost Model for Scaled Usage
-
-Section 9.2 of the harness doc estimates ~$1,170/month for "moderate usage" but doesn't define what moderate means. With ~400 tools across 20-40 MCP servers per account:
-- Token consumption per request could be dramatically higher than estimated
-- Multiple specialist agent calls per user query multiply LLM costs
-- MCP server SSE connections have infrastructure costs that scale per-account
-- Voice channel at ~$1.20/hour doesn't account for Recall.ai/Meeting BaaS pricing ($50-100+/month per bot seat)
-
-**Recommendation:** Define usage tiers (light/moderate/heavy) with concrete assumptions (users, requests/day, tools loaded, MCP servers active) and cost projections per tier.
-
-#### 6d. Workflow Management (Section 7) Is Too Thin
-
-The state machine diagram is fine but the section is missing:
-- Persistence model — how are workflow states stored and recovered after crashes?
-- Failure recovery — what happens when a workflow step fails mid-execution?
-- Idempotency — how do we prevent duplicate execution on retry?
-- n8n webhook callbacks — how do webhook results map back to workflow steps?
-
-**Recommendation:** Create `docs/design/workflow-management.md` as a standalone design doc (like the other three). This needs design work before Sprint 8+ implementation.
-
-#### 6e. No Rate Limiting / Quota Management
-
-Marketing platform APIs have aggressive rate limits:
-- Google Ads: 15,000 operations/day (basic access), vary by endpoint
-- Meta Marketing API: Rate limits per ad account, sliding window
-- HubSpot: 100-200 requests/10 seconds depending on plan
-
-The specialist agents need awareness of these limits. Missing:
-- Back-pressure mechanism when approaching rate limits
-- Quota tracking per account/platform
-- User-facing feedback when rate limited ("I can't query Google Ads right now, the daily quota is exhausted")
-- Retry-after / exponential backoff strategy
-
-**Recommendation:** Add rate limit awareness to the specialist agent design. This could be a `before_tool_callback` that checks quota state, or metadata on the MCP server config.
-
-#### 6f. Agent Factory Design Is Vague
-
-The agent factory is referenced multiple times as Sprint 5-6 but the actual assembly logic is not described:
-- How does Firestore config map to `Agent` constructor parameters?
-- How does the factory wire `tool_filter` predicates?
-- Is assembly at deploy time, startup time, or session creation time?
-- How is the factory tested? (Config validation, integration tests)
-- Hot-reload vs. redeploy semantics — can config changes take effect without redeployment?
-
-**Recommendation:** Create `docs/design/agent-factory.md` before Sprint 5-6 implementation begins.
-
-#### 6g. UsageTracker Scalability Concern
-
-The `UsageTracker` (`app/adk/tracking/usage.py`) writes one Firestore document per tool call to `tool_usage_events`. At moderate scale (~3,000 tool calls/day = ~90K docs/month), writes are cheap. However, `get_usage_aggregation()` scans all documents in a date range — at heavy scale (450K+ docs/month) this becomes slow and expensive.
-
-The `DailyCostAggregation` model exists in `analytics_models.py` but no rollup job is implemented. Without pre-aggregated daily rollups, every dashboard/report query triggers a full collection scan.
-
-**Recommendation:** Implement a daily rollup Cloud Function that aggregates per-account, per-tool metrics into summary documents. Query summaries for dashboards, raw events only for drill-down. Consider TTL policy on raw events (e.g., 90-day retention, roll up to summaries before deletion).
+| Gap | Status |
+|-----|--------|
+| **6a. Error handling / resilience** | Addressed in Review 2 — harness doc Section 10.1 |
+| **6b. MCP security model** | Addressed in Review 2 — harness doc Section 10.2 |
+| **6c. Cost model** | Addressed in Review 2 — harness doc Section 9.2 |
+| **6d. Workflow management** | Addressed in Review 2 — harness doc Section 7 |
+| **6e. Rate limiting** | Addressed in Review 2 — harness doc Section 10.3 |
+| **6f. Agent factory design** | Addressed in Review 2 — `agent-hierarchy.md` Section 8 |
+| **6g. UsageTracker scalability** | Open — needs daily rollup Cloud Function |
 
 ### 7. Documents Modified in This Review
 
@@ -203,21 +94,15 @@ The `DailyCostAggregation` model exists in `analytics_models.py` but no rollup j
 | `docs/KEN-E-Agentic-Harness-Design.md` | v2.0 → v2.1: Added sprint-3b dependency note. Rewrote Section 4.3 (Tool Discovery) with tool_filter architecture. Added glossary entries. Updated document history. |
 | `docs/design/DESIGN-REVIEW-LOG.md` | Created — this file. |
 
-### 8. Open Questions (Carried Forward)
+### 8. Open Questions (Active)
 
-1. **ADK version bump to `>=1.26.0`** — Needed for per-invocation tool caching fix. Should be low-risk but needs testing.
-2. **`tool_filter` integration pattern** — Three options identified (InstructionProvider, root agent state write, specialist self-search). Needs prototyping before Sprint 5-6.
-3. **Per-account MCP server sets** — If different accounts need different server configurations, the agent factory needs to assemble at session creation time, not just deploy time. Needs separate design work.
-4. **Voice latency budget** — 7-13s Agent Engine response time is incompatible with <2s voice target. Needs mitigation strategy. Now noted in harness doc Section 9.2.
-5. ~~**Workflow management design**~~ — **Addressed:** Expanded harness doc Section 7 with data model, persistence/recovery design, and n8n integration contract.
-6. ~~**Error handling / resilience**~~ — **Addressed:** Added harness doc Section 10.1 documenting existing patterns and identifying circuit breaker gap.
-7. ~~**MCP security model**~~ — **Addressed:** Added harness doc Section 10.2 documenting full OAuth lifecycle, credential storage, and identifying gaps (proactive refresh, KMS, cross-tenant isolation).
-8. ~~**Rate limiting / quota management**~~ — **Addressed:** Added harness doc Section 10.3 documenting existing rate limiting and identifying per-platform quota management gap.
-9. ~~**Agent factory detailed design**~~ — **Addressed:** Expanded `agent-hierarchy.md` Section 8 with assembly flow, config-to-constructor mapping, header provider factory, and limitations.
-10. ~~**Cost model refinement**~~ — **Addressed:** Added usage tier definitions and moderate tier cost breakdown to harness doc Section 9.2. Flagged UsageTracker scalability concern (6g).
-11. **UsageTracker scalability** — Pre-aggregated daily rollups needed before heavy scale. `DailyCostAggregation` model exists but no rollup job. (see 6g)
-12. **KMS encryption migration** — `EncryptionService` uses Fernet in dev, KMS path is TODO. Must complete before production launch.
-13. **Circuit breaker pattern** — No circuit breaker for MCP servers or Agent Engine. Needs design for cascading failure protection.
+1. **ADK version bump to `>=1.26.0`** — Needed for per-invocation tool caching fix.
+2. **`tool_filter` integration pattern** — Needs prototyping before Sprint 5-6.
+3. **Per-account MCP server sets** — Agent factory may need session-time assembly.
+4. **Voice latency budget** — 7-13s Agent Engine response is incompatible with <2s voice target.
+5. **UsageTracker scalability** — Needs daily rollup Cloud Function before heavy scale.
+6. **KMS encryption migration** — `EncryptionService` uses Fernet in dev, KMS path is TODO.
+7. **Circuit breaker pattern** — No circuit breaker for MCP servers or Agent Engine.
 
 ---
 
@@ -246,4 +131,135 @@ Items 1-4, 11-13 from the open questions list above are NOT yet resolved and car
 
 ---
 
-*Add new review entries above this line. Each entry should follow the same structure: date, scope, findings, actions taken, open questions.*
+## Review 3: Google Ads Integration Decision Revision
+
+**Date:** March 11, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Revise Google Ads integration decision based on post-review research
+
+### Finding
+
+Google's official MCP servers are read-only with no public write roadmap. Revised to hybrid approach (MCP reads + SDK writes).
+
+### Decision
+
+See [Decision 3: Google Ads — Hybrid MCP + SDK](https://www.notion.so/32030fd6530281fe91eaf7773665729f) in the Design Decisions database for full rationale.
+
+### Documents Updated
+
+| File | Changes |
+|------|---------|
+| `docs/design/mcp-architecture.md` | Updated Section 4 platform table (hybrid), Section 5 diagram (Execution Specialist gets SDK tools), Section 8 (rewritten read-only limitations — Google Ads now has write path), Section 9 (added `google-ads` SDK dependency) |
+| `docs/design/agent-hierarchy.md` | Updated Section 7 specialist table (Execution Specialist gets Google Ads SDK for writes) |
+| `docs/KEN-E-Agentic-Harness-Design.md` | Updated Section 2.4, 4.1, 4.4 specialist tables and Appendix A (Google Ads → hybrid) |
+
+### Impact on Decision 1 (Platform Integration Framework)
+
+The hybrid Google Ads approach reveals that the 4-tier framework is not mutually exclusive — a single platform can use multiple tiers (MCP for reads, SDK for writes). Decision 1 updated in Notion Design Decisions database to acknowledge hybrid tier combinations.
+
+---
+
+## Review 4: Context Loading — Keyword Detection → Agent-Driven Loading
+
+**Date:** March 11, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Revise Level 2/3 context loading trigger mechanism
+
+### Finding
+
+The Level 2 context loading implementation uses English keyword substring matching in the API preprocessing layer (`should_load_campaigns()`, `should_load_section()` with `SECTION_KEYWORDS` and `CAMPAIGN_KEYWORDS` in `shared/context_utils.py`). Two problems:
+
+1. **English-only** — Users typing in Spanish, German, or any non-English language would never trigger section loading (e.g., "¿Cómo van mis campañas?" contains no English keywords)
+2. **Brittle to paraphrases** — Even in English, indirect references or creative phrasing can miss the keyword list
+
+### Decision
+
+See [Decision 17: Context Management — Hierarchical Context Loading](https://www.notion.so/32030fd6530281dca919d68aa0e27094) in the Design Decisions database for full rationale, decision, and consequences.
+
+### Documents Updated
+
+| File | Changes |
+|------|---------|
+| `docs/KEN-E-Agentic-Harness-Design.md` | Updated Section 3.2 HCL diagram (Level 2/3 → "Agent-Driven Loading"). Updated Section 3.3 implementation status with deprecation note and design revision explanation. |
+| `docs/design/agent-hierarchy.md` | Updated Section 2 file inventory — context_loader.py description reflects agent-driven loading. |
+
+---
+
+## Review 5: Architecture Accuracy Pass — Harness Doc v2.2 → v2.3
+
+**Date:** March 11, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Ensure harness doc accurately reflects both current implementation and target architecture; expand session state documentation; add billing/usage tracking plan.
+
+### Changes Made
+
+| Area | Change | Location |
+|------|--------|----------|
+| **Document framing** | Reframed as "architecture reference" with explicit `[PLANNED]` convention. Updated `CLAUDE.md` docs/ description and workflow step. | Section 1.1, `CLAUDE.md` |
+| **Section 1.3** | Renamed "Solution Overview" → "Agentic Harness Overview". Split into 1.3.1 Current + 1.3.2 [PLANNED] with separate diagrams. | Section 1.3 |
+| **Section 2.1** | Rewrote system architecture diagram — replaced GA-specific content with target architecture (specialist agents, generic platform credentials, multiple MCP servers). | Section 2.1 |
+| **Section 2.3** | Split into 2.3.1 Current Request Flow (GA dispatch) + 2.3.2 [PLANNED] (specialist routing, tool_filter, multi-MCP). | Section 2.3 |
+| **Section 3.6** | Expanded from 3-row table to 5 subsections: current keys (11 entries with Set By / Read By), planned target model, what's NOT in state, token usage visibility, billing/usage tracking. | Section 3.6.1–3.6.5 |
+
+### Decisions Created
+
+| Decision | Status | Link |
+|----------|--------|------|
+| Decision 19: Token Usage Visibility in UI | Proposed | [Notion](https://www.notion.so/32030fd65302815ca0d6fe5291fdfc54) |
+| Decision 20: Unified Usage Tracking for Billing | Proposed | [Notion](https://www.notion.so/32030fd6530281bfa31cf19af537b206) |
+
+### Key Findings
+
+- **Token data gap:** Token usage data exists at every layer (Vertex AI, Weave, ConversationSummarizer) but never crosses the API boundary to the frontend. `ChatResponse` model has no token fields.
+- **Billing data gap:** Two separate Firestore tracking systems (`tool_usage_events` and `usage_records`) are never unified. `usage_records` lacks `organization_id` and `session_id`, making org-level billing aggregation impossible.
+- **Session state completeness:** Documented 11 current session state keys (vs. the previous 3-row table) including internal flags (`_tool_start_time`, `_requires_reauth`, `_reauth_service`) and strategy artifacts.
+
+---
+
+## Review 6: Task Delegation with Review Loops
+
+**Date:** March 11, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Design review loop pattern for specialist agent delegation using ADK native workflow agents; document multi-step workflow orchestration with parallel execution and user approval checkpoints.
+
+### Finding
+
+The current dispatch pattern runs specialists once and relays output verbatim — no quality gate exists. The Root Agent cannot verify that a specialist's response meets the user's intent before presenting it. For multi-step workflows (e.g., cross-platform budget optimisation), there is no mechanism for parallel data gathering, synthesis, user approval, or execution phasing.
+
+### Research
+
+Reviewed ADK documentation and source code. Confirmed the following native constructs are available in ADK 1.26.0 (installed version):
+
+| Construct | Purpose |
+|-----------|---------|
+| `LoopAgent` | Iterative cycle until `exit_loop` or `max_iterations` |
+| `SequentialAgent` | Chain specialist → reviewer inside loop |
+| `ParallelAgent` | Run independent steps concurrently |
+| `output_key` | Named state keys for inter-agent data passing |
+| `exit_loop` | Built-in tool that terminates LoopAgent |
+
+Google's recommended **Generator-Critic** pattern maps directly to the specialist + reviewer review loop.
+
+### Decision
+
+See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) in the Design Decisions database for full rationale, alternatives considered, and consequences.
+
+### Documents Updated
+
+| File | Changes |
+|------|---------|
+| `docs/KEN-E-Agentic-Harness-Design.md` | v2.3 → v2.4: Updated Section 2.3.2 request flow with review loop steps (3a specialist + 3b reviewer inside LoopAgent). Added Section 4.6 [PLANNED] Review Loop Pattern (Generator-Critic) with structure, termination rules, token impact. Rewrote Section 7.1 with ADK workflow agent architecture, ParallelAgent, Meta Ads optimisation example, `execute_workflow()` tool, dependency graph parsing, second example. |
+| `docs/design/agent-hierarchy.md` | v1.1 → v1.2: Added Section 9 [PLANNED] Review Loop & Workflow Orchestration — review loop pattern (9.1), multi-step workflow pattern with ParallelAgent (9.2), key files table (9.3). |
+| `docs/design/DESIGN-REVIEW-LOG.md` | Added this entry (Review 6). |
+| `docs/design/review-loop-implementation-plan.md` | Created — comprehensive implementation plan for future roadmap/story creation. |
+
+### Key Design Decisions
+
+1. **Root Agent stays LlmAgent** — review pipelines are built inside dispatch handlers, not by replacing the Root Agent with a SequentialAgent. This preserves the conversational interface.
+2. **User approval via conversation turns** — rather than ADK `pause_invocation`, multi-phase workflows naturally split across turns. Root presents results, user approves, next turn executes.
+3. **Backward compatible** — `acceptance_criteria=None` (default) preserves current single-pass behavior. Review loops only activate when criteria are provided.
+4. **Unique `output_key` per step** — avoids state collisions in parallel execution (e.g., `step_1a_draft`, `step_1b_draft`).
+
+---
+
+*Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*
