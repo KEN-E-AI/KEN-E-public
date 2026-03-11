@@ -44,7 +44,7 @@ The KEN-E API is a FastAPI application deployed on Google Cloud Run.
 - GA credentials stored in ADK session state (cached per-user)
 - Background reauth check with cache (non-blocking)
 
-## 2. Why the API Already Supports Multi-Channel
+## 2. Channel-Agnostic API Design
 
 The current chat endpoint is **channel-agnostic**:
 - Accepts a standard message format (role, content, timestamp)
@@ -109,7 +109,7 @@ Key considerations:
 - Need speaker diarization to identify who is speaking
 - Estimated cost: ~$1.20/hour per meeting
 
-## 6. What Does NOT Change for Future Channels
+## 6. Stable Components Across Channels
 
 | Component | Changes Needed? |
 |-----------|----------------|

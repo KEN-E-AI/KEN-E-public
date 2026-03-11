@@ -15,13 +15,13 @@ KEN-E needs to support ~400 tools across 20-40 MCP servers per account for marke
 
 We read the ADK source code (`mcp_toolset.py`, `mcp_session_manager.py`, `base_llm_flow.py`, `base_toolset.py`, `llm_agent.py`) and confirmed:
 
-| Behavior | Detail | Verified Against |
-|----------|--------|-----------------|
-| **Agent objects are singletons** | Reused across all requests per deployment | Agent Engine runtime |
-| **`McpToolset.get_tools()` called every LLM turn** | Tools re-resolved per invocation context, not cached across turns. This is intentional — `get_tools(readonly_context)` is designed for per-user permissions so different users can see different tools. | ADK team comment on [#3237](https://github.com/google/adk-python/issues/3237) |
-| **SSE sessions pooled by connection params** | `MCPSessionManager` caches sessions keyed by connection parameters. Same params reuse connection; different params get separate connections. | `mcp_session_manager.py` |
-| **`tool_filter` evaluated per turn** | `BaseToolset._is_tool_selected(tool, ctx)` applies filters on every `get_tools()` call, receiving `ReadonlyContext`. Supports callable predicates or static name lists. | `base_toolset.py` |
-| **`canonical_tools` cached per invocation** | Since ADK v1.26.0 ([commit 8f3c3bf](https://github.com/google/adk-python/commit/8f3c3bfda5e14f6a37979ad3030d3f2bbc0ae1a8)), `base_llm_flow.py` caches resolved tools on `invocation_context.canonical_tools_cache` to avoid redundant calls within a single response. Pre-1.26, `get_tools()` was called 4-5x per response. | PR [#3299](https://github.com/google/adk-python/pull/3299) |
+| Behavior | Detail |
+|----------|--------|
+| **Agent objects are singletons** | Reused across all requests per deployment |
+| **`McpToolset.get_tools()` called every LLM turn** | Tools re-resolved per invocation context, not cached across turns. Intentional for per-user permissions — different users can see different tools. |
+| **SSE sessions pooled by connection params** | `MCPSessionManager` caches sessions keyed by connection parameters. Same params reuse connection; different params get separate connections. |
+| **`tool_filter` evaluated per turn** | `BaseToolset._is_tool_selected(tool, ctx)` applies filters on every `get_tools()` call, receiving `ReadonlyContext`. Supports callable predicates or static name lists. |
+| **`canonical_tools` cached per invocation** | Since ADK v1.26.0 ([commit 8f3c3bf](https://github.com/google/adk-python/commit/8f3c3bfda5e14f6a37979ad3030d3f2bbc0ae1a8)), `base_llm_flow.py` caches resolved tools on `invocation_context.canonical_tools_cache` to avoid redundant calls within a single response. Pre-1.26, `get_tools()` was called 4-5x per response. |
 
 > **ADK version note:** We are currently on `google-adk==1.23.0` (`>=1.23.0` floor). The per-invocation caching fix landed in `1.26.0`. We should bump to `>=1.26.0` to avoid the redundant `get_tools()` calls. Between 1.23 and 1.26, ADK also added toolset authentication hooks and parallelized tool resolution.
 
@@ -41,33 +41,13 @@ We do not need per-account MCP server instances. The only potential exception is
 
 ## 4. Platform Integration Decisions
 
-### Decision Framework (priority order)
-
-1. **Provider-hosted multi-tenant MCP** — zero maintenance, use as-is
-2. **Provider official MCP, self-hosted** — low maintenance, provider maintains code
-3. **SDK function tools in the agent** — provider maintains SDK, we write thin wrappers, no MCP server to deploy
-4. **Build our own MCP server** — last resort, ongoing API maintenance burden
-
-### Platform Decisions
-
-| Platform | Decision | Integration Type | Rationale |
-|----------|----------|------------------|-----------|
-| **HubSpot** | Use provider MCP | Provider-hosted at `mcp.hubspot.com` | Only platform offering a hosted multi-tenant MCP. OAuth 2.1, zero deployment. Currently read-only (CRM objects) but HubSpot is actively expanding. |
-| **Google Ads** | Use official MCP, self-host | Self-host on Cloud Run | Google maintains the code. Read-only for now — sufficient for v1 reporting. Monitor for hosted option + write access. |
-| **Meta Ads** | SDK function tools | `facebook-business` Python SDK | Highest CMO value (full campaign CRUD). Graph API changes frequently — better to let Meta handle SDK updates than maintain an MCP server. |
-| **Mailchimp** | SDK function tools | `mailchimp-marketing` Python SDK | Simple REST API, official SDK. Not worth a standalone MCP server for email-only functionality. |
-| **Microsoft Ads** | Defer | — | Lowest CMO value, no official MCP, weakest ecosystem. Revisit when there's actual client demand. |
-
-### Why SDK Function Tools Over Third-Party MCP
-
-For Meta Ads and Mailchimp, third-party MCP servers exist but have problems:
-- **Licensing:** Pipeboard Meta Ads MCP uses BSL 1.1 (no competing hosted service)
-- **Pricing/limits:** Many are paid or have account limits
-- **Maintenance risk:** Community-maintained, could go stale
-
-SDK function tools avoid both problems: provider maintains the SDK, no server to deploy, no licensing concerns.
-
-**Tradeoff:** If we later need non-agent consumers (CLI, other products), we'd extract these into MCP servers. That's a straightforward future extraction.
+| Platform | Decision | Integration Type |
+|----------|----------|------------------|
+| **HubSpot** | Use provider MCP | Provider-hosted at `mcp.hubspot.com` (OAuth 2.1, read-only CRM, zero deployment) |
+| **Google Ads** | Hybrid: MCP reads + SDK writes | Self-host MCP on Cloud Run + `google-ads` SDK function tools for campaign CRUD |
+| **Meta Ads** | SDK function tools | `facebook-business` Python SDK (full campaign CRUD) |
+| **Mailchimp** | SDK function tools | `mailchimp-marketing` Python SDK |
+| **Microsoft Ads** | Defer | Revisit when there's client demand |
 
 ### SDK Function Tools Pattern
 
@@ -105,7 +85,8 @@ User -> API -> Agent Engine
                 |     |
                 |     |-- Execution Specialist
                 |     |     |-- SDK tools -> Meta Ads (facebook-business SDK)
-                |     |     |-- McpToolset -> Google Ads MCP (shared instance)
+                |     |     |-- SDK tools -> Google Ads writes (google-ads SDK)
+                |     |     |-- McpToolset -> Google Ads MCP (shared, read-only)
                 |     |
                 |     |-- Automation Specialist
                 |           |-- McpToolset -> n8n MCP (self-hosted, TBD)
@@ -153,18 +134,6 @@ Each LLM turn:
 |----------|-------------|------------------|-------------|
 | No filtering (all tools on specialist) | Fixed at deploy | All tools on connected servers | Up to ~30 tools × 150 tokens = 4,500 tokens |
 | `tool_filter` + ToolRegistry | Fixed at deploy | Only relevant tools per turn | ~5-10 tools × 150 tokens = 750-1,500 tokens |
-
-### What This Preserves from v1.0
-
-The v1.0 design had a `ToolDiscoveryAgent` with `search_tools()` and `load_tools()` capabilities. The `tool_filter` + ToolRegistry approach preserves the search/discovery capability while dropping the runtime server connection management:
-
-| v1.0 Capability | Preserved? | How |
-|-----------------|-----------|-----|
-| Search ~400 tool catalog by keyword | Yes | ToolRegistry.search() |
-| Expose only relevant tools per turn | Yes | `tool_filter` predicate using ToolRegistry results |
-| Token budget awareness | Yes | Fewer tools = fewer tokens in context |
-| Load new MCP servers mid-conversation | **No** | Server set fixed at deploy; mitigated by config-driven agent factory |
-| Unload MCP servers to free context | **No longer needed** | `tool_filter` hides tools without disconnecting — no context cost for filtered tools |
 
 ### Open Design Question
 
@@ -218,26 +187,26 @@ The **agent factory** (Sprint 5-6) reads this config to assemble specialist agen
 
 ## 7. MCPServerManager Disposition
 
-The Sprint 3 `MCPServerManager` (`app/adk/mcp_config/manager.py`) was built as an in-process Python singleton. Its connection pooling and LRU eviction are redundant — ADK's `MCPSessionManager` already pools connections, and `tool_filter` replaces LRU eviction (tools are hidden from context rather than disconnected).
+The `MCPServerManager` (`app/adk/mcp_config/manager.py`) is a Sprint 3 in-process Python singleton.
 
 | Component | Disposition |
 |-----------|-------------|
-| Health monitoring + admin status endpoints | **Keep** — operational tooling at API layer |
-| Connection pooling | **Remove** — ADK handles natively via `MCPSessionManager` |
-| LRU eviction logic | **Remove** — replaced by `tool_filter` (hides tools from context without disconnecting) |
+| Health monitoring + admin status endpoints | **Keep** |
+| Connection pooling | **Remove** |
+| LRU eviction logic | **Remove** |
 | Config loading + auth helpers | **Reuse** — move to agent factory |
 | YAML config | **Evolve** — extend schema, migrate to Firestore |
 
 ## 8. Read-Only Limitations and CMO Impact
 
-Google Ads and HubSpot MCP servers are currently read-only. This means KEN-E can **analyze and recommend** but cannot **execute** on those platforms.
+HubSpot MCP is currently read-only. Google Ads uses a **hybrid approach** (MCP for reads, SDK for writes). This means:
 
 For a CMO saying "shift 20% of budget to Campaign X":
 - **Meta Ads**: Can execute directly (SDK has full CRUD)
-- **Google Ads**: Can generate an action plan with specific steps, but execution requires manual action until write access is available
-- **HubSpot**: Can pull CRM data for analysis, but workflow creation requires manual action
+- **Google Ads**: Can execute directly via `google-ads` SDK function tools (campaign CRUD, budget changes, bid adjustments). Reporting and analytics use the MCP server (read-only).
+- **HubSpot**: Can pull CRM data for analysis, but workflow creation requires manual action until HubSpot expands MCP write capabilities
 
-This informs the Execution Specialist's design — it generates action plans for read-only platforms and executes directly for write-capable ones.
+The Execution Specialist uses SDK function tools for write operations on both Meta Ads and Google Ads, while the Analytics Specialist uses MCP servers for read-only reporting across both platforms.
 
 ## 9. Infrastructure Summary
 
@@ -245,8 +214,8 @@ This informs the Execution Specialist's design — it generates action plans for
 |-----------|-------|------|
 | Cloud Run deployments | 2 | Google Ads MCP + GA MCP (existing) |
 | Provider-hosted MCP | 1 | HubSpot (`mcp.hubspot.com`) |
-| SDK dependencies | 2 | `facebook-business`, `mailchimp-marketing` |
-| Total infrastructure to maintain | 2 servers | Everything else is provider-maintained |
+| SDK dependencies | 3 | `google-ads`, `facebook-business`, `mailchimp-marketing` |
+| Total infrastructure to maintain | 2 servers | Everything else is provider-maintained or SDK-based |
 
 ## 10. Open Questions
 
