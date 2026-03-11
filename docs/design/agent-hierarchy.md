@@ -26,7 +26,7 @@ KEN-E Root Agent (LlmAgent)
 | `app/adk/agents/ken_e_agent.py` | Root KEN-E agent definition, InstructionProvider, tool wrappers |
 | `app/adk/agents/registry.py` | Agent registry with lazy loading and Firestore config doc IDs |
 | `app/adk/agents/utils/dispatch_handlers.py` | Router functions (news, GA, strategy) with `@safe_weave_op()` |
-| `app/adk/agents/utils/context_loader.py` | HierarchicalContextManager, org + campaign context loading |
+| `app/adk/agents/utils/context_loader.py` | HierarchicalContextManager, org context loading, agent-driven section loading via `load_context_section` tool |
 | `app/adk/agents/company_news_chatbot/agent.py` | Company news sub-agent |
 | `app/adk/agents/google_analytics_agent_v4.py` | GA4 sub-agent with McpToolset |
 | `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document generation supervisor |
@@ -136,8 +136,6 @@ McpToolset(
 
 This enables per-turn tool selection: the root agent interprets user intent, queries the ToolRegistry for relevant tools, writes tool names to session state, and each specialist's `McpToolset` only exposes matching tools to the LLM. Tools not matching the filter are hidden from context without disconnecting from the MCP server.
 
-This preserves the v1.0 design's `ToolDiscoveryAgent` search capability (semantic tool search across ~400 tools) while using ADK-native mechanisms instead of custom server load/unload logic.
-
 See `docs/design/mcp-architecture.md` Section 5a for the full design.
 
 ## 7. [PLANNED] Specialist Agent Layer
@@ -148,7 +146,7 @@ The next expansion (Sprint 5-6) adds specialist agents below the root:
 |-----------|-------------|-----------------|
 | **Analytics** | GA MCP, Google Ads MCP | McpToolset |
 | **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK function tools |
-| **Execution** | Meta Ads SDK, Google Ads MCP | SDK function tools + McpToolset |
+| **Execution** | Meta Ads SDK, Google Ads SDK (writes), Google Ads MCP (reads) | SDK function tools + McpToolset |
 | **Automation** | n8n MCP | McpToolset |
 
 See `docs/design/mcp-architecture.md` for platform integration decisions.
@@ -276,6 +274,62 @@ This generalizes the existing `_ga_header_provider()` pattern.
 | **Per-account server sets** | Not supported in this design. All accounts see the same specialist hierarchy. If needed, factory must run at session creation time — needs separate design. |
 | **Testing** | Config validation at factory build time (check all URLs resolve, auth_types map to known credential keys). Integration test: build hierarchy from test config, verify agent count and tool count. |
 | **Failure at build time** | If Firestore is unreachable, fall back to bundled config snapshot (not yet implemented). |
+
+## 9. [PLANNED] Review Loop & Workflow Orchestration
+
+Every specialist delegation is wrapped in a **review loop** using ADK's native workflow agents. This is the execution-time complement to the structural routing described in Section 7.
+
+### 9.1 Review Loop Pattern (Single-Step)
+
+Uses the Generator-Critic pattern with ADK's `LoopAgent`:
+
+```
+Root Agent (LlmAgent)
+│   Generates acceptance criteria, passes to tool
+│
+└── dispatch handler builds:
+
+    review_loop (LoopAgent, max_iterations=3)
+    └── work_cycle (SequentialAgent)
+        ├── specialist (LlmAgent, output_key="draft")
+        │     instruction: task + criteria + {review_feedback}
+        │     tools: [specialist MCP/SDK tools]
+        └── reviewer (LlmAgent, output_key="review_feedback")
+              instruction: evaluate {draft} vs criteria
+              tools: [exit_loop]
+```
+
+The `build_review_pipeline()` factory in `app/adk/agents/utils/review_pipeline.py` constructs this structure.
+
+### 9.2 Multi-Step Workflow Pattern
+
+Multiple review loops compose into parallel and sequential structures:
+
+```
+data_gathering (ParallelAgent)
+├── step_1a_loop (LoopAgent)
+│   └── SequentialAgent [analytics_specialist, reviewer]
+└── step_1b_loop (LoopAgent)
+    └── SequentialAgent [execution_specialist, reviewer]
+
+→ Root Agent synthesises results, presents to user for approval
+
+step_3_loop (LoopAgent)  — runs after user approval
+└── SequentialAgent [execution_specialist, reviewer]
+```
+
+The `build_workflow_pipeline()` factory reads a dependency graph to construct the appropriate `ParallelAgent` / `SequentialAgent` composition. Steps with no shared dependencies are wrapped in `ParallelAgent`; steps with dependencies run sequentially.
+
+### 9.3 Key Files
+
+| File | Role |
+|------|------|
+| `app/adk/agents/utils/review_pipeline.py` | [PLANNED] Pipeline factories: `build_review_pipeline()`, `build_workflow_pipeline()` |
+| `app/adk/agents/utils/dispatch_handlers.py` | [MODIFY] Add `acceptance_criteria` parameter, build review pipelines |
+| `app/adk/agents/utils/supervisor_utils.py` | [MODIFY] Extract `output_key` values from session state after pipeline runs |
+| `app/adk/agents/ken_e_agent.py` | [MODIFY] Add `acceptance_criteria` to tool functions, add `execute_workflow` tool |
+
+See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) and the harness design doc Sections 4.6 and 7.1 for full details.
 
 ## References
 
