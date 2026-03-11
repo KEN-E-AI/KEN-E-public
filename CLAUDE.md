@@ -429,6 +429,51 @@ If you prefer not to use Secret Manager locally:
 ### GET `/api/v1/chat/health`
 Check Agent Engine connectivity and status.
 
+## Design Documentation & Architecture Decisions
+
+### Documentation Model
+
+The project uses a two-tier documentation model:
+
+- **`docs/` directory** — Architecture reference documents describing both the current implementation and planned extensions. Features marked `[PLANNED]` are not yet built. When a planned feature is deployed, update the docs to collapse the current-vs-planned distinction (remove `[PLANNED]` tags, merge diagrams, update status columns). Do not use `docs/` to record decision rationale or alternatives considered.
+- **Notion Design Decisions database** — The source of truth for *why* architectural choices were made. Each significant decision is recorded using the ADR format (Title, Status, Context, Decision, Consequences). Search the Notion workspace for "Design Decisions" to find the database, or use the Notion MCP tools.
+
+### Workflow for New Design Decisions
+
+When a significant architectural choice is made or revised during development:
+
+1. **Document the decision in Notion** — Create a new entry in the Design Decisions database (data source ID: `a88ce7c8-1ebb-4634-a422-2c1abcd2daf9`) with fields: Title, Status, Context, Decision, Consequences, Products (link to KEN-E product page).
+2. **Update `docs/` files** — Modify the relevant design docs to reflect the new architecture. If the change implements a previously `[PLANNED]` feature, collapse the current-vs-planned distinction: remove `[PLANNED]` tags, merge "current" and "planned" sections/diagrams, and update status columns to "Implemented".
+3. **Add a brief Notion reference** — Where the change was made in the docs, add a short inline callout referencing the Notion decision URL so readers can find the rationale. Format: `> **Revised [date]** — [brief description]. See [Decision N: Title](notion-url) for rationale.`
+4. **Log the change in DESIGN-REVIEW-LOG.md** — Add an entry documenting what changed in which files, with a reference to the Notion decision.
+
+### When to Create a Design Decision
+
+Create a Notion Design Decision entry when:
+- Choosing between multiple valid architectural approaches
+- Adopting, replacing, or deprecating a technology or pattern
+- Making a deliberate choice to defer or not build something
+- Revising a previous architectural decision based on new information
+
+Do NOT create a Design Decision for:
+- Bug fixes or implementation details
+- Routine code changes that don't affect architecture
+- Configuration changes within an existing architectural pattern
+
+### Design Docs in `docs/`
+
+| File | Purpose | Reference when... |
+|------|---------|-------------------|
+| `docs/KEN-E-Agentic-Harness-Design.md` | Root design document. Agent architecture, context loading, tool discovery, session management, multi-channel support, error handling, security, cost model, workflow management. | Working on any agent system component, understanding overall architecture, or planning new features. |
+| `docs/design/mcp-architecture.md` | MCP internals, platform integration decisions, token budget strategy, `tool_filter` architecture, MCPServerManager disposition. | Working on MCP server integration, tool management, or platform connections. |
+| `docs/design/agent-hierarchy.md` | Agent tree structure, dispatch pattern, InstructionProvider, ToolRegistry role, agent factory design, review loop & workflow orchestration. | Working on agent routing, adding new specialists, modifying dispatch logic, or implementing review loops. |
+| `docs/design/api-gateway-multi-channel.md` | API architecture, channel-agnostic design, planned Slack and Voice channel approaches. | Working on the API layer, adding new channels, or modifying the chat endpoint. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | Changelog of design doc revisions with Notion decision references. Tracks what changed, when, and why (via Notion links). | Understanding the history of design changes or adding a new review entry after updating docs. |
+| `docs/design/review-loop-implementation-plan.md` | Implementation plan for review loops and workflow orchestration. 13 stories across 5 phases with dependency graph, verification checklist, and risk assessment. | Planning sprints for review loop implementation, creating user stories, or understanding the implementation roadmap. |
+| `docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md` | MER-E evaluation framework design — scoring, feedback loops, self-improvement. | Working on evaluation, quality metrics, or the MER-E system. 
+| `docs/KEN-E_User_Stories.md` | The three guiding user stories that will be enabled by this product. These are used to define the future state of the product and its capabilities. | Understanding the key goals and objectives of this product. |
+| `docs/trace-structure-spec.md` | W&B Weave span structure specification — tracing contract between KEN-E and MER-E. | Working on tracing, observability, or the evaluation pipeline. |
+
 ## Additional Documentation
 
 For detailed information about:
