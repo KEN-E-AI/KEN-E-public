@@ -1,19 +1,8 @@
 # KEN-E Agentic Harness Design Document
 
-**Version:** 2.1
-**Date:** March 10, 2026
+**Version:** 2.4
+**Date:** March 11, 2026
 **Author:** Development Team
-
-> **v2.1 Revision Note (March 10, 2026):** Added `tool_filter` + ToolRegistry
-> architecture for dynamic per-turn tool selection (Section 4.3). Updated ADK
-> internals analysis with version-specific behavior. Added sprint-3b dependency
-> note.
-
-> **v2.0 Revision Note (March 2026):** This document has been updated to reflect
-> 4 sprints of implementation. Fictional code examples have been replaced with
-> references to actual implementations. Sections covering features not yet built
-> are marked `[PLANNED]` with architectural concepts preserved but fictional code
-> removed. See the Document History at the end for details.
 
 > **Dependency Note:** Several features described in this document (InstructionProvider
 > closure, agent registry, ReflectAndRetryToolPlugin, token_threshold in compaction
@@ -33,7 +22,7 @@
 7. [Workflow Management [PLANNED]](#7-workflow-management-planned)
 8. [Integration with Evaluation Framework](#8-integration-with-evaluation-framework)
 9. [Infrastructure Requirements](#9-infrastructure-requirements)
-10. [Risks and Testing Requirements](#10-risks-and-testing-requirements)
+10. [Resilience, Security & Testing](#10-resilience-security--testing)
 11. [Sprint-Based Roadmap](#11-sprint-based-roadmap)
 12. [Appendices](#12-appendices)
 
@@ -45,6 +34,8 @@
 
 This document defines the comprehensive design for KEN-E's agentic harness — the software framework that enables KEN-E to function as an autonomous AI marketing agent. The harness orchestrates multiple specialized agents using Google's Agent Development Kit (ADK) to complete complex marketing tasks including strategy development, content creation, campaign execution, and performance optimization.
 
+This document serves as an architecture reference: it describes both the current implementation and planned extensions. Features not yet built are marked `[PLANNED]` throughout. As planned features are deployed, this document is updated to collapse the distinction.
+
 ### 1.2 Critical Design Challenges
 
 The agentic harness must solve three primary challenges:
@@ -55,13 +46,15 @@ The agentic harness must solve three primary challenges:
 | **Large Context Requirements** | ~100,000 words of company knowledge | Leaves minimal room for conversation |
 | **Multi-Step Autonomous Workflows** | Tasks spanning days/weeks | Requires persistent state and scheduled execution |
 
-### 1.3 Solution Overview
+### 1.3 Agentic Harness Overview
 
-The design implements a **Hierarchical Agent Architecture with Dynamic Context Loading**:
+The design implements a **Hierarchical Agent Architecture with Dynamic Context Loading**.
+
+#### 1.3.1 Current Agentic Harness (March 11, 2026)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                       KEN-E AGENTIC HARNESS                             │
+│                       KEN-E AGENTIC HARNESS (Current)                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────┐     │
@@ -75,7 +68,7 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │                                │                                       │
 │                                ▼                                       │
 │  ┌───────────────────────────────────────────────────────────────┐     │
-│  │              CURRENT SUB-AGENT LAYER                          │     │
+│  │                    SUB-AGENT LAYER                             │     │
 │  │  ┌───────────┐ ┌───────────┐ ┌───────────────────────────┐   │     │
 │  │  │   News    │ │  Google   │ │  Strategy Supervisor      │   │     │
 │  │  │   Agent   │ │ Analytics │ │  (multi-agent)            │   │     │
@@ -85,7 +78,35 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │                                │                                       │
 │                                ▼                                       │
 │  ┌───────────────────────────────────────────────────────────────┐     │
-│  │              [PLANNED] SPECIALIST LAYER (Sprint 5-6)          │     │
+│  │              TOOL & INTEGRATION LAYER                         │     │
+│  │  ┌───────────────────────────────────────────────────────┐   │     │
+│  │  │          MCP Servers (Lazy-Loaded via McpToolset)      │   │     │
+│  │  │  GA MCP (Cloud Run)                                    │   │     │
+│  │  └───────────────────────────────────────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 1.3.2 [PLANNED] Agentic Harness
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       KEN-E AGENTIC HARNESS (Target)                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                  ORCHESTRATOR LAYER                            │     │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │     │
+│  │  │  KEN-E Root │  │   Context   │  │  Tool Registry      │   │     │
+│  │  │   Agent     │  │   Loader    │  │  + tool_filter      │   │     │
+│  │  │  (LlmAgent) │  │             │  │                     │   │     │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                │                                       │
+│                                ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │              SPECIALIST LAYER (config-driven agent factory)   │     │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐    │     │
 │  │  │Analytics │ │ Content  │ │Execution │ │  Automation  │    │     │
 │  │  │Specialist│ │Specialist│ │Specialist│ │  Specialist  │    │     │
@@ -97,7 +118,7 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │  │              TOOL & INTEGRATION LAYER                         │     │
 │  │  ┌───────────────────────────────────────────────────────┐   │     │
 │  │  │          MCP Servers (Lazy-Loaded via McpToolset)      │   │     │
-│  │  │  GA MCP (Cloud Run) | Google Ads MCP | HubSpot MCP   │   │     │
+│  │  │  GA MCP | Google Ads MCP | HubSpot MCP | n8n MCP     │   │     │
 │  │  └───────────────────────────────────────────────────────┘   │     │
 │  │  ┌───────────────────────────────────────────────────────┐   │     │
 │  │  │          SDK Function Tools                            │   │     │
@@ -110,14 +131,16 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 
 ### 1.4 Key Design Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| **Specialist routing for token budgets** | Each specialist agent sees only its domain tools (~10-30), not all 400 |
-| **ADK native compaction** | `EventsCompactionConfig` with `gemini-2.5-flash` summarizer handles long sessions |
-| **`McpToolset` for MCP connections** | ADK handles lazy loading, connection pooling, per-user auth natively |
-| **SDK function tools for some platforms** | Meta Ads + Mailchimp use SDK directly — no MCP server to deploy/maintain |
-| **Firestore-driven agent config** | Instructions, model, temperature stored in Firestore — change without redeployment |
-| **Config-driven agent factory** | Sprint 5-6: reads config to dynamically assemble specialist agents with correct tools |
+| Decision |
+|----------|
+| **Specialist routing for token budgets** — each specialist sees only its domain tools (~10-30), not all 400 |
+| **ADK native compaction** — `EventsCompactionConfig` with `gemini-2.5-flash` summarizer |
+| **`McpToolset` for MCP connections** — ADK handles lazy loading, connection pooling, per-user auth natively |
+| **SDK function tools for some platforms** — Meta Ads + Mailchimp use SDK directly |
+| **Firestore-driven agent config** — change instructions, model, temperature without redeployment |
+| **Config-driven agent factory** — Sprint 5-6: config-driven specialist assembly |
+
+For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e).
 
 ### 1.5 Expected Outcomes
 
@@ -153,7 +176,7 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │   POST /api/v1/chat/completions                                        │
 │   • Firebase Auth validation                                           │
 │   • Session management (pending → ADK session resolution)              │
-│   • GA credential injection into session state                         │
+│   • Platform credential injection into session state (OAuth, API keys) │
 │   • Background post-response writes (session preview + Redis)          │
 │                                                                         │
 └──────────────────────────────────┬──────────────────────────────────────┘
@@ -166,11 +189,15 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │   ├── InstructionProvider (org context from session state)              │
 │   ├── Firestore config (model, instruction, temperature)               │
 │   ├── Weave callbacks (before/after agent, after tool)                 │
-│   ├── Security hooks (before tool)                                     │
+│   ├── Security hooks (before tool — credential refresh, permissions)   │
 │   │                                                                     │
-│   ├── search_company_news → News Agent (LlmAgent)                     │
-│   ├── query_google_analytics → GA Agent (LlmAgent + McpToolset)       │
-│   └── [Strategy Supervisor — separate entry point]                     │
+│   ├── News Agent (LlmAgent)                                            │
+│   ├── Strategy Supervisor (multi-agent)                                 │
+│   └── [PLANNED] Specialist Agents (config-driven via agent factory)    │
+│       ├── Analytics Specialist (GA MCP, Google Ads MCP)                │
+│       ├── Content Specialist (HubSpot MCP, Mailchimp SDK)              │
+│       ├── Execution Specialist (Meta Ads SDK, Google Ads MCP)          │
+│       └── Automation Specialist (n8n MCP)                              │
 │                                                                         │
 │   EventsCompactionConfig: interval=5, overlap=1, threshold=50K tokens  │
 │   ContextCacheConfig: enabled                                          │
@@ -178,14 +205,14 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
-                    ┌──────────────┼──────────────┐
-                    │              │              │
-                    ▼              ▼              ▼
-             ┌───────────┐  ┌───────────┐  ┌───────────┐
-             │  Neo4j    │  │ Firestore │  │   GA MCP  │
-             │ Knowledge │  │  Config,  │  │  Server   │
-             │   Graph   │  │   State   │  │(Cloud Run)│
-             └───────────┘  └───────────┘  └───────────┘
+              ┌────────────────────┼────────────────────┐
+              │                    │                    │
+              ▼                    ▼                    ▼
+       ┌───────────┐        ┌───────────┐        ┌───────────────────┐
+       │  Neo4j    │        │ Firestore │        │   MCP Servers     │
+       │ Knowledge │        │  Config,  │        │  (Cloud Run)      │
+       │   Graph   │        │   State   │        │  GA, Ads, HubSpot │
+       └───────────┘        └───────────┘        └───────────────────┘
 ```
 
 ### 2.2 Component Responsibilities
@@ -200,6 +227,8 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 | **Dispatch Handlers** | Function tool implementations with Weave tracing and tenant context injection |
 
 ### 2.3 Request Flow
+
+#### 2.3.1 Current Request Flow (March 11, 2026)
 
 ```
 User Request: "Show me website traffic for last week"
@@ -244,18 +273,79 @@ User Request: "Show me website traffic for last week"
     └─────────────────────────────────────────────────────────┘
 ```
 
+#### 2.3.2 [PLANNED] Request Flow (Sprint 5-6+)
+
+```
+User Request: "Show me last week's traffic and top-performing ad campaigns"
+
+    ┌─────────────┐
+    │   Web UI    │
+    └──────┬──────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 1. FASTAPI (Cloud Run)                                   │
+    │    • Validate Firebase Auth token                        │
+    │    • Resolve session (pending_* → ADK session)           │
+    │    • Inject platform credentials into session state      │
+    │    • Forward to Agent Engine                             │
+    └─────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 2. KEN-E ROOT AGENT                                      │
+    │    • InstructionProvider loads org context from state    │
+    │    • LLM interprets intent: "analytics" + "advertising" │
+    │    • Generates acceptance criteria for the request       │
+    │    • Routes to Analytics Specialist with criteria        │
+    └─────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 3. REVIEW LOOP (LoopAgent, max_iterations=3)             │
+    │    Repeats until reviewer approves or iterations exhaust │
+    │                                                          │
+    │    ┌────────────────────────────────────────────────┐    │
+    │    │ 3a. ANALYTICS SPECIALIST (output_key="draft")  │    │
+    │    │    • Assembled by agent factory                 │    │
+    │    │    • tool_filter selects relevant tools         │    │
+    │    │    • McpToolset → GA MCP (traffic data)         │    │
+    │    │    • McpToolset → Google Ads MCP (campaigns)    │    │
+    │    │    • Reads {review_feedback} if prior iteration │    │
+    │    └────────────────────────────────────────────────┘    │
+    │                        │                                 │
+    │                        ▼                                 │
+    │    ┌────────────────────────────────────────────────┐    │
+    │    │ 3b. REVIEWER (output_key="review_feedback")    │    │
+    │    │    • Evaluates {draft} vs acceptance criteria   │    │
+    │    │    • ALL criteria met → call exit_loop          │    │
+    │    │    • ANY not met → write actionable feedback    │    │
+    │    └────────────────────────────────────────────────┘    │
+    └─────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 4. RESPONSE                                              │
+    │    • Approved draft extracted from session state         │
+    │    • KEN-E relays to user                                │
+    │    • Background: update session preview + Redis cache    │
+    └─────────────────────────────────────────────────────────┘
+```
+
+See Section 4.6 for the review loop pattern design and Section 7.1 for multi-step workflow application.
+
 ### 2.4 Agent Type Selection (Google ADK)
 
-| Agent | ADK Type | Status | Rationale |
-|-------|----------|--------|-----------|
-| **KEN-E Root** | `LlmAgent` | Implemented | Flexible routing via function tools |
-| **Company News** | `LlmAgent` | Implemented | Vertex AI Search integration |
-| **Google Analytics** | `LlmAgent` + `McpToolset` | Implemented | GA MCP server via SSE |
-| **Strategy Supervisor** | Multi-agent (custom) | Implemented | Orchestrates 8 researcher/formatter sub-agents |
-| **Analytics Specialist** | `LlmAgent` | [PLANNED] | GA + Google Ads + Meta tools |
-| **Content Specialist** | `LlmAgent` | [PLANNED] | HubSpot + Mailchimp tools |
-| **Execution Specialist** | `LlmAgent` | [PLANNED] | Meta Ads SDK + Google Ads MCP |
-| **Automation Specialist** | `LlmAgent` | [PLANNED] | n8n MCP |
+| Agent | ADK Type | Status |
+|-------|----------|--------|
+| **KEN-E Root** | `LlmAgent` | Implemented |
+| **Company News** | `LlmAgent` | Implemented |
+| **Google Analytics** | `LlmAgent` + `McpToolset` | Implemented |
+| **Strategy Supervisor** | Multi-agent (custom) | Implemented |
+| **Analytics Specialist** | `LlmAgent` | [PLANNED] |
+| **Content Specialist** | `LlmAgent` | [PLANNED] |
+| **Execution Specialist** | `LlmAgent` | [PLANNED] |
+| **Automation Specialist** | `LlmAgent` | [PLANNED] |
 
 ---
 
@@ -291,12 +381,14 @@ LEVEL 1: EXECUTIVE SUMMARY (~5,000 tokens) - Always Loaded
   Company overview, mission, products, ICPs, competitors, active campaigns,
   current focus, key KPIs
 
-LEVEL 2: SECTION SUMMARIES (~10,000 tokens each) - Loaded on Request
+LEVEL 2: SECTION SUMMARIES (~10,000 tokens each) - Agent-Driven Loading
   [products] [icps] [competitors] [campaigns] [strategies] [brand]
   [performance] [calendar]
+  Loaded via `load_context_section(section)` tool — agent decides when needed
 
-LEVEL 3: FULL DETAIL (~20,000+ tokens each) - Loaded for Specific Tasks
+LEVEL 3: FULL DETAIL (~20,000+ tokens each) - Agent-Driven Loading
   Complete documentation for individual entities
+  Loaded via same tool with detail level parameter
 ```
 
 ### 3.3 Context Loading Implementation
@@ -320,10 +412,12 @@ class HierarchicalContextManager:
 
 **Implementation status:**
 - Level 1 (Executive Summary): Implemented — loads org + brand context from Neo4j
-- Level 2 (Section Summaries): Implemented — campaign context loaded on-demand via keyword detection
+- Level 2 (Section Summaries): Partially implemented — campaign context loading exists but needs migration from keyword detection to agent-driven approach
 - Level 3 (Full Detail): Not yet implemented
 
-The canonical Neo4j query for org context is defined in `shared/context_utils.py` (`ORG_CONTEXT_QUERY`), shared between the API and agent layers. Section keyword detection uses `SECTION_KEYWORDS` and `CAMPAIGN_KEYWORDS` from the same module.
+The canonical Neo4j query for org context is defined in `shared/context_utils.py` (`ORG_CONTEXT_QUERY`), shared between the API and agent layers.
+
+> **Revised March 11, 2026** — Keyword detection replaced with agent-driven loading via `load_context_section(section)` tool. See [Decision 17: Context Management](https://www.notion.so/32030fd6530281dca919d68aa0e27094) for rationale.
 
 ### 3.4 Context-Aware Agent Instructions
 
@@ -359,23 +453,84 @@ compaction_config = EventsCompactionConfig(
 )
 ```
 
-This replaces the originally-planned custom `ContextCompressor` class. ADK handles summarization, retention, and token budgeting natively.
+ADK handles summarization, retention, and token budgeting natively. See [Decision 18: Session Compaction](https://www.notion.so/32030fd65302811dbc29f1c34dd46eab).
 
 ### 3.6 Session State Management
 
-ADK session state is used for context tracking with key prefixes:
+ADK session state carries per-session data that the API, agents, and security hooks read and write at runtime. The API layer (`api/src/kene_api/routers/chat.py`) initialises state at session creation; agents and hooks may update it mid-session.
+
+#### 3.6.1 Current Session State Keys
+
+| Key | Purpose | Set By | Read By |
+|-----|---------|--------|---------|
+| `user_id` | Authenticated user identifier | API at session creation | Security hooks, tracking callbacks |
+| `account_id` | Selected account identifier | API at session creation | Dispatch handlers |
+| `accessible_accounts` | Accounts the user can access | API at session creation | — |
+| `organization_context` | Org + brand context text from Neo4j | API at session creation (cached in Redis, 15-min TTL) | InstructionProvider (per-turn), dispatch handlers |
+| `ga_credentials` | Google Analytics OAuth tokens (access, refresh, tenant, properties, expiry) | API from Firebase Auth (cached in Redis, 10-min TTL) | GA dispatch handler, security hooks |
+| `campaign_context` | Campaign context text (when loaded) | Context loader | Dispatch handlers |
+| `connected_accounts` | User's connected platform account types | API at session creation | Tool discovery filtering |
+| `uploaded_strategy_documents` | Strategy input documents loaded mid-session | Strategy orchestrator | Strategy orchestrator |
+| `_tool_start_time` | Tool execution start timestamp | `adk_before_tool_callback` | `adk_after_tool_callback` |
+| `_requires_reauth` | Flag: user must re-authenticate | Security hooks (permission denied) | API response handler (then cleared) |
+| `_reauth_service` | Service name requiring re-auth | Security hooks | API response handler (then cleared) |
+
+#### 3.6.2 [PLANNED] Target Session State Model (Sprint 5-6+)
+
+The target architecture generalises credentials to support all integrated platforms:
 
 | Key | Purpose | Set By |
 |-----|---------|--------|
-| `organization_context` | Org + brand context text | API at session creation |
-| `ga_credentials` | Google Analytics OAuth tokens | API from Firebase Auth |
-| `user_id`, `account_id`, `org_id` | Identity context | API at session creation |
+| `platform_credentials.<service>` | Per-platform OAuth tokens or API keys (GA, Google Ads, HubSpot, Meta Ads, Mailchimp) | API at session creation |
+| `tool_filter_state` | ToolRegistry search results driving per-turn `tool_filter` predicates | ToolRegistry (written per-turn) |
 
-The API layer (`api/src/kene_api/routers/chat.py`) manages session state injection. The `InstructionProvider` reads from state per-turn. No custom `ContextStateManager` class was needed — ADK's native state management is sufficient.
+#### 3.6.3 What Is Not in Session State
+
+| Item | Where it lives instead |
+|------|----------------------|
+| Base agent instructions | Firestore config (loaded at deploy time); InstructionProvider merges with `organization_context` from state |
+| Token / cost usage metrics | UsageTracker via Weave traces (`app/adk/tracking/usage.py`) |
+| Tool registry index | YAML config loaded at deploy time (`app/adk/tools/registry/config/tools.yaml`) |
+| Conversation history | ADK event log (managed by EventsCompactionConfig, not stored in state) |
+
+#### 3.6.4 [PLANNED] Token Usage Visibility
+
+Token usage data exists at every layer (Vertex AI `usage_metadata`, Weave traces, `ConversationSummarizer` budget tracking) but does not currently cross the API boundary to the frontend. The `ChatResponse` model returns content and session metadata only — no token counts.
+
+The planned feature surfaces token data to the UI:
+
+| Metric | Source | Display |
+|--------|--------|---------|
+| Tokens sent with most recent query | `usage_metadata` from Agent Engine response | Percentage of total available context |
+| Session tokens used | `ConversationSummarizer.token_budget_usage` | Running total |
+| Compaction proximity | `ConversationSummarizer.should_compact()` threshold (80% of 40K) | Warning indicator when approaching limit |
+
+Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Decision 19: Token Usage Visibility in UI](https://www.notion.so/32030fd65302815ca0d6fe5291fdfc54).
+
+#### 3.6.5 [PLANNED] Unified Usage Tracking for Billing
+
+Monthly billing requires aggregating token usage to the organisation level. The current codebase has two separate tracking systems that cannot support this:
+
+| Collection | Tracks | Has `organization_id` | Has `session_id` | Has token counts |
+|------------|--------|----------------------|-------------------|-----------------|
+| `tool_usage_events` | Tool calls (name, duration, user) | ✅ | ❌ | ❌ |
+| `usage_records` | LLM calls (tokens, model, cost) | ❌ | ❌ | ✅ (partial) |
+
+**Billing hierarchy:** Organisation → Accounts → Sessions → Usage records.
+
+**Gaps to close:**
+
+1. Add `organization_id` and `session_id` to `usage_records` at write time
+2. Ensure LLM token counts from Vertex AI `usage_metadata` are reliably written to `usage_records` (currently they only reach W&B traces)
+3. Build a billing aggregation query or scheduled Cloud Function that sums tokens by organisation and billing period
+
+The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Decision 20: Unified Usage Tracking for Billing](https://www.notion.so/32030fd6530281bfa31cf19af537b206).
 
 ---
 
 ## 4. Agent Definitions
+
+> For full details on the agent tree, registry, dispatch pattern, and agent factory, see [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md).
 
 ### 4.1 Agent Hierarchy
 
@@ -400,7 +555,7 @@ CURRENT (Sprints 1-4):
     ├── [current agents]
     ├── Analytics Specialist (GA MCP, Google Ads MCP)
     ├── Content Specialist (HubSpot MCP, Mailchimp SDK)
-    ├── Execution Specialist (Meta Ads SDK, Google Ads MCP)
+    ├── Execution Specialist (Meta Ads SDK, Google Ads SDK writes, Google Ads MCP reads)
     └── Automation Specialist (n8n MCP)
 ```
 
@@ -444,7 +599,9 @@ The **ToolRegistry** (`app/adk/tools/registry/tool_registry.py`) provides:
 - Permission validation (required OAuth scopes)
 - **[PLANNED] `tool_filter` driver** — search results written to session state, read by `McpToolset` `tool_filter` predicates per-turn
 
-This architecture preserves the v1.0 design's `ToolDiscoveryAgent` capability (semantic search across ~400 tools, per-turn tool selection, token budget awareness) using ADK-native mechanisms rather than custom server load/unload logic. The key limitation is that MCP server connections are fixed at deploy time — only *which tools* are visible is dynamic per-turn.
+MCP server connections are fixed at deploy time — only *which tools* are visible is dynamic per-turn.
+
+See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8: ToolRegistry](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) in the Design Decisions database.
 
 ### 4.4 [PLANNED] Specialist Agents
 
@@ -454,38 +611,89 @@ The specialist layer (Sprint 5-6) partitions tools by domain.
 |-----------|-------------|-----------------|------------------|
 | **Analytics** | GA MCP, Google Ads MCP | McpToolset | Data queries, reporting, performance analysis |
 | **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK | CRM data, email campaigns, content management |
-| **Execution** | Meta Ads SDK, Google Ads MCP | SDK + McpToolset | Campaign deployment, budget management |
+| **Execution** | Meta Ads SDK, Google Ads SDK (writes), Google Ads MCP (reads) | SDK + McpToolset | Campaign deployment, budget management |
 | **Automation** | n8n MCP | McpToolset | Workflow creation, scheduling |
 
 Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
 
 ### 4.5 Agent Summary Table
 
-| Agent | Type | Status | Config Doc ID | Key Files |
-|-------|------|--------|---------------|-----------|
-| KEN-E Root | LlmAgent | Implemented | `ken_e_chatbot` | `app/adk/agents/ken_e_agent.py` |
-| Company News | LlmAgent | Implemented | `company_news_agent` | `app/adk/agents/company_news_chatbot/agent.py` |
-| Google Analytics | LlmAgent + McpToolset | Implemented | `google_analytics_agent` | `app/adk/agents/google_analytics_agent_v4.py` |
-| Strategy Supervisor | Multi-agent | Implemented | 8 sub-config docs | `app/adk/agents/create_strategy_docs_supervisor.py` |
-| Analytics Specialist | LlmAgent | [PLANNED] | — | — |
-| Content Specialist | LlmAgent | [PLANNED] | — | — |
-| Execution Specialist | LlmAgent | [PLANNED] | — | — |
-| Automation Specialist | LlmAgent | [PLANNED] | — | — |
+#### Current (Sprints 1-4)
+
+| Agent | Type | Config Doc ID | Key Files |
+|-------|------|---------------|-----------|
+| KEN-E Root | LlmAgent | `ken_e_chatbot` | `app/adk/agents/ken_e_agent.py` |
+| Company News | LlmAgent | `company_news_agent` | `app/adk/agents/company_news_chatbot/agent.py` |
+| Google Analytics | LlmAgent + McpToolset | `google_analytics_agent` | `app/adk/agents/google_analytics_agent_v4.py` |
+| Strategy Supervisor | Multi-agent | 8 sub-config docs | `app/adk/agents/create_strategy_docs_supervisor.py` |
+
+#### [PLANNED] Specialist Layer (Sprint 5-6+)
+
+| Agent | Type | Tool Sources | Assembled By |
+|-------|------|-------------|--------------|
+| Analytics Specialist | LlmAgent + McpToolset | GA MCP, Google Ads MCP | Config-driven agent factory |
+| Content Specialist | LlmAgent + McpToolset + SDK | HubSpot MCP, Mailchimp SDK | Config-driven agent factory |
+| Execution Specialist | LlmAgent + SDK + McpToolset | Meta Ads SDK, Google Ads SDK (writes), Google Ads MCP (reads) | Config-driven agent factory |
+| Automation Specialist | LlmAgent + McpToolset | n8n MCP | Config-driven agent factory |
+
+### 4.6 [PLANNED] Review Loop Pattern (Generator-Critic)
+
+Every specialist delegation is wrapped in a **review loop** that enforces acceptance criteria before returning results to the user. This uses ADK's native workflow agents:
+
+| ADK Construct | Role |
+|---------------|------|
+| `LoopAgent` | Repeats specialist + reviewer cycle until approved or `max_iterations` reached |
+| `SequentialAgent` | Chains specialist → reviewer within each iteration |
+| `output_key` | Specialist writes to `"draft"`, reviewer writes to `"review_feedback"` — shared via session state |
+| `exit_loop` | Built-in tool the reviewer calls when all acceptance criteria are met |
+
+#### Review Loop Structure
+
+```
+build_review_pipeline(specialist, acceptance_criteria, max_iterations=3)
+→ returns:
+
+    review_loop (LoopAgent, max_iterations=3)
+    └── work_cycle (SequentialAgent)
+        ├── specialist (LlmAgent, output_key="step_N_draft")
+        │     instruction: task + acceptance_criteria + {step_N_feedback}
+        │     tools: [specialist-specific MCP/SDK tools]
+        └── reviewer (LlmAgent, output_key="step_N_feedback")
+              instruction: evaluate {step_N_draft} vs acceptance_criteria
+              tools: [exit_loop]
+              ALL criteria met → call exit_loop
+              ANY not met → write actionable feedback
+```
+
+#### How It Works
+
+1. **Root Agent generates acceptance criteria** — before calling a tool, the Root Agent's LLM produces 2-4 measurable criteria based on the user's request
+2. **Criteria passed as tool parameter** — `search_company_news(query="...", acceptance_criteria="1. Must include... 2. Must cite...")`
+3. **Dispatch handler builds pipeline** — `build_review_pipeline()` constructs a `LoopAgent` wrapping a `SequentialAgent(specialist, reviewer)`
+4. **Iteration cycle** — specialist produces draft → reviewer checks against criteria → approved (exit_loop) or feedback for next iteration
+5. **Result extraction** — dispatch handler reads final `draft` from session state and returns to Root Agent
+
+#### Termination
+
+- **Approved:** Reviewer calls `exit_loop` → `escalate=True` → LoopAgent exits
+- **Max iterations reached:** Last draft returned with soft warning — user always gets a response
+- **Token overhead:** ~1,000 tokens per iteration (reviewer turn). With `max_iterations=3`, worst case ~3,000 tokens additional
+
+#### Extension to Multi-Step Workflows
+
+The review pipeline is the **atomic building block** for Section 7.1 multi-step workflows. Multiple review pipelines compose into parallel and sequential workflow structures. See Section 7.1 for the full pattern including `ParallelAgent` for concurrent steps and user approval checkpoints.
+
+> **Planned Sprint 5-6+** — Depends on the specialist layer (Section 4.4) and config-driven agent factory. See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) for rationale.
 
 ---
 
 ## 5. MCP Server Architecture
 
+> For ADK internals verification, platform integration decisions, and the full `tool_filter` architecture, see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md).
+
 ### 5.1 Lazy-Loading
 
-Lazy-loading MCP servers is the foundation of the token budget strategy:
-
-| Approach | Initial Tokens | Load Time | Recommendation |
-|----------|---------------|-----------|----------------|
-| **Pre-load all** | ~60,000 tokens | 5-10s | Not recommended |
-| **Lazy-load on demand** | ~2,000 tokens | 200-500ms per server | Recommended |
-
-ADK's `McpToolset` handles lazy-loading natively — SSE connections open on first `get_tools()` call, not at deploy time. No custom lazy-loading code is needed.
+ADK's `McpToolset` handles lazy-loading natively — SSE connections open on first `get_tools()` call, not at deploy time. This reduces initial context from ~60,000 tokens (all tools) to ~2,000 tokens (registry index only), with 200-500ms load time per server when first accessed.
 
 ### 5.2 Tool Registry
 
@@ -500,14 +708,16 @@ Currently defines ~9 Google Analytics tools.
 
 ### 5.3 MCPServerManager
 
-The `MCPServerManager` at `app/adk/mcp_config/manager.py` was built in Sprint 3 as an in-process Python singleton. After architecture review:
+The `MCPServerManager` at `app/adk/mcp_config/manager.py` was built in Sprint 3 as an in-process Python singleton.
 
 | Component | Disposition |
 |-----------|-------------|
-| Health monitoring + admin endpoints | **Keep** — operational tooling at API layer |
-| Connection pooling | **Deprecated** — ADK `MCPSessionManager` pools by header hash |
-| LRU eviction logic | **Deprecated** — not applicable on serverless Agent Engine |
+| Health monitoring + admin endpoints | **Keep** |
+| Connection pooling | **Deprecated** |
+| LRU eviction logic | **Deprecated** |
 | Config loading + auth helpers | **Reuse** — foundation for agent factory |
+
+See [Decision 9: MCPServerManager Disposition](https://www.notion.so/32030fd6530281ffafe8fd75298dce1d).
 
 ### 5.4 MCP Server Configuration
 
@@ -545,11 +755,13 @@ servers:
     enabled: false
 ```
 
-Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolve to include agent config, tool_filter, and dispatch configuration for the agent factory.
+Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolve to include agent config, tool_filter, and dispatch configuration for the agent factory. See [Decision 10: MCP Config Migration — YAML to Firestore](https://www.notion.so/32030fd6530281868b47e989b059e03a).
 
 ---
 
 ## 6. Multi-Channel Support [PLANNED]
+
+> For the full API architecture and channel integration approaches, see [`docs/design/api-gateway-multi-channel.md`](design/api-gateway-multi-channel.md). Design decisions: [Decision 14: Channel-Agnostic API](https://www.notion.so/32030fd65302811ea99dfa94c3448a0d), [Decision 15: Slack Channel](https://www.notion.so/32030fd6530281148e89eb56494a7489), [Decision 16: Voice Channel](https://www.notion.so/32030fd6530281ce82d3f7bbbee439c3).
 
 ### 6.1 Architecture Overview
 
@@ -619,18 +831,117 @@ Key considerations: voice responses must be concise (< 30s), target < 2s end-to-
 ### 7.1 Multi-Step Workflow Pattern
 
 KEN-E will handle complex, multi-step workflows with the pattern:
-1. **Plan** the workflow with clear steps
-2. **Track** progress visibly to the user
-3. **Get approval** at decision points
-4. **Resume** where left off if interrupted
+1. **Plan** the workflow — Root Agent decomposes the request into steps with acceptance criteria and a dependency graph
+2. **Execute** each step via a review loop (Section 4.6) — specialist produces draft, reviewer verifies against criteria
+3. **Run independent steps in parallel** — `ParallelAgent` wraps concurrent review loops
+4. **Get approval** at decision points — workflow pauses at approval checkpoints; Root Agent presents results and asks user to confirm
+5. **Resume** where left off — workflow progress tracked in session state across conversation turns
 
-Example: "Launch a Q2 campaign for Product X"
-→ Research competitors (Analytics Specialist)
-→ Generate campaign strategy (Strategy Supervisor)
-→ Create ad copy variations (Content Specialist)
-→ **[Approval checkpoint]** — user reviews strategy + copy
-→ Deploy to Meta Ads (Execution Specialist)
-→ Set up weekly performance reporting (Automation Specialist)
+#### ADK Constructs for Multi-Step Workflows
+
+| Construct | Role |
+|-----------|------|
+| `build_review_pipeline()` | Atomic building block — one specialist + reviewer LoopAgent (Section 4.6) |
+| `ParallelAgent` | Wraps independent review loops for concurrent execution |
+| `SequentialAgent` | Chains phases (data gathering → synthesis → execution) |
+| `output_key` | Each step writes to a unique key (e.g., `step_1a_draft`); downstream steps read via `{step_1a_draft}` |
+
+#### Example: "Increase budgets for Meta Ads campaigns with the most engaged website visitors"
+
+Root Agent decomposes this into phases:
+
+```
+Phase 1 — Data Gathering (parallel):
+  Step 1a: Query GA for engagement rate by Meta Ads campaign
+           → Analytics Specialist
+           CRITERIA: Table with columns: campaign name, sessions, engagement rate
+
+  Step 1b: Query Meta Ads for spend by campaign
+           → Execution Specialist
+           CRITERIA: Table with columns: campaign name, amount spent
+
+Phase 2 — Synthesis (Root Agent, approval checkpoint):
+  Step 2:  Create optimisation plan from step 1a + 1b data
+           → Present to user for approval
+
+Phase 3 — Execution (after user approval):
+  Step 3:  Execute budget changes in Meta Ads
+           → Execution Specialist
+           CRITERIA: Confirmation of each change made
+```
+
+This maps to ADK workflow agents:
+
+```
+CONVERSATION TURN 1:
+
+    data_gathering (ParallelAgent)
+    ├── step_1a_loop (LoopAgent, max_iterations=3)
+    │   └── work_cycle (SequentialAgent)
+    │       ├── analytics_specialist (output_key="step_1a_draft")
+    │       └── reviewer (output_key="step_1a_feedback", tools=[exit_loop])
+    │
+    └── step_1b_loop (LoopAgent, max_iterations=3)
+        └── work_cycle (SequentialAgent)
+            ├── execution_specialist (output_key="step_1b_draft")
+            └── reviewer (output_key="step_1b_feedback", tools=[exit_loop])
+
+    → Root Agent reads step_1a_draft + step_1b_draft
+    → Synthesises optimisation plan
+    → Presents to user: "Here's my recommended plan... Shall I proceed?"
+
+CONVERSATION TURN 2 (after user approval):
+
+    step_3_loop (LoopAgent, max_iterations=3)
+    └── work_cycle (SequentialAgent)
+        ├── execution_specialist (output_key="step_3_draft")
+        │     instruction includes: the approved plan
+        └── reviewer (output_key="step_3_feedback", tools=[exit_loop])
+
+    → Returns: "I've made the following changes to your Meta Ads campaigns: ..."
+```
+
+#### User Approval Splits Workflows Into Conversation Turns
+
+User approval checkpoints do **not** require ADK pause/resume infrastructure. The Root Agent's conversational nature handles this naturally — it presents results, the user responds, and the next turn executes the remaining steps. Workflow progress is tracked in session state between turns.
+
+#### Workflow Planning: Dynamic Pipeline Construction
+
+The Root Agent calls an `execute_workflow(steps)` tool with a structured plan:
+
+```python
+execute_workflow(steps=[
+    {"id": "1a", "specialist": "analytics", "query": "...", "criteria": "...", "depends_on": []},
+    {"id": "1b", "specialist": "execution", "query": "...", "criteria": "...", "depends_on": []},
+    {"id": "2",  "specialist": "root",      "query": "...",
+     "depends_on": ["1a", "1b"], "approval_required": True},
+    {"id": "3",  "specialist": "execution", "query": "...", "criteria": "...", "depends_on": ["2"]},
+])
+```
+
+The pipeline factory reads the `depends_on` graph to determine structure:
+- Steps with no shared dependencies → `ParallelAgent`
+- Steps that depend on a prior step → sequential (run after dependency completes)
+- Steps with `approval_required: True` → return to Root Agent for user presentation
+
+#### Second Example: "Launch a Q2 campaign for Product X"
+
+```
+Phase 1 — Research (sequential):
+  Step 1: Research competitors → Analytics Specialist
+  Step 2: Generate campaign strategy → Strategy Supervisor
+
+Phase 2 — Content (parallel, depends on Phase 1):
+  Step 3a: Create ad copy variations → Content Specialist
+  Step 3b: Design creative briefs → Content Specialist
+
+Phase 3 — Approval checkpoint:
+  Step 4: User reviews strategy + copy → [Approval required]
+
+Phase 4 — Deployment (sequential, after approval):
+  Step 5: Deploy to Meta Ads → Execution Specialist
+  Step 6: Set up weekly performance reporting → Automation Specialist
+```
 
 ### 7.2 Workflow State Machine
 
@@ -868,7 +1179,7 @@ The `UsageTracker` (`app/adk/tracking/usage.py`) records per-tool-call events in
 
 ---
 
-## 10. Resilience, Error Handling & Security
+## 10. Resilience, Security & Testing
 
 ### 10.1 Current Error Handling Patterns
 
@@ -983,7 +1294,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **OAuth token expiry mid-conversation** | Medium | Low | 5-min refresh buffer, reauth signal to frontend. Gap: no proactive refresh. |
 | **Credential encryption not prod-ready** | Low | High | Fernet in dev, KMS TODO in prod. Must complete before launch. |
 
-### 10.2 Test Locations
+### 10.5 Test Locations
 
 | Test Suite | Location | Coverage |
 |-----------|----------|----------|
@@ -993,7 +1304,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | Shared module tests | `shared/tests/` | Context utils, token estimation |
 | Load tests | `tests/load_test/` | Locust performance tests |
 
-### 10.3 Performance Benchmarks
+### 10.6 Performance Benchmarks
 
 | Operation | Target | Acceptable | Critical | Measured |
 |-----------|--------|------------|----------|----------|
@@ -1045,7 +1356,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | Platform | Integration Type | MCP/SDK | Status |
 |----------|-----------------|---------|--------|
 | **Google Analytics** | Self-hosted MCP | GA MCP on Cloud Run | Implemented |
-| **Google Ads** | Self-hosted MCP | Google official MCP | Planned |
+| **Google Ads** | Hybrid: MCP reads + SDK writes | Google official MCP + `google-ads` SDK | Planned |
 | **HubSpot** | Provider-hosted MCP | `mcp.hubspot.com` | Planned |
 | **Meta Ads** | SDK function tools | `facebook-business` | Planned |
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` | Planned |
@@ -1100,8 +1411,11 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-10 | Development Team | Initial design document |
-| 2.0 | 2026-03-10 | Development Team | Updated to reflect Sprints 1-4 implementation. Removed fictional code for unimplemented features (PrimaryOrchestrator, ContextCompressor, ContextStateManager, ToolDiscoveryAgent, WebChannelAdapter, SlackChannelAdapter, VoiceChannelAdapter, WorkflowManager, ScheduledWorkflowManager, FeedbackCollector, ExperimentManager). Replaced with actual implementations. Marked unbuilt features as [PLANNED]. |
-| 2.1 | 2026-03-10 | Development Team | Design review: Added `tool_filter` + ToolRegistry architecture for dynamic per-turn tool selection (preserves v1.0 ToolDiscoveryAgent capability via ADK-native mechanisms). Updated ADK internals analysis with version-specific behavior and issue references. Added sprint-3b dependency note. Fixed Deepgram latency claim. |
+| 2.0 | 2026-03-10 | Development Team | Updated to reflect Sprints 1-4 implementation. Replaced fictional code with actual implementations. Marked unbuilt features as [PLANNED]. |
+| 2.1 | 2026-03-10 | Development Team | Design review: Added `tool_filter` + ToolRegistry architecture (Section 4.3). Updated ADK internals analysis. Added sprint-3b dependency note. Fixed Deepgram latency claim. |
+| 2.2 | 2026-03-11 | Development Team | Cross-reference pass: added links to design docs (`agent-hierarchy.md`, `mcp-architecture.md`, `api-gateway-multi-channel.md`) and Notion Design Decisions database. Fixed Section 10 duplicate numbering and ToC mismatch. |
+| 2.3 | 2026-03-11 | Development Team | Architecture accuracy pass: reframed doc as architecture reference (current + `[PLANNED]`). Split Sections 1.3, 2.3 into current/planned. Rewrote Section 2.1 diagram for target architecture. Expanded Section 3.6 (session state keys, token visibility, billing/usage tracking). Added Decisions 19-20 links. |
+| 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 7.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
 
 ---
 
