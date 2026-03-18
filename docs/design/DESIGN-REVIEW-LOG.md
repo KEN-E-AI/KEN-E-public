@@ -382,4 +382,27 @@ See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd
 
 ---
 
+## Review 10: Align agent-hierarchy.md with Harness Design Doc + Cross-References
+
+**Date:** March 18, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Ensure the hierarchy doc reflects all concepts from the harness doc (including Experiment #4 corrections) and add bidirectional cross-references between the two documents.
+
+### Changes Made
+
+| File | Version | Changes |
+|------|---------|---------|
+| `docs/design/agent-hierarchy.md` | v1.5 → v1.6 | Added component responsibilities cross-reference to harness doc Section 2.2. Added two-tier tool management framing (Level 1 specialist routing, Level 2 `tool_filter`) matching harness doc Section 4.3. Renamed Section 6 subsections: "Current Role" → "6.1 Current", "Planned Role" → "6.2 Resolved" (aligns with harness doc v2.7 removing `[PLANNED]` from `tool_filter` driver). Fixed body text contradiction in Section 6.2 — changed "root agent interprets user intent, queries the ToolRegistry" to "each specialist's `before_agent_callback` runs a ToolRegistry search" (matching the revision callout from Experiment #4). Added LLM call cost note to Section 9.1 referencing harness doc Sections 4.6 and 8.4. Disambiguated cross-reference to harness doc Section 8.2 with specific factory names. Added dispatch-time pipeline building note to Section 8.2 step 4. |
+| `docs/KEN-E-Agentic-Harness-Design.md` | — | Added 6 targeted cross-references to `agent-hierarchy.md`: Section 2.2 → Sections 2-6, Section 2.3.1 → Section 3, Section 4.2 → Sections 4-5, Section 4.3 → Section 6, Section 4.4 → Sections 7-8, Section 4.6 → Section 9. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | — | Added this entry (Review 10). |
+
+### Key Corrections
+
+1. **Section 6 body text** now matches the Experiment #4 revision callout — both describe `before_agent_callback` as the mechanism for writing ToolRegistry results to state.
+2. **Section 6.2 heading** says "Resolved" (not "Planned"), matching harness doc v2.7 where `[PLANNED]` was removed from the `tool_filter` driver description.
+3. **Two-tier framing** added to Section 6, matching harness doc Section 4.3's explicit Level 1/Level 2 description.
+4. **No content duplication** — all additions are cross-references pointing to the harness doc, not copies of its content.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*

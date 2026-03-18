@@ -1,10 +1,12 @@
 # Agent Hierarchy & Registry
 
-**Version:** 1.5
+**Version:** 1.6
 **Date:** March 2026
-**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10-11, 2026) + ADK experiment corrections (March 18, 2026)
+**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10-11, 2026) + ADK experiment corrections (March 18, 2026) + harness doc alignment pass (March 18, 2026)
 
 > **Convention:** Agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by a specialist agent or automation when the specialist layer is built (Sprint 5-6). `[PLANNED]` marks features not yet built.
+
+> For a unified summary of all component responsibilities (Root Agent, InstructionProvider, Agent Registry, HierarchicalContextManager, ToolRegistry, Dispatch Handlers), see harness design doc Section 2.2.
 
 ---
 
@@ -122,11 +124,13 @@ The ToolRegistry (`app/adk/tools/registry/tool_registry.py`) provides a **metada
 - Permission validation (required scopes)
 - Generate compact ~2,000-token index via `get_index_for_context()`
 
-### Current Role: Discovery Index
+Tool management operates at two levels. **Level 1 — Specialist Routing** (structural, deploy-time) assigns domain MCP servers to each specialist, reducing the tool space from ~400 to ~10-30. **Level 2 — `tool_filter` + ToolRegistry** (dynamic, per-turn) selects the relevant subset per turn. See harness design doc Section 4.3 for the high-level description; this section covers Level 2 internals.
+
+### 6.1 Current: Discovery Index
 
 Specialist routing is the primary mechanism for tool assignment — each specialist agent has a fixed set of `McpToolset` instances. The ToolRegistry provides a searchable catalog across all tools.
 
-### Planned Role: `tool_filter` Driver
+### 6.2 Resolved: `tool_filter` Driver
 
 The ToolRegistry becomes load-bearing as the driver for ADK's `tool_filter` mechanism. ADK's `BaseToolset` (parent of `McpToolset`) accepts a `tool_filter` that is evaluated on every LLM turn with `ReadonlyContext`:
 
@@ -138,7 +142,7 @@ McpToolset(
 )
 ```
 
-This enables per-turn tool selection: the root agent interprets user intent, queries the ToolRegistry for relevant tools, writes tool names to session state, and each specialist's `McpToolset` only exposes matching tools to the LLM. Tools not matching the filter are hidden from context without disconnecting from the MCP server.
+This enables per-turn tool selection: each specialist's `before_agent_callback` runs a ToolRegistry search, writes relevant tool names to session state, and each specialist's `McpToolset` only exposes matching tools to the LLM. Tools not matching the filter are hidden from context without disconnecting from the MCP server.
 
 > **Revised March 18, 2026** — The mechanism for writing ToolRegistry results to state is `before_agent_callback` on each specialist (not root agent dispatch alone). This fires per-turn, ensuring `tool_filter_state` stays current within multi-turn specialist conversations. See `mcp-architecture.md` Section 5a and Experiment #4. [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c).
 
@@ -225,6 +229,8 @@ deploy_ken_e.py calls agent_factory.build_hierarchy()
   │
   ├── 4. Generate dispatch functions for root agent
   │     For each specialist: create dispatch_to_{name}() with @safe_weave_op()
+  │     (dispatch functions build review pipelines at runtime when
+  │      acceptance_criteria is provided — see Section 9.1)
   │
   ├── 5. Build root agent with dispatch functions as tools
   │
@@ -320,7 +326,9 @@ Key details:
 - **`include_contents='none'` on reviewer** — reviewer evaluates only the template-injected `{draft}`, not conversation history, for consistent evaluations.
 - **`{review_feedback?}` (optional)** — on first iteration, no feedback exists. The `?` suffix resolves to empty string instead of `KeyError`.
 
-The `build_review_pipeline()` factory in `app/adk/agents/utils/review_pipeline.py` constructs this structure. See harness design doc Section 8.2 for the full factory implementation.
+**LLM call cost:** Each iteration makes 2 LLM calls (specialist + reviewer), yielding 2-6 calls per loop. See harness design doc Section 4.6 for the full cost table and Section 8.4 for parallel execution cost analysis.
+
+The `build_review_pipeline()` factory in `app/adk/agents/utils/review_pipeline.py` constructs this structure. See harness design doc Section 8.2 for the `build_review_pipeline()` and `build_workflow_pipeline()` factory implementations.
 
 ### 9.2 Multi-Step Workflow Pattern
 

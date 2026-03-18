@@ -229,6 +229,8 @@ For full decision rationale, see the [Design Decisions database in Notion](https
 | **ToolRegistry** | Searchable metadata catalog (~2,000 token index) for tool discovery |
 | **Dispatch Handlers** | Function tool implementations with Weave tracing and tenant context injection |
 
+For detailed patterns of each component listed above, see [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Sections 2-6.
+
 ### 2.3 Request Flow
 
 #### 2.3.1 Current Request Flow (March 11, 2026)
@@ -275,6 +277,8 @@ User Request: "Show me website traffic for last week"
     │    • Background: update session preview + Redis cache    │
     └─────────────────────────────────────────────────────────┘
 ```
+
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 3 for the dispatch pattern implementation.
 
 #### 2.3.2 [PLANNED] Request Flow (Sprint 5-6+)
 
@@ -590,6 +594,8 @@ ken_e = Agent(
 
 > **Specialist `before_agent_callback` chaining:** Specialist agents (assembled by the agent factory) use a composite callback that chains Weave tracing with ToolRegistry search. The ToolRegistry callback writes `state["tool_filter_state"]` before tool resolution. The root agent keeps only the Weave callback since it routes via dispatch, not MCP tools. See `docs/design/mcp-architecture.md` Section 5a.
 
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 4 for the InstructionProvider closure pattern and Section 5 for Firestore-driven configuration details.
+
 ### 4.3 Tool Discovery & Dynamic Tool Selection
 
 Tool management operates at two levels:
@@ -610,6 +616,8 @@ MCP server connections are fixed at deploy time — only *which tools* are visib
 
 > **Execution order per LLM turn (verified in Experiment #4):** `before_agent_callback` (writes `tool_filter_state`) → `InstructionProvider` (reads state) → `tool_filter` (reads state) → `before_model_callback` → LLM call. All share the same `session.state` dict — `ReadonlyContext.state` is a `MappingProxyType` (read-only live view), so `CallbackContext` writes are immediately visible.
 
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 6 for the ToolRegistry's current and planned roles.
+
 See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8: ToolRegistry](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) in the Design Decisions database.
 
 ### 4.4 [PLANNED] Specialist Agents
@@ -626,6 +634,8 @@ The specialist layer (Sprint 5-6) partitions tools by domain.
 > **Note:** The `facebook-business` SDK is available to both Analytics (read-only tools: get campaigns, get spend, get metrics) and Execution (full CRUD). `tool_filter` controls which tools each specialist sees — Analytics sees read-only tools while Execution sees the full CRUD set. This parallels Google Ads, where the MCP (reads) is shared with Analytics.
 
 Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
+
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 7 for the specialist layer design and Section 8 for the config-driven agent factory.
 
 ### 4.5 Agent Summary Table
 
@@ -709,6 +719,8 @@ Each review loop iteration makes 2 LLM calls (specialist + reviewer):
 The review pipeline is the **atomic building block** for Section 8.1 multi-step workflows. Multiple review pipelines compose into parallel and sequential workflow structures. See Section 8 for the full pattern including `ParallelAgent` for concurrent steps, synthesizer agents, and user approval checkpoints.
 
 > **Planned Sprint 5-6+** — Depends on the specialist layer (Section 4.4) and config-driven agent factory. See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) for rationale.
+
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 9 for the review loop and workflow orchestration architecture, including the multi-step pattern and planned key files.
 
 ---
 
