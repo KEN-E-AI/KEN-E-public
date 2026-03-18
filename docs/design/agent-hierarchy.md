@@ -1,6 +1,6 @@
 # Agent Hierarchy & Registry
 
-**Version:** 1.4
+**Version:** 1.5
 **Date:** March 2026
 **Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10-11, 2026) + ADK experiment corrections (March 18, 2026)
 
@@ -139,6 +139,8 @@ McpToolset(
 ```
 
 This enables per-turn tool selection: the root agent interprets user intent, queries the ToolRegistry for relevant tools, writes tool names to session state, and each specialist's `McpToolset` only exposes matching tools to the LLM. Tools not matching the filter are hidden from context without disconnecting from the MCP server.
+
+> **Revised March 18, 2026** — The mechanism for writing ToolRegistry results to state is `before_agent_callback` on each specialist (not root agent dispatch alone). This fires per-turn, ensuring `tool_filter_state` stays current within multi-turn specialist conversations. See `mcp-architecture.md` Section 5a and Experiment #4. [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c).
 
 See `docs/design/mcp-architecture.md` Section 5a for the full design.
 

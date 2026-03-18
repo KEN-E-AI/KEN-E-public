@@ -1,6 +1,6 @@
 # KEN-E Agentic Harness Design Document
 
-**Version:** 2.6
+**Version:** 2.7
 **Date:** March 18, 2026
 **Author:** Development Team
 
@@ -487,7 +487,7 @@ The target architecture generalises credentials to support all integrated platfo
 | Key | Purpose | Set By |
 |-----|---------|--------|
 | `platform_credentials.<service>` | Per-platform OAuth tokens or API keys (GA, Google Ads, HubSpot, Meta Ads, Mailchimp) | API at session creation |
-| `tool_filter_state` | ToolRegistry search results driving per-turn `tool_filter` predicates | ToolRegistry (written per-turn) |
+| `tool_filter_state` | ToolRegistry search results driving per-turn `tool_filter` predicates | `before_agent_callback` on specialist agents (ToolRegistry search, written per-turn before tool resolution) |
 
 #### 3.6.3 What Is Not in Session State
 
@@ -588,6 +588,8 @@ ken_e = Agent(
 )
 ```
 
+> **Specialist `before_agent_callback` chaining:** Specialist agents (assembled by the agent factory) use a composite callback that chains Weave tracing with ToolRegistry search. The ToolRegistry callback writes `state["tool_filter_state"]` before tool resolution. The root agent keeps only the Weave callback since it routes via dispatch, not MCP tools. See `docs/design/mcp-architecture.md` Section 5a.
+
 ### 4.3 Tool Discovery & Dynamic Tool Selection
 
 Tool management operates at two levels:
@@ -602,9 +604,11 @@ The **ToolRegistry** (`app/adk/tools/registry/tool_registry.py`) provides:
 - Search by name, category, keyword with relevance scoring
 - Compact ~2,000-token index via `get_index_for_context()`
 - Permission validation (required OAuth scopes)
-- **[PLANNED] `tool_filter` driver** — search results written to session state, read by `McpToolset` `tool_filter` predicates per-turn
+- **`tool_filter` driver via `before_agent_callback`** — each specialist's `before_agent_callback` runs ToolRegistry search, writes results to `state["tool_filter_state"]`, read by `McpToolset` `tool_filter` predicates per-turn. Validated in Experiment #4; see `docs/design/mcp-architecture.md` Section 5a for execution order and anti-patterns. (Production implementation pending Sprint 5-6.)
 
 MCP server connections are fixed at deploy time — only *which tools* are visible is dynamic per-turn.
+
+> **Execution order per LLM turn (verified in Experiment #4):** `before_agent_callback` (writes `tool_filter_state`) → `InstructionProvider` (reads state) → `tool_filter` (reads state) → `before_model_callback` → LLM call. All share the same `session.state` dict — `ReadonlyContext.state` is a `MappingProxyType` (read-only live view), so `CallbackContext` writes are immediately visible.
 
 See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8: ToolRegistry](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) in the Design Decisions database.
 
@@ -1732,6 +1736,9 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | **SkillToolset** | ADK class for incorporating skills into `LlmAgent` via the `tools` parameter |
 | **SKILL.md** | Markdown file with YAML frontmatter defining a skill's name, description, allowed-tools, and procedural instructions |
 | **ToolRegistry** | Searchable metadata catalog for ~400 tools; planned as driver for `tool_filter` predicates |
+| **ReadonlyContext** | ADK read-only view of session state (`MappingProxyType`), passed to `InstructionProvider` and `tool_filter`. Live view of the mutable state dict — sees `CallbackContext` writes immediately. |
+| **CallbackContext** | ADK mutable context passed to `before_agent_callback`, `after_agent_callback`, and model callbacks. Writes to `callback_context.state` go to `session.state` with delta tracking. |
+| **before_agent_callback** | ADK callback that fires before each LLM turn's tool resolution. Receives `CallbackContext` (mutable). Used for Weave tracing and ToolRegistry-driven `tool_filter` state writes. |
 
 ---
 
@@ -1747,6 +1754,7 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 8.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
 | 2.5 | 2026-03-11 | Development Team | Added `[TRANSITIONAL]` convention for GA Agent and Company News Agent (successors documented). Added Meta Ads SDK shared access (Analytics reads + Execution reads/writes via `tool_filter`). Added Section 6 Skills Architecture (predefined + custom skills, SkillToolset integration, skill builder UI). Renumbered Sections 6-12 → 7-13. Added Decision 22 link. Updated glossary with Skill/SkillToolset/SKILL.md terms. |
 | 2.6 | 2026-03-18 | Development Team | ADK 1.26.0 experiment corrections: removed `SequentialAgent` wrappers inside `LoopAgent` (Sections 4.6, 8.1), added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. New subsections: 8.2 ADK Implementation Details (`build_review_pipeline()` and `build_workflow_pipeline()` factories, synthesizer pattern), 8.3 ADK Pitfalls (3 validated pitfalls), 8.4 LLM Call Cost & Latency. Renumbered 8.2-8.5 → 8.5-8.8. Added LLM call cost table to Section 4.6. |
+| 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c). |
 
 ---
 

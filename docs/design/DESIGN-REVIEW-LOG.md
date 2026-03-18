@@ -97,7 +97,7 @@ Structural gaps found and tracked. Most were addressed in Review 2 (see below).
 ### 8. Open Questions (Active)
 
 1. **ADK version bump to `>=1.26.0`** — Needed for per-invocation tool caching fix.
-2. **`tool_filter` integration pattern** — Needs prototyping before Sprint 5-6.
+2. ~~**`tool_filter` integration pattern** — Needs prototyping before Sprint 5-6.~~ **Resolved (Review 9, Experiment #4).**
 3. **Per-account MCP server sets** — Agent factory may need session-time assembly.
 4. **Voice latency budget** — 7-13s Agent Engine response is incompatible with <2s voice target.
 5. **UsageTracker scalability** — Needs daily rollup Cloud Function before heavy scale.
@@ -341,6 +341,44 @@ Additionally, 5 documentation gaps were identified:
 6. **Pipeline wrappers** — each `LoopAgent` wrapped in a `SequentialAgent` inside `ParallelAgent` for future extensibility.
 7. **3 ADK pitfalls** documented with rules.
 8. **LLM call cost table** present with per-step and parallel execution latency estimates.
+
+---
+
+## Review 9: Experiment #4 — tool_filter Integration Pattern Resolution
+
+**Date:** March 18, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Resolve the open design question for how ToolRegistry search drives `tool_filter`, based on Experiment #4 findings.
+
+### Finding
+
+Experiment #4 tested 4 options for triggering ToolRegistry search to populate `tool_filter_state`:
+
+| Option | Mechanism | Verdict |
+|--------|-----------|---------|
+| 1: InstructionProvider | ReadonlyContext (read-only) | Cannot write state |
+| 2: Root agent writes state | Root's LLM turn sets state | Works for dispatch, not per-turn within specialist |
+| 3: Specialist tool call | Tool writes state | One-turn delay; wastes an LLM call |
+| **4: before_agent_callback** | **CallbackContext (mutable)** | **Recommended — per-turn, pre-resolution** |
+
+Key insight: `ReadonlyContext.state` is a `MappingProxyType` wrapping the same `session.state` dict. Writes from `CallbackContext` in `before_agent_callback` are immediately visible to `InstructionProvider` and `tool_filter` — no copy, no propagation delay.
+
+### Decision
+
+See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd6530281999389eb3116e7585c) in the Design Decisions database for full rationale.
+
+### Documents Updated
+
+| File | Version | Changes |
+|------|---------|---------|
+| `docs/design/mcp-architecture.md` | v1.2 → v1.3 | Replaced "Open Design Question" in Section 5a with resolved 4-option comparison, production code pattern, execution order, anti-patterns. Struck through Open Question #5. |
+| `docs/KEN-E-Agentic-Harness-Design.md` | v2.6 → v2.7 | Updated `tool_filter_state` Set By (Section 3.6.2). Resolved `[PLANNED] tool_filter driver` (Section 4.3). Added execution order note and callback chaining note (Sections 4.2-4.3). Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). |
+| `docs/design/agent-hierarchy.md` | v1.4 → v1.5 | Added revision callout to Section 6 (tool_filter Driver) noting `before_agent_callback` replaces root-agent-writes pattern. |
+
+### Open Questions Resolved
+
+- **DESIGN-REVIEW-LOG Review 1, Open Question #2** (`tool_filter` integration pattern) — resolved as `before_agent_callback`.
+- **mcp-architecture.md Open Question #5** — resolved and struck through.
 
 ---
 

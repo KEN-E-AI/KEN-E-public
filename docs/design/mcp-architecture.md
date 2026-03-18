@@ -1,6 +1,6 @@
 # MCP Server Architecture
 
-**Version:** 1.1
+**Version:** 1.3
 **Date:** March 2026
 **Status:** Canonical — reflects decisions from Sprint 3b architecture review + design review (March 10, 2026)
 **Canonical Source:** [Notion Design Brief](https://www.notion.so/31e30fd653028118bd11f4a3270e3463)
@@ -45,7 +45,7 @@ We do not need per-account MCP server instances. The only potential exception is
 |----------|----------|------------------|
 | **HubSpot** | Use provider MCP | Provider-hosted at `mcp.hubspot.com` (OAuth 2.1, read-only CRM, zero deployment) |
 | **Google Ads** | Hybrid: MCP reads + SDK writes | Self-host MCP on Cloud Run + `google-ads` SDK function tools for campaign CRUD |
-| **Meta Ads** | SDK function tools | `facebook-business` Python SDK (full campaign CRUD) |
+| **Meta Ads** | SDK function tools | `facebook-business` Python SDK — shared: Analytics (reads) + Execution (reads + writes) |
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` Python SDK |
 | **Microsoft Ads** | Defer | Revisit when there's client demand |
 
@@ -78,13 +78,14 @@ User -> API -> Agent Engine
                 |     |-- Analytics Specialist
                 |     |     |-- McpToolset -> Google Ads MCP (self-hosted, Cloud Run)
                 |     |     |-- McpToolset -> GA MCP (self-hosted, exists today)
+                |     |     |-- SDK tools -> Meta Ads reads (facebook-business SDK)
                 |     |
                 |     |-- Content Specialist
                 |     |     |-- McpToolset -> HubSpot MCP (provider-hosted)
                 |     |     |-- SDK tools -> Mailchimp (mailchimp-marketing SDK)
                 |     |
                 |     |-- Execution Specialist
-                |     |     |-- SDK tools -> Meta Ads (facebook-business SDK)
+                |     |     |-- SDK tools -> Meta Ads reads + writes (facebook-business SDK)
                 |     |     |-- SDK tools -> Google Ads writes (google-ads SDK)
                 |     |     |-- McpToolset -> Google Ads MCP (shared, read-only)
                 |     |
@@ -135,15 +136,60 @@ Each LLM turn:
 | No filtering (all tools on specialist) | Fixed at deploy | All tools on connected servers | Up to ~30 tools × 150 tokens = 4,500 tokens |
 | `tool_filter` + ToolRegistry | Fixed at deploy | Only relevant tools per turn | ~5-10 tools × 150 tokens = 750-1,500 tokens |
 
-### Open Design Question
+### Resolved: How ToolRegistry Search Drives `tool_filter`
 
-The ToolRegistry search needs to happen *before* or *during* each turn's tool resolution. Options:
+Experiment #4 (ADK v1.26.0) tested four options for triggering ToolRegistry search to populate `tool_filter_state`:
 
-1. **Pre-processing in InstructionProvider** — The `InstructionProvider` closure already runs each turn. It could query the ToolRegistry and write results to session state before tool resolution happens.
-2. **Root agent writes to state before dispatch** — The root agent interprets intent, writes relevant tool categories to session state, then dispatches to specialist.
-3. **Specialist agent's first tool call** — Each specialist has a `search_tools` function tool that the LLM calls to narrow its own toolset for subsequent turns.
+| Option | Mechanism | State Access | Timing vs `tool_filter` | Verdict |
+|--------|-----------|-------------|------------------------|---------|
+| 1: InstructionProvider | Runs per-turn | `ReadonlyContext` (read-only) | Same phase — but cannot write state | **Cannot write state** |
+| 2: Root agent writes state | Root's LLM turn sets state before dispatch | `ToolContext` (mutable) | Before specialist's first turn only | **Works for dispatch, not per-turn within specialist** |
+| 3: Specialist tool call | LLM calls `search_tools` function tool | `ToolContext` (mutable) | One turn late — tools already resolved for current turn | **One-turn delay; wastes an LLM call** |
+| **4: `before_agent_callback`** | **Fires before each LLM turn** | **`CallbackContext` (mutable)** | **Before tool resolution** | **Recommended — per-turn, pre-resolution** |
 
-Option 2 is the most natural fit with the existing dispatch pattern. The root agent already interprets intent to choose a specialist — it can also write which tool categories/keywords are relevant.
+**Key insight:** `ReadonlyContext.state` is a `MappingProxyType` wrapping the same `session.state` dict. Writes from `CallbackContext` in `before_agent_callback` are immediately visible to `InstructionProvider` and `tool_filter` — no copy, no propagation delay.
+
+#### Production Code Pattern
+
+```python
+# Specialist agent's before_agent_callback — writes tool_filter_state
+async def toolregistry_before_agent_callback(
+    callback_context: CallbackContext,
+) -> None:
+    user_query = _extract_latest_user_message(callback_context)
+    results = tool_registry.search(user_query)
+    callback_context.state["tool_filter_state"] = [r.name for r in results]
+
+# McpToolset reads tool_filter_state via tool_filter lambda
+McpToolset(
+    connection_params=SseConnectionParams(url="..."),
+    tool_filter=lambda tool, ctx: tool.name in ctx.state.get("tool_filter_state", []),
+)
+```
+
+#### Execution Order per LLM Turn
+
+```
+1. before_agent_callback  → writes state["tool_filter_state"] via CallbackContext (mutable)
+2. InstructionProvider     → reads state via ReadonlyContext (live view of same dict)
+3. tool_filter             → reads state via ReadonlyContext (live view of same dict)
+4. before_model_callback   → final pre-LLM hook
+5. LLM call                → sees only filtered tools in context
+```
+
+All share the same `session.state` dict — `ReadonlyContext.state` is a `MappingProxyType` (read-only live view), so `CallbackContext` writes are immediately visible.
+
+#### Anti-Patterns
+
+1. **Do not write state via `ReadonlyContext`** — `MappingProxyType` raises `TypeError` on write. Only `CallbackContext` and `ToolContext` can mutate state.
+2. **Set `bypass_state_injection=True`** when `instruction` is a callable `InstructionProvider` — otherwise ADK injects a state dump into the instruction, wasting tokens.
+3. **Avoid `temp:` state prefix** — keys prefixed `temp:` are excluded from state delta tracking and may not persist across turns.
+
+#### Note on Option 2
+
+Option 2 (root agent writes state before dispatch) remains valid for the root→specialist handoff: the root interprets intent and writes initial tool categories to state. However, it does not cover per-turn updates within a multi-turn specialist conversation. Option 4 handles both cases.
+
+> Validated in Experiment #4 (`adk_experiments/experiment/instruction-tool-coordination`), ADK v1.26.0. See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd6530281999389eb3116e7585c) for full rationale.
 
 ## 6. MCP Server Config Registry
 
@@ -206,7 +252,7 @@ For a CMO saying "shift 20% of budget to Campaign X":
 - **Google Ads**: Can execute directly via `google-ads` SDK function tools (campaign CRUD, budget changes, bid adjustments). Reporting and analytics use the MCP server (read-only).
 - **HubSpot**: Can pull CRM data for analysis, but workflow creation requires manual action until HubSpot expands MCP write capabilities
 
-The Execution Specialist uses SDK function tools for write operations on both Meta Ads and Google Ads, while the Analytics Specialist uses MCP servers for read-only reporting across both platforms.
+The Analytics Specialist uses MCP servers and read-only SDK tools for reporting across GA, Google Ads, and Meta Ads. The Execution Specialist uses SDK function tools for write operations on Meta Ads and Google Ads. The `facebook-business` SDK is available to both specialists with different tool subsets controlled by `tool_filter` — Analytics sees read-only tools (get campaigns, get spend, get metrics) while Execution sees the full CRUD set.
 
 ## 9. Infrastructure Summary
 
@@ -223,7 +269,7 @@ The Execution Specialist uses SDK function tools for write operations on both Me
 2. **Google Ads write access timeline** — Monitor Google's roadmap. If no progress by Sprint 6, evaluate building write-capable tools as SDK function tools instead.
 3. **Agent factory timeline** — Config-driven specialist assembly (Sprint 5-6) is the prerequisite for scaling beyond current hardcoded agents.
 4. **ADK version bump** — Bump `google-adk>=1.26.0` to get per-invocation tool caching fix and toolset auth hooks. Current `>=1.23.0` hits the redundant `get_tools()` bug (4-5x per response instead of 1x).
-5. **`tool_filter` integration pattern** — Decide which option from Section 5a (InstructionProvider, root agent state write, or specialist self-search) best fits the dispatch pattern. Prototype needed before Sprint 5-6 agent factory work.
+5. ~~**`tool_filter` integration pattern** — Decide which option from Section 5a (InstructionProvider, root agent state write, or specialist self-search) best fits the dispatch pattern. Prototype needed before Sprint 5-6 agent factory work.~~ **Resolved (Experiment #4, March 2026):** Use `before_agent_callback` (Option 4). See Section 5a.
 6. **Dynamic MCP server connection** — Specialist routing + `tool_filter` covers tool-level dynamism but not server-level dynamism. If different accounts need different MCP server sets, the agent factory must assemble per-account specialist configurations at session creation time (not just at deploy time). This needs scoping.
 
 ## References
