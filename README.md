@@ -15,7 +15,14 @@ KEN-E is a sophisticated marketing analysis platform that leverages:
 
 ```
 ken-e/
-├── app/                    # Utility modules
+├── app/                    # ADK agent system
+│   ├── adk/               # Agent Development Kit implementation
+│   │   ├── agents/        # Agent definitions and strategy logic
+│   │   ├── tools/         # Tool discovery and registry
+│   │   ├── security/      # Authentication and authorization
+│   │   ├── session/       # Session management
+│   │   ├── mcp_config/    # MCP server configuration
+│   │   └── tracking/      # Observability and tracing
 │   └── utils/             # Utilities for GCS, tracing, typing
 ├── api/                   # FastAPI REST service
 │   ├── src/kene_api/      # API source code
@@ -30,7 +37,6 @@ ken-e/
 │   ├── terraform/         # IaC for GCP resources
 │   ├── ci/               # CI pipeline (PR checks)
 │   └── cd/               # CD pipelines (staging/prod)
-├── notebooks/             # Jupyter notebooks for prototyping
 └── tests/                 # Testing suite
     ├── unit/             # Unit tests
     ├── integration/      # Integration tests
@@ -120,9 +126,6 @@ cp .env.example .env.staging
 cp .env.example .env.production
 # Edit files with your configuration...
 ```
-
-For detailed environment setup instructions, see [ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md)
-
 
 ### 3. Start Development Servers
 
