@@ -127,6 +127,42 @@ cp .env.example .env.production
 # Edit files with your configuration...
 ```
 
+#### Environment Details
+
+| Environment | GCP Project | API URL | Frontend URL |
+|-------------|-------------|---------|--------------|
+| Development | ken-e-dev | http://localhost:8000 | http://localhost:8080 |
+| Staging | ken-e-staging | Staging endpoint | Staging endpoint |
+| Production | ken-e-production | Production endpoint | Production endpoint |
+
+#### Environment File Locations
+
+```
+ken-e/
+├── set-environment.sh           # Unified switching script
+├── app/adk/
+│   ├── .env                    # Current environment (generated)
+│   ├── .env.development        # Development config
+│   ├── .env.staging            # Staging config
+│   └── .env.production         # Production config
+├── api/
+│   ├── .env                    # Current environment (generated)
+│   ├── .env.development        # Development config
+│   ├── .env.staging            # Staging config
+│   └── .env.production         # Production config
+└── frontend/
+    ├── .env                    # Current environment (generated)
+    ├── .env.development        # Development config
+    ├── .env.staging            # Staging config
+    └── .env.production         # Production config
+```
+
+#### Environment Troubleshooting
+
+- **Permission Denied (403)**: Ensure all components use the same environment — run `./set-environment.sh [environment]` to sync
+- **Service Account Not Found**: Ensure SA files exist in `api/` (e.g., `ken-e-dev-sa.json`)
+- **Environment Variables Not Loading**: Check that source `.env.{environment}` files exist
+
 ### 3. Start Development Servers
 
 ```bash
