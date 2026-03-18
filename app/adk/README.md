@@ -1,148 +1,92 @@
-# Simple Company News Chatbot
+# KEN-E ADK Agent System
 
-A minimal ADK agent with Vertex AI Search integration - following official ADK patterns.
+Multi-agent system built on [Google ADK](https://google.github.io/adk-docs/) for marketing analysis. KEN-E acts as a router agent, dispatching queries to specialized sub-agents for company news, Google Analytics, and strategy document generation.
 
-## What This Demonstrates
+## Architecture
 
-✅ **Proper ADK Usage**: Uses official ADK patterns from sample agents  
-✅ **Minimal Code**: ~50 lines vs 400+ in the overengineered version  
-✅ **Native Interactive Mode**: Built-in CLI and web interfaces  
-✅ **First-Class Vertex AI Search**: No manual session management
+```
+KEN-E Router (agents/ken_e_agent.py)
+├── CompanyNews Agent    — Vertex AI Search for news & company intelligence
+├── GoogleAnalytics Agent — GA4 data via MCP (SSE transport + OAuth)
+└── StrategyDocs Supervisor — Programmatic multi-doc generation (account creation)
+
+Middleware (callbacks registered on the ADK Agent):
+  before_tool → security/hooks.py   (OAuth permission check, token refresh)
+  after_tool  → tracking/callbacks.py (usage tracking)
+  before/after_agent → tracking/callbacks.py (Weave distributed tracing)
+```
+
+Agents are **lazy-loaded** via `agents/__init__.py` so only the requested agent initializes at runtime.
+
+## Module Overview
+
+| Directory | Purpose |
+|-----------|---------|
+| `agents/` | Agent definitions, dispatch handlers, strategy suite |
+| `tools/` | Tool registry and discovery (schema, permissions, search) |
+| `security/` | OAuth permission verification and pre-execution hooks |
+| `session/` | Session recovery for returning users, timeout management |
+| `mcp_config/` | YAML-based MCP server config with env var / Secret Manager substitution |
+| `tracking/` | ADK callbacks for Weave tracing and usage analytics |
 
 ## Setup
 
-1. **Configure environment**:
-
-   **Option A: Use the unified environment switcher (recommended)**
+1. **Configure environment** (see [root README](../../README.md#2-configure-environment) for unified switching):
 
    ```bash
-   # From the project root, switch ALL components including agents
-   cd ../..  # Go to project root
-   ./set-environment.sh development
-   # OR
-   make env-dev
-
-   # Switch to staging
-   ./set-environment.sh staging
-   # OR
-   make env-staging
-
-   # Switch to production (use with caution!)
-   ./set-environment.sh production
-   # OR
-   make env-prod
+   # From project root
+   ./set-environment.sh development   # or: make env-dev
    ```
 
-   **Option B: Configure agents only**
+   Or configure agents only:
 
    ```bash
-   # If you need to configure just the agents
-   cp .env.development .env  # or .env.staging, .env.production
-   # Update .env with your actual Vertex AI Search IDs if needed
+   cp .env.development .env   # or .env.staging, .env.production
    ```
 
-2. **Install dependencies**:
+2. **Install dependencies:**
 
    ```bash
    uv sync
    ```
 
-3. **Run the agent**:
+3. **Run locally:**
 
    ```bash
-   # CLI interactive mode
-   adk run .
-
-   # Web interface
-   adk web
+   adk run .     # CLI interactive mode
+   adk web       # Web interface
    ```
 
-## Usage
+## Deployment
 
-Ask questions like:
-
-- "What's the latest Apple news?"
-- "Tell me about recent Apple developments"
-- "Apple stock updates"
-- "Create a business strategy for our company"
-- "Update our marketing strategy with new insights"
-
-The agent will automatically:
-
-1. Search your Vertex AI Search datastore
-2. Analyze and synthesize results
-3. Provide sourced responses with business insights
-4. Create and manage strategy documents
-
-## Agent Deployment
-
-### Recommended: ADK CLI Deployment
-
-Use the official ADK CLI for robust deployment:
+Deploy to Vertex AI Agent Engine using the Makefile targets:
 
 ```bash
-# Deploy using ADK CLI (recommended)
-uv run -- python -m google.adk.cli deploy agent_engine \
-  --project=ken-e-dev \
-  --region=us-central1 \
-  --staging_bucket=gs://ken-e-dev-vertex-ai-staging \
-  --display_name="multi-agent-supervisor-with-strategy" \
-  --description="Multi-agent supervisor with company news, Google Analytics, and strategy capabilities" \
-  .
-
-# Or use the deployment script (uses ADK CLI internally)
-uv run -- python deploy_agent.py deploy
+make deploy-ken-e              # Development
+make deploy-ken-e-staging      # Staging
+make deploy-ken-e-production   # Production
 ```
 
-### Alternative: Legacy Deployment Script
+Strategy supervisor (used during account creation):
 
 ```bash
-# List currently deployed agents
-uv run -- python deploy_agent.py list
-
-# Delete a specific agent
-uv run -- python deploy_agent.py delete --name "projects/PROJECT/locations/LOCATION/reasoningEngines/ID"
-
-# Deploy to a specific project
-uv run -- python deploy_agent.py deploy --project ken-e-production --location us-central1
+make deploy          # Development
+make deploy-staging  # Staging
+make deploy-production # Production
 ```
 
-### Authentication Requirements
+Other useful targets: `make test-local`, `make test-deployed`, `make clean`.
 
-**For local development:**
+## MCP Servers
 
-```bash
-gcloud auth application-default login
-```
+Configured in `mcp_config/config/mcp_servers.yaml`. Currently enabled:
 
-**For production deployments:**
-Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to your service account key file.
+- **google_analytics_mcp** — GA4 queries via SSE with OAuth
 
-## Key Differences from Overengineered Version
+Pending (disabled): HubSpot, Meta Ads, Google Ads, Slack, Notion.
 
-| Overengineered            | Proper ADK              |
-| ------------------------- | ----------------------- |
-| 400+ lines                | ~50 lines               |
-| Manual session management | ADK handles it          |
-| Custom event processing   | ADK abstracts it        |
-| Complex Runner setup      | `adk run .`             |
-| Dispatcher pattern        | Direct tool integration |
-| Custom invoke functions   | ADK built-in execution  |
+## Authentication
 
-## Architecture
-
-```
-Agent (agent.py)
-├── Instruction (how to behave)
-├── Tools (VertexAiSearchTool)
-└── ADK handles everything else!
-```
-
-ADK provides:
-
-- ✅ Interactive CLI mode
-- ✅ Web interface
-- ✅ Session management
-- ✅ Tool execution
-- ✅ Event handling
-- ✅ Response streaming
+- **Local dev:** `gcloud auth application-default login`
+- **Production:** Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key file.
+- **OAuth tokens** flow through ADK session state; the security hooks handle refresh automatically.
