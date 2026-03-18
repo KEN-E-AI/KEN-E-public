@@ -4,16 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-KEN-E is a multi-agent AI system for marketing analysis built on Google Cloud Platform. It combines LangGraph orchestration, CrewAI multi-agent collaboration, and a modern React frontend to provide comprehensive marketing insights and analytics.
+KEN-E is a multi-agent AI system for marketing analysis built on Google Cloud Platform. It uses Google's Agent Development Kit (ADK) deployed on Vertex AI Agent Engine, integrated with a modern React frontend to provide comprehensive marketing insights and analytics.
 
 ## Project Structure
 
 ```
 ken-e/
-├── app/                    # Main agent system (LangGraph & CrewAI)
-│   ├── agent.py           # Core LangGraph orchestration
-│   ├── agent_engine_app.py # Google Cloud Agent Engine deployment
-│   ├── crew/              # CrewAI multi-agent configuration
+├── app/                    # ADK agent system
+│   ├── adk/               # Agent Development Kit implementation
+│   │   ├── agents/        # Agent definitions and strategy logic
+│   │   ├── tools/         # Tool discovery and registry
+│   │   ├── security/      # Authentication and authorization
+│   │   ├── session/       # Session management
+│   │   ├── mcp_config/    # MCP server configuration
+│   │   └── tracking/      # Observability and tracing
 │   └── utils/             # Utilities for GCS, tracing, typing
 ├── api/                   # FastAPI REST service
 │   ├── src/kene_api/      # API source code
@@ -28,7 +32,6 @@ ken-e/
 │   ├── terraform/         # IaC for GCP resources
 │   ├── ci/               # CI pipeline (PR checks)
 │   └── cd/               # CD pipelines (staging/prod)
-├── notebooks/             # Jupyter notebooks for prototyping
 └── tests/                 # Testing suite
     ├── unit/             # Unit tests
     ├── integration/      # Integration tests
@@ -87,7 +90,7 @@ make backend  # Deploy to Agent Engine
 
 ## Core Architecture
 
-- **Agent System** (`app/`): LangGraph orchestration with CrewAI agents (KEN-E, BET-E, VIK-E)
+- **Agent System** (`app/adk/`): ADK agent system on Vertex AI Agent Engine
 - **API** (`api/`): FastAPI with Neo4j graph DB and Firestore
 - **Frontend** (`frontend/`): React 18 + TypeScript, TailwindCSS, Radix UI
 - **Infrastructure**: GCP (Vertex AI, Cloud Run, Firebase)
@@ -432,6 +435,5 @@ Check Agent Engine connectivity and status.
 ## Additional Documentation
 
 For detailed information about:
-- **Troubleshooting**: See `TROUBLESHOOTING.md` for historical issues and fixes
 - **Deployment**: See deployment files in `deployment/` directory
 - **Frontend specifics**: See `frontend/CLAUDE.md` for CSS architecture details
