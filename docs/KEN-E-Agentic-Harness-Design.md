@@ -724,6 +724,8 @@ The review pipeline is the **atomic building block** for Section 8.1 multi-step 
 
 See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 9 for the review loop and workflow orchestration architecture, including the multi-step pattern and planned key files.
 
+See [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for the phased delivery plan — 13 stories across 5 phases covering pipeline factories, dispatch integration, criteria generation, multi-step workflows, and observability.
+
 ---
 
 ## 5. MCP Server Architecture
@@ -969,6 +971,8 @@ Key considerations: voice responses must be concise (< 30s), target < 2s end-to-
 > **Status:** No workflow framework exists in the codebase today. The strategy agent's `execute_strategy_generation()` orchestrator is the closest pattern — it coordinates multiple sub-agents in sequence with Firestore persistence. No n8n, webhook, or cron infrastructure exists.
 >
 > **Revised March 18, 2026** — Structural corrections based on ADK 1.26.0 experiments. Removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added pipeline wrappers for `ParallelAgent` branches, added ADK Pitfalls and LLM Cost subsections.
+>
+> **Delivery plan:** See [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for the phased implementation plan covering Sections 8.1-8.4 — 13 stories across 5 phases.
 
 ### 8.1 Multi-Step Workflow Pattern
 
@@ -1691,7 +1695,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **SDK function tools** | Sprint 5-6 | Meta Ads, Mailchimp direct SDK integration |
 | **Skills architecture** | Sprint 5-6 | Predefined skills bundled, custom skills via UI (Section 6) |
 | **Slack channel** | Sprint 8+ | Bolt SDK integration on separate Cloud Run |
-| **Workflow management** | Sprint 8+ | Multi-step task tracking with Firestore persistence |
+| **Workflow management** | Sprint 8+ | Multi-step task tracking with Firestore persistence. See [`review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for phased delivery plan. |
 | **Voice channel** | Phase 4 | Pipecat + Meeting BaaS |
 | **A/B testing** | Phase 4 | Experiment infrastructure for agent configs |
 

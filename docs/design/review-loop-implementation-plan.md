@@ -28,6 +28,9 @@ Use ADK's native workflow agents (LoopAgent, SequentialAgent, ParallelAgent) to 
 | Harness Design Doc | 2.3.2 | Request flow with review loop |
 | Harness Design Doc | 4.6 | Review Loop Pattern (Generator-Critic) |
 | Harness Design Doc | 8.1 | Multi-Step Workflow Pattern |
+| Harness Design Doc | 8.2 | ADK Implementation Details (factory code, composition patterns) |
+| Harness Design Doc | 8.3 | ADK Pitfalls (validated rules from experiments) |
+| Harness Design Doc | 8.4 | LLM Call Cost & Latency (total-time estimates) |
 | `agent-hierarchy.md` | 9 | Review Loop & Workflow Orchestration |
 | Notion | Decision 21 | Full decision rationale |
 
@@ -187,6 +190,10 @@ Workflow progress is tracked in **session state** between turns so the Root Agen
 | Single step, 2 iterations | ~2,000 tokens | ~6-12s |
 | Multi-step (3 phases) | ~3,000-9,000 tokens | ~15-45s total |
 | Parallel steps (1a + 1b) | Same tokens as sequential | ~50% less latency (concurrent) |
+
+These figures represent **overhead only** — the additional cost of running a review loop compared to a single-pass specialist invocation without review. They do not include the specialist's own token consumption or tool-call latency.
+
+> For **total-time estimates** (including specialist LLM calls, tool execution, and review iterations), see the harness design doc Sections [4.6 — LLM Call Cost](../KEN-E-Agentic-Harness-Design.md#46-review-loop-pattern-generator-critic-planned) and [8.4 — LLM Call Cost & Latency](../KEN-E-Agentic-Harness-Design.md#84-llm-call-cost--latency), which provide per-scenario totals (e.g., 2 LLM calls / ~10-30s for first-pass approval, up to 6 calls / ~30-90s at max iterations).
 
 ---
 
@@ -532,10 +539,16 @@ def build_workflow_pipeline(
         pipelines = []
         for step in level_steps:
             specialist = specialists[step.specialist]
-            pipeline = build_review_pipeline(
+            loop = build_review_pipeline(
                 specialist=specialist,
                 acceptance_criteria=step.criteria,
                 output_key_prefix=f"step_{step.id}",
+            )
+            # Wrap each LoopAgent in a pipeline SequentialAgent for
+            # future pre/post steps (matches Section 3.3 diagram)
+            pipeline = SequentialAgent(
+                name=f"step_{step.id}_pipeline",
+                sub_agents=[loop],
             )
             pipelines.append(pipeline)
 
@@ -559,7 +572,7 @@ def build_workflow_pipeline(
 **Dependencies:** Phase 1 complete.
 
 **Tests:**
-- 2 parallel steps → ParallelAgent wrapping 2 LoopAgents
+- 2 parallel steps → ParallelAgent wrapping 2 pipeline SequentialAgents wrapping LoopAgents
 - 1 step depending on 2 parallel steps → SequentialAgent(ParallelAgent, LoopAgent)
 - Approval-required steps excluded from pipeline
 - Step results accessible via unique output_keys in session state
@@ -800,7 +813,7 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 | 2 | How should workflow progress be communicated to the streaming API? | Medium — UX | Phase 5 |
 | 3 | Should there be a "fast path" that skips review loops for simple factual queries? | Medium — latency | Phase 3 |
 | 4 | How does the review loop interact with the existing `ConversationSummarizer`? Will intermediate drafts and feedback inflate the conversation history? | Medium — token budget | Phase 2 |
-| 5 | Should workflow state (`pending_workflow`) be persisted to Firestore for crash recovery, or is session state sufficient? | Low — reliability | Phase 4 |
+| 5 | ~~Should workflow state (`pending_workflow`) be persisted to Firestore for crash recovery, or is session state sufficient?~~ **Answered:** Harness doc Sections 8.5-8.7 define the long-term Firestore persistence model (data model, persistence/recovery table, idempotency). Story 4.2's session-state `pending_workflow` is the initial incremental step; full Firestore persistence follows once the workflow framework matures. | Low — reliability | Phase 4 |
 | 6 | What is the maximum number of steps a workflow should support? | Low — UX guardrail | Phase 4 |
 | 7 | How do skills interact with review loops? Should the reviewer have access to the same skills as the specialist, or only evaluation-focused skills? | Low — skill architecture | Phase 1 (when skills are implemented) |
 

@@ -405,4 +405,42 @@ See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd
 
 ---
 
+## Review 11: Align review-loop-implementation-plan.md with Harness Design Doc + Cross-References
+
+**Date:** March 18, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Resolve 4 misalignments in the implementation plan and add 3 cross-references from the harness doc to the implementation plan.
+
+### Misalignments Resolved
+
+| # | Issue | Fix | File |
+|---|-------|-----|------|
+| 1 | Design References table missing harness doc Sections 8.2, 8.3, 8.4 | Added 3 rows for ADK Implementation Details, ADK Pitfalls, and LLM Call Cost & Latency | `review-loop-implementation-plan.md` |
+| 2 | Section 3.6 token/latency estimates unclear whether overhead-only or total | Added paragraph clarifying these are overhead-only numbers, with blockquote cross-referencing harness doc Sections 4.6 and 8.4 for total-time estimates | `review-loop-implementation-plan.md` |
+| 3 | Story 4.1 `build_workflow_pipeline()` code places `LoopAgent` directly in `ParallelAgent` — inconsistent with Section 3.3 diagram which shows pipeline `SequentialAgent` wrappers | Wrapped each `LoopAgent` in a `SequentialAgent` pipeline before placing in `ParallelAgent`; updated test description accordingly | `review-loop-implementation-plan.md` |
+| 4 | Open Question 5 (Firestore persistence for workflow state) still marked as open — answered by harness doc Sections 8.5-8.7 | Marked as answered with inline note: harness doc defines the long-term model; Story 4.2's session-state approach is the initial incremental step | `review-loop-implementation-plan.md` |
+
+### Cross-References Added
+
+| # | Location | Reference Added |
+|---|----------|----------------|
+| 5 | Harness doc Section 4.6 (after `agent-hierarchy.md` reference) | Pointer to implementation plan for phased delivery details (13 stories, 5 phases) |
+| 6 | Harness doc Section 8 status blockquote | Pointer to implementation plan as the delivery plan for Sections 8.1-8.4 |
+| 7 | Harness doc Section 12.3 roadmap, "Workflow management" row | Appended link to implementation plan |
+
+### Documents Updated
+
+| File | Version | Changes |
+|------|---------|---------|
+| `docs/design/review-loop-implementation-plan.md` | v1.1 (no version bump — alignment fixes only) | 4 edits: design refs table, latency clarification, pipeline wrappers in code, open question resolved |
+| `docs/KEN-E-Agentic-Harness-Design.md` | — | 3 cross-references added at Sections 4.6, 8, and 12.3 |
+| `docs/design/DESIGN-REVIEW-LOG.md` | — | Added this entry (Review 11) |
+
+### Verification
+
+- Section 3.3 diagram (lines 122-137) already shows pipeline `SequentialAgent` wrappers — confirming the Story 4.1 code fix resolves an internal inconsistency.
+- No duplicate cross-references exist in the harness doc — the 3 new references point to the implementation plan from locations that previously had no such link.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*
