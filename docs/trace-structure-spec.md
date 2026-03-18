@@ -75,6 +75,8 @@ MER-E extractors handle both: `OutputExtractor.get_subagent_output()` checks the
 
 ## 3. Span Naming Conventions
 
+> **Roadmap:** [Feature 1.1.2: Tracing Hardening](product-roadmap.md#feature-112-tracing-hardening) — Release 1.1
+
 ### ADK Native Names vs. MER-E Expectations
 
 ADK uses dot-notation span names. MER-E's current `ToolCallExtractor` uses colon-prefix matching. The table below documents the mapping:
@@ -117,6 +119,8 @@ The following code needs updating to support ADK naming (tracked separately from
 | `mer_e/adapters/ken_e/tool_calls/tool_call_extractor.py:191-195` | `_extract_single_tool_call()`: Strip `adk.tool.` prefix |
 
 ## 4. Required Metadata Per Span Level
+
+> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track), [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track) — Releases 2.0, 3.0
 
 ### 4.1 Root Span (Session Invocation)
 
@@ -258,6 +262,8 @@ LLM call metadata is auto-captured by ADK's OpenTelemetry GenAI conventions when
 
 ## 5. Context Block Capture Strategy
 
+> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track) — Release 3.0
+
 The design doc (Section 6.4.1) requires a `context` block on tool calls that ADK does not capture by default. This section specifies how KEN-E should implement each field.
 
 ### 5.1 Capturing `context.agent_goal`
@@ -349,6 +355,8 @@ Per the design doc (Section 6.6):
 | Aggregated metrics | Indefinite | BigQuery |
 
 ## 7. Compatibility with Existing MER-E Extractors
+
+> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track), [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track) — Releases 2.0, 3.0
 
 ### Works Today (No Changes Needed)
 
@@ -461,6 +469,8 @@ previous_tool_calls: list[str] | None = None
 
 ## 8. Threading and Parallel Agents
 
+> **Roadmap:** [Feature 3.4: Multi-Step Workflows](product-roadmap.md#feature-34-multi-step-workflows--phase-1) — Release 3.0
+
 ADK supports `ParallelAgent` which runs sub-agents concurrently. This affects trace structure.
 
 ### OpenTelemetry Context Propagation
@@ -498,6 +508,8 @@ def thread_target():
 ```
 
 ## 9. Multi-Step Workflow Support (Section 13)
+
+> **Roadmap:** [Feature 3.4: Multi-Step Workflows](product-roadmap.md#feature-34-multi-step-workflows--phase-1), [Feature 5.4: Advanced Workflow & Observability](product-roadmap.md#feature-54-advanced-workflow--observability) — Releases 3.0, 5.0
 
 For multi-step workflows (e.g., keyword analysis → campaign creation → performance report), additional metadata enables trajectory and workflow-level evaluation.
 
@@ -540,6 +552,8 @@ Per the design doc (Section 13.4), different workflow types weight steps differe
 
 ## 10. KEN-E Implementation Checklist
 
+> **Roadmap:** [Feature 1.1.2: Tracing Hardening](product-roadmap.md#feature-112-tracing-hardening), [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track) — Releases 1.1, 2.0
+
 This checklist is ordered by priority. Items 1-4 are needed for current MER-E functionality. Items 5-8 enable future evaluation features.
 
 ### Immediate (Current Output Evaluation)
@@ -570,6 +584,8 @@ This checklist is ordered by priority. Items 1-4 are needed for current MER-E fu
 - [ ] **13. Extractor compatibility** — Run MER-E's `ToolCallExtractor` against a sample trace to validate field extraction
 
 ## 11. Trace Compliance Validation
+
+> **Roadmap:** [Feature 1.1.2: Tracing Hardening](product-roadmap.md#feature-112-tracing-hardening), [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track) — Releases 1.1, 2.0
 
 MER-E includes a trace compliance validator (`mer_e/adapters/ken_e/trace_instrumentation/validation.py`) that programmatically checks traces against these requirements.
 

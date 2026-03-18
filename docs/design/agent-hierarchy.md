@@ -89,6 +89,8 @@ Dispatch handlers (`app/adk/agents/utils/dispatch_handlers.py`) handle:
 
 ## 4. InstructionProvider Pattern
 
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](../product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge) — Release 1.1
+
 ADK supports dynamic instruction injection via callables. KEN-E uses a closure-based pattern:
 
 ```python
@@ -104,6 +106,8 @@ def _make_instruction_provider(base_instruction: str) -> Callable[[ReadonlyConte
 This is called on every LLM turn, reading organization context from session state (stored at session creation time — no DB call per turn).
 
 ## 5. Firestore-Driven Configuration
+
+> **Roadmap:** [Feature 1.1.4: Firestore Config Registry](../product-roadmap.md#feature-114-firestore-config-registry-preparation-for-agent-factory) — Release 1.1
 
 Agent configuration is loaded from Firestore at agent creation time with fallback to hardcoded defaults:
 
@@ -150,6 +154,8 @@ See `docs/design/mcp-architecture.md` Section 5a for the full design.
 
 ## 7. [PLANNED] Specialist Agent Layer
 
+> **Roadmap:** [Feature 2.2: Agent Factory](../product-roadmap.md#feature-22-agent-factory--phase-1), [Feature 2.3: Analytics Specialist](../product-roadmap.md#feature-23-analytics-specialist--phase-1), [Feature 3.1: Content Specialist](../product-roadmap.md#feature-31-content-specialist), [Feature 3.2: Execution Specialist](../product-roadmap.md#feature-32-execution-specialist) — Releases 2.0, 3.0
+
 The next expansion (Sprint 5-6) adds specialist agents below the root:
 
 | Specialist | Tool Sources | Integration Type |
@@ -177,6 +183,8 @@ See `docs/design/mcp-architecture.md` for platform integration decisions.
 | Config source | YAML + Firestore (per agent) | Firestore config registry (all agents) |
 
 ## 8. [PLANNED] Agent Factory
+
+> **Roadmap:** [Feature 2.2: Agent Factory](../product-roadmap.md#feature-22-agent-factory--phase-1) — Release 2.0
 
 > **Status:** No factory exists. Current agent construction is per-file factory functions (`create_ken_e_agent()`, `create_google_analytics_agent()`). `deploy_ken_e.py` imports the root agent singleton and wraps it with `App`. The factory generalizes this pattern to config-driven assembly.
 
@@ -303,6 +311,8 @@ This generalizes the existing `_ga_header_provider()` pattern.
 | **Failure at build time** | If Firestore is unreachable, fall back to bundled config snapshot (not yet implemented). |
 
 ## 9. [PLANNED] Review Loop & Workflow Orchestration
+
+> **Roadmap:** [Feature 2.1: Review Loop Framework](../product-roadmap.md#feature-21-review-loop-framework), [Feature 3.4: Multi-Step Workflows](../product-roadmap.md#feature-34-multi-step-workflows--phase-1) — Releases 2.0, 3.0
 
 Every specialist delegation is wrapped in a **review loop** using ADK's native workflow agents. This is the execution-time complement to the structural routing described in Section 7.
 

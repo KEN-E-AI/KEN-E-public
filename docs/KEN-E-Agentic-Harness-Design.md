@@ -365,6 +365,8 @@ See Section 4.6 for the review loop pattern design and Section 8.1 for multi-ste
 
 ## 3. Context Management Strategy
 
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge) — Release 1.1
+
 ### 3.1 The Context Challenge
 
 KEN-E faces an unprecedented context management challenge:
@@ -576,6 +578,8 @@ CURRENT (Sprints 1-4):
 
 ### 4.2 KEN-E Root Agent
 
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge), [Feature 2.2: Agent Factory](product-roadmap.md#feature-22-agent-factory--phase-1) — Releases 1.1, 2.0
+
 The root agent (`app/adk/agents/ken_e_agent.py`) is an ADK `LlmAgent` that:
 
 1. **Loads config from Firestore** — model, instruction, temperature via `load_config_from_firestore(config_doc_id)`
@@ -638,6 +642,8 @@ See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97
 
 ### 4.4 [PLANNED] Specialist Agents
 
+> **Roadmap:** [Feature 2.2: Agent Factory](product-roadmap.md#feature-22-agent-factory--phase-1), [Feature 2.3: Analytics Specialist](product-roadmap.md#feature-23-analytics-specialist--phase-1), [Feature 3.1: Content Specialist](product-roadmap.md#feature-31-content-specialist), [Feature 3.2: Execution Specialist](product-roadmap.md#feature-32-execution-specialist), [Feature 4.1: Automation Specialist](product-roadmap.md#feature-41-automation-specialist--n8n) — Releases 2.0–4.0
+
 The specialist layer (Sprint 5-6) partitions tools by domain.
 
 | Specialist | Tool Sources | Integration Type | Key Capabilities |
@@ -680,6 +686,8 @@ See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 7 for 
 | Automation Specialist | LlmAgent + McpToolset | n8n MCP | Config-driven agent factory |
 
 ### 4.6 [PLANNED] Review Loop Pattern (Generator-Critic)
+
+> **Roadmap:** [Feature 2.1: Review Loop Framework](product-roadmap.md#feature-21-review-loop-framework) — Release 2.0
 
 Every specialist delegation is wrapped in a **review loop** that enforces acceptance criteria before returning results to the user. This uses ADK's native workflow agents:
 
@@ -760,6 +768,8 @@ See [`docs/design/data-visualization.md`](design/data-visualization.md) Section 
 
 ## 5. MCP Server Architecture
 
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge), [Feature 2.2: Agent Factory](product-roadmap.md#feature-22-agent-factory--phase-1) — Releases 1.1, 2.0
+
 > For ADK internals verification, platform integration decisions, and the full `tool_filter` architecture, see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md).
 
 ### 5.1 Lazy-Loading
@@ -833,6 +843,8 @@ Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolv
 ---
 
 ## 6. Skills Architecture [PLANNED]
+
+> **Roadmap:** [Feature 3.3: Predefined Skills](product-roadmap.md#feature-33-predefined-skills), [Feature 4.2: Custom Skills](product-roadmap.md#feature-42-custom-skills--phase-1) — Releases 3.0, 4.0
 
 > **Status:** No skills infrastructure exists in the codebase today. ADK recently added Skills support (Agent Skills specification) for packaging procedural knowledge as self-contained, progressively-disclosed units. This section defines the architecture for predefined and custom skills.
 
@@ -933,6 +945,8 @@ UI extension for skill management:
 
 ## 7. Multi-Channel Support [PLANNED]
 
+> **Roadmap:** [Feature 5.1: Slack Channel](product-roadmap.md#feature-51-slack-channel), [Feature 6.1: Voice Channel](product-roadmap.md#feature-61-voice-channel) — Releases 5.0, 6.0
+
 > For the full API architecture and channel integration approaches, see [`docs/design/api-gateway-multi-channel.md`](design/api-gateway-multi-channel.md). Design decisions: [Decision 14: Channel-Agnostic API](https://www.notion.so/32030fd65302811ea99dfa94c3448a0d), [Decision 15: Slack Channel](https://www.notion.so/32030fd6530281148e89eb56494a7489), [Decision 16: Voice Channel](https://www.notion.so/32030fd6530281ce82d3f7bbbee439c3).
 
 ### 7.1 Architecture Overview
@@ -997,6 +1011,8 @@ Key considerations: voice responses must be concise (< 30s), target < 2s end-to-
 ---
 
 ## 8. Workflow Management [PLANNED]
+
+> **Roadmap:** [Feature 3.4: Multi-Step Workflows](product-roadmap.md#feature-34-multi-step-workflows--phase-1), [Feature 5.3: Workflow Templates](product-roadmap.md#feature-53-workflow-templates), [Feature 5.4: Advanced Workflow](product-roadmap.md#feature-54-advanced-workflow--observability) — Releases 3.0, 5.0
 
 > **Status:** No workflow framework exists in the codebase today. The strategy agent's `execute_strategy_generation()` orchestrator is the closest pattern — it coordinates multiple sub-agents in sequence with Firestore persistence. No n8n, webhook, or cron infrastructure exists.
 >
@@ -1380,6 +1396,8 @@ Firestore: workflows/{workflow_id}
 
 ### 8.8 [PLANNED] n8n Integration
 
+> **Roadmap:** [Feature 4.1: Automation Specialist + n8n](product-roadmap.md#feature-41-automation-specialist--n8n) — Release 4.0
+
 > **Status:** No n8n infrastructure exists. This is Sprint 8+ work.
 
 For scheduled/recurring tasks (e.g., "send me a weekly performance report every Monday"):
@@ -1403,6 +1421,8 @@ KEN-E creates workflow → n8n workflow created via n8n API
 ---
 
 ## 9. Integration with Evaluation Framework
+
+> **Roadmap:** [Feature 2.5: MER-E Phase 0](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track), [Feature 3.5: MER-E Phase 1](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track), [Feature 4.3: MER-E Phase 2](product-roadmap.md#feature-43-mer-e-phase-2--human-feedback--patterns-parallel-track-phase-1), [Feature 4.4: A/B Testing](product-roadmap.md#feature-44-ab-testing-infrastructure) — Releases 2.0–4.0
 
 ### 9.1 Overview
 
@@ -1465,12 +1485,16 @@ OUTPUT_CATEGORIES = {
 
 ### 9.4 [PLANNED] Feedback Collection
 
+> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#feature-43-mer-e-phase-2--human-feedback--patterns-parallel-track-phase-1) — Release 4.0
+
 A feedback collection system will enable human evaluation alignment:
 - Queue feedback requests for users after agent outputs
 - Store ratings (1-5) and factor-level ratings in Firestore
 - Trigger alignment analysis when sufficient feedback is collected
 
 ### 9.5 [PLANNED] A/B Testing Support
+
+> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#feature-44-ab-testing-infrastructure) — Release 4.0
 
 The harness will support A/B testing of agent configurations:
 - Consistent hash-based variant assignment per account

@@ -140,6 +140,8 @@ R1.1  Sprint 3b Merge + Firestore Config Registry
 
 #### Feature 1.1.1: Agent Config Optimization (Sprint 3b Merge)
 
+> **Design refs:** [Harness §3](KEN-E-Agentic-Harness-Design.md#3-context-management-strategy), [§4.2](KEN-E-Agentic-Harness-Design.md#42-ken-e-root-agent), [§4.3](KEN-E-Agentic-Harness-Design.md#43-tool-discovery--dynamic-tool-selection), [§5](KEN-E-Agentic-Harness-Design.md#5-mcp-server-architecture) | [agent-hierarchy §4](design/agent-hierarchy.md#4-instructionprovider-pattern) | [api-gateway §1](design/api-gateway-multi-channel.md#1-current-api-architecture)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 1.1.1-1 | Merge Agent Registry | 5 | Centralized source of truth for 13 agents, API allowlist derivation |
@@ -149,6 +151,8 @@ R1.1  Sprint 3b Merge + Firestore Config Registry
 | 1.1.1-5 | Regression testing | 8 | Validate all existing functionality against Sprint 3b changes |
 
 #### Feature 1.1.2: Tracing Hardening
+
+> **Design refs:** [Harness §9.2](KEN-E-Agentic-Harness-Design.md#92-trace-instrumentation), [§11.1](KEN-E-Agentic-Harness-Design.md#111-current-error-handling-patterns) | [trace-structure-spec §3](trace-structure-spec.md#3-span-naming-conventions), [§10](trace-structure-spec.md#10-ken-e-implementation-checklist), [§11](trace-structure-spec.md#11-trace-compliance-validation)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -161,6 +165,8 @@ R1.1  Sprint 3b Merge + Firestore Config Registry
 
 #### Feature 1.1.3: Release 1 Optimization Gates
 
+> **Design refs:** [Harness §1.5](KEN-E-Agentic-Harness-Design.md#15-expected-outcomes), [§11.5–11.6](KEN-E-Agentic-Harness-Design.md#115-test-locations) | [Release-1-Optimization-Strategy.md](Release-1-Optimization-Strategy.md)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 1.1.3-1 | Quality gates validation | 8 | Run 16 quality gates from Release-1-Optimization-Strategy.md |
@@ -169,6 +175,8 @@ R1.1  Sprint 3b Merge + Firestore Config Registry
 | 1.1.3-4 | Production deployment + monitoring | 5 | Deploy R1.1, monitor for 48hrs, validate stability |
 
 #### Feature 1.1.4: Firestore Config Registry (Preparation for Agent Factory)
+
+> **Design refs:** [Harness §3.6](KEN-E-Agentic-Harness-Design.md#36-session-state-management), [Appendix C](KEN-E-Agentic-Harness-Design.md#appendix-c-configuration-reference) | [agent-hierarchy §5](design/agent-hierarchy.md#5-firestore-driven-configuration), [§8.3](design/agent-hierarchy.md#83-config-to-constructor-mapping) | [mcp-architecture §6](design/mcp-architecture.md#6-mcp-server-config-registry)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -199,6 +207,8 @@ R1.1  Sprint 3b Merge + Firestore Config Registry
 
 #### Feature 2.1: Review Loop Framework
 
+> **Design refs:** [Harness §4.6](KEN-E-Agentic-Harness-Design.md#46-planned-review-loop-pattern-generator-critic) | [agent-hierarchy §9.1](design/agent-hierarchy.md#91-review-loop-pattern-single-step) | [review-loop-implementation-plan §1–3, §5 Phases 1–3](design/review-loop-implementation-plan.md)
+
 The core building block for all specialist agents. Must be implemented first.
 
 | ID | Story | Points | Description |
@@ -212,6 +222,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 2.2: Agent Factory — Phase 1
 
+> **Design refs:** [Harness §4.1](KEN-E-Agentic-Harness-Design.md#41-agent-hierarchy), [§4.4](KEN-E-Agentic-Harness-Design.md#44-planned-specialist-agents) | [agent-hierarchy §7](design/agent-hierarchy.md#7-planned-specialist-agent-layer), [§8](design/agent-hierarchy.md#8-planned-agent-factory) | [mcp-architecture §5a](design/mcp-architecture.md#5a-dynamic-tool-selection-via-tool_filter--toolregistry), [§6](design/mcp-architecture.md#6-mcp-server-config-registry)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 2.2-1 | Config-driven agent constructor | 13 | Read Firestore config → assemble LlmAgent (instruction, model, temperature, description, code_execution_enabled) |
@@ -222,6 +234,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 2.2: Agent Factory — Phase 2
 
+> **Design refs:** [Harness §4.1](KEN-E-Agentic-Harness-Design.md#41-agent-hierarchy), [§4.4](KEN-E-Agentic-Harness-Design.md#44-planned-specialist-agents) | [agent-hierarchy §7](design/agent-hierarchy.md#7-planned-specialist-agent-layer), [§8](design/agent-hierarchy.md#8-planned-agent-factory) | [mcp-architecture §5a](design/mcp-architecture.md#5a-dynamic-tool-selection-via-tool_filter--toolregistry), [§6](design/mcp-architecture.md#6-mcp-server-config-registry)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 2.2-2 | McpToolset creation from config | 8 | Create McpToolset instances per MCP server config with SseConnectionParams |
@@ -231,6 +245,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 2.2-6 | Agent factory unit + integration tests | 8 | Test assembly pipeline, config validation, tool_filter behavior |
 
 #### Feature 2.3: Analytics Specialist — Phase 1
+
+> **Design refs:** [Harness §4.4](KEN-E-Agentic-Harness-Design.md#44-planned-specialist-agents), [§6.3](KEN-E-Agentic-Harness-Design.md#63-predefined-skills-shipped) | [mcp-architecture §4](design/mcp-architecture.md#4-platform-integration-decisions), [§9](design/mcp-architecture.md#9-infrastructure-summary) | [User Stories: Scenarios 1–3](KEN-E_User_Stories.md)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -243,6 +259,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 2.3: Analytics Specialist — Phase 2
 
+> **Design refs:** [Harness §4.4](KEN-E-Agentic-Harness-Design.md#44-planned-specialist-agents), [§6.3](KEN-E-Agentic-Harness-Design.md#63-predefined-skills-shipped) | [mcp-architecture §4](design/mcp-architecture.md#4-platform-integration-decisions), [§9](design/mcp-architecture.md#9-infrastructure-summary) | [User Stories: Scenarios 1–3](KEN-E_User_Stories.md)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 2.3-3 | Analytics review loop integration | 8 | Wire Analytics Specialist into `build_review_pipeline()` with analytics-specific acceptance criteria |
@@ -250,6 +268,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 2.3-5 | Analytics Specialist E2E tests | 8 | Full query → analysis → review → approved output flow |
 
 #### Feature 2.4: Data Visualization — Phase 1
+
+> **Design refs:** [data-visualization §1–10](design/data-visualization.md) | [review-loop-implementation-plan §3.1](design/review-loop-implementation-plan.md#31-building-block-review-pipeline)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -264,12 +284,16 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 2.4: Data Visualization — Phase 2
 
+> **Design refs:** [data-visualization §1–10](design/data-visualization.md) | [review-loop-implementation-plan §3.1](design/review-loop-implementation-plan.md#31-building-block-review-pipeline)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 2.4-5 | Review loop artifact evaluation | 8 | Reviewer evaluates text + artifacts together; `{step_N_artifacts?}` optional template variable |
 | 2.4-6 | Data visualization E2E tests | 8 | Full analytics query → visualization → review → render flow |
 
 #### Feature 2.5: MER-E Phase 0 — Trace Extraction (Parallel Track)
+
+> **Design refs:** [Harness §9](KEN-E-Agentic-Harness-Design.md#9-integration-with-evaluation-framework) | [trace-structure-spec §1–4, §7, §11](trace-structure-spec.md) | [MER-E Framework §4](KEN-E-Self-Improving-Evaluation-Framework-Design.md#4-data-storage-design--database-schema), [§6](KEN-E-Self-Improving-Evaluation-Framework-Design.md#6-trace-collection--wb-integration)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -304,6 +328,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 3.1: Content Specialist
 
+> **Design refs:** [Harness §4.4](KEN-E-Agentic-Harness-Design.md#44-planned-specialist-agents) | [mcp-architecture §4](design/mcp-architecture.md#4-platform-integration-decisions) | [User Stories: Scenario 2 §§1–4](KEN-E_User_Stories.md#scenario-2-the-user-generates-content-to-improve-brand-awareness)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 3.1-1 | Content Specialist agent definition | 8 | LlmAgent with content instruction, HubSpot MCP (read-only CRM data for personalization) |
@@ -319,6 +345,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 3.2: Execution Specialist
 
+> **Design refs:** [Harness §4.4](KEN-E-Agentic-Harness-Design.md#44-planned-specialist-agents) | [mcp-architecture §4](design/mcp-architecture.md#4-platform-integration-decisions), [§8](design/mcp-architecture.md#8-read-only-limitations-and-cmo-impact) | [User Stories: Scenario 3 §§1–4](KEN-E_User_Stories.md#scenario-3-the-user-hosts-a-team-meeting-to-brainstorm-optimiztion-strategies)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 3.2-1 | Execution Specialist agent definition | 8 | LlmAgent with execution instruction, platform SDK tools for campaign deployment |
@@ -333,6 +361,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 3.3: Predefined Skills
 
+> **Design refs:** [Harness §6.1–6.5](KEN-E-Agentic-Harness-Design.md#6-skills-architecture-planned) | [User Stories: Scenario 1 §§1–6](KEN-E_User_Stories.md#scenario-1-the-user-requests-a-keyword-analysis-for-a-website)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 3.3-1 | Skills architecture (L1/L2/L3 progressive disclosure) | 8 | L1: metadata (~50-100 tokens, loaded at startup), L2: instructions (<5,000 tokens, on-demand), L3: resources (variable, on-demand) |
@@ -342,6 +372,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 3.3-5 | Skills unit + integration tests | 8 | Test progressive loading, skill execution, specialist attachment |
 
 #### Feature 3.4: Multi-Step Workflows — Phase 1
+
+> **Design refs:** [Harness §8](KEN-E-Agentic-Harness-Design.md#8-workflow-management-planned) | [agent-hierarchy §9.2](design/agent-hierarchy.md#92-multi-step-workflow-pattern) | [review-loop-implementation-plan §5 Phase 4](design/review-loop-implementation-plan.md#phase-4-multi-step-workflow-support) | [trace-structure-spec §8–9](trace-structure-spec.md#8-threading-and-parallel-agents)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -354,6 +386,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 3.4: Multi-Step Workflows — Phase 2
 
+> **Design refs:** [Harness §8](KEN-E-Agentic-Harness-Design.md#8-workflow-management-planned) | [agent-hierarchy §9.2](design/agent-hierarchy.md#92-multi-step-workflow-pattern) | [review-loop-implementation-plan §5 Phase 4](design/review-loop-implementation-plan.md#phase-4-multi-step-workflow-support) | [trace-structure-spec §8–9](trace-structure-spec.md#8-threading-and-parallel-agents)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 3.4-3 | `execute_workflow()` tool for Root Agent | 8 | Root Agent decomposes user request into steps with acceptance criteria and dependency graph |
@@ -363,6 +397,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 3.4-7 | Multi-step workflow E2E test | 13 | Full parallel data gathering → synthesis → user approval → execution flow |
 
 #### Feature 3.5: MER-E Phase 1 — Quality Scoring (Parallel Track)
+
+> **Design refs:** [Harness §9.3](KEN-E-Agentic-Harness-Design.md#93-output-type-classification), [Appendix B](KEN-E-Agentic-Harness-Design.md#appendix-b-output-types-for-evaluation) | [trace-structure-spec §4–5, §7](trace-structure-spec.md#4-required-metadata-per-span-level) | [MER-E Framework §7](KEN-E-Self-Improving-Evaluation-Framework-Design.md#7-automated-analysis--recommendation-engine), [§11](KEN-E-Self-Improving-Evaluation-Framework-Design.md#11-agentic-harness-integration)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -394,6 +430,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 4.1: Automation Specialist + n8n
 
+> **Design refs:** [Harness §8.8](KEN-E-Agentic-Harness-Design.md#88-planned-n8n-integration) | [mcp-architecture §10](design/mcp-architecture.md#10-open-questions) | [MER-E Framework §14](KEN-E-Self-Improving-Evaluation-Framework-Design.md#14-n8n-workflow-evaluation)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 4.1-1 | Automation Specialist agent definition | 8 | LlmAgent with automation instruction, n8n MCP server |
@@ -403,6 +441,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 4.1-5 | Automation Specialist tests | 8 | Unit + integration tests for n8n flows and scheduled execution |
 
 #### Feature 4.2: Custom Skills — Phase 1
+
+> **Design refs:** [Harness §6.4](KEN-E-Agentic-Harness-Design.md#64-custom-skills-user-created), [§6.6](KEN-E-Agentic-Harness-Design.md#66-planned-frontend-skill-builder)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -414,6 +454,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 4.2: Custom Skills — Phase 2
 
+> **Design refs:** [Harness §6.4](KEN-E-Agentic-Harness-Design.md#64-custom-skills-user-created), [§6.6](KEN-E-Agentic-Harness-Design.md#66-planned-frontend-skill-builder)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 4.2-2 | GCS + Firestore per-org skill storage | 8 | `gs://ken-e-skills/{org_id}/{skill_name}/SKILL.md` + Firestore metadata per organization |
@@ -422,6 +464,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 4.2-5 | Custom skills tests | 8 | Unit + integration tests for CRUD, validation, loading, and per-org isolation |
 
 #### Feature 4.3: MER-E Phase 2 — Human Feedback + Patterns (Parallel Track, Phase 1)
+
+> **Design refs:** [Harness §9.4](KEN-E-Agentic-Harness-Design.md#94-planned-feedback-collection) | [MER-E Framework §5](KEN-E-Self-Improving-Evaluation-Framework-Design.md#5-human-feedback-capture-system), [§7.3](KEN-E-Self-Improving-Evaluation-Framework-Design.md#73-analysis-module-pattern-detector), [§7.7](KEN-E-Self-Improving-Evaluation-Framework-Design.md#77-automatic-issue-detection)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -434,6 +478,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 4.3: MER-E Phase 2 — Human Feedback + Patterns (Parallel Track, Phase 2)
 
+> **Design refs:** [Harness §9.4](KEN-E-Agentic-Harness-Design.md#94-planned-feedback-collection) | [MER-E Framework §5](KEN-E-Self-Improving-Evaluation-Framework-Design.md#5-human-feedback-capture-system), [§7.3](KEN-E-Self-Improving-Evaluation-Framework-Design.md#73-analysis-module-pattern-detector), [§7.7](KEN-E-Self-Improving-Evaluation-Framework-Design.md#77-automatic-issue-detection)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 4.3-3 | Pattern detection engine | 13 | Detect: consistency issues, hallucination signals, structural problems, length anomalies, repetitive content |
@@ -441,6 +487,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 4.3-5 | MER-E evaluation dashboard | 13 | Visualize quality scores, patterns, trends over time; per-agent and per-specialist breakdowns |
 
 #### Feature 4.4: A/B Testing Infrastructure
+
+> **Design refs:** [Harness §9.5](KEN-E-Agentic-Harness-Design.md#95-planned-ab-testing-support) | [MER-E Framework §8.7](KEN-E-Self-Improving-Evaluation-Framework-Design.md#87-ab-testing-infrastructure)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -473,6 +521,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 5.1: Slack Channel
 
+> **Design refs:** [Harness §7.1–7.3](KEN-E-Agentic-Harness-Design.md#7-multi-channel-support-planned) | [api-gateway §4](design/api-gateway-multi-channel.md#4-planned-slack-integration-approach) | [data-visualization §9](design/data-visualization.md#9-channel-considerations)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 5.1-1 | Slack Bolt SDK service (separate Cloud Run) | 13 | Event handling, message routing, thread-based conversation mapping to KEN-E sessions |
@@ -481,6 +531,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 5.1-4 | Slack channel integration tests | 8 | End-to-end message flow through Slack adapter to agent and back |
 
 #### Feature 5.2: MER-E Phase 3 — Prompt Optimization (Phase 1)
+
+> **Design refs:** [MER-E Framework §7.2](KEN-E-Self-Improving-Evaluation-Framework-Design.md#72-analysis-module-alignment-analyzer), [§7.5](KEN-E-Self-Improving-Evaluation-Framework-Design.md#75-analysis-module-configuration-optimizer), [§12](KEN-E-Self-Improving-Evaluation-Framework-Design.md#12-human-edit-distance-tracking)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -493,12 +545,16 @@ The core building block for all specialist agents. Must be implemented first.
 
 #### Feature 5.2: MER-E Phase 3 — Prompt Optimization (Phase 2)
 
+> **Design refs:** [MER-E Framework §7.2](KEN-E-Self-Improving-Evaluation-Framework-Design.md#72-analysis-module-alignment-analyzer), [§7.5](KEN-E-Self-Improving-Evaluation-Framework-Design.md#75-analysis-module-configuration-optimizer), [§12](KEN-E-Self-Improving-Evaluation-Framework-Design.md#12-human-edit-distance-tracking)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 5.2-3 | Canary deployment pipeline | 13 | Deploy revised prompts to configurable % of traffic; monitor quality metrics |
 | 5.2-4 | Staged rollout with rollback gates | 8 | Progressive rollout with automatic rollback on quality degradation below threshold |
 
 #### Feature 5.3: Workflow Templates
+
+> **Design refs:** [Harness §8.5–8.7](KEN-E-Agentic-Harness-Design.md#85-workflow-state-machine) | [User Stories: Scenario 1](KEN-E_User_Stories.md#scenario-1-the-user-requests-a-keyword-analysis-for-a-website), [Scenario 2](KEN-E_User_Stories.md#scenario-2-the-user-generates-content-to-improve-brand-awareness)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -512,6 +568,8 @@ The core building block for all specialist agents. Must be implemented first.
 ### Sprint 16
 
 #### Feature 5.4: Advanced Workflow & Observability
+
+> **Design refs:** [review-loop-implementation-plan §5 Phase 5](design/review-loop-implementation-plan.md#phase-5-observability--monitoring) | [trace-structure-spec §9](trace-structure-spec.md#9-multi-step-workflow-support-section-13) | [MER-E Framework §13](KEN-E-Self-Improving-Evaluation-Framework-Design.md#13-multi-step-workflow-evaluation)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
@@ -545,6 +603,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 ### Feature 6.1: Voice Channel
 
+> **Design refs:** [Harness §7.4](KEN-E-Agentic-Harness-Design.md#74-voice-channel-notes) | [api-gateway §5](design/api-gateway-multi-channel.md#5-planned-voice-integration-approach)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 6.1-1 | Pipecat orchestration framework | TBD | Voice pipeline: STT → agent → TTS |
@@ -557,6 +617,8 @@ The core building block for all specialist agents. Must be implemented first.
 
 ### Feature 6.2: Enterprise Integrations
 
+> **Design refs:** [User Stories: Scenario 3 §§3–5](KEN-E_User_Stories.md#scenario-3-the-user-hosts-a-team-meeting-to-brainstorm-optimiztion-strategies)
+
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|
 | 6.2-1 | Jira task automation | TBD | Post-meeting action items → Jira tickets with assignees |
@@ -564,6 +626,8 @@ The core building block for all specialist agents. Must be implemented first.
 | 6.2-3 | Multi-tenant scaling | TBD | Per-account MCP server sets, advanced RBAC for team collaboration |
 
 ### Feature 6.3: MER-E Phase 4 — Full Closed Loop
+
+> **Design refs:** [MER-E Framework §8](KEN-E-Self-Improving-Evaluation-Framework-Design.md#8-deployment-pipeline--rollback-system), [§13](KEN-E-Self-Improving-Evaluation-Framework-Design.md#13-multi-step-workflow-evaluation), [§14](KEN-E-Self-Improving-Evaluation-Framework-Design.md#14-n8n-workflow-evaluation), [§15](KEN-E-Self-Improving-Evaluation-Framework-Design.md#15-cross-account-benchmarking)
 
 | ID | Story | Points | Description |
 |----|-------|--------|-------------|

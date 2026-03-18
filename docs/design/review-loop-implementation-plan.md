@@ -11,6 +11,8 @@
 
 ## 1. Overview
 
+> **Roadmap:** [Feature 2.1: Review Loop Framework](../product-roadmap.md#feature-21-review-loop-framework) — Release 2.0
+
 This document is a comprehensive implementation plan for adding **review loops** and **multi-step workflow orchestration** to the KEN-E agent system. It is intended to be used as input for creating features and user stories in the product roadmap.
 
 ### Problem
@@ -491,6 +493,8 @@ Pass your criteria as the `acceptance_criteria` parameter when calling the tool.
 
 ### Phase 4: Multi-Step Workflow Support
 
+> **Roadmap:** [Feature 3.4: Multi-Step Workflows](../product-roadmap.md#feature-34-multi-step-workflows--phase-1) — Release 3.0
+
 **Goal:** Add the ability to decompose complex tasks into multi-step workflows with parallel execution and user approval checkpoints.
 
 **Stories:**
@@ -686,6 +690,8 @@ Steps:
 ---
 
 ### Phase 5: Observability & Monitoring
+
+> **Roadmap:** [Feature 5.4: Advanced Workflow & Observability](../product-roadmap.md#feature-54-advanced-workflow--observability) — Release 5.0
 
 **Goal:** Ensure review loop iterations and workflow execution are visible in tracing and monitoring.
 
