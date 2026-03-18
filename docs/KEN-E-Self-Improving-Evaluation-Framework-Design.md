@@ -3258,10 +3258,10 @@ CONTENT_SPECIALIST_EVAL_CONFIG = {
 
 #### Analytics Specialist Evaluation
 
-The Analytics Specialist performs multi-step analysis with potential code execution:
+The Analytics Specialist performs multi-step analysis with Gemini's native code execution (Python code generated and run in a Google-managed sandbox):
 
 1. **Data Retrieval Accuracy**: Verify correct data was fetched
-2. **Calculation Correctness**: Validate statistical computations
+2. **Calculation Correctness**: Review `executable_code` parts from Gemini code execution for correct logic, and cross-check `code_execution_result` output against source data from tool calls
 3. **Insight Quality**: Assess actionability of findings
 4. **Visualization Appropriateness**: Right chart type for data
 
@@ -3277,7 +3277,8 @@ ANALYTICS_SPECIALIST_EVAL_CONFIG = {
             "recommendation_quality"
         ],
         "numerical_validation": True,  # Cross-check numbers against source
-        "code_review": True  # If code was executed, review it
+        "code_execution_validation": True,  # Validate executable_code parts and code_execution_result output
+        "code_review": True  # Review generated Python code for correctness
     },
     "forecast": {
         "required_sections": ["methodology", "predictions", "confidence_intervals", "assumptions"],
@@ -3286,7 +3287,8 @@ ANALYTICS_SPECIALIST_EVAL_CONFIG = {
             "data_accuracy",
             "insight_actionability"
         ],
-        "confidence_interval_required": True
+        "confidence_interval_required": True,
+        "code_review": True  # Review generated Python code for statistical calculations
     }
 }
 ```

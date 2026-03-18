@@ -1,6 +1,6 @@
 # API Gateway & Multi-Channel Architecture
 
-**Version:** 1.0
+**Version:** 1.1
 **Date:** March 2026
 **Status:** Current API is canonical; multi-channel is [PLANNED]
 
@@ -49,7 +49,7 @@ The KEN-E API is a FastAPI application deployed on Google Cloud Run.
 The current chat endpoint is **channel-agnostic**:
 - Accepts a standard message format (role, content, timestamp)
 - Routes to Agent Engine regardless of message source
-- Returns a standard response format (role, content, session_id)
+- Returns a standard response format (role, content, session_id, optional artifacts)
 - Session management is user-based, not channel-based
 
 Any new channel only needs to:
@@ -122,6 +122,10 @@ Key considerations:
 | Authentication core | No — but need per-channel auth adapters |
 
 The only new code needed per channel is: auth adapter, input normalizer, output formatter, and a deployment target.
+
+| `ChatResponse` artifacts field | No — optional field, backward-compatible. Old clients ignore it. |
+
+> **Per-channel artifact rendering:** The `artifacts` field in `ChatResponse` contains Vega-Lite specs. Each channel renders artifacts differently: Web UI renders interactive charts via `react-vega` or Recharts translation; Slack `[PLANNED]` server-side renders to PNG and sends as image attachment; Voice `[PLANNED]` describes the data verbally with no visual rendering. See [`data-visualization.md`](data-visualization.md) Section 9 for channel-specific rendering details.
 
 ## References
 

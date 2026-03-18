@@ -82,6 +82,7 @@ Key details:
 - **`include_contents='none'` on reviewer** — evaluates only the template-injected `{step_N_draft}`, not conversation history
 - **`{step_N_feedback?}` (optional)** — on first iteration, no feedback exists; `?` resolves to empty string
 - Each step uses a unique `output_key` suffix (e.g., `step_1a_draft`, `step_1b_draft`) to avoid state collisions in parallel execution
+- **Artifact evaluation** — when a specialist calls `create_visualization()`, the reviewer evaluates both the text draft and any visualization artifacts. See [`data-visualization.md`](data-visualization.md) Section 6.
 
 ### 3.2 Single-Step Delegation
 
@@ -247,6 +248,7 @@ These figures represent **overhead only** — the additional cost of running a r
 - Specialist writes to `{output_key_prefix}_draft` via `output_key`
 - Reviewer writes to `{output_key_prefix}_feedback` via `output_key`
 - Each pipeline uses unique output_key prefixes to avoid state collisions
+- Reviewer instruction template supports optional `{step_N_artifacts?}` variable for evaluating visualization artifacts produced by `create_visualization()`
 
 **Implementation Notes:**
 ```python
@@ -789,6 +791,7 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 | **`output_key` + `exit_loop` state overwrite** | Medium — `exit_loop` produces no text, so `output_key` extracts `""` and overwrites state key | Never place `exit_loop` on the agent whose `output_key` holds important state. In the review loop, the reviewer (not specialist) calls `exit_loop`. The reviewer's `output_key` is `feedback_key` — overwritten to `""` on exit, but only read on next iteration (which won't happen after exit). |
 | **`SequentialAgent` swallows `escalate`** | High — reviewer's `exit_loop` signal ignored, specialist runs after approval | Place specialist and reviewer directly under `LoopAgent`, not inside a `SequentialAgent` wrapper. `LoopAgent` checks `escalate` between sub-agents; `SequentialAgent` does not. |
 | **Synthesizer sees full conversation history** | Medium — confuses model with review loop back-and-forth from parallel branches | Use `include_contents='none'` on synthesizer agent with a strong instruction framing injected template data as "completed research." |
+| **Artifact size in review context** | Low-Medium — large Vega-Lite specs with embedded data (>1,000 rows) could consume significant tokens in the reviewer's instruction template | Limit embedded data to summary/aggregated values in the artifact. Defer raw data to a separate `data_uri` field if specs exceed a size threshold. |
 
 ---
 
@@ -816,6 +819,7 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 | 5 | ~~Should workflow state (`pending_workflow`) be persisted to Firestore for crash recovery, or is session state sufficient?~~ **Answered:** Harness doc Sections 8.5-8.7 define the long-term Firestore persistence model (data model, persistence/recovery table, idempotency). Story 4.2's session-state `pending_workflow` is the initial incremental step; full Firestore persistence follows once the workflow framework matures. | Low — reliability | Phase 4 |
 | 6 | What is the maximum number of steps a workflow should support? | Low — UX guardrail | Phase 4 |
 | 7 | How do skills interact with review loops? Should the reviewer have access to the same skills as the specialist, or only evaluation-focused skills? | Low — skill architecture | Phase 1 (when skills are implemented) |
+| 8 | How should visualization artifacts be formatted for reviewer evaluation? Should the reviewer see the full Vega-Lite spec JSON, a summary, or only the metadata? | Low-Medium — affects review quality and token budget | Phase 1 (when `create_visualization` is implemented) |
 
 ---
 

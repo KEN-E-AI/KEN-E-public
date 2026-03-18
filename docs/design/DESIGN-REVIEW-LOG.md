@@ -443,4 +443,48 @@ See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd
 
 ---
 
+## Review 12: Data Visualization & Artifacts — Design Document Updates
+
+**Date:** March 18, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Add data visualization and artifact delivery capability to the architecture design documents. No code changes — documentation only.
+
+### Design Decisions
+
+| # | Decision | Status |
+|---|----------|--------|
+| 1 | Vega-Lite as visualization spec format | Proposed — Notion entry TBD |
+| 2 | Agent suggests chart type, frontend can override | Proposed — Notion entry TBD |
+| 3 | Additive `ChatResponse` extension (`artifacts` field, backward-compatible) | Proposed — Notion entry TBD |
+| 4 | Review loop evaluates visualization quality alongside text | Proposed — Notion entry TBD |
+
+### Documents Created
+
+| File | Content |
+|------|---------|
+| `docs/design/data-visualization.md` | New detail doc (v1.0). Artifact model (Vega-Lite spec + metadata), `create_visualization()` tool signature and implementation pattern, data flow (agent → session state → API → frontend), ChatResponse extension, review loop integration (reviewer instruction template, acceptance criteria), multi-step workflow integration (per-step artifacts, synthesizer references), frontend rendering decision (react-vega vs Recharts translation), channel considerations (Web: inline, Slack: PNG, Voice: verbal), open questions. |
+
+### Documents Updated
+
+| File | Version | Changes |
+|------|---------|---------|
+| `docs/KEN-E-Agentic-Harness-Design.md` | v2.7 → v2.8 | Added Vega-Lite decision to Section 1.4 Key Design Decisions. Updated Section 2.3.2 request flow (create_visualization in specialist step 3a, artifacts extraction in response step 4). Added `response_artifacts` to Section 3.6.2 session state. Added visualization blockquote to Section 4.4. Added "Visualization Artifacts in Review Loops" subsection after Section 4.6. Added data visualization row to Section 12.3 roadmap. Added Vega-Lite, Artifact, create_visualization glossary entries (Appendix D). Added v2.8 document history entry. |
+| `CLAUDE.md` | — | Added `data-visualization.md` to design docs table. |
+| `docs/design/agent-hierarchy.md` | v1.6 → v1.7 | Added `create_visualization()` blockquote after Section 7 specialist table. Added artifact evaluation bullet to Section 9.1 review loop key details. |
+| `docs/design/api-gateway-multi-channel.md` | v1.0 → v1.1 | Updated Section 2 response format (added artifacts). Added ChatResponse artifacts row and per-channel rendering blockquote to Section 6. |
+| `docs/design/review-loop-implementation-plan.md` | v1.1 (no bump) | Added artifact evaluation bullet to Section 3.1 key details. Added `{step_N_artifacts?}` template variable to Story 1.1 acceptance criteria. Added artifact size risk to Section 8. Added open question 8 (artifact formatting for reviewer). |
+| `docs/design/mcp-architecture.md` | v1.3 (no bump) | Added `create_visualization()` cross-reference blockquote after Section 4 SDK function tools pattern. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | — | Added this entry (Review 12). |
+
+### Key Design Decisions
+
+1. **Vega-Lite as the spec format** — declarative, JSON-based, well-supported ecosystem. Separates data from presentation, allowing the frontend to override chart types.
+2. **Additive ChatResponse extension** — `content: str` unchanged; new `artifacts: list[Artifact] | None` field is backward-compatible. Old clients that don't parse artifacts continue to work.
+3. **Agent suggests, frontend overrides** — the agent has data context to suggest appropriate chart types; the frontend has UX context to override via the Vega-Lite `mark` property.
+4. **Review loop evaluates artifacts** — reviewer evaluates visualization quality alongside text, using an optional `{step_N_artifacts?}` template variable. Acceptance criteria can require specific chart types.
+5. **`create_visualization()` is a function tool, not MCP** — follows the SDK function tools pattern. Writes to `response_artifacts` session state, consistent with `output_key` patterns.
+6. **Frontend rendering is an implementation-time decision** — Vega-Lite spec is the contract. Whether to use `react-vega`/`vega-embed` or translate to existing Recharts is deferred.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*

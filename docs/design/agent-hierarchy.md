@@ -1,8 +1,8 @@
 # Agent Hierarchy & Registry
 
-**Version:** 1.6
+**Version:** 1.8
 **Date:** March 2026
-**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10-11, 2026) + ADK experiment corrections (March 18, 2026) + harness doc alignment pass (March 18, 2026)
+**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10-11, 2026) + ADK experiment corrections (March 18, 2026) + harness doc alignment pass (March 18, 2026) + data visualization cross-references (March 18, 2026) + Gemini code execution capability (March 18, 2026)
 
 > **Convention:** Agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by a specialist agent or automation when the specialist layer is built (Sprint 5-6). `[PLANNED]` marks features not yet built.
 
@@ -154,7 +154,7 @@ The next expansion (Sprint 5-6) adds specialist agents below the root:
 
 | Specialist | Tool Sources | Integration Type |
 |-----------|-------------|-----------------|
-| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads) | McpToolset + SDK function tools |
+| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads), Gemini code execution | McpToolset + SDK function tools + built-in code execution |
 | **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK function tools |
 | **Execution** | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | SDK function tools + McpToolset |
 | **Automation** | n8n MCP | McpToolset |
@@ -162,6 +162,10 @@ The next expansion (Sprint 5-6) adds specialist agents below the root:
 > **Note:** The `facebook-business` SDK is available to both Analytics (read-only tools: get campaigns, get spend, get metrics) and Execution (full CRUD). `tool_filter` controls which tools each specialist sees — see `docs/design/mcp-architecture.md` Section 5a.
 
 See `docs/design/mcp-architecture.md` for platform integration decisions.
+
+> **Visualization artifacts:** All specialist agents have the `create_visualization()` function tool (not MCP) — a Python function tool that produces Vega-Lite chart specs and writes them to `response_artifacts` session state. See [`data-visualization.md`](data-visualization.md) Section 4 for the tool signature and implementation pattern.
+
+> **[PLANNED] Gemini code execution:** The Analytics Specialist uses Gemini's built-in code execution — a third tool type distinct from MCP and SDK function tools. Enabled via `GenerateContentConfig.tools = [Tool(code_execution=ToolCodeExecution())]` at agent construction. Not subject to `tool_filter` (no tool definition in context). Google manages the sandbox; no infrastructure required. The Content Specialist may receive this capability later. See harness design doc Section 4.3 Tool Type Taxonomy and Section 4.4 for the full description.
 
 ### Current vs Planned
 
@@ -225,7 +229,9 @@ deploy_ken_e.py calls agent_factory.build_hierarchy()
   │     │       tool_filter=_make_tool_filter(),  # reads ctx.state["relevant_tools"]
   │     │     )
   │     ├── Create SDK function tools (Meta Ads, Mailchimp) from config
-  │     └── Create Agent with tools + config
+  │     ├── Configure GenerateContentConfig with code execution if specialist
+  │     │     config specifies code_execution_enabled=true
+  │     └── Create Agent with tools + config + generate_content_config
   │
   ├── 4. Generate dispatch functions for root agent
   │     For each specialist: create dispatch_to_{name}() with @safe_weave_op()
@@ -254,6 +260,7 @@ deploy_ken_e.py calls agent_factory.build_hierarchy()
 | `mcp_servers/{id}.url` | `McpToolset(connection_params=SseConnectionParams(url=))` | SSE endpoint |
 | `mcp_servers/{id}.auth_type` | `McpToolset(header_provider=)` | Maps to credential key in session state |
 | `mcp_servers/{id}.enabled` | Include/exclude from specialist | Disabled servers are not wired |
+| `agents/{id}.code_execution_enabled` | `generate_content_config.tools` | If true, adds `Tool(code_execution=ToolCodeExecution())` to `GenerateContentConfig.tools` |
 | `mcp_servers/{id}.specialist_categories` | Groups server into specialist(s) | A server can belong to multiple specialists |
 
 ### 8.4 Header Provider Factory
@@ -325,6 +332,7 @@ Key details:
 - **No `SequentialAgent` wrapper** — `LoopAgent` iterates sub-agents sequentially and checks `escalate` between each. A `SequentialAgent` wrapper would swallow the `escalate` signal from `exit_loop`.
 - **`include_contents='none'` on reviewer** — reviewer evaluates only the template-injected `{draft}`, not conversation history, for consistent evaluations.
 - **`{review_feedback?}` (optional)** — on first iteration, no feedback exists. The `?` suffix resolves to empty string instead of `KeyError`.
+- **Artifact evaluation** — when a specialist calls `create_visualization()`, the reviewer evaluates visualization quality alongside the text draft. Acceptance criteria can require specific chart types or data dimensions. See [`data-visualization.md`](data-visualization.md) Section 6 for the reviewer instruction template and acceptance criteria patterns.
 
 **LLM call cost:** Each iteration makes 2 LLM calls (specialist + reviewer), yielding 2-6 calls per loop. See harness design doc Section 4.6 for the full cost table and Section 8.4 for parallel execution cost analysis.
 

@@ -1,6 +1,6 @@
 # KEN-E Agentic Harness Design Document
 
-**Version:** 2.7
+**Version:** 2.9
 **Date:** March 18, 2026
 **Author:** Development Team
 
@@ -142,6 +142,8 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 | **Firestore-driven agent config** — change instructions, model, temperature without redeployment |
 | **Config-driven agent factory** — Sprint 5-6: config-driven specialist assembly |
 | **ADK Skills for expertise delivery** — predefined skills shipped with product, custom skills created by users via UI |
+| **Vega-Lite artifacts for data visualization** — specialists produce Vega-Lite chart specs via `create_visualization()` tool; `ChatResponse` extended with `artifacts` field; agent suggests chart type, frontend can override |
+| **Gemini code execution for analytics** — Analytics Specialist uses Gemini's built-in code execution for reliable calculations (percentage changes, averages, trend analysis). No new infrastructure — Google-managed sandbox. |
 
 For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e).
 
@@ -318,6 +320,7 @@ User Request: "Show me last week's traffic and top-performing ad campaigns"
     │    │    • tool_filter selects relevant tools         │    │
     │    │    • McpToolset → GA MCP (traffic data)         │    │
     │    │    • McpToolset → Google Ads MCP (campaigns)    │    │
+    │    │    • create_visualization() for data charts     │    │
     │    │    • Reads {review_feedback} if prior iteration │    │
     │    └────────────────────────────────────────────────┘    │
     │                        │                                 │
@@ -334,6 +337,8 @@ User Request: "Show me last week's traffic and top-performing ad campaigns"
     ┌─────────────────────────────────────────────────────────┐
     │ 4. RESPONSE                                              │
     │    • Approved draft extracted from session state         │
+    │    • Artifacts extracted from response_artifacts state   │
+    │    • ChatResponse includes content + artifacts field     │
     │    • KEN-E relays to user                                │
     │    • Background: update session preview + Redis cache    │
     └─────────────────────────────────────────────────────────┘
@@ -492,6 +497,7 @@ The target architecture generalises credentials to support all integrated platfo
 |-----|---------|--------|
 | `platform_credentials.<service>` | Per-platform OAuth tokens or API keys (GA, Google Ads, HubSpot, Meta Ads, Mailchimp) | API at session creation |
 | `tool_filter_state` | ToolRegistry search results driving per-turn `tool_filter` predicates | `before_agent_callback` on specialist agents (ToolRegistry search, written per-turn before tool resolution) |
+| `response_artifacts` | Visualization artifacts (Vega-Lite specs) produced by specialist agents during current invocation | `create_visualization` tool in specialist agents. See [`data-visualization.md`](design/data-visualization.md) Section 4. |
 
 #### 3.6.3 What Is Not in Session State
 
@@ -614,6 +620,16 @@ The **ToolRegistry** (`app/adk/tools/registry/tool_registry.py`) provides:
 
 MCP server connections are fixed at deploy time — only *which tools* are visible is dynamic per-turn.
 
+#### Tool Type Taxonomy
+
+| Tool Type | Resolution Mechanism | Context Overhead | Subject to `tool_filter` | Example |
+|-----------|---------------------|-----------------|--------------------------|---------|
+| **MCP Tools** | Resolved via `McpToolset` + `tool_filter` | ~150 tokens/tool in context | Yes | GA MCP `run_report_mt`, HubSpot MCP `get_contacts` |
+| **SDK Function Tools** | Python functions wired at agent construction | ~150 tokens/tool in context | Yes (via `FunctionTool` wrapper) | `update_meta_campaign_budget()`, `create_visualization()` |
+| **Built-in Model Capabilities** | Enabled via `GenerateContentConfig.tools` | Zero — no tool definition sent to context | No — not subject to `tool_filter` | Gemini code execution (`ToolCodeExecution`) |
+
+> **Built-in model capabilities** are orthogonal to the tool management system. They are configured at agent construction via `GenerateContentConfig`, not as MCP or SDK tools. The LLM can invoke them natively without a tool definition in context. Currently, only Gemini code execution is planned (Analytics Specialist, Sprint 5-6).
+
 > **Execution order per LLM turn (verified in Experiment #4):** `before_agent_callback` (writes `tool_filter_state`) → `InstructionProvider` (reads state) → `tool_filter` (reads state) → `before_model_callback` → LLM call. All share the same `session.state` dict — `ReadonlyContext.state` is a `MappingProxyType` (read-only live view), so `CallbackContext` writes are immediately visible.
 
 See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 6 for the ToolRegistry's current and planned roles.
@@ -626,7 +642,7 @@ The specialist layer (Sprint 5-6) partitions tools by domain.
 
 | Specialist | Tool Sources | Integration Type | Key Capabilities |
 |-----------|-------------|-----------------|------------------|
-| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads) | McpToolset + SDK | Data queries, reporting, performance analysis |
+| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads), Gemini code execution | McpToolset + SDK + built-in | Data queries, reporting, performance analysis, calculations |
 | **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK | CRM data, email campaigns, content management |
 | **Execution** | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | SDK + McpToolset | Campaign deployment, budget management |
 | **Automation** | n8n MCP | McpToolset | Workflow creation, scheduling |
@@ -634,6 +650,10 @@ The specialist layer (Sprint 5-6) partitions tools by domain.
 > **Note:** The `facebook-business` SDK is available to both Analytics (read-only tools: get campaigns, get spend, get metrics) and Execution (full CRUD). `tool_filter` controls which tools each specialist sees — Analytics sees read-only tools while Execution sees the full CRUD set. This parallels Google Ads, where the MCP (reads) is shared with Analytics.
 
 Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
+
+> **Visualization artifacts:** All specialist agents have the `create_visualization()` function tool, enabling them to produce Vega-Lite chart specs alongside text responses. This is not an MCP tool — it is a Python function tool that writes artifacts to `response_artifacts` session state. See [`docs/design/data-visualization.md`](design/data-visualization.md) for the full artifact model, tool signature, and data flow.
+
+> **[PLANNED] Gemini code execution:** The Analytics Specialist uses Gemini's built-in code execution for reliable numerical calculations (percentage changes, averages, trend analysis). Enabled via `GenerateContentConfig.tools = [Tool(code_execution=ToolCodeExecution())]` at agent construction — not an MCP or SDK tool, and not subject to `tool_filter`. Google manages the sandbox; no infrastructure required. The Content Specialist may receive code execution later if needed for data-driven content. The Root Agent does NOT get code execution — it routes to specialists. See Section 4.3 Tool Type Taxonomy.
 
 > For platform-by-platform integration rationale (why hybrid MCP+SDK for Google Ads, why SDK-only for Meta/Mailchimp, provider-hosted vs self-hosted decisions) and the SDK function tools pattern, see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Sections 4 and 8.
 
@@ -654,7 +674,7 @@ See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 7 for 
 
 | Agent | Type | Tool Sources | Assembled By |
 |-------|------|-------------|--------------|
-| Analytics Specialist | LlmAgent + McpToolset + SDK | GA MCP, Google Ads MCP, Meta Ads SDK (reads) | Config-driven agent factory |
+| Analytics Specialist | LlmAgent + McpToolset + SDK + code execution | GA MCP, Google Ads MCP, Meta Ads SDK (reads), Gemini code execution | Config-driven agent factory |
 | Content Specialist | LlmAgent + McpToolset + SDK | HubSpot MCP, Mailchimp SDK | Config-driven agent factory |
 | Execution Specialist | LlmAgent + SDK + McpToolset | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | Config-driven agent factory |
 | Automation Specialist | LlmAgent + McpToolset | n8n MCP | Config-driven agent factory |
@@ -725,6 +745,16 @@ The review pipeline is the **atomic building block** for Section 8.1 multi-step 
 See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 9 for the review loop and workflow orchestration architecture, including the multi-step pattern and planned key files.
 
 See [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for the phased delivery plan — 13 stories across 5 phases covering pipeline factories, dispatch integration, criteria generation, multi-step workflows, and observability.
+
+#### Visualization Artifacts in Review Loops
+
+When a specialist calls `create_visualization()`, the produced artifacts are stored in session state alongside the text draft. The reviewer evaluates both text quality and artifact quality — including chart type appropriateness, data completeness, and consistency between narrative and visualization.
+
+When the specialist uses Gemini code execution, the generated Python code and its results are part of the draft output. The reviewer can evaluate computational correctness — verifying that the code logic matches the stated analysis, that results are consistent with the source data, and that percentage changes and averages are calculated correctly.
+
+Acceptance criteria can explicitly require visualizations (e.g., "Must include a line chart showing daily sessions"). The reviewer's instruction template supports an optional `{step_N_artifacts?}` variable for artifact evaluation.
+
+See [`docs/design/data-visualization.md`](design/data-visualization.md) Section 6 for the full review loop integration design including reviewer instruction templates and acceptance criteria patterns.
 
 ---
 
@@ -1406,6 +1436,19 @@ Root: Session Invocation
 │   │   └── L3: Tool Call (adk.tool.get_account_summaries_mt)
 ```
 
+#### 9.2.1 Code Execution Traces
+
+When the Analytics Specialist uses Gemini code execution, the LLM response contains `executable_code` and `code_execution_result` part types interleaved with text parts within L3 LLM Call spans. These are NOT separate L3 spans — they are additional content parts within the `generate_content` response.
+
+| Part Type | Key Fields | Description |
+|-----------|-----------|-------------|
+| `executable_code` | `code` (string) | Python code generated by the model |
+| `code_execution_result` | `output` (string), `outcome` (enum) | Execution output and success/failure status |
+
+These parts appear as siblings of text parts within a single `generate_content` span. MER-E extractors should detect `executable_code` parts and pair them with their corresponding `code_execution_result` to evaluate computational correctness.
+
+See `docs/trace-structure-spec.md` Section 4.4.1 for the full trace structure specification and MER-E extraction guidance.
+
 ### 9.3 Output Type Classification
 
 Output classification is implemented via `OUTPUT_CATEGORIES` in `app/adk/agents/strategy_agent/constants.py`. Each strategy type maps to semantic output categories for MER-E trace-rule matching:
@@ -1475,6 +1518,7 @@ The harness will support A/B testing of agent configurations:
 - **Token cost scales linearly** with requests × tools-per-request. With `tool_filter`, fewer tools in context reduces input tokens by ~30-50%.
 - **MCP server costs scale with server count**, not user count (multi-tenant). Adding Google Ads MCP + HubSpot MCP adds ~$345/month in Cloud Run.
 - **Voice channel** (Phase 4) adds: STT/TTS API costs (~$0.006/min for Deepgram) + Meeting BaaS ($50-100+/month per bot seat for Recall.ai). Not included in moderate tier estimate. Budget ~$500-1,500/month additional depending on meeting volume.
+- **Gemini code execution** adds minimal cost — billed as additional output tokens (~500-2,000 per request, ~$0.00015-0.0006 at Flash pricing). No separate compute cost; Google manages the sandbox.
 - **Voice latency gap:** Current Agent Engine response time is ~7-13s. Voice requires <2s end-to-end. Voice may need a lightweight agent path or a streaming-optimized serving strategy — this is an unsolved prerequisite for Phase 4.
 
 #### Cost Monitoring
@@ -1696,6 +1740,8 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **Skills architecture** | Sprint 5-6 | Predefined skills bundled, custom skills via UI (Section 6) |
 | **Slack channel** | Sprint 8+ | Bolt SDK integration on separate Cloud Run |
 | **Workflow management** | Sprint 8+ | Multi-step task tracking with Firestore persistence. See [`review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for phased delivery plan. |
+| **Gemini code execution** | Sprint 5-6 | Enable on Analytics Specialist via `GenerateContentConfig`. Depends on specialist agents + agent factory. |
+| **Data visualization & artifacts** | Sprint 7+ | Vega-Lite artifacts in ChatResponse, `create_visualization()` tool, frontend chart rendering. See [`data-visualization.md`](design/data-visualization.md). |
 | **Voice channel** | Phase 4 | Pipecat + Meeting BaaS |
 | **A/B testing** | Phase 4 | Experiment infrastructure for agent configs |
 
@@ -1713,6 +1759,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **Meta Ads** | SDK function tools | `facebook-business` — shared: Analytics (reads) + Execution (reads + writes) | Planned |
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` | Planned |
 | **Microsoft Ads** | Deferred | — | No current demand |
+| **Gemini Code Execution** | Built-in model capability | `GenerateContentConfig.tools` | Planned (Sprint 5-6) |
 
 > For detailed integration rationale per platform (hybrid MCP+SDK pattern, read-only limitations and CMO impact, SDK function tools code pattern), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Sections 4 and 8.
 
@@ -1763,6 +1810,12 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | **ReadonlyContext** | ADK read-only view of session state (`MappingProxyType`), passed to `InstructionProvider` and `tool_filter`. Live view of the mutable state dict — sees `CallbackContext` writes immediately. |
 | **CallbackContext** | ADK mutable context passed to `before_agent_callback`, `after_agent_callback`, and model callbacks. Writes to `callback_context.state` go to `session.state` with delta tracking. |
 | **before_agent_callback** | ADK callback that fires before each LLM turn's tool resolution. Receives `CallbackContext` (mutable). Used for Weave tracing and ToolRegistry-driven `tool_filter` state writes. |
+| **Vega-Lite** | Declarative JSON-based visualization grammar. Agents produce Vega-Lite chart specs via `create_visualization()`; the frontend renders them. See [`data-visualization.md`](design/data-visualization.md). |
+| **Artifact** | A structured output (e.g., Vega-Lite chart spec) produced alongside text by specialist agents. Delivered to the frontend via the `artifacts` field on `ChatResponse`. |
+| **create_visualization** | Python function tool available to all specialist agents. Produces a Vega-Lite artifact and writes it to `response_artifacts` session state. Not an MCP tool. |
+| **Code Execution (Gemini)** | Built-in Gemini model capability that generates and runs Python code in a Google-managed sandbox. Enabled via `GenerateContentConfig.tools = [Tool(code_execution=ToolCodeExecution())]`. Returns `executable_code` and `code_execution_result` parts in the LLM response. |
+| **Built-in Model Capability** | A capability provided natively by the LLM model (e.g., Gemini code execution), configured via `GenerateContentConfig` rather than as an MCP or SDK tool. Zero context overhead — no tool definition is sent. Not subject to `tool_filter`. |
+| **ToolCodeExecution** | ADK/Gemini class that enables code execution when added to `GenerateContentConfig.tools`. Part of `google.genai.types`. |
 
 ---
 
@@ -1779,6 +1832,8 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | 2.5 | 2026-03-11 | Development Team | Added `[TRANSITIONAL]` convention for GA Agent and Company News Agent (successors documented). Added Meta Ads SDK shared access (Analytics reads + Execution reads/writes via `tool_filter`). Added Section 6 Skills Architecture (predefined + custom skills, SkillToolset integration, skill builder UI). Renumbered Sections 6-12 → 7-13. Added Decision 22 link. Updated glossary with Skill/SkillToolset/SKILL.md terms. |
 | 2.6 | 2026-03-18 | Development Team | ADK 1.26.0 experiment corrections: removed `SequentialAgent` wrappers inside `LoopAgent` (Sections 4.6, 8.1), added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. New subsections: 8.2 ADK Implementation Details (`build_review_pipeline()` and `build_workflow_pipeline()` factories, synthesizer pattern), 8.3 ADK Pitfalls (3 validated pitfalls), 8.4 LLM Call Cost & Latency. Renumbered 8.2-8.5 → 8.5-8.8. Added LLM call cost table to Section 4.6. |
 | 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c). |
+| 2.8 | 2026-03-18 | Development Team | Data visualization & artifacts. Added Vega-Lite artifacts decision to Section 1.4. Updated Section 2.3.2 request flow (create_visualization in specialist, artifacts extraction in response). Added `response_artifacts` to Section 3.6.2 session state. Added visualization blockquote to Section 4.4. Added "Visualization Artifacts in Review Loops" subsection after Section 4.6. Added data visualization row to Section 12.3 roadmap. Added Vega-Lite, Artifact, create_visualization glossary entries (Appendix D). Created [`data-visualization.md`](design/data-visualization.md). |
+| 2.9 | 2026-03-18 | Development Team | Gemini native code execution. Added code execution decision to Section 1.4. Added Tool Type Taxonomy table to Section 4.3 (MCP Tools, SDK Function Tools, Built-in Model Capabilities). Updated Analytics Specialist in Sections 4.4 and 4.5 with Gemini code execution. Added code execution note to Section 4.6 review loop. Added Section 9.2.1 Code Execution Traces. Added code execution cost bullet to Section 10.2. Added Gemini code execution to Section 12.3 roadmap and Appendix A. Added Code Execution (Gemini), Built-in Model Capability, ToolCodeExecution to Appendix D glossary. |
 
 ---
 

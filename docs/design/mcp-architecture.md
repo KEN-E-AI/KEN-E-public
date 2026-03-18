@@ -1,8 +1,8 @@
 # MCP Server Architecture
 
-**Version:** 1.3
+**Version:** 1.4
 **Date:** March 2026
-**Status:** Canonical — reflects decisions from Sprint 3b architecture review + design review (March 10, 2026)
+**Status:** Canonical — reflects decisions from Sprint 3b architecture review + design review (March 10, 2026) + Gemini code execution taxonomy (March 18, 2026)
 **Canonical Source:** [Notion Design Brief](https://www.notion.so/31e30fd653028118bd11f4a3270e3463)
 
 ---
@@ -50,6 +50,7 @@ We do not need per-account MCP server instances. The only potential exception is
 | **Meta Ads** | SDK function tools | `facebook-business` Python SDK — shared: Analytics (reads) + Execution (reads + writes) |
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` Python SDK |
 | **Microsoft Ads** | Defer | Revisit when there's client demand |
+| **Gemini Code Execution** | Built-in model capability | `GenerateContentConfig.tools` — Analytics Specialist primary. No infrastructure — Google-managed sandbox. |
 
 ### SDK Function Tools Pattern
 
@@ -67,12 +68,16 @@ async def update_meta_campaign_budget(
     return {"status": "updated", "campaign_id": campaign_id}
 ```
 
+> **`create_visualization()` follows this same pattern** — it is a Python function tool (not MCP) available to all specialist agents. It produces Vega-Lite chart specs and writes them to `response_artifacts` session state. See [`data-visualization.md`](data-visualization.md) for the full design.
+
 ## 5. Token Budget Solution: Specialist Routing + Dynamic Tool Filtering
 
 Token budget is addressed at two levels:
 
 1. **Specialist routing (structural)** — Each specialist agent has 2-5 tool sources (~10-30 tools). The root agent routes to the right specialist — it never sees all 400 tools.
 2. **`tool_filter` (per-turn)** — Even within a specialist, not all tools need to be exposed on every turn. ADK's `tool_filter` on `BaseToolset` can dynamically select which tools the LLM sees, reducing context usage further.
+
+Built-in model capabilities are orthogonal to both levels of the token budget. They are not MCP tools, not subject to `tool_filter`, and carry zero context overhead. They are configured at agent construction via `GenerateContentConfig`, not through `McpToolset` or function tools. Currently, only Gemini code execution is planned (Analytics Specialist, Sprint 5-6).
 
 ```
 User -> API -> Agent Engine
@@ -81,6 +86,7 @@ User -> API -> Agent Engine
                 |     |     |-- McpToolset -> Google Ads MCP (self-hosted, Cloud Run)
                 |     |     |-- McpToolset -> GA MCP (self-hosted, exists today)
                 |     |     |-- SDK tools -> Meta Ads reads (facebook-business SDK)
+                |     |     |-- Built-in -> Gemini code execution (GenerateContentConfig)
                 |     |
                 |     |-- Content Specialist
                 |     |     |-- McpToolset -> HubSpot MCP (provider-hosted)
@@ -269,7 +275,8 @@ The Analytics Specialist uses MCP servers and read-only SDK tools for reporting 
 | Cloud Run deployments | 2 | Google Ads MCP + GA MCP (existing) |
 | Provider-hosted MCP | 1 | HubSpot (`mcp.hubspot.com`) |
 | SDK dependencies | 3 | `google-ads`, `facebook-business`, `mailchimp-marketing` |
-| Total infrastructure to maintain | 2 servers | Everything else is provider-maintained or SDK-based |
+| Built-in model capabilities | 1 | Gemini code execution (no infrastructure — Google-managed) |
+| Total infrastructure to maintain | 2 servers | Everything else is provider-maintained, SDK-based, or built-in |
 
 ## 10. Open Questions
 
