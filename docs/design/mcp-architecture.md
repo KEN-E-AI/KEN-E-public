@@ -39,6 +39,8 @@ Every major marketing platform API authenticates via OAuth 2.0 per-user tokens. 
 
 We do not need per-account MCP server instances. The only potential exception is account-specific automation (e.g., custom n8n workflows).
 
+> For the full credential lifecycle (OAuth flow, encrypted storage, token refresh, reauth signaling), see [`docs/KEN-E-Agentic-Harness-Design.md`](../KEN-E-Agentic-Harness-Design.md) Section 11.2.
+
 ## 4. Platform Integration Decisions
 
 | Platform | Decision | Integration Type |
@@ -92,6 +94,10 @@ User -> API -> Agent Engine
                 |     |-- Automation Specialist
                 |           |-- McpToolset -> n8n MCP (self-hosted, TBD)
 ```
+
+> **Review loops:** Every specialist delegation is wrapped in a review loop (generator-critic pattern using ADK `LoopAgent`) that enforces acceptance criteria before returning results. See [`docs/KEN-E-Agentic-Harness-Design.md`](../KEN-E-Agentic-Harness-Design.md) Section 4.6 for the review loop design and Section 8 for multi-step workflow composition.
+>
+> **Skills complement `tool_filter`:** ADK Skills provide procedural instructions for HOW to use tools (step-by-step workflows, best practices), while `tool_filter` controls WHICH tools are visible. A skill's `allowed-tools` field documents referenced tools, but visibility is still governed by `tool_filter`. See [`docs/KEN-E-Agentic-Harness-Design.md`](../KEN-E-Agentic-Harness-Design.md) Section 6.
 
 ## 5a. Dynamic Tool Selection via `tool_filter` + ToolRegistry
 
@@ -238,8 +244,8 @@ The `MCPServerManager` (`app/adk/mcp_config/manager.py`) is a Sprint 3 in-proces
 | Component | Disposition |
 |-----------|-------------|
 | Health monitoring + admin status endpoints | **Keep** |
-| Connection pooling | **Remove** |
-| LRU eviction logic | **Remove** |
+| Connection pooling | **Deprecated** → remove in Sprint 5-6 |
+| LRU eviction logic | **Deprecated** → remove in Sprint 5-6 |
 | Config loading + auth helpers | **Reuse** — move to agent factory |
 | YAML config | **Evolve** — extend schema, migrate to Firestore |
 
@@ -253,6 +259,8 @@ For a CMO saying "shift 20% of budget to Campaign X":
 - **HubSpot**: Can pull CRM data for analysis, but workflow creation requires manual action until HubSpot expands MCP write capabilities
 
 The Analytics Specialist uses MCP servers and read-only SDK tools for reporting across GA, Google Ads, and Meta Ads. The Execution Specialist uses SDK function tools for write operations on Meta Ads and Google Ads. The `facebook-business` SDK is available to both specialists with different tool subsets controlled by `tool_filter` — Analytics sees read-only tools (get campaigns, get spend, get metrics) while Execution sees the full CRUD set.
+
+> For the full specialist tool source mapping and planned agent factory, see [`docs/KEN-E-Agentic-Harness-Design.md`](../KEN-E-Agentic-Harness-Design.md) Section 4.4.
 
 ## 9. Infrastructure Summary
 

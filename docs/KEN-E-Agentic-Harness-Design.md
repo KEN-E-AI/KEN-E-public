@@ -635,6 +635,8 @@ The specialist layer (Sprint 5-6) partitions tools by domain.
 
 Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
 
+> For platform-by-platform integration rationale (why hybrid MCP+SDK for Google Ads, why SDK-only for Meta/Mailchimp, provider-hosted vs self-hosted decisions) and the SDK function tools pattern, see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Sections 4 and 8.
+
 See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 7 for the specialist layer design and Section 8 for the config-driven agent factory.
 
 ### 4.5 Agent Summary Table
@@ -731,6 +733,8 @@ See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 9 for 
 ### 5.1 Lazy-Loading
 
 ADK's `McpToolset` handles lazy-loading natively — SSE connections open on first `get_tools()` call, not at deploy time. This reduces initial context from ~60,000 tokens (all tools) to ~2,000 tokens (registry index only), with 200-500ms load time per server when first accessed.
+
+> **Important constraint:** `get_tools()` re-queries connected MCP servers each turn, but cannot connect to *new* MCP servers mid-conversation. The set of `McpToolset` instances is fixed at agent construction time. For full ADK internals (per-invocation caching in v1.26.0, SSE session pooling), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Section 2.
 
 ### 5.2 Tool Registry
 
@@ -1593,6 +1597,8 @@ Session state keys (per-platform):
 
 The API layer must load and refresh credentials for all connected platforms at session creation time. This is a linear scaling problem: N platforms = N credential loads. Mitigation: parallel loading (already implemented for GA), Redis caching per-platform.
 
+> For the multi-tenancy model (one MCP server instance per platform serving all accounts, scoped by OAuth token), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Section 3.
+
 ### 11.3 Rate Limiting & Platform Quota Management
 
 #### 11.3.1 Current Rate Limiting
@@ -1703,6 +1709,8 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **Meta Ads** | SDK function tools | `facebook-business` — shared: Analytics (reads) + Execution (reads + writes) | Planned |
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` | Planned |
 | **Microsoft Ads** | Deferred | — | No current demand |
+
+> For detailed integration rationale per platform (hybrid MCP+SDK pattern, read-only limitations and CMO impact, SDK function tools code pattern), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Sections 4 and 8.
 
 ### Appendix B: Output Types for Evaluation
 
