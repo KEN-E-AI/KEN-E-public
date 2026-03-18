@@ -78,28 +78,7 @@ docs/
 
    **Option A: Use the unified environment switcher (recommended)**
 
-   ```bash
-   # From the project root, switch ALL components including API
-   cd ..  # Go to project root
-   ./set-environment.sh development
-   # OR
-   make env-dev
-
-   # Switch to staging (requires service account)
-   ./set-environment.sh staging
-   # OR
-   make env-staging
-
-   # Switch to production (requires service account, use with caution!)
-   ./set-environment.sh production
-   # OR
-   make env-prod
-   ```
-
-   This unified script will automatically:
-   - Configure the API with the correct environment
-   - Set up service account authentication if available
-   - Resolve secrets from Google Secret Manager when needed
+   See the [root README](../README.md#2-configure-environment) for unified switching (`./set-environment.sh` / `make env-dev`).
 
    **Option B: Configure API only (if needed)**
 
@@ -175,36 +154,18 @@ For detailed authentication documentation, see [docs/AUTHENTICATION.md](docs/AUT
 
 ### Switching Between Environments
 
-To switch between environments during development:
+For unified switching across all components, see the [root README](../README.md#2-configure-environment).
 
-**With Service Account Credentials (Recommended):**
+To switch the API only:
+
 ```bash
-# Check current environment
-grep ENVIRONMENT .env
-
-# Switch to a different environment using service account
+# With service account credentials (recommended for staging/production)
 ./scripts/set_environment_with_sa.sh development
 ./scripts/set_environment_with_sa.sh staging
 ./scripts/set_environment_with_sa.sh production
 
-# For staging specifically, you can also use:
-./scripts/use_staging_with_sa_fixed.sh
-
-# Restart the API server to use the new environment
-```
-
-**Without Service Account Credentials:**
-```bash
-# Check current environment
-./scripts/set_environment.sh
-
-# Switch to development (no secrets needed)
+# Without service account credentials (development only)
 ./scripts/set_environment.sh development
-
-# For staging/production without service accounts, use local env files
-cp .env.staging.local .env  # or .env.production.local
-
-# Restart the API server to use the new environment
 ```
 
 ### Environment Files
@@ -310,9 +271,6 @@ The project includes a comprehensive CLI tool (`cli_manager.py`) for managing ac
 ```bash
 # Run the interactive CLI
 uv run python cli_manager.py
-
-# Test CLI functionality
-uv run python test_cli_demo.py
 
 # Make it executable and run directly
 chmod +x cli_manager.py

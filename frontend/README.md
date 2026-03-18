@@ -50,23 +50,7 @@ npm --version
 
    **Option A: Use the unified environment switcher (recommended)**
 
-   ```bash
-   # From the project root, switch ALL components to development
-   cd ..  # Go to project root
-   ./set-environment.sh development
-   # OR
-   make env-dev
-
-   # Switch ALL components to staging
-   ./set-environment.sh staging
-   # OR
-   make env-staging
-
-   # Switch ALL components to production (use with caution!)
-   ./set-environment.sh production
-   # OR
-   make env-prod
-   ```
+   See the [root README](../README.md#2-configure-environment) for unified switching (`./set-environment.sh` / `make env-dev`).
 
    **Option B: Configure frontend only**
 
@@ -104,16 +88,12 @@ npm --version
 
 ### Switching Between Environments
 
-To switch between environments during development:
+For unified switching across all components, see the [root README](../README.md#2-configure-environment).
+
+To switch the frontend only:
 
 ```bash
-# Check current environment
-./scripts/set_environment.sh
-
-# Switch to a different environment
 ./scripts/set_environment.sh [development|staging|production]
-
-# Restart the dev server with the appropriate command
 npm run dev:[environment]
 ```
 
