@@ -487,4 +487,37 @@ See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd
 
 ---
 
+## Review 13: Gemini Native Code Execution for Specialist Agents
+
+**Date:** March 18, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Document Gemini's native code execution as a third tool type for specialist agents. No code changes — documentation only.
+
+### Finding
+
+When a user asks KEN-E how well their website performed, the Analytics Specialist retrieves raw data from Google Analytics via MCP tools. To compute percentage changes, averages, or trend analysis, the agent must rely on the LLM doing arithmetic — which is unreliable. No code execution capability exists anywhere in the current architecture or design docs.
+
+**Solution:** Gemini's built-in code execution generates Python code and runs it in a Google-managed sandbox, returning results. Zero infrastructure required (Google handles sandboxing and security). Integrates naturally with ADK via `GenerateContentConfig.tools = [Tool(code_execution=ToolCodeExecution())]`.
+
+### Documents Updated
+
+| File | Version | Changes |
+|------|---------|---------|
+| `docs/KEN-E-Agentic-Harness-Design.md` | v2.8 → v2.9 | Added code execution decision (Section 1.4). Added Tool Type Taxonomy table (Section 4.3). Updated Analytics Specialist (Sections 4.4, 4.5). Added code execution in review loop (Section 4.6). Added Section 9.2.1 Code Execution Traces. Added cost bullet (Section 10.2). Added roadmap row (Section 12.3) and Appendix A row. Added 3 glossary entries (Appendix D). |
+| `docs/design/mcp-architecture.md` | v1.3 → v1.4 | Added Gemini Code Execution to platform table (Section 4). Added built-in capabilities paragraph and tree entry (Section 5). Added infrastructure row (Section 9). |
+| `docs/design/agent-hierarchy.md` | v1.7 → v1.8 | Updated Analytics row in specialist table (Section 7). Added code execution blockquote. Added `GenerateContentConfig` step to factory assembly (Section 8.2). Added `code_execution_enabled` config mapping (Section 8.3). |
+| `docs/trace-structure-spec.md` | v1.1 → v1.2 | Added Section 4.4.1 Code Execution Parts (part types table, trace structure, MER-E extraction guidance, key differences from tool calls). Added checklist item 5b. |
+| `docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md` | v2.0 → v2.1 | Updated Analytics Specialist intro to reference Gemini native code execution. Expanded calculation correctness step. Added `code_execution_validation` and `code_review` to eval config. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | — | Added this entry (Review 13). |
+
+### Key Design Decisions
+
+1. **Third tool type taxonomy** — MCP Tools, SDK Function Tools, and Built-in Model Capabilities. Built-in capabilities are orthogonal to `tool_filter` and carry zero context overhead.
+2. **Analytics Specialist only (initially)** — code execution enabled on Analytics Specialist. Content Specialist may get it later. Root Agent does NOT get code execution.
+3. **No infrastructure** — Google manages the sandbox. No Cloud Run deployments, no container images, no security configuration.
+4. **Config-driven enablement** — `agents/{id}.code_execution_enabled` in Firestore drives `GenerateContentConfig.tools` assembly in the agent factory.
+5. **Trace extraction pattern** — `executable_code` and `code_execution_result` are content parts within `generate_content` spans, not separate L3 spans. MER-E extracts and pairs them for evaluation.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*
