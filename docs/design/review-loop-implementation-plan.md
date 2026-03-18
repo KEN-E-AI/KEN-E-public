@@ -1,8 +1,10 @@
 # Review Loop & Workflow Orchestration — Implementation Plan
 
-**Version:** 1.0
-**Date:** March 11, 2026
+**Version:** 1.1
+**Date:** March 18, 2026
 **Status:** Proposed — for roadmap/story creation
+
+> **Revised March 18, 2026 (v1.1)** — Structural corrections based on ADK 1.26.0 experiments: removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline wrappers for `ParallelAgent` branches, added synthesizer agent pattern, added 3 new risks (pitfalls).
 **Decision:** [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e)
 
 ---
@@ -25,7 +27,7 @@ Use ADK's native workflow agents (LoopAgent, SequentialAgent, ParallelAgent) to 
 |----------|---------|---------|
 | Harness Design Doc | 2.3.2 | Request flow with review loop |
 | Harness Design Doc | 4.6 | Review Loop Pattern (Generator-Critic) |
-| Harness Design Doc | 7.1 | Multi-Step Workflow Pattern |
+| Harness Design Doc | 8.1 | Multi-Step Workflow Pattern |
 | `agent-hierarchy.md` | 9 | Review Loop & Workflow Orchestration |
 | Notion | Decision 21 | Full decision rationale |
 
@@ -37,18 +39,21 @@ All required constructs are available in ADK 1.26.0 (currently installed). No ve
 
 | Construct | Import | Purpose |
 |-----------|--------|---------|
-| `LoopAgent` | `google.adk.agents.loop_agent` | Iterative cycle — runs sub-agents until `exit_loop` called or `max_iterations` reached |
-| `SequentialAgent` | `google.adk.agents.sequential_agent` | Chains sub-agents in order with shared state |
+| `LoopAgent` | `google.adk.agents.loop_agent` | Iterative cycle — runs sub-agents **sequentially** until `exit_loop` called or `max_iterations` reached. Checks `escalate` between each sub-agent — no `SequentialAgent` wrapper needed inside. |
+| `SequentialAgent` | `google.adk.agents.sequential_agent` | Chains sub-agents in order with shared state. **Does not check `escalate`** — runs all sub-agents unconditionally. Use for pipeline wrapping and phase chaining, not inside `LoopAgent`. |
 | `ParallelAgent` | `google.adk.agents.parallel_agent` | Runs independent sub-agents concurrently |
+| `LlmAgent` | `google.adk.agents.llm_agent` | LLM-backed agent. Key parameters: `output_key` (writes text to session state), `include_contents` (set to `'none'` to exclude conversation history from context — agent sees only its instruction with template substitutions). |
 | `output_key` | Parameter on `LlmAgent` | Writes agent's text output to a named session state key |
-| `exit_loop` | Built-in tool on agents inside `LoopAgent` | Sets `escalate=True` in EventActions, terminates parent LoopAgent |
+| `exit_loop` | Built-in tool on agents inside `LoopAgent` | Sets `escalate=True` in EventActions, terminates parent LoopAgent. Produces no text output — if the agent also has `output_key`, it extracts `""` (see pitfall below). |
 
 ### Key Behaviors
 
-- **`output_key`**: Agent's text output is written to `session.state[output_key]`. Downstream agents read via `{key}` template substitution in their `instruction` string.
-- **`exit_loop`**: Only available to agents nested inside a `LoopAgent`. When called, the LoopAgent exits immediately.
+- **`output_key`**: Agent's text output is written to `session.state[output_key]`. Downstream agents read via `{key}` template substitution in their `instruction` string. Use `{key?}` (with `?`) for optional keys that may not exist on first iteration — resolves to empty string instead of `KeyError`.
+- **`include_contents`**: Set to `'none'` on an `LlmAgent` to exclude conversation history from context. The agent sees only its instruction text with template substitutions. Critical for reviewers (evaluate only the draft, not history) and synthesizers (see only parallel outputs, not review loop back-and-forth).
+- **`exit_loop`**: Only available to agents nested inside a `LoopAgent`. When called, sets `escalate=True` — the `LoopAgent` checks this between sub-agents and exits. **Important:** `exit_loop` is a tool call with no text, so `output_key` extracts `""` — never place `exit_loop` on the agent whose `output_key` holds important state.
 - **`ParallelAgent`**: Runs all sub-agents concurrently. Each must write to a unique `output_key` to avoid state collisions. No automatic state synchronization — results are available in session state after all sub-agents complete.
-- **`LoopAgent`**: Non-LLM orchestrator. Repeatedly runs its sub-agents until `exit_loop` is called or `max_iterations` is reached. Does not make its own LLM calls.
+- **`LoopAgent`**: Non-LLM orchestrator. Repeatedly runs its sub-agents **sequentially** until `exit_loop` is called or `max_iterations` is reached. Checks `escalate` between each sub-agent. Does not make its own LLM calls.
+- **`SequentialAgent`**: Non-LLM orchestrator. Runs sub-agents in order. **Does not check `escalate`** — runs all sub-agents unconditionally regardless of `exit_loop` calls within them.
 
 ---
 
@@ -56,22 +61,24 @@ All required constructs are available in ADK 1.26.0 (currently installed). No ve
 
 ### 3.1 Building Block: Review Pipeline
 
-The atomic building block is a `LoopAgent` wrapping a `SequentialAgent(specialist, reviewer)`:
+The atomic building block is a `LoopAgent` with specialist and reviewer as direct sub-agents (no `SequentialAgent` wrapper — `LoopAgent` iterates sequentially and checks `escalate` between each):
 
 ```
 review_loop (LoopAgent, max_iterations=3)
-└── work_cycle (SequentialAgent)
-    ├── specialist (LlmAgent, output_key="step_N_draft")
-    │     instruction: task + acceptance_criteria + {step_N_feedback}
-    │     tools: [specialist-specific MCP/SDK tools]
-    └── reviewer (LlmAgent, output_key="step_N_feedback")
-          instruction: evaluate {step_N_draft} against acceptance_criteria
-          tools: [exit_loop]
-          APPROVED → call exit_loop
-          NOT MET → write feedback to step_N_feedback
+├── specialist (LlmAgent, output_key="step_N_draft")
+│     instruction: task + acceptance_criteria + {step_N_feedback?}
+│     tools: [specialist-specific MCP/SDK tools]
+└── reviewer (LlmAgent, output_key="step_N_feedback", include_contents='none')
+      instruction: evaluate {step_N_draft} against acceptance_criteria
+      tools: [exit_loop]
+      APPROVED → call exit_loop (LoopAgent checks escalate, skips specialist, exits)
+      NOT MET → write feedback to step_N_feedback (next iteration, specialist reads it)
 ```
 
-Each step uses a unique `output_key` suffix (e.g., `step_1a_draft`, `step_1b_draft`) to avoid state collisions in parallel execution.
+Key details:
+- **`include_contents='none'` on reviewer** — evaluates only the template-injected `{step_N_draft}`, not conversation history
+- **`{step_N_feedback?}` (optional)** — on first iteration, no feedback exists; `?` resolves to empty string
+- Each step uses a unique `output_key` suffix (e.g., `step_1a_draft`, `step_1b_draft`) to avoid state collisions in parallel execution
 
 ### 3.2 Single-Step Delegation
 
@@ -83,9 +90,10 @@ Root Agent (LlmAgent)
   → calls search_company_news(query, acceptance_criteria)
     → dispatch handler builds:
         review_loop (LoopAgent, max_iterations=3)
-        └── work_cycle (SequentialAgent)
-            ├── news_specialist (output_key="draft")
-            └── reviewer (output_key="review_feedback", tools=[exit_loop])
+        ├── news_specialist (output_key="draft")
+        │     instruction: task + criteria + {review_feedback?}
+        └── reviewer (output_key="review_feedback",
+              include_contents='none', tools=[exit_loop])
     → invokes pipeline
     → returns approved draft to Root Agent
   → Root Agent presents to user
@@ -113,29 +121,45 @@ Phase 3 — Execution (after user approval):
 
 ```
 data_gathering (ParallelAgent)
-├── step_1a_loop (LoopAgent, max_iterations=3)
-│   └── work_cycle (SequentialAgent)
+├── step_1a_pipeline (SequentialAgent)
+│   └── step_1a_loop (LoopAgent, max_iterations=3)
 │       ├── analytics_specialist (output_key="step_1a_draft")
-│       └── reviewer (output_key="step_1a_feedback", tools=[exit_loop])
+│       │     instruction: task + criteria + {step_1a_feedback?}
+│       └── step_1a_reviewer (output_key="step_1a_feedback",
+│             include_contents='none', tools=[exit_loop])
 │
-└── step_1b_loop (LoopAgent, max_iterations=3)
-    └── work_cycle (SequentialAgent)
+└── step_1b_pipeline (SequentialAgent)
+    └── step_1b_loop (LoopAgent, max_iterations=3)
         ├── execution_specialist (output_key="step_1b_draft")
-        └── reviewer (output_key="step_1b_feedback", tools=[exit_loop])
+        │     instruction: task + criteria + {step_1b_feedback?}
+        └── step_1b_reviewer (output_key="step_1b_feedback",
+              include_contents='none', tools=[exit_loop])
 ```
 
-**Phase 2** (Root Agent's own conversation turn — no pipeline):
-- Root reads `step_1a_draft` and `step_1b_draft` from session state
-- Synthesises optimisation plan
-- Presents to user: "Here's my recommended plan... Shall I proceed?"
+> **Pipeline wrappers:** Each `LoopAgent` is wrapped in a `SequentialAgent` ("pipeline") inside the `ParallelAgent`. This allows future pre/post steps per branch without restructuring the tree.
+
+**Phase 2** — Synthesis (dedicated agent, not Root Agent):
+
+```
+synthesizer (LlmAgent, include_contents='none')
+  instruction: "You are given completed research from two parallel analyses.
+                Combine into an optimisation plan:
+                Analytics findings: {step_1a_draft}
+                Spend data: {step_1b_draft}"
+```
+
+- Synthesizer uses `include_contents='none'` with a strong instruction framing injected data as "completed research"
+- Root Agent presents synthesised plan to user: "Here's my recommended plan... Shall I proceed?"
 
 **Phase 3** (runs on next conversation turn after user approval):
 
 ```
-step_3_loop (LoopAgent, max_iterations=3)
-└── work_cycle (SequentialAgent)
+step_3_pipeline (SequentialAgent)
+└── step_3_loop (LoopAgent, max_iterations=3)
     ├── execution_specialist (output_key="step_3_draft")
-    └── reviewer (output_key="step_3_feedback", tools=[exit_loop])
+    │     instruction: approved plan + {step_3_feedback?}
+    └── step_3_reviewer (output_key="step_3_feedback",
+          include_contents='none', tools=[exit_loop])
 ```
 
 ### 3.4 User Approval via Conversation Turns
@@ -198,7 +222,7 @@ Workflow progress is tracked in **session state** between turns so the Root Agen
 
 ### Phase 1: Review Pipeline Factory (Core Building Block)
 
-**Goal:** Create the reusable `build_review_pipeline()` function that constructs a LoopAgent wrapping a SequentialAgent(specialist, reviewer).
+**Goal:** Create the reusable `build_review_pipeline()` function that constructs a LoopAgent with specialist and reviewer as direct sub-agents.
 
 **Stories:**
 
@@ -208,9 +232,10 @@ Workflow progress is tracked in **session state** between turns so the Root Agen
 
 **Acceptance Criteria:**
 - Function signature: `build_review_pipeline(specialist: LlmAgent, acceptance_criteria: str, output_key_prefix: str, max_iterations: int = 3) -> LoopAgent`
-- Creates a LoopAgent containing a SequentialAgent with specialist and reviewer
-- Specialist instruction includes `{output_key_prefix}_feedback` template for iteration feedback
+- Creates a LoopAgent with specialist and reviewer as **direct sub-agents** (no SequentialAgent wrapper)
+- Specialist instruction includes `{output_key_prefix}_feedback?` template (optional `?` suffix) for iteration feedback
 - Reviewer instruction includes `{output_key_prefix}_draft` template for draft evaluation
+- Reviewer uses `include_contents='none'` to evaluate only the template-injected draft
 - Reviewer has `exit_loop` available as a tool (built-in when nested in LoopAgent)
 - Specialist writes to `{output_key_prefix}_draft` via `output_key`
 - Reviewer writes to `{output_key_prefix}_feedback` via `output_key`
@@ -240,7 +265,7 @@ ACCEPTANCE CRITERIA:
 {acceptance_criteria}
 
 PREVIOUS FEEDBACK (if any):
-{{{feedback_key}}}
+{{{feedback_key}?}}
 
 Your task: produce output that meets ALL acceptance criteria. If feedback is provided,
 address each point specifically.
@@ -252,6 +277,7 @@ address each point specifically.
     reviewer = LlmAgent(
         name=f"{output_key_prefix}_reviewer",
         model="gemini-2.0-flash",
+        include_contents='none',
         instruction=f"""
 You are a quality reviewer. Evaluate the following draft against the acceptance criteria.
 
@@ -268,14 +294,11 @@ or incorrect. Do NOT call exit_loop.
         output_key=feedback_key,
     )
 
-    work_cycle = SequentialAgent(
-        name=f"{output_key_prefix}_cycle",
-        sub_agents=[specialist_with_output, reviewer],
-    )
-
+    # No SequentialAgent wrapper — LoopAgent iterates sub-agents sequentially
+    # and checks escalate between each (SequentialAgent would swallow escalate)
     return LoopAgent(
         name=f"{output_key_prefix}_loop",
-        sub_agents=[work_cycle],
+        sub_agents=[specialist_with_output, reviewer],
         max_iterations=max_iterations,
     )
 ```
@@ -283,7 +306,8 @@ or incorrect. Do NOT call exit_loop.
 **Dependencies:** None (standalone function).
 
 **Tests:**
-- Pipeline construction produces correct agent hierarchy (LoopAgent → SequentialAgent → [specialist, reviewer])
+- Pipeline construction produces correct agent hierarchy (LoopAgent → [specialist, reviewer] as direct sub-agents, no SequentialAgent)
+- Reviewer has `include_contents='none'`
 - Output keys are correctly assigned
 - Unique prefixes prevent key collisions between multiple pipelines
 
@@ -320,7 +344,7 @@ def extract_pipeline_result(session_state: dict, output_key_prefix: str) -> str 
 **Description:** Create comprehensive unit tests for the review pipeline factory.
 
 **Acceptance Criteria:**
-- Test: pipeline construction produces correct hierarchy (LoopAgent > SequentialAgent > [specialist, reviewer])
+- Test: pipeline construction produces correct hierarchy (LoopAgent > [specialist, reviewer] as direct sub-agents, no SequentialAgent)
 - Test: mock specialist returns bad draft iteration 1, good draft iteration 2 — verify exit_loop called on iteration 2
 - Test: `max_iterations=1` exhaustion — verify last draft returned without error
 - Test: unique output_key prefixes across multiple pipelines — verify no key collisions
@@ -749,6 +773,9 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 | **State collisions in parallel execution** | High if not handled | Unique `output_key` prefix per step enforced by factory function. |
 | **Review loop never exits** | Low — `max_iterations` cap prevents infinite loops | Default `max_iterations=3`. Return last draft with warning. |
 | **Backward compatibility regression** | Medium | `acceptance_criteria=None` default preserves current behavior. Phase 2 tests verify this. |
+| **`output_key` + `exit_loop` state overwrite** | Medium — `exit_loop` produces no text, so `output_key` extracts `""` and overwrites state key | Never place `exit_loop` on the agent whose `output_key` holds important state. In the review loop, the reviewer (not specialist) calls `exit_loop`. The reviewer's `output_key` is `feedback_key` — overwritten to `""` on exit, but only read on next iteration (which won't happen after exit). |
+| **`SequentialAgent` swallows `escalate`** | High — reviewer's `exit_loop` signal ignored, specialist runs after approval | Place specialist and reviewer directly under `LoopAgent`, not inside a `SequentialAgent` wrapper. `LoopAgent` checks `escalate` between sub-agents; `SequentialAgent` does not. |
+| **Synthesizer sees full conversation history** | Medium — confuses model with review loop back-and-forth from parallel branches | Use `include_contents='none'` on synthesizer agent with a strong instruction framing injected template data as "completed research." |
 
 ---
 
@@ -775,6 +802,7 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 | 4 | How does the review loop interact with the existing `ConversationSummarizer`? Will intermediate drafts and feedback inflate the conversation history? | Medium — token budget | Phase 2 |
 | 5 | Should workflow state (`pending_workflow`) be persisted to Firestore for crash recovery, or is session state sufficient? | Low — reliability | Phase 4 |
 | 6 | What is the maximum number of steps a workflow should support? | Low — UX guardrail | Phase 4 |
+| 7 | How do skills interact with review loops? Should the reviewer have access to the same skills as the specialist, or only evaluation-focused skills? | Low — skill architecture | Phase 1 (when skills are implemented) |
 
 ---
 
@@ -782,7 +810,7 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 
 - [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) — Notion Design Decision
 - Harness Design Doc Section 4.6 — Review Loop Pattern (Generator-Critic)
-- Harness Design Doc Section 7.1 — Multi-Step Workflow Pattern
+- Harness Design Doc Section 8.1 — Multi-Step Workflow Pattern
 - `agent-hierarchy.md` Section 9 — Review Loop & Workflow Orchestration
 - [ADK LoopAgent Documentation](https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/)
 - [ADK Generator-Critic Pattern](https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/#example-generator-critic-pattern)

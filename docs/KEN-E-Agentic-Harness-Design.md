@@ -1,7 +1,7 @@
 # KEN-E Agentic Harness Design Document
 
-**Version:** 2.4
-**Date:** March 11, 2026
+**Version:** 2.6
+**Date:** March 18, 2026
 **Author:** Development Team
 
 > **Dependency Note:** Several features described in this document (InstructionProvider
@@ -18,13 +18,14 @@
 3. [Context Management Strategy](#3-context-management-strategy)
 4. [Agent Definitions](#4-agent-definitions)
 5. [MCP Server Architecture](#5-mcp-server-architecture)
-6. [Multi-Channel Support [PLANNED]](#6-multi-channel-support-planned)
-7. [Workflow Management [PLANNED]](#7-workflow-management-planned)
-8. [Integration with Evaluation Framework](#8-integration-with-evaluation-framework)
-9. [Infrastructure Requirements](#9-infrastructure-requirements)
-10. [Resilience, Security & Testing](#10-resilience-security--testing)
-11. [Sprint-Based Roadmap](#11-sprint-based-roadmap)
-12. [Appendices](#12-appendices)
+6. [Skills Architecture [PLANNED]](#6-skills-architecture-planned)
+7. [Multi-Channel Support [PLANNED]](#7-multi-channel-support-planned)
+8. [Workflow Management [PLANNED]](#8-workflow-management-planned)
+9. [Integration with Evaluation Framework](#9-integration-with-evaluation-framework)
+10. [Infrastructure Requirements](#10-infrastructure-requirements)
+11. [Resilience, Security & Testing](#11-resilience-security--testing)
+12. [Sprint-Based Roadmap](#12-sprint-based-roadmap)
+13. [Appendices](#13-appendices)
 
 ---
 
@@ -34,7 +35,7 @@
 
 This document defines the comprehensive design for KEN-E's agentic harness — the software framework that enables KEN-E to function as an autonomous AI marketing agent. The harness orchestrates multiple specialized agents using Google's Agent Development Kit (ADK) to complete complex marketing tasks including strategy development, content creation, campaign execution, and performance optimization.
 
-This document serves as an architecture reference: it describes both the current implementation and planned extensions. Features not yet built are marked `[PLANNED]` throughout. As planned features are deployed, this document is updated to collapse the distinction.
+This document serves as an architecture reference: it describes both the current implementation and planned extensions. Features not yet built are marked `[PLANNED]` throughout. Agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by a specialist agent or automation when the specialist layer is built (Sprint 5-6). As planned features are deployed, this document is updated to collapse the distinction.
 
 ### 1.2 Critical Design Challenges
 
@@ -72,7 +73,8 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 │  │  ┌───────────┐ ┌───────────┐ ┌───────────────────────────┐   │     │
 │  │  │   News    │ │  Google   │ │  Strategy Supervisor      │   │     │
 │  │  │   Agent   │ │ Analytics │ │  (multi-agent)            │   │     │
-│  │  │           │ │   Agent   │ │                           │   │     │
+│  │  │ [TRANSIT.]│ │   Agent   │ │                           │   │     │
+│  │  │           │ │ [TRANSIT.]│ │                           │   │     │
 │  │  └───────────┘ └───────────┘ └───────────────────────────┘   │     │
 │  └───────────────────────────────────────────────────────────────┘     │
 │                                │                                       │
@@ -139,6 +141,7 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 | **SDK function tools for some platforms** — Meta Ads + Mailchimp use SDK directly |
 | **Firestore-driven agent config** — change instructions, model, temperature without redeployment |
 | **Config-driven agent factory** — Sprint 5-6: config-driven specialist assembly |
+| **ADK Skills for expertise delivery** — predefined skills shipped with product, custom skills created by users via UI |
 
 For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e).
 
@@ -191,12 +194,12 @@ For full decision rationale, see the [Design Decisions database in Notion](https
 │   ├── Weave callbacks (before/after agent, after tool)                 │
 │   ├── Security hooks (before tool — credential refresh, permissions)   │
 │   │                                                                     │
-│   ├── News Agent (LlmAgent)                                            │
+│   ├── News Agent (LlmAgent) [TRANSITIONAL → Automation Specialist + Skill]│
 │   ├── Strategy Supervisor (multi-agent)                                 │
 │   └── [PLANNED] Specialist Agents (config-driven via agent factory)    │
-│       ├── Analytics Specialist (GA MCP, Google Ads MCP)                │
+│       ├── Analytics Specialist (GA MCP, Google Ads MCP, Meta Ads reads)│
 │       ├── Content Specialist (HubSpot MCP, Mailchimp SDK)              │
-│       ├── Execution Specialist (Meta Ads SDK, Google Ads MCP)          │
+│       ├── Execution Specialist (Meta Ads SDK r/w, Google Ads MCP)      │
 │       └── Automation Specialist (n8n MCP)                              │
 │                                                                         │
 │   EventsCompactionConfig: interval=5, overlap=1, threshold=50K tokens  │
@@ -332,20 +335,22 @@ User Request: "Show me last week's traffic and top-performing ad campaigns"
     └─────────────────────────────────────────────────────────┘
 ```
 
-See Section 4.6 for the review loop pattern design and Section 7.1 for multi-step workflow application.
+See Section 4.6 for the review loop pattern design and Section 8.1 for multi-step workflow application.
+
+> **Transitional note:** The current request flow dispatches directly to the Google Analytics Agent and Company News Agent. These agents are `[TRANSITIONAL]` — GA queries will route to the Analytics Specialist when the specialist layer is built (Section 4.4). Company news will transition to a scheduled automation (Automation Specialist) plus a predefined `research-company-news` Skill (Section 6).
 
 ### 2.4 Agent Type Selection (Google ADK)
 
-| Agent | ADK Type | Status |
-|-------|----------|--------|
-| **KEN-E Root** | `LlmAgent` | Implemented |
-| **Company News** | `LlmAgent` | Implemented |
-| **Google Analytics** | `LlmAgent` + `McpToolset` | Implemented |
-| **Strategy Supervisor** | Multi-agent (custom) | Implemented |
-| **Analytics Specialist** | `LlmAgent` | [PLANNED] |
-| **Content Specialist** | `LlmAgent` | [PLANNED] |
-| **Execution Specialist** | `LlmAgent` | [PLANNED] |
-| **Automation Specialist** | `LlmAgent` | [PLANNED] |
+| Agent | ADK Type | Status | Successor |
+|-------|----------|--------|-----------|
+| **KEN-E Root** | `LlmAgent` | Implemented | — |
+| **Company News** | `LlmAgent` | Implemented `[TRANSITIONAL]` | Automation Specialist + `research-company-news` Skill |
+| **Google Analytics** | `LlmAgent` + `McpToolset` | Implemented `[TRANSITIONAL]` | Analytics Specialist |
+| **Strategy Supervisor** | Multi-agent (custom) | Implemented | — |
+| **Analytics Specialist** | `LlmAgent` | [PLANNED] | — |
+| **Content Specialist** | `LlmAgent` | [PLANNED] | — |
+| **Execution Specialist** | `LlmAgent` | [PLANNED] | — |
+| **Automation Specialist** | `LlmAgent` | [PLANNED] | — |
 
 ---
 
@@ -609,10 +614,12 @@ The specialist layer (Sprint 5-6) partitions tools by domain.
 
 | Specialist | Tool Sources | Integration Type | Key Capabilities |
 |-----------|-------------|-----------------|------------------|
-| **Analytics** | GA MCP, Google Ads MCP | McpToolset | Data queries, reporting, performance analysis |
+| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads) | McpToolset + SDK | Data queries, reporting, performance analysis |
 | **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK | CRM data, email campaigns, content management |
-| **Execution** | Meta Ads SDK, Google Ads SDK (writes), Google Ads MCP (reads) | SDK + McpToolset | Campaign deployment, budget management |
+| **Execution** | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | SDK + McpToolset | Campaign deployment, budget management |
 | **Automation** | n8n MCP | McpToolset | Workflow creation, scheduling |
+
+> **Note:** The `facebook-business` SDK is available to both Analytics (read-only tools: get campaigns, get spend, get metrics) and Execution (full CRUD). `tool_filter` controls which tools each specialist sees — Analytics sees read-only tools while Execution sees the full CRUD set. This parallels Google Ads, where the MCP (reads) is shared with Analytics.
 
 Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
 
@@ -620,20 +627,20 @@ Each specialist will be assembled by the config-driven agent factory, reading fr
 
 #### Current (Sprints 1-4)
 
-| Agent | Type | Config Doc ID | Key Files |
-|-------|------|---------------|-----------|
-| KEN-E Root | LlmAgent | `ken_e_chatbot` | `app/adk/agents/ken_e_agent.py` |
-| Company News | LlmAgent | `company_news_agent` | `app/adk/agents/company_news_chatbot/agent.py` |
-| Google Analytics | LlmAgent + McpToolset | `google_analytics_agent` | `app/adk/agents/google_analytics_agent_v4.py` |
-| Strategy Supervisor | Multi-agent | 8 sub-config docs | `app/adk/agents/create_strategy_docs_supervisor.py` |
+| Agent | Type | Config Doc ID | Key Files | Lifecycle |
+|-------|------|---------------|-----------|-----------|
+| KEN-E Root | LlmAgent | `ken_e_chatbot` | `app/adk/agents/ken_e_agent.py` | Permanent |
+| Company News | LlmAgent | `company_news_agent` | `app/adk/agents/company_news_chatbot/agent.py` | `[TRANSITIONAL]` → Automation Specialist (scheduled n8n workflow) + `research-company-news` Skill (Section 6) |
+| Google Analytics | LlmAgent + McpToolset | `google_analytics_agent` | `app/adk/agents/google_analytics_agent_v4.py` | `[TRANSITIONAL]` → Analytics Specialist |
+| Strategy Supervisor | Multi-agent | 8 sub-config docs | `app/adk/agents/create_strategy_docs_supervisor.py` | Permanent |
 
 #### [PLANNED] Specialist Layer (Sprint 5-6+)
 
 | Agent | Type | Tool Sources | Assembled By |
 |-------|------|-------------|--------------|
-| Analytics Specialist | LlmAgent + McpToolset | GA MCP, Google Ads MCP | Config-driven agent factory |
+| Analytics Specialist | LlmAgent + McpToolset + SDK | GA MCP, Google Ads MCP, Meta Ads SDK (reads) | Config-driven agent factory |
 | Content Specialist | LlmAgent + McpToolset + SDK | HubSpot MCP, Mailchimp SDK | Config-driven agent factory |
-| Execution Specialist | LlmAgent + SDK + McpToolset | Meta Ads SDK, Google Ads SDK (writes), Google Ads MCP (reads) | Config-driven agent factory |
+| Execution Specialist | LlmAgent + SDK + McpToolset | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | Config-driven agent factory |
 | Automation Specialist | LlmAgent + McpToolset | n8n MCP | Config-driven agent factory |
 
 ### 4.6 [PLANNED] Review Loop Pattern (Generator-Critic)
@@ -642,10 +649,10 @@ Every specialist delegation is wrapped in a **review loop** that enforces accept
 
 | ADK Construct | Role |
 |---------------|------|
-| `LoopAgent` | Repeats specialist + reviewer cycle until approved or `max_iterations` reached |
-| `SequentialAgent` | Chains specialist → reviewer within each iteration |
-| `output_key` | Specialist writes to `"draft"`, reviewer writes to `"review_feedback"` — shared via session state |
-| `exit_loop` | Built-in tool the reviewer calls when all acceptance criteria are met |
+| `LoopAgent` | Repeats specialist + reviewer cycle until approved or `max_iterations` reached. Iterates its sub-agents sequentially and checks for `escalate` between each one — no `SequentialAgent` wrapper needed. |
+| `output_key` | Specialist writes to `"step_N_draft"`, reviewer writes to `"step_N_feedback"` — shared via session state |
+| `include_contents` | Set to `'none'` on the reviewer so it evaluates only the template-injected `{draft}`, not the full conversation history |
+| `exit_loop` | Built-in tool the reviewer calls when all acceptance criteria are met. Sets `escalate=True` in `EventActions`, causing the parent `LoopAgent` to skip remaining sub-agents and exit. |
 
 #### Review Loop Structure
 
@@ -654,34 +661,48 @@ build_review_pipeline(specialist, acceptance_criteria, max_iterations=3)
 → returns:
 
     review_loop (LoopAgent, max_iterations=3)
-    └── work_cycle (SequentialAgent)
-        ├── specialist (LlmAgent, output_key="step_N_draft")
-        │     instruction: task + acceptance_criteria + {step_N_feedback}
-        │     tools: [specialist-specific MCP/SDK tools]
-        └── reviewer (LlmAgent, output_key="step_N_feedback")
-              instruction: evaluate {step_N_draft} vs acceptance_criteria
-              tools: [exit_loop]
-              ALL criteria met → call exit_loop
-              ANY not met → write actionable feedback
+    ├── specialist (LlmAgent, output_key="step_N_draft")
+    │     instruction: task + acceptance_criteria + {step_N_feedback?}
+    │     tools: [specialist-specific MCP/SDK tools]
+    └── reviewer (LlmAgent, output_key="step_N_feedback", include_contents='none')
+          instruction: evaluate {step_N_draft} vs acceptance_criteria
+          tools: [exit_loop]
+          ALL criteria met → call exit_loop
+          ANY not met → write actionable feedback
 ```
+
+> **Why no `SequentialAgent` wrapper?** `LoopAgent` already iterates its sub-agents in order and checks `escalate` between each one. A `SequentialAgent` wrapper would swallow the `escalate` signal — if agent order were ever reversed, the specialist would run even after approval. Placing agents directly under `LoopAgent` ensures `exit_loop` immediately terminates the iteration.
+
+> **Why `include_contents='none'` on the reviewer?** Without it, the reviewer sees the full conversation history (all prior turns, tool calls, and review loop back-and-forth), producing inconsistent evaluations. With `include_contents='none'`, the reviewer evaluates only the template-injected `{step_N_draft}` — a clean, repeatable signal.
+
+> **Why `{step_N_feedback?}` (with `?`)?** On the first iteration, no feedback exists. The `?` suffix makes the template variable optional — it resolves to an empty string instead of raising `KeyError`.
 
 #### How It Works
 
 1. **Root Agent generates acceptance criteria** — before calling a tool, the Root Agent's LLM produces 2-4 measurable criteria based on the user's request
 2. **Criteria passed as tool parameter** — `search_company_news(query="...", acceptance_criteria="1. Must include... 2. Must cite...")`
-3. **Dispatch handler builds pipeline** — `build_review_pipeline()` constructs a `LoopAgent` wrapping a `SequentialAgent(specialist, reviewer)`
+3. **Dispatch handler builds pipeline** — `build_review_pipeline()` constructs a `LoopAgent` containing the specialist and reviewer as direct sub-agents
 4. **Iteration cycle** — specialist produces draft → reviewer checks against criteria → approved (exit_loop) or feedback for next iteration
 5. **Result extraction** — dispatch handler reads final `draft` from session state and returns to Root Agent
 
 #### Termination
 
-- **Approved:** Reviewer calls `exit_loop` → `escalate=True` → LoopAgent exits
+- **Approved:** Reviewer calls `exit_loop` → `escalate=True` → LoopAgent skips specialist, exits
 - **Max iterations reached:** Last draft returned with soft warning — user always gets a response
-- **Token overhead:** ~1,000 tokens per iteration (reviewer turn). With `max_iterations=3`, worst case ~3,000 tokens additional
+
+#### LLM Call Cost
+
+Each review loop iteration makes 2 LLM calls (specialist + reviewer):
+
+| Scenario | LLM Calls | Latency (~5-15s/call) |
+|----------|-----------|----------------------|
+| Approved first pass | 2 | ~10-30s |
+| 1 revision | 4 | ~20-60s |
+| Max iterations (3) | 6 | ~30-90s |
 
 #### Extension to Multi-Step Workflows
 
-The review pipeline is the **atomic building block** for Section 7.1 multi-step workflows. Multiple review pipelines compose into parallel and sequential workflow structures. See Section 7.1 for the full pattern including `ParallelAgent` for concurrent steps and user approval checkpoints.
+The review pipeline is the **atomic building block** for Section 8.1 multi-step workflows. Multiple review pipelines compose into parallel and sequential workflow structures. See Section 8 for the full pattern including `ParallelAgent` for concurrent steps, synthesizer agents, and user approval checkpoints.
 
 > **Planned Sprint 5-6+** — Depends on the specialist layer (Section 4.4) and config-driven agent factory. See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) for rationale.
 
@@ -759,11 +780,110 @@ Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolv
 
 ---
 
-## 6. Multi-Channel Support [PLANNED]
+## 6. Skills Architecture [PLANNED]
+
+> **Status:** No skills infrastructure exists in the codebase today. ADK recently added Skills support (Agent Skills specification) for packaging procedural knowledge as self-contained, progressively-disclosed units. This section defines the architecture for predefined and custom skills.
+
+### 6.1 Overview
+
+ADK Skills are self-contained units of expertise that provide procedural knowledge to agents. They complement tools (which execute actions) by providing instructions for HOW to use tools effectively — step-by-step workflows, best practices, decision frameworks, and domain-specific procedures.
+
+Skills use **progressive disclosure** to minimize token overhead:
+
+| Level | What's Loaded | When | Token Cost |
+|-------|--------------|------|------------|
+| **L1 (Metadata)** | Name + description | At startup, always available | ~50-100 tokens/skill |
+| **L2 (Instructions)** | Full SKILL.md body | On activation (agent determines relevance) | <5,000 tokens |
+| **L3 (Resources)** | Scripts, references, assets | On-demand during skill execution | Variable |
+
+Each skill is defined by a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+name: analyze-campaign-performance
+description: Step-by-step workflow for cross-platform campaign analysis
+allowed-tools:
+  - run_report_mt
+  - get_meta_campaign_metrics
+  - get_google_ads_report
+---
+
+## Procedure
+
+1. Gather data from all connected platforms...
+2. Normalize metrics across platforms...
+3. Identify top and bottom performers...
+```
+
+### 6.2 Skill Types
+
+| Type | Storage | Lifecycle | Example |
+|------|---------|-----------|---------|
+| **Predefined** | Bundled in deployment (`app/adk/skills/`) | Static, versioned with releases | `analyze-campaign-performance`, `generate-marketing-report` |
+| **Custom** | Firestore (metadata) + GCS (SKILL.md content) | Dynamic, user-managed via UI | "Q2 campaign launch checklist", "Weekly client report template" |
+
+### 6.3 Predefined Skills (Shipped)
+
+| Skill | Description | Specialist(s) |
+|-------|-------------|---------------|
+| `analyze-campaign-performance` | Step-by-step workflow for cross-platform campaign analysis | Analytics |
+| `generate-marketing-report` | Report generation with standard sections and formatting | Analytics, Content |
+| `competitor-analysis` | Competitive research procedures using available data sources | Analytics |
+| `optimize-ad-spend` | Budget optimization workflow across platforms | Execution |
+| `create-email-campaign` | Email campaign creation workflow (Mailchimp) | Content |
+| `research-company-news` | Company news research and summarization — successor to the `[TRANSITIONAL]` Company News Agent | Root, Analytics |
+
+The `research-company-news` skill encapsulates the Company News Agent's functionality as a reusable skill. When the specialist layer is built, any specialist can invoke company news research without requiring a standalone agent. The Company News Agent's retrieval pipeline transitions to a scheduled automation (n8n workflow) managed by the Automation Specialist, while this skill provides the analysis and summarization procedures.
+
+### 6.4 Custom Skills (User-Created)
+
+Users create skills via a UI skill builder. Skills are scoped to an organization.
+
+**Storage:**
+- SKILL.md content: GCS (`gs://ken-e-skills/{org_id}/{skill_name}/SKILL.md`)
+- Metadata: Firestore (`skills/{skill_id}` — name, description, org_id, created_by, status, created_at)
+
+**Lifecycle:**
+1. User creates skill via UI → validated → stored in GCS + Firestore
+2. On session start, agent factory loads org's active skills via `SkillToolset`
+3. `LlmAgent` reads skill catalog (L1), activates relevant skills dynamically (L2)
+4. User can edit, disable, or delete skills via UI
+
+**Validation:** Custom skills are validated at creation time for well-formed YAML frontmatter, non-empty instruction body, and `allowed-tools` references matching known tools in the ToolRegistry.
+
+### 6.5 Integration with Agent Architecture
+
+Skills are loaded onto agents via ADK's `SkillToolset` in the `tools` parameter:
+
+- **Root Agent:** Predefined skills for general marketing expertise (e.g., `research-company-news`)
+- **Specialist Agents:** Domain-specific predefined skills + organization's custom skills
+- **Agent factory:** Reads skill config from Firestore and assembles `SkillToolset` per agent at deploy time
+
+**Interaction with `tool_filter`:** Skills and tools are complementary. `tool_filter` controls WHICH tools are visible to the LLM on each turn; skills provide instructions for HOW to use those tools effectively. A skill's `allowed-tools` field documents which tools the skill's procedures reference, but tool visibility is still governed by `tool_filter`.
+
+**Interaction with review loops (Section 4.6):** When a specialist executes a skill-guided workflow within a review loop, the reviewer evaluates the output against acceptance criteria — the skill provides procedural guidance but does not bypass quality gates.
+
+### 6.6 [PLANNED] Frontend: Skill Builder
+
+UI extension for skill management:
+
+| Feature | Description |
+|---------|-------------|
+| **Skill list view** | Organization's predefined + custom skills with status indicators |
+| **Create/edit form** | Name, description, markdown instructions editor with syntax highlighting |
+| **Preview** | Preview skill activation behavior and token cost estimate |
+| **Enable/disable toggle** | Per-skill toggle without deletion |
+| **Usage analytics** | Which skills are activated most often, by which specialists |
+
+> See [Decision 22: ADK Skills Architecture](https://www.notion.so/32030fd653028114827be82c2731ea72) for rationale.
+
+---
+
+## 7. Multi-Channel Support [PLANNED]
 
 > For the full API architecture and channel integration approaches, see [`docs/design/api-gateway-multi-channel.md`](design/api-gateway-multi-channel.md). Design decisions: [Decision 14: Channel-Agnostic API](https://www.notion.so/32030fd65302811ea99dfa94c3448a0d), [Decision 15: Slack Channel](https://www.notion.so/32030fd6530281148e89eb56494a7489), [Decision 16: Voice Channel](https://www.notion.so/32030fd6530281ce82d3f7bbbee439c3).
 
-### 6.1 Architecture Overview
+### 7.1 Architecture Overview
 
 ```
 ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
@@ -789,7 +909,7 @@ Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolv
 
 The current API is already channel-agnostic — any new channel only needs an auth adapter, input normalizer, and output formatter. The Agent Engine call path does not change.
 
-### 6.2 Unified Message Format
+### 7.2 Unified Message Format
 
 The target design uses a channel-agnostic message format internally. All channel adapters convert to/from this format:
 
@@ -804,7 +924,7 @@ The target design uses a channel-agnostic message format internally. All channel
 | `thread_id` | For threaded conversations |
 | `channel_context` | Channel-specific metadata |
 
-### 6.3 Channel Integration Plans
+### 7.3 Channel Integration Plans
 
 | Channel | Framework | Deployment | Timeline |
 |---------|-----------|------------|----------|
@@ -812,7 +932,7 @@ The target design uses a channel-agnostic message format internally. All channel
 | **Slack** | Bolt SDK | Separate Cloud Run | Sprint 8+ |
 | **Voice** | Pipecat + Meeting BaaS | Dedicated service | Phase 4 |
 
-### 6.4 Voice Channel Notes
+### 7.4 Voice Channel Notes
 
 Voice-enabled meeting participation is technically feasible using:
 - **Meeting Bot API**: Recall.ai or Meeting BaaS
@@ -824,27 +944,31 @@ Key considerations: voice responses must be concise (< 30s), target < 2s end-to-
 
 ---
 
-## 7. Workflow Management [PLANNED]
+## 8. Workflow Management [PLANNED]
 
 > **Status:** No workflow framework exists in the codebase today. The strategy agent's `execute_strategy_generation()` orchestrator is the closest pattern — it coordinates multiple sub-agents in sequence with Firestore persistence. No n8n, webhook, or cron infrastructure exists.
+>
+> **Revised March 18, 2026** — Structural corrections based on ADK 1.26.0 experiments. Removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added pipeline wrappers for `ParallelAgent` branches, added ADK Pitfalls and LLM Cost subsections.
 
-### 7.1 Multi-Step Workflow Pattern
+### 8.1 Multi-Step Workflow Pattern
 
 KEN-E will handle complex, multi-step workflows with the pattern:
 1. **Plan** the workflow — Root Agent decomposes the request into steps with acceptance criteria and a dependency graph
 2. **Execute** each step via a review loop (Section 4.6) — specialist produces draft, reviewer verifies against criteria
-3. **Run independent steps in parallel** — `ParallelAgent` wraps concurrent review loops
-4. **Get approval** at decision points — workflow pauses at approval checkpoints; Root Agent presents results and asks user to confirm
-5. **Resume** where left off — workflow progress tracked in session state across conversation turns
+3. **Run independent steps in parallel** — `ParallelAgent` wraps concurrent review loops (each wrapped in a pipeline `SequentialAgent` for future pre/post steps)
+4. **Synthesise** parallel results — a dedicated synthesizer agent with `include_contents='none'` reads parallel outputs via template substitution
+5. **Get approval** at decision points — workflow pauses at approval checkpoints; Root Agent presents results and asks user to confirm
+6. **Resume** where left off — workflow progress tracked in session state across conversation turns
 
 #### ADK Constructs for Multi-Step Workflows
 
 | Construct | Role |
 |-----------|------|
-| `build_review_pipeline()` | Atomic building block — one specialist + reviewer LoopAgent (Section 4.6) |
-| `ParallelAgent` | Wraps independent review loops for concurrent execution |
-| `SequentialAgent` | Chains phases (data gathering → synthesis → execution) |
-| `output_key` | Each step writes to a unique key (e.g., `step_1a_draft`); downstream steps read via `{step_1a_draft}` |
+| `build_review_pipeline()` | Atomic building block — one specialist + reviewer as direct `LoopAgent` sub-agents (Section 4.6). Reviewer uses `include_contents='none'`. |
+| `ParallelAgent` | Wraps independent review pipelines for concurrent execution. Each branch is wrapped in a pipeline `SequentialAgent` for extensibility. |
+| `SequentialAgent` | Chains phases (data gathering → synthesis → execution). Also used as pipeline wrapper around each `LoopAgent` inside `ParallelAgent` — allows future pre/post steps per branch. **Not** used inside `LoopAgent` (see Section 8.3 Pitfall 2). |
+| `output_key` | Each step writes to a unique key (e.g., `step_1a_draft`); downstream steps read via `{step_1a_draft}`. Use `{key?}` (optional syntax) for keys that may not exist on first iteration. |
+| Synthesizer `LlmAgent` | Dedicated agent with `include_contents='none'` that reads parallel outputs via template substitution. Instruction must explicitly state the injected data is "completed research" (see Section 8.3 Pitfall 3). |
 
 #### Example: "Increase budgets for Meta Ads campaigns with the most engaged website visitors"
 
@@ -860,9 +984,9 @@ Phase 1 — Data Gathering (parallel):
            → Execution Specialist
            CRITERIA: Table with columns: campaign name, amount spent
 
-Phase 2 — Synthesis (Root Agent, approval checkpoint):
-  Step 2:  Create optimisation plan from step 1a + 1b data
-           → Present to user for approval
+Phase 2 — Synthesis (approval checkpoint):
+  Step 2:  Synthesise optimisation plan from step 1a + 1b data
+           → Synthesizer agent presents to user for approval
 
 Phase 3 — Execution (after user approval):
   Step 3:  Execute budget changes in Meta Ads
@@ -876,30 +1000,42 @@ This maps to ADK workflow agents:
 CONVERSATION TURN 1:
 
     data_gathering (ParallelAgent)
-    ├── step_1a_loop (LoopAgent, max_iterations=3)
-    │   └── work_cycle (SequentialAgent)
-    │       ├── analytics_specialist (output_key="step_1a_draft")
-    │       └── reviewer (output_key="step_1a_feedback", tools=[exit_loop])
+    ├── step_1a_pipeline (SequentialAgent)
+    │   └── step_1a_loop (LoopAgent, max_iterations=3)
+    │       ├── analytics_specialist (LlmAgent, output_key="step_1a_draft")
+    │       │     instruction: task + criteria + {step_1a_feedback?}
+    │       └── step_1a_reviewer (LlmAgent, output_key="step_1a_feedback",
+    │             include_contents='none', tools=[exit_loop])
     │
-    └── step_1b_loop (LoopAgent, max_iterations=3)
-        └── work_cycle (SequentialAgent)
-            ├── execution_specialist (output_key="step_1b_draft")
-            └── reviewer (output_key="step_1b_feedback", tools=[exit_loop])
+    └── step_1b_pipeline (SequentialAgent)
+        └── step_1b_loop (LoopAgent, max_iterations=3)
+            ├── execution_specialist (LlmAgent, output_key="step_1b_draft")
+            │     instruction: task + criteria + {step_1b_feedback?}
+            └── step_1b_reviewer (LlmAgent, output_key="step_1b_feedback",
+                  include_contents='none', tools=[exit_loop])
 
-    → Root Agent reads step_1a_draft + step_1b_draft
-    → Synthesises optimisation plan
-    → Presents to user: "Here's my recommended plan... Shall I proceed?"
+    synthesizer (LlmAgent, include_contents='none')
+      instruction: "You are given completed research from two parallel analyses.
+                    Combine the following into an optimisation plan:
+                    Analytics findings: {step_1a_draft}
+                    Spend data: {step_1b_draft}"
+
+    → Root Agent presents synthesised plan to user:
+      "Here's my recommended plan... Shall I proceed?"
 
 CONVERSATION TURN 2 (after user approval):
 
-    step_3_loop (LoopAgent, max_iterations=3)
-    └── work_cycle (SequentialAgent)
-        ├── execution_specialist (output_key="step_3_draft")
-        │     instruction includes: the approved plan
-        └── reviewer (output_key="step_3_feedback", tools=[exit_loop])
+    step_3_pipeline (SequentialAgent)
+    └── step_3_loop (LoopAgent, max_iterations=3)
+        ├── execution_specialist (LlmAgent, output_key="step_3_draft")
+        │     instruction includes: the approved plan + {step_3_feedback?}
+        └── step_3_reviewer (LlmAgent, output_key="step_3_feedback",
+              include_contents='none', tools=[exit_loop])
 
     → Returns: "I've made the following changes to your Meta Ads campaigns: ..."
 ```
+
+> **Pipeline wrappers:** Each `LoopAgent` is wrapped in a `SequentialAgent` ("pipeline") inside the `ParallelAgent`. This allows future pre-processing (e.g., context injection) or post-processing (e.g., result formatting) steps per branch without restructuring the tree.
 
 #### User Approval Splits Workflows Into Conversation Turns
 
@@ -920,9 +1056,10 @@ execute_workflow(steps=[
 ```
 
 The pipeline factory reads the `depends_on` graph to determine structure:
-- Steps with no shared dependencies → `ParallelAgent`
+- Steps with no shared dependencies → `ParallelAgent` (each branch wrapped in pipeline `SequentialAgent`)
 - Steps that depend on a prior step → sequential (run after dependency completes)
 - Steps with `approval_required: True` → return to Root Agent for user presentation
+- Template variables use `{key?}` (optional syntax) for first-iteration safety
 
 #### Second Example: "Launch a Q2 campaign for Product X"
 
@@ -943,7 +1080,195 @@ Phase 4 — Deployment (sequential, after approval):
   Step 6: Set up weekly performance reporting → Automation Specialist
 ```
 
-### 7.2 Workflow State Machine
+### 8.2 ADK Implementation Details
+
+#### `build_review_pipeline()` Factory
+
+The atomic building block for all review loops. Constructs a `LoopAgent` with specialist and reviewer as direct sub-agents:
+
+```python
+def build_review_pipeline(
+    specialist: LlmAgent,
+    acceptance_criteria: str,
+    output_key_prefix: str = "review",
+    max_iterations: int = 3,
+) -> LoopAgent:
+    """Build a review loop: specialist produces draft, reviewer evaluates against criteria."""
+
+    draft_key = f"{output_key_prefix}_draft"
+    feedback_key = f"{output_key_prefix}_feedback"
+
+    specialist_with_output = LlmAgent(
+        name=f"{specialist.name}_worker",
+        model=specialist.model,
+        instruction=f"""
+{specialist.instruction}
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+PREVIOUS FEEDBACK (if any):
+{{{feedback_key}?}}
+
+Your task: produce output that meets ALL acceptance criteria. If feedback is provided,
+address each point specifically.
+""",
+        tools=specialist.tools,
+        output_key=draft_key,
+    )
+
+    reviewer = LlmAgent(
+        name=f"{output_key_prefix}_reviewer",
+        model="gemini-2.0-flash",
+        include_contents='none',
+        instruction=f"""
+You are a quality reviewer. Evaluate the following draft against the acceptance criteria.
+
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+DRAFT TO REVIEW:
+{{{draft_key}}}
+
+If ALL criteria are met: call the exit_loop tool immediately.
+If ANY criteria are NOT met: write specific, actionable feedback explaining what is missing
+or incorrect. Do NOT call exit_loop.
+""",
+        output_key=feedback_key,
+    )
+
+    return LoopAgent(
+        name=f"{output_key_prefix}_loop",
+        sub_agents=[specialist_with_output, reviewer],
+        max_iterations=max_iterations,
+    )
+```
+
+Key details:
+- **No `SequentialAgent`** — specialist and reviewer are direct `LoopAgent` sub-agents. `LoopAgent` iterates them sequentially and checks `escalate` between each.
+- **`include_contents='none'` on reviewer** — reviewer evaluates only the template-injected `{draft_key}`, not conversation history.
+- **`{feedback_key?}` (optional)** — on first iteration, no feedback exists. The `?` suffix resolves to empty string.
+- **`output_key` on reviewer is `feedback_key`**, not `draft_key` — the reviewer's `exit_loop` call produces no text, so `output_key` extracts `""`. This is safe because only the specialist's `draft_key` is read downstream (see Section 8.3 Pitfall 1).
+
+#### `build_workflow_pipeline()` Composition Pattern
+
+Composes multiple review pipelines into a workflow with parallel and sequential phases:
+
+```python
+def build_workflow_pipeline(
+    steps: list[WorkflowStep],
+    specialists: dict[str, LlmAgent],
+) -> Agent:
+    """Build a workflow from a dependency graph of steps."""
+
+    levels = _compute_dependency_levels(steps)
+
+    level_agents = []
+    for level_steps in levels:
+        pipelines = []
+        for step in level_steps:
+            loop = build_review_pipeline(
+                specialist=specialists[step.specialist],
+                acceptance_criteria=step.criteria,
+                output_key_prefix=f"step_{step.id}",
+            )
+            # Wrap each LoopAgent in a pipeline SequentialAgent
+            pipeline = SequentialAgent(
+                name=f"step_{step.id}_pipeline",
+                sub_agents=[loop],
+            )
+            pipelines.append(pipeline)
+
+        if len(pipelines) == 1:
+            level_agents.append(pipelines[0])
+        else:
+            level_agents.append(ParallelAgent(
+                name=f"parallel_level_{levels.index(level_steps)}",
+                sub_agents=pipelines,
+            ))
+
+    if len(level_agents) == 1:
+        return level_agents[0]
+
+    return SequentialAgent(name="workflow", sub_agents=level_agents)
+```
+
+#### Synthesizer Agent Pattern
+
+After parallel branches complete, a synthesizer agent combines results. It must use `include_contents='none'` with a strong instruction that frames the injected data as completed research:
+
+```python
+synthesizer = LlmAgent(
+    name="synthesizer",
+    model="gemini-2.0-flash",
+    include_contents='none',
+    instruction="""You are given completed research from parallel analyses.
+Combine the following data into an actionable optimisation plan.
+
+Analytics findings:
+{step_1a_draft}
+
+Spend data:
+{step_1b_draft}
+
+Produce a clear plan with specific budget recommendations.""",
+    output_key="synthesis_result",
+)
+```
+
+Without `include_contents='none'`, the synthesizer sees full conversation history from all parallel branches (including review loop back-and-forth), which confuses the model. With `include_contents='none'` but a weak instruction (e.g., bare bracket placeholders), the model may not understand the injected data is final. The instruction must explicitly frame it as "completed research" or equivalent.
+
+### 8.3 ADK Pitfalls
+
+Three experimentally validated pitfalls (ADK 1.26.0):
+
+#### Pitfall 1: `output_key` + `exit_loop` Interaction
+
+`exit_loop` is a tool call with no text output. If an agent has both `output_key` and calls `exit_loop`, `output_key` extracts `""` and overwrites the state key.
+
+**Rule:** Never place `exit_loop` on the agent whose `output_key` holds important state. In the review loop, the reviewer (not the specialist) calls `exit_loop`. The reviewer's `output_key` is `feedback_key`, which is only read on the *next* iteration — by the time `exit_loop` fires, the loop is exiting, so the `""` overwrite is harmless. The specialist's `draft_key` is never overwritten by `exit_loop`.
+
+#### Pitfall 2: `SequentialAgent` Ignores `escalate`
+
+Only `LoopAgent` checks `escalate` between sub-agents. `SequentialAgent` runs all its sub-agents unconditionally.
+
+**Rule:** Place agents directly under `LoopAgent` when `exit_loop` should skip subsequent agents. Wrapping specialist + reviewer in a `SequentialAgent` inside a `LoopAgent` means that if agent order were ever reversed, the `escalate` signal from `exit_loop` would be ignored by the `SequentialAgent`, and the specialist would run unnecessarily after approval.
+
+#### Pitfall 3: Synthesizer `include_contents` Behavior
+
+| Configuration | Behavior | Result |
+|--------------|----------|--------|
+| `include_contents='none'` + weak instruction (bare `{placeholders}`) | Model sees only injected text but doesn't understand context | Confused or incomplete output |
+| Default (no `include_contents`) | Model sees full conversation history from all parallel branches | Confused by review loop back-and-forth; unreliable |
+| `include_contents='none'` + strong instruction ("completed research from parallel analyses") | Model sees only injected text with clear framing | Correct, focused output |
+
+**Rule:** Always pair `include_contents='none'` with an instruction that explicitly frames injected template data as completed, final input.
+
+### 8.4 LLM Call Cost & Latency
+
+#### Per-Step Cost
+
+Each review loop iteration makes 2 LLM calls (specialist + reviewer):
+
+| Scenario | LLM Calls | Latency (~5-15s/call) |
+|----------|-----------|----------------------|
+| Approved first pass | 2 | ~10-30s |
+| 1 revision | 4 | ~20-60s |
+| Max iterations (3) | 6 | ~30-90s |
+
+#### Parallel Execution Characteristics
+
+`ParallelAgent` runs branches concurrently. Total latency = max(branch latencies), not sum:
+
+| Workflow Shape | Total LLM Calls | Wall-Clock Latency |
+|---------------|-----------------|-------------------|
+| 2 parallel steps, both approved first pass | 4 (2+2) | ~10-30s (parallel) |
+| 2 parallel steps + synthesizer + 1 execution step | 4+1+2 = 7 minimum | ~30-90s total |
+| Same with 1 revision each | 4+4+1+4 = 13 | ~40-120s total |
+
+Add ~1 LLM call for the synthesizer agent. Approval checkpoints add user wait time (not LLM latency).
+
+### 8.5 Workflow State Machine
 
 ```
         CREATED → PLANNING → AWAITING_APPROVAL → IN_PROGRESS → COMPLETED
@@ -960,7 +1285,7 @@ Phase 4 — Deployment (sequential, after approval):
                                               (after max retries)
 ```
 
-### 7.3 Workflow Data Model
+### 8.6 Workflow Data Model
 
 ```
 Firestore: workflows/{workflow_id}
@@ -989,7 +1314,7 @@ Firestore: workflows/{workflow_id}
   |-- approval_checkpoints: [step_id, ...]  (steps requiring user approval before proceeding)
 ```
 
-### 7.4 Persistence & Recovery
+### 8.7 Persistence & Recovery
 
 | Concern | Approach |
 |---------|----------|
@@ -999,7 +1324,7 @@ Firestore: workflows/{workflow_id}
 | **User interruption** | Steps in AWAITING_INPUT pause workflow. User response writes to `step.inputs` and transitions step to IN_PROGRESS. |
 | **Long-running steps** | Steps that take >30s (e.g., strategy generation) execute asynchronously. Workflow polls step status. Frontend shows progress. |
 
-### 7.5 [PLANNED] n8n Integration
+### 8.8 [PLANNED] n8n Integration
 
 > **Status:** No n8n infrastructure exists. This is Sprint 8+ work.
 
@@ -1023,9 +1348,9 @@ KEN-E creates workflow → n8n workflow created via n8n API
 
 ---
 
-## 8. Integration with Evaluation Framework
+## 9. Integration with Evaluation Framework
 
-### 8.1 Overview
+### 9.1 Overview
 
 The agentic harness integrates with the Self-Improving Evaluation Framework (MER-E) to enable:
 1. **Automatic tracing** of all agent outputs via Weave
@@ -1033,7 +1358,7 @@ The agentic harness integrates with the Self-Improving Evaluation Framework (MER
 3. **Human feedback collection** for alignment
 4. **Continuous improvement** of agent prompts
 
-### 8.2 Trace Instrumentation
+### 9.2 Trace Instrumentation
 
 Tracing is implemented using Weave SDK with ADK callbacks, defined in `app/adk/tracking/callbacks.py`:
 
@@ -1057,7 +1382,7 @@ Root: Session Invocation
 │   │   └── L3: Tool Call (adk.tool.get_account_summaries_mt)
 ```
 
-### 8.3 Output Type Classification
+### 9.3 Output Type Classification
 
 Output classification is implemented via `OUTPUT_CATEGORIES` in `app/adk/agents/strategy_agent/constants.py`. Each strategy type maps to semantic output categories for MER-E trace-rule matching:
 
@@ -1071,14 +1396,14 @@ OUTPUT_CATEGORIES = {
 }
 ```
 
-### 8.4 [PLANNED] Feedback Collection
+### 9.4 [PLANNED] Feedback Collection
 
 A feedback collection system will enable human evaluation alignment:
 - Queue feedback requests for users after agent outputs
 - Store ratings (1-5) and factor-level ratings in Firestore
 - Trigger alignment analysis when sufficient feedback is collected
 
-### 8.5 [PLANNED] A/B Testing Support
+### 9.5 [PLANNED] A/B Testing Support
 
 The harness will support A/B testing of agent configurations:
 - Consistent hash-based variant assignment per account
@@ -1087,9 +1412,9 @@ The harness will support A/B testing of agent configurations:
 
 ---
 
-## 9. Infrastructure Requirements
+## 10. Infrastructure Requirements
 
-### 9.1 Compute Requirements
+### 10.1 Compute Requirements
 
 | Component | Specification | Scaling |
 |-----------|--------------|---------|
@@ -1097,7 +1422,7 @@ The harness will support A/B testing of agent configurations:
 | **Agent Engine (Vertex AI)** | Managed by Google | Auto-scaled |
 | **GA MCP Server (Cloud Run)** | 2 vCPU, 4GB RAM | On-demand |
 
-### 9.2 Cost Estimates
+### 10.2 Cost Estimates
 
 #### Usage Tier Definitions
 
@@ -1132,7 +1457,7 @@ The harness will support A/B testing of agent configurations:
 
 The `UsageTracker` (`app/adk/tracking/usage.py`) records per-tool-call events in Firestore with batched writes (100 events or 30s flush). Alert support: `AlertData` model supports threshold-based alerts. **Scalability concern:** At heavy usage, individual Firestore documents per tool call create expensive aggregation queries. A time-bucketed rollup strategy (hourly/daily pre-aggregated counters) is recommended before production scale.
 
-### 9.3 Architecture Diagram
+### 10.3 Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1179,13 +1504,13 @@ The `UsageTracker` (`app/adk/tracking/usage.py`) records per-tool-call events in
 
 ---
 
-## 10. Resilience, Security & Testing
+## 11. Resilience, Security & Testing
 
-### 10.1 Current Error Handling Patterns
+### 11.1 Current Error Handling Patterns
 
 The codebase has multi-layer error handling. This section documents what exists and identifies gaps.
 
-#### 10.1.1 Implemented Patterns
+#### 11.1.1 Implemented Patterns
 
 | Layer | Pattern | Key Files |
 |-------|---------|-----------|
@@ -1199,7 +1524,7 @@ The codebase has multi-layer error handling. This section documents what exists 
 | **Security hooks** | `adk_before_tool_callback` checks token expiry (5-min buffer), refreshes via Google OAuth2 API. Permission denied → signals frontend reauth. | `security/hooks.py` |
 | **Firestore operations** | Retry decorators with exponential backoff + jitter. Retriable: `Aborted`, `DeadlineExceeded`, `ResourceExhausted`, `ServiceUnavailable`. Config: 3-5 attempts, 0.5-2s initial delay. | `strategy_agent/retry_utils.py` |
 
-#### 10.1.2 Gap: No Circuit Breaker Pattern
+#### 11.1.2 Gap: No Circuit Breaker Pattern
 
 Current retry logic always attempts up to `max_retries` even if a service is clearly down. Missing:
 - **Circuit breaker state machine** (CLOSED → OPEN → HALF-OPEN) for MCP servers and Agent Engine
@@ -1208,15 +1533,15 @@ Current retry logic always attempts up to `max_retries` even if a service is cle
 
 **Recommendation:** Implement circuit breaker at the `McpToolset` or dispatch handler level. ADK's `before_tool_callback` could check circuit state before allowing tool execution.
 
-#### 10.1.3 Gap: Firestore Unavailability at Deploy Time
+#### 11.1.3 Gap: Firestore Unavailability at Deploy Time
 
 If Firestore is unreachable during `deploy_ken_e.py` execution, `load_config_from_firestore()` raises `FirestoreConnectionError`. The deployment fails — there are no bundled fallback configs.
 
 **Recommendation:** Bundle last-known-good config snapshots in the deployment package. Deploy script should catch `FirestoreConnectionError` and fall back to bundled config with a warning.
 
-### 10.2 Credential Lifecycle & Security Model
+### 11.2 Credential Lifecycle & Security Model
 
-#### 10.2.1 Current OAuth Flow
+#### 11.2.1 Current OAuth Flow
 
 | Step | Implementation | Key File |
 |------|---------------|----------|
@@ -1228,7 +1553,7 @@ If Firestore is unreachable during `deploy_ken_e.py` execution, `load_config_fro
 | **Token refresh** | On-demand: checks `expires_at` with 5-min buffer. Calls `https://oauth2.googleapis.com/token` with 10s timeout. Updates Firestore + returns refreshed creds. | `ga_credential_helper.py` |
 | **Reauth signal** | `adk_before_tool_callback` detects expired/revoked tokens → returns `{requires_reauth: true}` → frontend triggers re-authorization flow. | `security/hooks.py` |
 
-#### 10.2.2 Gaps in Credential Security
+#### 11.2.2 Gaps in Credential Security
 
 | Gap | Risk | Recommendation |
 |-----|------|----------------|
@@ -1238,7 +1563,7 @@ If Firestore is unreachable during `deploy_ken_e.py` execution, `load_config_fro
 | **No credential expiry notifications** | Users discover broken credentials only when they try to use an agent | Add expiry monitoring: warn user in frontend when creds expire within 24h |
 | **No cross-tenant isolation checks** | Credential retrieval uses `account_id` but no additional tenant boundary enforcement | Add explicit tenant context validation in `IntegrationCredentialsService` |
 
-#### 10.2.3 Multi-Tenant Security for Specialist Agents
+#### 11.2.3 Multi-Tenant Security for Specialist Agents
 
 When specialist agents connect to multiple MCP servers per user (Sprint 5-6), each `McpToolset` needs its own `header_provider` that reads the correct platform credentials from session state:
 
@@ -1252,9 +1577,9 @@ Session state keys (per-platform):
 
 The API layer must load and refresh credentials for all connected platforms at session creation time. This is a linear scaling problem: N platforms = N credential loads. Mitigation: parallel loading (already implemented for GA), Redis caching per-platform.
 
-### 10.3 Rate Limiting & Platform Quota Management
+### 11.3 Rate Limiting & Platform Quota Management
 
-#### 10.3.1 Current Rate Limiting
+#### 11.3.1 Current Rate Limiting
 
 | Scope | Implementation | Key File |
 |-------|---------------|----------|
@@ -1262,7 +1587,7 @@ The API layer must load and refresh credentials for all connected platforms at s
 | **External APIs** | Redis-backed per-API limits. Wikipedia: 10/min. Wikidata: 10/min. Gemini: 5/min. Fail-open if cache unavailable. | `services/rate_limiter.py` |
 | **Firestore operations** | Retry with backoff on `ResourceExhausted` (Firestore's rate limit signal). | `strategy_agent/retry_utils.py` |
 
-#### 10.3.2 Gap: No Marketing Platform Quota Management
+#### 11.3.2 Gap: No Marketing Platform Quota Management
 
 Marketing platform APIs have aggressive rate limits that the specialist agents must respect:
 
@@ -1280,7 +1605,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 3. **Account-level quota isolation** — For platforms with per-account limits (Meta, HubSpot), track quota per `account_id`, not globally.
 4. **User-facing feedback** — When rate limited, the specialist agent should explain the constraint: "Google Ads daily quota is at 95%. I can run 3 more queries today."
 
-### 10.4 Risk Assessment Matrix
+### 11.4 Risk Assessment Matrix
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
@@ -1294,7 +1619,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **OAuth token expiry mid-conversation** | Medium | Low | 5-min refresh buffer, reauth signal to frontend. Gap: no proactive refresh. |
 | **Credential encryption not prod-ready** | Low | High | Fernet in dev, KMS TODO in prod. Must complete before launch. |
 
-### 10.5 Test Locations
+### 11.5 Test Locations
 
 | Test Suite | Location | Coverage |
 |-----------|----------|----------|
@@ -1304,7 +1629,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | Shared module tests | `shared/tests/` | Context utils, token estimation |
 | Load tests | `tests/load_test/` | Locust performance tests |
 
-### 10.6 Performance Benchmarks
+### 11.6 Performance Benchmarks
 
 | Operation | Target | Acceptable | Critical | Measured |
 |-----------|--------|------------|----------|----------|
@@ -1317,9 +1642,9 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 
 ---
 
-## 11. Sprint-Based Roadmap
+## 12. Sprint-Based Roadmap
 
-### 11.1 Completed (Sprints 1-4)
+### 12.1 Completed (Sprints 1-4)
 
 | Sprint | What Was Built | Status |
 |--------|---------------|--------|
@@ -1329,19 +1654,20 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **Sprint 3b** | Agent registry + Firestore config, API allowlist from registry, context loader consolidation, chat latency optimization (~23s → ~7-13s), structured logging, Prometheus, Agent Engine tracing, MCP health ping | Canonical |
 | **Sprint 4** | Weave SDK init, @weave.op() instrumentation, trace hierarchy (before/after callbacks), structured logging with request_id | Canonical |
 
-### 11.2 In Progress
+### 12.2 In Progress
 
 | Item | Sprint | Description |
 |------|--------|-------------|
 | Sprint 3b PR | 3b | Agent config optimization, final review |
 
-### 11.3 Planned
+### 12.3 Planned
 
 | Item | Timeline | Description |
 |------|----------|-------------|
 | **Specialist agents + agent factory** | Sprint 5-6 | Config-driven agent assembly, category-based tool routing |
 | **Additional MCP servers** | Sprint 5-6 | Google Ads MCP, HubSpot MCP integration |
 | **SDK function tools** | Sprint 5-6 | Meta Ads, Mailchimp direct SDK integration |
+| **Skills architecture** | Sprint 5-6 | Predefined skills bundled, custom skills via UI (Section 6) |
 | **Slack channel** | Sprint 8+ | Bolt SDK integration on separate Cloud Run |
 | **Workflow management** | Sprint 8+ | Multi-step task tracking with Firestore persistence |
 | **Voice channel** | Phase 4 | Pipecat + Meeting BaaS |
@@ -1349,7 +1675,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 
 ---
 
-## 12. Appendices
+## 13. Appendices
 
 ### Appendix A: Platform Integration Reference
 
@@ -1358,7 +1684,7 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **Google Analytics** | Self-hosted MCP | GA MCP on Cloud Run | Implemented |
 | **Google Ads** | Hybrid: MCP reads + SDK writes | Google official MCP + `google-ads` SDK | Planned |
 | **HubSpot** | Provider-hosted MCP | `mcp.hubspot.com` | Planned |
-| **Meta Ads** | SDK function tools | `facebook-business` | Planned |
+| **Meta Ads** | SDK function tools | `facebook-business` — shared: Analytics (reads) + Execution (reads + writes) | Planned |
 | **Mailchimp** | SDK function tools | `mailchimp-marketing` | Planned |
 | **Microsoft Ads** | Deferred | — | No current demand |
 
@@ -1402,6 +1728,9 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | **InstructionProvider** | Callable that returns dynamic instructions per LLM turn |
 | **Agent Factory** | [PLANNED] Config-driven system that assembles agents from Firestore config |
 | **tool_filter** | ADK `BaseToolset` parameter — callable predicate evaluated per-turn to control which tools are visible to the LLM |
+| **Skill** | Self-contained unit of expertise (SKILL.md) providing procedural knowledge to agents via progressive disclosure (L1/L2/L3) |
+| **SkillToolset** | ADK class for incorporating skills into `LlmAgent` via the `tools` parameter |
+| **SKILL.md** | Markdown file with YAML frontmatter defining a skill's name, description, allowed-tools, and procedural instructions |
 | **ToolRegistry** | Searchable metadata catalog for ~400 tools; planned as driver for `tool_filter` predicates |
 
 ---
@@ -1415,7 +1744,9 @@ Planned: Migrate to Firestore config registry for per-org enablement without red
 | 2.1 | 2026-03-10 | Development Team | Design review: Added `tool_filter` + ToolRegistry architecture (Section 4.3). Updated ADK internals analysis. Added sprint-3b dependency note. Fixed Deepgram latency claim. |
 | 2.2 | 2026-03-11 | Development Team | Cross-reference pass: added links to design docs (`agent-hierarchy.md`, `mcp-architecture.md`, `api-gateway-multi-channel.md`) and Notion Design Decisions database. Fixed Section 10 duplicate numbering and ToC mismatch. |
 | 2.3 | 2026-03-11 | Development Team | Architecture accuracy pass: reframed doc as architecture reference (current + `[PLANNED]`). Split Sections 1.3, 2.3 into current/planned. Rewrote Section 2.1 diagram for target architecture. Expanded Section 3.6 (session state keys, token visibility, billing/usage tracking). Added Decisions 19-20 links. |
-| 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 7.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
+| 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 8.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
+| 2.5 | 2026-03-11 | Development Team | Added `[TRANSITIONAL]` convention for GA Agent and Company News Agent (successors documented). Added Meta Ads SDK shared access (Analytics reads + Execution reads/writes via `tool_filter`). Added Section 6 Skills Architecture (predefined + custom skills, SkillToolset integration, skill builder UI). Renumbered Sections 6-12 → 7-13. Added Decision 22 link. Updated glossary with Skill/SkillToolset/SKILL.md terms. |
+| 2.6 | 2026-03-18 | Development Team | ADK 1.26.0 experiment corrections: removed `SequentialAgent` wrappers inside `LoopAgent` (Sections 4.6, 8.1), added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. New subsections: 8.2 ADK Implementation Details (`build_review_pipeline()` and `build_workflow_pipeline()` factories, synthesizer pattern), 8.3 ADK Pitfalls (3 validated pitfalls), 8.4 LLM Call Cost & Latency. Renumbered 8.2-8.5 → 8.5-8.8. Added LLM call cost table to Section 4.6. |
 
 ---
 

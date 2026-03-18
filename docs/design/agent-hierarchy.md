@@ -1,8 +1,10 @@
 # Agent Hierarchy & Registry
 
-**Version:** 1.1
+**Version:** 1.4
 **Date:** March 2026
-**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10, 2026)
+**Status:** Canonical — reflects Sprints 1-4 implementation + design review (March 10-11, 2026) + ADK experiment corrections (March 18, 2026)
+
+> **Convention:** Agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by a specialist agent or automation when the specialist layer is built (Sprint 5-6). `[PLANNED]` marks features not yet built.
 
 ---
 
@@ -10,8 +12,10 @@
 
 ```
 KEN-E Root Agent (LlmAgent)
-├── Company News Agent (LlmAgent) — via dispatch_to_company_news()
-├── Google Analytics Agent (LlmAgent) — via dispatch_to_google_analytics()
+├── Company News Agent (LlmAgent) [TRANSITIONAL] — via dispatch_to_company_news()
+│     Successor: Automation Specialist (scheduled n8n workflow) + research-company-news Skill
+├── Google Analytics Agent (LlmAgent) [TRANSITIONAL] — via dispatch_to_google_analytics()
+│     Successor: Analytics Specialist
 └── Strategy Supervisor (multi-agent) — separate entry point, not dispatched from root
     ├── Business Researcher + Formatter
     ├── Competitive Researcher + Formatter
@@ -21,15 +25,15 @@ KEN-E Root Agent (LlmAgent)
 
 ### Key Files
 
-| File | Role |
-|------|------|
-| `app/adk/agents/ken_e_agent.py` | Root KEN-E agent definition, InstructionProvider, tool wrappers |
-| `app/adk/agents/registry.py` | Agent registry with lazy loading and Firestore config doc IDs |
-| `app/adk/agents/utils/dispatch_handlers.py` | Router functions (news, GA, strategy) with `@safe_weave_op()` |
-| `app/adk/agents/utils/context_loader.py` | HierarchicalContextManager, org context loading, agent-driven section loading via `load_context_section` tool |
-| `app/adk/agents/company_news_chatbot/agent.py` | Company news sub-agent |
-| `app/adk/agents/google_analytics_agent_v4.py` | GA4 sub-agent with McpToolset |
-| `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document generation supervisor |
+| File | Role | Lifecycle |
+|------|------|-----------|
+| `app/adk/agents/ken_e_agent.py` | Root KEN-E agent definition, InstructionProvider, tool wrappers | Permanent |
+| `app/adk/agents/registry.py` | Agent registry with lazy loading and Firestore config doc IDs | Permanent |
+| `app/adk/agents/utils/dispatch_handlers.py` | Router functions (news, GA, strategy) with `@safe_weave_op()` | Permanent (dispatch targets change) |
+| `app/adk/agents/utils/context_loader.py` | HierarchicalContextManager, org context loading, agent-driven section loading via `load_context_section` tool | Permanent |
+| `app/adk/agents/company_news_chatbot/agent.py` | Company news sub-agent | Transitional → Automation Specialist + Skill |
+| `app/adk/agents/google_analytics_agent_v4.py` | GA4 sub-agent with McpToolset | Transitional → Analytics Specialist |
+| `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document generation supervisor | Permanent |
 
 ## 2. Agent Registry
 
@@ -41,12 +45,12 @@ The agent registry (`app/adk/agents/registry.py`) provides:
 
 ### Registered Agents
 
-| Name | Module | Config Doc ID | Capabilities |
-|------|--------|---------------|-------------|
-| `ken_e` | `.ken_e_agent` | `ken_e_chatbot` | chat, marketing, news, analytics |
-| `news` | `.company_news_chatbot.agent` | `company_news_agent` | news, financial |
-| `google_analytics` | `.google_analytics_agent_v4` | `google_analytics_agent` | analytics, ga4 |
-| `strategy` | `.create_strategy_docs_supervisor` | (8 sub-config docs) | strategy, documents |
+| Name | Module | Config Doc ID | Capabilities | Lifecycle |
+|------|--------|---------------|-------------|-----------|
+| `ken_e` | `.ken_e_agent` | `ken_e_chatbot` | chat, marketing, news, analytics | Permanent |
+| `news` | `.company_news_chatbot.agent` | `company_news_agent` | news, financial | Transitional → Automation Specialist + `research-company-news` Skill |
+| `google_analytics` | `.google_analytics_agent_v4` | `google_analytics_agent` | analytics, ga4 | Transitional → Analytics Specialist |
+| `strategy` | `.create_strategy_docs_supervisor` | (8 sub-config docs) | strategy, documents | Permanent |
 
 The registry's `get_all_config_doc_ids()` method collects all config doc IDs for use by the API layer's allowlist validation.
 
@@ -144,10 +148,12 @@ The next expansion (Sprint 5-6) adds specialist agents below the root:
 
 | Specialist | Tool Sources | Integration Type |
 |-----------|-------------|-----------------|
-| **Analytics** | GA MCP, Google Ads MCP | McpToolset |
+| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads) | McpToolset + SDK function tools |
 | **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK function tools |
-| **Execution** | Meta Ads SDK, Google Ads SDK (writes), Google Ads MCP (reads) | SDK function tools + McpToolset |
+| **Execution** | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | SDK function tools + McpToolset |
 | **Automation** | n8n MCP | McpToolset |
+
+> **Note:** The `facebook-business` SDK is available to both Analytics (read-only tools: get campaigns, get spend, get metrics) and Execution (full CRUD). `tool_filter` controls which tools each specialist sees — see `docs/design/mcp-architecture.md` Section 5a.
 
 See `docs/design/mcp-architecture.md` for platform integration decisions.
 
@@ -220,7 +226,13 @@ deploy_ken_e.py calls agent_factory.build_hierarchy()
   │
   ├── 5. Build root agent with dispatch functions as tools
   │
-  └── 6. Build ToolRegistry index from all tool metadata (~2,000 tokens)
+  ├── 6. Build ToolRegistry index from all tool metadata (~2,000 tokens)
+  │
+  └── 7. [PLANNED] Load Skills via SkillToolset
+        ├── Load predefined skills from app/adk/skills/ (bundled)
+        ├── Load org custom skills from GCS + Firestore (per-org)
+        └── Attach SkillToolset to each specialist agent
+            See harness design doc Section 6 for Skills Architecture
 ```
 
 ### 8.3 Config-to-Constructor Mapping
@@ -279,6 +291,8 @@ This generalizes the existing `_ga_header_provider()` pattern.
 
 Every specialist delegation is wrapped in a **review loop** using ADK's native workflow agents. This is the execution-time complement to the structural routing described in Section 7.
 
+> **Revised March 18, 2026** — Structural corrections based on ADK 1.26.0 experiments. Removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added pipeline wrappers for `ParallelAgent` branches.
+
 ### 9.1 Review Loop Pattern (Single-Step)
 
 Uses the Generator-Critic pattern with ADK's `LoopAgent`:
@@ -290,35 +304,60 @@ Root Agent (LlmAgent)
 └── dispatch handler builds:
 
     review_loop (LoopAgent, max_iterations=3)
-    └── work_cycle (SequentialAgent)
-        ├── specialist (LlmAgent, output_key="draft")
-        │     instruction: task + criteria + {review_feedback}
-        │     tools: [specialist MCP/SDK tools]
-        └── reviewer (LlmAgent, output_key="review_feedback")
-              instruction: evaluate {draft} vs criteria
-              tools: [exit_loop]
+    ├── specialist (LlmAgent, output_key="draft")
+    │     instruction: task + criteria + {review_feedback?}
+    │     tools: [specialist MCP/SDK tools]
+    └── reviewer (LlmAgent, output_key="review_feedback",
+          include_contents='none')
+          instruction: evaluate {draft} vs criteria
+          tools: [exit_loop]
 ```
 
-The `build_review_pipeline()` factory in `app/adk/agents/utils/review_pipeline.py` constructs this structure.
+Key details:
+- **No `SequentialAgent` wrapper** — `LoopAgent` iterates sub-agents sequentially and checks `escalate` between each. A `SequentialAgent` wrapper would swallow the `escalate` signal from `exit_loop`.
+- **`include_contents='none'` on reviewer** — reviewer evaluates only the template-injected `{draft}`, not conversation history, for consistent evaluations.
+- **`{review_feedback?}` (optional)** — on first iteration, no feedback exists. The `?` suffix resolves to empty string instead of `KeyError`.
+
+The `build_review_pipeline()` factory in `app/adk/agents/utils/review_pipeline.py` constructs this structure. See harness design doc Section 8.2 for the full factory implementation.
 
 ### 9.2 Multi-Step Workflow Pattern
 
-Multiple review loops compose into parallel and sequential structures:
+Multiple review loops compose into parallel and sequential structures. Each `LoopAgent` is wrapped in a pipeline `SequentialAgent` inside `ParallelAgent` for extensibility:
 
 ```
 data_gathering (ParallelAgent)
-├── step_1a_loop (LoopAgent)
-│   └── SequentialAgent [analytics_specialist, reviewer]
-└── step_1b_loop (LoopAgent)
-    └── SequentialAgent [execution_specialist, reviewer]
+├── step_1a_pipeline (SequentialAgent)
+│   └── step_1a_loop (LoopAgent)
+│       ├── analytics_specialist (output_key="step_1a_draft")
+│       │     instruction: task + criteria + {step_1a_feedback?}
+│       └── reviewer (include_contents='none', output_key="step_1a_feedback")
+│
+└── step_1b_pipeline (SequentialAgent)
+    └── step_1b_loop (LoopAgent)
+        ├── execution_specialist (output_key="step_1b_draft")
+        │     instruction: task + criteria + {step_1b_feedback?}
+        └── reviewer (include_contents='none', output_key="step_1b_feedback")
 
-→ Root Agent synthesises results, presents to user for approval
+synthesizer (LlmAgent, include_contents='none')
+  instruction: "You are given completed research from parallel analyses.
+                Analytics findings: {step_1a_draft}
+                Spend data: {step_1b_draft}"
 
-step_3_loop (LoopAgent)  — runs after user approval
-└── SequentialAgent [execution_specialist, reviewer]
+→ Root Agent presents synthesis to user for approval
+
+step_3_pipeline (SequentialAgent)  — runs after user approval
+└── step_3_loop (LoopAgent)
+    ├── execution_specialist (output_key="step_3_draft")
+    │     instruction: approved plan + {step_3_feedback?}
+    └── reviewer (include_contents='none', output_key="step_3_feedback")
 ```
 
-The `build_workflow_pipeline()` factory reads a dependency graph to construct the appropriate `ParallelAgent` / `SequentialAgent` composition. Steps with no shared dependencies are wrapped in `ParallelAgent`; steps with dependencies run sequentially.
+Key details:
+- **Pipeline wrappers** — each `LoopAgent` is wrapped in a `SequentialAgent` inside `ParallelAgent`, allowing future pre/post steps per branch.
+- **Dedicated synthesizer** — uses `include_contents='none'` with a strong instruction framing injected data as "completed research." Without this, the synthesizer sees all conversation history from parallel branches.
+- **`SequentialAgent` only outside `LoopAgent`** — used for pipeline wrapping and phase chaining, never inside `LoopAgent` (which handles sequential iteration natively).
+
+The `build_workflow_pipeline()` factory reads a dependency graph to construct the appropriate `ParallelAgent` / `SequentialAgent` composition. See harness design doc Section 8.2 for the full factory implementation and Section 8.3 for validated ADK pitfalls.
 
 ### 9.3 Key Files
 
@@ -329,7 +368,7 @@ The `build_workflow_pipeline()` factory reads a dependency graph to construct th
 | `app/adk/agents/utils/supervisor_utils.py` | [MODIFY] Extract `output_key` values from session state after pipeline runs |
 | `app/adk/agents/ken_e_agent.py` | [MODIFY] Add `acceptance_criteria` to tool functions, add `execute_workflow` tool |
 
-See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) and the harness design doc Sections 4.6 and 7.1 for full details.
+See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) and the harness design doc Sections 4.6 and 8 for full details.
 
 ## References
 

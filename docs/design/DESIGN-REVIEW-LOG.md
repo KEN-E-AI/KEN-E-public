@@ -262,4 +262,86 @@ See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030
 
 ---
 
+## Review 7: Transitional Agent Annotations, Meta Ads Shared Access, Skills Architecture
+
+**Date:** March 11, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Four documentation improvements: (1) Mark GA and Company News agents as transitional, (2) correct Meta Ads SDK shared access across specialists, (3) add ADK Skills Architecture as new Section 6, (4) renumber all subsequent sections and cross-references.
+
+### Issues Addressed
+
+| # | Issue | Resolution |
+|---|-------|------------|
+| 1 | Google Analytics Agent has no lifecycle annotation — will be replaced by Analytics Specialist in Sprint 5-6 | Added `[TRANSITIONAL]` convention alongside `[PLANNED]`. Annotated GA Agent in all diagrams, tables, and flow descriptions with successor = Analytics Specialist. |
+| 2 | Company News Agent has no lifecycle annotation — will be replaced by Automation Specialist (n8n workflow) + predefined `research-company-news` Skill | Annotated News Agent as `[TRANSITIONAL]`. Tied transition to both Automation Specialist (scheduled pipeline) and new Skills Architecture (Section 6). |
+| 3 | Meta Ads SDK only assigned to Execution Specialist, but Analytics Specialist also needs read access for reporting | Added `facebook-business` SDK (reads) to Analytics Specialist tool sources in all specialist tables. Clarified Execution gets reads + writes. Added `tool_filter` explanatory notes. |
+| 4 | ADK recently added Skills support — need architecture for predefined + custom skills | Added new Section 6: Skills Architecture [PLANNED] with 6 subsections covering progressive disclosure, predefined skills, custom skills, agent integration, and frontend skill builder. |
+
+### Decision
+
+See [Decision 22: ADK Skills Architecture](https://www.notion.so/32030fd653028114827be82c2731ea72) in the Design Decisions database for full rationale.
+
+### Documents Updated
+
+| File | Changes |
+|------|---------|
+| `docs/design/mcp-architecture.md` | v1.1 → v1.2: Updated Section 4 platform table (Meta Ads → shared). Updated Section 5 diagram (Meta Ads SDK reads under Analytics Specialist). Rewrote Section 8 (Analytics Specialist uses read-only SDK tools for Meta Ads reporting). Added `tool_filter` note for Meta Ads. |
+| `docs/design/agent-hierarchy.md` | v1.1 → v1.3: Added `[TRANSITIONAL]` convention note. Annotated News Agent and GA Agent in agent tree. Added "Lifecycle" column to Key Files and Registered Agents tables. Updated specialist table with Meta Ads shared access. Added skills loading step to agent factory assembly flow. |
+| `docs/KEN-E-Agentic-Harness-Design.md` | v2.4 → v2.5: Added `[TRANSITIONAL]` convention. Annotated transitional agents in all diagrams and tables. Updated Meta Ads shared access in Sections 2.1, 4.4, 4.5, and Appendix A. **Inserted new Section 6: Skills Architecture [PLANNED]** (6 subsections). Renumbered Sections 6→7 through 12→13 with all subsections and cross-references. Updated ToC, roadmap, glossary, and document history. |
+| `docs/design/review-loop-implementation-plan.md` | Added open question 7: skills interaction with review loops. Updated cross-references for section renumbering. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | Added this entry (Review 7). |
+
+### Key Design Decisions
+
+1. **`[TRANSITIONAL]` convention** — New tag for agents that exist today but will be subsumed. Distinct from `[PLANNED]` (not yet built) — transitional agents ARE built but have a planned successor.
+2. **Meta Ads SDK shared access** — Parallels Google Ads pattern (MCP reads shared with Analytics). `tool_filter` controls which tools each specialist sees from the same `facebook-business` SDK.
+3. **Skills progressive disclosure** — L1 metadata (~50-100 tokens) loaded at startup; L2 instructions (<5,000 tokens) loaded on activation; L3 resources on-demand. Minimizes baseline token overhead.
+4. **Two-tier skill storage** — Predefined skills bundled in deployment (`app/adk/skills/`), custom skills in GCS + Firestore per-org. Loaded via `SkillToolset` during agent factory assembly.
+5. **News Agent → Skill transition** — `research-company-news` predefined skill replaces the standalone Company News Agent. Combined with Automation Specialist (scheduled n8n workflow) for automated news retrieval.
+
+---
+
+## Review 8: ADK 1.26.0 Experiment Corrections — Review Loops & Workflow Management
+
+**Date:** March 18, 2026
+**Branch:** `docs/harness-cleanup-design-docs`
+**Scope:** Correct 3 structural errors and fill documentation gaps in Sections 4.6 and 8 (and related docs) based on validated ADK 1.26.0 experiments with review loop and parallel workflow patterns.
+
+### Finding
+
+A dev team member conducted ADK experiments (google-adk 1.26.0) validating the review loop and parallel workflow patterns described in the design docs. The experiments revealed 3 structural errors:
+
+1. **`SequentialAgent` wrappers inside `LoopAgent` are unnecessary and harmful** — `LoopAgent` already iterates sub-agents sequentially and checks `escalate` between each. A `SequentialAgent` wrapper swallows the `escalate` signal from `exit_loop`.
+2. **Reviewer agents need `include_contents='none'`** — without it, the reviewer sees the full conversation history (all prior turns, tool calls, review loop back-and-forth), producing inconsistent evaluations.
+3. **Synthesizer agents need `include_contents='none'` + strong instructions** — without `include_contents='none'`, the synthesizer sees full conversation history from all parallel branches. With it but a weak instruction, the model doesn't understand the injected data is final. The instruction must explicitly frame it as "completed research."
+
+Additionally, 5 documentation gaps were identified:
+- `{feedback?}` optional template syntax (avoids `KeyError` on first iteration)
+- `output_key` + `exit_loop` interaction pitfall (`exit_loop` produces no text, overwrites state with `""`)
+- `SequentialAgent` ignores `escalate` pitfall
+- LLM call cost/latency analysis
+- `build_review_pipeline()` and `build_workflow_pipeline()` factory implementations
+
+### Documents Updated
+
+| File | Version | Changes |
+|------|---------|---------|
+| `docs/KEN-E-Agentic-Harness-Design.md` | v2.5 → v2.6 | **Section 4.6**: Removed `SequentialAgent` wrapper from diagram and constructs table. Added `include_contents='none'` to reviewer. Fixed `{step_N_feedback}` → `{step_N_feedback?}`. Added "Why no SequentialAgent", "Why include_contents='none'", "Why `?` suffix" explanations. Added LLM call cost table. **Section 8.1**: Rewrote all workflow diagrams — removed `SequentialAgent` inside `LoopAgent`, added `include_contents='none'` on reviewers, added explicit synthesizer agent with `include_contents='none'`, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. **Section 8.2 (NEW)**: `build_review_pipeline()` factory implementation, `build_workflow_pipeline()` composition pattern, synthesizer agent pattern. **Section 8.3 (NEW)**: 3 validated ADK Pitfalls with rules. **Section 8.4 (NEW)**: LLM call cost & latency tables. Renumbered 8.2-8.5 → 8.5-8.8. |
+| `docs/design/agent-hierarchy.md` | v1.3 → v1.4 | **Section 9.1**: Removed `SequentialAgent` wrapper, added `include_contents='none'` on reviewer, fixed template syntax, added key details. **Section 9.2**: Rewrote multi-step workflow diagram — added pipeline wrappers, synthesizer agent, `include_contents='none'`, key details. Updated cross-references. |
+| `docs/design/review-loop-implementation-plan.md` | v1.0 → v1.1 | **Section 2**: Updated `LoopAgent` description (iterates sequentially), added `SequentialAgent` caveat (ignores `escalate`), added `LlmAgent` `include_contents` parameter, updated `exit_loop` description (no text output), added `SequentialAgent` key behavior. **Section 3.1**: Removed `SequentialAgent` wrapper, added `include_contents='none'`, fixed template syntax. **Section 3.2**: Same fixes. **Section 3.3**: Same fixes plus synthesizer agent, pipeline wrappers. **Story 1.1**: Updated acceptance criteria and implementation code. **Section 8**: Added 3 new risks (`output_key`+`exit_loop`, `SequentialAgent` swallows `escalate`, synthesizer history confusion). |
+| `docs/design/DESIGN-REVIEW-LOG.md` | — | Added this entry (Review 8). |
+
+### Key Corrections
+
+1. **All workflow diagrams** now show specialist + reviewer as direct `LoopAgent` sub-agents (no `SequentialAgent` wrapper).
+2. **All reviewer agents** now show `include_contents='none'`.
+3. **All synthesizer agents** now show `include_contents='none'` + strong instruction framing injected data as "completed research."
+4. **Template variables** use `{key?}` optional syntax for first-iteration safety.
+5. **`build_review_pipeline()`** factory code included with validated implementation.
+6. **Pipeline wrappers** — each `LoopAgent` wrapped in a `SequentialAgent` inside `ParallelAgent` for future extensibility.
+7. **3 ADK pitfalls** documented with rules.
+8. **LLM call cost table** present with per-step and parallel execution latency estimates.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*
