@@ -228,6 +228,17 @@ def ga_credentials_key(account_id: str) -> str:
     return f"chat:ga_creds:{account_id}"
 
 
+def user_session_ids_key(user_id: str) -> str:
+    """Generate cache key for a user's session ID list.
+
+    Stores the list of session IDs for a user so that on restart
+    we can skip the expensive Vertex AI list_sessions call.
+
+    TTL: 24 hours (matches session_metadata_key)
+    """
+    return f"chat:user_sessions:{user_id}"
+
+
 def session_metadata_key(user_id: str, session_id: str) -> str:
     """Generate cache key for session metadata.
 

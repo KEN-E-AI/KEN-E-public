@@ -224,15 +224,12 @@ class TestFirestoreNotificationBatching:
         # Test include_archived=False
         await repository.get_by_account([account_id], include_archived=False)
 
-        # Verify archived_at filter was applied
-        # Check the second where call (first is account_id, second is archived_at)
+        # Verify archived_at filter was applied via FieldFilter keyword arg
         where_calls = mock_query.where.call_args_list
         assert len(where_calls) >= 1
-        # Check that archived_at filter was applied with ">" comparison
         archived_filter_call = where_calls[0]
-        assert archived_filter_call[0][0] == "archived_at"
-        assert archived_filter_call[0][1] == ">"
-        assert isinstance(archived_filter_call[0][2], str)  # ISO timestamp
+        filter_obj = archived_filter_call.kwargs["filter"]
+        assert isinstance(filter_obj, firestore.FieldFilter)
 
     @pytest.mark.asyncio
     async def test_error_handling_fallback(self, repository, mock_firestore_client):

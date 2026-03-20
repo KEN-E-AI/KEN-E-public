@@ -6,21 +6,21 @@ import functools
 import logging
 import random
 import time
-from typing import Any, Callable, Optional, TypeVar, Union
-
-from pydantic import ValidationError
+from collections.abc import Callable
+from typing import Any, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
 # Type variable for generic return types
 T = TypeVar("T")
 
-# Common exceptions that should trigger a retry
+# Transient exceptions that may succeed on retry.
+# Deterministic errors (ValidationError, ValueError) are excluded — they will
+# never succeed on retry and should surface immediately.
 RETRIABLE_EXCEPTIONS = (
     ConnectionError,
     TimeoutError,
-    ValidationError,  # Pydantic validation errors
-    ValueError,  # JSON parsing errors
+    OSError,  # Covers network-related OS errors (e.g. socket errors)
 )
 
 
@@ -117,33 +117,34 @@ def retry_with_exponential_backoff(
 def invoke_agent_with_retry(
     agent: Any,
     query: str,
-    user_id: Optional[str] = None,
-    session_id: Optional[str] = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
     max_attempts: int = 3,
-    state: Optional[dict[str, Any]] = None,
+    state: dict[str, Any] | None = None,
+    retry_config: Optional["AgentRetryConfig"] = None,
 ) -> str:
-    """
-    Invoke an agent with automatic retry on failure.
-
-    This is a convenience function that wraps invoke_agent_sync with retry logic.
+    """Invoke an agent with automatic retry on transient failures.
 
     Args:
         agent: The agent to invoke
         query: The query to send to the agent
         user_id: Optional user ID for context
         session_id: Optional session ID for context
-        max_attempts: Maximum number of retry attempts
+        max_attempts: Maximum number of retry attempts (ignored if retry_config given)
         state: Optional initial session state for the child agent
+        retry_config: Optional retry configuration (overrides max_attempts)
 
     Returns:
         The agent's response
-
-    Raises:
-        Exception: If all retry attempts fail
     """
     from .supervisor_utils import invoke_agent_sync
 
-    @retry_with_exponential_backoff(max_attempts=max_attempts)
+    if retry_config:
+        decorator = retry_config.get_decorator()
+    else:
+        decorator = retry_with_exponential_backoff(max_attempts=max_attempts)
+
+    @decorator
     def _invoke() -> str:
         return invoke_agent_sync(agent, query, user_id, session_id, state=state)
 
@@ -160,28 +161,12 @@ class AgentRetryConfig:
         max_delay: float = 30.0,
         exponential_base: float = 2.0,
         jitter: bool = True,
-        retry_on_validation_error: bool = True,
-        retry_on_timeout: bool = True,
     ):
-        """
-        Initialize retry configuration.
-
-        Args:
-            max_attempts: Maximum number of retry attempts
-            initial_delay: Initial delay between retries in seconds
-            max_delay: Maximum delay between retries in seconds
-            exponential_base: Base for exponential backoff
-            jitter: Whether to add random jitter to delays
-            retry_on_validation_error: Whether to retry on Pydantic validation errors
-            retry_on_timeout: Whether to retry on timeout errors
-        """
         self.max_attempts = max_attempts
         self.initial_delay = initial_delay
         self.max_delay = max_delay
         self.exponential_base = exponential_base
         self.jitter = jitter
-        self.retry_on_validation_error = retry_on_validation_error
-        self.retry_on_timeout = retry_on_timeout
 
     def get_decorator(self) -> Callable:
         """Get a configured retry decorator."""

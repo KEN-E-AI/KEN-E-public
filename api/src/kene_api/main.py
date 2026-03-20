@@ -144,6 +144,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start session timeout monitor: {e}")
 
+    # Validate agent registry config doc IDs
+    try:
+        from app.adk.agents.registry import validate_registry_at_startup
+
+        validate_registry_at_startup()
+    except Exception as e:
+        logger.warning(f"Agent registry validation failed: {e}")
+
     # Pre-load agent engine connection to avoid 3s lazy-load on first request
     # This is done in a non-blocking background thread
     try:

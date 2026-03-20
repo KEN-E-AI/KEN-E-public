@@ -4,9 +4,11 @@ KEN-E Agent: Frontend-facing chat agent for company news and analytics.
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from google.adk.agents import Agent
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools import ToolContext
 
 # Load environment variables from .env file BEFORE reading any env vars.
@@ -46,71 +48,12 @@ configure_logging(level=_log_level)
 
 logger = get_structured_logger(__name__)
 
-
-def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
-    """
-    Create the KEN-E chat agent for frontend interactions.
-    Handles company news and Google Analytics queries only.
-
-    Args:
-        config_doc_id: Firestore document ID for agent configuration (default: "ken_e_chatbot")
-    """
-
-    # Initialize Weave tracing — log loudly on failure but don't block agent
-    weave_ok = init_weave_if_needed()
-    if not weave_ok:
-        logger.error(
-            "WEAVE INITIALIZATION FAILED — traces will NOT be captured. "
-            "Check that WANDB_API_KEY is set in .env and the weave package is installed."
-        )
-
-    # Load configuration from Firestore with fallback to hardcoded values
-    try:
-        config, metadata = load_config_from_firestore(config_doc_id)
-        model = config.model
-        logger.info(
-            f"Loaded KEN-E chatbot config from Firestore: {config_doc_id} "
-            f"(version: {metadata.get('version', 'unknown')}, model: {model})"
-        )
-    except Exception as e:
-        logger.warning(
-            f"Failed to load KEN-E chatbot config from Firestore ({config_doc_id}): {e}. "
-            f"Falling back to hardcoded model: gemini-2.0-flash"
-        )
-        model = "gemini-2.0-flash"
-
-    # Create tool wrappers that expose ToolContext and return strings
-    def search_company_news(query: str, tool_context: ToolContext | None = None) -> str:
-        """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
-
-        Args:
-            query: The user's question about company news, earnings, market updates, or business intelligence
-        """
-        result = dispatch_to_company_news(query, tool_context)
-        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
-
-    def query_google_analytics(query: str, tool_context: ToolContext | None = None) -> str:
-        """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
-
-        Args:
-            query: The user's question about website analytics, traffic, user behavior, or GA4 data
-        """
-        result = dispatch_to_google_analytics(query, tool_context)
-        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
-
-    ken_e = Agent(
-        name="ken_e",
-        model=model,
-        before_agent_callback=weave_before_agent_callback,
-        after_agent_callback=weave_after_agent_callback,
-        before_tool_callback=adk_before_tool_callback,
-        after_tool_callback=adk_after_tool_callback,
-        instruction="""You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.
+_BASE_INSTRUCTION = """You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.
 
 **CRITICAL: When you call a tool, the tool's response contains the answer. You MUST present that response to the user. Never just acknowledge that you called the tool - always share what the tool returned.**
 
 **ORGANIZATION CONTEXT:**
-Every message includes [ORGANIZATION CONTEXT] with your company's information and brand guidelines.
+When organization context is available, it appears at the top of this instruction under [ORGANIZATION CONTEXT].
 
 CRITICAL - When formulating responses, ALWAYS:
 - Match the brand's tone and communication style (see "DO" and "DON'T" lists in context)
@@ -177,7 +120,109 @@ If users ask about creating or generating strategy documents, explain:
 - "Bounce rate by country" → query_google_analytics
 - "Microsoft acquisition news" → search_company_news
 
-Remember: You are a router, not a data source. ALWAYS delegate to the appropriate specialized agent using the provided tools.""",
+Remember: You are a router, not a data source. ALWAYS delegate to the appropriate specialized agent using the provided tools."""
+
+
+def build_ken_e_instruction(context: ReadonlyContext) -> str:
+    """Build KEN-E instruction with organization context from session state.
+
+    ADK calls this on each turn, reading org context that was stored
+    in session state at session creation time (no DB call here).
+
+    Args:
+        context: ADK ReadonlyContext with access to session state
+    """
+    org_context = context.state.get("organization_context")
+    if org_context:
+        return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{_BASE_INSTRUCTION}"
+    return _BASE_INSTRUCTION
+
+
+def _make_instruction_provider(base_instruction: str) -> Callable[[ReadonlyContext], str]:
+    """Create a closure-based InstructionProvider that uses the given base instruction.
+
+    Args:
+        base_instruction: The base instruction text (from Firestore or hardcoded fallback)
+
+    Returns:
+        A callable that ADK invokes on each turn to get the instruction string
+    """
+    def instruction_provider(context: ReadonlyContext) -> str:
+        org_context = context.state.get("organization_context")
+        if org_context:
+            return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{base_instruction}"
+        return base_instruction
+
+    return instruction_provider
+
+
+def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
+    """
+    Create the KEN-E chat agent for frontend interactions.
+    Handles company news and Google Analytics queries only.
+
+    Args:
+        config_doc_id: Firestore document ID for agent configuration (default: "ken_e_chatbot")
+    """
+
+    # Initialize Weave tracing — log loudly on failure but don't block agent
+    weave_ok = init_weave_if_needed()
+    if not weave_ok:
+        logger.error(
+            "WEAVE INITIALIZATION FAILED — traces will NOT be captured. "
+            "Check that WANDB_API_KEY is set in .env and the weave package is installed."
+        )
+
+    # Load configuration from Firestore with fallback to hardcoded values
+    try:
+        config, metadata = load_config_from_firestore(config_doc_id)
+        model = config.model
+        base_instruction = config.instruction or _BASE_INSTRUCTION
+        description = config.description or ""
+        generate_content_config = config.generate_content_config
+        logger.info(
+            f"Loaded KEN-E chatbot config from Firestore: {config_doc_id} "
+            f"(version: {metadata.get('version', 'unknown')}, model: {model})"
+        )
+    except Exception as e:
+        logger.warning(
+            f"Failed to load KEN-E chatbot config from Firestore ({config_doc_id}): {e}. "
+            f"Falling back to hardcoded defaults"
+        )
+        model = "gemini-2.0-flash"
+        base_instruction = _BASE_INSTRUCTION
+        description = ""
+        generate_content_config = None
+
+    # Create tool wrappers that expose ToolContext and return strings
+    def search_company_news(query: str, tool_context: ToolContext | None = None) -> str:
+        """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
+
+        Args:
+            query: The user's question about company news, earnings, market updates, or business intelligence
+        """
+        result = dispatch_to_company_news(query, tool_context)
+        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
+
+    def query_google_analytics(query: str, tool_context: ToolContext | None = None) -> str:
+        """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
+
+        Args:
+            query: The user's question about website analytics, traffic, user behavior, or GA4 data
+        """
+        result = dispatch_to_google_analytics(query, tool_context)
+        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
+
+    ken_e = Agent(
+        name="ken_e",
+        model=model,
+        description=description,
+        instruction=_make_instruction_provider(base_instruction),
+        generate_content_config=generate_content_config,
+        before_agent_callback=weave_before_agent_callback,
+        after_agent_callback=weave_after_agent_callback,
+        before_tool_callback=adk_before_tool_callback,
+        after_tool_callback=adk_after_tool_callback,
         tools=[search_company_news, query_google_analytics],
     )
 

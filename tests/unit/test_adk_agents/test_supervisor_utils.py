@@ -64,14 +64,15 @@ class TestExtractTenantContext:
 class TestDispatchWithContext:
     """Test the dispatch_with_context wrapper with session state."""
 
-    def test_dispatch_with_tool_context_and_credentials(self):
-        """Should read credentials from tool_context.state and build tenant_context."""
+    def test_dispatch_with_tool_context_and_org_context_in_state(self):
+        """Should use org context from session state and skip Neo4j."""
         mock_dispatch = MagicMock(__name__="mock_dispatch", return_value="GA analytics result")
         wrapped = dispatch_with_context(mock_dispatch)
 
         mock_tool_context = MagicMock()
         mock_tool_context.state = {
             "account_id": "acc_123",
+            "organization_context": "# Company Context\nTest Company",
             "ga_credentials": {
                 "access_token": "test_token",
                 "refresh_token": "test_refresh",
@@ -84,12 +85,6 @@ class TestDispatchWithContext:
         with patch(
             "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
         ) as mock_manager_class:
-            mock_manager = MagicMock()
-            mock_manager_class.return_value = mock_manager
-            mock_manager.load_executive_summary.return_value = "# Company Context\nTest Company"
-            mock_manager.inject_context.return_value = "[ORGANIZATION CONTEXT]\n# Company Context\nTest Company\n[END CONTEXT]\n\nGet my analytics"
-            mock_manager.get_total_tokens.return_value = 100
-
             result = wrapped("Get my analytics", tool_context=mock_tool_context)
 
             assert mock_dispatch.called
@@ -99,33 +94,28 @@ class TestDispatchWithContext:
             assert "[ORGANIZATION CONTEXT]" in query_arg
             assert "Get my analytics" in query_arg
 
-            # Credentials flow via McpToolset header_provider now, not encoded in tenant_context
             tenant_context_arg = call_args[0][1]
             assert tenant_context_arg is not None
             assert tenant_context_arg["tenant_id"] == "acc_123"
             assert tenant_context_arg["account_id"] == "acc_123"
             assert tenant_context_arg["selected_property_ids"] == ["prop_1"]
-            # tenant_credentials key no longer present (credentials flow via headers)
             assert "tenant_credentials" not in tenant_context_arg
 
-            mock_manager_class.assert_called_once_with("acc_123")
-            mock_manager.load_executive_summary.assert_called_once()
-            mock_manager.inject_context.assert_called_once_with("Get my analytics")
+            # Neo4j should NOT be called when org context is in session state
+            mock_manager_class.assert_not_called()
 
             assert result == "GA analytics result"
 
-    def test_dispatch_with_tool_context_no_credentials(self):
-        """Should handle account_id without GA credentials."""
+    def test_dispatch_falls_back_to_neo4j_when_no_org_context_in_state(self):
+        """Should fall back to Neo4j when org context is not in session state."""
         mock_dispatch = MagicMock(__name__="mock_dispatch", return_value="News result")
         wrapped = dispatch_with_context(mock_dispatch)
 
-        # Tool context with only account_id (no GA creds)
         mock_tool_context = MagicMock()
         mock_tool_context.state = {
             "account_id": "acc_123",
         }
 
-        # Mock HierarchicalContextManager
         with patch(
             "adk.agents.utils.supervisor_utils.HierarchicalContextManager"
         ) as mock_manager_class:
@@ -133,11 +123,13 @@ class TestDispatchWithContext:
             mock_manager_class.return_value = mock_manager
             mock_manager.load_executive_summary.return_value = "# Company Context\nTest Company"
             mock_manager.inject_context.return_value = "[ORGANIZATION CONTEXT]\n# Company Context\n[END CONTEXT]\n\nGet latest news"
-            mock_manager.get_total_tokens.return_value = 100
 
             result = wrapped("Get latest news", tool_context=mock_tool_context)
 
-            # Should call dispatch with minimal tenant_context
+            # Neo4j SHOULD be called as fallback
+            mock_manager_class.assert_called_once_with("acc_123")
+            mock_manager.load_executive_summary.assert_called_once()
+
             call_args = mock_dispatch.call_args
             tenant_context_arg = call_args[0][1]
             assert tenant_context_arg == {"account_id": "acc_123"}

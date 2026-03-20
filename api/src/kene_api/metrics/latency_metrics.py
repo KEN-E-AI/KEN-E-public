@@ -1,11 +1,16 @@
 """Per-endpoint HTTP latency metrics using Prometheus histograms."""
 
+import logging
 import time
 
 from prometheus_client import REGISTRY, Histogram
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+
+from shared.structured_logging import log_context
+
+logger = logging.getLogger(__name__)
 
 # Bucket boundaries chosen for typical web + LLM-powered endpoints:
 #   fast (static/health): 0.01-0.1s
@@ -46,10 +51,41 @@ class LatencyMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration = time.perf_counter() - start
 
+        route = _normalize_route(request)
+
         http_request_duration_seconds.labels(
             method=request.method,
-            route=_normalize_route(request),
+            route=route,
             status_code=response.status_code,
         ).observe(duration)
+
+        logger.info(
+            "HTTP request completed",
+            extra=log_context(
+                component="http",
+                action="request_completed",
+                duration_ms=round(duration * 1000, 2),
+                extra={
+                    "method": request.method,
+                    "route": route,
+                    "status_code": response.status_code,
+                },
+            ),
+        )
+
+        if duration > 1.0:
+            logger.warning(
+                "Slow HTTP request",
+                extra=log_context(
+                    component="http",
+                    action="request",
+                    duration_ms=duration * 1000,
+                    extra={
+                        "method": request.method,
+                        "route": route,
+                        "status_code": response.status_code,
+                    },
+                ),
+            )
 
         return response

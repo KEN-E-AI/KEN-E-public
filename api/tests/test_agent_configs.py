@@ -22,7 +22,7 @@ def admin_user():
     """Create mock super admin user."""
     return UserContext(
         user_id="admin123",
-        email="admin@ken-e.ai",        permissions={},
+        email="admin@ken-e.ai",
         organization_permissions={},
         account_permissions={},
     )
@@ -33,7 +33,7 @@ def regular_user():
     """Create mock regular user."""
     return UserContext(
         user_id="user123",
-        email="user@example.com",        permissions={},
+        email="user@example.com",
         organization_permissions={},
         account_permissions={},
     )
@@ -139,9 +139,9 @@ class TestInputValidation:
         """Invalid model ID should be rejected."""
         from pydantic import ValidationError
 
-        with pytest.raises(ValidationError, match="String should match pattern"):
+        with pytest.raises(ValidationError, match="not supported"):
             AgentConfigUpdate(
-                model="gpt-4",  # Not a Gemini model
+                model="gpt-4",  # Not in supported models list
                 updated_by="test@example.com",
             )
 
@@ -338,3 +338,13 @@ class TestFirestoreDependency:
 
         # Should return exact same instance
         assert client1 is client2
+
+
+class TestAllowlistDerivedFromRegistry:
+    """Test that ALLOWED_CONFIG_IDS is derived from the agent registry."""
+
+    def test_allowed_config_ids_matches_registry(self):
+        """ALLOWED_CONFIG_IDS should equal registry.get_all_config_doc_ids()."""
+        from app.adk.agents.registry import get_registry
+
+        assert ALLOWED_CONFIG_IDS == get_registry().get_all_config_doc_ids()

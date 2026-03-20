@@ -35,7 +35,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 const getModelOptionsForAgent = (
   configName: string,
 ): Array<{ value: string; label: string }> => {
-  if (configName.includes("researcher") || configName === "ken_e_chatbot") {
+  if (
+    configName.includes("researcher") ||
+    configName === "ken_e_chatbot" ||
+    configName === "google_analytics_agent" ||
+    configName === "company_news_agent"
+  ) {
     // Gemini models for researchers and chatbot
     return [
       { value: "gemini-3-flash-preview", label: "Gemini 3.0 Flash (Preview)" },
@@ -232,8 +237,12 @@ const AgentConfigManagement = () => {
                     Loading...
                   </div>
                 ) : (
-                  Object.entries(categorizedConfigs).map(
-                    ([strategy, configs]) => (
+                  Object.entries(categorizedConfigs)
+                    .filter(
+                      ([, configs]) =>
+                        configs.researcher || configs.formatter,
+                    )
+                    .map(([strategy, configs]) => (
                       <div key={strategy} className="space-y-1">
                         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1">
                           {strategy}
@@ -273,8 +282,7 @@ const AgentConfigManagement = () => {
                           </Button>
                         )}
                       </div>
-                    ),
-                  )
+                    ))
                 )}
 
                 {/* Chatbot Agent Section */}
@@ -297,6 +305,57 @@ const AgentConfigManagement = () => {
                     >
                       <Bot className="h-4 w-4 mr-2" />
                       KEN-E Chatbot
+                    </Button>
+                  </div>
+                )}
+
+                {/* Analytics Agent Section */}
+                {categorizedConfigs.analytics?.chatbot && (
+                  <div className="space-y-1 mt-4">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1">
+                      Analytics
+                    </div>
+                    <Button
+                      variant={
+                        selectedConfigId ===
+                        categorizedConfigs.analytics.chatbot
+                          ? "default"
+                          : "ghost"
+                      }
+                      className="w-full justify-start text-sm"
+                      size="sm"
+                      onClick={() =>
+                        handleSelectConfig(
+                          categorizedConfigs.analytics.chatbot!,
+                        )
+                      }
+                    >
+                      <Bot className="h-4 w-4 mr-2" />
+                      Google Analytics
+                    </Button>
+                  </div>
+                )}
+
+                {/* News Agent Section */}
+                {categorizedConfigs.news?.chatbot && (
+                  <div className="space-y-1 mt-4">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1">
+                      News
+                    </div>
+                    <Button
+                      variant={
+                        selectedConfigId === categorizedConfigs.news.chatbot
+                          ? "default"
+                          : "ghost"
+                      }
+                      className="w-full justify-start text-sm"
+                      size="sm"
+                      onClick={() =>
+                        handleSelectConfig(categorizedConfigs.news.chatbot!)
+                      }
+                    >
+                      <Bot className="h-4 w-4 mr-2" />
+                      Company News
                     </Button>
                   </div>
                 )}

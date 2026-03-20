@@ -1,11 +1,14 @@
 """User context and authentication utilities."""
 
 import logging
+import time
 from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.cloud import firestore
+
+from shared.structured_logging import log_context
 
 from ..firestore import FirestoreService, get_firestore_service
 from ..rate_limiter import RateLimiter
@@ -239,6 +242,8 @@ async def _get_user_context_with_limiter(
 
     This is the actual implementation that accepts a custom rate limiter.
     """
+    t_start = time.time()
+
     # Choose which rate limiter to use
     active_limiter = rate_limiter if rate_limiter is not None else token_rate_limiter
     # Get client info for audit logging
@@ -263,8 +268,17 @@ async def _get_user_context_with_limiter(
 
     try:
         # Verify the Firebase ID token
+        t0 = time.time()
         decoded_token, user_id, email = await _verify_and_decode_token(
             credentials, audit_logger, client_ip, user_agent, active_limiter, request
+        )
+        logger.info(
+            "Firebase token verification completed",
+            extra=log_context(
+                component="auth",
+                action="verify_token",
+                duration_ms=(time.time() - t0) * 1000,
+            ),
         )
 
         # Check if user is super admin (before rate limiting)
@@ -304,7 +318,15 @@ async def _get_user_context_with_limiter(
     logger.debug(f"Got cached service, calling get_user_context")
     cached_context = cached_user_service.get_user_context(user_id)
     if cached_context:
-        logger.debug(f"Returning cached context for {user_id}")
+        logger.info(
+            "Auth completed (cache hit)",
+            extra=log_context(
+                component="auth",
+                action="get_user_context",
+                duration_ms=(time.time() - t_start) * 1000,
+                extra={"cache_hit": True},
+            ),
+        )
         return cached_context
 
     logger.debug(f"No cache, fetching from Firestore for {user_id}")
@@ -313,8 +335,17 @@ async def _get_user_context_with_limiter(
     firestore_db = firestore_service.get_client()
 
     # Get or create user document
+    t_fs = time.time()
     user_data = await _get_or_create_user_document(
         firestore_db, user_id, email, audit_logger, client_ip, user_agent
+    )
+    logger.info(
+        "Firestore user document lookup completed",
+        extra=log_context(
+            component="auth",
+            action="get_user_document",
+            duration_ms=(time.time() - t_fs) * 1000,
+        ),
     )
 
     # Build user context from data
@@ -331,6 +362,15 @@ async def _get_user_context_with_limiter(
         user_agent=user_agent,
     )
 
+    logger.info(
+        "Auth completed (cache miss)",
+        extra=log_context(
+            component="auth",
+            action="get_user_context",
+            duration_ms=(time.time() - t_start) * 1000,
+            extra={"cache_hit": False},
+        ),
+    )
     return user_context
 
 

@@ -146,36 +146,33 @@ class TokenRevocationService:
         Returns:
             True if the token is revoked, False otherwise
         """
-        # Check Redis cache first
+        # Check Redis first — revoke_token() and revoke_all_user_tokens()
+        # write to both Redis AND Firestore, so Redis is authoritative
+        # when available. Firestore is only needed as fallback when Redis
+        # is down.
         if self.redis.is_available():
-            # Check specific token revocation
             cache_key = f"revoked_token:{token_id}"
             if self.redis.get(cache_key):
                 return True
 
-            # Check if all user tokens were revoked
             all_tokens_key = f"revoked_all_tokens:{user_id}"
             revoke_all_timestamp = self.redis.get(all_tokens_key)
             if revoke_all_timestamp and issued_at:
-                # Convert ISO timestamp to Unix timestamp
                 revoke_time = datetime.fromisoformat(revoke_all_timestamp).timestamp()
                 if issued_at < revoke_time:
                     return True
 
-        # Fall back to Firestore
+            # Redis is available and has no revocation record — token is valid
+            return False
+
+        # Fall back to Firestore only when Redis is unavailable
         firestore_service = get_firestore_service()
         db = firestore_service.get_client()
 
-        # Check specific token revocation
         token_doc = db.collection(self.collection_name).document(token_id).get()
         if token_doc.exists:
-            # Cache the result
-            if self.redis.is_available():
-                cache_key = f"revoked_token:{token_id}"
-                self.redis.set(cache_key, "1", ttl=self.cache_ttl)
             return True
 
-        # Check if all user tokens were revoked
         if issued_at:
             all_tokens_doc = (
                 db.collection(f"{self.collection_name}_all").document(user_id).get()
@@ -185,14 +182,6 @@ class TokenRevocationService:
                 revoke_all_before = data.get("revoke_all_before")
                 if revoke_all_before and isinstance(revoke_all_before, datetime):
                     if issued_at < revoke_all_before.timestamp():
-                        # Cache the result
-                        if self.redis.is_available():
-                            all_tokens_key = f"revoked_all_tokens:{user_id}"
-                            self.redis.set(
-                                all_tokens_key,
-                                revoke_all_before.isoformat(),
-                                ttl=self.cache_ttl,
-                            )
                         return True
 
         return False

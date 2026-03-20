@@ -1,8 +1,8 @@
 # Spike 1.14.1: OTEL Pydantic Bug in ADK >=1.23.0
 
-**Status**: Investigation complete
-**ADK Version installed**: 1.14.1 (pyproject.toml requires >=1.23.0)
-**Date**: 2026-02-24
+**Status**: RESOLVED — Tracing re-enabled with workaround (2026-03-06)
+**ADK Version installed**: 1.26.0
+**Date**: 2026-02-24 (updated 2026-03-06)
 
 ## Summary
 
@@ -83,8 +83,22 @@ Before enabling OTEL in production:
 | OTEL + Weave interference | None | Independent systems |
 | Strategy agent output_schema breakage | Med | Test before enabling OTEL |
 
+## Resolution (2026-03-06)
+
+Tracing has been re-enabled across all environments:
+
+1. `deploy_ken_e.py` now sets `enable_tracing=True` and applies the workaround via
+   `os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")`
+   before creating `AdkApp`.
+2. `.env.development`, `.env.staging`, `.env.production` all set:
+   - `OTEL_SDK_DISABLED=false`
+   - `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai`
+3. GCP Agent Engine dashboards (Tools, Traces, Models, Usage) now auto-populate.
+4. A direct GA MCP server health ping was added at `api/src/kene_api/services/mcp_health_service.py`
+   for proactive detection of MCP server outages.
+
 ## Existing Code References
 
-- `app/adk/deploy_ken_e.py:290` — `enable_tracing=False` (current state)
+- `app/adk/deploy_ken_e.py:299` — `enable_tracing=True` (re-enabled)
 - `app/adk/agents/strategy_agent/orchestrator.py` — uses `output_schema` for formatters
 - `app/adk/agents/ken_e_agent.py` — does NOT use `output_schema`

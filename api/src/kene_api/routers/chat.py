@@ -18,13 +18,6 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
-from shared.context_utils import (
-    CAMPAIGN_KEYWORDS,
-    format_campaign_markdown,
-    inject_campaign_context,
-    inject_organization_context,
-    should_load_campaigns,
-)
 from shared.structured_logging import get_structured_logger, log_context
 
 try:
@@ -37,7 +30,12 @@ except ImportError:
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
-from ..cache import ga_credentials_key, org_context_key, session_metadata_key
+from ..cache import (
+    ga_credentials_key,
+    org_context_key,
+    session_metadata_key,
+    user_session_ids_key,
+)
 from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
 from ..models.kene_models import RecoverableSessionInfo
@@ -54,6 +52,12 @@ SESSION_METADATA_TTL_SECONDS = 86400  # 24 hours
 # CRITICAL: Use this constant for all ADK session operations
 # Bug fix: Previously line 965 used "ken-e-chatbot" while others used "ken_e_chatbot"
 APP_NAME = "ken_e_chatbot"
+
+# Background reauth check cache: populated by async task, consumed on next request
+_reauth_cache: dict[str, dict[str, Any]] = {}
+
+# Strong references for fire-and-forget tasks to prevent garbage collection (RUF006)
+_background_tasks: set[asyncio.Task[Any]] = set()
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -89,6 +93,8 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
     """Load organization context from Neo4j using API's Neo4j service.
 
     Loads Account info and Brand Voice/Tone, formats as markdown.
+    Uses the canonical shared query (ORG_CONTEXT_QUERY) so API and agent
+    loaders always fetch the same fields.
 
     Args:
         account_id: Account identifier
@@ -96,37 +102,20 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
     Returns:
         Formatted markdown context string, or None if loading fails
     """
-    query = """
-    MATCH (acc:Account {account_id: $account_id})
-
-    // Brand Guidelines
-    OPTIONAL MATCH (acc)-[:FOLLOWS_THESE_BRAND_GUIDELINES]->(brand:BrandIdentity)
-    OPTIONAL MATCH (brand)-[:USES_COMMUNICATION_STYLE]->(voice:VoiceAndTone)
-    OPTIONAL MATCH (brand)-[:HAS_TRAITS_AND_CHARACTERISTICS]->(personality:BrandPersonality)
-    OPTIONAL MATCH (brand)-[:HAS_MISSION]->(mission:MissionAndValues)
-
-    RETURN {
-      account: {
-        account_id: acc.account_id,
-        company_name: acc.company_name,
-        company_overview: acc.company_overview,
-        industry: acc.industry,
-        websites: acc.websites,
-        customer_regions: acc.customer_regions
-      },
-      brand: {
-        voice_tone_description: voice.description,
-        personality_description: personality.description,
-        mission_description: mission.description
-      }
-    } as context
-    """
+    from shared.context_utils import (
+        ORG_CONTEXT_QUERY,
+        extract_context_from_result,
+        format_context_markdown,
+    )
 
     try:
         neo4j_service = await get_neo4j_service()
-        result = await neo4j_service.execute_query(query, {"account_id": account_id})
+        result = await neo4j_service.execute_query(
+            ORG_CONTEXT_QUERY, {"account_id": account_id}
+        )
 
-        if not result or not result[0]:
+        context_data = extract_context_from_result(result)
+        if not context_data:
             logger.warning(
                 "No organization context found",
                 extra=log_context(
@@ -139,42 +128,8 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
             )
             return None
 
-        context_data = result[0]["context"]
+        context_str = format_context_markdown(context_data)
 
-        # Format as markdown
-        account = context_data.get("account", {})
-        brand = context_data.get("brand", {})
-
-        markdown_parts = ["---"]
-        if account.get("account_id"):
-            markdown_parts.append(f"account_id: {account['account_id']}")
-        if account.get("company_name"):
-            markdown_parts.append(f"company: {account['company_name']}")
-        if account.get("industry"):
-            markdown_parts.append(f"industry: {account['industry']}")
-        markdown_parts.append("---\n")
-
-        markdown_parts.append("# Company Context\n")
-        if account.get("company_overview"):
-            markdown_parts.append(f"{account['company_overview']}\n")
-
-        # Brand guidelines section
-        has_brand_guidelines = False
-        if brand and any(brand.values()):
-            has_brand_guidelines = True
-            markdown_parts.append("\n## Brand Voice & Communication Style\n")
-            if brand.get("voice_tone_description"):
-                markdown_parts.append(f"\n**Voice & Tone:**\n{brand['voice_tone_description']}\n")
-
-            if brand.get("personality_description"):
-                markdown_parts.append(f"\n**Brand Personality:**\n{brand['personality_description']}\n")
-
-            if brand.get("mission_description"):
-                markdown_parts.append(f"\n**Mission & Values:**\n{brand['mission_description']}\n")
-
-        context_str = "".join(markdown_parts)
-
-        # Structured logging for production visibility
         logger.info(
             "Organization context loaded",
             extra=log_context(
@@ -183,8 +138,13 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
                 account_id=account_id,
                 success=True,
                 extra={
-                    "company_name": account.get("company_name", "unknown"),
-                    "has_brand_guidelines": has_brand_guidelines,
+                    "company_name": context_data.get("account", {}).get(
+                        "company_name", "unknown"
+                    ),
+                    "has_brand_guidelines": bool(
+                        context_data.get("brand")
+                        and any(context_data["brand"].values())
+                    ),
                     "context_length": len(context_str),
                 },
             ),
@@ -205,256 +165,6 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         )
         return None
 
-
-async def load_campaign_context(account_id: str) -> str | None:
-    """Load campaign context for an account (async, API-side).
-
-    For Sprint 2, returns mock data until Campaign nodes exist in Neo4j.
-    Mirrors the agent's sync version but uses the API's async Neo4jService.
-
-    Args:
-        account_id: Account identifier
-
-    Returns:
-        Formatted markdown campaign context, or None if loading fails
-    """
-    try:
-        now = datetime.now()
-        mock_campaigns: list[dict[str, Any]] = [
-            {
-                "campaign_id": f"camp_{account_id[:8]}_001",
-                "name": "Q1 Brand Awareness Campaign",
-                "status": "active",
-                "channel": "google_ads",
-                "objective": "Brand awareness",
-                "budget": {
-                    "total": 5000.00,
-                    "spent": 3250.00,
-                    "remaining": 1750.00,
-                    "currency": "USD",
-                },
-                "date_range": {
-                    "start_date": (now - timedelta(days=30)).strftime("%Y-%m-%d"),
-                    "end_date": (now + timedelta(days=30)).strftime("%Y-%m-%d"),
-                },
-                "performance": {
-                    "impressions": 125000,
-                    "clicks": 3200,
-                    "ctr": 2.56,
-                    "conversions": 145,
-                    "conversion_rate": 4.53,
-                    "cost_per_click": 1.02,
-                    "cost_per_conversion": 22.41,
-                    "roas": 3.2,
-                },
-            },
-            {
-                "campaign_id": f"camp_{account_id[:8]}_002",
-                "name": "Product Launch - Spring Collection",
-                "status": "active",
-                "channel": "meta_ads",
-                "objective": "Conversions",
-                "budget": {
-                    "total": 8000.00,
-                    "spent": 4500.00,
-                    "remaining": 3500.00,
-                    "currency": "USD",
-                },
-                "date_range": {
-                    "start_date": (now - timedelta(days=14)).strftime("%Y-%m-%d"),
-                    "end_date": (now + timedelta(days=45)).strftime("%Y-%m-%d"),
-                },
-                "performance": {
-                    "impressions": 95000,
-                    "clicks": 4750,
-                    "ctr": 5.0,
-                    "conversions": 285,
-                    "conversion_rate": 6.0,
-                    "cost_per_click": 0.95,
-                    "cost_per_conversion": 15.79,
-                    "roas": 4.5,
-                },
-            },
-            {
-                "campaign_id": f"camp_{account_id[:8]}_003",
-                "name": "Retargeting - Cart Abandoners",
-                "status": "active",
-                "channel": "google_ads",
-                "objective": "Conversions",
-                "budget": {
-                    "total": 2000.00,
-                    "spent": 1200.00,
-                    "remaining": 800.00,
-                    "currency": "USD",
-                },
-                "date_range": {
-                    "start_date": (now - timedelta(days=45)).strftime("%Y-%m-%d"),
-                    "end_date": (now + timedelta(days=15)).strftime("%Y-%m-%d"),
-                },
-                "performance": {
-                    "impressions": 35000,
-                    "clicks": 2100,
-                    "ctr": 6.0,
-                    "conversions": 168,
-                    "conversion_rate": 8.0,
-                    "cost_per_click": 0.57,
-                    "cost_per_conversion": 7.14,
-                    "roas": 6.8,
-                },
-            },
-            {
-                "campaign_id": f"camp_{account_id[:8]}_004",
-                "name": "Email Newsletter Promotion",
-                "status": "paused",
-                "channel": "google_ads",
-                "objective": "Lead generation",
-                "budget": {
-                    "total": 1500.00,
-                    "spent": 1500.00,
-                    "remaining": 0.00,
-                    "currency": "USD",
-                },
-                "date_range": {
-                    "start_date": (now - timedelta(days=60)).strftime("%Y-%m-%d"),
-                    "end_date": (now - timedelta(days=15)).strftime("%Y-%m-%d"),
-                },
-                "performance": {
-                    "impressions": 42000,
-                    "clicks": 1890,
-                    "ctr": 4.5,
-                    "conversions": 378,
-                    "conversion_rate": 20.0,
-                    "cost_per_click": 0.79,
-                    "cost_per_conversion": 3.97,
-                    "roas": None,
-                },
-            },
-        ]
-
-        context_markdown = format_campaign_markdown(mock_campaigns)
-
-        logger.info(
-            "Loaded campaign context",
-            extra=log_context(
-                component="campaign_context",
-                action="load",
-                account_id=account_id,
-                success=True,
-                extra={
-                    "campaign_count": len(mock_campaigns),
-                    "context_length": len(context_markdown),
-                },
-            ),
-        )
-
-        return context_markdown
-
-    except Exception as e:
-        logger.error(
-            "Failed to load campaign context",
-            extra=log_context(
-                component="campaign_context",
-                action="load",
-                account_id=account_id,
-                success=False,
-                error_message=str(e),
-            ),
-            exc_info=True,
-        )
-        return None
-
-
-async def inject_context_into_message(
-    formatted_input: str,
-    user_input: str,
-    account_id: str | None,
-    session_id: str,
-    streaming: bool = False,
-) -> str:
-    """Inject organization and campaign context into the user message.
-
-    This helper function consolidates context injection logic used by both
-    streaming and non-streaming chat endpoints.
-
-    Args:
-        formatted_input: The formatted user message (may include conversation history)
-        user_input: The raw user input (for keyword detection)
-        account_id: Account ID for context loading
-        session_id: Session ID for logging
-        streaming: Whether this is called from a streaming endpoint (for log messages)
-
-    Returns:
-        The formatted_input with context injected
-    """
-    if not account_id:
-        return formatted_input
-
-    suffix = " (streaming)" if streaming else ""
-
-    # Always inject organization context (Level 1 - always loaded per design doc)
-    # This ensures brand voice, tone, and company info are available to all agents
-    try:
-        org_context = await load_organization_context_from_neo4j(account_id)
-        if org_context:
-            formatted_input = inject_organization_context(formatted_input, org_context)
-            logger.info(
-                f"Organization context injected{suffix}",
-                extra=log_context(
-                    component="organization_context",
-                    action="inject",
-                    account_id=account_id,
-                    session_id=session_id,
-                    success=True,
-                    extra={"context_length": len(org_context)},
-                ),
-            )
-    except Exception as e:
-        logger.warning(
-            f"Failed to inject organization context{suffix}",
-            extra=log_context(
-                component="organization_context",
-                action="inject",
-                success=False,
-                error_message=str(e),
-            ),
-        )
-        # Continue without org context - graceful degradation
-
-    # Check if user message mentions campaigns and load campaign context on-demand
-    if should_load_campaigns(user_input):
-        try:
-            campaign_context = await load_campaign_context(account_id)
-            if campaign_context:
-                formatted_input = inject_campaign_context(formatted_input, campaign_context)
-                logger.info(
-                    f"Campaign context injected{suffix}",
-                    extra=log_context(
-                        component="campaign_context",
-                        action="inject",
-                        account_id=account_id,
-                        session_id=session_id,
-                        success=True,
-                        extra={
-                            "context_length": len(campaign_context),
-                            "trigger_keywords": [
-                                kw for kw in CAMPAIGN_KEYWORDS if kw in user_input.lower()
-                            ][:3],
-                        },
-                    ),
-                )
-        except Exception as e:
-            logger.warning(
-                f"Failed to load campaign context{suffix}",
-                extra=log_context(
-                    component="campaign_context",
-                    action="inject",
-                    success=False,
-                    error_message=str(e),
-                ),
-            )
-            # Continue without campaign context - graceful degradation
-
-    return formatted_input
 
 
 class ChatMessage(BaseModel):
@@ -586,7 +296,14 @@ class AgentEngineClient:
 
         self._agent_engine: Any = None
         self._session_service: VertexAiSessionService | None = None
-        self._user_sessions = {}  # Cache for user session metadata
+        self._user_sessions: dict[str, dict] = {}
+        self._sessions_loaded_for: set[str] = set()
+        # Maps pending session IDs to background creation tasks.
+        # POST /conversations returns a pending_* ID immediately while
+        # create_session runs in the background (~3.8s).  When POST
+        # /completions arrives, resolve_pending_session() awaits the
+        # task and swaps in the real Vertex AI session ID.
+        self._pending_sessions: dict[str, asyncio.Task[str]] = {}
 
     @property
     def agent_engine(self):
@@ -679,6 +396,7 @@ class AgentEngineClient:
             Session ID for the created conversation
         """
         try:
+            t_total = time.time()
             logger.info(f"Creating new conversation for user {user_id}")
 
             # Prepare initial session state
@@ -831,9 +549,22 @@ class AgentEngineClient:
                         return None
 
                 # Execute both operations in parallel
+                t_parallel = time.time()
                 org_context, ga_credentials = await asyncio.gather(
                     load_org_context(),
                     load_ga_credentials(),
+                )
+                logger.info(
+                    "Parallel data loading completed",
+                    extra=log_context(
+                        component="chat",
+                        action="load_session_data",
+                        duration_ms=(time.time() - t_parallel) * 1000,
+                        extra={
+                            "org_context_loaded": org_context is not None,
+                            "ga_credentials_loaded": ga_credentials is not None,
+                        },
+                    ),
                 )
 
                 # Store results in session state
@@ -853,9 +584,7 @@ class AgentEngineClient:
                 if initial_state:
                     logger.info(f"Initial state keys: {list(initial_state.keys())}")
 
-                logger.info(
-                    f"Creating session with state keys: {list(initial_state.keys())}"
-                )
+                t0 = time.time()
                 session_result = await self.session_service.create_session(
                     app_name=APP_NAME, user_id=user_id, state=initial_state
                 )
@@ -865,7 +594,14 @@ class AgentEngineClient:
                     else str(session_result)
                 )
                 logger.info(
-                    f"Successfully created ADK session: {session_id} for user: {user_id}"
+                    "Vertex AI create_session completed",
+                    extra=log_context(
+                        component="vertex_ai_session",
+                        action="create_session",
+                        session_id=session_id,
+                        duration_ms=(time.time() - t0) * 1000,
+                        extra={"state_keys": list(initial_state.keys())},
+                    ),
                 )
             except Exception as async_error:
                 logger.error(
@@ -913,9 +649,27 @@ class AgentEngineClient:
                     logger.info(
                         f"Cached new session metadata to Redis for {session_id}"
                     )
+
+                    # Update the user's session ID list in Redis
+                    ids_key = user_session_ids_key(user_id)
+                    cached_ids = redis_service.get_json(ids_key)
+                    if isinstance(cached_ids, list):
+                        cached_ids.append(session_id)
+                        redis_service.set_json(
+                            ids_key, cached_ids, ttl=SESSION_METADATA_TTL_SECONDS
+                        )
             except Exception as e:
                 logger.warning(f"Failed to cache new session to Redis: {e}")
 
+            logger.info(
+                "create_conversation completed",
+                extra=log_context(
+                    component="chat",
+                    action="create_conversation",
+                    duration_ms=(time.time() - t_total) * 1000,
+                    extra={"session_id": session_id},
+                ),
+            )
             return session_id
 
         except Exception as e:
@@ -932,6 +686,44 @@ class AgentEngineClient:
             }
             self._user_sessions[f"{user_id}:{fallback_session_id}"] = conversation_info
             return fallback_session_id
+
+    async def resolve_pending_session(
+        self, user_id: str, pending_id: str
+    ) -> str:
+        """Resolve a pending session ID to a real Vertex AI session ID.
+
+        Args:
+            user_id: User identifier
+            pending_id: The pending_* session ID returned by POST /conversations
+
+        Returns:
+            The real Vertex AI session ID
+        """
+        # Use pop() to atomically claim the task — prevents double-resolution
+        # when two concurrent requests arrive with the same pending_id.
+        task = self._pending_sessions.pop(pending_id, None)
+        if not task:
+            return pending_id
+
+        try:
+            real_session_id = await task
+        except Exception as e:
+            logger.error(f"Background session creation failed for {pending_id}: {e}")
+            raise
+
+        # Swap pending → real in _user_sessions
+        pending_key = f"{user_id}:{pending_id}"
+        real_key = f"{user_id}:{real_session_id}"
+
+        metadata = self._user_sessions.pop(pending_key, None)
+        if metadata:
+            metadata["session_id"] = real_session_id
+            self._user_sessions[real_key] = metadata
+
+        logger.info(
+            f"Resolved pending session {pending_id} → {real_session_id}",
+        )
+        return real_session_id
 
     async def get_or_create_session(
         self,
@@ -953,6 +745,10 @@ class AgentEngineClient:
             Session ID (existing or newly created)
         """
         if session_id:
+            # Resolve pending sessions created by deferred POST /conversations
+            if session_id.startswith("pending_"):
+                session_id = await self.resolve_pending_session(user_id, session_id)
+
             session_key = f"{user_id}:{session_id}"
 
             # First check in-memory cache
@@ -991,76 +787,31 @@ class AgentEngineClient:
             except Exception as e:
                 logger.warning(f"Failed to check Redis for session {session_id}: {e}")
 
-            # Not in cache - check if this is a valid ADK session format before querying ADK
-            # Skip ADK validation for frontend-generated or fallback session IDs
+            # Not in cache — determine session type
             is_adk_session = not (
                 session_id.startswith("chat_")
                 or session_id.startswith("fallback_")
                 or session_id.startswith("manual_")
+                or session_id.startswith("pending_")
             )
 
             if is_adk_session:
+                # Skip the blocking get_session() validation call — stream_query will
+                # validate the session itself. Register optimistically in-memory cache.
                 logger.info(
-                    f"Session {session_id} not in cache, checking ADK for user {user_id}"
+                    f"Optimistically registering ADK session {session_id} for user {user_id} (skipping validation call)"
                 )
-                try:
-                    session_data = await self.session_service.get_session(
-                        app_name=APP_NAME,
-                        user_id=user_id,
-                        session_id=session_id,
-                    )
-                    if session_data:
-                        logger.info(
-                            f"Found existing ADK session {session_id} for user {user_id}"
-                        )
-                        # Restore session info to cache
-                        conversation_info = {
-                            "session_id": session_id,
-                            "user_id": user_id,
-                            "conversation_name": conversation_name,
-                            "created_at": getattr(
-                                session_data,
-                                "create_time",
-                                datetime.now(timezone.utc),
-                            ),
-                            "last_updated": getattr(
-                                session_data,
-                                "update_time",
-                                datetime.now(timezone.utc),
-                            ),
-                            "message_count": len(getattr(session_data, "events", [])),
-                        }
-                        self._user_sessions[session_key] = conversation_info
-
-                        # Also cache to Redis (survives API restarts)
-                        try:
-                            redis_service = get_redis_service()
-                            if redis_service.is_available():
-                                cache_key = session_metadata_key(user_id, session_id)
-                                redis_service.set_json(
-                                    cache_key,
-                                    conversation_info,
-                                    ttl=SESSION_METADATA_TTL_SECONDS,
-                                )
-                                logger.info(
-                                    f"Cached session metadata to Redis for {session_id}"
-                                )
-                        except Exception as e:
-                            logger.warning(f"Failed to cache session to Redis: {e}")
-
-                        return session_id
-                    else:
-                        logger.warning(
-                            f"ADK session {session_id} not found for user {user_id}"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Error checking ADK session {session_id} for user {user_id}: {e}"
-                    )
+                conversation_info = {
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "conversation_name": conversation_name,
+                    "created_at": datetime.now(timezone.utc),
+                    "last_updated": datetime.now(timezone.utc),
+                    "message_count": 0,
+                }
+                self._user_sessions[session_key] = conversation_info
+                return session_id
             else:
-                # Non-ADK format session (chat_*, fallback_*, manual_*)
-                # If not in cache, this might be a frontend-generated ID on first message
-                # Don't pass invalid session IDs to Agent Engine - create proper ADK session instead
                 logger.info(
                     f"Session {session_id} has non-ADK format and not in cache - creating proper ADK session"
                 )
@@ -1103,20 +854,144 @@ class AgentEngineClient:
             return True
         return False
 
+    async def _delete_old_session(self, user_id: str, session_id: str) -> None:
+        """Delete an old session from Vertex AI (fire-and-forget)."""
+        try:
+            await self.session_service.delete_session(
+                app_name=APP_NAME, user_id=user_id, session_id=session_id
+            )
+            logger.info(f"Cleaned up old Vertex AI session: {session_id}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up old session {session_id}: {e}")
+
+    def _get_cached_conversations(self, user_id: str) -> list[ConversationInfo]:
+        """Build conversation list from in-memory cache for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Sorted list of ConversationInfo from the last 7 days
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        conversations = []
+        prefix = f"{user_id}:"
+
+        for session_key, info in self._user_sessions.items():
+            if not session_key.startswith(prefix):
+                continue
+
+            last_updated = info.get("last_updated", datetime.now(timezone.utc))
+            if isinstance(last_updated, str):
+                last_updated = datetime.fromisoformat(last_updated)
+            if last_updated < cutoff:
+                continue
+
+            conversations.append(
+                ConversationInfo(
+                    session_id=info["session_id"],
+                    conversation_name=info.get("conversation_name")
+                    or f"Chat {info['session_id'][-8:]}",
+                    created_at=info.get("created_at", datetime.now(timezone.utc)),
+                    last_updated=last_updated,
+                    message_count=info.get("message_count", 0),
+                    preview=info.get("preview"),
+                )
+            )
+
+        conversations.sort(key=lambda x: x.last_updated, reverse=True)
+        return conversations
+
     async def get_user_conversations(self, user_id: str) -> list[ConversationInfo]:
         """Get conversations for a user from the last 7 days."""
+        # Serve from cache if we've already loaded this user's sessions
+        if user_id in self._sessions_loaded_for:
+            conversations = self._get_cached_conversations(user_id)
+            logger.info(
+                "get_user_conversations served from cache",
+                extra=log_context(
+                    component="vertex_ai_session",
+                    action="get_user_conversations",
+                    duration_ms=0,
+                    results_count=len(conversations),
+                    extra={"cache_hit": True},
+                ),
+            )
+            return conversations
+
         conversations = []
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
 
+        # Try Redis session list before expensive list_sessions call
         try:
-            logger.info(f"Getting conversations for user: {user_id}")
-            logger.info(
-                f"Cache keys: {list(self._user_sessions.keys())[:5]}..."
-            )  # Show first 5 cache keys
+            redis_service = get_redis_service()
+            if redis_service.is_available():
+                cached_ids = redis_service.get_json(user_session_ids_key(user_id))
+                if cached_ids and isinstance(cached_ids, list):
+                    # Reconstruct _user_sessions from per-session Redis metadata
+                    for sid in cached_ids:
+                        session_key = f"{user_id}:{sid}"
+                        if session_key not in self._user_sessions:
+                            meta = redis_service.get_json(
+                                session_metadata_key(user_id, sid)
+                            )
+                            if meta:
+                                if isinstance(meta.get("created_at"), str):
+                                    meta["created_at"] = datetime.fromisoformat(
+                                        meta["created_at"]
+                                    )
+                                if isinstance(meta.get("last_updated"), str):
+                                    meta["last_updated"] = datetime.fromisoformat(
+                                        meta["last_updated"]
+                                    )
+                                self._user_sessions[session_key] = meta
 
-            # Get sessions from ADK session service
-            sessions = await self.session_service.list_sessions(
-                app_name=APP_NAME, user_id=user_id
+                    self._sessions_loaded_for.add(user_id)
+                    result = self._get_cached_conversations(user_id)
+                    logger.info(
+                        "get_user_conversations restored from Redis",
+                        extra=log_context(
+                            component="vertex_ai_session",
+                            action="get_user_conversations",
+                            duration_ms=0,
+                            results_count=len(result),
+                            extra={"cache_hit": True, "source": "redis"},
+                        ),
+                    )
+                    return result
+        except Exception as e:
+            logger.warning(f"Failed to load session list from Redis: {e}")
+
+        try:
+            t_start = time.time()
+
+            t0 = time.time()
+            # ADK's list_sessions uses a synchronous for-loop over a
+            # network-fetching iterator, which blocks the asyncio event
+            # loop for the full duration (~21s for 38 sessions).  Running
+            # it in a separate thread with its own event loop prevents it
+            # from starving concurrent requests (e.g. POST /conversations).
+            _ss = self.session_service
+
+            def _list_sessions_sync() -> Any:
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(
+                        _ss.list_sessions(
+                            app_name=APP_NAME, user_id=user_id
+                        )
+                    )
+                finally:
+                    loop.close()
+
+            sessions = await asyncio.to_thread(_list_sessions_sync)
+            logger.info(
+                "Vertex AI list_sessions completed",
+                extra=log_context(
+                    component="vertex_ai_session",
+                    action="list_sessions",
+                    duration_ms=(time.time() - t0) * 1000,
+                ),
             )
 
             # Handle ListSessionsResponse - it might have a sessions attribute
@@ -1131,6 +1006,8 @@ class AgentEngineClient:
                     redis_service = None
             except Exception:
                 pass
+
+            old_session_ids: list[str] = []
 
             for session in session_list:
                 session_id = getattr(session, "id", None) or getattr(
@@ -1167,8 +1044,9 @@ class AgentEngineClient:
                 if isinstance(last_updated, str):
                     last_updated = datetime.fromisoformat(last_updated)
 
-                # Skip sessions older than 7 days
+                # Skip sessions older than 7 days and mark for cleanup
                 if last_updated < cutoff:
+                    old_session_ids.append(session_id)
                     continue
 
                 conversations.append(
@@ -1183,6 +1061,18 @@ class AgentEngineClient:
                         preview=cached_info.get("preview"),
                     )
                 )
+
+            # Fire-and-forget cleanup of old sessions from Vertex AI
+            if old_session_ids:
+                logger.info(
+                    f"Cleaning up {len(old_session_ids)} old sessions from Vertex AI"
+                )
+                for old_id in old_session_ids:
+                    task = asyncio.create_task(
+                        self._delete_old_session(user_id, old_id)
+                    )
+                    _background_tasks.add(task)
+                    task.add_done_callback(_background_tasks.discard)
 
         except Exception as e:
             logger.error(f"Failed to get sessions from ADK service: {e}")
@@ -1207,20 +1097,52 @@ class AgentEngineClient:
 
         # Sort by last updated (most recent first)
         conversations.sort(key=lambda x: x.last_updated, reverse=True)
+
+        # Mark this user as loaded so subsequent calls skip list_sessions
+        self._sessions_loaded_for.add(user_id)
+
+        # Persist session ID list to Redis for restart resilience
+        try:
+            redis_service = get_redis_service()
+            if redis_service.is_available():
+                session_ids = [c.session_id for c in conversations]
+                redis_service.set_json(
+                    user_session_ids_key(user_id),
+                    session_ids,
+                    ttl=SESSION_METADATA_TTL_SECONDS,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to persist session list to Redis: {e}")
+
+        logger.info(
+            "get_user_conversations completed",
+            extra=log_context(
+                component="vertex_ai_session",
+                action="get_user_conversations",
+                duration_ms=(time.time() - t_start) * 1000,
+                results_count=len(conversations),
+                extra={"cache_hit": False},
+            ),
+        )
         return conversations
 
     async def delete_conversation(self, user_id: str, session_id: str) -> bool:
         """Delete a conversation and its session."""
         session_key = f"{user_id}:{session_id}"
         if session_key in self._user_sessions:
-            try:
-                # Try to delete the ADK session
-                await self.session_service.delete_session(
-                    app_name=APP_NAME, user_id=user_id, session_id=session_id
-                )
-                logger.info(f"Deleted ADK session {session_id}")
-            except Exception as e:
-                logger.warning(f"Failed to delete ADK session {session_id}: {e}")
+            # If this is a pending session, cancel the background creation
+            if session_id in self._pending_sessions:
+                self._pending_sessions[session_id].cancel()
+                del self._pending_sessions[session_id]
+                logger.info(f"Cancelled pending session creation for {session_id}")
+            else:
+                try:
+                    await self.session_service.delete_session(
+                        app_name=APP_NAME, user_id=user_id, session_id=session_id
+                    )
+                    logger.info(f"Deleted ADK session {session_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete ADK session {session_id}: {e}")
 
             # Remove from in-memory cache
             del self._user_sessions[session_key]
@@ -1231,6 +1153,16 @@ class AgentEngineClient:
                 if redis_service.is_available():
                     cache_key = session_metadata_key(user_id, session_id)
                     redis_service.delete(cache_key)
+
+                    # Remove from user's session ID list
+                    ids_key = user_session_ids_key(user_id)
+                    cached_ids = redis_service.get_json(ids_key)
+                    if isinstance(cached_ids, list) and session_id in cached_ids:
+                        cached_ids.remove(session_id)
+                        redis_service.set_json(
+                            ids_key, cached_ids, ttl=SESSION_METADATA_TTL_SECONDS
+                        )
+
                     logger.info(f"Deleted session from Redis cache: {session_id}")
             except Exception as e:
                 logger.warning(f"Failed to delete session from Redis: {e}")
@@ -1361,12 +1293,18 @@ class AgentEngineClient:
     ) -> dict[str, Any] | None:
         """Get conversation history from ADK session service and format it for frontend consumption."""
         try:
-            logger.info(
-                f"Getting conversation history for user: {user_id}, session: {session_id}"
-            )
-
+            t0 = time.time()
             session_data = await self.session_service.get_session(
                 app_name=APP_NAME, user_id=user_id, session_id=session_id
+            )
+            logger.info(
+                "Vertex AI get_session completed",
+                extra=log_context(
+                    component="vertex_ai_session",
+                    action="get_session",
+                    session_id=session_id,
+                    duration_ms=(time.time() - t0) * 1000,
+                ),
             )
 
             if session_data and hasattr(session_data, "events"):
@@ -1440,47 +1378,16 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
-            # Format conversation history if there are previous messages
-            if len(messages) > 1:
-                # Build conversation context from all messages
-                conversation_context = []
-                for msg in messages[:-1]:  # All messages except the latest
-                    role_label = "User" if msg.role == "user" else "Assistant"
-                    conversation_context.append(f"{role_label}: {msg.content}")
-
-                # Add conversation history as context to the current message
-                context_str = "\n".join(conversation_context)
-                formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
-                logger.info(
-                    f"[CHAT] Including {len(messages) - 1} previous messages in context"
-                )
-            else:
-                formatted_input = user_input
+            # ADK session already maintains conversation history — no need to re-inject
+            formatted_input = user_input
 
             logger.info(
                 f"[CHAT] Processing message for user {user_id}: {user_input[:100]}..."
-            )
-            logger.info(
-                f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
             )
 
             # Get or create session for this user (credentials now passed via session state)
             actual_session_id = await self.get_or_create_session(
                 user_id, user_context, session_id, conversation_name, account_id
-            )
-
-            # Determine account_id for context injection
-            context_account_id = account_id
-            if not context_account_id and user_context and user_context.accessible_accounts:
-                context_account_id = user_context.accessible_accounts[0]
-
-            # Inject organization and campaign context
-            formatted_input = await inject_context_into_message(
-                formatted_input=formatted_input,
-                user_input=user_input,
-                account_id=context_account_id,
-                session_id=actual_session_id,
-                streaming=False,
             )
 
             # Check if this is the first message and we need to generate a conversation name
@@ -1500,36 +1407,28 @@ class AgentEngineClient:
             # Increment message count
             self.increment_message_count(user_id, actual_session_id)
 
-            # PERFORMANCE: Log when we're about to send to Agent Engine
             logger.info(
-                f"[PERF] SENDING to Agent Engine at {time.time():.3f} for user {user_id}, session {actual_session_id}"
+                f"[PERF] Sending to Agent Engine for user {user_id}, session {actual_session_id}, query_len={len(formatted_input)}"
             )
-            logger.info(
-                f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
-            )
-            logger.info(f"Session ID being passed to Agent Engine: {actual_session_id}")
 
             # Use the agent_engines API with proper Queryable interface
             try:
-                # Log available methods for debugging
                 available_methods = [
                     method
                     for method in dir(self.agent_engine)
                     if not method.startswith("_")
                 ]
-                logger.info(f"Available methods on agent engine: {available_methods}")
+                logger.debug(f"Available methods on agent engine: {available_methods}")
 
                 # Try the agent_engines query patterns
                 response = None
 
                 # The Agent Engine has stream_query method - let's collect the stream into a single response
                 if hasattr(self.agent_engine, "stream_query"):
-                    logger.info("Using stream_query method and collecting response")
                     response_parts = []
                     try:
-                        # Use the correct parameters expected by the deployed agent
-                        # Run the blocking stream_query in a thread pool with timeout to avoid blocking the event loop
                         loop = asyncio.get_event_loop()
+                        t_query = time.time()
                         try:
                             stream_iterator = await asyncio.wait_for(
                                 loop.run_in_executor(
@@ -1542,7 +1441,16 @@ class AgentEngineClient:
                                         )
                                     ),
                                 ),
-                                timeout=1800.0,  # 30 minute timeout for complex requests like strategy generation
+                                timeout=1800.0,
+                            )
+                            logger.info(
+                                "Agent Engine stream_query completed",
+                                extra=log_context(
+                                    component="agent_engine",
+                                    action="stream_query",
+                                    session_id=actual_session_id,
+                                    duration_ms=(time.time() - t_query) * 1000,
+                                ),
                             )
                         except asyncio.TimeoutError:
                             logger.error(
@@ -1553,13 +1461,12 @@ class AgentEngineClient:
                                 actual_session_id,
                             )
                         for chunk in stream_iterator:
-                            logger.info(
+                            logger.debug(
                                 f"Received chunk type: {type(chunk)}, content preview: {str(chunk)[:100]}..."
                             )
 
                             if isinstance(chunk, dict):
-                                # Handle actual dictionary response
-                                logger.info(
+                                logger.debug(
                                     f"Processing dict chunk with keys: {list(chunk.keys())}"
                                 )
 
@@ -1576,12 +1483,9 @@ class AgentEngineClient:
                                                 isinstance(part, dict)
                                                 and "text" in part
                                             ):
-                                                logger.info(
-                                                    f"Extracted text from nested structure: {part['text'][:50]}..."
-                                                )
                                                 response_parts.append(part["text"])
                                             elif isinstance(part, dict) and _is_function_event_part(part):
-                                                logger.info(
+                                                logger.debug(
                                                     "Skipping function_call/function_response part"
                                                 )
                                             else:
@@ -1594,12 +1498,9 @@ class AgentEngineClient:
                                 ):
                                     for part in chunk["parts"]:
                                         if isinstance(part, dict) and "text" in part:
-                                            logger.info(
-                                                f"Extracted text from direct structure: {part['text'][:50]}..."
-                                            )
                                             response_parts.append(part["text"])
                                         elif isinstance(part, dict) and _is_function_event_part(part):
-                                            logger.info(
+                                            logger.debug(
                                                 "Skipping function_call/function_response part"
                                             )
                                         else:
@@ -1611,32 +1512,25 @@ class AgentEngineClient:
                                     if not _is_function_event_part(chunk):
                                         response_parts.append(str(chunk))
                                     else:
-                                        logger.info(
+                                        logger.debug(
                                             "Skipping function debug data in non-streaming response"
                                         )
                             elif isinstance(chunk, str):
-                                # Handle string representation of dictionary
-                                logger.info(f"Processing string chunk: {chunk[:50]}...")
+                                logger.debug(f"Processing string chunk: {chunk[:50]}...")
 
                                 # Skip JSON-format function events (double-quoted keys)
                                 # Agent Engine may return these as JSON strings, not Python dicts
                                 if _is_function_event_json(chunk):
-                                    logger.info(
+                                    logger.debug(
                                         "Skipping JSON function event data"
                                     )
                                     continue
 
                                 if chunk.startswith("{'parts'") and "'text':" in chunk:
-                                    logger.info(
-                                        "Attempting to parse chunk as dictionary"
-                                    )
                                     try:
                                         import ast
 
                                         parsed_chunk = ast.literal_eval(chunk)
-                                        logger.info(
-                                            f"Successfully parsed chunk: {type(parsed_chunk)}"
-                                        )
                                         if (
                                             isinstance(parsed_chunk, dict)
                                             and "parts" in parsed_chunk
@@ -1646,9 +1540,6 @@ class AgentEngineClient:
                                                     isinstance(part, dict)
                                                     and "text" in part
                                                 ):
-                                                    logger.info(
-                                                        f"Extracted text: {part['text'][:50]}..."
-                                                    )
                                                     response_parts.append(part["text"])
                                         else:
                                             response_parts.append(chunk)
@@ -1659,37 +1550,16 @@ class AgentEngineClient:
                                         response_parts.append(chunk)
                                 else:
                                     if _contains_function_event_str(chunk):
-                                        # Try to extract just the text after the function data
-                                        logger.info(
-                                            "Found function data in string chunk, attempting to extract text"
+                                        logger.debug(
+                                            "Found function data in string chunk, extracting text"
                                         )
-
-                                        # Look for text after the last }}
                                         if "}}" in chunk:
                                             parts = chunk.rsplit("}}", 1)
                                             if len(parts) == 2 and parts[1].strip():
                                                 remaining = parts[1].strip()
                                                 if not remaining.startswith("{"):
-                                                    logger.info(
-                                                        f"Extracted text after function data: {remaining[:50]}..."
-                                                    )
                                                     response_parts.append(remaining)
-                                                else:
-                                                    logger.info(
-                                                        "Remaining part is another JSON object, skipping"
-                                                    )
-                                            else:
-                                                logger.info(
-                                                    "No text found after function data, skipping entire chunk"
-                                                )
-                                        else:
-                                            logger.info(
-                                                "No }} found in chunk with function data, skipping"
-                                            )
                                     else:
-                                        logger.info(
-                                            "Chunk doesn't match dictionary pattern, adding as-is"
-                                        )
                                         response_parts.append(chunk)
                             elif hasattr(chunk, "content"):
                                 response_parts.append(str(chunk.content))
@@ -1700,7 +1570,7 @@ class AgentEngineClient:
 
                         # Clean up function_call/function_response data from the final response
                         if full_response and _contains_function_event_str(full_response):
-                            logger.info(
+                            logger.debug(
                                 f"Cleaning function data from response (length: {len(full_response)})"
                             )
                             # Try to extract only the text after function blocks
@@ -1735,7 +1605,7 @@ class AgentEngineClient:
                         actual_session_id,
                     )
 
-                logger.info(f"Response received: {type(response)}")
+                logger.debug(f"Response received: {type(response)}")
 
                 # Process the response
                 if isinstance(response, str):
@@ -1804,47 +1674,16 @@ class AgentEngineClient:
             user_input = latest_message.content
             user_id = user_context.user_id
 
-            # Format conversation history if there are previous messages
-            if len(messages) > 1:
-                # Build conversation context from all messages
-                conversation_context = []
-                for msg in messages[:-1]:  # All messages except the latest
-                    role_label = "User" if msg.role == "user" else "Assistant"
-                    conversation_context.append(f"{role_label}: {msg.content}")
-
-                # Add conversation history as context to the current message
-                context_str = "\n".join(conversation_context)
-                formatted_input = f"Previous conversation:\n{context_str}\n\nCurrent message: {user_input}"
-                logger.info(
-                    f"[CHAT STREAM] Including {len(messages) - 1} previous messages in context"
-                )
-            else:
-                formatted_input = user_input
+            # ADK session already maintains conversation history — no need to re-inject
+            formatted_input = user_input
 
             logger.info(
-                f"[CHAT] Processing message for user {user_id}: {user_input[:100]}..."
-            )
-            logger.info(
-                f"[CHAT] User context: {user_context.accessible_accounts if user_context else 'No context'}"
+                f"[CHAT] Processing stream message for user {user_id}: {user_input[:100]}..."
             )
 
             # Get or create session for this user (credentials now passed via session state)
             actual_session_id = await self.get_or_create_session(
                 user_id, user_context, session_id, conversation_name, account_id
-            )
-
-            # Determine account_id for context injection
-            context_account_id = account_id
-            if not context_account_id and user_context and user_context.accessible_accounts:
-                context_account_id = user_context.accessible_accounts[0]
-
-            # Inject organization and campaign context
-            formatted_input = await inject_context_into_message(
-                formatted_input=formatted_input,
-                user_input=user_input,
-                account_id=context_account_id,
-                session_id=actual_session_id,
-                streaming=True,
             )
 
             # Check if this is the first message and we need to generate a conversation name
@@ -1865,28 +1704,20 @@ class AgentEngineClient:
             self.increment_message_count(user_id, actual_session_id)
 
             logger.info(
-                f"Streaming query to Agent Engine for user {user_id}, session {actual_session_id}"
-            )
-            logger.info(
-                f"Query length: {len(formatted_input)} chars, preview: {formatted_input[:200]}..."
-            )
-            logger.info(
-                f"Session ID being passed to Agent Engine for streaming: {actual_session_id}"
+                f"[PERF] Streaming to Agent Engine for user {user_id}, session {actual_session_id}, query_len={len(formatted_input)}"
             )
 
             # Try streaming with agent_engines API
             try:
-                # Log available methods for debugging
                 available_methods = [
                     method
                     for method in dir(self.agent_engine)
                     if not method.startswith("_")
                 ]
-                logger.info(f"Available methods on agent engine: {available_methods}")
+                logger.debug(f"Available methods on agent engine: {available_methods}")
 
                 # Use stream_query with correct parameters for deployed agent
                 if hasattr(self.agent_engine, "stream_query"):
-                    logger.info("Using stream_query method for streaming")
 
                     # Create an async generator that runs the blocking stream_query in a thread
                     import queue
@@ -2092,7 +1923,7 @@ class AgentEngineClient:
                     yield f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
                     return
 
-                logger.info(f"Streaming response received: {type(response)}")
+                logger.debug(f"Streaming response received: {type(response)}")
 
                 # Process and yield the response
                 if isinstance(response, str):
@@ -2177,6 +2008,7 @@ async def chat_completion(
                 pass  # Non-critical
 
         # Set Weave root span metadata for trace filtering (scoped via contextvars)
+        _attrs_cm = None
         if WEAVE_AVAILABLE:
             try:
                 _exit_stack.enter_context(weave.attributes({
@@ -2187,7 +2019,7 @@ async def chat_completion(
                     "agent": "ken_e_chatbot",
                 }))
             except Exception:
-                pass
+                _attrs_cm = None
 
         if request.stream:
             # Return streaming response
@@ -2221,55 +2053,78 @@ async def chat_completion(
                 account_id=request.account_id,
             )
 
-            # Store a preview of the response for session recovery
-            preview = (
-                response_content[:100] + "..."
-                if len(response_content) > 100
-                else response_content
-            )
-            session_metadata = agent_client.update_session_preview(
-                user_context.user_id, actual_session_id, preview
-            )
-            if session_metadata:
+            # Fire post-response writes in background (non-blocking)
+            async def _post_response_writes(
+                uid: str, sid: str, content: str
+            ) -> None:
                 try:
-                    redis_service = get_redis_service()
-                    if redis_service.is_available():
-                        cache_key = session_metadata_key(
-                            user_context.user_id, actual_session_id
-                        )
-                        redis_service.set_json(
-                            cache_key,
-                            session_metadata,
-                            ttl_seconds=SESSION_METADATA_TTL_SECONDS,
-                        )
+                    preview = (
+                        content[:100] + "..."
+                        if len(content) > 100
+                        else content
+                    )
+                    session_metadata = agent_client.update_session_preview(
+                        uid, sid, preview
+                    )
+                    if session_metadata:
+                        try:
+                            redis_svc = get_redis_service()
+                            if redis_svc.is_available():
+                                cache_key = session_metadata_key(uid, sid)
+                                redis_svc.set_json(
+                                    cache_key,
+                                    session_metadata,
+                                    ttl_seconds=SESSION_METADATA_TTL_SECONDS,
+                                )
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.debug(f"Background session preview update failed for {sid}")
+
+            task = asyncio.create_task(
+                _post_response_writes(
+                    user_context.user_id,
+                    actual_session_id,
+                    response_content,
+                )
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+
+            # Fire reauth check in background (non-blocking, result used on next request)
+            async def _check_reauth_bg(uid: str, sid: str) -> None:
+                try:
+                    from app.adk.session.recovery import (
+                        get_recovery_service as _get_recovery,
+                    )
+
+                    _recovery = _get_recovery()
+                    _session = await _recovery._session_service.get_session(
+                        app_name=APP_NAME,
+                        user_id=uid,
+                        session_id=sid,
+                    )
+                    if _session and _session.state.get("_requires_reauth"):
+                        _reauth_cache[f"{uid}:{sid}"] = {
+                            "requires_reauth": True,
+                            "service": _session.state.get(
+                                "_reauth_service", "google-analytics"
+                            ),
+                        }
+                        _session.state.pop("_requires_reauth", None)
+                        _session.state.pop("_reauth_service", None)
                 except Exception:
                     pass
 
-            # Check session state for re-auth requirement (set by before_tool_callback)
-            metadata = None
-            try:
-                from app.adk.session.recovery import (
-                    get_recovery_service as _get_recovery,
-                )
+            task = asyncio.create_task(
+                _check_reauth_bg(user_context.user_id, actual_session_id)
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
-                _recovery = _get_recovery()
-                _session = await _recovery._session_service.get_session(
-                    app_name=APP_NAME,
-                    user_id=user_context.user_id,
-                    session_id=actual_session_id,
-                )
-                if _session and _session.state.get("_requires_reauth"):
-                    metadata = {
-                        "requires_reauth": True,
-                        "service": _session.state.get(
-                            "_reauth_service", "google-analytics"
-                        ),
-                    }
-                    # Clear the flag so it doesn't persist
-                    _session.state.pop("_requires_reauth", None)
-                    _session.state.pop("_reauth_service", None)
-            except Exception:
-                pass
+            # Use cached reauth result from previous request's background check
+            reauth_key = f"{user_context.user_id}:{actual_session_id}"
+            metadata = _reauth_cache.pop(reauth_key, None)
 
             return ChatResponse(
                 content=response_content,
@@ -2313,6 +2168,11 @@ async def create_conversation(
 ):
     """
     Create a new conversation/session with initial state.
+
+    Returns immediately with a pending session ID while the real
+    Vertex AI session is created in the background (~3.8s).  The
+    pending ID is resolved transparently when the first message
+    is sent via POST /completions.
     """
     try:
         # SECURITY: Validate account access if account_id provided
@@ -2324,40 +2184,52 @@ async def create_conversation(
                 detail=f"Access denied to account {request.account_id}",
             )
 
+        now = datetime.now(timezone.utc)
+        pending_id = f"pending_{uuid4()}"
+        user_id = user_context.user_id
+
         logger.info(
-            f"Creating conversation for user: {user_context.user_id}, account: {request.account_id}"
+            f"Creating deferred conversation {pending_id} for user: {user_id}, account: {request.account_id}"
         )
 
-        session_id = await agent_client.create_conversation(
-            user_id=user_context.user_id,
-            user_context=user_context,
-            conversation_name=request.conversation_name,
-            account_id=request.account_id,
+        # Store metadata immediately so the UI can display the conversation
+        conversation_info = {
+            "session_id": pending_id,
+            "user_id": user_id,
+            "conversation_name": request.conversation_name,
+            "created_at": now,
+            "last_updated": now,
+            "message_count": 0,
+        }
+        agent_client._user_sessions[f"{user_id}:{pending_id}"] = conversation_info
+
+        # Kick off real session creation in the background
+        async def _create_in_background() -> str:
+            sid = await agent_client.create_conversation(
+                user_id=user_id,
+                user_context=user_context,
+                conversation_name=request.conversation_name,
+                account_id=request.account_id,
+            )
+            # Record session activity for timeout tracking
+            try:
+                from app.adk.session.timeout import get_timeout_manager
+
+                timeout_mgr = get_timeout_manager()
+                timeout_mgr.record_activity(user_id, sid)
+            except Exception:
+                pass
+            return sid
+
+        agent_client._pending_sessions[pending_id] = asyncio.create_task(
+            _create_in_background()
         )
 
-        logger.info(f"Created session: {session_id}")
-
-        # Record session activity for timeout tracking
-        try:
-            from app.adk.session.timeout import get_timeout_manager
-
-            timeout_mgr = get_timeout_manager()
-            timeout_mgr.record_activity(user_context.user_id, session_id)
-        except Exception:
-            pass  # Non-critical
-
-        # Get the conversation info to return
-        conversations = await agent_client.get_user_conversations(user_context.user_id)
-        for conv in conversations:
-            if conv.session_id == session_id:
-                return conv
-
-        # Fallback if not found in cache
         return ConversationInfo(
-            session_id=session_id,
+            session_id=pending_id,
             conversation_name=request.conversation_name,
-            created_at=datetime.now(timezone.utc),
-            last_updated=datetime.now(timezone.utc),
+            created_at=now,
+            last_updated=now,
             message_count=0,
         )
 
@@ -2412,15 +2284,17 @@ async def update_conversation(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
             )
 
-        # Get updated conversation info
-        conversations = await agent_client.get_user_conversations(user_context.user_id)
-        for conv in conversations:
-            if conv.session_id == session_id:
-                return conv
-
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found after update",
+        # Return updated info directly from cache (avoids list_sessions call)
+        session_key = f"{user_context.user_id}:{session_id}"
+        cached = agent_client._user_sessions.get(session_key, {})
+        now = datetime.now(timezone.utc)
+        return ConversationInfo(
+            session_id=session_id,
+            conversation_name=cached.get("conversation_name", request.conversation_name),
+            created_at=cached.get("created_at", now),
+            last_updated=cached.get("last_updated", now),
+            message_count=cached.get("message_count", 0),
+            preview=cached.get("preview"),
         )
 
     except HTTPException:

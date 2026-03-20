@@ -51,6 +51,8 @@ except Exception as e:
 
 from shared.secrets import get_env_or_secret  # noqa: E402
 
+from .strategy_agent.config_loader import load_config_from_firestore  # noqa: E402
+
 GA_MCP_SERVER_URL = get_env_or_secret("GA_MCP_SERVER_URL") or ""
 if not GA_MCP_SERVER_URL:
     GA_MCP_SERVER_URL = os.getenv("GA_MCP_SERVER_URL", "")
@@ -140,14 +142,41 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
 - If a property_id is provided in the context, use it without asking again"""
 
 
-def create_google_analytics_agent() -> Agent:
-    """Create a Google Analytics agent using McpToolset with header-based OAuth."""
+def create_google_analytics_agent(config_doc_id: str = "google_analytics_agent") -> Agent:
+    """Create a Google Analytics agent using McpToolset with header-based OAuth.
+
+    Args:
+        config_doc_id: Firestore document ID for agent configuration
+    """
+    # Load configuration from Firestore with fallback to hardcoded values
+    try:
+        config, metadata = load_config_from_firestore(config_doc_id)
+        model = config.model
+        instruction = config.instruction or GA_AGENT_INSTRUCTION
+        description = config.description or ""
+        generate_content_config = config.generate_content_config
+        logger.info(
+            f"Loaded GA agent config from Firestore: {config_doc_id} "
+            f"(version: {metadata.get('version', 'unknown')}, model: {model})"
+        )
+    except Exception as e:
+        logger.warning(
+            f"Failed to load GA agent config from Firestore ({config_doc_id}): {e}. "
+            f"Falling back to hardcoded defaults"
+        )
+        model = "gemini-2.0-flash"
+        instruction = GA_AGENT_INSTRUCTION
+        description = ""
+        generate_content_config = None
+
     tools = [ga_toolset] if ga_toolset else []
 
     agent = Agent(
         name="google_analytics_agent_v4",
-        model="gemini-2.0-flash",
-        instruction=GA_AGENT_INSTRUCTION,
+        model=model,
+        description=description,
+        instruction=instruction,
+        generate_content_config=generate_content_config,
         tools=tools,
     )
 

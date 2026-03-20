@@ -215,6 +215,12 @@ class AgentConfigService {
           categories.brand = { researcher: "", formatter: "" };
         if (id.includes("researcher")) categories.brand.researcher = id;
         else categories.brand.formatter = id;
+      } else if (id === "google_analytics_agent") {
+        if (!categories.analytics) categories.analytics = {};
+        categories.analytics.chatbot = id;
+      } else if (id === "company_news_agent") {
+        if (!categories.news) categories.news = {};
+        categories.news.chatbot = id;
       }
     }
 

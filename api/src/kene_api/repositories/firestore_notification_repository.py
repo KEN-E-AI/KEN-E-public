@@ -8,8 +8,6 @@ from typing import Any
 from google.cloud import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 
-logger = logging.getLogger(__name__)
-
 from ..models.kene_models import (
     Notification,
     NotificationCategory,
@@ -23,7 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 class FirestoreNotificationRepository(NotificationRepository):
-    """Firestore implementation of notification repository."""
+    """Firestore implementation of notification repository.
+
+    All Firestore operations use asyncio.to_thread() to avoid blocking
+    the asyncio event loop, since the synchronous Firestore client's
+    .stream(), .get(), .set(), etc. make blocking network calls.
+    """
 
     def __init__(self, db: firestore.Client):
         self.db = db
@@ -31,14 +34,22 @@ class FirestoreNotificationRepository(NotificationRepository):
     async def create(self, notification: Notification) -> str:
         """Create a new notification in Firestore."""
         notification_data = notification.model_dump()
-        self.db.collection("notifications").document(notification.id).set(
-            notification_data
-        )
+
+        def _write() -> None:
+            self.db.collection("notifications").document(notification.id).set(
+                notification_data
+            )
+
+        await asyncio.to_thread(_write)
         return notification.id
 
     async def get_by_id(self, notification_id: str) -> Notification | None:
         """Get a notification by ID from Firestore."""
-        doc = self.db.collection("notifications").document(notification_id).get()
+
+        def _read() -> Any:
+            return self.db.collection("notifications").document(notification_id).get()
+
+        doc = await asyncio.to_thread(_read)
 
         if not doc.exists:
             return None
@@ -62,35 +73,28 @@ class FirestoreNotificationRepository(NotificationRepository):
     ) -> list[Notification]:
         """Fetch notifications for a single batch of account IDs."""
         query = self.db.collection("notifications").where(
-            "account_id", "in", batch_account_ids
+            filter=firestore.FieldFilter("account_id", "in", batch_account_ids)
         )
 
         if not include_archived:
             now = datetime.now().isoformat()
-            query = query.where("archived_at", ">", now)
-            # When filtering by archived_at, we need to order by archived_at first
-            # to match the existing composite index
+            query = query.where(
+                filter=firestore.FieldFilter("archived_at", ">", now)
+            )
             query = query.order_by("archived_at", direction=firestore.Query.ASCENDING)
 
-        # Try with ordering by created_at
-        try:
-            # Order by created_at descending
-            # Note: This requires a composite index in Firestore
-            ordered_query = query.order_by(
-                "created_at", direction=firestore.Query.DESCENDING
-            )
-            docs = ordered_query.stream()
-        except Exception as e:
-            # If there's an index issue, fall back to simpler query
-            logger.warning(f"Firestore query failed (likely missing index): {e}")
-            docs = query.stream()
+        def _run_query() -> list[dict[str, Any]]:
+            try:
+                ordered_query = query.order_by(
+                    "created_at", direction=firestore.Query.DESCENDING
+                )
+                return [doc.to_dict() for doc in ordered_query.stream()]
+            except Exception as e:
+                logger.warning(f"Firestore query failed (likely missing index): {e}")
+                return [doc.to_dict() for doc in query.stream()]
 
-        notifications = []
-        for doc in docs:
-            data = doc.to_dict()
-            notifications.append(Notification(**data))
-
-        return notifications
+        docs_data = await asyncio.to_thread(_run_query)
+        return [Notification(**data) for data in docs_data]
 
     async def _fetch_batches_parallel(
         self,
@@ -98,13 +102,9 @@ class FirestoreNotificationRepository(NotificationRepository):
         include_archived: bool,
     ) -> list[Notification]:
         """Fetch multiple batches of notifications in parallel."""
-        # Create tasks for parallel execution
         tasks = [self._fetch_batch(batch, include_archived) for batch in batches]
-
-        # Execute all batches in parallel
         batch_results = await asyncio.gather(*tasks)
 
-        # Flatten the results
         all_notifications = []
         for batch_notifications in batch_results:
             all_notifications.extend(batch_notifications)
@@ -142,18 +142,14 @@ class FirestoreNotificationRepository(NotificationRepository):
         This method handles Firestore's limitation of 10 items in "IN" queries
         by batching the account IDs and fetching in parallel for better performance.
         """
-        # Firestore doesn't allow empty arrays in "in" queries
         if not account_ids:
             return []
 
-        # For small sets, use direct query with Firestore pagination
         if len(account_ids) <= 10 and limit and limit <= 100:
-            # Single batch, can use Firestore's native pagination
             return await self._fetch_batch_with_pagination(
                 account_ids, include_archived, limit, offset
             )
 
-        # For larger sets, fetch all and paginate in memory
         batches = self._create_batches(account_ids)
         notifications = await self._fetch_batches_parallel(batches, include_archived)
         notifications = self._sort_notifications(notifications)
@@ -168,38 +164,34 @@ class FirestoreNotificationRepository(NotificationRepository):
     ) -> list[Notification]:
         """Fetch a single batch with Firestore-level pagination."""
         query = self.db.collection("notifications").where(
-            "account_id", "in", account_ids
+            filter=firestore.FieldFilter("account_id", "in", account_ids)
         )
 
         if not include_archived:
             now = datetime.now().isoformat()
-            query = query.where("archived_at", ">", now)
-            # When filtering by archived_at, we need to order by archived_at first
-            # to match the existing composite index
+            query = query.where(
+                filter=firestore.FieldFilter("archived_at", ">", now)
+            )
             query = query.order_by("archived_at", direction=firestore.Query.ASCENDING)
 
-        # Apply ordering by created_at
         query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
         if offset > 0:
             query = query.offset(offset)
         if limit:
             query = query.limit(limit)
 
+        def _run_query() -> list[dict[str, Any]]:
+            return [doc.to_dict() for doc in query.stream()]
+
         try:
-            docs = query.stream()
+            docs_data = await asyncio.to_thread(_run_query)
         except Exception as e:
             logger.warning(f"Firestore query with pagination failed: {e}")
-            # Fallback to in-memory pagination
             notifications = await self._fetch_batch(account_ids, include_archived)
             notifications = self._sort_notifications(notifications)
             return self._apply_pagination(notifications, limit, offset)
 
-        notifications = []
-        for doc in docs:
-            data = doc.to_dict()
-            notifications.append(Notification(**data))
-
-        return notifications
+        return [Notification(**data) for data in docs_data]
 
     async def get_user_statuses(
         self,
@@ -213,21 +205,20 @@ class FirestoreNotificationRepository(NotificationRepository):
             .collection("notification_status")
         )
 
-        statuses = {}
+        def _fetch_all_statuses() -> dict[str, dict[str, Any]]:
+            statuses: dict[str, dict[str, Any]] = {}
+            for i in range(0, len(notification_ids), 10):
+                batch_ids = notification_ids[i : i + 10]
+                docs = status_collection.where(
+                    filter=firestore.FieldFilter(
+                        FieldPath.document_id(), "in", batch_ids
+                    )
+                ).stream()
+                for doc in docs:
+                    statuses[doc.id] = doc.to_dict()
+            return statuses
 
-        # Firestore doesn't support WHERE IN with more than 10 values
-        # So we need to batch the requests
-        for i in range(0, len(notification_ids), 10):
-            batch_ids = notification_ids[i : i + 10]
-
-            docs = status_collection.where(
-                FieldPath.document_id(), "in", batch_ids
-            ).stream()
-
-            for doc in docs:
-                statuses[doc.id] = doc.to_dict()
-
-        return statuses
+        return await asyncio.to_thread(_fetch_all_statuses)
 
     async def update_user_status(
         self,
@@ -243,7 +234,7 @@ class FirestoreNotificationRepository(NotificationRepository):
             .document(notification_id)
         )
 
-        update_data = {
+        update_data: dict[str, str] = {
             "status": status.value,
             "updated_at": datetime.now().isoformat(),
         }
@@ -253,7 +244,7 @@ class FirestoreNotificationRepository(NotificationRepository):
         elif status == NotificationStatus.ARCHIVED:
             update_data["archived_at"] = datetime.now().isoformat()
 
-        status_ref.update(update_data)
+        await asyncio.to_thread(status_ref.update, update_data)
 
     async def get_user_preferences(
         self, user_id: str
@@ -266,7 +257,7 @@ class FirestoreNotificationRepository(NotificationRepository):
             .document("notifications")
         )
 
-        pref_doc = pref_ref.get()
+        pref_doc = await asyncio.to_thread(pref_ref.get)
 
         if not pref_doc.exists:
             return None
@@ -301,25 +292,18 @@ class FirestoreNotificationRepository(NotificationRepository):
             "updated_at": datetime.now().isoformat(),
         }
 
-        pref_ref.set(pref_data)
+        await asyncio.to_thread(pref_ref.set, pref_data)
 
     async def count_unread(self, user_id: str, account_ids: list[str]) -> int:
         """Count unread notifications for a user in Firestore."""
-        # Get active notifications for accessible accounts
-        now = datetime.now().isoformat()
-
-        # We need to count manually since Firestore doesn't support
-        # counting with joins across collections
         notifications = await self.get_by_account(account_ids, include_archived=False)
 
         if not notifications:
             return 0
 
-        # Get user statuses for these notifications
         notification_ids = [n.id for n in notifications]
         user_statuses = await self.get_user_statuses(user_id, notification_ids)
 
-        # Count unread
         unread_count = 0
         for notification in notifications:
             status_data = user_statuses.get(notification.id, {"status": "unread"})
@@ -332,129 +316,128 @@ class FirestoreNotificationRepository(NotificationRepository):
         self, account_id: str
     ) -> list[tuple[str, dict[str, Any]]]:
         """Get all users with access to an account from Firestore."""
-        users = []
 
-        # Query all users
-        users_stream = self.db.collection("users").stream()
+        def _query_users() -> list[tuple[str, dict[str, Any]]]:
+            users = []
+            users_stream = self.db.collection("users").stream()
+            for user_doc in users_stream:
+                user_data = user_doc.to_dict()
+                user_id = user_doc.id
+                permissions = user_data.get("permissions", {})
+                account_permissions = permissions.get("accounts", {})
+                if account_id in account_permissions:
+                    users.append((user_id, user_data))
+            return users
 
-        for user_doc in users_stream:
-            user_data = user_doc.to_dict()
-            user_id = user_doc.id
-
-            # Check if user has access to this account
-            permissions = user_data.get("permissions", {})
-            account_permissions = permissions.get("accounts", {})
-
-            if account_id in account_permissions:
-                users.append((user_id, user_data))
-
-        return users
+        return await asyncio.to_thread(_query_users)
 
     async def batch_create_user_statuses(
         self,
         statuses: list[dict[str, Any]],
     ) -> None:
         """Create multiple user notification statuses in batch in Firestore."""
-        batch = self.db.batch()
-        batch_count = 0
 
-        for status in statuses:
-            user_id = status["user_id"]
-            notification_id = status["notification_id"]
+        def _batch_write() -> None:
+            batch = self.db.batch()
+            batch_count = 0
 
-            status_ref = (
-                self.db.collection("users")
-                .document(user_id)
-                .collection("notification_status")
-                .document(notification_id)
-            )
+            for status in statuses:
+                user_id = status["user_id"]
+                notification_id = status["notification_id"]
 
-            batch.set(
-                status_ref,
-                {
-                    "notification_id": notification_id,
-                    "status": status["status"],
-                    "updated_at": status["updated_at"],
-                },
-            )
+                status_ref = (
+                    self.db.collection("users")
+                    .document(user_id)
+                    .collection("notification_status")
+                    .document(notification_id)
+                )
 
-            batch_count += 1
+                batch.set(
+                    status_ref,
+                    {
+                        "notification_id": notification_id,
+                        "status": status["status"],
+                        "updated_at": status["updated_at"],
+                    },
+                )
 
-            # Commit every 500 operations (Firestore limit)
-            if batch_count >= 500:
+                batch_count += 1
+
+                if batch_count >= 500:
+                    batch.commit()
+                    batch = self.db.batch()
+                    batch_count = 0
+
+            if batch_count > 0:
                 batch.commit()
-                batch = self.db.batch()
-                batch_count = 0
 
-        # Commit remaining operations
-        if batch_count > 0:
-            batch.commit()
+        await asyncio.to_thread(_batch_write)
 
     async def archive_old_notifications(self, days: int = 30) -> int:
         """Archive notifications older than specified days in Firestore."""
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        archived_count = 0
 
-        # Get all users
-        users = self.db.collection("users").stream()
+        def _archive() -> int:
+            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+            archived_count = 0
+            users = self.db.collection("users").stream()
+            batch = self.db.batch()
+            batch_count = 0
 
-        batch = self.db.batch()
-        batch_count = 0
-
-        for user_doc in users:
-            user_id = user_doc.id
-
-            # Query notification statuses that should be auto-archived
-            status_query = (
-                self.db.collection("users")
-                .document(user_id)
-                .collection("notification_status")
-                .where("status", "!=", NotificationStatus.ARCHIVED.value)
-            )
-
-            status_docs = status_query.stream()
-
-            for status_doc in status_docs:
-                status_data = status_doc.to_dict()
-                notification_id = status_data["notification_id"]
-
-                # Check if notification should be archived
-                notif_doc = (
-                    self.db.collection("notifications").document(notification_id).get()
+            for user_doc in users:
+                user_id = user_doc.id
+                status_query = (
+                    self.db.collection("users")
+                    .document(user_id)
+                    .collection("notification_status")
+                    .where(
+                        filter=firestore.FieldFilter(
+                            "status", "!=", NotificationStatus.ARCHIVED.value
+                        )
+                    )
                 )
+                status_docs = status_query.stream()
 
-                if notif_doc.exists:
-                    notif_data = notif_doc.to_dict()
-                    if notif_data.get("created_at", "") < cutoff:
-                        # Archive this notification
-                        status_ref = (
-                            self.db.collection("users")
-                            .document(user_id)
-                            .collection("notification_status")
-                            .document(notification_id)
-                        )
+                for status_doc in status_docs:
+                    status_data = status_doc.to_dict()
+                    notification_id = status_data["notification_id"]
 
-                        batch.update(
-                            status_ref,
-                            {
-                                "status": NotificationStatus.ARCHIVED.value,
-                                "archived_at": datetime.now().isoformat(),
-                                "updated_at": datetime.now().isoformat(),
-                            },
-                        )
+                    notif_doc = (
+                        self.db.collection("notifications")
+                        .document(notification_id)
+                        .get()
+                    )
 
-                        archived_count += 1
-                        batch_count += 1
+                    if notif_doc.exists:
+                        notif_data = notif_doc.to_dict()
+                        if notif_data.get("created_at", "") < cutoff:
+                            status_ref = (
+                                self.db.collection("users")
+                                .document(user_id)
+                                .collection("notification_status")
+                                .document(notification_id)
+                            )
 
-                        # Commit batch every 500 operations
-                        if batch_count >= 500:
-                            batch.commit()
-                            batch = self.db.batch()
-                            batch_count = 0
+                            batch.update(
+                                status_ref,
+                                {
+                                    "status": NotificationStatus.ARCHIVED.value,
+                                    "archived_at": datetime.now().isoformat(),
+                                    "updated_at": datetime.now().isoformat(),
+                                },
+                            )
 
-        # Commit any remaining operations
-        if batch_count > 0:
-            batch.commit()
+                            archived_count += 1
+                            batch_count += 1
 
-        logger.info(f"Auto-archived {archived_count} notifications")
-        return archived_count
+                            if batch_count >= 500:
+                                batch.commit()
+                                batch = self.db.batch()
+                                batch_count = 0
+
+            if batch_count > 0:
+                batch.commit()
+
+            logger.info(f"Auto-archived {archived_count} notifications")
+            return archived_count
+
+        return await asyncio.to_thread(_archive)
