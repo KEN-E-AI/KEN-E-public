@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-> **Roadmap:** [Feature 2.4: Data Visualization](../product-roadmap.md#feature-24-data-visualization--phase-1) — Release 2.0
+> **Roadmap:** [Feature 2.4: Data Visualization](../product-roadmap.md#24--data-visualization) — Release 2.0
 
 ### Problem
 
@@ -274,7 +274,7 @@ Artifacts are sent as a single atomic event (not streamed incrementally) because
 
 ## 6. Review Loop Integration
 
-> **Roadmap:** [Feature 2.1: Review Loop Framework](../product-roadmap.md#feature-21-review-loop-framework), [Feature 2.4: Data Visualization](../product-roadmap.md#feature-24-data-visualization--phase-1) — Release 2.0
+> **Roadmap:** [Feature 2.1: Review Loop Framework](../product-roadmap.md#21--review-loop-framework), [Feature 2.4: Data Visualization](../product-roadmap.md#24--data-visualization) — Release 2.0
 
 ### 6.1 Reviewer Evaluates Artifacts
 
@@ -317,7 +317,7 @@ The reviewer checks that a visualization artifact exists, matches the specified 
 
 ## 7. Multi-Step Workflow Integration
 
-> **Roadmap:** [Feature 2.4: Data Visualization](../product-roadmap.md#feature-24-data-visualization--phase-1), [Feature 3.4: Multi-Step Workflows](../product-roadmap.md#feature-34-multi-step-workflows--phase-1) — Releases 2.0, 3.0
+> **Roadmap:** [Feature 2.4: Data Visualization](../product-roadmap.md#24--data-visualization), [Feature 3.4: Multi-Step Workflows](../product-roadmap.md#34--multi-step-workflows) — Releases 2.0, 3.0
 
 ### 7.1 Per-Step Artifacts
 
@@ -424,7 +424,7 @@ The chat message display component detects artifacts in the response and renders
 
 ## 9. Channel Considerations
 
-> **Roadmap:** [Feature 5.1: Slack Channel](../product-roadmap.md#feature-51-slack-channel), [Feature 6.1: Voice Channel](../product-roadmap.md#feature-61-voice-channel) — Releases 5.0, 6.0
+> **Roadmap:** [Feature 5.1: Slack Channel](../product-roadmap.md#51--slack-channel), [Feature 6.1: Voice Channel](../product-roadmap.md#61--voice-channel) — Releases 5.0, 6.0
 
 | Channel | Rendering Approach | Status |
 |---------|--------------------|--------|

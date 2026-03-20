@@ -335,7 +335,7 @@ Integration Methods:
 
 ## 4. Data Storage Design & Database Schema
 
-> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track) — Release 2.0
+> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#25--mer-e-phase-0-trace-extraction) — Release 2.0
 
 ### 4.1 Storage Strategy Overview
 
@@ -858,7 +858,7 @@ Weave Project: ken-e-evaluation
 
 ## 5. Human Feedback Capture System
 
-> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#feature-43-mer-e-phase-2--human-feedback--patterns-parallel-track-phase-1) — Release 4.0
+> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#43--mer-e-phase-2-human-feedback--patterns) — Release 4.0
 
 ### 5.1 System Overview
 
@@ -1187,7 +1187,7 @@ For efficiency, the system should support bulk operations:
 
 ## 6. Trace Collection & W&B Integration
 
-> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track) — Release 2.0
+> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#25--mer-e-phase-0-trace-extraction) — Release 2.0
 
 ### 6.1 Current State
 
@@ -1362,7 +1362,7 @@ batch_config = {
 
 ## 7. Automated Analysis & Recommendation Engine
 
-> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track), [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#feature-52-mer-e-phase-3--prompt-optimization-phase-1) — Releases 3.0, 5.0
+> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#35--mer-e-phase-1-quality-scoring), [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#52--mer-e-phase-3-prompt-optimization) — Releases 3.0, 5.0
 
 ### 7.1 Engine Overview
 
@@ -1946,7 +1946,7 @@ def generate_feedback_requests(analysis_results: AnalysisResults) -> List[Feedba
 
 ## 8. Deployment Pipeline & Rollback System
 
-> **Roadmap:** [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#feature-52-mer-e-phase-3--prompt-optimization-phase-1), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Releases 5.0, 6.0
+> **Roadmap:** [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#52--mer-e-phase-3-prompt-optimization), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#63--mer-e-phase-4-full-closed-loop) — Releases 5.0, 6.0
 
 ### 8.1 Deployment Philosophy
 
@@ -2274,7 +2274,7 @@ options:
 
 ### 8.7 A/B Testing Infrastructure
 
-> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#feature-44-ab-testing-infrastructure) — Release 4.0
+> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#44--ab-testing-infrastructure) — Release 4.0
 
 For configuration experiments, the system supports A/B testing at the account level.
 
@@ -3093,7 +3093,7 @@ def get_collection(collection_name: str) -> str:
 
 ## 11. Agentic Harness Integration
 
-> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track) — Release 3.0
+> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#35--mer-e-phase-1-quality-scoring) — Release 3.0
 
 This section describes how the evaluation framework integrates with the KEN-E Agentic Harness architecture (see `KEN-E-Agentic-Harness-Design.md`).
 
@@ -3471,7 +3471,7 @@ class AgentEffectivenessCalculator:
 
 ## 12. Human Edit Distance Tracking
 
-> **Roadmap:** [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#feature-52-mer-e-phase-3--prompt-optimization-phase-1) — Release 5.0
+> **Roadmap:** [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#52--mer-e-phase-3-prompt-optimization) — Release 5.0
 
 This section defines how to measure the quality signal from human edits to AI-generated content.
 
@@ -3791,7 +3791,7 @@ const ContentEditorWithTracking: React.FC<ContentEditorProps> = ({
 
 ## 13. Multi-Step Workflow Evaluation
 
-> **Roadmap:** [Feature 5.4: Advanced Workflow & Observability](product-roadmap.md#feature-54-advanced-workflow--observability), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Releases 5.0, 6.0
+> **Roadmap:** [Feature 5.4: Advanced Workflow & Observability](product-roadmap.md#54--advanced-workflow--observability), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#63--mer-e-phase-4-full-closed-loop) — Releases 5.0, 6.0
 
 This section defines how to evaluate multi-step agentic workflows where KEN-E executes sequences of tasks.
 
@@ -4220,7 +4220,7 @@ workflow_evaluation_schema = {
 
 ## 14. n8n Workflow Evaluation
 
-> **Roadmap:** [Feature 4.1: Automation Specialist + n8n](product-roadmap.md#feature-41-automation-specialist--n8n), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Releases 4.0, 6.0
+> **Roadmap:** [Feature 4.1: Automation Specialist + n8n](product-roadmap.md#41--automation-specialist--n8n), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#63--mer-e-phase-4-full-closed-loop) — Releases 4.0, 6.0
 
 This section defines how to evaluate the n8n workflows created by the Automation Specialist.
 
@@ -4607,7 +4607,7 @@ N8N_WORKFLOW_DASHBOARD_METRICS = {
 
 ## 15. Cross-Account Benchmarking
 
-> **Roadmap:** [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Release 6.0
+> **Roadmap:** [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#63--mer-e-phase-4-full-closed-loop) — Release 6.0
 
 This section defines how to aggregate metrics across accounts for anonymized benchmarking.
 

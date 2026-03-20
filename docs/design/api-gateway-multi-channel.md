@@ -8,7 +8,7 @@
 
 ## 1. Current API Architecture
 
-> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](../product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge) — Release 1.1
+> **Roadmap:** [Feature 1.1.1: ADK Upgrade](../product-roadmap.md#111--adk-upgrade) — Release 1.1
 
 The KEN-E API is a FastAPI application deployed on Google Cloud Run.
 
@@ -88,7 +88,7 @@ All channels normalize to the same `POST /api/v1/chat/completions` call. The age
 
 ## 4. [PLANNED] Slack Integration Approach
 
-> **Roadmap:** [Feature 5.1: Slack Channel](../product-roadmap.md#feature-51-slack-channel) — Release 5.0
+> **Roadmap:** [Feature 5.1: Slack Channel](../product-roadmap.md#51--slack-channel) — Release 5.0
 
 - **Framework:** Slack Bolt SDK for Python
 - **Deployment:** Separate Cloud Run service (not embedded in the API)
@@ -101,7 +101,7 @@ The Slack service is a thin adapter — it authenticates the Slack user, maps to
 
 ## 5. [PLANNED] Voice Integration Approach
 
-> **Roadmap:** [Feature 6.1: Voice Channel](../product-roadmap.md#feature-61-voice-channel) — Release 6.0
+> **Roadmap:** [Feature 6.1: Voice Channel](../product-roadmap.md#61--voice-channel) — Release 6.0
 
 - **Framework:** Pipecat for voice pipeline orchestration
 - **Meeting access:** Recall.ai or Meeting BaaS for joining Zoom/Teams/Meet
