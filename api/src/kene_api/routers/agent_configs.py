@@ -12,8 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
 from pydantic import BaseModel, Field, field_validator
 
-from app.adk.agents.registry import get_registry
-
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
@@ -22,7 +20,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agent-configs", tags=["agent-configs"])
 
-ALLOWED_CONFIG_IDS = get_registry().get_all_config_doc_ids()
+# Allowlist of valid Firestore config doc IDs for agent configurations.
+# These correspond to the config_doc_id and sub_config_doc_ids in
+# app/adk/agents/registry.py. Keep in sync when agents are added/removed.
+ALLOWED_CONFIG_IDS: set[str] = {
+    "ken_e_chatbot",
+    "company_news_agent",
+    "google_analytics_agent",
+    "business_researcher",
+    "business_formatter",
+    "competitive_researcher",
+    "competitive_formatter",
+    "marketing_researcher",
+    "marketing_formatter",
+    "brand_researcher",
+    "brand_formatter",
+}
 
 
 class AgentConfigMetadata(BaseModel):
