@@ -1,9 +1,13 @@
 # KEN-E Agentic Harness Design Document
 
-**Version:** 1.0
-**Date:** January 10, 2026
+**Version:** 2.9
+**Date:** March 18, 2026
 **Author:** Development Team
-**Status:** Design Phase
+
+> **Dependency Note:** Several features described in this document (InstructionProvider
+> closure, agent registry, ReflectAndRetryToolPlugin, token_threshold in compaction
+> config) exist on the `feat/sprint-3b-agent-config-optimization` branch (PR #217)
+> but have not yet been merged to main. These are noted where relevant.
 
 ---
 
@@ -14,13 +18,13 @@
 3. [Context Management Strategy](#3-context-management-strategy)
 4. [Agent Definitions](#4-agent-definitions)
 5. [MCP Server Architecture](#5-mcp-server-architecture)
-6. [Multi-Channel Support](#6-multi-channel-support)
-7. [Workflow Management](#7-workflow-management)
-8. [Integration with Evaluation Framework](#8-integration-with-evaluation-framework)
-9. [Code Examples](#9-code-examples)
+6. [Skills Architecture [PLANNED]](#6-skills-architecture-planned)
+7. [Multi-Channel Support [PLANNED]](#7-multi-channel-support-planned)
+8. [Workflow Management [PLANNED]](#8-workflow-management-planned)
+9. [Integration with Evaluation Framework](#9-integration-with-evaluation-framework)
 10. [Infrastructure Requirements](#10-infrastructure-requirements)
-11. [Risks and Testing Requirements](#11-risks-and-testing-requirements)
-12. [Prioritized Feature Roadmap](#12-prioritized-feature-roadmap)
+11. [Resilience, Security & Testing](#11-resilience-security--testing)
+12. [Sprint-Based Roadmap](#12-sprint-based-roadmap)
 13. [Appendices](#13-appendices)
 
 ---
@@ -29,7 +33,9 @@
 
 ### 1.1 Purpose
 
-This document defines the comprehensive design for KEN-E's agentic harness—the software framework that enables KEN-E to function as an autonomous AI marketing agent. The harness orchestrates multiple specialized agents using Google's Agent Development Kit (ADK) to complete complex marketing tasks including strategy development, content creation, campaign execution, and performance optimization.
+This document defines the comprehensive design for KEN-E's agentic harness — the software framework that enables KEN-E to function as an autonomous AI marketing agent. The harness orchestrates multiple specialized agents using Google's Agent Development Kit (ADK) to complete complex marketing tasks including strategy development, content creation, campaign execution, and performance optimization.
+
+This document serves as an architecture reference: it describes both the current implementation and planned extensions. Features not yet built are marked `[PLANNED]` throughout. Agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by a specialist agent or automation when the specialist layer is built (Sprint 5-6). As planned features are deployed, this document is updated to collapse the distinction.
 
 ### 1.2 Critical Design Challenges
 
@@ -41,61 +47,105 @@ The agentic harness must solve three primary challenges:
 | **Large Context Requirements** | ~100,000 words of company knowledge | Leaves minimal room for conversation |
 | **Multi-Step Autonomous Workflows** | Tasks spanning days/weeks | Requires persistent state and scheduled execution |
 
-### 1.3 Solution Overview
+### 1.3 Agentic Harness Overview
 
-The design implements a **Hierarchical Agent Architecture with Dynamic Context Loading**:
+The design implements a **Hierarchical Agent Architecture with Dynamic Context Loading**.
+
+#### 1.3.1 Current Agentic Harness (March 11, 2026)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           KEN-E AGENTIC HARNESS                                  │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                    ORCHESTRATOR LAYER                                    │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │   │
-│  │  │   Primary   │  │   Context   │  │    Tool     │  │  Workflow   │    │   │
-│  │  │Orchestrator │  │   Manager   │  │  Discovery  │  │   Router    │    │   │
-│  │  │   Agent     │  │             │  │    Agent    │  │             │    │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                       │                                         │
-│                                       ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                    SPECIALIST AGENT LAYER                                │   │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ │   │
-│  │  │ Strategy  │ │  Content  │ │ Analytics │ │ Execution │ │Automation │ │   │
-│  │  │   Agent   │ │   Agent   │ │   Agent   │ │   Agent   │ │   Agent   │ │   │
-│  │  └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘ │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                       │                                         │
-│                                       ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                    TOOL & INTEGRATION LAYER                              │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐    │   │
-│  │  │              MCP Server Pool (Lazy-Loaded)                       │    │   │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │    │   │
-│  │  │  │Analytics│ │   Ads   │ │  Email  │ │  Social │ │   CMS   │   │    │   │
-│  │  │  │ Servers │ │ Servers │ │ Servers │ │ Servers │ │ Servers │   │    │   │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘   │    │   │
-│  │  └─────────────────────────────────────────────────────────────────┘    │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐    │   │
-│  │  │              Automation Platform (n8n/ActivePieces)              │    │   │
-│  │  └─────────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       KEN-E AGENTIC HARNESS (Current)                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                  ORCHESTRATOR LAYER                            │     │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │     │
+│  │  │  KEN-E Root │  │   Context   │  │  Tool Registry      │   │     │
+│  │  │   Agent     │  │   Loader    │  │  (Discovery Index)  │   │     │
+│  │  │  (LlmAgent) │  │             │  │                     │   │     │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                │                                       │
+│                                ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                    SUB-AGENT LAYER                             │     │
+│  │  ┌───────────┐ ┌───────────┐ ┌───────────────────────────┐   │     │
+│  │  │   News    │ │  Google   │ │  Strategy Supervisor      │   │     │
+│  │  │   Agent   │ │ Analytics │ │  (multi-agent)            │   │     │
+│  │  │ [TRANSIT.]│ │   Agent   │ │                           │   │     │
+│  │  │           │ │ [TRANSIT.]│ │                           │   │     │
+│  │  └───────────┘ └───────────┘ └───────────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                │                                       │
+│                                ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │              TOOL & INTEGRATION LAYER                         │     │
+│  │  ┌───────────────────────────────────────────────────────┐   │     │
+│  │  │          MCP Servers (Lazy-Loaded via McpToolset)      │   │     │
+│  │  │  GA MCP (Cloud Run)                                    │   │     │
+│  │  └───────────────────────────────────────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 1.3.2 [PLANNED] Agentic Harness
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       KEN-E AGENTIC HARNESS (Target)                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                  ORCHESTRATOR LAYER                            │     │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │     │
+│  │  │  KEN-E Root │  │   Context   │  │  Tool Registry      │   │     │
+│  │  │   Agent     │  │   Loader    │  │  + tool_filter      │   │     │
+│  │  │  (LlmAgent) │  │             │  │                     │   │     │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                │                                       │
+│                                ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │              SPECIALIST LAYER (config-driven agent factory)   │     │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐    │     │
+│  │  │Analytics │ │ Content  │ │Execution │ │  Automation  │    │     │
+│  │  │Specialist│ │Specialist│ │Specialist│ │  Specialist  │    │     │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘    │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                │                                       │
+│                                ▼                                       │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │              TOOL & INTEGRATION LAYER                         │     │
+│  │  ┌───────────────────────────────────────────────────────┐   │     │
+│  │  │          MCP Servers (Lazy-Loaded via McpToolset)      │   │     │
+│  │  │  GA MCP | Google Ads MCP | HubSpot MCP | n8n MCP     │   │     │
+│  │  └───────────────────────────────────────────────────────┘   │     │
+│  │  ┌───────────────────────────────────────────────────────┐   │     │
+│  │  │          SDK Function Tools                            │   │     │
+│  │  │  Meta Ads (facebook-business) | Mailchimp SDK         │   │     │
+│  │  └───────────────────────────────────────────────────────┘   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.4 Key Design Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| **Lazy-load MCP servers** | Reduces initial context from ~60,000 tokens to ~2,000 tokens |
-| **Tool Discovery Agent** | Searches tool registry on-demand, loads only needed tools |
-| **Hierarchical summarization** | Company context compressed to ~15,000 tokens with drill-down capability |
-| **Embedded automation platform** | Scheduled tasks delegated to n8n, freeing orchestrator for interactive work |
-| **Specialist agents** | Domain-specific agents receive only relevant context and tools |
-| **Unified channel architecture** | Single agent system serves Web, Slack, and Voice channels |
+| Decision |
+|----------|
+| **Specialist routing for token budgets** — each specialist sees only its domain tools (~10-30), not all 400 |
+| **ADK native compaction** — `EventsCompactionConfig` with `gemini-2.5-flash` summarizer |
+| **`McpToolset` for MCP connections** — ADK handles lazy loading, connection pooling, per-user auth natively |
+| **SDK function tools for some platforms** — Meta Ads + Mailchimp use SDK directly |
+| **Firestore-driven agent config** — change instructions, model, temperature without redeployment |
+| **Config-driven agent factory** — Sprint 5-6: config-driven specialist assembly |
+| **ADK Skills for expertise delivery** — predefined skills shipped with product, custom skills created by users via UI |
+| **Vega-Lite artifacts for data visualization** — specialists produce Vega-Lite chart specs via `create_visualization()` tool; `ChatResponse` extended with `artifacts` field; agent suggests chart type, frontend can override |
+| **Gemini code execution for analytics** — Analytics Specialist uses Gemini's built-in code execution for reliable calculations (percentage changes, averages, trend analysis). No new infrastructure — Google-managed sandbox. |
+
+For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e).
 
 ### 1.5 Expected Outcomes
 
@@ -104,7 +154,7 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 | Initial context consumption | <20% of available context |
 | Tool discovery latency | <500ms |
 | Task completion rate | >95% |
-| Cross-channel feature parity | 100% (where technically feasible) |
+| Agent response (simple) | ~7-13s (measured) |
 
 ---
 
@@ -113,305 +163,229 @@ The design implements a **Hierarchical Agent Architecture with Dynamic Context L
 ### 2.1 System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT INTERFACES                                   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────────┐  │
-│   │  Web UI     │     │   Slack     │     │     Voice (Zoom/Teams/Meet)     │  │
-│   │app.ken-e.ai │     │   Bot       │     │         via Pipecat             │  │
-│   └──────┬──────┘     └──────┬──────┘     └───────────────┬─────────────────┘  │
-│          │                   │                            │                     │
-└──────────┼───────────────────┼────────────────────────────┼─────────────────────┘
-           │                   │                            │
-           └───────────────────┴────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           UNIFIED API GATEWAY                                    │
-│                                                                                  │
-│   ┌─────────────────────────────────────────────────────────────────────────┐  │
-│   │                    Channel Adapter Layer                                 │  │
-│   │  • Normalizes input from all channels                                   │  │
-│   │  • Manages authentication and session context                           │  │
-│   │  • Routes responses back to appropriate channel                         │  │
-│   └─────────────────────────────────────────────────────────────────────────┘  │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           AGENTIC HARNESS CORE                                   │
-│                         (Google Agent Development Kit)                           │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                     SESSION MANAGEMENT                                   │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │   │
-│  │  │   Session   │  │    State    │  │   Context   │  │   Memory    │    │   │
-│  │  │   Service   │  │   Manager   │  │   Loader    │  │   Service   │    │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                       │                                         │
-│                                       ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                     PRIMARY ORCHESTRATOR                                 │   │
-│  │                                                                          │   │
-│  │  • Interprets user intent                                                │   │
-│  │  • Routes to specialist agents                                           │   │
-│  │  • Manages multi-step workflows                                          │   │
-│  │  • Coordinates tool discovery                                            │   │
-│  │  • Handles errors and recovery                                           │   │
-│  │                                                                          │   │
-│  │  Tools: delegate_to_specialist, search_tools, load_context,              │   │
-│  │         create_automation, manage_workflow, ask_user                     │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                       │                                         │
-│           ┌───────────────────────────┼───────────────────────────┐            │
-│           │                           │                           │            │
-│           ▼                           ▼                           ▼            │
-│  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐        │
-│  │    STRATEGY     │      │    CONTENT      │      │   ANALYTICS     │        │
-│  │   SPECIALIST    │      │   SPECIALIST    │      │   SPECIALIST    │        │
-│  │                 │      │                 │      │                 │        │
-│  │ • Research      │      │ • Blog posts    │      │ • Data queries  │        │
-│  │ • ICP creation  │      │ • Social posts  │      │ • Visualizations│        │
-│  │ • Competitor    │      │ • Email copy    │      │ • Forecasting   │        │
-│  │   analysis      │      │ • Video scripts │      │ • Attribution   │        │
-│  │ • Campaign      │      │ • Landing pages │      │ • Reporting     │        │
-│  │   planning      │      │                 │      │                 │        │
-│  └─────────────────┘      └─────────────────┘      └─────────────────┘        │
-│           │                           │                           │            │
-│           ▼                           ▼                           ▼            │
-│  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐        │
-│  │   EXECUTION     │      │   AUTOMATION    │      │   INTEGRATION   │        │
-│  │   SPECIALIST    │      │   SPECIALIST    │      │   SPECIALIST    │        │
-│  │                 │      │                 │      │                 │        │
-│  │ • Deploy content│      │ • Create flows  │      │ • Configure     │        │
-│  │ • Publish posts │      │ • Schedule jobs │      │   integrations  │        │
-│  │ • Send emails   │      │ • Monitor runs  │      │ • Test          │        │
-│  │ • Update CMS    │      │ • Handle errors │      │   connections   │        │
-│  │                 │      │                 │      │ • Sync data     │        │
-│  └─────────────────┘      └─────────────────┘      └─────────────────┘        │
-│                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           DATA & INTEGRATION LAYER                               │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐           │
-│  │     Neo4j         │  │    Firestore      │  │    BigQuery       │           │
-│  │  Knowledge Graph  │  │   User Data &     │  │    Analytics      │           │
-│  │                   │  │   Configurations  │  │    Warehouse      │           │
-│  └───────────────────┘  └───────────────────┘  └───────────────────┘           │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                    MCP SERVER REGISTRY                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐    │   │
-│  │  │  Tool Index (~2,000 tokens)                                      │    │   │
-│  │  │  • Tool names, descriptions, categories                          │    │   │
-│  │  │  • Trigger keywords for on-demand loading                        │    │   │
-│  │  └─────────────────────────────────────────────────────────────────┘    │   │
-│  │                                                                          │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐    │   │
-│  │  │  MCP Server Pool (Lazy-Loaded)                                   │    │   │
-│  │  │                                                                  │    │   │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │    │   │
-│  │  │  │ Google  │ │ Google  │ │ Google  │ │  Meta   │ │LinkedIn │   │    │   │
-│  │  │  │Analytics│ │  Ads    │ │ Search  │ │  Ads    │ │  Ads    │   │    │   │
-│  │  │  │   MCP   │ │   MCP   │ │ Console │ │   MCP   │ │   MCP   │   │    │   │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘   │    │   │
-│  │  │                                                                  │    │   │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │    │   │
-│  │  │  │Mailchimp│ │ HubSpot │ │Salesforce│ │  Shopify│ │ Notion  │   │    │   │
-│  │  │  │   MCP   │ │   MCP   │ │   MCP   │ │   MCP   │ │   MCP   │   │    │   │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘   │    │   │
-│  │  │                                                                  │    │   │
-│  │  │  ... (20-40 total MCP servers per account)                       │    │   │
-│  │  └─────────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                    AUTOMATION PLATFORM (n8n)                             │   │
-│  │  • Scheduled content deployment                                         │   │
-│  │  • Report generation workflows                                          │   │
-│  │  • Performance monitoring jobs                                          │   │
-│  │  • Content calendar management                                          │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          CLIENT INTERFACES                               │
+│                                                                         │
+│   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐     │
+│   │  Web UI     │     │   Slack     │     │     Voice           │     │
+│   │app.ken-e.ai │     │ [PLANNED]  │     │   [PLANNED]         │     │
+│   └──────┬──────┘     └──────┬──────┘     └─────────┬───────────┘     │
+└──────────┼───────────────────┼──────────────────────┼─────────────────┘
+           │                   │                      │
+           └───────────────────┴──────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    FASTAPI (Cloud Run)                                   │
+│                                                                         │
+│   POST /api/v1/chat/completions                                        │
+│   • Firebase Auth validation                                           │
+│   • Session management (pending → ADK session resolution)              │
+│   • Platform credential injection into session state (OAuth, API keys) │
+│   • Background post-response writes (session preview + Redis)          │
+│                                                                         │
+└──────────────────────────────────┬──────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                 VERTEX AI AGENT ENGINE                                   │
+│                                                                         │
+│   KEN-E Root Agent (LlmAgent)                                          │
+│   ├── InstructionProvider (org context from session state)              │
+│   ├── Firestore config (model, instruction, temperature)               │
+│   ├── Weave callbacks (before/after agent, after tool)                 │
+│   ├── Security hooks (before tool — credential refresh, permissions)   │
+│   │                                                                     │
+│   ├── News Agent (LlmAgent) [TRANSITIONAL → Automation Specialist + Skill]│
+│   ├── Strategy Supervisor (multi-agent)                                 │
+│   └── [PLANNED] Specialist Agents (config-driven via agent factory)    │
+│       ├── Analytics Specialist (GA MCP, Google Ads MCP, Meta Ads reads)│
+│       ├── Content Specialist (HubSpot MCP, Mailchimp SDK)              │
+│       ├── Execution Specialist (Meta Ads SDK r/w, Google Ads MCP)      │
+│       └── Automation Specialist (n8n MCP)                              │
+│                                                                         │
+│   EventsCompactionConfig: interval=5, overlap=1, threshold=50K tokens  │
+│   ContextCacheConfig: enabled                                          │
+│   ReflectAndRetryToolPlugin: enabled                                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+              ┌────────────────────┼────────────────────┐
+              │                    │                    │
+              ▼                    ▼                    ▼
+       ┌───────────┐        ┌───────────┐        ┌───────────────────┐
+       │  Neo4j    │        │ Firestore │        │   MCP Servers     │
+       │ Knowledge │        │  Config,  │        │  (Cloud Run)      │
+       │   Graph   │        │   State   │        │  GA, Ads, HubSpot │
+       └───────────┘        └───────────┘        └───────────────────┘
 ```
 
 ### 2.2 Component Responsibilities
 
-#### 2.2.1 Orchestrator Layer
-
 | Component | Responsibility |
 |-----------|----------------|
-| **Primary Orchestrator Agent** | Main LLM agent that interprets user intent, routes to specialists, manages conversations |
-| **Context Manager** | Loads and manages hierarchical company context, handles drill-down requests |
-| **Tool Discovery Agent** | Searches tool registry, loads MCP servers on-demand, manages tool lifecycle |
-| **Workflow Router** | Determines if task requires immediate execution, scheduled automation, or multi-step workflow |
+| **KEN-E Root Agent** | LlmAgent that interprets user intent, routes via function tools to sub-agents |
+| **InstructionProvider** | Closure that injects org context from session state on each LLM turn |
+| **Agent Registry** | Lazy-loading registry with Firestore config doc IDs and capability search |
+| **HierarchicalContextManager** | 3-level context loading from Neo4j with token budgeting |
+| **ToolRegistry** | Searchable metadata catalog (~2,000 token index) for tool discovery |
+| **Dispatch Handlers** | Function tool implementations with Weave tracing and tenant context injection |
 
-#### 2.2.2 Specialist Agent Layer
-
-| Agent | Domain | Key Capabilities |
-|-------|--------|------------------|
-| **Strategy Specialist** | Marketing strategy | Research, ICP creation, competitor analysis, campaign planning |
-| **Content Specialist** | Content creation | Blog posts, social media, email copy, video scripts, landing pages |
-| **Analytics Specialist** | Data analysis | Queries, visualizations, forecasting, attribution, reporting |
-| **Execution Specialist** | Campaign deployment | Publish content, send emails, update CMS, manage ads |
-| **Automation Specialist** | Workflow automation | Create n8n flows, schedule jobs, monitor executions |
-| **Integration Specialist** | Platform connections | Configure integrations, test connections, sync data |
-
-#### 2.2.3 Data & Integration Layer
-
-| Component | Purpose |
-|-----------|---------|
-| **Neo4j Knowledge Graph** | Stores company strategy, ICPs, products, competitors, relationships |
-| **Firestore** | User configurations, session state, agent configs, approval queues |
-| **BigQuery** | Analytics data warehouse, historical performance, reporting |
-| **MCP Server Registry** | Tool index with metadata, lazy-loading configuration |
-| **MCP Server Pool** | Actual MCP server connections, loaded on-demand |
-| **Automation Platform (n8n)** | Executes scheduled tasks, manages long-running workflows |
+For detailed patterns of each component listed above, see [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Sections 2-6.
 
 ### 2.3 Request Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           REQUEST PROCESSING FLOW                                │
-└─────────────────────────────────────────────────────────────────────────────────┘
+#### 2.3.1 Current Request Flow (March 11, 2026)
 
-User Request: "Analyze our Google Ads performance and create a report"
+```
+User Request: "Show me website traffic for last week"
 
     ┌─────────────┐
-    │   User      │
-    │   Input     │
+    │   Web UI    │
     └──────┬──────┘
            │
            ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 1. CHANNEL ADAPTER                                                   │
-    │    • Normalize input format                                          │
-    │    • Attach session context (account_id, user_id)                   │
-    │    • Route to orchestrator                                           │
-    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────┐
+    │ 1. FASTAPI (Cloud Run)                                   │
+    │    • Validate Firebase Auth token                        │
+    │    • Resolve session (pending_* → ADK session)           │
+    │    • Inject GA credentials into session state            │
+    │    • Forward to Agent Engine                             │
+    └─────────────────────────────────────────────────────────┘
            │
            ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 2. SESSION MANAGER                                                   │
-    │    • Load/create session state                                       │
-    │    • Retrieve conversation history                                   │
-    │    • Load hierarchical company context summary (~15k tokens)         │
-    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────┐
+    │ 2. KEN-E ROOT AGENT                                      │
+    │    • InstructionProvider loads org context from state    │
+    │    • LLM interprets intent: "analytics" + "traffic"     │
+    │    • Calls query_google_analytics(query)                 │
+    └─────────────────────────────────────────────────────────┘
            │
            ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 3. PRIMARY ORCHESTRATOR                                              │
-    │    • Parse intent: "analytics" + "google ads" + "report"            │
-    │    • Check loaded tools → Google Ads MCP not loaded                  │
-    │    • Decision: Need to load tools and delegate to Analytics Agent   │
-    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────┐
+    │ 3. DISPATCH TO GA AGENT                                  │
+    │    • dispatch_to_google_analytics() in dispatch_handlers │
+    │    • Injects GA credentials from session state           │
+    │    • @safe_weave_op() records trace                      │
+    │    • GA Agent uses McpToolset → GA MCP Server            │
+    │    • MCP server queries GA4 API                          │
+    └─────────────────────────────────────────────────────────┘
            │
            ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 4. TOOL DISCOVERY AGENT                                              │
-    │    • Search tool index for "google ads" keywords                     │
-    │    • Find: google_ads_mcp (10 tools)                                │
-    │    • Load MCP server connection                                      │
-    │    • Return tool schemas to orchestrator                             │
-    └─────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 5. DELEGATE TO ANALYTICS SPECIALIST                                  │
-    │    • Transfer task: "Analyze Google Ads performance"                │
-    │    • Provide: google_ads tools + company context summary            │
-    │    • Analytics Agent executes:                                       │
-    │      - get_campaign_performance()                                    │
-    │      - get_keyword_stats()                                           │
-    │      - analyze_trends()                                              │
-    └─────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 6. CONTENT GENERATION                                                │
-    │    • Analytics Agent generates report with insights                 │
-    │    • Includes visualizations, recommendations                        │
-    │    • Returns to Orchestrator                                         │
-    └─────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │ 7. RESPONSE DELIVERY                                                 │
-    │    • Format response for channel (Web/Slack/Voice)                  │
-    │    • Save to session state                                           │
-    │    • Update conversation history                                     │
-    │    • Deliver to user                                                 │
-    └─────────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-    ┌─────────────┐
-    │   User      │
-    │  Response   │
-    └─────────────┘
+    ┌─────────────────────────────────────────────────────────┐
+    │ 4. RESPONSE                                              │
+    │    • GA Agent returns formatted analytics data           │
+    │    • KEN-E relays to user                                │
+    │    • Background: update session preview + Redis cache    │
+    └─────────────────────────────────────────────────────────┘
 ```
+
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 3 for the dispatch pattern implementation.
+
+#### 2.3.2 [PLANNED] Request Flow (Sprint 5-6+)
+
+```
+User Request: "Show me last week's traffic and top-performing ad campaigns"
+
+    ┌─────────────┐
+    │   Web UI    │
+    └──────┬──────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 1. FASTAPI (Cloud Run)                                   │
+    │    • Validate Firebase Auth token                        │
+    │    • Resolve session (pending_* → ADK session)           │
+    │    • Inject platform credentials into session state      │
+    │    • Forward to Agent Engine                             │
+    └─────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 2. KEN-E ROOT AGENT                                      │
+    │    • InstructionProvider loads org context from state    │
+    │    • LLM interprets intent: "analytics" + "advertising" │
+    │    • Generates acceptance criteria for the request       │
+    │    • Routes to Analytics Specialist with criteria        │
+    └─────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 3. REVIEW LOOP (LoopAgent, max_iterations=3)             │
+    │    Repeats until reviewer approves or iterations exhaust │
+    │                                                          │
+    │    ┌────────────────────────────────────────────────┐    │
+    │    │ 3a. ANALYTICS SPECIALIST (output_key="draft")  │    │
+    │    │    • Assembled by agent factory                 │    │
+    │    │    • tool_filter selects relevant tools         │    │
+    │    │    • McpToolset → GA MCP (traffic data)         │    │
+    │    │    • McpToolset → Google Ads MCP (campaigns)    │    │
+    │    │    • create_visualization() for data charts     │    │
+    │    │    • Reads {review_feedback} if prior iteration │    │
+    │    └────────────────────────────────────────────────┘    │
+    │                        │                                 │
+    │                        ▼                                 │
+    │    ┌────────────────────────────────────────────────┐    │
+    │    │ 3b. REVIEWER (output_key="review_feedback")    │    │
+    │    │    • Evaluates {draft} vs acceptance criteria   │    │
+    │    │    • ALL criteria met → call exit_loop          │    │
+    │    │    • ANY not met → write actionable feedback    │    │
+    │    └────────────────────────────────────────────────┘    │
+    └─────────────────────────────────────────────────────────┘
+           │
+           ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │ 4. RESPONSE                                              │
+    │    • Approved draft extracted from session state         │
+    │    • Artifacts extracted from response_artifacts state   │
+    │    • ChatResponse includes content + artifacts field     │
+    │    • KEN-E relays to user                                │
+    │    • Background: update session preview + Redis cache    │
+    └─────────────────────────────────────────────────────────┘
+```
+
+See Section 4.6 for the review loop pattern design and Section 8.1 for multi-step workflow application.
+
+> **Transitional note:** The current request flow dispatches directly to the Google Analytics Agent and Company News Agent. These agents are `[TRANSITIONAL]` — GA queries will route to the Analytics Specialist when the specialist layer is built (Section 4.4). Company news will transition to a scheduled automation (Automation Specialist) plus a predefined `research-company-news` Skill (Section 6).
 
 ### 2.4 Agent Type Selection (Google ADK)
 
-Based on Google ADK capabilities, we use the following agent types:
-
-| Agent | ADK Type | Rationale |
-|-------|----------|-----------|
-| **Primary Orchestrator** | `LlmAgent` | Needs flexible reasoning, dynamic routing |
-| **Tool Discovery** | `LlmAgent` | Semantic search requires LLM understanding |
-| **Strategy Specialist** | `LlmAgent` | Creative reasoning for strategy development |
-| **Content Specialist** | `LlmAgent` | Creative content generation |
-| **Analytics Specialist** | `SequentialAgent` containing `LlmAgent` | Structured: query → analyze → visualize → report |
-| **Execution Specialist** | `SequentialAgent` | Ordered steps: validate → execute → verify |
-| **Automation Specialist** | `LlmAgent` | Flexible workflow design |
-| **Multi-Step Workflows** | `LoopAgent` containing specialists | Iterate until completion or user approval |
+| Agent | ADK Type | Status | Successor |
+|-------|----------|--------|-----------|
+| **KEN-E Root** | `LlmAgent` | Implemented | — |
+| **Company News** | `LlmAgent` | Implemented `[TRANSITIONAL]` | Automation Specialist + `research-company-news` Skill |
+| **Google Analytics** | `LlmAgent` + `McpToolset` | Implemented `[TRANSITIONAL]` | Analytics Specialist |
+| **Strategy Supervisor** | Multi-agent (custom) | Implemented | — |
+| **Analytics Specialist** | `LlmAgent` | [PLANNED] | — |
+| **Content Specialist** | `LlmAgent` | [PLANNED] | — |
+| **Execution Specialist** | `LlmAgent` | [PLANNED] | — |
+| **Automation Specialist** | `LlmAgent` | [PLANNED] | — |
 
 ---
 
 ## 3. Context Management Strategy
+
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge) — Release 1.1
 
 ### 3.1 The Context Challenge
 
 KEN-E faces an unprecedented context management challenge:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         CONTEXT BUDGET ANALYSIS                                  │
-│                      (Based on 200,000 token context window)                    │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  NAIVE APPROACH (No Optimization):                                               │
-│  ─────────────────────────────────                                               │
-│  Company knowledge graph (100k words)     ≈ 133,000 tokens  (66.5%)             │
-│  Tool definitions (400 tools × 150 avg)   ≈  60,000 tokens  (30.0%)             │
-│  System prompts & instructions            ≈   5,000 tokens  ( 2.5%)             │
-│  ───────────────────────────────────────────────────────────────────            │
-│  TOTAL BEFORE CONVERSATION                ≈ 198,000 tokens  (99.0%)             │
-│                                                                                  │
-│  Available for conversation               ≈   2,000 tokens  ( 1.0%)  ❌         │
-│                                                                                  │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  OPTIMIZED APPROACH (With DCL):                                                  │
-│  ──────────────────────────────                                                  │
-│  Hierarchical context summary             ≈  15,000 tokens  ( 7.5%)             │
-│  Tool registry index                      ≈   2,000 tokens  ( 1.0%)             │
-│  System prompts & instructions            ≈   5,000 tokens  ( 2.5%)             │
-│  Active tools (loaded on-demand)          ≈   5,000 tokens  ( 2.5%)             │
-│  ───────────────────────────────────────────────────────────────────            │
-│  TOTAL BEFORE CONVERSATION                ≈  27,000 tokens  (13.5%)             │
-│                                                                                  │
-│  Available for conversation               ≈ 173,000 tokens  (86.5%)  ✅         │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+NAIVE APPROACH (No Optimization):
+  Company knowledge graph (100k words)     ~ 133,000 tokens  (66.5%)
+  Tool definitions (400 tools x 150 avg)   ~  60,000 tokens  (30.0%)
+  System prompts & instructions            ~   5,000 tokens  ( 2.5%)
+  TOTAL BEFORE CONVERSATION                ~ 198,000 tokens  (99.0%)
+  Available for conversation               ~   2,000 tokens  ( 1.0%)
+
+OPTIMIZED APPROACH (With HCL + Specialist Routing):
+  Hierarchical context summary             ~  15,000 tokens  ( 7.5%)
+  Tool registry index                      ~   2,000 tokens  ( 1.0%)
+  System prompts & instructions            ~   5,000 tokens  ( 2.5%)
+  Active tools (loaded on-demand)          ~   5,000 tokens  ( 2.5%)
+  TOTAL BEFORE CONVERSATION                ~  27,000 tokens  (13.5%)
+  Available for conversation               ~ 173,000 tokens  (86.5%)
 ```
 
 ### 3.2 Hierarchical Context Loading (HCL)
@@ -419,3344 +393,1453 @@ KEN-E faces an unprecedented context management challenge:
 The company knowledge graph is organized into a three-level hierarchy:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                    HIERARCHICAL CONTEXT LOADING                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
 LEVEL 1: EXECUTIVE SUMMARY (~5,000 tokens) - Always Loaded
-─────────────────────────────────────────────────────────────
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ Company: Acme Corp                                                               │
-│ Industry: B2B SaaS - Marketing Technology                                        │
-│ Mission: Help marketing teams optimize performance through AI                    │
-│                                                                                  │
-│ Products: 3 main products (MarketingAI Suite, Analytics Pro, ContentBot)        │
-│ ICPs: 4 customer profiles (Enterprise CMO, Mid-Market Director, Agency, SMB)    │
-│ Competitors: 5 main competitors (Competitor A, B, C, D, E)                       │
-│                                                                                  │
-│ Current Focus: Q1 2026 - Increase enterprise pipeline by 40%                    │
-│ Active Campaigns: 3 (Enterprise ABM, Product Launch, Brand Awareness)           │
-│ Key KPIs: MQLs, Pipeline Value, CAC, LTV, NPS                                   │
-│                                                                                  │
-│ Available Detail Sections: [products] [icps] [competitors] [campaigns]          │
-│                           [strategies] [brand] [performance] [calendar]         │
-└─────────────────────────────────────────────────────────────────────────────────┘
+  Company overview, mission, products, ICPs, competitors, active campaigns,
+  current focus, key KPIs
 
-LEVEL 2: SECTION SUMMARIES (~10,000 tokens each) - Loaded on Request
-─────────────────────────────────────────────────────────────────────────
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ [products] Product Portfolio Summary                                             │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│ MARKETINGAI SUITE                                                                │
-│ • Primary offering: End-to-end marketing automation platform                    │
-│ • Target: Enterprise marketing teams (500+ employees)                           │
-│ • Key features: AI content generation, campaign orchestration, analytics        │
-│ • Pricing: $50,000-$200,000/year                                                │
-│ • Differentiators: Native AI, single platform, enterprise security              │
-│ • Value proposition: "Reduce marketing ops time by 60%"                         │
-│                                                                                  │
-│ ANALYTICS PRO                                                                    │
-│ • Secondary offering: Marketing analytics and attribution                        │
-│ • Target: Mid-market companies (100-500 employees)                              │
-│ • Key features: Multi-touch attribution, predictive analytics, dashboards       │
-│ • Pricing: $15,000-$50,000/year                                                 │
-│ • Differentiators: ML-powered attribution, real-time insights                   │
-│                                                                                  │
-│ CONTENTBOT                                                                       │
-│ • Entry offering: AI content generation tool                                    │
-│ • Target: SMBs and individual marketers                                         │
-│ • Key features: Blog posts, social media, email copy                            │
-│ • Pricing: $99-$499/month                                                       │
-│                                                                                  │
-│ Available Detail: [marketingai_full] [analytics_full] [contentbot_full]         │
-└─────────────────────────────────────────────────────────────────────────────────┘
+LEVEL 2: SECTION SUMMARIES (~10,000 tokens each) - Agent-Driven Loading
+  [products] [icps] [competitors] [campaigns] [strategies] [brand]
+  [performance] [calendar]
+  Loaded via `load_context_section(section)` tool — agent decides when needed
 
-LEVEL 3: FULL DETAIL (~20,000+ tokens each) - Loaded for Specific Tasks
-─────────────────────────────────────────────────────────────────────────
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│ [marketingai_full] MarketingAI Suite - Complete Documentation                   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│ FULL PRODUCT SPECIFICATION                                                       │
-│ • Complete feature list with technical details                                  │
-│ • Integration capabilities (50+ integrations)                                   │
-│ • Implementation requirements and timeline                                       │
-│ • Security certifications (SOC 2, GDPR, HIPAA)                                  │
-│ • API documentation summary                                                      │
-│                                                                                  │
-│ POSITIONING & MESSAGING                                                          │
-│ • Primary messaging framework                                                    │
-│ • Competitive positioning matrix                                                 │
-│ • Objection handling guide                                                       │
-│ • Case studies and proof points                                                  │
-│                                                                                  │
-│ SALES ENABLEMENT                                                                 │
-│ • Ideal customer profile details                                                │
-│ • Buying process and stakeholders                                               │
-│ • Pricing and packaging details                                                  │
-│ • ROI calculator inputs                                                          │
-│ • Implementation success metrics                                                 │
-│                                                                                  │
-│ MARKETING STRATEGIES                                                             │
-│ • Problem awareness strategies                                                   │
-│ • Brand awareness strategies                                                     │
-│ • Consideration strategies                                                       │
-│ • Conversion strategies                                                          │
-│ • Loyalty strategies                                                             │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+LEVEL 3: FULL DETAIL (~20,000+ tokens each) - Agent-Driven Loading
+  Complete documentation for individual entities
+  Loaded via same tool with detail level parameter
 ```
 
 ### 3.3 Context Loading Implementation
 
+The `HierarchicalContextManager` at `app/adk/agents/utils/context_loader.py` implements the 3-level hierarchy:
+
 ```python
 class HierarchicalContextManager:
+    """Manages hierarchical loading of company context to optimize token usage.
+
+    Implements 3-level hierarchy:
+    - Level 1: Executive Summary (~5,000 tokens) - Always loaded
+    - Level 2: Section Summaries (~10,000 tokens each) - Loaded on request
+    - Level 3: Full Detail (~20,000 tokens each) - Loaded for specific tasks
     """
-    Manages hierarchical loading of company context to optimize token usage.
-    """
 
-    def __init__(self, account_id: str, neo4j_client: Neo4jClient):
-        self.account_id = account_id
-        self.neo4j = neo4j_client
-        self.loaded_sections: Dict[str, str] = {}
-        self.token_budget = 40000  # Max tokens for context
-
-    async def load_executive_summary(self) -> str:
-        """
-        Load Level 1 context - always loaded at session start.
-        Target: ~5,000 tokens
-        """
-        query = """
-        MATCH (a:Account {id: $account_id})
-        OPTIONAL MATCH (a)-[:HAS_PRODUCT]->(p:Product)
-        OPTIONAL MATCH (a)-[:HAS_ICP]->(i:ICP)
-        OPTIONAL MATCH (a)-[:HAS_COMPETITOR]->(c:Competitor)
-        OPTIONAL MATCH (a)-[:HAS_CAMPAIGN]->(camp:Campaign {status: 'active'})
-        RETURN a, collect(DISTINCT p.name) as products,
-               collect(DISTINCT i.name) as icps,
-               collect(DISTINCT c.name) as competitors,
-               collect(DISTINCT camp.name) as campaigns
-        """
-        result = await self.neo4j.execute(query, {"account_id": self.account_id})
-        return self._format_executive_summary(result)
-
-    async def load_section(self, section_name: str) -> str:
-        """
-        Load Level 2 context - section summary.
-        Target: ~10,000 tokens per section
-        """
-        if section_name in self.loaded_sections:
-            return self.loaded_sections[section_name]
-
-        section_loaders = {
-            "products": self._load_products_summary,
-            "icps": self._load_icps_summary,
-            "competitors": self._load_competitors_summary,
-            "campaigns": self._load_campaigns_summary,
-            "strategies": self._load_strategies_summary,
-            "brand": self._load_brand_summary,
-            "performance": self._load_performance_summary,
-            "calendar": self._load_calendar_summary,
-        }
-
-        if section_name not in section_loaders:
-            raise ValueError(f"Unknown section: {section_name}")
-
-        content = await section_loaders[section_name]()
-        self.loaded_sections[section_name] = content
-        return content
-
-    async def load_detail(self, detail_key: str) -> str:
-        """
-        Load Level 3 context - full detail for specific entity.
-        Target: ~20,000+ tokens
-        """
-        # Parse detail key (e.g., "marketingai_full" -> product detail)
-        entity_type, entity_id = self._parse_detail_key(detail_key)
-
-        if entity_type == "product":
-            return await self._load_product_full(entity_id)
-        elif entity_type == "icp":
-            return await self._load_icp_full(entity_id)
-        elif entity_type == "competitor":
-            return await self._load_competitor_full(entity_id)
-        elif entity_type == "campaign":
-            return await self._load_campaign_full(entity_id)
-        else:
-            raise ValueError(f"Unknown detail type: {entity_type}")
-
-    def get_current_token_usage(self) -> int:
-        """Calculate current context token usage."""
-        total = 0
-        for content in self.loaded_sections.values():
-            total += self._estimate_tokens(content)
-        return total
-
-    def can_load_section(self, section_name: str, estimated_tokens: int) -> bool:
-        """Check if loading a section would exceed budget."""
-        current = self.get_current_token_usage()
-        return (current + estimated_tokens) <= self.token_budget
-
-    async def unload_section(self, section_name: str) -> None:
-        """Unload a section to free up token budget."""
-        if section_name in self.loaded_sections:
-            del self.loaded_sections[section_name]
+    MAX_EXECUTIVE_TOKENS: ClassVar[int] = 5_000
+    MAX_SECTION_TOKENS: ClassVar[int] = 10_000
+    MAX_DETAIL_TOKENS: ClassVar[int] = 20_000
 ```
+
+**Implementation status:**
+- Level 1 (Executive Summary): Implemented — loads org + brand context from Neo4j
+- Level 2 (Section Summaries): Partially implemented — campaign context loading exists but needs migration from keyword detection to agent-driven approach
+- Level 3 (Full Detail): Not yet implemented
+
+The canonical Neo4j query for org context is defined in `shared/context_utils.py` (`ORG_CONTEXT_QUERY`), shared between the API and agent layers.
+
+> **Revised March 11, 2026** — Keyword detection replaced with agent-driven loading via `load_context_section(section)` tool. See [Decision 17: Context Management](https://www.notion.so/32030fd6530281dca919d68aa0e27094) for rationale.
 
 ### 3.4 Context-Aware Agent Instructions
 
-The Primary Orchestrator includes instructions for context management:
+The KEN-E root agent uses an `InstructionProvider` pattern (see `app/adk/agents/ken_e_agent.py`):
 
 ```python
-ORCHESTRATOR_CONTEXT_INSTRUCTIONS = """
-## Context Management
-
-You have access to a hierarchical company knowledge base. Context is loaded
-in three levels to optimize performance:
-
-### Level 1: Executive Summary (Always Available)
-You always have access to a high-level summary of the company including:
-- Company overview and mission
-- List of products, ICPs, competitors, and active campaigns
-- Current focus and key KPIs
-
-### Level 2: Section Summaries (Load on Request)
-Use the `load_context` tool to load detailed summaries of specific areas:
-- [products] - Product portfolio with features, pricing, positioning
-- [icps] - Ideal customer profiles with pain points, messaging
-- [competitors] - Competitive analysis and positioning
-- [campaigns] - Active campaign details and performance
-- [strategies] - Marketing strategies by funnel stage
-- [brand] - Brand guidelines, voice, messaging
-- [performance] - Historical performance data and trends
-- [calendar] - Content calendar and scheduled activities
-
-### Level 3: Full Detail (Load for Specific Tasks)
-When you need complete information about a specific entity, load the full
-detail using the detail key (e.g., [marketingai_full], [enterprise_cmo_full]).
-
-### Context Management Rules
-1. ALWAYS check the executive summary first - it may have enough information
-2. Only load sections when the task specifically requires that information
-3. Unload sections when moving to unrelated tasks to free context budget
-4. When in doubt, ask the user which area they want to explore
-5. Monitor your context usage - you have ~40,000 tokens for company context
-
-### Example Workflow
-User: "Help me create content for our enterprise customers"
-
-1. Check executive summary → See "Enterprise CMO" is an ICP
-2. Load [icps] section → Get summary of all ICPs
-3. Load [enterprise_cmo_full] → Get complete ICP details for content creation
-4. Generate content using the detailed context
-5. Unload full detail when moving to next task
-"""
+def _make_instruction_provider(base_instruction: str) -> Callable[[ReadonlyContext], str]:
+    """Create a closure-based InstructionProvider."""
+    def instruction_provider(context: ReadonlyContext) -> str:
+        org_context = context.state.get("organization_context")
+        if org_context:
+            return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{base_instruction}"
+        return base_instruction
+    return instruction_provider
 ```
 
-### 3.5 Dynamic Context Compression
+This is called on every LLM turn, reading organization context from session state (stored at session creation time — no DB call per turn).
 
-For long-running sessions, implement automatic context compression:
+### 3.5 Session Compaction (ADK Native)
+
+Long-running sessions are automatically compacted using ADK's `EventsCompactionConfig`, configured in `app/adk/deploy_ken_e.py`:
 
 ```python
-class ContextCompressor:
-    """
-    Compresses conversation history and loaded context when approaching limits.
-    """
-
-    def __init__(self, max_tokens: int = 180000):
-        self.max_tokens = max_tokens
-        self.compression_threshold = 0.8  # Compress at 80% capacity
-
-    async def check_and_compress(
-        self,
-        session: Session,
-        context_manager: HierarchicalContextManager
-    ) -> None:
-        """
-        Check token usage and compress if needed.
-        """
-        current_usage = self._calculate_total_usage(session, context_manager)
-
-        if current_usage > (self.max_tokens * self.compression_threshold):
-            await self._compress_session(session, context_manager)
-
-    async def _compress_session(
-        self,
-        session: Session,
-        context_manager: HierarchicalContextManager
-    ) -> None:
-        """
-        Compress session to free up tokens.
-        """
-        # 1. Summarize old conversation turns
-        conversation_summary = await self._summarize_conversation(
-            session.messages[:-10]  # Keep last 10 messages intact
-        )
-
-        # 2. Replace old messages with summary
-        session.messages = [
-            {"role": "system", "content": f"Previous conversation summary:\n{conversation_summary}"},
-            *session.messages[-10:]
-        ]
-
-        # 3. Unload unused context sections
-        recently_used = self._get_recently_used_sections(session)
-        for section in context_manager.loaded_sections.keys():
-            if section not in recently_used:
-                await context_manager.unload_section(section)
-
-        # 4. Log compression event for monitoring
-        logger.info(f"Session compressed: {current_usage} → {new_usage} tokens")
-
-    async def _summarize_conversation(self, messages: List[Dict]) -> str:
-        """
-        Use LLM to create a summary of older conversation turns.
-        """
-        summary_prompt = """
-        Summarize the following conversation, preserving:
-        1. Key decisions made
-        2. Important information gathered
-        3. Tasks completed or in progress
-        4. User preferences expressed
-
-        Be concise but complete. This summary will replace the full conversation.
-        """
-
-        # Use fast model for summarization
-        response = await self.summarization_model.generate(
-            prompt=summary_prompt,
-            context=messages
-        )
-        return response.text
+compaction_summarizer = LlmEventSummarizer(
+    llm=Gemini(model="gemini-2.5-flash")
+)
+compaction_config = EventsCompactionConfig(
+    summarizer=compaction_summarizer,
+    compaction_interval=5,        # Compact every 5 user invocations
+    overlap_size=1,               # Include 1 prior invocation for context continuity
+    token_threshold=50000,        # Also compact when session exceeds 50K tokens
+    event_retention_size=10,      # Keep last 10 raw events un-compacted
+)
 ```
 
-### 3.6 Context State Management (ADK Integration)
+ADK handles summarization, retention, and token budgeting natively. See [Decision 18: Session Compaction](https://www.notion.so/32030fd65302811dbc29f1c34dd46eab).
 
-Using Google ADK's state management with proper prefixes:
+### 3.6 Session State Management
 
-```python
-# State key prefixes for context management
-STATE_KEYS = {
-    # Session-specific (cleared on session end)
-    "loaded_sections": "loaded_sections",           # List of loaded Level 2 sections
-    "loaded_details": "loaded_details",             # List of loaded Level 3 details
-    "context_token_usage": "context_token_usage",   # Current context token count
+ADK session state carries per-session data that the API, agents, and security hooks read and write at runtime. The API layer (`api/src/kene_api/routers/chat.py`) initialises state at session creation; agents and hooks may update it mid-session.
 
-    # User-level (persists across sessions)
-    "user:preferred_sections": "user:preferred_sections",  # Sections user frequently uses
-    "user:context_preferences": "user:context_preferences", # User's context loading prefs
+#### 3.6.1 Current Session State Keys
 
-    # App-level (global)
-    "app:default_sections": "app:default_sections",  # Default sections to load
-}
+| Key | Purpose | Set By | Read By |
+|-----|---------|--------|---------|
+| `user_id` | Authenticated user identifier | API at session creation | Security hooks, tracking callbacks |
+| `account_id` | Selected account identifier | API at session creation | Dispatch handlers |
+| `accessible_accounts` | Accounts the user can access | API at session creation | — |
+| `organization_context` | Org + brand context text from Neo4j | API at session creation (cached in Redis, 15-min TTL) | InstructionProvider (per-turn), dispatch handlers |
+| `ga_credentials` | Google Analytics OAuth tokens (access, refresh, tenant, properties, expiry) | API from Firebase Auth (cached in Redis, 10-min TTL) | GA dispatch handler, security hooks |
+| `campaign_context` | Campaign context text (when loaded) | Context loader | Dispatch handlers |
+| `connected_accounts` | User's connected platform account types | API at session creation | Tool discovery filtering |
+| `uploaded_strategy_documents` | Strategy input documents loaded mid-session | Strategy orchestrator | Strategy orchestrator |
+| `_tool_start_time` | Tool execution start timestamp | `adk_before_tool_callback` | `adk_after_tool_callback` |
+| `_requires_reauth` | Flag: user must re-authenticate | Security hooks (permission denied) | API response handler (then cleared) |
+| `_reauth_service` | Service name requiring re-auth | Security hooks | API response handler (then cleared) |
 
-class ContextStateManager:
-    """
-    Manages context state using ADK's state management.
-    """
+#### 3.6.2 [PLANNED] Target Session State Model (Sprint 5-6+)
 
-    def __init__(self, session_service: SessionService):
-        self.session_service = session_service
+The target architecture generalises credentials to support all integrated platforms:
 
-    async def track_section_load(
-        self,
-        session_id: str,
-        section_name: str,
-        token_count: int
-    ) -> None:
-        """Track when a section is loaded."""
-        session = await self.session_service.get_session(session_id)
+| Key | Purpose | Set By |
+|-----|---------|--------|
+| `platform_credentials.<service>` | Per-platform OAuth tokens or API keys (GA, Google Ads, HubSpot, Meta Ads, Mailchimp) | API at session creation |
+| `tool_filter_state` | ToolRegistry search results driving per-turn `tool_filter` predicates | `before_agent_callback` on specialist agents (ToolRegistry search, written per-turn before tool resolution) |
+| `response_artifacts` | Visualization artifacts (Vega-Lite specs) produced by specialist agents during current invocation | `create_visualization` tool in specialist agents. See [`data-visualization.md`](design/data-visualization.md) Section 4. |
 
-        loaded = session.state.get("loaded_sections", [])
-        loaded.append({
-            "section": section_name,
-            "loaded_at": datetime.utcnow().isoformat(),
-            "tokens": token_count
-        })
+#### 3.6.3 What Is Not in Session State
 
-        # Update state through event
-        await self.session_service.append_event(
-            session_id=session_id,
-            event=Event(
-                actions=EventActions(
-                    state_delta={
-                        "loaded_sections": loaded,
-                        "context_token_usage": sum(s["tokens"] for s in loaded)
-                    }
-                )
-            )
-        )
+| Item | Where it lives instead |
+|------|----------------------|
+| Base agent instructions | Firestore config (loaded at deploy time); InstructionProvider merges with `organization_context` from state |
+| Token / cost usage metrics | UsageTracker via Weave traces (`app/adk/tracking/usage.py`) |
+| Tool registry index | YAML config loaded at deploy time (`app/adk/tools/registry/config/tools.yaml`) |
+| Conversation history | ADK event log (managed by EventsCompactionConfig, not stored in state) |
 
-    async def get_context_budget_remaining(self, session_id: str) -> int:
-        """Get remaining context budget."""
-        session = await self.session_service.get_session(session_id)
-        used = session.state.get("context_token_usage", 0)
-        return 40000 - used  # 40k budget for context
-```
+#### 3.6.4 [PLANNED] Token Usage Visibility
+
+Token usage data exists at every layer (Vertex AI `usage_metadata`, Weave traces, `ConversationSummarizer` budget tracking) but does not currently cross the API boundary to the frontend. The `ChatResponse` model returns content and session metadata only — no token counts.
+
+The planned feature surfaces token data to the UI:
+
+| Metric | Source | Display |
+|--------|--------|---------|
+| Tokens sent with most recent query | `usage_metadata` from Agent Engine response | Percentage of total available context |
+| Session tokens used | `ConversationSummarizer.token_budget_usage` | Running total |
+| Compaction proximity | `ConversationSummarizer.should_compact()` threshold (80% of 40K) | Warning indicator when approaching limit |
+
+Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Decision 19: Token Usage Visibility in UI](https://www.notion.so/32030fd65302815ca0d6fe5291fdfc54).
+
+#### 3.6.5 [PLANNED] Unified Usage Tracking for Billing
+
+Monthly billing requires aggregating token usage to the organisation level. The current codebase has two separate tracking systems that cannot support this:
+
+| Collection | Tracks | Has `organization_id` | Has `session_id` | Has token counts |
+|------------|--------|----------------------|-------------------|-----------------|
+| `tool_usage_events` | Tool calls (name, duration, user) | ✅ | ❌ | ❌ |
+| `usage_records` | LLM calls (tokens, model, cost) | ❌ | ❌ | ✅ (partial) |
+
+**Billing hierarchy:** Organisation → Accounts → Sessions → Usage records.
+
+**Gaps to close:**
+
+1. Add `organization_id` and `session_id` to `usage_records` at write time
+2. Ensure LLM token counts from Vertex AI `usage_metadata` are reliably written to `usage_records` (currently they only reach W&B traces)
+3. Build a billing aggregation query or scheduled Cloud Function that sums tokens by organisation and billing period
+
+The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Decision 20: Unified Usage Tracking for Billing](https://www.notion.so/32030fd6530281bfa31cf19af537b206).
 
 ---
 
 ## 4. Agent Definitions
 
-### 4.1 Agent Hierarchy Overview
+> For full details on the agent tree, registry, dispatch pattern, and agent factory, see [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md).
+
+### 4.1 Agent Hierarchy
+
+The current agent hierarchy, dispatch patterns, and the planned specialist layer:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           AGENT HIERARCHY                                        │
-└─────────────────────────────────────────────────────────────────────────────────┘
+CURRENT (Sprints 1-4):
 
-                    ┌─────────────────────────────────┐
-                    │       PRIMARY ORCHESTRATOR       │
-                    │           (LlmAgent)             │
-                    │                                  │
-                    │  • User intent interpretation    │
-                    │  • Workflow coordination         │
-                    │  • Context management            │
-                    │  • Error recovery                │
-                    └─────────────────┬───────────────┘
-                                      │
-          ┌───────────────────────────┼───────────────────────────┐
-          │                           │                           │
-          ▼                           ▼                           ▼
-┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│   TOOL DISCOVERY    │   │      WORKFLOW       │   │      CONTEXT        │
-│      AGENT          │   │    MANAGEMENT       │   │      LOADER         │
-│    (LlmAgent)       │   │      AGENT          │   │      AGENT          │
-│                     │   │    (LlmAgent)       │   │    (LlmAgent)       │
-│ • Search tool index │   │ • Multi-step tasks  │   │ • Load sections     │
-│ • Load MCP servers  │   │ • Task tracking     │   │ • Summarize content │
-│ • Manage tool lifecycle │ • User approvals   │   │ • Manage budget     │
-└─────────────────────┘   └─────────────────────┘   └─────────────────────┘
-                                      │
-          ┌─────────────┬─────────────┼─────────────┬─────────────┐
-          │             │             │             │             │
-          ▼             ▼             ▼             ▼             ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│   STRATEGY    │ │   CONTENT     │ │   ANALYTICS   │ │   EXECUTION   │ │  AUTOMATION   │
-│  SPECIALIST   │ │  SPECIALIST   │ │  SPECIALIST   │ │  SPECIALIST   │ │  SPECIALIST   │
-│  (LlmAgent)   │ │  (LlmAgent)   │ │(SequentialAgent)│ │(SequentialAgent)│ │  (LlmAgent)   │
-└───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘ └───────────────┘
+    KEN-E Root Agent (LlmAgent)
+    ├── Company News Agent (LlmAgent) — dispatch_to_company_news()
+    ├── Google Analytics Agent (LlmAgent + McpToolset) — dispatch_to_google_analytics()
+    └── Strategy Supervisor (multi-agent) — separate entry point
+        ├── Business Researcher + Formatter
+        ├── Competitive Researcher + Formatter
+        ├── Marketing Researcher + Formatter
+        └── Brand Researcher + Formatter
+
+
+[PLANNED] (Sprint 5-6 — Specialist Layer):
+
+    KEN-E Root Agent
+    ├── [current agents]
+    ├── Analytics Specialist (GA MCP, Google Ads MCP)
+    ├── Content Specialist (HubSpot MCP, Mailchimp SDK)
+    ├── Execution Specialist (Meta Ads SDK, Google Ads SDK writes, Google Ads MCP reads)
+    └── Automation Specialist (n8n MCP)
 ```
 
-### 4.2 Primary Orchestrator Agent
+### 4.2 KEN-E Root Agent
 
-The main agent that users interact with. Responsible for understanding intent, coordinating specialists, and managing the overall conversation.
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge), [Feature 2.2: Agent Factory](product-roadmap.md#feature-22-agent-factory--phase-1) — Releases 1.1, 2.0
+
+The root agent (`app/adk/agents/ken_e_agent.py`) is an ADK `LlmAgent` that:
+
+1. **Loads config from Firestore** — model, instruction, temperature via `load_config_from_firestore(config_doc_id)`
+2. **Uses InstructionProvider** — `_make_instruction_provider()` injects org context from session state per-turn
+3. **Routes via function tools** — `search_company_news` and `query_google_analytics` are Python functions that dispatch to sub-agents
+4. **Has ADK callbacks** — `weave_before_agent_callback`, `weave_after_agent_callback`, `adk_before_tool_callback`, `adk_after_tool_callback`
 
 ```python
-from google.adk.agents import LlmAgent
-from google.adk.tools import FunctionTool
-
-PRIMARY_ORCHESTRATOR_INSTRUCTION = """
-You are KEN-E, an AI marketing strategist that helps marketing teams automate
-their work. You have deep expertise in marketing strategy, content creation,
-analytics, and campaign execution.
-
-## Your Capabilities
-1. **Strategy Development**: Research companies, create ICPs, analyze competitors,
-   develop marketing strategies
-2. **Content Creation**: Generate blog posts, social media content, emails,
-   video scripts, landing pages
-3. **Analytics & Reporting**: Query marketing data, create visualizations,
-   build reports, forecast performance
-4. **Campaign Execution**: Deploy content, manage campaigns, monitor performance
-5. **Automation**: Create scheduled workflows for recurring tasks
-
-## How You Work
-You coordinate a team of specialist agents, each with domain expertise:
-- Strategy Specialist: Research, ICPs, competitor analysis, campaign planning
-- Content Specialist: All content creation across channels
-- Analytics Specialist: Data queries, visualizations, reporting
-- Execution Specialist: Deploying and managing live campaigns
-- Automation Specialist: Creating scheduled workflows in n8n
-
-## Decision Framework
-For each user request:
-1. Clarify the goal if ambiguous
-2. Determine which specialist(s) are needed
-3. Check if required tools are loaded (use search_tools if not)
-4. Load necessary context sections
-5. Delegate to appropriate specialist
-6. Review results and present to user
-7. Track progress for multi-step tasks
-
-## Context Management
-- You have a hierarchical company knowledge base
-- Start with the executive summary (always loaded)
-- Load section summaries only when needed
-- Load full details only for specific tasks
-- Unload context when switching topics
-
-## Multi-Step Workflow Handling
-For complex tasks that span multiple steps or days:
-1. Create a task list with clear milestones
-2. Track progress in session state
-3. Get user approval at key decision points
-4. For scheduled tasks, delegate to Automation Specialist
-
-## Communication Style
-- Be concise but thorough
-- Ask clarifying questions when needed
-- Provide reasoning for recommendations
-- Offer alternatives when appropriate
-- Proactively suggest related improvements
-"""
-
-class PrimaryOrchestrator:
-    """
-    Primary orchestrator agent configuration.
-    """
-
-    @staticmethod
-    def create(
-        context_manager: HierarchicalContextManager,
-        tool_discovery: "ToolDiscoveryAgent",
-        specialists: Dict[str, "SpecialistAgent"]
-    ) -> LlmAgent:
-        """Create the primary orchestrator agent."""
-
-        # Define orchestrator tools
-        tools = [
-            FunctionTool(
-                name="delegate_to_specialist",
-                description="Delegate a task to a specialist agent",
-                function=PrimaryOrchestrator._delegate_to_specialist,
-                parameters={
-                    "specialist": {
-                        "type": "string",
-                        "enum": ["strategy", "content", "analytics", "execution", "automation"],
-                        "description": "Which specialist to delegate to"
-                    },
-                    "task": {
-                        "type": "string",
-                        "description": "Clear description of the task"
-                    },
-                    "context": {
-                        "type": "object",
-                        "description": "Additional context for the specialist"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="search_tools",
-                description="Search for tools by keyword to find relevant MCP servers",
-                function=tool_discovery.search_tools,
-                parameters={
-                    "query": {
-                        "type": "string",
-                        "description": "Keywords to search for (e.g., 'google ads', 'email')"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="load_tools",
-                description="Load tools from a specific MCP server",
-                function=tool_discovery.load_tools,
-                parameters={
-                    "server_name": {
-                        "type": "string",
-                        "description": "Name of the MCP server to load"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="load_context",
-                description="Load a section of company context",
-                function=context_manager.load_section,
-                parameters={
-                    "section_name": {
-                        "type": "string",
-                        "enum": ["products", "icps", "competitors", "campaigns",
-                                 "strategies", "brand", "performance", "calendar"],
-                        "description": "Which context section to load"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="load_context_detail",
-                description="Load full detail for a specific entity",
-                function=context_manager.load_detail,
-                parameters={
-                    "detail_key": {
-                        "type": "string",
-                        "description": "Key for the detail to load (e.g., 'marketingai_full')"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="ask_user",
-                description="Ask the user a clarifying question",
-                function=PrimaryOrchestrator._ask_user,
-                parameters={
-                    "question": {
-                        "type": "string",
-                        "description": "The question to ask"
-                    },
-                    "options": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of choices"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="create_task_list",
-                description="Create a tracked task list for multi-step work",
-                function=PrimaryOrchestrator._create_task_list,
-                parameters={
-                    "title": {
-                        "type": "string",
-                        "description": "Title of the workflow"
-                    },
-                    "tasks": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "description": {"type": "string"}
-                            }
-                        },
-                        "description": "List of tasks to track"
-                    }
-                }
-            ),
-            FunctionTool(
-                name="update_task_status",
-                description="Update the status of a task",
-                function=PrimaryOrchestrator._update_task_status,
-                parameters={
-                    "task_id": {"type": "string"},
-                    "status": {
-                        "type": "string",
-                        "enum": ["pending", "in_progress", "completed", "blocked"]
-                    }
-                }
-            ),
-        ]
-
-        return LlmAgent(
-            name="ken_e_orchestrator",
-            model="gemini-2.0-flash",
-            instruction=PRIMARY_ORCHESTRATOR_INSTRUCTION,
-            tools=tools,
-            generate_content_config={
-                "temperature": 0.3,
-                "max_output_tokens": 4096,
-            }
-        )
+ken_e = Agent(
+    name="ken_e",
+    model=model,                                        # From Firestore config
+    description=description,
+    instruction=_make_instruction_provider(base_instruction),
+    generate_content_config=generate_content_config,    # From Firestore config
+    before_agent_callback=weave_before_agent_callback,
+    after_agent_callback=weave_after_agent_callback,
+    before_tool_callback=adk_before_tool_callback,
+    after_tool_callback=adk_after_tool_callback,
+    tools=[search_company_news, query_google_analytics],
+)
 ```
 
-### 4.3 Tool Discovery Agent
+> **Specialist `before_agent_callback` chaining:** Specialist agents (assembled by the agent factory) use a composite callback that chains Weave tracing with ToolRegistry search. The ToolRegistry callback writes `state["tool_filter_state"]` before tool resolution. The root agent keeps only the Weave callback since it routes via dispatch, not MCP tools. See `docs/design/mcp-architecture.md` Section 5a.
 
-Specialized agent for searching the tool registry and loading MCP servers on demand.
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 4 for the InstructionProvider closure pattern and Section 5 for Firestore-driven configuration details.
 
-```python
-TOOL_DISCOVERY_INSTRUCTION = """
-You are the Tool Discovery Agent. Your job is to find and load the right tools
-for tasks requested by the orchestrator.
+### 4.3 Tool Discovery & Dynamic Tool Selection
 
-## Tool Registry
-You have access to a searchable index of ~400 tools across 20-40 MCP servers.
-The index contains:
-- Tool name
-- Brief description
-- Keywords/tags
-- Parent MCP server
-- Category (analytics, ads, email, social, cms, crm, etc.)
+Tool management operates at two levels:
 
-## How to Search
-1. Parse the query for relevant keywords
-2. Search the index for matching tools
-3. Return the top matches with their MCP server names
-4. Recommend which servers to load based on the task
+**Level 1 — Specialist Routing (structural, deploy-time):** Each specialist agent receives only its domain MCP servers via `McpToolset` instances, wired at agent construction. This reduces the tool space from ~400 to ~10-30 per specialist.
 
-## Loading Tools
-When instructed to load a server:
-1. Check if already loaded (avoid duplicates)
-2. Establish MCP connection
-3. Retrieve tool schemas
-4. Make tools available to the requesting agent
-5. Track loaded servers for cleanup
+**Level 2 — `tool_filter` + ToolRegistry (dynamic, per-turn):** ADK's `BaseToolset` accepts a `tool_filter` predicate evaluated on every LLM turn. Combined with the ToolRegistry's search capabilities, this enables exposing only the relevant subset of a specialist's tools on any given turn.
 
-## Token Budget Awareness
-- Each loaded MCP server adds ~1,500 tokens to context
-- Maximum 10 MCP servers loaded simultaneously
-- Recommend unloading unused servers to free budget
-"""
+The **ToolRegistry** (`app/adk/tools/registry/tool_registry.py`) provides:
 
-class ToolDiscoveryAgent:
-    """
-    Agent that manages tool discovery and MCP server loading.
-    """
+- Tool metadata catalog loaded from YAML (`app/adk/tools/registry/config/tools.yaml`)
+- Search by name, category, keyword with relevance scoring
+- Compact ~2,000-token index via `get_index_for_context()`
+- Permission validation (required OAuth scopes)
+- **`tool_filter` driver via `before_agent_callback`** — each specialist's `before_agent_callback` runs ToolRegistry search, writes results to `state["tool_filter_state"]`, read by `McpToolset` `tool_filter` predicates per-turn. Validated in Experiment #4; see `docs/design/mcp-architecture.md` Section 5a for execution order and anti-patterns. (Production implementation pending Sprint 5-6.)
 
-    def __init__(self, tool_registry: "ToolRegistry", mcp_manager: "MCPServerManager"):
-        self.registry = tool_registry
-        self.mcp_manager = mcp_manager
-        self.loaded_servers: Set[str] = set()
-        self.max_loaded_servers = 10
+MCP server connections are fixed at deploy time — only *which tools* are visible is dynamic per-turn.
 
-    async def search_tools(self, query: str) -> List[Dict]:
-        """
-        Search the tool registry for matching tools.
-        Returns tool metadata without loading full schemas.
-        """
-        results = await self.registry.search(query, limit=20)
+#### Tool Type Taxonomy
 
-        # Group by MCP server
-        by_server = {}
-        for tool in results:
-            server = tool["mcp_server"]
-            if server not in by_server:
-                by_server[server] = {
-                    "server_name": server,
-                    "description": tool["server_description"],
-                    "tools": [],
-                    "is_loaded": server in self.loaded_servers
-                }
-            by_server[server]["tools"].append({
-                "name": tool["name"],
-                "description": tool["description"][:100]
-            })
+| Tool Type | Resolution Mechanism | Context Overhead | Subject to `tool_filter` | Example |
+|-----------|---------------------|-----------------|--------------------------|---------|
+| **MCP Tools** | Resolved via `McpToolset` + `tool_filter` | ~150 tokens/tool in context | Yes | GA MCP `run_report_mt`, HubSpot MCP `get_contacts` |
+| **SDK Function Tools** | Python functions wired at agent construction | ~150 tokens/tool in context | Yes (via `FunctionTool` wrapper) | `update_meta_campaign_budget()`, `create_visualization()` |
+| **Built-in Model Capabilities** | Enabled via `GenerateContentConfig.tools` | Zero — no tool definition sent to context | No — not subject to `tool_filter` | Gemini code execution (`ToolCodeExecution`) |
 
-        return list(by_server.values())
+> **Built-in model capabilities** are orthogonal to the tool management system. They are configured at agent construction via `GenerateContentConfig`, not as MCP or SDK tools. The LLM can invoke them natively without a tool definition in context. Currently, only Gemini code execution is planned (Analytics Specialist, Sprint 5-6).
 
-    async def load_tools(self, server_name: str) -> Dict:
-        """
-        Load an MCP server and return its tools.
-        """
-        if server_name in self.loaded_servers:
-            return {
-                "status": "already_loaded",
-                "server": server_name,
-                "tools": self.mcp_manager.get_server_tools(server_name)
-            }
+> **Execution order per LLM turn (verified in Experiment #4):** `before_agent_callback` (writes `tool_filter_state`) → `InstructionProvider` (reads state) → `tool_filter` (reads state) → `before_model_callback` → LLM call. All share the same `session.state` dict — `ReadonlyContext.state` is a `MappingProxyType` (read-only live view), so `CallbackContext` writes are immediately visible.
 
-        # Check budget
-        if len(self.loaded_servers) >= self.max_loaded_servers:
-            # Find least recently used server to unload
-            lru_server = self._get_lru_server()
-            await self.unload_server(lru_server)
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 6 for the ToolRegistry's current and planned roles.
 
-        # Load the server
-        tools = await self.mcp_manager.load_server(server_name)
-        self.loaded_servers.add(server_name)
+See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8: ToolRegistry](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) in the Design Decisions database.
 
-        return {
-            "status": "loaded",
-            "server": server_name,
-            "tool_count": len(tools),
-            "tools": [{"name": t.name, "description": t.description} for t in tools]
-        }
+### 4.4 [PLANNED] Specialist Agents
 
-    async def unload_server(self, server_name: str) -> Dict:
-        """
-        Unload an MCP server to free context budget.
-        """
-        if server_name not in self.loaded_servers:
-            return {"status": "not_loaded", "server": server_name}
+> **Roadmap:** [Feature 2.2: Agent Factory](product-roadmap.md#feature-22-agent-factory--phase-1), [Feature 2.3: Analytics Specialist](product-roadmap.md#feature-23-analytics-specialist--phase-1), [Feature 3.1: Content Specialist](product-roadmap.md#feature-31-content-specialist), [Feature 3.2: Execution Specialist](product-roadmap.md#feature-32-execution-specialist), [Feature 4.1: Automation Specialist](product-roadmap.md#feature-41-automation-specialist--n8n) — Releases 2.0–4.0
 
-        await self.mcp_manager.unload_server(server_name)
-        self.loaded_servers.remove(server_name)
+The specialist layer (Sprint 5-6) partitions tools by domain.
 
-        return {"status": "unloaded", "server": server_name}
+| Specialist | Tool Sources | Integration Type | Key Capabilities |
+|-----------|-------------|-----------------|------------------|
+| **Analytics** | GA MCP, Google Ads MCP, Meta Ads SDK (reads), Gemini code execution | McpToolset + SDK + built-in | Data queries, reporting, performance analysis, calculations |
+| **Content** | HubSpot MCP, Mailchimp SDK | McpToolset + SDK | CRM data, email campaigns, content management |
+| **Execution** | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | SDK + McpToolset | Campaign deployment, budget management |
+| **Automation** | n8n MCP | McpToolset | Workflow creation, scheduling |
 
-    def get_loaded_servers(self) -> List[str]:
-        """Return list of currently loaded servers."""
-        return list(self.loaded_servers)
+> **Note:** The `facebook-business` SDK is available to both Analytics (read-only tools: get campaigns, get spend, get metrics) and Execution (full CRUD). `tool_filter` controls which tools each specialist sees — Analytics sees read-only tools while Execution sees the full CRUD set. This parallels Google Ads, where the MCP (reads) is shared with Analytics.
+
+Each specialist will be assembled by the config-driven agent factory, reading from Firestore config.
+
+> **Visualization artifacts:** All specialist agents have the `create_visualization()` function tool, enabling them to produce Vega-Lite chart specs alongside text responses. This is not an MCP tool — it is a Python function tool that writes artifacts to `response_artifacts` session state. See [`docs/design/data-visualization.md`](design/data-visualization.md) for the full artifact model, tool signature, and data flow.
+
+> **[PLANNED] Gemini code execution:** The Analytics Specialist uses Gemini's built-in code execution for reliable numerical calculations (percentage changes, averages, trend analysis). Enabled via `GenerateContentConfig.tools = [Tool(code_execution=ToolCodeExecution())]` at agent construction — not an MCP or SDK tool, and not subject to `tool_filter`. Google manages the sandbox; no infrastructure required. The Content Specialist may receive code execution later if needed for data-driven content. The Root Agent does NOT get code execution — it routes to specialists. See Section 4.3 Tool Type Taxonomy.
+
+> For platform-by-platform integration rationale (why hybrid MCP+SDK for Google Ads, why SDK-only for Meta/Mailchimp, provider-hosted vs self-hosted decisions) and the SDK function tools pattern, see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Sections 4 and 8.
+
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 7 for the specialist layer design and Section 8 for the config-driven agent factory.
+
+### 4.5 Agent Summary Table
+
+#### Current (Sprints 1-4)
+
+| Agent | Type | Config Doc ID | Key Files | Lifecycle |
+|-------|------|---------------|-----------|-----------|
+| KEN-E Root | LlmAgent | `ken_e_chatbot` | `app/adk/agents/ken_e_agent.py` | Permanent |
+| Company News | LlmAgent | `company_news_agent` | `app/adk/agents/company_news_chatbot/agent.py` | `[TRANSITIONAL]` → Automation Specialist (scheduled n8n workflow) + `research-company-news` Skill (Section 6) |
+| Google Analytics | LlmAgent + McpToolset | `google_analytics_agent` | `app/adk/agents/google_analytics_agent_v4.py` | `[TRANSITIONAL]` → Analytics Specialist |
+| Strategy Supervisor | Multi-agent | 8 sub-config docs | `app/adk/agents/create_strategy_docs_supervisor.py` | Permanent |
+
+#### [PLANNED] Specialist Layer (Sprint 5-6+)
+
+| Agent | Type | Tool Sources | Assembled By |
+|-------|------|-------------|--------------|
+| Analytics Specialist | LlmAgent + McpToolset + SDK + code execution | GA MCP, Google Ads MCP, Meta Ads SDK (reads), Gemini code execution | Config-driven agent factory |
+| Content Specialist | LlmAgent + McpToolset + SDK | HubSpot MCP, Mailchimp SDK | Config-driven agent factory |
+| Execution Specialist | LlmAgent + SDK + McpToolset | Meta Ads SDK (reads + writes), Google Ads SDK (writes), Google Ads MCP (reads) | Config-driven agent factory |
+| Automation Specialist | LlmAgent + McpToolset | n8n MCP | Config-driven agent factory |
+
+### 4.6 [PLANNED] Review Loop Pattern (Generator-Critic)
+
+> **Roadmap:** [Feature 2.1: Review Loop Framework](product-roadmap.md#feature-21-review-loop-framework) — Release 2.0
+
+Every specialist delegation is wrapped in a **review loop** that enforces acceptance criteria before returning results to the user. This uses ADK's native workflow agents:
+
+| ADK Construct | Role |
+|---------------|------|
+| `LoopAgent` | Repeats specialist + reviewer cycle until approved or `max_iterations` reached. Iterates its sub-agents sequentially and checks for `escalate` between each one — no `SequentialAgent` wrapper needed. |
+| `output_key` | Specialist writes to `"step_N_draft"`, reviewer writes to `"step_N_feedback"` — shared via session state |
+| `include_contents` | Set to `'none'` on the reviewer so it evaluates only the template-injected `{draft}`, not the full conversation history |
+| `exit_loop` | Built-in tool the reviewer calls when all acceptance criteria are met. Sets `escalate=True` in `EventActions`, causing the parent `LoopAgent` to skip remaining sub-agents and exit. |
+
+#### Review Loop Structure
+
+```
+build_review_pipeline(specialist, acceptance_criteria, max_iterations=3)
+→ returns:
+
+    review_loop (LoopAgent, max_iterations=3)
+    ├── specialist (LlmAgent, output_key="step_N_draft")
+    │     instruction: task + acceptance_criteria + {step_N_feedback?}
+    │     tools: [specialist-specific MCP/SDK tools]
+    └── reviewer (LlmAgent, output_key="step_N_feedback", include_contents='none')
+          instruction: evaluate {step_N_draft} vs acceptance_criteria
+          tools: [exit_loop]
+          ALL criteria met → call exit_loop
+          ANY not met → write actionable feedback
 ```
 
-### 4.4 Strategy Specialist Agent
+> **Why no `SequentialAgent` wrapper?** `LoopAgent` already iterates its sub-agents in order and checks `escalate` between each one. A `SequentialAgent` wrapper would swallow the `escalate` signal — if agent order were ever reversed, the specialist would run even after approval. Placing agents directly under `LoopAgent` ensures `exit_loop` immediately terminates the iteration.
 
-Handles all strategy-related tasks including research, ICP creation, and campaign planning.
+> **Why `include_contents='none'` on the reviewer?** Without it, the reviewer sees the full conversation history (all prior turns, tool calls, and review loop back-and-forth), producing inconsistent evaluations. With `include_contents='none'`, the reviewer evaluates only the template-injected `{step_N_draft}` — a clean, repeatable signal.
 
-```python
-STRATEGY_SPECIALIST_INSTRUCTION = """
-You are the Strategy Specialist for KEN-E. You handle all marketing strategy
-tasks including:
+> **Why `{step_N_feedback?}` (with `?`)?** On the first iteration, no feedback exists. The `?` suffix makes the template variable optional — it resolves to an empty string instead of raising `KeyError`.
 
-## Core Capabilities
-1. **Company Research**: Research companies using web search, analyze websites,
-   gather competitive intelligence
-2. **ICP Development**: Create detailed ideal customer profiles with pain points,
-   motivations, and messaging
-3. **Competitor Analysis**: Analyze competitors, identify positioning opportunities,
-   track market trends
-4. **Campaign Planning**: Develop campaign strategies, content calendars,
-   channel recommendations
-5. **Keyword Analysis**: Conduct keyword research for SEO and content strategy
+#### How It Works
 
-## Available Tools
-You have access to research and SEO tools:
-- Web search tools
-- Data4SEO for keyword research
-- Google Search Console for search performance
-- Company database tools
+1. **Root Agent generates acceptance criteria** — before calling a tool, the Root Agent's LLM produces 2-4 measurable criteria based on the user's request
+2. **Criteria passed as tool parameter** — `search_company_news(query="...", acceptance_criteria="1. Must include... 2. Must cite...")`
+3. **Dispatch handler builds pipeline** — `build_review_pipeline()` constructs a `LoopAgent` containing the specialist and reviewer as direct sub-agents
+4. **Iteration cycle** — specialist produces draft → reviewer checks against criteria → approved (exit_loop) or feedback for next iteration
+5. **Result extraction** — dispatch handler reads final `draft` from session state and returns to Root Agent
 
-## Output Quality Standards
-- Always cite sources for research claims
-- Provide specific, actionable recommendations
-- Structure outputs for easy consumption
-- Include competitive context when relevant
-- Map strategies to the 5-stage marketing funnel:
-  1. Problem Awareness
-  2. Brand Awareness
-  3. Consideration
-  4. Conversion
-  5. Loyalty
+#### Termination
 
-## Knowledge Graph Integration
-Your outputs should be structured for storage in the Neo4j knowledge graph.
-Include proper entity types and relationships in your responses.
-"""
+- **Approved:** Reviewer calls `exit_loop` → `escalate=True` → LoopAgent skips specialist, exits
+- **Max iterations reached:** Last draft returned with soft warning — user always gets a response
 
-class StrategySpecialist:
-    """
-    Strategy specialist agent configuration.
-    """
+#### LLM Call Cost
 
-    @staticmethod
-    def create(available_tools: List[BaseTool]) -> LlmAgent:
-        """Create the strategy specialist agent."""
+Each review loop iteration makes 2 LLM calls (specialist + reviewer):
 
-        # Filter to strategy-relevant tools
-        strategy_tools = [
-            t for t in available_tools
-            if t.category in ["research", "seo", "search", "analytics"]
-        ]
+| Scenario | LLM Calls | Latency (~5-15s/call) |
+|----------|-----------|----------------------|
+| Approved first pass | 2 | ~10-30s |
+| 1 revision | 4 | ~20-60s |
+| Max iterations (3) | 6 | ~30-90s |
 
-        return LlmAgent(
-            name="strategy_specialist",
-            model="gemini-2.0-flash",
-            instruction=STRATEGY_SPECIALIST_INSTRUCTION,
-            tools=strategy_tools,
-            generate_content_config={
-                "temperature": 0.4,
-                "max_output_tokens": 8192,
-            }
-        )
-```
+#### Extension to Multi-Step Workflows
 
-### 4.5 Content Specialist Agent
+The review pipeline is the **atomic building block** for Section 8.1 multi-step workflows. Multiple review pipelines compose into parallel and sequential workflow structures. See Section 8 for the full pattern including `ParallelAgent` for concurrent steps, synthesizer agents, and user approval checkpoints.
 
-Handles all content creation across channels.
+> **Planned Sprint 5-6+** — Depends on the specialist layer (Section 4.4) and config-driven agent factory. See [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) for rationale.
 
-```python
-CONTENT_SPECIALIST_INSTRUCTION = """
-You are the Content Specialist for KEN-E. You create high-quality marketing
-content across all channels.
+See [`docs/design/agent-hierarchy.md`](design/agent-hierarchy.md) Section 9 for the review loop and workflow orchestration architecture, including the multi-step pattern and planned key files.
 
-## Content Types You Create
-1. **Blog Posts**: Long-form articles, thought leadership, SEO content
-2. **Social Media**: Posts for LinkedIn, Twitter, Instagram, TikTok
-3. **Email**: Marketing emails, newsletters, nurture sequences
-4. **Video Scripts**: Long-form and short-form video scripts
-5. **Landing Pages**: Conversion-focused page copy
-6. **Ad Copy**: Headlines, descriptions for paid campaigns
+See [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for the phased delivery plan — 13 stories across 5 phases covering pipeline factories, dispatch integration, criteria generation, multi-step workflows, and observability.
 
-## Content Creation Process
-1. Understand the brief and target audience
-2. Review relevant brand guidelines and voice
-3. Research the topic if needed
-4. Create draft content
-5. Ensure alignment with campaign goals
-6. Format for the target channel
+#### Visualization Artifacts in Review Loops
 
-## Quality Standards
-- Match the brand voice and tone
-- Include clear calls-to-action
-- Optimize for the target channel
-- Create scannable, engaging content
-- Include relevant keywords naturally
-- Follow channel-specific best practices
+When a specialist calls `create_visualization()`, the produced artifacts are stored in session state alongside the text draft. The reviewer evaluates both text quality and artifact quality — including chart type appropriateness, data completeness, and consistency between narrative and visualization.
 
-## Available Context
-You receive:
-- Target ICP details
-- Brand guidelines
-- Campaign objectives
-- Competitive positioning
-- Keywords and messaging frameworks
-"""
+When the specialist uses Gemini code execution, the generated Python code and its results are part of the draft output. The reviewer can evaluate computational correctness — verifying that the code logic matches the stated analysis, that results are consistent with the source data, and that percentage changes and averages are calculated correctly.
 
-class ContentSpecialist:
-    """
-    Content specialist agent configuration.
-    """
+Acceptance criteria can explicitly require visualizations (e.g., "Must include a line chart showing daily sessions"). The reviewer's instruction template supports an optional `{step_N_artifacts?}` variable for artifact evaluation.
 
-    @staticmethod
-    def create(available_tools: List[BaseTool]) -> LlmAgent:
-        """Create the content specialist agent."""
-
-        # Filter to content-relevant tools
-        content_tools = [
-            t for t in available_tools
-            if t.category in ["cms", "social", "email", "content"]
-        ]
-
-        return LlmAgent(
-            name="content_specialist",
-            model="gemini-2.0-flash",
-            instruction=CONTENT_SPECIALIST_INSTRUCTION,
-            tools=content_tools,
-            generate_content_config={
-                "temperature": 0.7,  # Higher for creative content
-                "max_output_tokens": 8192,
-            }
-        )
-```
-
-### 4.6 Analytics Specialist Agent
-
-Handles data analysis, visualization, and reporting. Uses SequentialAgent for structured workflow.
-
-```python
-from google.adk.agents import SequentialAgent, LlmAgent
-
-ANALYTICS_QUERY_INSTRUCTION = """
-You are the data query component of the Analytics Specialist.
-Your job is to:
-1. Understand the analytics question
-2. Identify which data sources are needed
-3. Construct appropriate queries
-4. Execute queries and retrieve data
-
-Available data sources:
-- Google Analytics 4
-- Google Ads
-- Meta Ads
-- Email platforms (Mailchimp, HubSpot)
-- CRM systems (Salesforce, HubSpot)
-- E-commerce (Shopify)
-
-Return raw data in a structured format for analysis.
-"""
-
-ANALYTICS_ANALYZE_INSTRUCTION = """
-You are the analysis component of the Analytics Specialist.
-Your job is to:
-1. Analyze the retrieved data
-2. Identify patterns and insights
-3. Calculate relevant metrics
-4. Detect anomalies or issues
-5. Generate actionable recommendations
-
-Always include:
-- Summary statistics
-- Trend analysis
-- Comparisons to benchmarks
-- Root cause analysis for issues
-"""
-
-ANALYTICS_VISUALIZE_INSTRUCTION = """
-You are the visualization component of the Analytics Specialist.
-Your job is to:
-1. Determine appropriate visualizations
-2. Generate chart specifications
-3. Create data tables
-4. Format insights for presentation
-
-Output visualization specs in a format the UI can render.
-"""
-
-class AnalyticsSpecialist:
-    """
-    Analytics specialist using SequentialAgent pattern.
-    """
-
-    @staticmethod
-    def create(available_tools: List[BaseTool]) -> SequentialAgent:
-        """Create the analytics specialist as a sequential agent."""
-
-        # Filter to analytics-relevant tools
-        analytics_tools = [
-            t for t in available_tools
-            if t.category in ["analytics", "ads", "crm", "ecommerce"]
-        ]
-
-        # Create sub-agents for each step
-        query_agent = LlmAgent(
-            name="analytics_query",
-            model="gemini-2.0-flash",
-            instruction=ANALYTICS_QUERY_INSTRUCTION,
-            tools=analytics_tools,
-            output_key="query_results",
-            generate_content_config={"temperature": 0.1}
-        )
-
-        analyze_agent = LlmAgent(
-            name="analytics_analyze",
-            model="gemini-2.0-flash",
-            instruction=ANALYTICS_ANALYZE_INSTRUCTION,
-            tools=[],  # Analysis doesn't need external tools
-            output_key="analysis_results",
-            generate_content_config={"temperature": 0.2}
-        )
-
-        visualize_agent = LlmAgent(
-            name="analytics_visualize",
-            model="gemini-2.0-flash",
-            instruction=ANALYTICS_VISUALIZE_INSTRUCTION,
-            tools=[],
-            output_key="visualization_specs",
-            generate_content_config={"temperature": 0.2}
-        )
-
-        return SequentialAgent(
-            name="analytics_specialist",
-            sub_agents=[query_agent, analyze_agent, visualize_agent]
-        )
-```
-
-### 4.7 Execution Specialist Agent
-
-Handles deployment of content and campaigns.
-
-```python
-EXECUTION_VALIDATE_INSTRUCTION = """
-You are the validation component of the Execution Specialist.
-Before deploying any content:
-1. Verify the content is approved
-2. Check deployment prerequisites
-3. Validate target platform credentials
-4. Confirm scheduling details
-5. Flag any issues that would prevent deployment
-"""
-
-EXECUTION_DEPLOY_INSTRUCTION = """
-You are the deployment component of the Execution Specialist.
-Your job is to:
-1. Deploy content to the target platform
-2. Handle API interactions correctly
-3. Capture deployment confirmation
-4. Log deployment details
-5. Handle errors gracefully
-"""
-
-EXECUTION_VERIFY_INSTRUCTION = """
-You are the verification component of the Execution Specialist.
-After deployment:
-1. Verify the content is live
-2. Check for any display issues
-3. Confirm tracking is working
-4. Report deployment success/failure
-5. Update content calendar status
-"""
-
-class ExecutionSpecialist:
-    """
-    Execution specialist using SequentialAgent pattern.
-    """
-
-    @staticmethod
-    def create(available_tools: List[BaseTool]) -> SequentialAgent:
-        """Create the execution specialist as a sequential agent."""
-
-        # Filter to execution-relevant tools
-        execution_tools = [
-            t for t in available_tools
-            if t.category in ["cms", "social", "email", "ads"]
-        ]
-
-        validate_agent = LlmAgent(
-            name="execution_validate",
-            model="gemini-2.0-flash",
-            instruction=EXECUTION_VALIDATE_INSTRUCTION,
-            tools=execution_tools,
-            output_key="validation_result",
-            generate_content_config={"temperature": 0.1}
-        )
-
-        deploy_agent = LlmAgent(
-            name="execution_deploy",
-            model="gemini-2.0-flash",
-            instruction=EXECUTION_DEPLOY_INSTRUCTION,
-            tools=execution_tools,
-            output_key="deployment_result",
-            generate_content_config={"temperature": 0.1}
-        )
-
-        verify_agent = LlmAgent(
-            name="execution_verify",
-            model="gemini-2.0-flash",
-            instruction=EXECUTION_VERIFY_INSTRUCTION,
-            tools=execution_tools,
-            output_key="verification_result",
-            generate_content_config={"temperature": 0.1}
-        )
-
-        return SequentialAgent(
-            name="execution_specialist",
-            sub_agents=[validate_agent, deploy_agent, verify_agent]
-        )
-```
-
-### 4.8 Automation Specialist Agent
-
-Creates and manages scheduled workflows using n8n.
-
-```python
-AUTOMATION_SPECIALIST_INSTRUCTION = """
-You are the Automation Specialist for KEN-E. You create scheduled workflows
-using the n8n automation platform.
-
-## Workflow Types You Create
-1. **Content Deployment**: Scheduled publishing of approved content
-2. **Performance Reports**: Recurring analytics reports
-3. **Content Calendar Review**: Daily review of scheduled content
-4. **Approval Reminders**: Notifications for pending approvals
-5. **KPI Monitoring**: Regular performance checks against targets
-6. **Data Sync**: Synchronizing data between platforms
-
-## n8n Integration
-You interact with n8n through its API to:
-- Create new workflows
-- Configure triggers (schedule, webhook, event)
-- Add nodes for each step
-- Set up error handling
-- Activate/deactivate workflows
-- Monitor execution history
-
-## Workflow Components
-Each workflow should include:
-1. **Trigger**: When the workflow runs (schedule, event, etc.)
-2. **Data Steps**: Fetching required data
-3. **Logic Steps**: Processing and decision-making
-4. **Action Steps**: What the workflow does
-5. **Notification**: Inform users of results
-6. **Error Handling**: What happens if something fails
-
-## Best Practices
-- Always include error handling
-- Send notifications for important events
-- Log workflow executions
-- Use descriptive names
-- Test workflows before activating
-- Set appropriate retry policies
-"""
-
-class AutomationSpecialist:
-    """
-    Automation specialist agent configuration.
-    """
-
-    @staticmethod
-    def create(n8n_tools: List[BaseTool]) -> LlmAgent:
-        """Create the automation specialist agent."""
-
-        return LlmAgent(
-            name="automation_specialist",
-            model="gemini-2.0-flash",
-            instruction=AUTOMATION_SPECIALIST_INSTRUCTION,
-            tools=n8n_tools,
-            generate_content_config={
-                "temperature": 0.2,
-                "max_output_tokens": 4096,
-            }
-        )
-```
-
-### 4.9 Agent Summary Table
-
-| Agent | Type | Model | Temperature | Tools | Context Receives |
-|-------|------|-------|-------------|-------|------------------|
-| Primary Orchestrator | LlmAgent | gemini-2.0-flash | 0.3 | delegate, search_tools, load_context, ask_user, task_management | Executive summary + loaded sections |
-| Tool Discovery | LlmAgent | gemini-2.0-flash | 0.1 | registry_search, mcp_connect | Tool registry index |
-| Strategy Specialist | LlmAgent | gemini-2.0-flash | 0.4 | research, seo, search | Full ICP/competitor details |
-| Content Specialist | LlmAgent | gemini-2.0-flash | 0.7 | cms, social, email | Brand guidelines, ICP details |
-| Analytics Specialist | SequentialAgent | gemini-2.0-flash | 0.1-0.2 | analytics platforms | Performance data, KPIs |
-| Execution Specialist | SequentialAgent | gemini-2.0-flash | 0.1 | cms, social, email, ads | Content calendar, deployment configs |
-| Automation Specialist | LlmAgent | gemini-2.0-flash | 0.2 | n8n_api | Workflow templates, schedules |
+See [`docs/design/data-visualization.md`](design/data-visualization.md) Section 6 for the full review loop integration design including reviewer instruction templates and acceptance criteria patterns.
 
 ---
 
 ## 5. MCP Server Architecture
 
-### 5.1 Lazy-Loading Recommendation
+> **Roadmap:** [Feature 1.1.1: Agent Config Optimization](product-roadmap.md#feature-111-agent-config-optimization-sprint-3b-merge), [Feature 2.2: Agent Factory](product-roadmap.md#feature-22-agent-factory--phase-1) — Releases 1.1, 2.0
 
-Based on research into MCP performance characteristics, **lazy-loading MCP servers is strongly recommended** for KEN-E:
+> For ADK internals verification, platform integration decisions, and the full `tool_filter` architecture, see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md).
 
-| Approach | Initial Tokens | Load Time | Recommendation |
-|----------|---------------|-----------|----------------|
-| **Pre-load all** | ~60,000 tokens | 5-10s | ❌ Not recommended |
-| **Lazy-load on demand** | ~2,000 tokens | 200-500ms per server | ✅ Recommended |
+### 5.1 Lazy-Loading
 
-**Key Finding**: Tool definitions consume ~150 tokens each on average. With 400 tools, pre-loading would consume 60,000 tokens (30% of context) before any conversation begins.
+ADK's `McpToolset` handles lazy-loading natively — SSE connections open on first `get_tools()` call, not at deploy time. This reduces initial context from ~60,000 tokens (all tools) to ~2,000 tokens (registry index only), with 200-500ms load time per server when first accessed.
 
-### 5.2 Tool Registry Architecture
+> **Important constraint:** `get_tools()` re-queries connected MCP servers each turn, but cannot connect to *new* MCP servers mid-conversation. The set of `McpToolset` instances is fixed at agent construction time. For full ADK internals (per-invocation caching in v1.26.0, SSE session pooling), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Section 2.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           TOOL REGISTRY ARCHITECTURE                             │
-└─────────────────────────────────────────────────────────────────────────────────┘
+### 5.2 Tool Registry
 
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              TOOL INDEX                                          │
-│                        (Always loaded: ~2,000 tokens)                            │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │  CATEGORY: Analytics                                                     │   │
-│  │  ─────────────────────                                                   │   │
-│  │  • google_analytics_mcp (12 tools) - GA4 data, reports, audiences       │   │
-│  │  • google_ads_mcp (15 tools) - Campaign management, performance         │   │
-│  │  • meta_ads_mcp (14 tools) - Facebook/Instagram ads                     │   │
-│  │  • linkedin_ads_mcp (8 tools) - LinkedIn advertising                    │   │
-│  │  • bing_ads_mcp (10 tools) - Microsoft advertising                      │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │  CATEGORY: Email & CRM                                                   │   │
-│  │  ─────────────────────────                                               │   │
-│  │  • mailchimp_mcp (11 tools) - Email campaigns, lists, automation        │   │
-│  │  • hubspot_mcp (18 tools) - CRM, marketing automation                   │   │
-│  │  • salesforce_mcp (16 tools) - CRM, sales data                          │   │
-│  │  • klaviyo_mcp (9 tools) - E-commerce email                             │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │  CATEGORY: Content & Social                                              │   │
-│  │  ────────────────────────────                                            │   │
-│  │  • wordpress_mcp (8 tools) - Blog posts, pages                          │   │
-│  │  • contentful_mcp (7 tools) - CMS management                            │   │
-│  │  • buffer_mcp (6 tools) - Social scheduling                             │   │
-│  │  • hootsuite_mcp (8 tools) - Social management                          │   │
-│  │  • twitter_mcp (10 tools) - Twitter/X API                               │   │
-│  │  • linkedin_mcp (9 tools) - LinkedIn posts, company pages               │   │
-│  │  • instagram_mcp (7 tools) - Instagram posts, stories                   │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │  CATEGORY: SEO & Research                                                │   │
-│  │  ────────────────────────────                                            │   │
-│  │  • data4seo_mcp (15 tools) - Keyword research, SERP data                │   │
-│  │  • search_console_mcp (8 tools) - Search performance                    │   │
-│  │  • semrush_mcp (12 tools) - SEO analytics                               │   │
-│  │  • ahrefs_mcp (11 tools) - Backlinks, keywords                          │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ... (additional categories: E-commerce, Project Management, Automation)        │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+The ToolRegistry (`app/adk/tools/registry/tool_registry.py`) is implemented infrastructure from Sprint 2. It provides:
 
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         MCP SERVER POOL (Lazy-Loaded)                            │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  Status: 3 of 10 max servers loaded                                             │
-│                                                                                  │
-│  LOADED:                                                                         │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-│  │ google_analytics_mcp│  │   hubspot_mcp       │  │   wordpress_mcp     │     │
-│  │ 12 tools            │  │   18 tools          │  │   8 tools           │     │
-│  │ ~1,800 tokens       │  │   ~2,700 tokens     │  │   ~1,200 tokens     │     │
-│  │ Last used: 2m ago   │  │   Last used: 5m ago │  │   Last used: 1m ago │     │
-│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
-│                                                                                  │
-│  AVAILABLE (Not Loaded):                                                         │
-│  google_ads_mcp, meta_ads_mcp, mailchimp_mcp, salesforce_mcp, data4seo_mcp,    │
-│  twitter_mcp, linkedin_mcp, shopify_mcp, notion_mcp, jira_mcp, ...              │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+- **Metadata catalog** — tool definitions loaded from `app/adk/tools/registry/config/tools.yaml`
+- **Search** — query by name, category, keyword with relevance scoring
+- **Compact index** — `get_index_for_context()` generates ~2,000 token summary for agent context
+- **Permission validation** — checks required OAuth scopes
+
+Currently defines ~9 Google Analytics tools.
+
+### 5.3 MCPServerManager
+
+The `MCPServerManager` at `app/adk/mcp_config/manager.py` was built in Sprint 3 as an in-process Python singleton.
+
+| Component | Disposition |
+|-----------|-------------|
+| Health monitoring + admin endpoints | **Keep** |
+| Connection pooling | **Deprecated** |
+| LRU eviction logic | **Deprecated** |
+| Config loading + auth helpers | **Reuse** — foundation for agent factory |
+
+See [Decision 9: MCPServerManager Disposition](https://www.notion.so/32030fd6530281ffafe8fd75298dce1d).
+
+### 5.4 MCP Server Configuration
+
+Server configs are defined in `app/adk/mcp_config/config/mcp_servers.yaml`:
+
+```yaml
+servers:
+  google_analytics_mcp:
+    description: "Google Analytics 4 data access, reports, and audiences"
+    category: "analytics"
+    tool_count: 4
+    estimated_tokens: 1800
+    keywords: [analytics, ga4, traffic, users, sessions, pageviews, metrics]
+    connection:
+      connection_type: sse
+      url: "${GA_MCP_SERVER_URL}/mcp/sse"
+      headers:
+        Content-Type: "application/json"
+      timeout_seconds: 30
+    auth_type: "ga_oauth"
+    enabled: true
+
+  hubspot_mcp:
+    description: "HubSpot CRM contacts, deals, and marketing automation"
+    category: "crm"
+    tool_count: 18
+    estimated_tokens: 2700
+    keywords: [crm, contacts, deals, pipeline, marketing, hubspot]
+    connection:
+      connection_type: sse
+      url: "${HUBSPOT_MCP_URL}"
+      headers:
+        Authorization: "Bearer ${HUBSPOT_API_KEY}"
+      timeout_seconds: 30
+    enabled: false
 ```
 
-### 5.3 Tool Registry Implementation
+Currently defines 6 servers (1 enabled: Google Analytics). The schema will evolve to include agent config, tool_filter, and dispatch configuration for the agent factory. See [Decision 10: MCP Config Migration — YAML to Firestore](https://www.notion.so/32030fd6530281868b47e989b059e03a).
+
+---
+
+## 6. Skills Architecture [PLANNED]
+
+> **Roadmap:** [Feature 3.3: Predefined Skills](product-roadmap.md#feature-33-predefined-skills), [Feature 4.2: Custom Skills](product-roadmap.md#feature-42-custom-skills--phase-1) — Releases 3.0, 4.0
+
+> **Status:** No skills infrastructure exists in the codebase today. ADK recently added Skills support (Agent Skills specification) for packaging procedural knowledge as self-contained, progressively-disclosed units. This section defines the architecture for predefined and custom skills.
+
+### 6.1 Overview
+
+ADK Skills are self-contained units of expertise that provide procedural knowledge to agents. They complement tools (which execute actions) by providing instructions for HOW to use tools effectively — step-by-step workflows, best practices, decision frameworks, and domain-specific procedures.
+
+Skills use **progressive disclosure** to minimize token overhead:
+
+| Level | What's Loaded | When | Token Cost |
+|-------|--------------|------|------------|
+| **L1 (Metadata)** | Name + description | At startup, always available | ~50-100 tokens/skill |
+| **L2 (Instructions)** | Full SKILL.md body | On activation (agent determines relevance) | <5,000 tokens |
+| **L3 (Resources)** | Scripts, references, assets | On-demand during skill execution | Variable |
+
+Each skill is defined by a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+name: analyze-campaign-performance
+description: Step-by-step workflow for cross-platform campaign analysis
+allowed-tools:
+  - run_report_mt
+  - get_meta_campaign_metrics
+  - get_google_ads_report
+---
+
+## Procedure
+
+1. Gather data from all connected platforms...
+2. Normalize metrics across platforms...
+3. Identify top and bottom performers...
+```
+
+### 6.2 Skill Types
+
+| Type | Storage | Lifecycle | Example |
+|------|---------|-----------|---------|
+| **Predefined** | Bundled in deployment (`app/adk/skills/`) | Static, versioned with releases | `analyze-campaign-performance`, `generate-marketing-report` |
+| **Custom** | Firestore (metadata) + GCS (SKILL.md content) | Dynamic, user-managed via UI | "Q2 campaign launch checklist", "Weekly client report template" |
+
+### 6.3 Predefined Skills (Shipped)
+
+| Skill | Description | Specialist(s) |
+|-------|-------------|---------------|
+| `analyze-campaign-performance` | Step-by-step workflow for cross-platform campaign analysis | Analytics |
+| `generate-marketing-report` | Report generation with standard sections and formatting | Analytics, Content |
+| `competitor-analysis` | Competitive research procedures using available data sources | Analytics |
+| `optimize-ad-spend` | Budget optimization workflow across platforms | Execution |
+| `create-email-campaign` | Email campaign creation workflow (Mailchimp) | Content |
+| `research-company-news` | Company news research and summarization — successor to the `[TRANSITIONAL]` Company News Agent | Root, Analytics |
+
+The `research-company-news` skill encapsulates the Company News Agent's functionality as a reusable skill. When the specialist layer is built, any specialist can invoke company news research without requiring a standalone agent. The Company News Agent's retrieval pipeline transitions to a scheduled automation (n8n workflow) managed by the Automation Specialist, while this skill provides the analysis and summarization procedures.
+
+### 6.4 Custom Skills (User-Created)
+
+Users create skills via a UI skill builder. Skills are scoped to an organization.
+
+**Storage:**
+- SKILL.md content: GCS (`gs://ken-e-skills/{org_id}/{skill_name}/SKILL.md`)
+- Metadata: Firestore (`skills/{skill_id}` — name, description, org_id, created_by, status, created_at)
+
+**Lifecycle:**
+1. User creates skill via UI → validated → stored in GCS + Firestore
+2. On session start, agent factory loads org's active skills via `SkillToolset`
+3. `LlmAgent` reads skill catalog (L1), activates relevant skills dynamically (L2)
+4. User can edit, disable, or delete skills via UI
+
+**Validation:** Custom skills are validated at creation time for well-formed YAML frontmatter, non-empty instruction body, and `allowed-tools` references matching known tools in the ToolRegistry.
+
+### 6.5 Integration with Agent Architecture
+
+Skills are loaded onto agents via ADK's `SkillToolset` in the `tools` parameter:
+
+- **Root Agent:** Predefined skills for general marketing expertise (e.g., `research-company-news`)
+- **Specialist Agents:** Domain-specific predefined skills + organization's custom skills
+- **Agent factory:** Reads skill config from Firestore and assembles `SkillToolset` per agent at deploy time
+
+**Interaction with `tool_filter`:** Skills and tools are complementary. `tool_filter` controls WHICH tools are visible to the LLM on each turn; skills provide instructions for HOW to use those tools effectively. A skill's `allowed-tools` field documents which tools the skill's procedures reference, but tool visibility is still governed by `tool_filter`.
+
+**Interaction with review loops (Section 4.6):** When a specialist executes a skill-guided workflow within a review loop, the reviewer evaluates the output against acceptance criteria — the skill provides procedural guidance but does not bypass quality gates.
+
+### 6.6 [PLANNED] Frontend: Skill Builder
+
+UI extension for skill management:
+
+| Feature | Description |
+|---------|-------------|
+| **Skill list view** | Organization's predefined + custom skills with status indicators |
+| **Create/edit form** | Name, description, markdown instructions editor with syntax highlighting |
+| **Preview** | Preview skill activation behavior and token cost estimate |
+| **Enable/disable toggle** | Per-skill toggle without deletion |
+| **Usage analytics** | Which skills are activated most often, by which specialists |
+
+> See [Decision 22: ADK Skills Architecture](https://www.notion.so/32030fd653028114827be82c2731ea72) for rationale.
+
+---
+
+## 7. Multi-Channel Support [PLANNED]
+
+> **Roadmap:** [Feature 5.1: Slack Channel](product-roadmap.md#feature-51-slack-channel), [Feature 6.1: Voice Channel](product-roadmap.md#feature-61-voice-channel) — Releases 5.0, 6.0
+
+> For the full API architecture and channel integration approaches, see [`docs/design/api-gateway-multi-channel.md`](design/api-gateway-multi-channel.md). Design decisions: [Decision 14: Channel-Agnostic API](https://www.notion.so/32030fd65302811ea99dfa94c3448a0d), [Decision 15: Slack Channel](https://www.notion.so/32030fd6530281148e89eb56494a7489), [Decision 16: Voice Channel](https://www.notion.so/32030fd6530281ce82d3f7bbbee439c3).
+
+### 7.1 Architecture Overview
+
+```
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│     WEB UI      │   │      SLACK      │   │     VOICE       │
+│  app.ken-e.ai   │   │  [PLANNED]      │   │  [PLANNED]      │
+└────────┬────────┘   └────────┬────────┘   └────────┬────────┘
+         │                     │                      │
+         └─────────────────────┴──────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  KEN-E API (FastAPI)                          │
+│            POST /api/v1/chat/completions                    │
+│            (Channel-agnostic endpoint)                       │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Vertex AI Agent Engine                           │
+│            (Same agents for all channels)                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The current API is already channel-agnostic — any new channel only needs an auth adapter, input normalizer, and output formatter. The Agent Engine call path does not change.
+
+### 7.2 Unified Message Format
+
+The target design uses a channel-agnostic message format internally. All channel adapters convert to/from this format:
+
+| Field | Purpose |
+|-------|---------|
+| `message_id` | Unique identifier |
+| `channel` | web, slack, voice |
+| `user_id` | Unified KEN-E user ID |
+| `account_id` | KEN-E account |
+| `text` | Message content |
+| `attachments` | Files, images |
+| `thread_id` | For threaded conversations |
+| `channel_context` | Channel-specific metadata |
+
+### 7.3 Channel Integration Plans
+
+| Channel | Framework | Deployment | Timeline |
+|---------|-----------|------------|----------|
+| **Web** | React SPA | Firebase Hosting | Implemented |
+| **Slack** | Bolt SDK | Separate Cloud Run | Sprint 8+ |
+| **Voice** | Pipecat + Meeting BaaS | Dedicated service | Phase 4 |
+
+### 7.4 Voice Channel Notes
+
+Voice-enabled meeting participation is technically feasible using:
+- **Meeting Bot API**: Recall.ai or Meeting BaaS
+- **STT**: Deepgram (sub-300ms streaming latency)
+- **TTS**: Cartesia (sub-100ms TTFB) or Deepgram Aura (sub-200ms TTFB)
+- **Framework**: Pipecat for pipeline orchestration
+
+Key considerations: voice responses must be concise (< 30s), target < 2s end-to-end latency, need speaker diarization. Estimated cost: ~$1.20/hour per meeting.
+
+---
+
+## 8. Workflow Management [PLANNED]
+
+> **Roadmap:** [Feature 3.4: Multi-Step Workflows](product-roadmap.md#feature-34-multi-step-workflows--phase-1), [Feature 5.3: Workflow Templates](product-roadmap.md#feature-53-workflow-templates), [Feature 5.4: Advanced Workflow](product-roadmap.md#feature-54-advanced-workflow--observability) — Releases 3.0, 5.0
+
+> **Status:** No workflow framework exists in the codebase today. The strategy agent's `execute_strategy_generation()` orchestrator is the closest pattern — it coordinates multiple sub-agents in sequence with Firestore persistence. No n8n, webhook, or cron infrastructure exists.
+>
+> **Revised March 18, 2026** — Structural corrections based on ADK 1.26.0 experiments. Removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added pipeline wrappers for `ParallelAgent` branches, added ADK Pitfalls and LLM Cost subsections.
+>
+> **Delivery plan:** See [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for the phased implementation plan covering Sections 8.1-8.4 — 13 stories across 5 phases.
+
+### 8.1 Multi-Step Workflow Pattern
+
+KEN-E will handle complex, multi-step workflows with the pattern:
+1. **Plan** the workflow — Root Agent decomposes the request into steps with acceptance criteria and a dependency graph
+2. **Execute** each step via a review loop (Section 4.6) — specialist produces draft, reviewer verifies against criteria
+3. **Run independent steps in parallel** — `ParallelAgent` wraps concurrent review loops (each wrapped in a pipeline `SequentialAgent` for future pre/post steps)
+4. **Synthesise** parallel results — a dedicated synthesizer agent with `include_contents='none'` reads parallel outputs via template substitution
+5. **Get approval** at decision points — workflow pauses at approval checkpoints; Root Agent presents results and asks user to confirm
+6. **Resume** where left off — workflow progress tracked in session state across conversation turns
+
+#### ADK Constructs for Multi-Step Workflows
+
+| Construct | Role |
+|-----------|------|
+| `build_review_pipeline()` | Atomic building block — one specialist + reviewer as direct `LoopAgent` sub-agents (Section 4.6). Reviewer uses `include_contents='none'`. |
+| `ParallelAgent` | Wraps independent review pipelines for concurrent execution. Each branch is wrapped in a pipeline `SequentialAgent` for extensibility. |
+| `SequentialAgent` | Chains phases (data gathering → synthesis → execution). Also used as pipeline wrapper around each `LoopAgent` inside `ParallelAgent` — allows future pre/post steps per branch. **Not** used inside `LoopAgent` (see Section 8.3 Pitfall 2). |
+| `output_key` | Each step writes to a unique key (e.g., `step_1a_draft`); downstream steps read via `{step_1a_draft}`. Use `{key?}` (optional syntax) for keys that may not exist on first iteration. |
+| Synthesizer `LlmAgent` | Dedicated agent with `include_contents='none'` that reads parallel outputs via template substitution. Instruction must explicitly state the injected data is "completed research" (see Section 8.3 Pitfall 3). |
+
+#### Example: "Increase budgets for Meta Ads campaigns with the most engaged website visitors"
+
+Root Agent decomposes this into phases:
+
+```
+Phase 1 — Data Gathering (parallel):
+  Step 1a: Query GA for engagement rate by Meta Ads campaign
+           → Analytics Specialist
+           CRITERIA: Table with columns: campaign name, sessions, engagement rate
+
+  Step 1b: Query Meta Ads for spend by campaign
+           → Execution Specialist
+           CRITERIA: Table with columns: campaign name, amount spent
+
+Phase 2 — Synthesis (approval checkpoint):
+  Step 2:  Synthesise optimisation plan from step 1a + 1b data
+           → Synthesizer agent presents to user for approval
+
+Phase 3 — Execution (after user approval):
+  Step 3:  Execute budget changes in Meta Ads
+           → Execution Specialist
+           CRITERIA: Confirmation of each change made
+```
+
+This maps to ADK workflow agents:
+
+```
+CONVERSATION TURN 1:
+
+    data_gathering (ParallelAgent)
+    ├── step_1a_pipeline (SequentialAgent)
+    │   └── step_1a_loop (LoopAgent, max_iterations=3)
+    │       ├── analytics_specialist (LlmAgent, output_key="step_1a_draft")
+    │       │     instruction: task + criteria + {step_1a_feedback?}
+    │       └── step_1a_reviewer (LlmAgent, output_key="step_1a_feedback",
+    │             include_contents='none', tools=[exit_loop])
+    │
+    └── step_1b_pipeline (SequentialAgent)
+        └── step_1b_loop (LoopAgent, max_iterations=3)
+            ├── execution_specialist (LlmAgent, output_key="step_1b_draft")
+            │     instruction: task + criteria + {step_1b_feedback?}
+            └── step_1b_reviewer (LlmAgent, output_key="step_1b_feedback",
+                  include_contents='none', tools=[exit_loop])
+
+    synthesizer (LlmAgent, include_contents='none')
+      instruction: "You are given completed research from two parallel analyses.
+                    Combine the following into an optimisation plan:
+                    Analytics findings: {step_1a_draft}
+                    Spend data: {step_1b_draft}"
+
+    → Root Agent presents synthesised plan to user:
+      "Here's my recommended plan... Shall I proceed?"
+
+CONVERSATION TURN 2 (after user approval):
+
+    step_3_pipeline (SequentialAgent)
+    └── step_3_loop (LoopAgent, max_iterations=3)
+        ├── execution_specialist (LlmAgent, output_key="step_3_draft")
+        │     instruction includes: the approved plan + {step_3_feedback?}
+        └── step_3_reviewer (LlmAgent, output_key="step_3_feedback",
+              include_contents='none', tools=[exit_loop])
+
+    → Returns: "I've made the following changes to your Meta Ads campaigns: ..."
+```
+
+> **Pipeline wrappers:** Each `LoopAgent` is wrapped in a `SequentialAgent` ("pipeline") inside the `ParallelAgent`. This allows future pre-processing (e.g., context injection) or post-processing (e.g., result formatting) steps per branch without restructuring the tree.
+
+#### User Approval Splits Workflows Into Conversation Turns
+
+User approval checkpoints do **not** require ADK pause/resume infrastructure. The Root Agent's conversational nature handles this naturally — it presents results, the user responds, and the next turn executes the remaining steps. Workflow progress is tracked in session state between turns.
+
+#### Workflow Planning: Dynamic Pipeline Construction
+
+The Root Agent calls an `execute_workflow(steps)` tool with a structured plan:
 
 ```python
-from dataclasses import dataclass
-from typing import List, Dict, Optional
-import json
-from pathlib import Path
-
-@dataclass
-class ToolIndexEntry:
-    """Lightweight tool representation for the index."""
-    name: str
-    description: str  # Brief, ~20 words max
-    keywords: List[str]
-    category: str
-    mcp_server: str
-
-@dataclass
-class MCPServerConfig:
-    """Configuration for an MCP server."""
-    name: str
-    description: str
-    category: str
-    tool_count: int
-    connection_type: str  # "stdio" | "sse" | "http"
-    connection_params: Dict
-    estimated_tokens: int
-    keywords: List[str]
-
-class ToolRegistry:
-    """
-    Searchable registry of all available tools across MCP servers.
-    Provides lightweight index for discovery without loading full schemas.
-    """
-
-    def __init__(self, registry_path: Path):
-        self.registry_path = registry_path
-        self.tool_index: List[ToolIndexEntry] = []
-        self.server_configs: Dict[str, MCPServerConfig] = {}
-        self._load_registry()
-
-    def _load_registry(self) -> None:
-        """Load the tool registry from disk."""
-        with open(self.registry_path / "tool_index.json") as f:
-            index_data = json.load(f)
-            self.tool_index = [
-                ToolIndexEntry(**entry) for entry in index_data["tools"]
-            ]
-
-        with open(self.registry_path / "server_configs.json") as f:
-            server_data = json.load(f)
-            self.server_configs = {
-                name: MCPServerConfig(**config)
-                for name, config in server_data.items()
-            }
-
-    def search(self, query: str, limit: int = 20) -> List[Dict]:
-        """
-        Search tools by keyword matching.
-        Returns lightweight metadata, not full tool schemas.
-        """
-        query_terms = query.lower().split()
-        results = []
-
-        for tool in self.tool_index:
-            score = self._calculate_relevance(tool, query_terms)
-            if score > 0:
-                results.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "category": tool.category,
-                    "mcp_server": tool.mcp_server,
-                    "server_description": self.server_configs[tool.mcp_server].description,
-                    "score": score
-                })
-
-        # Sort by relevance
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:limit]
-
-    def _calculate_relevance(self, tool: ToolIndexEntry, query_terms: List[str]) -> float:
-        """Calculate relevance score for a tool."""
-        score = 0.0
-
-        # Check tool name
-        tool_name_lower = tool.name.lower()
-        for term in query_terms:
-            if term in tool_name_lower:
-                score += 3.0
-
-        # Check description
-        desc_lower = tool.description.lower()
-        for term in query_terms:
-            if term in desc_lower:
-                score += 1.0
-
-        # Check keywords
-        for keyword in tool.keywords:
-            for term in query_terms:
-                if term in keyword.lower():
-                    score += 2.0
-
-        # Check category
-        if any(term in tool.category.lower() for term in query_terms):
-            score += 1.5
-
-        return score
-
-    def get_server_config(self, server_name: str) -> Optional[MCPServerConfig]:
-        """Get configuration for a specific MCP server."""
-        return self.server_configs.get(server_name)
-
-    def get_index_for_context(self) -> str:
-        """
-        Generate a compact text representation of the tool index
-        for inclusion in agent context.
-        Target: ~2,000 tokens
-        """
-        lines = ["## Available Tool Categories\n"]
-
-        # Group by category
-        by_category = {}
-        for config in self.server_configs.values():
-            if config.category not in by_category:
-                by_category[config.category] = []
-            by_category[config.category].append(config)
-
-        for category, servers in by_category.items():
-            lines.append(f"\n### {category}")
-            for server in servers:
-                lines.append(f"- {server.name} ({server.tool_count} tools): {server.description}")
-
-        lines.append("\n\nUse search_tools to find specific tools by keyword.")
-        return "\n".join(lines)
+execute_workflow(steps=[
+    {"id": "1a", "specialist": "analytics", "query": "...", "criteria": "...", "depends_on": []},
+    {"id": "1b", "specialist": "execution", "query": "...", "criteria": "...", "depends_on": []},
+    {"id": "2",  "specialist": "root",      "query": "...",
+     "depends_on": ["1a", "1b"], "approval_required": True},
+    {"id": "3",  "specialist": "execution", "query": "...", "criteria": "...", "depends_on": ["2"]},
+])
 ```
 
-### 5.4 MCP Server Manager
+The pipeline factory reads the `depends_on` graph to determine structure:
+- Steps with no shared dependencies → `ParallelAgent` (each branch wrapped in pipeline `SequentialAgent`)
+- Steps that depend on a prior step → sequential (run after dependency completes)
+- Steps with `approval_required: True` → return to Root Agent for user presentation
+- Template variables use `{key?}` (optional syntax) for first-iteration safety
+
+#### Second Example: "Launch a Q2 campaign for Product X"
+
+```
+Phase 1 — Research (sequential):
+  Step 1: Research competitors → Analytics Specialist
+  Step 2: Generate campaign strategy → Strategy Supervisor
+
+Phase 2 — Content (parallel, depends on Phase 1):
+  Step 3a: Create ad copy variations → Content Specialist
+  Step 3b: Design creative briefs → Content Specialist
+
+Phase 3 — Approval checkpoint:
+  Step 4: User reviews strategy + copy → [Approval required]
+
+Phase 4 — Deployment (sequential, after approval):
+  Step 5: Deploy to Meta Ads → Execution Specialist
+  Step 6: Set up weekly performance reporting → Automation Specialist
+```
+
+### 8.2 ADK Implementation Details
+
+#### `build_review_pipeline()` Factory
+
+The atomic building block for all review loops. Constructs a `LoopAgent` with specialist and reviewer as direct sub-agents:
 
 ```python
-from google.adk.tools.mcp_tool import MCPToolset
-from google.adk.tools.mcp_tool.mcp_toolset import StdioConnectionParams, SseConnectionParams
-from typing import Dict, List, Set
-import asyncio
-from datetime import datetime
+def build_review_pipeline(
+    specialist: LlmAgent,
+    acceptance_criteria: str,
+    output_key_prefix: str = "review",
+    max_iterations: int = 3,
+) -> LoopAgent:
+    """Build a review loop: specialist produces draft, reviewer evaluates against criteria."""
 
-class MCPServerManager:
-    """
-    Manages MCP server connections with lazy-loading and LRU eviction.
-    """
+    draft_key = f"{output_key_prefix}_draft"
+    feedback_key = f"{output_key_prefix}_feedback"
 
-    def __init__(
-        self,
-        registry: ToolRegistry,
-        max_loaded_servers: int = 10,
-        max_total_tokens: int = 15000
-    ):
-        self.registry = registry
-        self.max_loaded_servers = max_loaded_servers
-        self.max_total_tokens = max_total_tokens
+    specialist_with_output = LlmAgent(
+        name=f"{specialist.name}_worker",
+        model=specialist.model,
+        instruction=f"""
+{specialist.instruction}
 
-        self.loaded_servers: Dict[str, MCPToolset] = {}
-        self.server_tools: Dict[str, List] = {}
-        self.last_used: Dict[str, datetime] = {}
-        self.token_usage: Dict[str, int] = {}
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
 
-    async def load_server(self, server_name: str) -> List:
-        """
-        Load an MCP server and return its tools.
-        Implements lazy-loading with LRU eviction.
-        """
-        # Already loaded?
-        if server_name in self.loaded_servers:
-            self.last_used[server_name] = datetime.utcnow()
-            return self.server_tools[server_name]
+PREVIOUS FEEDBACK (if any):
+{{{feedback_key}?}}
 
-        # Get server config
-        config = self.registry.get_server_config(server_name)
-        if not config:
-            raise ValueError(f"Unknown MCP server: {server_name}")
+Your task: produce output that meets ALL acceptance criteria. If feedback is provided,
+address each point specifically.
+""",
+        tools=specialist.tools,
+        output_key=draft_key,
+    )
 
-        # Check if we need to evict servers
-        await self._ensure_capacity(config.estimated_tokens)
+    reviewer = LlmAgent(
+        name=f"{output_key_prefix}_reviewer",
+        model="gemini-2.0-flash",
+        include_contents='none',
+        instruction=f"""
+You are a quality reviewer. Evaluate the following draft against the acceptance criteria.
 
-        # Create connection params
-        if config.connection_type == "stdio":
-            connection_params = StdioConnectionParams(**config.connection_params)
-        elif config.connection_type == "sse":
-            connection_params = SseConnectionParams(**config.connection_params)
+ACCEPTANCE CRITERIA:
+{acceptance_criteria}
+
+DRAFT TO REVIEW:
+{{{draft_key}}}
+
+If ALL criteria are met: call the exit_loop tool immediately.
+If ANY criteria are NOT met: write specific, actionable feedback explaining what is missing
+or incorrect. Do NOT call exit_loop.
+""",
+        output_key=feedback_key,
+    )
+
+    return LoopAgent(
+        name=f"{output_key_prefix}_loop",
+        sub_agents=[specialist_with_output, reviewer],
+        max_iterations=max_iterations,
+    )
+```
+
+Key details:
+- **No `SequentialAgent`** — specialist and reviewer are direct `LoopAgent` sub-agents. `LoopAgent` iterates them sequentially and checks `escalate` between each.
+- **`include_contents='none'` on reviewer** — reviewer evaluates only the template-injected `{draft_key}`, not conversation history.
+- **`{feedback_key?}` (optional)** — on first iteration, no feedback exists. The `?` suffix resolves to empty string.
+- **`output_key` on reviewer is `feedback_key`**, not `draft_key` — the reviewer's `exit_loop` call produces no text, so `output_key` extracts `""`. This is safe because only the specialist's `draft_key` is read downstream (see Section 8.3 Pitfall 1).
+
+#### `build_workflow_pipeline()` Composition Pattern
+
+Composes multiple review pipelines into a workflow with parallel and sequential phases:
+
+```python
+def build_workflow_pipeline(
+    steps: list[WorkflowStep],
+    specialists: dict[str, LlmAgent],
+) -> Agent:
+    """Build a workflow from a dependency graph of steps."""
+
+    levels = _compute_dependency_levels(steps)
+
+    level_agents = []
+    for level_steps in levels:
+        pipelines = []
+        for step in level_steps:
+            loop = build_review_pipeline(
+                specialist=specialists[step.specialist],
+                acceptance_criteria=step.criteria,
+                output_key_prefix=f"step_{step.id}",
+            )
+            # Wrap each LoopAgent in a pipeline SequentialAgent
+            pipeline = SequentialAgent(
+                name=f"step_{step.id}_pipeline",
+                sub_agents=[loop],
+            )
+            pipelines.append(pipeline)
+
+        if len(pipelines) == 1:
+            level_agents.append(pipelines[0])
         else:
-            raise ValueError(f"Unknown connection type: {config.connection_type}")
+            level_agents.append(ParallelAgent(
+                name=f"parallel_level_{levels.index(level_steps)}",
+                sub_agents=pipelines,
+            ))
 
-        # Load the MCP toolset
-        toolset = MCPToolset(connection_params=connection_params)
-        tools = await toolset.get_tools()
+    if len(level_agents) == 1:
+        return level_agents[0]
 
-        # Store references
-        self.loaded_servers[server_name] = toolset
-        self.server_tools[server_name] = tools
-        self.last_used[server_name] = datetime.utcnow()
-        self.token_usage[server_name] = config.estimated_tokens
-
-        return tools
-
-    async def unload_server(self, server_name: str) -> None:
-        """Unload an MCP server to free resources."""
-        if server_name not in self.loaded_servers:
-            return
-
-        # Close the connection
-        toolset = self.loaded_servers[server_name]
-        await toolset.close()
-
-        # Clean up references
-        del self.loaded_servers[server_name]
-        del self.server_tools[server_name]
-        del self.last_used[server_name]
-        del self.token_usage[server_name]
-
-    async def _ensure_capacity(self, needed_tokens: int) -> None:
-        """Ensure we have capacity for new server, evicting LRU if needed."""
-        current_tokens = sum(self.token_usage.values())
-
-        # Check server count limit
-        while len(self.loaded_servers) >= self.max_loaded_servers:
-            lru_server = self._get_lru_server()
-            await self.unload_server(lru_server)
-
-        # Check token limit
-        while (current_tokens + needed_tokens) > self.max_total_tokens:
-            lru_server = self._get_lru_server()
-            await self.unload_server(lru_server)
-            current_tokens = sum(self.token_usage.values())
-
-    def _get_lru_server(self) -> str:
-        """Get the least recently used server."""
-        return min(self.last_used, key=self.last_used.get)
-
-    def get_server_tools(self, server_name: str) -> List:
-        """Get tools for a loaded server."""
-        return self.server_tools.get(server_name, [])
-
-    def get_all_loaded_tools(self) -> List:
-        """Get all tools from all loaded servers."""
-        all_tools = []
-        for tools in self.server_tools.values():
-            all_tools.extend(tools)
-        return all_tools
-
-    def get_status(self) -> Dict:
-        """Get current server loading status."""
-        return {
-            "loaded_count": len(self.loaded_servers),
-            "max_servers": self.max_loaded_servers,
-            "total_tokens": sum(self.token_usage.values()),
-            "max_tokens": self.max_total_tokens,
-            "servers": [
-                {
-                    "name": name,
-                    "tool_count": len(self.server_tools[name]),
-                    "tokens": self.token_usage[name],
-                    "last_used": self.last_used[name].isoformat()
-                }
-                for name in self.loaded_servers
-            ]
-        }
+    return SequentialAgent(name="workflow", sub_agents=level_agents)
 ```
 
-### 5.5 MCP Server Configuration Examples
+#### Synthesizer Agent Pattern
 
-```json
-// server_configs.json
-{
-  "google_analytics_mcp": {
-    "name": "google_analytics_mcp",
-    "description": "Google Analytics 4 data access, reports, and audience management",
-    "category": "Analytics",
-    "tool_count": 12,
-    "connection_type": "stdio",
-    "connection_params": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-google-analytics"],
-      "env": {
-        "GA_PROPERTY_ID": "${GA_PROPERTY_ID}",
-        "GOOGLE_APPLICATION_CREDENTIALS": "${GOOGLE_CREDS_PATH}"
-      }
-    },
-    "estimated_tokens": 1800,
-    "keywords": ["analytics", "ga4", "traffic", "users", "sessions", "pageviews", "events", "conversions"]
-  },
-  "hubspot_mcp": {
-    "name": "hubspot_mcp",
-    "description": "HubSpot CRM and marketing automation - contacts, deals, campaigns",
-    "category": "CRM",
-    "tool_count": 18,
-    "connection_type": "sse",
-    "connection_params": {
-      "url": "https://mcp.hubspot.com/sse",
-      "headers": {
-        "Authorization": "Bearer ${HUBSPOT_API_KEY}"
-      }
-    },
-    "estimated_tokens": 2700,
-    "keywords": ["crm", "contacts", "deals", "pipeline", "email", "marketing", "automation"]
-  },
-  "n8n_mcp": {
-    "name": "n8n_mcp",
-    "description": "n8n workflow automation - create, manage, and monitor workflows",
-    "category": "Automation",
-    "tool_count": 15,
-    "connection_type": "sse",
-    "connection_params": {
-      "url": "${N8N_BASE_URL}/mcp",
-      "headers": {
-        "X-N8N-API-KEY": "${N8N_API_KEY}"
-      }
-    },
-    "estimated_tokens": 2250,
-    "keywords": ["automation", "workflow", "schedule", "trigger", "integration", "n8n"]
-  }
-}
+After parallel branches complete, a synthesizer agent combines results. It must use `include_contents='none'` with a strong instruction that frames the injected data as completed research:
+
+```python
+synthesizer = LlmAgent(
+    name="synthesizer",
+    model="gemini-2.0-flash",
+    include_contents='none',
+    instruction="""You are given completed research from parallel analyses.
+Combine the following data into an actionable optimisation plan.
+
+Analytics findings:
+{step_1a_draft}
+
+Spend data:
+{step_1b_draft}
+
+Produce a clear plan with specific budget recommendations.""",
+    output_key="synthesis_result",
+)
 ```
+
+Without `include_contents='none'`, the synthesizer sees full conversation history from all parallel branches (including review loop back-and-forth), which confuses the model. With `include_contents='none'` but a weak instruction (e.g., bare bracket placeholders), the model may not understand the injected data is final. The instruction must explicitly frame it as "completed research" or equivalent.
+
+### 8.3 ADK Pitfalls
+
+Three experimentally validated pitfalls (ADK 1.26.0):
+
+#### Pitfall 1: `output_key` + `exit_loop` Interaction
+
+`exit_loop` is a tool call with no text output. If an agent has both `output_key` and calls `exit_loop`, `output_key` extracts `""` and overwrites the state key.
+
+**Rule:** Never place `exit_loop` on the agent whose `output_key` holds important state. In the review loop, the reviewer (not the specialist) calls `exit_loop`. The reviewer's `output_key` is `feedback_key`, which is only read on the *next* iteration — by the time `exit_loop` fires, the loop is exiting, so the `""` overwrite is harmless. The specialist's `draft_key` is never overwritten by `exit_loop`.
+
+#### Pitfall 2: `SequentialAgent` Ignores `escalate`
+
+Only `LoopAgent` checks `escalate` between sub-agents. `SequentialAgent` runs all its sub-agents unconditionally.
+
+**Rule:** Place agents directly under `LoopAgent` when `exit_loop` should skip subsequent agents. Wrapping specialist + reviewer in a `SequentialAgent` inside a `LoopAgent` means that if agent order were ever reversed, the `escalate` signal from `exit_loop` would be ignored by the `SequentialAgent`, and the specialist would run unnecessarily after approval.
+
+#### Pitfall 3: Synthesizer `include_contents` Behavior
+
+| Configuration | Behavior | Result |
+|--------------|----------|--------|
+| `include_contents='none'` + weak instruction (bare `{placeholders}`) | Model sees only injected text but doesn't understand context | Confused or incomplete output |
+| Default (no `include_contents`) | Model sees full conversation history from all parallel branches | Confused by review loop back-and-forth; unreliable |
+| `include_contents='none'` + strong instruction ("completed research from parallel analyses") | Model sees only injected text with clear framing | Correct, focused output |
+
+**Rule:** Always pair `include_contents='none'` with an instruction that explicitly frames injected template data as completed, final input.
+
+### 8.4 LLM Call Cost & Latency
+
+#### Per-Step Cost
+
+Each review loop iteration makes 2 LLM calls (specialist + reviewer):
+
+| Scenario | LLM Calls | Latency (~5-15s/call) |
+|----------|-----------|----------------------|
+| Approved first pass | 2 | ~10-30s |
+| 1 revision | 4 | ~20-60s |
+| Max iterations (3) | 6 | ~30-90s |
+
+#### Parallel Execution Characteristics
+
+`ParallelAgent` runs branches concurrently. Total latency = max(branch latencies), not sum:
+
+| Workflow Shape | Total LLM Calls | Wall-Clock Latency |
+|---------------|-----------------|-------------------|
+| 2 parallel steps, both approved first pass | 4 (2+2) | ~10-30s (parallel) |
+| 2 parallel steps + synthesizer + 1 execution step | 4+1+2 = 7 minimum | ~30-90s total |
+| Same with 1 revision each | 4+4+1+4 = 13 | ~40-120s total |
+
+Add ~1 LLM call for the synthesizer agent. Approval checkpoints add user wait time (not LLM latency).
+
+### 8.5 Workflow State Machine
+
+```
+        CREATED → PLANNING → AWAITING_APPROVAL → IN_PROGRESS → COMPLETED
+            │         ↑              │                  │            │
+            │         └──────────────┘                  │            │
+            │        (User requests changes)            │            │
+            │                                           ↓            │
+            │                                 ┌─── Executing Step    │
+            │                                 ├─── Awaiting Input    │
+            │                                 └─── Step Failed       │
+            │                                          │             │
+            │                                          ▼             │
+            └────────────────────────────────── FAILED ◄─────────────┘
+                                              (after max retries)
+```
+
+### 8.6 Workflow Data Model
+
+```
+Firestore: workflows/{workflow_id}
+  |-- account_id: str
+  |-- user_id: str
+  |-- title: str
+  |-- status: CREATED | PLANNING | AWAITING_APPROVAL | IN_PROGRESS | COMPLETED | FAILED
+  |-- created_at: timestamp
+  |-- updated_at: timestamp
+  |-- session_id: str  (ADK session for conversation context)
+  |-- steps: [
+  |     {
+  |       step_id: str,
+  |       title: str,
+  |       specialist: "analytics" | "content" | "execution" | "automation",
+  |       status: PENDING | IN_PROGRESS | COMPLETED | FAILED | SKIPPED,
+  |       depends_on: [step_id, ...],
+  |       inputs: dict,
+  |       outputs: dict | null,
+  |       error: str | null,
+  |       attempts: int,
+  |       started_at: timestamp | null,
+  |       completed_at: timestamp | null,
+  |     }
+  |   ]
+  |-- approval_checkpoints: [step_id, ...]  (steps requiring user approval before proceeding)
+```
+
+### 8.7 Persistence & Recovery
+
+| Concern | Approach |
+|---------|----------|
+| **Crash recovery** | Workflow state persisted to Firestore after each step transition. On recovery, resume from last completed step. |
+| **Idempotency** | Each step execution keyed by `(workflow_id, step_id, attempt)`. Before executing, check if output already exists for this attempt. |
+| **Partial failure** | Individual step failure marks step as FAILED, increments `attempts`. If `attempts < max_retries`, re-queue. If exhausted, mark workflow as FAILED with last error. |
+| **User interruption** | Steps in AWAITING_INPUT pause workflow. User response writes to `step.inputs` and transitions step to IN_PROGRESS. |
+| **Long-running steps** | Steps that take >30s (e.g., strategy generation) execute asynchronously. Workflow polls step status. Frontend shows progress. |
+
+### 8.8 [PLANNED] n8n Integration
+
+> **Roadmap:** [Feature 4.1: Automation Specialist + n8n](product-roadmap.md#feature-41-automation-specialist--n8n) — Release 4.0
+
+> **Status:** No n8n infrastructure exists. This is Sprint 8+ work.
+
+For scheduled/recurring tasks (e.g., "send me a weekly performance report every Monday"):
+
+```
+KEN-E creates workflow → n8n workflow created via n8n API
+                          |-- Schedule trigger (cron)
+                          |-- Webhook step → POST /api/v1/workflows/{id}/execute
+                          |-- KEN-E executes workflow steps
+                          |-- n8n sends notification on completion
+```
+
+| Concern | Approach |
+|---------|----------|
+| **Workflow templates** | n8n workflows created from KEN-E-defined templates (schedule → webhook → notify) |
+| **Webhook authentication** | n8n webhook calls KEN-E API with service account token (not user OAuth) |
+| **Callback mapping** | Webhook payload includes `workflow_id` and `step_id` → KEN-E looks up Firestore workflow and resumes |
+| **Per-account isolation** | Each account's n8n workflows scoped by `account_id`. One n8n instance, workflows isolated by credential. |
+| **Failure notification** | n8n error handler → Slack/email notification to user + mark workflow as FAILED in Firestore |
 
 ---
 
-## 6. Multi-Channel Support
+## 9. Integration with Evaluation Framework
 
-### 6.1 Unified Channel Architecture
+> **Roadmap:** [Feature 2.5: MER-E Phase 0](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track), [Feature 3.5: MER-E Phase 1](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track), [Feature 4.3: MER-E Phase 2](product-roadmap.md#feature-43-mer-e-phase-2--human-feedback--patterns-parallel-track-phase-1), [Feature 4.4: A/B Testing](product-roadmap.md#feature-44-ab-testing-infrastructure) — Releases 2.0–4.0
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                        MULTI-CHANNEL ARCHITECTURE                                │
-└─────────────────────────────────────────────────────────────────────────────────┘
+### 9.1 Overview
 
-                    ┌─────────────────────────────────────────┐
-                    │           CLIENT CHANNELS                │
-                    └─────────────────────────────────────────┘
-                                       │
-        ┌──────────────────────────────┼──────────────────────────────┐
-        │                              │                              │
-        ▼                              ▼                              ▼
-┌─────────────────┐        ┌─────────────────┐        ┌─────────────────┐
-│     WEB UI      │        │      SLACK      │        │     VOICE       │
-│  app.ken-e.ai   │        │      BOT        │        │ (Zoom/Teams)    │
-├─────────────────┤        ├─────────────────┤        ├─────────────────┤
-│ • React SPA     │        │ • Bolt SDK      │        │ • Pipecat       │
-│ • WebSocket     │        │ • Event API     │        │ • Recall.ai     │
-│ • Rich UI       │        │ • Block Kit     │        │ • Deepgram STT  │
-│ • File uploads  │        │ • Threads       │        │ • Cartesia TTS  │
-└────────┬────────┘        └────────┬────────┘        └────────┬────────┘
-         │                          │                          │
-         └──────────────────────────┼──────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          CHANNEL ADAPTER LAYER                                   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                        MESSAGE NORMALIZER                                │   │
-│  │  • Convert channel-specific formats to unified message format           │   │
-│  │  • Extract text, attachments, context from each channel                 │   │
-│  │  • Handle channel-specific features (threads, reactions, etc.)          │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                      AUTHENTICATION LAYER                                │   │
-│  │  • Firebase Auth (Web)                                                  │   │
-│  │  • Slack OAuth (Slack)                                                  │   │
-│  │  • Meeting authentication (Voice)                                       │   │
-│  │  • Map to unified user identity                                         │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                      SESSION MANAGER                                     │   │
-│  │  • Create/resume sessions across channels                               │   │
-│  │  • Share state between channels for same user                           │   │
-│  │  • Handle cross-channel handoffs                                        │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           AGENTIC HARNESS                                        │
-│                    (Same for all channels)                                       │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          RESPONSE FORMATTER                                      │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐              │
-│  │   WEB FORMAT    │   │  SLACK FORMAT   │   │  VOICE FORMAT   │              │
-│  │                 │   │                 │   │                 │              │
-│  │ • Markdown      │   │ • Block Kit     │   │ • Plain text    │              │
-│  │ • Charts        │   │ • Attachments   │   │ • Summarized    │              │
-│  │ • Interactive   │   │ • Actions       │   │ • TTS-friendly  │              │
-│  │   components    │   │ • Modals        │   │ • Key points    │              │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘              │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 6.2 Unified Message Format
-
-```python
-from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
-from enum import Enum
-from datetime import datetime
-
-class ChannelType(Enum):
-    WEB = "web"
-    SLACK = "slack"
-    VOICE = "voice"
-
-@dataclass
-class UnifiedMessage:
-    """
-    Channel-agnostic message format used internally.
-    All channel adapters convert to/from this format.
-    """
-    # Identity
-    message_id: str
-    channel: ChannelType
-    channel_message_id: str  # Original ID from channel
-
-    # User context
-    user_id: str             # Unified user ID
-    account_id: str          # KEN-E account
-    organization_id: str     # KEN-E organization
-
-    # Content
-    text: str
-    attachments: List[Dict]  # Files, images, etc.
-
-    # Metadata
-    timestamp: datetime
-    thread_id: Optional[str]  # For threaded conversations
-    reply_to: Optional[str]   # Message being replied to
-
-    # Channel-specific context
-    channel_context: Dict[str, Any]  # Slack channel, meeting ID, etc.
-
-@dataclass
-class UnifiedResponse:
-    """
-    Channel-agnostic response format.
-    Response formatters convert to channel-specific format.
-    """
-    # Content
-    text: str
-    structured_content: Optional[Dict]  # Tables, charts, etc.
-
-    # Actions
-    suggested_actions: List[Dict]  # Buttons, quick replies
-    requires_confirmation: bool
-
-    # Metadata
-    confidence: float
-    sources: List[str]
-
-    # Formatting hints
-    format_hints: Dict[str, Any]  # Channel-specific formatting preferences
-```
-
-### 6.3 Channel Adapters
-
-#### 6.3.1 Web Channel Adapter
-
-```python
-from fastapi import WebSocket
-import json
-
-class WebChannelAdapter:
-    """
-    Adapter for the web UI channel (app.ken-e.ai).
-    Uses WebSocket for real-time communication.
-    """
-
-    def __init__(self, session_manager: SessionManager):
-        self.session_manager = session_manager
-        self.active_connections: Dict[str, WebSocket] = {}
-
-    async def handle_websocket(self, websocket: WebSocket, user_id: str):
-        """Handle WebSocket connection from web client."""
-        await websocket.accept()
-        self.active_connections[user_id] = websocket
-
-        try:
-            while True:
-                data = await websocket.receive_json()
-                message = self._normalize_message(data, user_id)
-                response = await self._process_message(message)
-                await self._send_response(websocket, response)
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-        finally:
-            del self.active_connections[user_id]
-
-    def _normalize_message(self, data: Dict, user_id: str) -> UnifiedMessage:
-        """Convert web message to unified format."""
-        return UnifiedMessage(
-            message_id=generate_id(),
-            channel=ChannelType.WEB,
-            channel_message_id=data.get("id", ""),
-            user_id=user_id,
-            account_id=data["account_id"],
-            organization_id=data["organization_id"],
-            text=data["text"],
-            attachments=data.get("attachments", []),
-            timestamp=datetime.utcnow(),
-            thread_id=data.get("session_id"),
-            reply_to=None,
-            channel_context={
-                "client_version": data.get("client_version"),
-                "viewport": data.get("viewport")
-            }
-        )
-
-    def _format_response(self, response: UnifiedResponse) -> Dict:
-        """Format response for web client."""
-        return {
-            "text": response.text,
-            "markdown": True,
-            "structured_content": response.structured_content,
-            "actions": [
-                {"type": "button", "label": a["label"], "action": a["action"]}
-                for a in response.suggested_actions
-            ],
-            "sources": response.sources
-        }
-```
-
-#### 6.3.2 Slack Channel Adapter
-
-```python
-from slack_bolt.async_app import AsyncApp
-from slack_sdk.web.async_client import AsyncWebClient
-
-class SlackChannelAdapter:
-    """
-    Adapter for Slack channel using Bolt SDK.
-    """
-
-    def __init__(self, session_manager: SessionManager):
-        self.session_manager = session_manager
-        self.app = AsyncApp(
-            token=os.environ["SLACK_BOT_TOKEN"],
-            signing_secret=os.environ["SLACK_SIGNING_SECRET"]
-        )
-        self._register_handlers()
-
-    def _register_handlers(self):
-        """Register Slack event handlers."""
-
-        @self.app.event("app_mention")
-        async def handle_mention(event, say, client):
-            message = self._normalize_message(event, client)
-            response = await self._process_message(message)
-            await self._send_response(say, response, event.get("thread_ts"))
-
-        @self.app.event("message")
-        async def handle_dm(event, say, client):
-            # Only handle DMs (not channel messages without mention)
-            if event.get("channel_type") == "im":
-                message = self._normalize_message(event, client)
-                response = await self._process_message(message)
-                await self._send_response(say, response, event.get("thread_ts"))
-
-    def _normalize_message(self, event: Dict, client: AsyncWebClient) -> UnifiedMessage:
-        """Convert Slack event to unified format."""
-        # Look up user mapping
-        user_mapping = self._get_user_mapping(event["user"])
-
-        return UnifiedMessage(
-            message_id=generate_id(),
-            channel=ChannelType.SLACK,
-            channel_message_id=event["ts"],
-            user_id=user_mapping.ken_e_user_id,
-            account_id=user_mapping.account_id,
-            organization_id=user_mapping.organization_id,
-            text=self._clean_mention(event["text"]),
-            attachments=self._process_slack_files(event.get("files", [])),
-            timestamp=datetime.fromtimestamp(float(event["ts"])),
-            thread_id=event.get("thread_ts"),
-            reply_to=event.get("thread_ts"),
-            channel_context={
-                "slack_channel": event["channel"],
-                "slack_team": event.get("team"),
-                "slack_user": event["user"]
-            }
-        )
-
-    def _format_response(self, response: UnifiedResponse) -> List[Dict]:
-        """Format response as Slack Block Kit blocks."""
-        blocks = []
-
-        # Main text as markdown section
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": self._convert_to_slack_markdown(response.text)
-            }
-        })
-
-        # Structured content (tables, etc.)
-        if response.structured_content:
-            blocks.extend(self._format_structured_content(response.structured_content))
-
-        # Action buttons
-        if response.suggested_actions:
-            blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": a["label"]},
-                        "action_id": a["action"],
-                        "value": json.dumps(a.get("value", {}))
-                    }
-                    for a in response.suggested_actions[:5]  # Slack limit
-                ]
-            })
-
-        return blocks
-```
-
-#### 6.3.3 Voice Channel Adapter (Research-Based)
-
-Based on research, voice-enabled meeting participation **is technically feasible** using:
-- **Meeting Bot API**: Recall.ai or Meeting BaaS for joining meetings
-- **STT**: Deepgram for real-time transcription
-- **TTS**: Cartesia or Deepgram Aura for voice synthesis
-- **Framework**: Pipecat for orchestrating the voice pipeline
-
-```python
-from pipecat.pipeline import Pipeline
-from pipecat.transports.services.meeting_baas import MeetingBaaSTransport
-from pipecat.services.deepgram import DeepgramSTTService
-from pipecat.services.cartesia import CartesiaTTSService
-
-class VoiceChannelAdapter:
-    """
-    Adapter for voice channel (Zoom, Teams, Meet).
-    Uses Pipecat + Meeting BaaS for meeting participation.
-
-    STATUS: Technically feasible but complex. Recommend Phase 4 implementation.
-    """
-
-    def __init__(self, session_manager: SessionManager):
-        self.session_manager = session_manager
-        self.active_meetings: Dict[str, Pipeline] = {}
-
-    async def join_meeting(self, meeting_url: str, user_id: str) -> str:
-        """
-        Join a meeting as an AI participant.
-        Returns meeting session ID.
-        """
-        # Create the voice pipeline
-        pipeline = Pipeline([
-            # Transport: Join meeting via Meeting BaaS
-            MeetingBaaSTransport(
-                api_key=os.environ["MEETING_BAAS_API_KEY"],
-                meeting_url=meeting_url,
-                bot_name="KEN-E",
-                bot_image_url="https://app.ken-e.ai/avatar.png"
-            ),
-
-            # STT: Deepgram for transcription
-            DeepgramSTTService(
-                api_key=os.environ["DEEPGRAM_API_KEY"],
-                model="nova-2",
-                language="en"
-            ),
-
-            # LLM processing
-            KenEVoiceProcessor(
-                session_manager=self.session_manager,
-                user_id=user_id
-            ),
-
-            # TTS: Cartesia for speech synthesis
-            CartesiaTTSService(
-                api_key=os.environ["CARTESIA_API_KEY"],
-                voice_id="professional-male"  # Or configurable
-            )
-        ])
-
-        meeting_id = generate_id()
-        self.active_meetings[meeting_id] = pipeline
-
-        # Start the pipeline
-        await pipeline.start()
-
-        return meeting_id
-
-    def _normalize_message(self, transcript: str, speaker: str, meeting_context: Dict) -> UnifiedMessage:
-        """Convert voice transcript to unified format."""
-        user_mapping = self._get_speaker_mapping(speaker, meeting_context)
-
-        return UnifiedMessage(
-            message_id=generate_id(),
-            channel=ChannelType.VOICE,
-            channel_message_id=f"{meeting_context['meeting_id']}_{datetime.utcnow().timestamp()}",
-            user_id=user_mapping.ken_e_user_id,
-            account_id=user_mapping.account_id,
-            organization_id=user_mapping.organization_id,
-            text=transcript,
-            attachments=[],
-            timestamp=datetime.utcnow(),
-            thread_id=meeting_context["meeting_id"],
-            reply_to=None,
-            channel_context={
-                "meeting_id": meeting_context["meeting_id"],
-                "meeting_platform": meeting_context["platform"],
-                "speaker_name": speaker,
-                "participant_count": meeting_context.get("participant_count")
-            }
-        )
-
-    def _format_response(self, response: UnifiedResponse) -> str:
-        """
-        Format response for voice output.
-        Optimized for TTS: shorter, conversational, no formatting.
-        """
-        # Strip markdown and special characters
-        text = self._strip_formatting(response.text)
-
-        # Summarize if too long for voice
-        if len(text) > 500:
-            text = self._summarize_for_voice(text)
-
-        # Convert numbers and abbreviations for natural speech
-        text = self._convert_for_speech(text)
-
-        return text
-
-    async def leave_meeting(self, meeting_id: str):
-        """Leave a meeting and clean up resources."""
-        if meeting_id in self.active_meetings:
-            pipeline = self.active_meetings[meeting_id]
-            await pipeline.stop()
-            del self.active_meetings[meeting_id]
-```
-
-### 6.4 Voice Channel Implementation Notes
-
-**Technical Feasibility**: ✅ Confirmed feasible
-
-**Recommended Implementation Path**:
-1. Use **Recall.ai** or **Meeting BaaS** for meeting joining (handles platform complexity)
-2. Use **Pipecat** framework for voice pipeline orchestration
-3. Use **Deepgram** for STT (sub-200ms latency)
-4. Use **Cartesia** or **Deepgram Aura** for TTS
-
-**Key Considerations**:
-- Voice responses must be concise (< 30 seconds typically)
-- Need speaker diarization to identify who is speaking
-- Meeting context (agenda, participants) should be loaded at join
-- Latency is critical: target < 2 seconds end-to-end response time
-- Consider "raise hand" or activation phrase to avoid interrupting
-
-**Estimated Costs**:
-- Recall.ai: ~$1/hour per meeting
-- Deepgram STT: ~$0.15/hour
-- TTS: ~$0.05/hour
-- **Total**: ~$1.20/hour per meeting
-
-**Recommendation**: Implement in **Phase 4** after core functionality is stable. The complexity of voice integration warrants dedicated focus.
-
----
-
-## 7. Workflow Management
-
-### 7.1 Multi-Step Workflow Handling
-
-KEN-E handles complex, multi-step workflows similar to Claude Code. The key pattern is:
-1. **Plan** the workflow with clear steps
-2. **Track** progress visibly to the user
-3. **Get approval** at decision points
-4. **Resume** where left off if interrupted
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         WORKFLOW STATE MACHINE                                   │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-                              ┌─────────────┐
-                              │   CREATED   │
-                              └──────┬──────┘
-                                     │
-                                     ▼
-                              ┌─────────────┐
-                              │  PLANNING   │◄──────────────────────┐
-                              └──────┬──────┘                       │
-                                     │                              │
-                                     ▼                              │
-                         ┌───────────────────────┐                  │
-                         │  AWAITING_APPROVAL    │──────────────────┘
-                         │  (User reviews plan)  │     (User requests changes)
-                         └───────────┬───────────┘
-                                     │ (Approved)
-                                     ▼
-                              ┌─────────────┐
-           ┌─────────────────►│ IN_PROGRESS │◄─────────────────┐
-           │                  └──────┬──────┘                  │
-           │                         │                         │
-           │        ┌────────────────┼────────────────┐        │
-           │        │                │                │        │
-           │        ▼                ▼                ▼        │
-           │  ┌───────────┐   ┌───────────┐   ┌───────────┐   │
-           │  │ Executing │   │ Awaiting  │   │   Error   │   │
-           │  │   Step    │   │  Input    │   │  Handler  │   │
-           │  └─────┬─────┘   └─────┬─────┘   └─────┬─────┘   │
-           │        │               │               │         │
-           │        │               │ (Input       │ (Retry) │
-           │        │               │  received)   │         │
-           │        └───────────────┴───────────────┘         │
-           │                        │                         │
-           │                        ▼                         │
-           │                 ┌─────────────┐                  │
-           │                 │ Step Done?  │──────────────────┘
-           │                 └──────┬──────┘     (More steps)
-           │                        │
-           │                        │ (All steps done)
-           │                        ▼
-           │                 ┌─────────────┐
-           │ (User adds     │  COMPLETED  │
-           │  more tasks)   └──────┬──────┘
-           │                       │
-           └───────────────────────┘
-```
-
-### 7.2 Workflow Data Model
-
-```python
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any
-from enum import Enum
-from datetime import datetime
-
-class WorkflowStatus(Enum):
-    CREATED = "created"
-    PLANNING = "planning"
-    AWAITING_APPROVAL = "awaiting_approval"
-    IN_PROGRESS = "in_progress"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-class TaskStatus(Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    AWAITING_INPUT = "awaiting_input"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
-@dataclass
-class WorkflowTask:
-    """Individual task within a workflow."""
-    task_id: str
-    name: str
-    description: str
-    status: TaskStatus = TaskStatus.PENDING
-    specialist: Optional[str] = None  # Which agent handles this
-    dependencies: List[str] = field(default_factory=list)  # Task IDs
-    inputs: Dict[str, Any] = field(default_factory=dict)
-    outputs: Dict[str, Any] = field(default_factory=dict)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
-
-@dataclass
-class Workflow:
-    """Multi-step workflow definition."""
-    workflow_id: str
-    name: str
-    description: str
-    account_id: str
-    user_id: str
-    status: WorkflowStatus = WorkflowStatus.CREATED
-    tasks: List[WorkflowTask] = field(default_factory=list)
-    current_task_index: int = 0
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
-    completed_at: Optional[datetime] = None
-    context: Dict[str, Any] = field(default_factory=dict)  # Shared context
-
-class WorkflowManager:
-    """
-    Manages multi-step workflows with persistence and state tracking.
-    """
-
-    def __init__(self, firestore_client, session_service):
-        self.db = firestore_client
-        self.session_service = session_service
-
-    async def create_workflow(
-        self,
-        name: str,
-        tasks: List[Dict],
-        account_id: str,
-        user_id: str,
-        context: Dict = None
-    ) -> Workflow:
-        """Create a new workflow with tasks."""
-        workflow = Workflow(
-            workflow_id=generate_id(),
-            name=name,
-            description=f"Workflow: {name}",
-            account_id=account_id,
-            user_id=user_id,
-            tasks=[
-                WorkflowTask(
-                    task_id=generate_id(),
-                    name=t["name"],
-                    description=t.get("description", ""),
-                    specialist=t.get("specialist"),
-                    dependencies=t.get("dependencies", [])
-                )
-                for t in tasks
-            ],
-            context=context or {}
-        )
-
-        # Persist to Firestore
-        await self._save_workflow(workflow)
-
-        return workflow
-
-    async def execute_next_task(self, workflow_id: str) -> Dict:
-        """Execute the next pending task in the workflow."""
-        workflow = await self._load_workflow(workflow_id)
-
-        if workflow.status not in [WorkflowStatus.IN_PROGRESS, WorkflowStatus.AWAITING_APPROVAL]:
-            raise ValueError(f"Workflow not executable: {workflow.status}")
-
-        # Find next executable task
-        next_task = self._get_next_executable_task(workflow)
-        if not next_task:
-            # All tasks complete
-            workflow.status = WorkflowStatus.COMPLETED
-            workflow.completed_at = datetime.utcnow()
-            await self._save_workflow(workflow)
-            return {"status": "completed", "workflow": workflow}
-
-        # Execute the task
-        next_task.status = TaskStatus.IN_PROGRESS
-        next_task.started_at = datetime.utcnow()
-        await self._save_workflow(workflow)
-
-        try:
-            # Delegate to appropriate specialist
-            result = await self._execute_task(next_task, workflow)
-
-            next_task.status = TaskStatus.COMPLETED
-            next_task.outputs = result
-            next_task.completed_at = datetime.utcnow()
-
-            # Update workflow context with task outputs
-            workflow.context[next_task.task_id] = result
-
-        except Exception as e:
-            next_task.status = TaskStatus.FAILED
-            next_task.error = str(e)
-            workflow.status = WorkflowStatus.FAILED
-
-        await self._save_workflow(workflow)
-
-        return {
-            "status": "task_completed" if next_task.status == TaskStatus.COMPLETED else "task_failed",
-            "task": next_task,
-            "workflow": workflow
-        }
-
-    def _get_next_executable_task(self, workflow: Workflow) -> Optional[WorkflowTask]:
-        """Find the next task that can be executed."""
-        for task in workflow.tasks:
-            if task.status != TaskStatus.PENDING:
-                continue
-
-            # Check dependencies
-            deps_met = all(
-                self._get_task_by_id(workflow, dep_id).status == TaskStatus.COMPLETED
-                for dep_id in task.dependencies
-            )
-
-            if deps_met:
-                return task
-
-        return None
-
-    async def get_workflow_summary(self, workflow_id: str) -> str:
-        """Generate a user-friendly summary of workflow progress."""
-        workflow = await self._load_workflow(workflow_id)
-
-        lines = [f"## Workflow: {workflow.name}\n"]
-        lines.append(f"Status: {workflow.status.value}\n")
-
-        for i, task in enumerate(workflow.tasks):
-            status_icon = {
-                TaskStatus.PENDING: "⬜",
-                TaskStatus.IN_PROGRESS: "🔄",
-                TaskStatus.AWAITING_INPUT: "⏳",
-                TaskStatus.COMPLETED: "✅",
-                TaskStatus.FAILED: "❌",
-                TaskStatus.SKIPPED: "⏭️"
-            }.get(task.status, "❓")
-
-            lines.append(f"{status_icon} {i+1}. {task.name}")
-            if task.status == TaskStatus.IN_PROGRESS:
-                lines.append(f"   ↳ Currently executing...")
-            elif task.status == TaskStatus.FAILED:
-                lines.append(f"   ↳ Error: {task.error}")
-
-        return "\n".join(lines)
-```
-
-### 7.3 Scheduled Workflow Integration
-
-Workflows that need to run on a schedule are delegated to the Automation Specialist to create n8n workflows:
-
-```python
-class ScheduledWorkflowManager:
-    """
-    Creates n8n workflows for scheduled/recurring tasks.
-    """
-
-    def __init__(self, n8n_client, workflow_manager):
-        self.n8n = n8n_client
-        self.workflow_manager = workflow_manager
-
-    async def schedule_workflow(
-        self,
-        workflow: Workflow,
-        schedule: Dict  # cron expression or interval
-    ) -> str:
-        """
-        Convert a KEN-E workflow to an n8n workflow for scheduling.
-        Returns the n8n workflow ID.
-        """
-        n8n_workflow = self._build_n8n_workflow(workflow, schedule)
-
-        # Create in n8n
-        response = await self.n8n.create_workflow(n8n_workflow)
-        n8n_workflow_id = response["id"]
-
-        # Activate the workflow
-        await self.n8n.activate_workflow(n8n_workflow_id)
-
-        # Store reference
-        await self._store_schedule_mapping(workflow.workflow_id, n8n_workflow_id)
-
-        return n8n_workflow_id
-
-    def _build_n8n_workflow(self, workflow: Workflow, schedule: Dict) -> Dict:
-        """Build n8n workflow definition from KEN-E workflow."""
-        nodes = []
-
-        # Schedule trigger node
-        nodes.append({
-            "name": "Schedule Trigger",
-            "type": "n8n-nodes-base.scheduleTrigger",
-            "position": [250, 300],
-            "parameters": {
-                "rule": {
-                    "interval": schedule.get("interval", [{"field": "hours", "value": 24}])
-                }
-            }
-        })
-
-        # Webhook to KEN-E API for each task
-        for i, task in enumerate(workflow.tasks):
-            nodes.append({
-                "name": f"Execute: {task.name}",
-                "type": "n8n-nodes-base.httpRequest",
-                "position": [450 + (i * 200), 300],
-                "parameters": {
-                    "method": "POST",
-                    "url": f"{{{{$env.KEN_E_API_URL}}}}/api/workflows/{workflow.workflow_id}/tasks/{task.task_id}/execute",
-                    "authentication": "headerAuth",
-                    "sendBody": True,
-                    "bodyParameters": {
-                        "parameters": [
-                            {"name": "context", "value": "={{$json}}"}
-                        ]
-                    }
-                }
-            })
-
-        # Notification node at end
-        nodes.append({
-            "name": "Notify Completion",
-            "type": "n8n-nodes-base.slack",
-            "position": [450 + (len(workflow.tasks) * 200), 300],
-            "parameters": {
-                "channel": "{{$env.SLACK_NOTIFICATION_CHANNEL}}",
-                "text": f"Workflow '{workflow.name}' completed successfully"
-            }
-        })
-
-        return {
-            "name": f"KEN-E: {workflow.name}",
-            "nodes": nodes,
-            "connections": self._build_connections(nodes),
-            "settings": {
-                "executionOrder": "v1"
-            }
-        }
-```
-
----
-
-## 8. Integration with Evaluation Framework
-
-### 8.1 Overview
-
-The agentic harness integrates with the Self-Improving Evaluation Framework to enable:
-1. **Automatic tracing** of all agent outputs
+The agentic harness integrates with the Self-Improving Evaluation Framework (MER-E) to enable:
+1. **Automatic tracing** of all agent outputs via Weave
 2. **Quality scoring** via LLM-based evaluation
 3. **Human feedback collection** for alignment
 4. **Continuous improvement** of agent prompts
 
-### 8.2 Trace Instrumentation
+### 9.2 Trace Instrumentation
 
-```python
-import weave
-from functools import wraps
+Tracing is implemented using Weave SDK with ADK callbacks, defined in `app/adk/tracking/callbacks.py`:
 
-class AgentTracer:
-    """
-    Instruments agent calls for the evaluation framework.
-    """
+- **`weave_before_agent_callback()`** — creates parent Weave span wrapping entire agent invocation
+- **`weave_after_agent_callback()`** — finishes parent span with output metadata
+- **`adk_after_tool_callback()`** — records tool execution status (SUCCESS, PERMISSION_DENIED, RATE_LIMITED, TIMEOUT, FAILURE)
 
-    def __init__(self, project_name: str = "ken-e-production"):
-        weave.init(project_name)
+Weave initialization is in `app/utils/weave_observability.py`:
+- `init_weave_if_needed()` — thread-safe singleton initialization
+- `safe_weave_op()` — conditional decorator (no-op if Weave unavailable)
+- `sanitize_sensitive_data()` — hash-based redaction before logging
 
-    def trace_agent_call(self, agent_name: str, agent_version: str):
-        """Decorator to trace agent calls."""
-        def decorator(func):
-            @wraps(func)
-            async def wrapper(*args, **kwargs):
-                # Extract context from kwargs
-                context = kwargs.get("context", {})
+The trace hierarchy follows the contract in `docs/trace-structure-spec.md`:
 
-                trace_metadata = {
-                    # Agent identification
-                    "agent_id": agent_name,
-                    "agent_version": agent_version,
-
-                    # Experiment tracking
-                    "experiment_id": context.get("experiment_id", "baseline"),
-                    "variant_name": context.get("variant_name", "baseline"),
-
-                    # User context
-                    "account_id": context.get("account_id"),
-                    "session_id": context.get("session_id"),
-                    "user_id": context.get("user_id"),
-
-                    # Environment
-                    "environment": os.getenv("ENVIRONMENT", "production"),
-
-                    # Channel info
-                    "channel": context.get("channel", "unknown"),
-                }
-
-                with weave.op(name=f"agent:{agent_name}", metadata=trace_metadata):
-                    # Log inputs
-                    weave.log({
-                        "input_text": kwargs.get("input_text", ""),
-                        "loaded_context_sections": context.get("loaded_sections", []),
-                        "loaded_tools": context.get("loaded_tools", []),
-                    })
-
-                    # Execute agent
-                    result = await func(*args, **kwargs)
-
-                    # Log outputs
-                    weave.log({
-                        "output_text": result.get("text", ""),
-                        "output_type": result.get("output_type", "general"),
-                        "tool_calls": result.get("tool_calls", []),
-                        "tokens_used": result.get("tokens_used", 0),
-                    })
-
-                    return result
-
-            return wrapper
-        return decorator
-
-# Usage example
-tracer = AgentTracer()
-
-class StrategySpecialistWithTracing:
-    @tracer.trace_agent_call(
-        agent_name="strategy_specialist",
-        agent_version="v1.0.0"
-    )
-    async def execute(self, input_text: str, context: Dict) -> Dict:
-        # Agent execution logic
-        pass
+```
+Root: Session Invocation
+├── L1: Orchestrator Agent Run (KEN-E)
+│   ├── L2: Sub-Agent Run (e.g., google_analytics_agent)
+│   │   ├── L3: LLM Call (Gemini)
+│   │   ├── L3: Tool Call (adk.tool.run_report_mt)
+│   │   └── L3: Tool Call (adk.tool.get_account_summaries_mt)
 ```
 
-### 8.3 Output Type Classification
+#### 9.2.1 Code Execution Traces
 
-The harness automatically classifies outputs for appropriate evaluation:
+When the Analytics Specialist uses Gemini code execution, the LLM response contains `executable_code` and `code_execution_result` part types interleaved with text parts within L3 LLM Call spans. These are NOT separate L3 spans — they are additional content parts within the `generate_content` response.
+
+| Part Type | Key Fields | Description |
+|-----------|-----------|-------------|
+| `executable_code` | `code` (string) | Python code generated by the model |
+| `code_execution_result` | `output` (string), `outcome` (enum) | Execution output and success/failure status |
+
+These parts appear as siblings of text parts within a single `generate_content` span. MER-E extractors should detect `executable_code` parts and pair them with their corresponding `code_execution_result` to evaluate computational correctness.
+
+See `docs/trace-structure-spec.md` Section 4.4.1 for the full trace structure specification and MER-E extraction guidance.
+
+### 9.3 Output Type Classification
+
+Output classification is implemented via `OUTPUT_CATEGORIES` in `app/adk/agents/strategy_agent/constants.py`. Each strategy type maps to semantic output categories for MER-E trace-rule matching:
 
 ```python
-OUTPUT_TYPE_PATTERNS = {
-    # Business Strategy outputs
-    "company_overview": ["company overview", "business summary", "about the company"],
-    "swot_analysis": ["swot", "strengths", "weaknesses", "opportunities", "threats"],
-    "competitor_analysis": ["competitor", "competitive analysis", "market position"],
-
-    # Marketing Strategy outputs
-    "icp_narrative": ["ideal customer", "icp", "customer profile", "target audience"],
-    "campaign_strategy": ["campaign", "marketing strategy", "go-to-market"],
-
-    # Content outputs
-    "blog_post": ["blog", "article", "long-form"],
-    "social_post": ["social", "tweet", "linkedin post", "instagram"],
-    "email_copy": ["email", "newsletter", "subject line"],
-
-    # Analytics outputs
-    "performance_report": ["report", "dashboard", "analytics", "performance"],
-    "forecast": ["forecast", "prediction", "projection"],
+OUTPUT_CATEGORIES = {
+    "business_strategy": {
+        "research": "business_strategy.google_search",
+        "report": "business_strategy.research_report",
+    },
+    # ... per strategy type
 }
-
-class OutputClassifier:
-    """
-    Classifies agent outputs for evaluation routing.
-    """
-
-    def classify(self, output_text: str, task_context: Dict) -> str:
-        """
-        Determine the output type for evaluation purposes.
-        """
-        # Check explicit type from context
-        if "output_type" in task_context:
-            return task_context["output_type"]
-
-        # Pattern matching
-        output_lower = output_text.lower()
-        for output_type, patterns in OUTPUT_TYPE_PATTERNS.items():
-            if any(pattern in output_lower for pattern in patterns):
-                return output_type
-
-        # Check specialist agent
-        specialist = task_context.get("specialist")
-        if specialist == "strategy_specialist":
-            return "strategy_output"
-        elif specialist == "content_specialist":
-            return "content_output"
-        elif specialist == "analytics_specialist":
-            return "analytics_output"
-
-        return "general_output"
 ```
 
-### 8.4 Feedback Collection Integration
+### 9.4 [PLANNED] Feedback Collection
 
-```python
-class FeedbackCollector:
-    """
-    Collects user feedback on agent outputs for evaluation alignment.
-    """
+> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#feature-43-mer-e-phase-2--human-feedback--patterns-parallel-track-phase-1) — Release 4.0
 
-    def __init__(self, firestore_client):
-        self.db = firestore_client
+A feedback collection system will enable human evaluation alignment:
+- Queue feedback requests for users after agent outputs
+- Store ratings (1-5) and factor-level ratings in Firestore
+- Trigger alignment analysis when sufficient feedback is collected
 
-    async def request_feedback(
-        self,
-        trace_id: str,
-        output_text: str,
-        output_type: str,
-        channel: ChannelType
-    ) -> None:
-        """
-        Queue a feedback request for the user.
-        """
-        # Create feedback request
-        request = {
-            "trace_id": trace_id,
-            "output_type": output_type,
-            "output_preview": output_text[:500],
-            "status": "pending",
-            "created_at": datetime.utcnow(),
-            "channel": channel.value,
-        }
+### 9.5 [PLANNED] A/B Testing Support
 
-        # Store in Firestore for evaluation UI
-        await self.db.collection("evaluation_queue").add(request)
+> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#feature-44-ab-testing-infrastructure) — Release 4.0
 
-    async def submit_feedback(
-        self,
-        trace_id: str,
-        rating: int,  # 1-5
-        factors: Dict[str, bool],  # Factor-level ratings
-        comments: Optional[str] = None
-    ) -> None:
-        """
-        Submit user feedback on an output.
-        """
-        feedback = {
-            "trace_id": trace_id,
-            "rating": rating,
-            "factors": factors,
-            "comments": comments,
-            "submitted_at": datetime.utcnow(),
-            "evaluator_type": "human",
-        }
-
-        # Store feedback
-        await self.db.collection("human_evaluations").add(feedback)
-
-        # Trigger alignment analysis if needed
-        await self._check_alignment_trigger(trace_id)
-```
-
-### 8.5 A/B Testing Support
-
-The harness supports A/B testing of agent configurations:
-
-```python
-class ExperimentManager:
-    """
-    Manages A/B experiments for agent configurations.
-    """
-
-    def __init__(self, firestore_client):
-        self.db = firestore_client
-        self.active_experiments: Dict[str, Dict] = {}
-
-    async def get_variant_for_account(
-        self,
-        agent_name: str,
-        account_id: str
-    ) -> str:
-        """
-        Determine which variant an account should receive.
-        Uses consistent hashing for stable assignment.
-        """
-        experiment = await self._get_active_experiment(agent_name)
-        if not experiment:
-            return "baseline"
-
-        # Consistent hash assignment
-        hash_input = f"{experiment['id']}:{account_id}"
-        hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
-
-        # Determine variant based on traffic split
-        cumulative = 0
-        for variant in experiment["variants"]:
-            cumulative += variant["traffic_percentage"]
-            if (hash_value % 100) < cumulative:
-                return variant["name"]
-
-        return "baseline"
-
-    async def load_agent_config(
-        self,
-        agent_name: str,
-        variant: str
-    ) -> Dict:
-        """
-        Load the agent configuration for a specific variant.
-        """
-        if variant == "baseline":
-            doc_path = f"agent_configs/{agent_name}"
-        else:
-            doc_path = f"agent_configs/{agent_name}_{variant}"
-
-        doc = await self.db.document(doc_path).get()
-        return doc.to_dict()
-```
+The harness will support A/B testing of agent configurations:
+- Consistent hash-based variant assignment per account
+- Firestore-stored variant configurations
+- Trace metadata includes `experiment_id` and `variant_name` for evaluation
 
 ---
 
-## 9. Infrastructure Requirements
+## 10. Infrastructure Requirements
 
-### 9.1 Compute Requirements
+### 10.1 Compute Requirements
 
 | Component | Specification | Scaling |
 |-----------|--------------|---------|
-| **API Server** | 4 vCPU, 8GB RAM | 2-10 instances based on load |
-| **Agent Workers** | 8 vCPU, 16GB RAM | 1-5 instances per account tier |
-| **MCP Server Pool** | 2 vCPU, 4GB RAM per server | On-demand scaling |
-| **Automation Runner** | 4 vCPU, 8GB RAM | 1-3 instances |
-| **Voice Pipeline** | 8 vCPU, 16GB RAM | Per active meeting |
+| **API Server (Cloud Run)** | 4 vCPU, 8GB RAM | 2-10 instances based on load |
+| **Agent Engine (Vertex AI)** | Managed by Google | Auto-scaled |
+| **GA MCP Server (Cloud Run)** | 2 vCPU, 4GB RAM | On-demand |
 
-### 9.2 Memory Estimates
+### 10.2 Cost Estimates
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         MEMORY USAGE PER SESSION                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+#### Usage Tier Definitions
 
-Component                           Memory        Notes
-──────────────────────────────────────────────────────────────────────────────────
-Session state                       ~50 KB        Conversation history, state
-Context manager                     ~200 KB       Loaded sections, cache
-Tool registry index                 ~100 KB       Searchable index
-Loaded MCP servers (3 avg)          ~150 KB       Connection state
-Agent instances                     ~100 KB       Cached model configs
-──────────────────────────────────────────────────────────────────────────────────
-TOTAL PER SESSION                   ~600 KB
+| Tier | Accounts | Requests/Day | Specialist Calls/Request | Tokens/Request (est.) |
+|------|----------|-------------|-------------------------|----------------------|
+| **Light** | 1-5 | 50-100 | 1-2 | ~5,000 |
+| **Moderate** | 10-25 | 500-1,000 | 2-3 | ~8,000 |
+| **Heavy** | 50+ | 5,000+ | 3-5 | ~15,000 |
 
-At 1,000 concurrent sessions:       ~600 MB
-At 10,000 concurrent sessions:      ~6 GB
-```
-
-### 9.3 Cost Estimates
+#### Moderate Tier Cost Breakdown
 
 | Resource | Unit Cost | Est. Monthly Usage | Monthly Cost |
 |----------|-----------|-------------------|--------------|
-| **Gemini 2.0 Flash** | $0.075/1M input, $0.30/1M output | 500M tokens | ~$150 |
-| **Cloud Run** | $0.00002400/vCPU-second | 10,000 CPU-hours | ~$864 |
+| **Gemini 2.0 Flash** | $0.075/1M input, $0.30/1M output | ~240M tokens (1,000 req/day × 8K tokens × 30 days) | ~$90 |
+| **Cloud Run (API)** | $0.00002400/vCPU-second | 10,000 CPU-hours | ~$864 |
+| **Cloud Run (MCP servers)** | Same rate | 2 servers × 2,000 CPU-hours | ~$345 |
 | **Firestore** | $0.18/100K reads | 50M reads | ~$90 |
 | **Neo4j AuraDB** | $65/month (Professional) | 1 instance | $65 |
-| **BigQuery** | $5/TB queried | 100GB | ~$0.50 |
-| **Cloud Storage** | $0.020/GB/month | 500GB | ~$10 |
-| **n8n Cloud** | $50/month (Starter) | 1 instance | $50 |
+| **Redis (Memorystore)** | ~$0.049/GB-hour | 1GB instance | ~$36 |
 | **Weave (W&B)** | $0/month (included) | Unlimited | $0 |
-| **Voice (Recall.ai)** | $1/hour | 100 hours | ~$100 |
-| **Voice (Deepgram)** | $0.15/hour | 100 hours | ~$15 |
 
-**Estimated Total**: ~$1,350/month for moderate usage
+**Moderate tier total:** ~$1,490/month
 
-### 9.4 Architecture Diagram
+#### Scaling Considerations
+
+- **Token cost scales linearly** with requests × tools-per-request. With `tool_filter`, fewer tools in context reduces input tokens by ~30-50%.
+- **MCP server costs scale with server count**, not user count (multi-tenant). Adding Google Ads MCP + HubSpot MCP adds ~$345/month in Cloud Run.
+- **Voice channel** (Phase 4) adds: STT/TTS API costs (~$0.006/min for Deepgram) + Meeting BaaS ($50-100+/month per bot seat for Recall.ai). Not included in moderate tier estimate. Budget ~$500-1,500/month additional depending on meeting volume.
+- **Gemini code execution** adds minimal cost — billed as additional output tokens (~500-2,000 per request, ~$0.00015-0.0006 at Flash pricing). No separate compute cost; Google manages the sandbox.
+- **Voice latency gap:** Current Agent Engine response time is ~7-13s. Voice requires <2s end-to-end. Voice may need a lightweight agent path or a streaming-optimized serving strategy — this is an unsolved prerequisite for Phase 4.
+
+#### Cost Monitoring
+
+The `UsageTracker` (`app/adk/tracking/usage.py`) records per-tool-call events in Firestore with batched writes (100 events or 30s flush). Alert support: `AlertData` model supports threshold-based alerts. **Scalability concern:** At heavy usage, individual Firestore documents per tool call create expensive aggregation queries. A time-bucketed rollup strategy (hourly/daily pre-aggregated counters) is recommended before production scale.
+
+### 10.3 Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           INFRASTRUCTURE DIAGRAM                                 │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          GOOGLE CLOUD PLATFORM                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────┐     ┌─────────────────────┐     ┌─────────────┐     │
+│  │  Cloud Run  │     │ Vertex AI           │     │  Cloud Run  │     │
+│  │   API       │────▶│ Agent Engine        │────▶│  GA MCP     │     │
+│  │  (FastAPI)  │     │ (KEN-E Agent)       │     │  Server     │     │
+│  └──────┬──────┘     └─────────────────────┘     └─────────────┘     │
+│         │                                                              │
+│    ┌────┴──────────────────────────────────────────┐                  │
+│    │                                                │                  │
+│    ▼                    ▼                    ▼       │                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │                  │
+│  │  Firestore  │  │   Neo4j     │  │   Redis     │ │                  │
+│  │  (Config,   │  │   AuraDB    │  │  (Sessions) │ │                  │
+│  │   State)    │  │  (Knowledge)│  │             │ │                  │
+│  └─────────────┘  └─────────────┘  └─────────────┘ │                  │
+│                                                      │                  │
+│  ┌───────────────────────────────────────────────────┘                  │
+│  │                                                                      │
+│  ▼                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐      │
+│  │                    Secret Manager                            │      │
+│  │         (API keys, OAuth tokens, MCP credentials)           │      │
+│  └─────────────────────────────────────────────────────────────┘      │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              GOOGLE CLOUD PLATFORM                               │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Cloud Load Balancer                              │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                          │
-│         ┌────────────────────────────┼────────────────────────────┐            │
-│         │                            │                            │            │
-│         ▼                            ▼                            ▼            │
-│  ┌─────────────┐            ┌─────────────┐            ┌─────────────┐        │
-│  │  Cloud Run  │            │  Cloud Run  │            │  Cloud Run  │        │
-│  │   API       │            │   Workers   │            │   Slack     │        │
-│  │  (FastAPI)  │            │  (Agents)   │            │   Handler   │        │
-│  └──────┬──────┘            └──────┬──────┘            └─────────────┘        │
-│         │                          │                                           │
-│         └────────────┬─────────────┘                                           │
-│                      │                                                          │
-│                      ▼                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Cloud Tasks / Pub/Sub                            │   │
-│  │                    (Async job processing)                                │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                      │                                          │
-│         ┌────────────────────────────┼────────────────────────────┐            │
-│         │                            │                            │            │
-│         ▼                            ▼                            ▼            │
-│  ┌─────────────┐            ┌─────────────┐            ┌─────────────┐        │
-│  │  Firestore  │            │   Neo4j     │            │  BigQuery   │        │
-│  │  (Config,   │            │   AuraDB    │            │ (Analytics) │        │
-│  │   State)    │            │  (Knowledge)│            │             │        │
-│  └─────────────┘            └─────────────┘            └─────────────┘        │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Secret Manager                                   │   │
-│  │           (API keys, OAuth tokens, MCP credentials)                     │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              EXTERNAL SERVICES                                   │
-├─────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │
-│  │   n8n       │  │  Weave/W&B  │  │  Recall.ai  │  │  Deepgram   │           │
-│  │ (Automation)│  │ (Tracing)   │  │  (Meetings) │  │  (STT/TTS)  │           │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘           │
-│                                                                                  │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         MCP Server Pool                                  │   │
-│  │  Google Analytics | Google Ads | HubSpot | Mailchimp | Salesforce | ... │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL SERVICES                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────┐  ┌───────────────────────┐                  │
+│  │   Weave / W&B         │  │  [PLANNED] MCP Servers │                  │
+│  │   (Tracing)           │  │  Google Ads MCP        │                  │
+│  └───────────────────────┘  │  HubSpot MCP (hosted)  │                  │
+│                              └───────────────────────┘                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. Risks and Testing Requirements
+## 11. Resilience, Security & Testing
 
-### 10.1 Risk Assessment Matrix
+### 11.1 Current Error Handling Patterns
+
+The codebase has multi-layer error handling. This section documents what exists and identifies gaps.
+
+#### 11.1.1 Implemented Patterns
+
+| Layer | Pattern | Key Files |
+|-------|---------|-----------|
+| **Dispatch handlers** | Try/catch → return `{status: "error", error: str}`. Never raises. | `dispatch_handlers.py` |
+| **Agent invocation** | Exponential backoff + jitter via `@retry_with_exponential_backoff()`. Retriable: `ConnectionError`, `TimeoutError`, `ValidationError`. 3 attempts, 1-30s delay. | `agent_retry.py` |
+| **MCP health monitoring** | Background health checks every 30s. Auto-reconnect with backoff (1s, 2s, 4s) after 3 consecutive failures. | `mcp_config/manager.py` |
+| **API context loading** | Parallel `asyncio.gather()` with per-source try/catch. Neo4j fails → skip org context. Firestore fails → skip GA creds. Redis miss → load from DB. | `routers/chat.py` |
+| **API session creation** | ADK session fails → generate `manual_*` fallback ID. Non-blocking. | `routers/chat.py` |
+| **Chat completion** | 1800s timeout on Agent Engine calls. `TimeoutError` → user-facing message. Stream errors caught and returned as text. | `routers/chat.py` |
+| **Tool execution tracking** | `adk_after_tool_callback` records `ExecutionStatus`: SUCCESS, FAILURE, TIMEOUT, PERMISSION_DENIED, RATE_LIMITED. Never blocks. | `tracking/callbacks.py`, `tracking/usage.py` |
+| **Security hooks** | `adk_before_tool_callback` checks token expiry (5-min buffer), refreshes via Google OAuth2 API. Permission denied → signals frontend reauth. | `security/hooks.py` |
+| **Firestore operations** | Retry decorators with exponential backoff + jitter. Retriable: `Aborted`, `DeadlineExceeded`, `ResourceExhausted`, `ServiceUnavailable`. Config: 3-5 attempts, 0.5-2s initial delay. | `strategy_agent/retry_utils.py` |
+
+#### 11.1.2 Gap: No Circuit Breaker Pattern
+
+Current retry logic always attempts up to `max_retries` even if a service is clearly down. Missing:
+- **Circuit breaker state machine** (CLOSED → OPEN → HALF-OPEN) for MCP servers and Agent Engine
+- **Failure rate threshold** — e.g., if >50% of calls to an MCP server fail in 60s, stop sending for 30s
+- **Cascading failure protection** — if GA MCP is down, GA agent should fail fast rather than retry 3x per dispatch
+
+**Recommendation:** Implement circuit breaker at the `McpToolset` or dispatch handler level. ADK's `before_tool_callback` could check circuit state before allowing tool execution.
+
+#### 11.1.3 Gap: Firestore Unavailability at Deploy Time
+
+If Firestore is unreachable during `deploy_ken_e.py` execution, `load_config_from_firestore()` raises `FirestoreConnectionError`. The deployment fails — there are no bundled fallback configs.
+
+**Recommendation:** Bundle last-known-good config snapshots in the deployment package. Deploy script should catch `FirestoreConnectionError` and fall back to bundled config with a warning.
+
+### 11.2 Credential Lifecycle & Security Model
+
+#### 11.2.1 Current OAuth Flow
+
+| Step | Implementation | Key File |
+|------|---------------|----------|
+| **Authorization** | Frontend initiates `GET /api/oauth/authorize/google-analytics`. Generates state token (15-min TTL in Firestore). Redirects to Google with `offline` + `consent` prompts. Scopes: `analytics.readonly`, `analytics.edit`. | `routers/oauth_integrations.py` |
+| **Callback** | Validates state token (CSRF protection). Exchanges auth code for tokens. Preserves existing refresh_token if Google doesn't return new one. Encrypts and stores in Firestore. | `routers/oauth_integrations.py` |
+| **Storage** | Credentials encrypted via `EncryptionService` (Fernet-based). Stored in Firestore via `IntegrationCredentialsService`. Keys: `access_token`, `refresh_token`, `expires_at`, `tenant_id`, `selected_property_ids`. | `ga_credential_helper.py`, `encryption_service.py` |
+| **Injection** | API loads creds from Firestore at session creation, refreshes if expired, writes to ADK session state as `ga_credentials`. Cached in Redis (10-min TTL). | `routers/chat.py` |
+| **Per-request auth** | `_ga_header_provider()` reads `ga_credentials` from `context.state`, builds `Authorization: Bearer` + `X-Tenant-ID` headers. Called per turn by McpToolset. | `google_analytics_agent_v4.py` |
+| **Token refresh** | On-demand: checks `expires_at` with 5-min buffer. Calls `https://oauth2.googleapis.com/token` with 10s timeout. Updates Firestore + returns refreshed creds. | `ga_credential_helper.py` |
+| **Reauth signal** | `adk_before_tool_callback` detects expired/revoked tokens → returns `{requires_reauth: true}` → frontend triggers re-authorization flow. | `security/hooks.py` |
+
+#### 11.2.2 Gaps in Credential Security
+
+| Gap | Risk | Recommendation |
+|-----|------|----------------|
+| **No proactive token refresh** | Tokens may expire mid-conversation if session is long | Add background refresh task or refresh during `InstructionProvider` (runs each turn) |
+| **No refresh token rotation tracking** | Can't detect if refresh token was revoked by user in Google | Track last successful refresh timestamp; if refresh fails, immediately signal reauth |
+| **Fernet encryption in dev, KMS TODO in prod** | Local encryption key management is not production-grade | Complete `EncryptionService` KMS integration before production launch |
+| **No credential expiry notifications** | Users discover broken credentials only when they try to use an agent | Add expiry monitoring: warn user in frontend when creds expire within 24h |
+| **No cross-tenant isolation checks** | Credential retrieval uses `account_id` but no additional tenant boundary enforcement | Add explicit tenant context validation in `IntegrationCredentialsService` |
+
+#### 11.2.3 Multi-Tenant Security for Specialist Agents
+
+When specialist agents connect to multiple MCP servers per user (Sprint 5-6), each `McpToolset` needs its own `header_provider` that reads the correct platform credentials from session state:
+
+```
+Session state keys (per-platform):
+  ga_credentials      → GA MCP header_provider
+  google_ads_credentials → Google Ads MCP header_provider
+  hubspot_credentials → HubSpot MCP header_provider
+  meta_ads_credentials → Meta Ads SDK tool_context.state
+```
+
+The API layer must load and refresh credentials for all connected platforms at session creation time. This is a linear scaling problem: N platforms = N credential loads. Mitigation: parallel loading (already implemented for GA), Redis caching per-platform.
+
+> For the multi-tenancy model (one MCP server instance per platform serving all accounts, scoped by OAuth token), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Section 3.
+
+### 11.3 Rate Limiting & Platform Quota Management
+
+#### 11.3.1 Current Rate Limiting
+
+| Scope | Implementation | Key File |
+|-------|---------------|----------|
+| **Auth endpoints** | In-memory sliding window per IP. Login: 10/min, 50/hr. Token: 60/min, 1000/hr. Password reset: 3/min, 10/hr. | `auth/rate_limiting.py` |
+| **External APIs** | Redis-backed per-API limits. Wikipedia: 10/min. Wikidata: 10/min. Gemini: 5/min. Fail-open if cache unavailable. | `services/rate_limiter.py` |
+| **Firestore operations** | Retry with backoff on `ResourceExhausted` (Firestore's rate limit signal). | `strategy_agent/retry_utils.py` |
+
+#### 11.3.2 Gap: No Marketing Platform Quota Management
+
+Marketing platform APIs have aggressive rate limits that the specialist agents must respect:
+
+| Platform | Rate Limits | Impact |
+|----------|------------|--------|
+| **Google Ads API** | 15,000 operations/day (basic access), per-customer limits on mutate operations | Daily quota exhaustion blocks all Google Ads queries |
+| **Meta Marketing API** | Rate limits per ad account, sliding window with business use case rate limits | Account-level throttling; shared across all users accessing same ad account |
+| **HubSpot API** | 100-200 requests/10s depending on plan tier, daily limits | Per-app limits shared across all KEN-E users on same HubSpot portal |
+| **Google Analytics Data API** | 200 requests/min per property, 50,000 requests/day per project | Shared project quota across all KEN-E users |
+
+**Recommendation:** Implement per-platform quota tracking at the specialist agent level:
+
+1. **`before_tool_callback` quota check** — Before each tool call, check remaining quota from a shared counter (Redis). If quota is low, either throttle (add delay) or inform the user.
+2. **Response header parsing** — Extract `X-RateLimit-Remaining` and `Retry-After` headers from MCP server responses. Store in Redis for quota tracking.
+3. **Account-level quota isolation** — For platforms with per-account limits (Meta, HubSpot), track quota per `account_id`, not globally.
+4. **User-facing feedback** — When rate limited, the specialist agent should explain the constraint: "Google Ads daily quota is at 95%. I can run 3 more queries today."
+
+### 11.4 Risk Assessment Matrix
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| **Context overflow** during complex tasks | High | High | Implement context compression, hierarchical loading, monitoring |
-| **MCP server connection failures** | Medium | High | Connection pooling, retry logic, fallback to cached data |
-| **Tool discovery returns irrelevant results** | Medium | Medium | Improve search algorithm, user feedback loop, manual override |
+| **Context overflow during complex tasks** | High | High | ADK compaction (interval=5, threshold=50K), hierarchical loading, `tool_filter` |
+| **MCP server connection failures** | Medium | High | ADK auto-reconnect, health monitoring, retry logic. Gap: no circuit breaker. |
 | **Agent hallucination in strategy outputs** | Medium | High | Require citations, fact-checking tools, human review queue |
-| **Workflow interruption loses state** | Low | High | Persistent state in Firestore, recovery mechanisms |
-| **Cross-channel session inconsistency** | Medium | Medium | Unified session service, state sync |
-| **n8n automation failures** | Medium | Medium | Error handling, notifications, manual override |
-| **Voice latency exceeds tolerance** | Medium | Medium | Optimize pipeline, use faster models, chunk responses |
-| **Cost overrun from token usage** | Medium | Medium | Token budgets, usage monitoring, alerts |
-| **Evaluation framework impacts performance** | Low | Medium | Async tracing, sampling for high-volume |
+| **ADK version dependency** | Medium | Medium | Pin versions, test upgrades in staging before prod |
+| **Firestore config drift** | Low | Medium | Config validation at deploy time, registry consistency tests |
+| **Cost overrun from token usage** | Medium | Medium | UsageTracker (token + cost metrics), Weave tracing, alerts via `AlertData` model |
+| **Platform API rate limit exhaustion** | Medium | Medium | Per-platform quota tracking (gap — not yet implemented) |
+| **OAuth token expiry mid-conversation** | Medium | Low | 5-min refresh buffer, reauth signal to frontend. Gap: no proactive refresh. |
+| **Credential encryption not prod-ready** | Low | High | Fernet in dev, KMS TODO in prod. Must complete before launch. |
 
-### 10.2 Critical Test Scenarios
+### 11.5 Test Locations
 
-#### 10.2.1 Context Management Tests
+| Test Suite | Location | Coverage |
+|-----------|----------|----------|
+| API unit tests | `api/tests/unit/` | Chat, auth, sessions, context |
+| API integration tests | `api/tests/` | End-to-end API flows |
+| Agent tests | `app/adk/agents/tests/` | Registry, dispatch, context loading |
+| Shared module tests | `shared/tests/` | Context utils, token estimation |
+| Load tests | `tests/load_test/` | Locust performance tests |
 
-```python
-class ContextManagementTests:
-    """
-    Test suite for context management functionality.
-    """
+### 11.6 Performance Benchmarks
 
-    async def test_context_budget_enforcement(self):
-        """Verify context stays within budget limits."""
-        # Setup: Create session with company context
-        session = await create_test_session(account_id="test_account")
-        context_mgr = session.context_manager
-
-        # Load multiple sections
-        await context_mgr.load_section("products")
-        await context_mgr.load_section("icps")
-        await context_mgr.load_section("competitors")
-
-        # Verify budget
-        usage = context_mgr.get_current_token_usage()
-        assert usage <= 40000, f"Context budget exceeded: {usage}"
-
-    async def test_context_compression_triggered(self):
-        """Verify compression activates at threshold."""
-        session = await create_test_session()
-
-        # Simulate long conversation (many messages)
-        for i in range(100):
-            await session.add_message(f"User message {i}" * 100)
-            await session.add_message(f"Assistant response {i}" * 200)
-
-        # Verify compression was triggered
-        assert session.compression_count > 0
-        assert session.total_tokens < 180000
-
-    async def test_hierarchical_loading(self):
-        """Verify hierarchical context loads correctly."""
-        context_mgr = HierarchicalContextManager("test_account", neo4j_client)
-
-        # Level 1 should always be available
-        summary = await context_mgr.load_executive_summary()
-        assert "products" in summary.lower()
-
-        # Level 2 loads on demand
-        products = await context_mgr.load_section("products")
-        assert len(products) > len(summary)
-
-        # Level 3 provides full detail
-        detail = await context_mgr.load_detail("marketingai_full")
-        assert len(detail) > len(products)
-```
-
-#### 10.2.2 Tool Discovery Tests
-
-```python
-class ToolDiscoveryTests:
-    """
-    Test suite for tool discovery and MCP loading.
-    """
-
-    async def test_tool_search_relevance(self):
-        """Verify search returns relevant tools."""
-        discovery = ToolDiscoveryAgent(registry, mcp_manager)
-
-        # Search for analytics tools
-        results = await discovery.search_tools("google analytics traffic")
-
-        # Verify top result is Google Analytics
-        assert results[0]["server_name"] == "google_analytics_mcp"
-
-    async def test_lazy_loading(self):
-        """Verify MCP servers load on demand."""
-        discovery = ToolDiscoveryAgent(registry, mcp_manager)
-
-        # Initially no servers loaded
-        assert len(discovery.loaded_servers) == 0
-
-        # Load a server
-        await discovery.load_tools("google_analytics_mcp")
-
-        # Verify loaded
-        assert "google_analytics_mcp" in discovery.loaded_servers
-
-    async def test_lru_eviction(self):
-        """Verify LRU eviction when at capacity."""
-        discovery = ToolDiscoveryAgent(registry, mcp_manager)
-        discovery.max_loaded_servers = 3
-
-        # Load max servers
-        await discovery.load_tools("server_a")
-        await discovery.load_tools("server_b")
-        await discovery.load_tools("server_c")
-
-        # Use server_a (make it recently used)
-        await discovery.load_tools("server_a")
-
-        # Load new server - should evict server_b (LRU)
-        await discovery.load_tools("server_d")
-
-        assert "server_a" in discovery.loaded_servers
-        assert "server_b" not in discovery.loaded_servers
-        assert "server_d" in discovery.loaded_servers
-
-    async def test_tool_token_budget(self):
-        """Verify tool loading respects token budget."""
-        manager = MCPServerManager(registry, max_total_tokens=5000)
-
-        # Load servers until budget reached
-        await manager.load_server("server_a")  # ~1500 tokens
-        await manager.load_server("server_b")  # ~1500 tokens
-        await manager.load_server("server_c")  # ~1500 tokens
-
-        # Next load should trigger eviction
-        await manager.load_server("server_d")  # ~1500 tokens
-
-        total_tokens = sum(manager.token_usage.values())
-        assert total_tokens <= 5000
-```
-
-#### 10.2.3 Multi-Channel Tests
-
-```python
-class MultiChannelTests:
-    """
-    Test suite for cross-channel functionality.
-    """
-
-    async def test_web_to_slack_session_continuity(self):
-        """Verify session state shared across channels."""
-        # Start conversation on web
-        web_adapter = WebChannelAdapter(session_manager)
-        web_msg = UnifiedMessage(
-            user_id="user_123",
-            account_id="acct_456",
-            channel=ChannelType.WEB,
-            text="Help me analyze our Q4 performance"
-        )
-        await web_adapter._process_message(web_msg)
-
-        # Continue on Slack
-        slack_adapter = SlackChannelAdapter(session_manager)
-        slack_msg = UnifiedMessage(
-            user_id="user_123",  # Same user
-            account_id="acct_456",
-            channel=ChannelType.SLACK,
-            text="What about comparing to Q3?"
-        )
-        response = await slack_adapter._process_message(slack_msg)
-
-        # Response should reference Q4 from web conversation
-        assert "Q4" in response.text or "quarter" in response.text.lower()
-
-    async def test_voice_response_formatting(self):
-        """Verify voice responses are TTS-friendly."""
-        voice_adapter = VoiceChannelAdapter(session_manager)
-
-        # Create response with markdown
-        response = UnifiedResponse(
-            text="Here are the **key metrics**:\n- Revenue: $1,234,567\n- Growth: 15%",
-            structured_content=None,
-            suggested_actions=[]
-        )
-
-        # Format for voice
-        voice_text = voice_adapter._format_response(response)
-
-        # Should remove markdown
-        assert "**" not in voice_text
-        # Should convert numbers
-        assert "one million" in voice_text.lower() or "1234567" not in voice_text
-```
-
-#### 10.2.4 Workflow Tests
-
-```python
-class WorkflowTests:
-    """
-    Test suite for multi-step workflow management.
-    """
-
-    async def test_workflow_persistence(self):
-        """Verify workflow state persists across sessions."""
-        manager = WorkflowManager(firestore, session_service)
-
-        # Create workflow
-        workflow = await manager.create_workflow(
-            name="Test Campaign",
-            tasks=[
-                {"name": "Research", "specialist": "strategy"},
-                {"name": "Content", "specialist": "content"}
-            ],
-            account_id="test_acct",
-            user_id="test_user"
-        )
-
-        # Simulate restart
-        manager2 = WorkflowManager(firestore, session_service)
-        loaded = await manager2._load_workflow(workflow.workflow_id)
-
-        assert loaded.name == "Test Campaign"
-        assert len(loaded.tasks) == 2
-
-    async def test_workflow_dependency_execution(self):
-        """Verify tasks execute in dependency order."""
-        manager = WorkflowManager(firestore, session_service)
-
-        workflow = await manager.create_workflow(
-            name="Dependent Tasks",
-            tasks=[
-                {"name": "Task A", "specialist": "strategy"},
-                {"name": "Task B", "specialist": "content", "dependencies": ["task_a_id"]},
-            ],
-            account_id="test_acct",
-            user_id="test_user"
-        )
-
-        # Task B should not be executable until Task A completes
-        workflow.status = WorkflowStatus.IN_PROGRESS
-        next_task = manager._get_next_executable_task(workflow)
-        assert next_task.name == "Task A"
-
-    async def test_workflow_error_recovery(self):
-        """Verify workflow handles task failures."""
-        manager = WorkflowManager(firestore, session_service)
-
-        workflow = await manager.create_workflow(
-            name="Error Test",
-            tasks=[{"name": "Failing Task", "specialist": "strategy"}],
-            account_id="test_acct",
-            user_id="test_user"
-        )
-
-        # Simulate task failure
-        workflow.status = WorkflowStatus.IN_PROGRESS
-        workflow.tasks[0].status = TaskStatus.FAILED
-        workflow.tasks[0].error = "Test error"
-
-        # Workflow should be in failed state
-        assert workflow.status == WorkflowStatus.IN_PROGRESS  # Until explicitly failed
-```
-
-### 10.3 Performance Benchmarks
-
-| Operation | Target | Acceptable | Critical |
-|-----------|--------|------------|----------|
-| Session initialization | < 500ms | < 1s | > 2s |
-| Tool search | < 200ms | < 500ms | > 1s |
-| MCP server load | < 500ms | < 1s | > 2s |
-| Agent response (simple) | < 3s | < 5s | > 10s |
-| Agent response (complex) | < 10s | < 20s | > 30s |
-| Context section load | < 300ms | < 500ms | > 1s |
-| Workflow state save | < 100ms | < 200ms | > 500ms |
-| Voice end-to-end | < 2s | < 3s | > 5s |
-
-### 10.4 Monitoring Requirements
-
-```python
-# Key metrics to monitor
-MONITORING_METRICS = {
-    # Context
-    "context_token_usage": Gauge("Context tokens used per session"),
-    "context_compression_events": Counter("Context compression triggered"),
-    "context_load_latency": Histogram("Time to load context sections"),
-
-    # Tools
-    "mcp_servers_loaded": Gauge("Currently loaded MCP servers"),
-    "tool_search_latency": Histogram("Tool search response time"),
-    "mcp_connection_errors": Counter("MCP server connection failures"),
-
-    # Agents
-    "agent_invocations": Counter("Agent invocations by type"),
-    "agent_response_latency": Histogram("Agent response time"),
-    "agent_errors": Counter("Agent errors by type"),
-
-    # Workflows
-    "active_workflows": Gauge("Currently active workflows"),
-    "workflow_completion_rate": Gauge("Workflow completion percentage"),
-    "task_failures": Counter("Task failures by specialist"),
-
-    # Channels
-    "messages_by_channel": Counter("Messages processed by channel"),
-    "session_duration": Histogram("Session duration"),
-    "cross_channel_sessions": Counter("Sessions spanning multiple channels"),
-
-    # Costs
-    "tokens_consumed": Counter("Total tokens consumed"),
-    "estimated_cost": Gauge("Estimated daily cost"),
-}
-```
+| Operation | Target | Acceptable | Critical | Measured |
+|-----------|--------|------------|----------|----------|
+| Session initialization | < 500ms | < 1s | > 2s | — |
+| Tool search | < 200ms | < 500ms | > 1s | — |
+| MCP server load | < 500ms | < 1s | > 2s | — |
+| Agent response (simple) | < 5s | < 10s | > 15s | ~7-13s |
+| Agent response (complex) | < 10s | < 20s | > 30s | — |
+| Context section load | < 300ms | < 500ms | > 1s | — |
 
 ---
 
-## 11. Prioritized Feature Roadmap
+## 12. Sprint-Based Roadmap
 
-### 11.1 Phase Overview
+### 12.1 Completed (Sprints 1-4)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         IMPLEMENTATION PHASES                                    │
-└─────────────────────────────────────────────────────────────────────────────────┘
+| Sprint | What Was Built | Status |
+|--------|---------------|--------|
+| **Sprint 1** | Session state architecture (creds + org context in ADK state), authorization checks, KEN-E root agent with dispatch | Canonical |
+| **Sprint 2** | HierarchicalContextManager, ToolRegistry, EventsCompactionConfig + ContextCacheConfig in deploy, shared context utils | Canonical |
+| **Sprint 3** | MCPServerManager, security hooks, usage tracking, MCP admin endpoints | Partially superseded (see Section 5.3) |
+| **Sprint 3b** | Agent registry + Firestore config, API allowlist from registry, context loader consolidation, chat latency optimization (~23s → ~7-13s), structured logging, Prometheus, Agent Engine tracing, MCP health ping | Canonical |
+| **Sprint 4** | Weave SDK init, @weave.op() instrumentation, trace hierarchy (before/after callbacks), structured logging with request_id | Canonical |
 
-    PHASE 1                 PHASE 2                 PHASE 3                 PHASE 4
-    FOUNDATION              CORE AGENTS             AUTOMATION              ADVANCED
-    (4-6 weeks)             (6-8 weeks)             (4-6 weeks)             (6-8 weeks)
-    ──────────              ───────────             ──────────              ────────
+### 12.2 In Progress
 
-┌─────────────┐        ┌─────────────┐        ┌─────────────┐        ┌─────────────┐
-│ • Context   │        │ • Strategy  │        │ • n8n       │        │ • Voice     │
-│   Manager   │        │   Agent     │        │   Integration│       │   Channel   │
-│             │        │             │        │             │        │             │
-│ • Tool      │   ──▶  │ • Content   │   ──▶  │ • Scheduled │   ──▶  │ • Advanced  │
-│   Registry  │        │   Agent     │        │   Workflows │        │   Analytics │
-│             │        │             │        │             │        │             │
-│ • MCP       │        │ • Analytics │        │ • Report    │        │ • A/B       │
-│   Manager   │        │   Agent     │        │   Automation│        │   Testing   │
-│             │        │             │        │             │        │             │
-│ • Session   │        │ • Execution │        │ • Calendar  │        │ • Self-     │
-│   Service   │        │   Agent     │        │   Review    │        │   Optimize  │
-│             │        │             │        │             │        │             │
-│ • Web       │        │ • Slack     │        │ • Approval  │        │ • Meeting   │
-│   Channel   │        │   Channel   │        │   Queue     │        │   Bot       │
-└─────────────┘        └─────────────┘        └─────────────┘        └─────────────┘
+| Item | Sprint | Description |
+|------|--------|-------------|
+| Sprint 3b PR | 3b | Agent config optimization, final review |
 
-   Foundation             User-Facing              Background               Intelligence
-   ───────────            ───────────              ──────────               ────────────
-   Core infra             Interactive              Scheduled                Advanced
-   must work              capabilities             tasks                    features
-```
+### 12.3 Planned
 
-### 11.2 Phase 1: Foundation (Critical Path)
-
-**Goal**: Establish core infrastructure for context management and tool discovery.
-
-| Feature | Priority | Effort | Description |
-|---------|----------|--------|-------------|
-| **1.1** Hierarchical Context Manager | Critical | High | 3-level context loading from Neo4j |
-| **1.2** Tool Registry & Index | Critical | Medium | Searchable tool index with ~2,000 token footprint |
-| **1.3** MCP Server Manager | Critical | High | Lazy-loading with LRU eviction |
-| **1.4** Session Service | Critical | Medium | State management using ADK patterns |
-| **1.5** Web Channel Adapter | Critical | Medium | WebSocket-based web UI integration |
-| **1.6** Primary Orchestrator | Critical | High | Core routing and coordination agent |
-| **1.7** Context Compression | High | Medium | Auto-compress long sessions |
-| **1.8** Basic Monitoring | High | Low | Token usage, latency metrics |
-
-**Exit Criteria**:
-- User can chat via web UI
-- Context loads hierarchically without exceeding budget
-- Tools load on-demand when referenced
-- Session state persists across reconnects
-
-### 11.3 Phase 2: Core Agents
-
-**Goal**: Implement specialist agents for user-facing capabilities.
-
-| Feature | Priority | Effort | Description |
-|---------|----------|--------|-------------|
-| **2.1** Strategy Specialist | Critical | High | Research, ICP, competitor analysis |
-| **2.2** Content Specialist | Critical | High | Multi-format content generation |
-| **2.3** Analytics Specialist | Critical | High | Sequential agent for data analysis |
-| **2.4** Execution Specialist | High | Medium | Content deployment, validation |
-| **2.5** Slack Channel Adapter | High | Medium | Bolt SDK integration |
-| **2.6** Workflow Manager | High | High | Multi-step task tracking |
-| **2.7** Tool Discovery Agent | High | Medium | Intelligent tool search |
-| **2.8** Trace Instrumentation | Medium | Low | Weave integration for evaluation |
-
-**Exit Criteria**:
-- All specialist agents functional
-- Slack integration working
-- Multi-step workflows tracked
-- Agent outputs traced for evaluation
-
-### 11.4 Phase 3: Automation
-
-**Goal**: Enable scheduled and autonomous operations.
-
-| Feature | Priority | Effort | Description |
-|---------|----------|--------|-------------|
-| **3.1** n8n Integration | Critical | High | Create/manage n8n workflows |
-| **3.2** Automation Specialist | Critical | Medium | Agent for workflow creation |
-| **3.3** Scheduled Workflows | High | Medium | Convert workflows to n8n |
-| **3.4** Content Calendar Review | High | Medium | Daily automated review |
-| **3.5** Report Automation | High | Medium | Scheduled analytics reports |
-| **3.6** Approval Queue | Medium | Medium | Content approval workflow |
-| **3.7** KPI Monitoring | Medium | Medium | Automated performance tracking |
-| **3.8** Notification System | Medium | Low | Slack/email notifications |
-
-**Exit Criteria**:
-- Scheduled tasks run autonomously
-- Content calendar reviewed daily
-- Reports generated automatically
-- Users notified of pending actions
-
-### 11.5 Phase 4: Advanced Features
-
-**Goal**: Advanced intelligence and voice capabilities.
-
-| Feature | Priority | Effort | Description |
-|---------|----------|--------|-------------|
-| **4.1** Voice Channel (MVP) | High | Very High | Pipecat + Meeting BaaS integration |
-| **4.2** A/B Testing Support | High | Medium | Experiment infrastructure |
-| **4.3** Self-Optimization | Medium | High | Alignment engine integration |
-| **4.4** Advanced Analytics | Medium | High | Forecasting, attribution |
-| **4.5** Voice Enhancement | Medium | High | Multi-speaker, interruption handling |
-| **4.6** Custom Report Builder | Medium | Medium | User-defined reports |
-| **4.7** Cross-Account Learning | Low | High | Anonymized pattern sharing |
-| **4.8** Proactive Suggestions | Low | Medium | AI-initiated recommendations |
-
-**Exit Criteria**:
-- Voice meetings functional
-- A/B tests running
-- Evaluation framework integrated
-- Self-optimization active
-
-### 11.6 Dependencies Graph
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         FEATURE DEPENDENCIES                                     │
-└─────────────────────────────────────────────────────────────────────────────────┘
-
-PHASE 1                          PHASE 2
-────────                         ────────
-
-1.1 Context Manager ─────────────┬─► 2.1 Strategy Specialist
-                                 │
-1.2 Tool Registry ───────────────┼─► 2.2 Content Specialist
-         │                       │
-         └──► 1.3 MCP Manager ───┼─► 2.3 Analytics Specialist
-                                 │
-1.4 Session Service ─────────────┤
-         │                       │
-         └──► 1.5 Web Channel ───┼─► 2.5 Slack Channel
-                                 │
-1.6 Primary Orchestrator ────────┴─► 2.7 Tool Discovery
-         │
-         └──► 2.6 Workflow Manager
-
-
-PHASE 2                          PHASE 3
-────────                         ────────
-
-2.4 Execution Specialist ────────┬─► 3.3 Scheduled Workflows
-                                 │
-2.6 Workflow Manager ────────────┼─► 3.1 n8n Integration
-                                 │
-2.3 Analytics Specialist ────────┼─► 3.5 Report Automation
-                                 │
-                                 └─► 3.4 Content Calendar Review
-
-
-PHASE 3                          PHASE 4
-────────                         ────────
-
-3.1 n8n Integration ─────────────┬─► 4.6 Custom Report Builder
-                                 │
-2.8 Trace Instrumentation ───────┼─► 4.2 A/B Testing
-                                 │
-                                 └─► 4.3 Self-Optimization
-
-All Phase 3 ─────────────────────┬─► 4.1 Voice Channel
-                                 │
-                                 └─► 4.4 Advanced Analytics
-```
-
-### 11.7 Success Metrics by Phase
-
-| Phase | Metric | Target |
-|-------|--------|--------|
-| **Phase 1** | Context budget compliance | <20% of window |
-| **Phase 1** | Tool discovery accuracy | >90% relevant |
-| **Phase 1** | Session stability | >99% uptime |
-| **Phase 2** | Agent task completion | >95% |
-| **Phase 2** | User satisfaction (CSAT) | >4.0/5.0 |
-| **Phase 2** | Response latency | <5s average |
-| **Phase 3** | Automation success rate | >98% |
-| **Phase 3** | Content deployment accuracy | >99% |
-| **Phase 3** | Report generation time | <60s |
-| **Phase 4** | Voice latency | <2s e2e |
-| **Phase 4** | A/B test velocity | 2+ per week |
-| **Phase 4** | Self-optimization impact | +20% quality |
+| Item | Timeline | Description |
+|------|----------|-------------|
+| **Specialist agents + agent factory** | Sprint 5-6 | Config-driven agent assembly, category-based tool routing |
+| **Additional MCP servers** | Sprint 5-6 | Google Ads MCP, HubSpot MCP integration |
+| **SDK function tools** | Sprint 5-6 | Meta Ads, Mailchimp direct SDK integration |
+| **Skills architecture** | Sprint 5-6 | Predefined skills bundled, custom skills via UI (Section 6) |
+| **Slack channel** | Sprint 8+ | Bolt SDK integration on separate Cloud Run |
+| **Workflow management** | Sprint 8+ | Multi-step task tracking with Firestore persistence. See [`review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) for phased delivery plan. |
+| **Gemini code execution** | Sprint 5-6 | Enable on Analytics Specialist via `GenerateContentConfig`. Depends on specialist agents + agent factory. |
+| **Data visualization & artifacts** | Sprint 7+ | Vega-Lite artifacts in ChatResponse, `create_visualization()` tool, frontend chart rendering. See [`data-visualization.md`](design/data-visualization.md). |
+| **Voice channel** | Phase 4 | Pipecat + Meeting BaaS |
+| **A/B testing** | Phase 4 | Experiment infrastructure for agent configs |
 
 ---
 
-## 12. Appendices
+## 13. Appendices
 
-### Appendix A: Tool Categories Reference
+### Appendix A: Platform Integration Reference
 
-| Category | Example MCP Servers | Typical Tools |
-|----------|---------------------|---------------|
-| **Analytics** | google_analytics, mixpanel, amplitude | get_metrics, run_report, get_audiences |
-| **Advertising** | google_ads, meta_ads, linkedin_ads | get_campaigns, update_budget, get_keywords |
-| **Email** | mailchimp, hubspot_email, klaviyo | send_email, get_lists, create_campaign |
-| **CRM** | salesforce, hubspot_crm, pipedrive | get_contacts, update_deal, create_task |
-| **Social** | twitter, linkedin, instagram | post_content, get_analytics, schedule_post |
-| **CMS** | wordpress, contentful, webflow | create_post, update_page, get_content |
-| **SEO** | data4seo, semrush, ahrefs | keyword_research, get_rankings, backlinks |
-| **E-commerce** | shopify, woocommerce, bigcommerce | get_orders, update_products, get_analytics |
-| **Project** | notion, jira, asana | create_task, update_status, get_projects |
-| **Automation** | n8n, zapier, make | create_workflow, trigger_workflow, get_runs |
+| Platform | Integration Type | MCP/SDK | Status |
+|----------|-----------------|---------|--------|
+| **Google Analytics** | Self-hosted MCP | GA MCP on Cloud Run | Implemented |
+| **Google Ads** | Hybrid: MCP reads + SDK writes | Google official MCP + `google-ads` SDK | Planned |
+| **HubSpot** | Provider-hosted MCP | `mcp.hubspot.com` | Planned |
+| **Meta Ads** | SDK function tools | `facebook-business` — shared: Analytics (reads) + Execution (reads + writes) | Planned |
+| **Mailchimp** | SDK function tools | `mailchimp-marketing` | Planned |
+| **Microsoft Ads** | Deferred | — | No current demand |
+| **Gemini Code Execution** | Built-in model capability | `GenerateContentConfig.tools` | Planned (Sprint 5-6) |
+
+> For detailed integration rationale per platform (hybrid MCP+SDK pattern, read-only limitations and CMO impact, SDK function tools code pattern), see [`docs/design/mcp-architecture.md`](design/mcp-architecture.md) Sections 4 and 8.
 
 ### Appendix B: Output Types for Evaluation
 
 | Category | Output Types |
 |----------|-------------|
-| **Business Strategy** | company_overview, swot_analysis, strategic_goals, value_proposition, market_position |
+| **Business Strategy** | company_overview, swot_analysis, strategic_goals, value_proposition |
 | **Marketing Strategy** | icp_narrative, campaign_strategy, channel_strategy, messaging_framework |
 | **Competitive** | competitor_analysis, competitive_positioning, market_trends |
 | **Content** | blog_post, social_post, email_copy, video_script, landing_page |
-| **Analytics** | performance_report, forecast, attribution_analysis, dashboard |
+| **Analytics** | performance_report, forecast, attribution_analysis |
 
 ### Appendix C: Configuration Reference
 
-```yaml
-# harness_config.yaml
-harness:
-  context:
-    max_tokens: 40000
-    compression_threshold: 0.8
-    levels:
-      executive_summary: 5000
-      section_summary: 10000
-      full_detail: 20000
+#### Agent Configuration (Firestore)
 
-  tools:
-    max_loaded_servers: 10
-    max_tool_tokens: 15000
-    search_result_limit: 20
-    lru_eviction: true
+Agent behavior is driven by Firestore documents. Each document contains:
+- `instruction` — system prompt text
+- `model` — Gemini model identifier (e.g., `gemini-2.0-flash`)
+- `temperature` — creativity parameter
+- `description` — agent description for ADK
+- `version` — semver for trace metadata
 
-  agents:
-    orchestrator:
-      model: gemini-2.0-flash
-      temperature: 0.3
-      max_tokens: 4096
-    specialists:
-      strategy:
-        model: gemini-2.0-flash
-        temperature: 0.4
-        max_tokens: 8192
-      content:
-        model: gemini-2.0-flash
-        temperature: 0.7
-        max_tokens: 8192
-      analytics:
-        model: gemini-2.0-flash
-        temperature: 0.1
-        max_tokens: 4096
+The agent registry (`app/adk/agents/registry.py`) maps agent names to their Firestore config doc IDs.
 
-  channels:
-    web:
-      enabled: true
-      websocket_timeout: 300
-    slack:
-      enabled: true
-      thread_replies: true
-    voice:
-      enabled: false  # Phase 4
-      latency_target: 2000
+#### MCP Server Configuration (YAML → Firestore)
 
-  automation:
-    platform: n8n
-    base_url: ${N8N_BASE_URL}
-    default_retry_count: 3
-    notification_channel: ${SLACK_NOTIFICATION_CHANNEL}
-```
+Current: `app/adk/mcp_config/config/mcp_servers.yaml` defines server connections, auth types, categories, and enabled status.
+
+Planned: Migrate to Firestore config registry for per-org enablement without redeployment.
 
 ### Appendix D: Glossary
 
 | Term | Definition |
 |------|------------|
-| **HCL** | Hierarchical Context Loading - 3-level context management |
-| **DCL** | Dynamic Context Loading - on-demand context retrieval |
-| **MCP** | Model Context Protocol - standard for tool integration |
-| **LRU** | Least Recently Used - eviction strategy for loaded servers |
-| **STT** | Speech-to-Text - voice transcription |
-| **TTS** | Text-to-Speech - voice synthesis |
-| **ADK** | Agent Development Kit - Google's agent framework |
+| **HCL** | Hierarchical Context Loading — 3-level context management |
+| **MCP** | Model Context Protocol — standard for tool integration |
+| **ADK** | Agent Development Kit — Google's agent framework |
+| **McpToolset** | ADK class that manages MCP server connections |
+| **InstructionProvider** | Callable that returns dynamic instructions per LLM turn |
+| **Agent Factory** | [PLANNED] Config-driven system that assembles agents from Firestore config |
+| **tool_filter** | ADK `BaseToolset` parameter — callable predicate evaluated per-turn to control which tools are visible to the LLM |
+| **Skill** | Self-contained unit of expertise (SKILL.md) providing procedural knowledge to agents via progressive disclosure (L1/L2/L3) |
+| **SkillToolset** | ADK class for incorporating skills into `LlmAgent` via the `tools` parameter |
+| **SKILL.md** | Markdown file with YAML frontmatter defining a skill's name, description, allowed-tools, and procedural instructions |
+| **ToolRegistry** | Searchable metadata catalog for ~400 tools; planned as driver for `tool_filter` predicates |
+| **ReadonlyContext** | ADK read-only view of session state (`MappingProxyType`), passed to `InstructionProvider` and `tool_filter`. Live view of the mutable state dict — sees `CallbackContext` writes immediately. |
+| **CallbackContext** | ADK mutable context passed to `before_agent_callback`, `after_agent_callback`, and model callbacks. Writes to `callback_context.state` go to `session.state` with delta tracking. |
+| **before_agent_callback** | ADK callback that fires before each LLM turn's tool resolution. Receives `CallbackContext` (mutable). Used for Weave tracing and ToolRegistry-driven `tool_filter` state writes. |
+| **Vega-Lite** | Declarative JSON-based visualization grammar. Agents produce Vega-Lite chart specs via `create_visualization()`; the frontend renders them. See [`data-visualization.md`](design/data-visualization.md). |
+| **Artifact** | A structured output (e.g., Vega-Lite chart spec) produced alongside text by specialist agents. Delivered to the frontend via the `artifacts` field on `ChatResponse`. |
+| **create_visualization** | Python function tool available to all specialist agents. Produces a Vega-Lite artifact and writes it to `response_artifacts` session state. Not an MCP tool. |
+| **Code Execution (Gemini)** | Built-in Gemini model capability that generates and runs Python code in a Google-managed sandbox. Enabled via `GenerateContentConfig.tools = [Tool(code_execution=ToolCodeExecution())]`. Returns `executable_code` and `code_execution_result` parts in the LLM response. |
+| **Built-in Model Capability** | A capability provided natively by the LLM model (e.g., Gemini code execution), configured via `GenerateContentConfig` rather than as an MCP or SDK tool. Zero context overhead — no tool definition is sent. Not subject to `tool_filter`. |
+| **ToolCodeExecution** | ADK/Gemini class that enables code execution when added to `GenerateContentConfig.tools`. Part of `google.genai.types`. |
 
 ---
 
@@ -3765,8 +1848,17 @@ harness:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-10 | Development Team | Initial design document |
+| 2.0 | 2026-03-10 | Development Team | Updated to reflect Sprints 1-4 implementation. Replaced fictional code with actual implementations. Marked unbuilt features as [PLANNED]. |
+| 2.1 | 2026-03-10 | Development Team | Design review: Added `tool_filter` + ToolRegistry architecture (Section 4.3). Updated ADK internals analysis. Added sprint-3b dependency note. Fixed Deepgram latency claim. |
+| 2.2 | 2026-03-11 | Development Team | Cross-reference pass: added links to design docs (`agent-hierarchy.md`, `mcp-architecture.md`, `api-gateway-multi-channel.md`) and Notion Design Decisions database. Fixed Section 10 duplicate numbering and ToC mismatch. |
+| 2.3 | 2026-03-11 | Development Team | Architecture accuracy pass: reframed doc as architecture reference (current + `[PLANNED]`). Split Sections 1.3, 2.3 into current/planned. Rewrote Section 2.1 diagram for target architecture. Expanded Section 3.6 (session state keys, token visibility, billing/usage tracking). Added Decisions 19-20 links. |
+| 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 8.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
+| 2.5 | 2026-03-11 | Development Team | Added `[TRANSITIONAL]` convention for GA Agent and Company News Agent (successors documented). Added Meta Ads SDK shared access (Analytics reads + Execution reads/writes via `tool_filter`). Added Section 6 Skills Architecture (predefined + custom skills, SkillToolset integration, skill builder UI). Renumbered Sections 6-12 → 7-13. Added Decision 22 link. Updated glossary with Skill/SkillToolset/SKILL.md terms. |
+| 2.6 | 2026-03-18 | Development Team | ADK 1.26.0 experiment corrections: removed `SequentialAgent` wrappers inside `LoopAgent` (Sections 4.6, 8.1), added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. New subsections: 8.2 ADK Implementation Details (`build_review_pipeline()` and `build_workflow_pipeline()` factories, synthesizer pattern), 8.3 ADK Pitfalls (3 validated pitfalls), 8.4 LLM Call Cost & Latency. Renumbered 8.2-8.5 → 8.5-8.8. Added LLM call cost table to Section 4.6. |
+| 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c). |
+| 2.8 | 2026-03-18 | Development Team | Data visualization & artifacts. Added Vega-Lite artifacts decision to Section 1.4. Updated Section 2.3.2 request flow (create_visualization in specialist, artifacts extraction in response). Added `response_artifacts` to Section 3.6.2 session state. Added visualization blockquote to Section 4.4. Added "Visualization Artifacts in Review Loops" subsection after Section 4.6. Added data visualization row to Section 12.3 roadmap. Added Vega-Lite, Artifact, create_visualization glossary entries (Appendix D). Created [`data-visualization.md`](design/data-visualization.md). |
+| 2.9 | 2026-03-18 | Development Team | Gemini native code execution. Added code execution decision to Section 1.4. Added Tool Type Taxonomy table to Section 4.3 (MCP Tools, SDK Function Tools, Built-in Model Capabilities). Updated Analytics Specialist in Sections 4.4 and 4.5 with Gemini code execution. Added code execution note to Section 4.6 review loop. Added Section 9.2.1 Code Execution Traces. Added code execution cost bullet to Section 10.2. Added Gemini code execution to Section 12.3 roadmap and Appendix A. Added Code Execution (Gemini), Built-in Model Capability, ToolCodeExecution to Appendix D glossary. |
 
 ---
 
-*This document describes the target architecture for the KEN-E agentic harness. Implementation details may evolve based on testing and user feedback.*
-
+*This document describes the architecture for the KEN-E agentic harness. It is updated as implementation progresses.*

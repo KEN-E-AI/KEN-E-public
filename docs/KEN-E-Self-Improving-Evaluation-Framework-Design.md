@@ -1,7 +1,7 @@
 # KEN-E Self-Improving Evaluation Framework
 ## Comprehensive Design Document
 
-**Version:** 2.0
+**Version:** 2.1
 **Date:** January 11, 2026
 **Author:** Development Team
 **Status:** Design Phase
@@ -334,6 +334,8 @@ Integration Methods:
 ---
 
 ## 4. Data Storage Design & Database Schema
+
+> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track) — Release 2.0
 
 ### 4.1 Storage Strategy Overview
 
@@ -856,6 +858,8 @@ Weave Project: ken-e-evaluation
 
 ## 5. Human Feedback Capture System
 
+> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#feature-43-mer-e-phase-2--human-feedback--patterns-parallel-track-phase-1) — Release 4.0
+
 ### 5.1 System Overview
 
 The Human Feedback Capture System is the primary mechanism for collecting ground truth evaluations that train and align the LLM scorers. This system should **extend the existing evaluation_feedback application** rather than building from scratch, leveraging its React/TypeScript/Tailwind foundation.
@@ -1183,6 +1187,8 @@ For efficiency, the system should support bulk operations:
 
 ## 6. Trace Collection & W&B Integration
 
+> **Roadmap:** [Feature 2.5: MER-E Phase 0 — Trace Extraction](product-roadmap.md#feature-25-mer-e-phase-0--trace-extraction-parallel-track) — Release 2.0
+
 ### 6.1 Current State
 
 All KEN-E agents are already instrumented to send traces to W&B Weave. This section documents the expected trace structure and how the evaluation framework consumes this data.
@@ -1355,6 +1361,8 @@ batch_config = {
 ---
 
 ## 7. Automated Analysis & Recommendation Engine
+
+> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track), [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#feature-52-mer-e-phase-3--prompt-optimization-phase-1) — Releases 3.0, 5.0
 
 ### 7.1 Engine Overview
 
@@ -1938,6 +1946,8 @@ def generate_feedback_requests(analysis_results: AnalysisResults) -> List[Feedba
 
 ## 8. Deployment Pipeline & Rollback System
 
+> **Roadmap:** [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#feature-52-mer-e-phase-3--prompt-optimization-phase-1), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Releases 5.0, 6.0
+
 ### 8.1 Deployment Philosophy
 
 The deployment system is designed around three core principles:
@@ -2263,6 +2273,8 @@ options:
 ```
 
 ### 8.7 A/B Testing Infrastructure
+
+> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#feature-44-ab-testing-infrastructure) — Release 4.0
 
 For configuration experiments, the system supports A/B testing at the account level.
 
@@ -3081,6 +3093,8 @@ def get_collection(collection_name: str) -> str:
 
 ## 11. Agentic Harness Integration
 
+> **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#feature-35-mer-e-phase-1--quality-scoring-parallel-track) — Release 3.0
+
 This section describes how the evaluation framework integrates with the KEN-E Agentic Harness architecture (see `KEN-E-Agentic-Harness-Design.md`).
 
 ### 11.1 New Agent Types Requiring Evaluation
@@ -3258,10 +3272,10 @@ CONTENT_SPECIALIST_EVAL_CONFIG = {
 
 #### Analytics Specialist Evaluation
 
-The Analytics Specialist performs multi-step analysis with potential code execution:
+The Analytics Specialist performs multi-step analysis with Gemini's native code execution (Python code generated and run in a Google-managed sandbox):
 
 1. **Data Retrieval Accuracy**: Verify correct data was fetched
-2. **Calculation Correctness**: Validate statistical computations
+2. **Calculation Correctness**: Review `executable_code` parts from Gemini code execution for correct logic, and cross-check `code_execution_result` output against source data from tool calls
 3. **Insight Quality**: Assess actionability of findings
 4. **Visualization Appropriateness**: Right chart type for data
 
@@ -3277,7 +3291,8 @@ ANALYTICS_SPECIALIST_EVAL_CONFIG = {
             "recommendation_quality"
         ],
         "numerical_validation": True,  # Cross-check numbers against source
-        "code_review": True  # If code was executed, review it
+        "code_execution_validation": True,  # Validate executable_code parts and code_execution_result output
+        "code_review": True  # Review generated Python code for correctness
     },
     "forecast": {
         "required_sections": ["methodology", "predictions", "confidence_intervals", "assumptions"],
@@ -3286,7 +3301,8 @@ ANALYTICS_SPECIALIST_EVAL_CONFIG = {
             "data_accuracy",
             "insight_actionability"
         ],
-        "confidence_interval_required": True
+        "confidence_interval_required": True,
+        "code_review": True  # Review generated Python code for statistical calculations
     }
 }
 ```
@@ -3454,6 +3470,8 @@ class AgentEffectivenessCalculator:
 ---
 
 ## 12. Human Edit Distance Tracking
+
+> **Roadmap:** [Feature 5.2: MER-E Phase 3 — Prompt Optimization](product-roadmap.md#feature-52-mer-e-phase-3--prompt-optimization-phase-1) — Release 5.0
 
 This section defines how to measure the quality signal from human edits to AI-generated content.
 
@@ -3772,6 +3790,8 @@ const ContentEditorWithTracking: React.FC<ContentEditorProps> = ({
 ---
 
 ## 13. Multi-Step Workflow Evaluation
+
+> **Roadmap:** [Feature 5.4: Advanced Workflow & Observability](product-roadmap.md#feature-54-advanced-workflow--observability), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Releases 5.0, 6.0
 
 This section defines how to evaluate multi-step agentic workflows where KEN-E executes sequences of tasks.
 
@@ -4200,6 +4220,8 @@ workflow_evaluation_schema = {
 
 ## 14. n8n Workflow Evaluation
 
+> **Roadmap:** [Feature 4.1: Automation Specialist + n8n](product-roadmap.md#feature-41-automation-specialist--n8n), [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Releases 4.0, 6.0
+
 This section defines how to evaluate the n8n workflows created by the Automation Specialist.
 
 ### 14.1 Overview
@@ -4584,6 +4606,8 @@ N8N_WORKFLOW_DASHBOARD_METRICS = {
 ---
 
 ## 15. Cross-Account Benchmarking
+
+> **Roadmap:** [Feature 6.3: MER-E Phase 4 — Full Closed Loop](product-roadmap.md#feature-63-mer-e-phase-4--full-closed-loop) — Release 6.0
 
 This section defines how to aggregate metrics across accounts for anonymized benchmarking.
 
