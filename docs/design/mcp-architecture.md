@@ -43,7 +43,7 @@ We do not need per-account MCP server instances. The only potential exception is
 
 ## 4. Platform Integration Decisions
 
-> **Roadmap:** [Feature 2.3: Analytics Specialist](../product-roadmap.md#feature-23-analytics-specialist--phase-1), [Feature 3.1: Content Specialist](../product-roadmap.md#feature-31-content-specialist), [Feature 3.2: Execution Specialist](../product-roadmap.md#feature-32-execution-specialist) — Releases 2.0, 3.0
+> **Roadmap:** [Feature 2.3: Analytics Specialist](../product-roadmap.md#23--analytics-specialist), [Feature 3.1: Content Specialist](../product-roadmap.md#31--content-specialist), [Feature 3.2: Execution Specialist](../product-roadmap.md#32--execution-specialist) — Releases 2.0, 3.0
 
 | Platform | Decision | Integration Type |
 |----------|----------|------------------|
@@ -109,7 +109,7 @@ User -> API -> Agent Engine
 
 ## 5a. Dynamic Tool Selection via `tool_filter` + ToolRegistry
 
-> **Roadmap:** [Feature 2.2: Agent Factory](../product-roadmap.md#feature-22-agent-factory--phase-1) — Release 2.0
+> **Roadmap:** [Feature 2.2: Agent Factory](../product-roadmap.md#22--agent-factory) — Release 2.0
 
 ### The Problem
 
@@ -209,7 +209,7 @@ Option 2 (root agent writes state before dispatch) remains valid for the root→
 
 ## 6. MCP Server Config Registry
 
-> **Roadmap:** [Feature 1.1.4: Firestore Config Registry](../product-roadmap.md#feature-114-firestore-config-registry-preparation-for-agent-factory), [Feature 2.2: Agent Factory](../product-roadmap.md#feature-22-agent-factory--phase-1) — Releases 1.1, 2.0
+> **Roadmap:** [Feature 1.1.4: Firestore Config Registry](../product-roadmap.md#114--firestore-config-registry), [Feature 2.2: Agent Factory](../product-roadmap.md#22--agent-factory) — Releases 1.1, 2.0
 
 ### Current: YAML Config
 
@@ -251,7 +251,7 @@ The **agent factory** (Sprint 5-6) reads this config to assemble specialist agen
 
 ## 7. MCPServerManager Disposition
 
-> **Roadmap:** [Feature 2.2: Agent Factory](../product-roadmap.md#feature-22-agent-factory--phase-1) — Release 2.0
+> **Roadmap:** [Feature 2.2: Agent Factory](../product-roadmap.md#22--agent-factory) — Release 2.0
 
 The `MCPServerManager` (`app/adk/mcp_config/manager.py`) is a Sprint 3 in-process Python singleton.
 
@@ -265,7 +265,7 @@ The `MCPServerManager` (`app/adk/mcp_config/manager.py`) is a Sprint 3 in-proces
 
 ## 8. Read-Only Limitations and CMO Impact
 
-> **Roadmap:** [Feature 3.2: Execution Specialist](../product-roadmap.md#feature-32-execution-specialist) — Release 3.0
+> **Roadmap:** [Feature 3.2: Execution Specialist](../product-roadmap.md#32--execution-specialist) — Release 3.0
 
 HubSpot MCP is currently read-only. Google Ads uses a **hybrid approach** (MCP for reads, SDK for writes). This means:
 
