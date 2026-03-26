@@ -486,7 +486,7 @@ wheels = [
 
 [[package]]
 name = "google-adk"
-version = "1.26.0"
+version = "1.27.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -500,6 +500,7 @@ dependencies = [
     { name = "google-cloud-bigquery" },
     { name = "google-cloud-bigquery-storage" },
     { name = "google-cloud-bigtable" },
+    { name = "google-cloud-dataplex" },
     { name = "google-cloud-discoveryengine" },
     { name = "google-cloud-pubsub" },
     { name = "google-cloud-secret-manager" },
@@ -534,9 +535,9 @@ dependencies = [
     { name = "watchdog" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/99/b2/09b9ee1374b767eaba29e693b0b867fb587a9a131ea159300c9f9fa97d61/google_adk-1.26.0.tar.gz", hash = "sha256:29ec8636025848716246228b595749f785ddc83fb3982052ec92ae871f12fcd8", size = 2250703, upload-time = "2026-02-26T23:39:15.614Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/0c/dd9f1609e2e855c3bb327154d38bb86b003955655b55da6eda59cc260632/google_adk-1.27.5.tar.gz", hash = "sha256:b07b9022f78e3f9e85248ad1a66be572110adf0ba27a6b724fd59f204d58b124", size = 2299556, upload-time = "2026-03-26T02:54:06.672Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/a0/0ca4174ad1ad5f8a81b26e0d67bdff509e18ecc2ae79ca7a87e6f16dd394/google_adk-1.26.0-py3-none-any.whl", hash = "sha256:1a74c6b25f8f4d4098e1a01118b8eefcdf7b3741ba07993093a773bc6775b4d5", size = 2621967, upload-time = "2026-02-26T23:39:13.026Z" },
+    { url = "https://files.pythonhosted.org/packages/66/ba/1229af18793c3ddeca526544904e00df37896be34c66248d0b231f6c28c5/google_adk-1.27.5-py3-none-any.whl", hash = "sha256:916da63bfb54c1cd872b7e6381a0338478ab58d7328984b28026a8b6f213a2e2", size = 2690581, upload-time = "2026-03-26T02:54:04.796Z" },
 ]
 
 [[package]]
@@ -742,6 +743,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d6/b8/2b53838d2acd6ec6168fd284a990c76695e84c65deee79c9f3a4276f6b4f/google_cloud_core-2.4.3.tar.gz", hash = "sha256:1fab62d7102844b278fe6dead3af32408b1df3eb06f5c7e8634cbd40edc4da53", size = 35861, upload-time = "2025-03-10T21:05:38.948Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/40/86/bda7241a8da2d28a754aad2ba0f6776e35b67e37c36ae0c45d49370f1014/google_cloud_core-2.4.3-py2.py3-none-any.whl", hash = "sha256:5130f9f4c14b4fafdff75c79448f9495cfade0d8775facf1b09c3bf67e027f6e", size = 29348, upload-time = "2025-03-10T21:05:37.785Z" },
+]
+
+[[package]]
+name = "google-cloud-dataplex"
+version = "2.17.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpc-google-iam-v1" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/ba/33ea98684204b15f9f070ca79da020742c12a7845e5b3a8ff405490fa5b3/google_cloud_dataplex-2.17.0.tar.gz", hash = "sha256:321ad2abb9faecda60136d197bd2348c1dd73885fb67707db0d8f828d774fb65", size = 873181, upload-time = "2026-03-23T22:43:51.164Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/fa/dfa1eb5c7708c06736cb743b4fe4428d904fc47a424bd208a2667ee9150b/google_cloud_dataplex-2.17.0-py3-none-any.whl", hash = "sha256:6f04a772f68564979cdf5fadb517960b961792921e117043ed1b1ef44694853c", size = 669888, upload-time = "2026-03-23T22:43:25.527Z" },
 ]
 
 [[package]]
@@ -1400,7 +1418,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "firebase-admin", specifier = ">=6.1.0" },
-    { name = "google-adk", specifier = ">=1.26.0" },
+    { name = "google-adk", specifier = ">=1.27.4" },
     { name = "google-cloud-aiplatform", specifier = ">=1.140.0" },
     { name = "google-cloud-bigquery", specifier = ">=3.40.0" },
     { name = "google-cloud-firestore", specifier = ">=2.23.0" },

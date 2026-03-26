@@ -28,7 +28,7 @@ dependencies = [
     "jinja2>=3.1.2",
     "firebase-admin>=6.1.0",
     "redis>=5.0.0",
-    "google-adk>=1.26.0",
+    "google-adk>=1.27.4",
     "weave>=0.51.59",
     "wandb>=0.21.1",
     "importlib-metadata<8.0",
