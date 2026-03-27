@@ -520,4 +520,47 @@ When a user asks KEN-E how well their website performed, the Analytics Specialis
 
 ---
 
+## Review 14: ADK Experiment Findings Integration (ADK v1.27.4 Validation)
+
+**Date:** March 27, 2026
+**Branch:** `docs/integrate-adk-experiment-findings`
+**Scope:** Integrate findings from 9 ADK experiment branches (`adk_experiments` repo). All experiments re-validated on ADK v1.27.4 with zero regressions. Most findings were already incorporated in Reviews 8-13 (March 18); this review adds remaining gaps.
+
+### New Content Added
+
+1. **Dynamic agent creation findings** (`agent-hierarchy.md` §8.5) — Three experiment branches (ephemeral, persistent sub-agents, combined) validated that pre-declared specialists are the recommended pattern. Added:
+   - Comparison table: pre-declared vs ephemeral vs persistent dynamic
+   - Runner pattern for ephemeral sub-tasks (code example)
+   - Three pitfalls to avoid (parent_agent linkage, duplicate names, ADK v2 migration)
+
+2. **Token savings metric** (`mcp-architecture.md` §5a) — MCP tool management experiment measured ~21 tokens per tool declaration. Added measured savings note with experiment reference.
+
+3. **ADK v1.27.4 validation notes** — Updated experiment references from "ADK v1.26.0" to "re-validated v1.27.4" in mcp-architecture.md.
+
+### Documents Updated
+
+| File | Changes |
+|------|---------|
+| `docs/design/agent-hierarchy.md` | Added §8.5 "Dynamic Agent Creation: Why Pre-Declared Specialists" with Runner pattern, pitfall documentation. Renumbered §8.5 → §8.6 (Limitations). |
+| `docs/design/mcp-architecture.md` | Added ~21 tokens/tool savings metric to §5a. Updated experiment version references to include v1.27.4 re-validation. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | Added this entry (Review 14). |
+
+### Already Documented (No Changes Needed)
+
+The following experiment findings were already incorporated in Reviews 8-13 (March 18, 2026):
+
+| Experiment | Already In | Review |
+|-----------|-----------|--------|
+| Review loop (LoopAgent, exit_loop, include_contents) | Harness §4.6, implementation plan §2 | Review 8 |
+| Parallel workflow (ParallelAgent, output_key, synthesizer) | Harness §8.1-8.3 | Review 8 |
+| ADK pitfalls (output_key+exit_loop, SequentialAgent escalate) | Harness §8.3 | Review 8 |
+| tool_filter execution order (before_agent_callback as Option 4) | mcp-architecture §5a | Review 9 |
+| Compaction verification (EventsCompactionConfig on v1.26.0) | Already known, documented in memory | — |
+
+### Notion Design Decision
+
+[Agent Engine Python Version Migration: 3.10 → 3.13](https://www.notion.so/33030fd6530281b8ad51f2482a0bd0b2) — created during ADK upgrade session, documents the weave/polyfile/gql dependency chain and Python version migration.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*

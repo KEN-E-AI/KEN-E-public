@@ -299,7 +299,54 @@ def _make_header_provider(auth_type: str) -> Callable[[ReadonlyContext], dict[st
 
 This generalizes the existing `_ga_header_provider()` pattern.
 
-### 8.5 Limitations & Open Questions
+### 8.5 Dynamic Agent Creation: Why Pre-Declared Specialists
+
+> Validated in ADK experiments (`adk_experiments/experiment/dynamic-agent-*`), ADK v1.27.4. Three approaches tested: ephemeral (Runner-based), persistent (sub_agents.append + transfer_to_agent), and combined.
+
+**Recommendation: Pre-declare all specialists at deploy time** (as described in §8.2). Do not dynamically create sub-agents at runtime. The experiments validated that dynamic creation works but has fragile gotchas:
+
+| Approach | Verdict | Why |
+|----------|---------|-----|
+| **Pre-declared specialists** (§8.2 factory) | **Recommended** | Static tree is easy to test, reason about, deploy. `model_post_init()` handles parent linkage automatically. Field validators catch duplicate names at construction. |
+| **Ephemeral agents** (Runner pattern) | **Production-ready for sub-tasks** | A specialist spawns a focused ephemeral agent via `Runner` for a specific sub-task, then discards it. Clean lifecycle, no tree mutation. |
+| **Persistent dynamic sub-agents** (append to `sub_agents`) | **Not recommended** | Manual `parent_agent` linkage required (undocumented, breaks transfer_to_agent if missed). Duplicate name validation only fires at construction, not on runtime append. Module-level state fragility. |
+
+#### Runner Pattern for Ephemeral Sub-Tasks
+
+When a specialist needs a focused sub-agent for a specific task (e.g., analytics specialist running a targeted data query):
+
+```python
+async def run_sub_task(query: str, tool_context: ToolContext) -> str:
+    ephemeral = LlmAgent(
+        name="focused_sub_task",
+        tools=[specific_tool],  # only relevant tools
+        instruction="Answer this specific question with minimal context.",
+    )
+    runner = Runner(
+        app_name=ephemeral.name,
+        agent=ephemeral,
+        session_service=InMemorySessionService(),
+    )
+    try:
+        async for event in runner.run_async(...):
+            if event.actions.state_delta:
+                tool_context.state.update(event.actions.state_delta)
+            if event.content:
+                result = event.content
+    finally:
+        await runner.close()
+    return result
+```
+
+**Benefits:** Reduced context window, only relevant tools, clean lifecycle, state deltas forwarded to parent.
+
+#### Dynamic Agent Pitfalls (Avoid)
+
+1. **Manual `parent_agent` linkage:** `parent_agent` is set only in Pydantic `model_post_init()`. Dynamically appended agents don't get it → `root_agent` property returns wrong agent → `transfer_to_agent` breaks.
+2. **Duplicate name gap:** `validate_sub_agents_unique_names` only fires at construction. Runtime `sub_agents.append()` bypasses validation entirely.
+3. **ADK v2 migration:** `transfer_to_agent` is being replaced by Task Mode (`Agent(mode='task')`). Dynamic creation patterns will need rework.
+
+### 8.6 Limitations & Open Questions
 
 | Concern | Current Answer |
 |---------|---------------|

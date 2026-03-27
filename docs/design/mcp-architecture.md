@@ -152,9 +152,11 @@ Each LLM turn:
 | No filtering (all tools on specialist) | Fixed at deploy | All tools on connected servers | Up to ~30 tools × 150 tokens = 4,500 tokens |
 | `tool_filter` + ToolRegistry | Fixed at deploy | Only relevant tools per turn | ~5-10 tools × 150 tokens = 750-1,500 tokens |
 
+> **Measured:** ~21 tokens per tool declaration in context. Filtering from 30 → 8 tools saves ~460 tokens/request. Validated in `adk_experiments/experiment/mcp-tool-management` (ADK v1.27.4).
+
 ### Resolved: How ToolRegistry Search Drives `tool_filter`
 
-Experiment #4 (ADK v1.26.0) tested four options for triggering ToolRegistry search to populate `tool_filter_state`:
+Experiment #4 (ADK v1.26.0, re-validated v1.27.4) tested four options for triggering ToolRegistry search to populate `tool_filter_state`:
 
 | Option | Mechanism | State Access | Timing vs `tool_filter` | Verdict |
 |--------|-----------|-------------|------------------------|---------|
@@ -205,7 +207,7 @@ All share the same `session.state` dict — `ReadonlyContext.state` is a `Mappin
 
 Option 2 (root agent writes state before dispatch) remains valid for the root→specialist handoff: the root interprets intent and writes initial tool categories to state. However, it does not cover per-turn updates within a multi-turn specialist conversation. Option 4 handles both cases.
 
-> Validated in Experiment #4 (`adk_experiments/experiment/instruction-tool-coordination`), ADK v1.26.0. See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd6530281999389eb3116e7585c) for full rationale.
+> Validated in Experiment #4 (`adk_experiments/experiment/instruction-tool-coordination`), ADK v1.26.0. Re-validated on ADK v1.27.4 (all 7 experiments pass, zero regressions). See [Decision 23: tool_filter Integration Pattern](https://www.notion.so/32730fd6530281999389eb3116e7585c) for full rationale.
 
 ## 6. MCP Server Config Registry
 
