@@ -2,7 +2,7 @@
 name = "company-news-chatbot"
 version = "0.1.0"
 description = "Simple company news chatbot using ADK and Vertex AI Search"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "baml-py>=0.207.1",
     "google-adk>=1.27.4",
@@ -15,7 +15,8 @@ dependencies = [
     "python-dotenv",
     "requests>=2.32.4",
     "wandb>=0.22.2",
-    "weave>=0.51.0,<0.51.57",
+    "weave>=0.51.0,<0.51.57",  # pinned: 0.51.57+ adds polyfile-weave which has broken kaitai parsers that fail Agent Engine compileall on ALL Python versions
+    "gql<4",  # pinned: gql 4.0 breaks weave 0.51.x (wandb/weave#5288); fix is in weave 0.52.1+ but blocked by polyfile
 ]
 
 [dependency-groups]

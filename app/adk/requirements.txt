@@ -9,6 +9,7 @@ python-dotenv
 google-analytics-data
 newsapi-python
 weave>=0.51.0,<0.51.57
+gql<4
 wandb
 nest-asyncio
 PyPDF2
