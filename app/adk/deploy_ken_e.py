@@ -346,7 +346,7 @@ def deploy_ken_e() -> str | None:
                 except Exception as update_error:
                     logger.warning(
                         f"Failed to update existing engine: {update_error}. "
-                        "Creating new engine (Python version change requires new engine)."
+                        "Falling back to creating a new engine."
                     )
 
             if deployed_engine is None:
