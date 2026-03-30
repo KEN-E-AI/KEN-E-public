@@ -120,30 +120,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start usage tracker auto-flush: {e}")
 
-    # Start session timeout monitor
-    try:
-        from app.adk.session.timeout import configure_timeout_manager
-
-        async def _on_session_timeout(user_id: str, session_id: str) -> None:
-            logger.info(f"Session timed out: user={user_id}, session={session_id}")
-
-        async def _on_session_warning(
-            user_id: str, session_id: str, remaining_minutes: int
-        ) -> None:
-            logger.info(
-                f"Session warning: user={user_id}, session={session_id}, "
-                f"{remaining_minutes}min left"
-            )
-
-        timeout_mgr = configure_timeout_manager(
-            on_warning=_on_session_warning,
-            on_timeout=_on_session_timeout,
-        )
-        await timeout_mgr.start_monitor()
-        logger.info("Session timeout monitor started")
-    except Exception as e:
-        logger.warning(f"Failed to start session timeout monitor: {e}")
-
     # Validate agent registry config doc IDs
     try:
         from app.adk.agents.registry import validate_registry_at_startup
@@ -186,16 +162,6 @@ async def lifespan(app: FastAPI):
         logger.info("Usage tracker auto-flush stopped")
     except Exception as e:
         logger.warning(f"Failed to stop usage tracker: {e}")
-
-    # Stop session timeout monitor
-    try:
-        from app.adk.session.timeout import get_timeout_manager
-
-        timeout_mgr = get_timeout_manager()
-        await timeout_mgr.stop_monitor()
-        logger.info("Session timeout monitor stopped")
-    except Exception as e:
-        logger.warning(f"Failed to stop session timeout monitor: {e}")
 
     # Stop MCP health monitor
     try:

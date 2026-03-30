@@ -2,7 +2,6 @@
 
 This module provides:
 - SessionRecoveryService: Recover sessions for returning users
-- SessionTimeoutManager: Manage session timeout and warnings
 """
 
 from .recovery import (
@@ -12,23 +11,11 @@ from .recovery import (
     get_recovery_service,
     reset_recovery_service,
 )
-from .timeout import (
-    SessionTimeoutManager,
-    TimeoutConfig,
-    configure_timeout_manager,
-    get_timeout_manager,
-    reset_timeout_manager,
-)
 
 __all__ = [
     "RecoverableSession",
     "SessionRecoveryResult",
     "SessionRecoveryService",
-    "SessionTimeoutManager",
-    "TimeoutConfig",
-    "configure_timeout_manager",
     "get_recovery_service",
-    "get_timeout_manager",
     "reset_recovery_service",
-    "reset_timeout_manager",
 ]
