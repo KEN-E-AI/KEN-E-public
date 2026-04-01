@@ -108,15 +108,14 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
           Array.isArray(userConversations) ? userConversations : [],
         );
 
-        // Auto-start: load most recent conversation or create new session
+        // Auto-resume: load most recent conversation with full message history
         if (
           !sessionId &&
           Array.isArray(userConversations) &&
           userConversations.length > 0
         ) {
           const mostRecent = userConversations[0];
-          setCurrentConversation(mostRecent);
-          setSessionId(mostRecent.session_id);
+          await switchToConversation(mostRecent);
         }
       } catch (error) {
         console.error("Failed to load conversations:", error);
