@@ -99,8 +99,11 @@ def load_config_from_firestore(
             logger.error(error_msg)
             raise ConfigValidationError(error_msg)
 
-        # Extract metadata (for Weave logging)
+        # Extract metadata (for Weave logging) and validate version
         metadata = config_data.get("metadata", {})
+        from app.adk.tracking.trace_metadata import validate_semver
+
+        metadata["version"] = validate_semver(metadata.get("version"))
 
         # Remove metadata from config data (not needed for LlmAgentConfig)
         config_dict = {k: v for k, v in config_data.items() if k != "metadata"}

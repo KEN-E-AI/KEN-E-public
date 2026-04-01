@@ -179,37 +179,32 @@ class TestInputValidation:
 
 
 class TestVersionIncrement:
-    """Test version auto-increment logic."""
+    """Test version auto-increment logic (semver patch bump)."""
 
-    def test_version_increment_from_v1_0(self):
-        """Version should increment from v1.0 to v1.1."""
-        assert _increment_version("v1.0") == "v1.1"
+    def test_semver_patch_increment(self):
+        """Semver 3-part: should bump patch."""
+        assert _increment_version("v1.0.0") == "v1.0.1"
+        assert _increment_version("v1.2.3") == "v1.2.4"
+        assert _increment_version("v2.0.0") == "v2.0.1"
 
-    def test_version_increment_from_v1_999(self):
-        """Version at max minor should increment to v1.1000 then fallback."""
-        # First check: 999 is within bounds, so it increments
-        assert _increment_version("v1.999") == "v1.1000"
-        # But v1.1000 exceeds bounds (1000 > 999), so fallback
-        assert _increment_version("v1.1000") == "v1.1"
+    def test_legacy_two_part_upgrades_to_semver(self):
+        """Legacy 2-part: treated as vX.Y.0, bumps to vX.Y.1."""
+        assert _increment_version("v1.0") == "v1.0.1"
+        assert _increment_version("v1.5") == "v1.5.1"
+        assert _increment_version("v10.50") == "v10.50.1"
 
-    def test_invalid_version_format_uses_fallback(self):
-        """Invalid version format should fallback to v1.1."""
-        invalid_versions = ["1.0", "v1", "version1.0", "", "vABC.123"]
+    def test_invalid_version_raises(self):
+        """Invalid formats should raise ValueError, not silently fallback."""
+        invalid_versions = ["v1", "version1.0", "", "vABC.123"]
 
         for invalid_version in invalid_versions:
-            assert _increment_version(invalid_version) == "v1.1"
+            with pytest.raises(ValueError):
+                _increment_version(invalid_version)
 
-    def test_version_increment_normal_case(self):
-        """Version should increment normally."""
-        test_cases = [
-            ("v1.0", "v1.1"),
-            ("v1.5", "v1.6"),
-            ("v2.0", "v2.1"),
-            ("v10.50", "v10.51"),
-        ]
-
-        for input_ver, expected in test_cases:
-            assert _increment_version(input_ver) == expected
+    def test_without_v_prefix(self):
+        """Should handle versions without v prefix."""
+        assert _increment_version("1.0.0") == "v1.0.1"
+        assert _increment_version("1.2") == "v1.2.1"
 
 
 class TestSanitization:
