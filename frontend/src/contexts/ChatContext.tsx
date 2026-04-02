@@ -11,13 +11,8 @@ import {
   chatService,
   type ChatMessage,
   type ConversationInfo,
-  type RecoverableSessionInfo,
 } from "@/services/chatService";
 import { useAuth } from "./AuthContext";
-import { useSessionTimeout } from "@/hooks/useSessionTimeout";
-import { SessionRecoveryDialog } from "@/components/chat/SessionRecoveryDialog";
-import { SessionTimeoutWarning } from "@/components/chat/SessionTimeoutWarning";
-import { SessionExpiredDialog } from "@/components/chat/SessionExpiredDialog";
 
 interface DisplayMessage {
   id: string;
@@ -35,15 +30,12 @@ interface ChatContextType {
   conversations: ConversationInfo[];
   currentConversation: ConversationInfo | null;
   currentTab: string;
-  isTimeoutWarning: boolean;
-  isSessionExpired: boolean;
   setNewMessage: (message: string) => void;
   sendMessage: () => Promise<void>;
   createNewChat: () => Promise<void>;
   switchToConversation: (conversation: ConversationInfo) => Promise<void>;
   handleKeyPress: (e: React.KeyboardEvent) => void;
   updateChatContext: (selectedTab: string) => void;
-  extendSession: () => void;
 }
 
 export const ChatContext = createContext<ChatContextType | undefined>(
@@ -79,12 +71,6 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
       timestamp: new Date().toISOString(),
     },
   ]);
-
-  // Session recovery state
-  const [recoverableSessions, setRecoverableSessions] = useState<
-    RecoverableSessionInfo[]
-  >([]);
-  const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
 
   // Track previous account to detect switches
   const prevAccountIdRef = useRef(selectedOrgAccount?.accountId);
@@ -122,37 +108,14 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
           Array.isArray(userConversations) ? userConversations : [],
         );
 
-        // Show recovery dialog when user has previous conversations but no
-        // active session. Use conversations data directly since it has rich
-        // metadata (names, message counts) unlike the bare ADK list_sessions.
-        if (
-          !sessionId &&
-          Array.isArray(userConversations) &&
-          userConversations.length > 0
-        ) {
-          const recoverable: RecoverableSessionInfo[] = userConversations.map(
-            (c) => ({
-              session_id: c.session_id,
-              conversation_name: c.conversation_name,
-              last_updated: c.last_updated,
-              message_count: c.message_count,
-              preview: c.preview,
-            }),
-          );
-          setRecoverableSessions(recoverable);
-          setShowRecoveryDialog(true);
-          return;
-        }
-
-        // Auto-load most recent conversation if no recovery dialog shown
+        // Auto-resume: load most recent conversation with full message history
         if (
           !sessionId &&
           Array.isArray(userConversations) &&
           userConversations.length > 0
         ) {
           const mostRecent = userConversations[0];
-          setCurrentConversation(mostRecent);
-          setSessionId(mostRecent.session_id);
+          await switchToConversation(mostRecent);
         }
       } catch (error) {
         console.error("Failed to load conversations:", error);
@@ -342,77 +305,6 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     setCurrentTab(selectedTab);
   }, []);
 
-  // Recover a session from the recovery dialog
-  const handleRecoverSession = useCallback(
-    async (recoverySessionId: string) => {
-      setShowRecoveryDialog(false);
-      // Find the conversation in the already-loaded list and switch to it
-      const conversation = conversations.find(
-        (c) => c.session_id === recoverySessionId,
-      );
-      if (conversation) {
-        await switchToConversation(conversation);
-      } else {
-        // Fallback: set session ID directly
-        setSessionId(recoverySessionId);
-      }
-    },
-    [conversations, switchToConversation],
-  );
-
-  // Session timeout handling — save expired session so "Recover" can restore it
-  const expiredSessionRef = useRef<{
-    sessionId: string;
-    conversation: ConversationInfo | null;
-  } | null>(null);
-
-  const handleSessionTimeout = useCallback(() => {
-    if (sessionId) {
-      expiredSessionRef.current = {
-        sessionId,
-        conversation: currentConversation,
-      };
-    }
-    setSessionId(null);
-    setCurrentConversation(null);
-  }, [sessionId, currentConversation]);
-
-  const {
-    isWarningShown: isTimeoutWarning,
-    isExpired: isSessionExpired,
-    remainingSeconds,
-    extendSession,
-  } = useSessionTimeout({
-    sessionId,
-    enabled: isAuthenticated,
-    onTimeout: handleSessionTimeout,
-  });
-
-  const handleEndSession = useCallback(() => {
-    setSessionId(null);
-    setCurrentConversation(null);
-    setMessages([
-      {
-        id: "1",
-        role: "assistant",
-        content: `Hello! I'm here to help with your ${currentTab} strategy. What would you like to discuss?`,
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-  }, [currentTab]);
-
-  const handleExpiredRecover = useCallback(async () => {
-    const expired = expiredSessionRef.current;
-    if (expired) {
-      if (expired.conversation) {
-        await switchToConversation(expired.conversation);
-      } else {
-        setSessionId(expired.sessionId);
-      }
-      expiredSessionRef.current = null;
-    }
-  }, [switchToConversation]);
-
   const value = {
     messages,
     newMessage,
@@ -421,40 +313,17 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     conversations,
     currentConversation,
     currentTab,
-    isTimeoutWarning,
-    isSessionExpired,
     setNewMessage,
     sendMessage,
     createNewChat,
     switchToConversation,
     handleKeyPress,
     updateChatContext,
-    extendSession,
   };
 
   return (
     <ChatContext.Provider value={value}>
       {children}
-      <SessionRecoveryDialog
-        open={showRecoveryDialog}
-        sessions={recoverableSessions}
-        onRecover={handleRecoverSession}
-        onDismiss={() => {
-          setShowRecoveryDialog(false);
-          createNewChat();
-        }}
-      />
-      <SessionTimeoutWarning
-        open={isTimeoutWarning}
-        remainingSeconds={remainingSeconds}
-        onExtend={extendSession}
-        onEndSession={handleEndSession}
-      />
-      <SessionExpiredDialog
-        open={isSessionExpired}
-        onRecover={handleExpiredRecover}
-        onStartNew={createNewChat}
-      />
     </ChatContext.Provider>
   );
 };

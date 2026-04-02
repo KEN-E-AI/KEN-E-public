@@ -129,18 +129,6 @@ def mock_usage_tracker():
 
 
 @pytest.fixture
-def mock_timeout_manager():
-    """Create a mock timeout manager."""
-    manager = MagicMock()
-    manager.config.warning_minutes = 25
-    manager.config.timeout_minutes = 30
-    manager.config.check_interval_seconds = 60
-    manager._activity = {"user1:session1": datetime.now(timezone.utc)}
-    manager._warned = set()
-    return manager
-
-
-@pytest.fixture
 def mock_recovery_service():
     """Create a mock recovery service."""
     service = MagicMock()
@@ -403,14 +391,10 @@ class TestSessionStatusEndpoints:
     def test_get_session_status(
         self,
         test_client,
-        mock_timeout_manager,
         mock_recovery_service,
     ):
         """Test GET /api/v1/mcp/sessions/status returns session status."""
         with patch(
-            "src.kene_api.routers.mcp._get_timeout_manager",
-            return_value=mock_timeout_manager,
-        ), patch(
             "src.kene_api.routers.mcp._get_recovery_service",
             return_value=mock_recovery_service,
         ):
@@ -418,8 +402,6 @@ class TestSessionStatusEndpoints:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["timeout_config"]["warning_minutes"] == 25
-        assert data["timeout_config"]["timeout_minutes"] == 30
         assert data["recovery_window_days"] == 7
 
 

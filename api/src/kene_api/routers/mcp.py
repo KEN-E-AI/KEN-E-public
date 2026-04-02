@@ -448,28 +448,10 @@ async def flush_tool_usage(
 # ============================================================================
 
 
-class SessionTimeoutConfig(BaseModel):
-    """Session timeout configuration."""
-
-    warning_minutes: int = Field(..., description="Minutes before timeout warning")
-    timeout_minutes: int = Field(..., description="Minutes until session times out")
-    check_interval_seconds: int = Field(..., description="How often timeout is checked")
-
-
 class SessionStatusResponse(BaseModel):
     """Overall session management status."""
 
-    timeout_config: SessionTimeoutConfig = Field(..., description="Timeout configuration")
-    active_sessions_tracked: int = Field(..., description="Sessions being tracked for timeout")
-    sessions_warned: int = Field(..., description="Sessions that have received timeout warning")
     recovery_window_days: int = Field(..., description="Days sessions are recoverable")
-
-
-def _get_timeout_manager():
-    """Lazy import to avoid circular dependencies."""
-    from app.adk.session.timeout import get_timeout_manager
-
-    return get_timeout_manager()
 
 
 def _get_recovery_service():
@@ -485,36 +467,16 @@ async def get_session_status(
 ) -> SessionStatusResponse:
     """Get session management system status.
 
-    Returns information about timeout configuration and active tracking.
-    Useful for understanding session lifecycle management.
-
     Requires: Admin access
     """
     _require_admin(user)
     try:
-        timeout_mgr = _get_timeout_manager()
         recovery_svc = _get_recovery_service()
-
         return SessionStatusResponse(
-            timeout_config=SessionTimeoutConfig(
-                warning_minutes=timeout_mgr.config.warning_minutes,
-                timeout_minutes=timeout_mgr.config.timeout_minutes,
-                check_interval_seconds=timeout_mgr.config.check_interval_seconds,
-            ),
-            active_sessions_tracked=timeout_mgr.active_session_count,
-            sessions_warned=timeout_mgr.get_warned_session_count(),
             recovery_window_days=recovery_svc.RECOVERY_WINDOW_DAYS,
         )
     except Exception:
-        # Return defaults if services not initialized
         return SessionStatusResponse(
-            timeout_config=SessionTimeoutConfig(
-                warning_minutes=25,
-                timeout_minutes=30,
-                check_interval_seconds=60,
-            ),
-            active_sessions_tracked=0,
-            sessions_warned=0,
             recovery_window_days=7,
         )
 
@@ -669,7 +631,6 @@ async def get_admin_dashboard(
         "oauth_header_auth": True,
         "tool_usage_tracking": True,
         "session_recovery": True,
-        "session_timeout": True,
     }
 
     return Sprint3StatusResponse(

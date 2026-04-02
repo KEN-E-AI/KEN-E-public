@@ -1997,16 +1997,6 @@ async def chat_completion(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied to account {request.account_id}",
             )
-        # Record session activity for timeout tracking
-        if request.session_id:
-            try:
-                from app.adk.session.timeout import get_timeout_manager
-
-                timeout_mgr = get_timeout_manager()
-                timeout_mgr.record_activity(user_context.user_id, request.session_id)
-            except Exception:
-                pass  # Non-critical
-
         # Set Weave root span metadata for trace filtering (scoped via contextvars)
         _attrs_cm = None
         if WEAVE_AVAILABLE:
@@ -2211,14 +2201,6 @@ async def create_conversation(
                 conversation_name=request.conversation_name,
                 account_id=request.account_id,
             )
-            # Record session activity for timeout tracking
-            try:
-                from app.adk.session.timeout import get_timeout_manager
-
-                timeout_mgr = get_timeout_manager()
-                timeout_mgr.record_activity(user_id, sid)
-            except Exception:
-                pass
             return sid
 
         agent_client._pending_sessions[pending_id] = asyncio.create_task(
@@ -2315,15 +2297,6 @@ async def get_conversation_history(
     Get the message history for a specific conversation.
     """
     try:
-        # Record session activity for timeout tracking
-        try:
-            from app.adk.session.timeout import get_timeout_manager
-
-            timeout_mgr = get_timeout_manager()
-            timeout_mgr.record_activity(user_context.user_id, session_id)
-        except Exception:
-            pass  # Non-critical
-
         history = await agent_client.get_conversation_history(
             user_id=user_context.user_id, session_id=session_id
         )
@@ -2380,13 +2353,6 @@ class SessionRecoveryResponse(BaseModel):
     session_id: str | None = None
     conversation_history: list[dict[str, Any]] | None = None
     message_count: int = 0
-
-
-class SessionActivityResponse(BaseModel):
-    """Response for session activity recording."""
-
-    status: str = "ok"
-    remaining_seconds: int | None = None
 
 
 @router.get("/sessions/recoverable")
@@ -2455,28 +2421,6 @@ async def recover_session(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to recover session",
         ) from e
-
-
-@router.post("/sessions/{session_id}/activity")
-async def record_session_activity(
-    session_id: str,
-    user_context: UserContext = Depends(get_current_user_context),
-) -> SessionActivityResponse:
-    """Record user activity to reset session timeout timer.
-
-    Called by the frontend as a keep-alive when the user is active.
-    """
-    try:
-        from app.adk.session.timeout import get_timeout_manager
-
-        timeout_mgr = get_timeout_manager()
-        timeout_mgr.record_activity(user_context.user_id, session_id)
-        remaining = timeout_mgr.get_remaining_time(user_context.user_id, session_id)
-
-        return SessionActivityResponse(status="ok", remaining_seconds=remaining)
-    except Exception as e:
-        logger.error(f"Error recording session activity: {e}")
-        return SessionActivityResponse(status="ok", remaining_seconds=None)
 
 
 @router.post("/cache/invalidate/{account_id}")
