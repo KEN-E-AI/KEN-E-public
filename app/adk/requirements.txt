@@ -1,5 +1,5 @@
 google-cloud-aiplatform[adk,agent_engines]
-google-adk==1.27.4
+google-adk>=1.27.4
 google-cloud-discoveryengine
 google-cloud-firestore
 google-cloud-logging
