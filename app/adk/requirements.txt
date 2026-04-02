@@ -1,5 +1,5 @@
 google-cloud-aiplatform[adk,agent_engines]
-google-adk==1.26.0
+google-adk>=1.27.4
 google-cloud-discoveryengine
 google-cloud-firestore
 google-cloud-logging
@@ -9,6 +9,7 @@ python-dotenv
 google-analytics-data
 newsapi-python
 weave>=0.51.0,<0.51.57
+gql<4
 wandb
 nest-asyncio
 PyPDF2

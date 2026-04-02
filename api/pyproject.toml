@@ -28,8 +28,9 @@ dependencies = [
     "jinja2>=3.1.2",
     "firebase-admin>=6.1.0",
     "redis>=5.0.0",
-    "google-adk>=1.26.0",
-    "weave>=0.51.59",
+    "google-adk>=1.27.4",
+    "weave>=0.51.0,<0.51.57",  # pinned: polyfile-weave breaks Agent Engine (see docs/spike-otel-pydantic-findings.md)
+    "gql<4",  # pinned: gql 4.0 breaks weave 0.51.x (wandb/weave#5288)
     "wandb>=0.21.1",
     "importlib-metadata<8.0",
     "prometheus-client>=0.19.0",

@@ -97,6 +97,41 @@ Tracing has been re-enabled across all environments:
 4. A direct GA MCP server health ping was added at `api/src/kene_api/services/mcp_health_service.py`
    for proactive detection of MCP server outages.
 
+## Weave Version Pin & polyfile-weave Issue (2026-03-26)
+
+During the ADK 1.27.4 upgrade (Sprint 5, Story 1.1.1-2), we discovered two interacting dependency issues:
+
+### Problem: gql 4.0 breaks weave 0.51.x
+
+ADK 1.27.5 pulls in `gql>=4.0.0` as a transitive dependency. gql 4.0 changed `SyncClientSession.execute()` from positional to keyword-only args, breaking `weave/wandb_interface/wandb_api.py`. This is tracked as [wandb/weave#5288](https://github.com/wandb/weave/issues/5288).
+
+The fix ([wandb/weave#5290](https://github.com/wandb/weave/pull/5290)) was merged on 2025-08-18 and ships in **weave 0.52.1+**.
+
+### Problem: polyfile-weave breaks Agent Engine deployment
+
+weave 0.51.57+ (including all 0.52.x) adds `polyfile-weave` as an unconditional dependency. `polyfile-weave` contains kaitai parser files (`wmf.py`, `sudoers_ts.py`, `regf.py`) with syntax errors that fail Agent Engine's strict `compileall` step — even on Python 3.12. This blocks deployment to Vertex AI Agent Engine.
+
+### Resolution (2026-03-27)
+
+polyfile-weave's kaitai parsers (`wmf.py`, `sudoers_ts.py`, `regf.py`) have genuine syntax errors that fail Agent Engine's `compileall` step on ALL Python versions (3.10, 3.12, 3.13 all tested and all fail). This is not a Python version issue — the generated parser code is broken.
+
+The only working combination for Agent Engine deployment:
+- `weave>=0.51.0,<0.51.57` (last version without polyfile-weave dependency)
+- `gql<4` (gql 4.0 broke weave 0.51.x's `session.execute()` call; fix is in weave 0.52.1+ but blocked by polyfile)
+
+Migrated Agent Engine from Python 3.10 to 3.13 for long-term Python support (3.10 EOL: Oct 2026). This required creating a new engine instance (Agent Engine cannot update Python version in-place due to serialization format incompatibility). Dev session history was lost (no production users).
+
+Current pins in `app/adk/pyproject.toml`:
+- `weave>=0.51.0,<0.51.57`
+- `gql<4`
+- `requires-python = ">=3.13,<3.14"`
+
+### Unblock condition
+
+When W&B either (a) makes polyfile-weave optional, or (b) fixes the kaitai parser syntax errors, we can upgrade to weave >=0.52.1 and remove the gql<4 pin. Track [wandb/weave#5288](https://github.com/wandb/weave/issues/5288).
+
+See Notion Design Decision: "Agent Engine Python Version Migration: 3.10 to 3.13".
+
 ## Existing Code References
 
 - `app/adk/deploy_ken_e.py:299` — `enable_tracing=True` (re-enabled)

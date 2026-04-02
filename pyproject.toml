@@ -9,16 +9,17 @@ dependencies = [
     "opentelemetry-exporter-gcp-trace>=1.9.0",
     "google-cloud-logging>=3.11.4",
     "google-cloud-aiplatform[evaluation,reasoningengine]>=1.118.0",
-    "google-adk>=1.23.0",
+    "google-adk>=1.27.4",
     "firebase-admin>=6.7.0",
     "google-cloud-secret-manager>=2.24.0",
-    "weave>=0.51.20",
+    "weave>=0.51.0,<0.51.57",  # pinned: polyfile-weave breaks Agent Engine (see docs/spike-otel-pydantic-findings.md)
+    "gql<4",  # pinned: gql 4.0 breaks weave 0.51.x (wandb/weave#5288)
     "wandb>=0.19.1",
     "ruff>=0.9.7",
     "python-dotenv>=1.0.0",
 ]
 
-requires-python = ">=3.10,<=3.11"
+requires-python = ">=3.13,<3.14"
 
 [dependency-groups]
 dev = [
