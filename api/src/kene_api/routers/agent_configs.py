@@ -111,7 +111,7 @@ class AgentConfigUpdate(BaseModel):
     def validate_version_format(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        from app.adk.tracking.trace_metadata import SEMVER_PATTERN
+        from app.utils.trace_metadata import SEMVER_PATTERN
 
         v = v.strip()
         if not v.startswith("v"):
@@ -213,7 +213,7 @@ def _increment_version(current_version: str) -> str:
     Raises:
         ValueError: If version format is not parseable
     """
-    from app.adk.tracking.trace_metadata import validate_semver
+    from app.utils.trace_metadata import validate_semver
 
     version = current_version.strip() if current_version else ""
     if not version.startswith("v"):
@@ -505,7 +505,7 @@ async def update_agent_config(
 
         # Determine new version
         # Note: format validation already done by Pydantic field_validator
-        from app.adk.tracking.trace_metadata import (
+        from app.utils.trace_metadata import (
             parse_semver,
             validate_semver,
         )

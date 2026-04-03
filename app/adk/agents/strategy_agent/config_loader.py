@@ -101,7 +101,7 @@ def load_config_from_firestore(
 
         # Extract metadata (for Weave logging) and validate version
         metadata = config_data.get("metadata", {})
-        from app.adk.tracking.trace_metadata import validate_semver
+        from app.utils.trace_metadata import validate_semver
 
         metadata["version"] = validate_semver(metadata.get("version"))
 

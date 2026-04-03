@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.adk.tracking.trace_metadata import (
+from app.utils.trace_metadata import (
     DEFAULT_VERSION,
     SEMVER_PATTERN,
     parse_semver,

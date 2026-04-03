@@ -414,6 +414,14 @@ def _execute_single_strategy(
     strategy_name = strategy_config["name"]
     logger.info(f"\n[SPLIT AGENT] ========== Starting {strategy_name} ==========")
 
+    # Load agent version metadata for trace identification
+    from .config_loader import get_current_config_metadata
+
+    researcher_doc_id = strategy_config.get("researcher_doc_id")
+    formatter_doc_id = strategy_config.get("formatter_doc_id")
+    researcher_meta = get_current_config_metadata(researcher_doc_id) if researcher_doc_id else {}
+    formatter_meta = get_current_config_metadata(formatter_doc_id) if formatter_doc_id else {}
+
     # Track operation
     operation = None
     if performance_profiler:
@@ -510,16 +518,20 @@ def _execute_single_strategy(
 
         @weave.op(name=f"{strategy_name}_research")
         def run_research():
-            with weave.attributes({"output_category": _research_category}):
-                return list(
-                    runner.run(
-                        user_id=strategy_context.user_id or "system",
-                        session_id=session_id,
-                        new_message=Content(parts=[{"text": research_query}]),
-                    )
+            return list(
+                runner.run(
+                    user_id=strategy_context.user_id or "system",
+                    session_id=session_id,
+                    new_message=Content(parts=[{"text": research_query}]),
                 )
+            )
 
-        events = run_research()
+        with weave.attributes({
+            "output_category": _research_category,
+            "agent_id": researcher_doc_id or strategy_name,
+            "agent_version": researcher_meta.get("version", "unknown"),
+        }):
+            events = run_research()
 
         # Extract research text and grounding metadata (source URLs)
         research_text = ""
@@ -593,16 +605,20 @@ def _execute_single_strategy(
 
         @weave.op(name=f"{strategy_name}_format_openai")
         def run_openai_formatter():
-            with weave.attributes({"output_category": _report_category}):
-                return format_with_openai(
-                    research_text,
-                    strategy_config["model_class"],
-                    strategy_name,
-                    source_urls,
-                    custom_instructions=firestore_instructions,
-                )
+            return format_with_openai(
+                research_text,
+                strategy_config["model_class"],
+                strategy_name,
+                source_urls,
+                custom_instructions=firestore_instructions,
+            )
 
-        openai_dict = run_openai_formatter()
+        with weave.attributes({
+            "output_category": _report_category,
+            "agent_id": formatter_doc_id or strategy_name,
+            "agent_version": formatter_meta.get("version", "unknown"),
+        }):
+            openai_dict = run_openai_formatter()
         formatted_data = strategy_config["model_class"](**openai_dict)
         used_openai = True
         logger.info("[SPLIT AGENT] ✅ OpenAI formatting successful")
@@ -927,6 +943,7 @@ def _execute_strategy_generation_body(
                 google_search_agent
             ),
             "create_formatter": create_business_formatter,
+            "researcher_doc_id": "business_researcher",
             "formatter_doc_id": "business_formatter",
             "model_class": StructuredBusinessStrategy,
             "graph_builder_class": GraphBuilder,
@@ -938,6 +955,7 @@ def _execute_strategy_generation_body(
                 google_search_agent
             ),
             "create_formatter": create_competitive_formatter,
+            "researcher_doc_id": "competitive_researcher",
             "formatter_doc_id": "competitive_formatter",
             "model_class": CompetitiveAnalysis,
             "graph_builder_class": CompetitiveGraphBuilder,
@@ -949,6 +967,7 @@ def _execute_strategy_generation_body(
                 google_search_agent
             ),
             "create_formatter": create_marketing_formatter,
+            "researcher_doc_id": "marketing_researcher",
             "formatter_doc_id": "marketing_formatter",
             "model_class": MarketingResearchReport,
             "graph_builder_class": MarketingGraphBuilder,
@@ -958,6 +977,7 @@ def _execute_strategy_generation_body(
             "name": "brand_guidelines",
             "create_researcher": lambda: create_brand_researcher(google_search_agent),
             "create_formatter": create_brand_formatter,
+            "researcher_doc_id": "brand_researcher",
             "formatter_doc_id": "brand_formatter",
             "model_class": BrandGuidelines,
             "graph_builder_class": BrandGraphBuilder,
