@@ -758,6 +758,20 @@ def execute_strategy_generation_direct(
         "rollout_percentage": 100,
     }
 
+    # Add experiment metadata if configured (omit when no experiment active)
+    try:
+        from .config_loader import get_current_config_metadata
+
+        orchestrator_meta = get_current_config_metadata("ken_e_chatbot")
+        experiment_id = orchestrator_meta.get("experiment_id")
+        variant_name = orchestrator_meta.get("variant_name")
+        if experiment_id and experiment_id != "unknown":
+            root_attrs["experiment_id"] = experiment_id
+        if variant_name and variant_name != "unknown":
+            root_attrs["variant_name"] = variant_name
+    except Exception as e:
+        logger.warning(f"Failed to load experiment metadata: {e}")
+
     exit_stack = ExitStack()
     try:
         exit_stack.enter_context(weave.attributes(root_attrs))
