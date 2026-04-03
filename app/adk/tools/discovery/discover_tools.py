@@ -9,11 +9,14 @@ import logging
 
 from google.adk.tools import ToolContext
 
+from app.utils.weave_observability import safe_weave_op
+
 from .tool_discovery import get_default_discovery
 
 logger = logging.getLogger(__name__)
 
 
+@safe_weave_op(name="discover_tools")
 def discover_tools(
     query: str,
     tool_context: ToolContext | None = None,
@@ -122,6 +125,7 @@ def _format_results(results: list, query: str, category: str | None) -> str:
     return "\n".join(lines)
 
 
+@safe_weave_op(name="list_tool_categories")
 def list_tool_categories(tool_context: ToolContext | None = None) -> str:
     """List all available tool categories.
 
@@ -149,6 +153,7 @@ def list_tool_categories(tool_context: ToolContext | None = None) -> str:
     return "\n".join(lines)
 
 
+@safe_weave_op(name="get_tool_details")
 def get_tool_details(tool_name: str, tool_context: ToolContext | None = None) -> str:
     """Get detailed information about a specific tool.
 

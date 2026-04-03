@@ -213,6 +213,13 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         result = dispatch_to_google_analytics(query, tool_context)
         return result.get("result", str(result)) if isinstance(result, dict) else str(result)
 
+    # Apply Weave tracing to tool wrappers (dispatch handlers are already traced,
+    # but these wrappers need their own spans for complete L3 tool coverage)
+    from app.utils.weave_observability import safe_weave_op
+
+    search_company_news = safe_weave_op(name="search_company_news")(search_company_news)
+    query_google_analytics = safe_weave_op(name="query_google_analytics")(query_google_analytics)
+
     ken_e = Agent(
         name="ken_e",
         model=model,
