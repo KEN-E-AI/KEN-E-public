@@ -99,6 +99,11 @@ class TestParseSemver:
         with pytest.raises(ValueError):
             parse_semver("latest")
 
+    def test_parse_prerelease_strips_suffix(self) -> None:
+        assert parse_semver("v1.0.0-beta.1") == (1, 0, 0)
+        assert parse_semver("v2.1.3-rc1") == (2, 1, 3)
+        assert parse_semver("v1.0.0-alpha") == (1, 0, 0)
+
     def test_comparison(self) -> None:
         assert parse_semver("v1.0.1") > parse_semver("v1.0.0")
         assert parse_semver("v1.1.0") > parse_semver("v1.0.9")

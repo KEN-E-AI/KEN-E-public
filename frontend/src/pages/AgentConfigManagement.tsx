@@ -161,7 +161,7 @@ const AgentConfigManagement = () => {
       description: editedConfig.description,
       temperature: editedConfig.generate_content_config.temperature,
       max_output_tokens: editedConfig.generate_content_config.max_output_tokens,
-      version: editedConfig.metadata.version !== config?.metadata.version
+      version: config?.metadata?.version && editedConfig.metadata.version !== config.metadata.version
         ? editedConfig.metadata.version
         : undefined,
       variant_name: editedConfig.metadata.variant_name,

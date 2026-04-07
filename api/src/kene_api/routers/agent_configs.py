@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
 from pydantic import BaseModel, Field, field_validator
 
+from app.utils.trace_metadata import SEMVER_PATTERN, parse_semver, validate_semver
+
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
@@ -111,8 +113,6 @@ class AgentConfigUpdate(BaseModel):
     def validate_version_format(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        from app.utils.trace_metadata import SEMVER_PATTERN
-
         v = v.strip()
         if not v.startswith("v"):
             v = f"v{v}"
@@ -213,13 +213,13 @@ def _increment_version(current_version: str) -> str:
     Raises:
         ValueError: If version format is not parseable
     """
-    from app.utils.trace_metadata import validate_semver
-
     version = current_version.strip() if current_version else ""
     if not version.startswith("v"):
         version = f"v{version}" if version else ""
 
-    parts = version[1:].split(".") if version.startswith("v") else []
+    # Strip prerelease suffix for incrementing (e.g., "v1.0.0-beta" → "v1.0.0")
+    base = version[1:].split("-", 1)[0] if version.startswith("v") else ""
+    parts = base.split(".") if base else []
 
     if len(parts) == 2:
         major, minor, patch = int(parts[0]), int(parts[1]), 0
@@ -231,8 +231,7 @@ def _increment_version(current_version: str) -> str:
             f"expected vX.Y or vX.Y.Z format"
         )
 
-    new_version = f"v{major}.{minor}.{patch + 1}"
-    return validate_semver(new_version)
+    return f"v{major}.{minor}.{patch + 1}"
 
 
 def _sanitize_updated_by(email: str) -> str:
@@ -505,11 +504,6 @@ async def update_agent_config(
 
         # Determine new version
         # Note: format validation already done by Pydantic field_validator
-        from app.utils.trace_metadata import (
-            parse_semver,
-            validate_semver,
-        )
-
         current_version_str = current_metadata.get("version")
 
         if update.version:

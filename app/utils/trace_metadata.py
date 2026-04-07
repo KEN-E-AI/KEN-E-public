@@ -60,7 +60,9 @@ def parse_semver(version: str) -> tuple[int, int, int]:
         ValueError: If version cannot be parsed
     """
     v = version.lstrip("v")
-    parts = v.split(".")
+    # Strip prerelease suffix (e.g., "1.0.0-beta.1" → "1.0.0")
+    base = v.split("-", 1)[0]
+    parts = base.split(".")
     if len(parts) != 3:
         raise ValueError(f"Cannot parse '{version}' as semver (expected vX.Y.Z)")
     return int(parts[0]), int(parts[1]), int(parts[2])

@@ -206,6 +206,11 @@ class TestVersionIncrement:
         assert _increment_version("1.0.0") == "v1.0.1"
         assert _increment_version("1.2") == "v1.2.1"
 
+    def test_prerelease_version_increment(self):
+        """Prerelease suffix stripped before incrementing."""
+        assert _increment_version("v1.0.0-beta.1") == "v1.0.1"
+        assert _increment_version("v2.1.3-rc1") == "v2.1.4"
+
 
 class TestSanitization:
     """Test input sanitization functions."""
