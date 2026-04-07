@@ -142,7 +142,7 @@ def truncate_large_output(
         Original output or {_truncated: True, size_bytes: N, preview: "..."}
     """
     try:
-        serialized = json.dumps(output) if isinstance(output, dict) else str(output)
+        serialized = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
         size = len(serialized.encode("utf-8"))
         if size <= max_bytes:
             return output

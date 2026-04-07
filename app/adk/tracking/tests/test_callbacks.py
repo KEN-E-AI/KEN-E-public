@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -273,6 +274,9 @@ class TestTruncateLargeOutput:
 
         # Create output that serializes to exactly 100KB
         output = {"d": "a" * (100 * 1024 - 10)}
+        # Guard: verify our test data is actually at/under the limit
+        serialized = json.dumps(output)
+        assert len(serialized.encode("utf-8")) <= 100 * 1024
         result = truncate_large_output(output)
         # Should not be truncated (at or under limit)
         assert not isinstance(result, dict) or "_truncated" not in result
@@ -284,6 +288,20 @@ class TestTruncateLargeOutput:
         result = truncate_large_output(output)
         assert result["_truncated"] is True
         assert result["size_bytes"] > 100_000
+
+    def test_list_output_truncated(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = [{"item": "x" * 200_000}]
+        result = truncate_large_output(output)
+        assert result["_truncated"] is True
+        assert result["size_bytes"] > 100_000
+
+    def test_small_list_output_unchanged(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = [{"a": 1}, {"b": 2}]
+        assert truncate_large_output(output) == output
 
     def test_none_output_unchanged(self) -> None:
         from app.adk.tracking.callbacks import truncate_large_output

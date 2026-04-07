@@ -34,7 +34,7 @@ from app.adk.tracking.callbacks import (
     weave_after_agent_callback,
     weave_before_agent_callback,
 )
-from app.utils.weave_observability import init_weave_if_needed
+from app.utils.weave_observability import init_weave_if_needed, safe_weave_op
 from shared.structured_logging import configure_logging, get_structured_logger
 
 from .strategy_agent.config_loader import load_config_from_firestore
@@ -215,8 +215,6 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
 
     # Apply Weave tracing to tool wrappers (dispatch handlers are already traced,
     # but these wrappers need their own spans for complete L3 tool coverage)
-    from app.utils.weave_observability import safe_weave_op
-
     search_company_news = safe_weave_op(name="search_company_news")(search_company_news)
     query_google_analytics = safe_weave_op(name="query_google_analytics")(query_google_analytics)
 
