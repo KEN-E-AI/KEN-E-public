@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -248,3 +249,68 @@ class TestAdkAfterToolCallback:
         assert call_kwargs["user_id"] == "unknown"
         assert call_kwargs["account_id"] == "unknown"
         assert call_kwargs["duration_ms"] is None
+
+
+class TestTruncateLargeOutput:
+    """Tests for output truncation utility."""
+
+    def test_small_output_unchanged(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = {"result": "small data"}
+        assert truncate_large_output(output) == output
+
+    def test_large_output_truncated(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = {"data": "x" * 200_000}
+        result = truncate_large_output(output)
+        assert result["_truncated"] is True
+        assert result["size_bytes"] > 100_000
+        assert len(result["preview"]) == 500
+
+    def test_exactly_100kb_not_truncated(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        # Create output that serializes to exactly 100KB
+        output = {"d": "a" * (100 * 1024 - 10)}
+        # Guard: verify our test data is actually at/under the limit
+        serialized = json.dumps(output)
+        assert len(serialized.encode("utf-8")) <= 100 * 1024
+        result = truncate_large_output(output)
+        # Should not be truncated (at or under limit)
+        assert not isinstance(result, dict) or "_truncated" not in result
+
+    def test_string_output_truncated(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = "x" * 200_000
+        result = truncate_large_output(output)
+        assert result["_truncated"] is True
+        assert result["size_bytes"] > 100_000
+
+    def test_list_output_truncated(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = [{"item": "x" * 200_000}]
+        result = truncate_large_output(output)
+        assert result["_truncated"] is True
+        assert result["size_bytes"] > 100_000
+
+    def test_small_list_output_unchanged(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = [{"a": 1}, {"b": 2}]
+        assert truncate_large_output(output) == output
+
+    def test_none_output_unchanged(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        assert truncate_large_output(None) is None
+
+    def test_custom_max_bytes(self) -> None:
+        from app.adk.tracking.callbacks import truncate_large_output
+
+        output = {"data": "x" * 1000}
+        result = truncate_large_output(output, max_bytes=100)
+        assert result["_truncated"] is True

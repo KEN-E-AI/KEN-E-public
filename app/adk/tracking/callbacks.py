@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import contextvars
+import json
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -122,6 +123,38 @@ def weave_after_agent_callback(
     return None
 
 
+_MAX_OUTPUT_BYTES = 100 * 1024  # 100KB
+
+
+def truncate_large_output(
+    output: Any, max_bytes: int = _MAX_OUTPUT_BYTES
+) -> Any:
+    """Truncate tool output if it exceeds max_bytes.
+
+    Returns the original output if within limits, or a truncation marker dict
+    if the serialized output exceeds max_bytes.
+
+    Args:
+        output: Tool response to check
+        max_bytes: Maximum size in bytes before truncation
+
+    Returns:
+        Original output or {_truncated: True, size_bytes: N, preview: "..."}
+    """
+    try:
+        serialized = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
+        size = len(serialized.encode("utf-8"))
+        if size <= max_bytes:
+            return output
+        return {
+            "_truncated": True,
+            "size_bytes": size,
+            "preview": serialized[:500],
+        }
+    except Exception:
+        return output
+
+
 def _determine_status(tool_response: dict[str, Any] | str | Any) -> ExecutionStatus:
     """Determine execution status from the tool response.
 
@@ -186,6 +219,9 @@ async def adk_after_tool_callback(
         if status != ExecutionStatus.SUCCESS and isinstance(tool_response, dict):
             error_message = tool_response.get("message") or tool_response.get("error")
 
+        # Truncate large outputs for trace storage (preserves signal, protects Weave)
+        traced_output = truncate_large_output(tool_response)
+
         tracker = get_usage_tracker()
         await tracker.track_execution(
             tool_name=tool.name,
@@ -194,7 +230,10 @@ async def adk_after_tool_callback(
             status=status,
             duration_ms=duration_ms,
             error_message=error_message,
-            metadata={"args_keys": list(args.keys())},
+            metadata={
+                "args_keys": list(args.keys()),
+                "output": traced_output,
+            },
         )
         # Flush immediately so events persist even in short-lived processes
         await tracker.flush()
