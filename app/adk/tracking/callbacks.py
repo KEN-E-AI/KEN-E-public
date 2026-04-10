@@ -29,13 +29,11 @@ import json
 import time
 from typing import TYPE_CHECKING, Any
 
-from app.utils.weave_observability import init_weave_if_needed
-
 import weave
 from weave.trace.api import get_client as _weave_get_client
 from weave.trace.context import call_context as _weave_call_context
 
-_WEAVE_TRACE_AVAILABLE = True
+from app.utils.weave_observability import init_weave_if_needed
 from shared.structured_logging import get_structured_logger
 
 from .usage import ExecutionStatus, get_usage_tracker
@@ -86,8 +84,6 @@ def weave_before_agent_callback(
 
     Returns None so the agent proceeds normally.
     """
-    if not _WEAVE_TRACE_AVAILABLE:
-        return None
     try:
         # On Agent Engine, module-level weave.init() from ken_e_agent.py
         # doesn't re-execute after deserialization. This is the earliest
@@ -133,7 +129,7 @@ def weave_after_agent_callback(
     Returns None so the agent proceeds normally.
     """
     call = _current_agent_call.get(None)
-    if not call or not _WEAVE_TRACE_AVAILABLE:
+    if not call:
         return None
     try:
         client = _weave_get_client()
@@ -276,14 +272,16 @@ async def adk_after_tool_callback(
     except Exception as e:
         logger.warning(f"Usage tracking failed (non-blocking): {e}")
     finally:
-        # Exit the weave.attributes() context entered in adk_before_tool_callback
-        state: dict[str, Any] = {}
-        if hasattr(tool_context, "state") and hasattr(tool_context.state, "get"):
-            state = tool_context.state  # type: ignore[assignment]
-        goal_ctx = state.get("_agent_goal_ctx")
-        if goal_ctx:
-            goal_ctx.__exit__(None, None, None)
-            if hasattr(tool_context.state, "__setitem__"):
-                tool_context.state["_agent_goal_ctx"] = None
+        if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
+            # Append current tool to previous_tool_calls for the next tool call
+            previous = tool_context.state.get("_previous_tool_calls", [])
+            previous.append(tool.name)
+            tool_context.state["_previous_tool_calls"] = previous
+
+            # Exit the weave.attributes() context entered in adk_before_tool_callback
+            attrs_ctx = tool_context.state.get("_trace_attrs_ctx")
+            if attrs_ctx:
+                attrs_ctx.__exit__(None, None, None)
+                tool_context.state["_trace_attrs_ctx"] = None
 
     return None

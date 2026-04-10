@@ -23,7 +23,6 @@ class TestWeaveBeforeAgentCallbackGoal:
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
-    @patch("app.adk.tracking.callbacks._WEAVE_TRACE_AVAILABLE", True)
     def test_agent_goal_set_from_user_content(
         self, mock_init: MagicMock, mock_get_client: MagicMock, mock_call_ctx: MagicMock
     ) -> None:
@@ -45,7 +44,6 @@ class TestWeaveBeforeAgentCallbackGoal:
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
-    @patch("app.adk.tracking.callbacks._WEAVE_TRACE_AVAILABLE", True)
     def test_agent_goal_none_when_no_user_content(
         self, mock_init: MagicMock, mock_get_client: MagicMock, mock_call_ctx: MagicMock
     ) -> None:
@@ -63,13 +61,11 @@ class TestWeaveBeforeAgentCallbackGoal:
         assert result is None
         call_kwargs = mock_client.create_call.call_args
         inputs = call_kwargs[1]["inputs"] if "inputs" in call_kwargs[1] else call_kwargs[0][1]
-        # Should still have agent key but goal is absent or None
         assert inputs.get("context_agent_goal") is None
 
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
-    @patch("app.adk.tracking.callbacks._WEAVE_TRACE_AVAILABLE", True)
     def test_agent_goal_truncated_for_long_queries(
         self, mock_init: MagicMock, mock_get_client: MagicMock, mock_call_ctx: MagicMock
     ) -> None:
@@ -93,17 +89,11 @@ class TestWeaveBeforeAgentCallbackGoal:
 
 
 class TestAgentGoalContextPropagation:
-    """Test that agent-level weave.attributes context propagates to tool spans.
-
-    The before_agent_callback enters a weave.attributes({"context_agent_goal": ...})
-    context that stays active for the entire agent invocation. This means all
-    tool spans created during that invocation inherit the attribute automatically.
-    """
+    """Test that agent-level weave.attributes context propagates to tool spans."""
 
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
-    @patch("app.adk.tracking.callbacks._WEAVE_TRACE_AVAILABLE", True)
     @patch("app.adk.tracking.callbacks.weave")
     def test_before_callback_enters_attributes_context(
         self, mock_weave: MagicMock, mock_init: MagicMock,
@@ -135,7 +125,6 @@ class TestAgentGoalContextPropagation:
 
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
-    @patch("app.adk.tracking.callbacks._WEAVE_TRACE_AVAILABLE", True)
     def test_after_callback_exits_attributes_context(
         self, mock_get_client: MagicMock, mock_call_ctx: MagicMock
     ) -> None:

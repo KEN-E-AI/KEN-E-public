@@ -211,15 +211,25 @@ async def adk_before_tool_callback(
     if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
         tool_context.state["_tool_start_time"] = time.monotonic()
 
-        # Enter weave.attributes() with agent_goal so the @weave.op tool span
-        # picks up context_agent_goal. Exited in adk_after_tool_callback.
+        # Build trace context attributes for this tool span.
+        # Entered here, exited in adk_after_tool_callback.
+        trace_attrs: dict[str, Any] = {}
+
+        # context_agent_goal: the user's query that triggered this tool call
         user_content = tool_context.user_content
         if user_content and hasattr(user_content, "parts") and user_content.parts:
             goal_text = getattr(user_content.parts[0], "text", None)
             if goal_text:
-                goal_ctx = weave.attributes({"context_agent_goal": goal_text[:500]})
-                goal_ctx.__enter__()
-                tool_context.state["_agent_goal_ctx"] = goal_ctx
+                trace_attrs["context_agent_goal"] = goal_text[:500]
+
+        # context_previous_tool_calls: list of tool names called before this one
+        previous = tool_context.state.get("_previous_tool_calls", [])
+        trace_attrs["context_previous_tool_calls"] = list(previous)
+
+        if trace_attrs:
+            attrs_ctx = weave.attributes(trace_attrs)
+            attrs_ctx.__enter__()
+            tool_context.state["_trace_attrs_ctx"] = attrs_ctx
 
     await _refresh_ga_token_if_needed(tool_context)
 
