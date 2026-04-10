@@ -10,6 +10,7 @@ from pathlib import Path
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools import ToolContext
+from google.genai.types import GenerateContentConfig, ThinkingConfig
 
 # Load environment variables from .env file BEFORE reading any env vars.
 # On Agent Engine the .env is deployed alongside the agent code.
@@ -30,6 +31,7 @@ except ImportError:
 
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import (
+    adk_after_model_callback,
     adk_after_tool_callback,
     weave_after_agent_callback,
     weave_before_agent_callback,
@@ -194,6 +196,16 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         description = ""
         generate_content_config = None
 
+    # Enable thinking so the model outputs reasoning about tool selection.
+    # This makes thought parts available to adk_after_model_callback for
+    # context_reasoning capture on tool call spans.
+    if generate_content_config is None:
+        generate_content_config = GenerateContentConfig(
+            thinking_config=ThinkingConfig(include_thoughts=True),
+        )
+    elif not getattr(generate_content_config, "thinking_config", None):
+        generate_content_config.thinking_config = ThinkingConfig(include_thoughts=True)
+
     # Create tool wrappers that expose ToolContext and return strings
     def search_company_news(query: str, tool_context: ToolContext | None = None) -> str:
         """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
@@ -226,6 +238,7 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         generate_content_config=generate_content_config,
         before_agent_callback=weave_before_agent_callback,
         after_agent_callback=weave_after_agent_callback,
+        after_model_callback=adk_after_model_callback,
         before_tool_callback=adk_before_tool_callback,
         after_tool_callback=adk_after_tool_callback,
         tools=[search_company_news, query_google_analytics],

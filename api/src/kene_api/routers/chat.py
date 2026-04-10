@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field
 
+from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
 
 try:
@@ -262,9 +263,6 @@ class AgentEngineClient:
         self.location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
         # Use KEN_E_ENGINE_ID if available, fall back to VERTEX_AI_AGENT_ENGINE_ID for backward compatibility
-        # Use get_env_or_secret to resolve Secret Manager paths
-        from shared.secrets import get_env_or_secret
-
         engine_id_full = get_env_or_secret("KEN_E_ENGINE_ID") or get_env_or_secret(
             "VERTEX_AI_AGENT_ENGINE_ID"
         )
@@ -519,6 +517,8 @@ class AgentEngineClient:
                                 "refresh_token": raw_creds.get("refresh_token")
                                 if raw_creds
                                 else None,
+                                "client_id": os.getenv("GOOGLE_OAUTH_CLIENT_ID", ""),
+                                "client_secret": get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET") or "",
                                 "tenant_id": ga_creds["tenant_id"],
                                 "selected_property_ids": property_ids_to_store,
                                 "selected_properties": ga_creds.get(

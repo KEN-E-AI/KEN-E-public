@@ -20,6 +20,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
+import weave
+
 from app.utils.weave_observability import WEAVE_AVAILABLE, init_weave_if_needed
 from shared.structured_logging import get_structured_logger, log_context
 
@@ -208,6 +210,32 @@ async def adk_before_tool_callback(
 
     if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
         tool_context.state["_tool_start_time"] = time.monotonic()
+
+        # Build trace context attributes for this tool span.
+        # Entered here, exited in adk_after_tool_callback.
+        trace_attrs: dict[str, Any] = {}
+
+        # context_agent_goal: the user's query that triggered this tool call
+        user_content = tool_context.user_content
+        if user_content and hasattr(user_content, "parts") and user_content.parts:
+            goal_text = getattr(user_content.parts[0], "text", None)
+            if goal_text:
+                trace_attrs["context_agent_goal"] = goal_text[:500]
+
+        # context_previous_tool_calls: list of tool names called before this one
+        previous = tool_context.state.get("_previous_tool_calls", [])
+        trace_attrs["context_previous_tool_calls"] = list(previous)
+
+        # context_reasoning: LLM's reasoning text from after_model_callback
+        reasoning = tool_context.state.get("_last_reasoning")
+        if reasoning:
+            trace_attrs["context_reasoning"] = reasoning
+            tool_context.state["_last_reasoning"] = None  # Clear after read
+
+        if trace_attrs:
+            attrs_ctx = weave.attributes(trace_attrs)
+            attrs_ctx.__enter__()
+            tool_context.state["_trace_attrs_ctx"] = attrs_ctx
 
     await _refresh_ga_token_if_needed(tool_context)
 
