@@ -40,6 +40,7 @@ from .usage import ExecutionStatus, get_usage_tracker
 
 if TYPE_CHECKING:
     from google.adk.agents.callback_context import CallbackContext
+    from google.adk.models.llm_response import LlmResponse
     from google.adk.tools import BaseTool, ToolContext
     from google.genai import types
 
@@ -152,6 +153,62 @@ def weave_after_agent_callback(
             except Exception:
                 pass
             _current_agent_goal_ctx.set(None)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# LLM reasoning capture callback
+# ---------------------------------------------------------------------------
+
+_MAX_REASONING_LENGTH = 2000
+
+
+async def adk_after_model_callback(
+    callback_context: CallbackContext,
+    llm_response: LlmResponse,
+) -> LlmResponse | None:
+    """Extract LLM reasoning text and stash in session state for tool spans.
+
+    When the model decides to call a tool, the response typically includes
+    thought parts (reasoning) alongside function_call parts. This callback
+    extracts the reasoning, stores it in state["_last_reasoning"], and strips
+    thought parts from the response so they don't appear in the chat.
+
+    Returns None if no thought parts were stripped, or the modified response.
+    """
+    if not llm_response.content or not llm_response.content.parts:
+        return None
+
+    reasoning_parts = []
+    has_thought_parts = False
+    for part in llm_response.content.parts:
+        text = getattr(part, "text", None)
+        if not text:
+            continue
+        if getattr(part, "thought", False):
+            reasoning_parts.append(text)
+            has_thought_parts = True
+
+    # Fall back to regular text parts if no thought parts exist
+    if not reasoning_parts:
+        for part in llm_response.content.parts:
+            text = getattr(part, "text", None)
+            if text and not getattr(part, "function_call", None):
+                reasoning_parts.append(text)
+
+    if reasoning_parts and hasattr(callback_context, "state") and hasattr(
+        callback_context.state, "__setitem__"
+    ):
+        reasoning_text = "\n".join(reasoning_parts)
+        callback_context.state["_last_reasoning"] = reasoning_text[:_MAX_REASONING_LENGTH]
+
+    # Strip thought parts from the response so they don't leak into the chat
+    if has_thought_parts:
+        llm_response.content.parts = [
+            p for p in llm_response.content.parts if not getattr(p, "thought", False)
+        ]
+        return llm_response
+
     return None
 
 

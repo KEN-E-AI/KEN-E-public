@@ -226,6 +226,12 @@ async def adk_before_tool_callback(
         previous = tool_context.state.get("_previous_tool_calls", [])
         trace_attrs["context_previous_tool_calls"] = list(previous)
 
+        # context_reasoning: LLM's reasoning text from after_model_callback
+        reasoning = tool_context.state.get("_last_reasoning")
+        if reasoning:
+            trace_attrs["context_reasoning"] = reasoning
+            tool_context.state["_last_reasoning"] = None  # Clear after read
+
         if trace_attrs:
             attrs_ctx = weave.attributes(trace_attrs)
             attrs_ctx.__enter__()
