@@ -39,7 +39,7 @@ except ImportError:
     sys.exit(1)
 
 # Default Configuration
-PYTHON_VERSION = "3.12"
+PYTHON_VERSION = "3.13"
 DEFAULT_LOCATION = "us-central1"
 
 # Environment to GCP project mapping
@@ -196,6 +196,24 @@ with tempfile.TemporaryDirectory() as temp_dir:
     else:
         logger.warning("⚠️  shared package not found")
 
+    # Copy app sub-packages needed by agent code (trace_metadata, weave_observability, etc.)
+    # These are imported as `from app.utils.trace_metadata import ...` so we
+    # replicate the package structure.
+    adk_root = Path(__file__).parent  # app/adk/
+    app_root = adk_root.parent  # app/
+    app_dest = temp_path / "app"
+    app_dest.mkdir(parents=True, exist_ok=True)
+
+    # Copy app/utils/ (trace_metadata, weave_observability, etc.)
+    app_utils_src = app_root / "utils"
+    if app_utils_src.exists():
+        shutil.copytree(
+            app_utils_src,
+            app_dest / "utils",
+            ignore=shutil.ignore_patterns("tests", "__pycache__"),
+        )
+        logger.info("Copied app/utils package")
+
     # Copy requirements.txt
     if Path("requirements.txt").exists():
         shutil.copy2("requirements.txt", temp_path / "requirements.txt")
@@ -259,7 +277,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
                 "split agents, Neo4j, W&B"
             ),
             sys_version=PYTHON_VERSION,
-            extra_packages=["agents", "shared"],
+            extra_packages=["agents", "shared", "app"],
         )
 
         logger.info("✅ Deployment successful!")

@@ -398,7 +398,7 @@ Location: {location}
             print("🎉 KEN-E CHAT AGENT DEPLOYMENT SUCCESSFUL!")
             print("=" * 70)
             print(f"Engine ID: {engine_id}")
-            print("Python Version: 3.12")
+            print(f"Python Version: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}")
             print("=" * 70)
 
             return engine_id

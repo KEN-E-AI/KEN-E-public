@@ -99,8 +99,17 @@ def load_config_from_firestore(
             logger.error(error_msg)
             raise ConfigValidationError(error_msg)
 
-        # Extract metadata (for Weave logging)
+        # Extract metadata (for Weave logging) and validate version
         metadata = config_data.get("metadata", {})
+        from app.utils.trace_metadata import DEFAULT_VERSION, validate_semver
+
+        raw_version = metadata.get("version")
+        metadata["version"] = validate_semver(raw_version)
+        if metadata["version"] == DEFAULT_VERSION and raw_version != DEFAULT_VERSION:
+            logger.error(
+                f"Firestore config '{doc_id}' has invalid version: {raw_version!r}. "
+                f"Falling back to {DEFAULT_VERSION}. Fix the version in Firestore."
+            )
 
         # Remove metadata from config data (not needed for LlmAgentConfig)
         config_dict = {k: v for k, v in config_data.items() if k != "metadata"}

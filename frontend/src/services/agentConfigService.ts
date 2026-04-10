@@ -97,8 +97,17 @@ class AgentConfigService {
           error.response.status !== 429
         ) {
           console.error("Agent config API error:", error);
+          const rawDetail = (error.response.data as any)?.detail;
+          let message: string;
+          if (typeof rawDetail === "string") {
+            message = rawDetail;
+          } else if (Array.isArray(rawDetail) && rawDetail.length > 0) {
+            message = rawDetail.map((e: any) => e.msg || String(e)).join("; ");
+          } else {
+            message = "Request failed";
+          }
           throw new AgentConfigServiceError(
-            (error.response.data as any)?.detail || "Request failed",
+            message,
             error.response.status,
             error,
           );

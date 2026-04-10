@@ -118,9 +118,14 @@ const AgentConfigManagement = () => {
       });
     },
     onError: (error: any) => {
+      const detail =
+        error?.response?.data?.detail ||
+        error?.message ||
+        String(error) ||
+        "Failed to update config";
       toast({
         title: "Update Failed",
-        description: error.message || "Failed to update config",
+        description: typeof detail === "string" ? detail : JSON.stringify(detail),
         variant: "destructive",
       });
     },
@@ -156,6 +161,9 @@ const AgentConfigManagement = () => {
       description: editedConfig.description,
       temperature: editedConfig.generate_content_config.temperature,
       max_output_tokens: editedConfig.generate_content_config.max_output_tokens,
+      version: config?.metadata?.version && editedConfig.metadata.version !== config.metadata.version
+        ? editedConfig.metadata.version
+        : undefined,
       variant_name: editedConfig.metadata.variant_name,
       experiment_id: editedConfig.metadata.experiment_id,
       updated_by: user.email || "unknown",
@@ -555,7 +563,7 @@ const AgentConfigManagement = () => {
                               onChange={(e) =>
                                 updateField("metadata.version", e.target.value)
                               }
-                              placeholder="v1.0"
+                              placeholder="v1.0.0"
                             />
                             <p className="text-xs text-muted-foreground">
                               Auto-incremented on save if not changed

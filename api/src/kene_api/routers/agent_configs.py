@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
 from pydantic import BaseModel, Field, field_validator
 
+from app.utils.trace_metadata import SEMVER_PATTERN, parse_semver, validate_semver
+
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
@@ -102,8 +104,24 @@ class AgentConfigUpdate(BaseModel):
     )
 
     version: str | None = Field(
-        None, pattern=r"^v\d+\.\d+$", description="Version string in format vX.Y"
+        None,
+        description="Version string in semver format (e.g., v1.0.0)",
     )
+
+    @field_validator("version")
+    @classmethod
+    def validate_version_format(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v.startswith("v"):
+            v = f"v{v}"
+        if not SEMVER_PATTERN.match(v):
+            raise ValueError(
+                f"Invalid version '{v}'. "
+                f"Please use semver format, e.g. v1.0.0 or v2.1.3"
+            )
+        return v
 
     variant_name: str | None = Field(
         None, min_length=1, max_length=100, description="Descriptive variant name"
@@ -181,40 +199,39 @@ class AgentConfigUpdate(BaseModel):
 
 def _increment_version(current_version: str) -> str:
     """
-    Increment version number with validation.
+    Increment version patch number (semver format).
+
+    Auto-increment bumps the patch version. Major/minor bumps are manual.
+    Handles both legacy 2-part (vX.Y) and semver 3-part (vX.Y.Z) formats.
 
     Args:
-        current_version: Current version string (e.g., "v1.0")
+        current_version: Current version string (e.g., "v1.0.0", "v1.2")
 
     Returns:
-        Incremented version string (e.g., "v1.1")
+        Incremented semver version string (e.g., "v1.0.1")
 
-    Example:
-        >>> _increment_version("v1.0")
-        "v1.1"
-        >>> _increment_version("v1.999")
-        "v1.1000"
-        >>> _increment_version("v1.1000")
-        "v1.1"  # Fallback due to bounds check (1000 > 999)
+    Raises:
+        ValueError: If version format is not parseable
     """
-    try:
-        if not current_version.startswith("v"):
-            raise ValueError("Version must start with 'v'")
+    version = current_version.strip() if current_version else ""
+    if not version.startswith("v"):
+        version = f"v{version}" if version else ""
 
-        version_parts = current_version[1:].split(".")
-        if len(version_parts) != 2:
-            raise ValueError("Version must be in format vX.Y")
+    # Strip prerelease suffix for incrementing (e.g., "v1.0.0-beta" → "v1.0.0")
+    base = version[1:].split("-", 1)[0] if version.startswith("v") else ""
+    parts = base.split(".") if base else []
 
-        major = int(version_parts[0])
-        minor = int(version_parts[1])
+    if len(parts) == 2:
+        major, minor, patch = int(parts[0]), int(parts[1]), 0
+    elif len(parts) == 3:
+        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+    else:
+        raise ValueError(
+            f"Cannot increment version '{current_version}': "
+            f"expected vX.Y or vX.Y.Z format"
+        )
 
-        if major > 999 or minor > 999:
-            raise ValueError("Version numbers must be <= 999")
-
-        return f"v{major}.{minor + 1}"
-    except (ValueError, IndexError) as e:
-        logger.warning(f"Invalid version format {current_version}: {e}, using fallback")
-        return "v1.1"
+    return f"v{major}.{minor}.{patch + 1}"
 
 
 def _sanitize_updated_by(email: str) -> str:
@@ -486,11 +503,51 @@ async def update_agent_config(
         current_metadata = current_config.get("metadata", {})
 
         # Determine new version
-        new_version = (
-            update.version
-            if update.version
-            else _increment_version(current_metadata.get("version", "v1.0"))
-        )
+        # Note: format validation already done by Pydantic field_validator
+        current_version_str = current_metadata.get("version")
+
+        if update.version:
+            new_version = validate_semver(update.version)
+
+            # Prevent version downgrade
+            if current_version_str:
+                try:
+                    current_parsed = parse_semver(
+                        validate_semver(current_version_str)
+                    )
+                    new_parsed = parse_semver(new_version)
+                    if new_parsed < current_parsed:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Version downgrade not allowed: "
+                            f"{new_version} < {validate_semver(current_version_str)}. "
+                            f"Version must be greater than the current version.",
+                        )
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot compare versions: current stored version "
+                        f"'{current_version_str}' is not valid semver. "
+                        f"Please contact an admin to fix the stored version. "
+                        f"Error: {e}",
+                    ) from e
+        else:
+            if not current_version_str:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No version found in config metadata. "
+                    "Please set a version manually (e.g., v1.0.0).",
+                )
+            try:
+                new_version = _increment_version(current_version_str)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot auto-increment version: {e}. "
+                    f"Current stored version '{current_version_str}' "
+                    f"is not valid semver. Please set a valid version manually "
+                    f"(e.g., v1.0.0).",
+                ) from e
 
         # Sanitize updated_by field
         safe_updated_by = _sanitize_updated_by(update.updated_by)
