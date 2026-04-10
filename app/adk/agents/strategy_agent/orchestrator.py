@@ -528,6 +528,7 @@ def _execute_single_strategy(
             "output_category": _research_category,
             "agent_id": researcher_doc_id or strategy_name,
             "agent_version": researcher_meta.get("version", "unknown"),
+            "context_agent_goal": f"Research {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
         }):
             events = run_research()
 
@@ -615,6 +616,7 @@ def _execute_single_strategy(
             "output_category": _report_category,
             "agent_id": formatter_doc_id or strategy_name,
             "agent_version": formatter_meta.get("version", "unknown"),
+            "context_agent_goal": f"Format {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
         }):
             openai_dict = run_openai_formatter()
         formatted_data = strategy_config["model_class"](**openai_dict)

@@ -31,15 +31,11 @@ from typing import TYPE_CHECKING, Any
 
 from app.utils.weave_observability import init_weave_if_needed
 
-try:
-    from weave.trace.api import get_client as _weave_get_client
-    from weave.trace.context import call_context as _weave_call_context
+import weave
+from weave.trace.api import get_client as _weave_get_client
+from weave.trace.context import call_context as _weave_call_context
 
-    _WEAVE_TRACE_AVAILABLE = True
-except ImportError:
-    _WEAVE_TRACE_AVAILABLE = False
-    _weave_get_client = None  # type: ignore[assignment]
-    _weave_call_context = None  # type: ignore[assignment]
+_WEAVE_TRACE_AVAILABLE = True
 from shared.structured_logging import get_structured_logger
 
 from .usage import ExecutionStatus, get_usage_tracker
@@ -58,6 +54,25 @@ logger = get_structured_logger(__name__)
 _current_agent_call: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "_current_agent_call", default=None
 )
+_current_agent_goal_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "_current_agent_goal_ctx", default=None
+)
+
+
+_MAX_GOAL_LENGTH = 500
+
+
+def _extract_user_goal(callback_context: CallbackContext) -> str | None:
+    """Extract the user's query text from CallbackContext for agent_goal."""
+    try:
+        content = callback_context.user_content
+        if content and hasattr(content, "parts") and content.parts:
+            text = getattr(content.parts[0], "text", None)
+            if text:
+                return text[:_MAX_GOAL_LENGTH]
+    except Exception:
+        pass
+    return None
 
 
 def weave_before_agent_callback(
@@ -83,9 +98,22 @@ def weave_before_agent_callback(
         client = _weave_get_client()
         if not client:
             return None
+
+        agent_goal = _extract_user_goal(callback_context)
+
+        # Enter weave.attributes() context so all child spans (tool dispatches)
+        # inherit context_agent_goal. Exited in weave_after_agent_callback.
+        if agent_goal:
+            goal_ctx = weave.attributes({"context_agent_goal": agent_goal})
+            goal_ctx.__enter__()
+            _current_agent_goal_ctx.set(goal_ctx)
+
         call = client.create_call(
             op="ken_e_agent",
-            inputs={"agent": "ken_e"},
+            inputs={
+                "agent": "ken_e",
+                "context_agent_goal": agent_goal,
+            },
             use_stack=True,
         )
         _current_agent_call.set(call)
@@ -120,6 +148,14 @@ def weave_after_agent_callback(
             pass
     finally:
         _current_agent_call.set(None)
+        # Exit the weave.attributes() context entered in before_agent_callback
+        goal_ctx = _current_agent_goal_ctx.get(None)
+        if goal_ctx:
+            try:
+                goal_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
+            _current_agent_goal_ctx.set(None)
     return None
 
 
@@ -239,5 +275,15 @@ async def adk_after_tool_callback(
         await tracker.flush()
     except Exception as e:
         logger.warning(f"Usage tracking failed (non-blocking): {e}")
+    finally:
+        # Exit the weave.attributes() context entered in adk_before_tool_callback
+        state: dict[str, Any] = {}
+        if hasattr(tool_context, "state") and hasattr(tool_context.state, "get"):
+            state = tool_context.state  # type: ignore[assignment]
+        goal_ctx = state.get("_agent_goal_ctx")
+        if goal_ctx:
+            goal_ctx.__exit__(None, None, None)
+            if hasattr(tool_context.state, "__setitem__"):
+                tool_context.state["_agent_goal_ctx"] = None
 
     return None

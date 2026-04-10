@@ -52,7 +52,7 @@ class TestWeaveBeforeAgentCallback:
         assert result is None
         mock_client.create_call.assert_called_once_with(
             op="ken_e_agent",
-            inputs={"agent": "ken_e"},
+            inputs={"agent": "ken_e", "context_agent_goal": None},
             use_stack=True,
         )
         assert _current_agent_call.get(None) is mock_call
