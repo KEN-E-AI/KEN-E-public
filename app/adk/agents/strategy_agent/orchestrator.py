@@ -701,7 +701,6 @@ def _execute_single_strategy(
         raise  # Re-raise for fail-fast behavior
 
 
-@weave.op(name="execute_all_strategies")
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
@@ -711,6 +710,7 @@ def execute_strategy_generation_direct(
     enabled_strategies: list[str] | None = None,
     override_product_categories: list[str] | None = None,
     dry_run: bool = False,
+    execution_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
@@ -748,8 +748,11 @@ def execute_strategy_generation_direct(
     Returns:
         Dictionary of generated documents
     """
-    # Set root span metadata for trace filtering in Weave UI
-    execution_id = uuid.uuid4().hex[:12]
+    # Set root span metadata for trace filtering in Weave UI.
+    # workflow_id and workflow_type are set by the execute_strategy_generation
+    # wrapper's weave.attributes() context, which merges with this dict.
+    if execution_id is None:
+        execution_id = uuid.uuid4().hex[:12]
     root_attrs = {
         "account_id": context.account_id,
         "session_id": f"strategy_{context.account_id}_{execution_id}",
@@ -1160,13 +1163,14 @@ def _execute_strategy_generation_body(
 
 
 @weave.op(name="execute_strategy_generation")
-def execute_strategy_generation(
+def _execute_strategy_generation_impl(
     company_name: str,
     industry: str,
     websites: str,
     customer_regions: str,
     account_id: str,
     user_id: str,
+    execution_id: str,
     annual_ad_budget: float = 0.0,
     project_id: Optional[str] = None,
     uploaded_documents: Optional[List[str]] = None,
@@ -1502,7 +1506,6 @@ def execute_strategy_generation(
         logger.info("[EXECUTION] Starting direct sequential execution")
         start_time = time.time()
 
-        # Execute strategy generation directly
         generated_documents = execute_strategy_generation_direct(
             context=context,
             firestore_client=client,
@@ -1512,6 +1515,7 @@ def execute_strategy_generation(
             enabled_strategies=enabled_strategies,
             override_product_categories=override_product_categories,
             dry_run=dry_run,
+            execution_id=execution_id,
         )
 
         execution_time = time.time() - start_time
@@ -1537,6 +1541,59 @@ def execute_strategy_generation(
         error_msg = f"Failed to generate strategy documents: {e}"
         logger.error(error_msg)
         return error_msg
+
+
+def execute_strategy_generation(
+    company_name: str,
+    industry: str,
+    websites: str,
+    customer_regions: str,
+    account_id: str,
+    user_id: str,
+    annual_ad_budget: float = 0.0,
+    project_id: Optional[str] = None,
+    uploaded_documents: Optional[List[str]] = None,
+    enable_analytics: bool = True,
+    enabled_strategies: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
+    dry_run: bool = False,
+) -> str:
+    """ADK tool entry point for strategy generation.
+
+    Initializes Weave first so the @weave.op decorator on
+    _execute_strategy_generation_impl creates a span (the decorator checks
+    is_tracing_setting_disabled() before the body runs, so Weave must be
+    initialized BEFORE calling the impl).
+
+    Then enters a weave.attributes() context so the impl's span carries
+    workflow_id and workflow_type as root span attributes for MER-E
+    workflow evaluation.
+    """
+    init_weave_if_needed()
+
+    execution_id = uuid.uuid4().hex[:12]
+    workflow_attrs = {
+        "workflow_id": execution_id,
+        "workflow_type": "strategy_generation",
+    }
+
+    with weave.attributes(workflow_attrs):
+        return _execute_strategy_generation_impl(
+            company_name=company_name,
+            industry=industry,
+            websites=websites,
+            customer_regions=customer_regions,
+            account_id=account_id,
+            user_id=user_id,
+            execution_id=execution_id,
+            annual_ad_budget=annual_ad_budget,
+            project_id=project_id,
+            uploaded_documents=uploaded_documents,
+            enable_analytics=enable_analytics,
+            enabled_strategies=enabled_strategies,
+            override_product_categories=override_product_categories,
+            dry_run=dry_run,
+        )
 
 
 def process_and_save_documents_with_analytics(
