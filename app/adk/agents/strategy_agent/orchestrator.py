@@ -375,6 +375,46 @@ def extract_document_sections(
     return extracted
 
 
+# Step metadata for each strategy, used to set step_type, step_index, and
+# depends_on_steps on the _execute_single_strategy sub-agent span. MER-E reads
+# these attributes to perform workflow step-level evaluation (see
+# docs/trace-structure-spec.md §9 and KEN-E-Self-Improving-Evaluation-Framework-Design.md §13).
+# - business_strategy runs first (step 0) and is the foundational research step.
+# - The other three run in parallel (step 1). Only marketing has a data
+#   dependency on business (it consumes product_category_names).
+_STRATEGY_STEP_METADATA: dict[str, dict[str, Any]] = {
+    "business_strategy": {
+        "step_type": "research",
+        "step_index": 0,
+        "depends_on_steps": [],
+    },
+    "competitive_strategy": {
+        "step_type": "analysis",
+        "step_index": 1,
+        "depends_on_steps": [],
+    },
+    "marketing_strategy": {
+        "step_type": "generation",
+        "step_index": 1,
+        "depends_on_steps": ["business_strategy"],
+    },
+    "brand_guidelines": {
+        "step_type": "generation",
+        "step_index": 1,
+        "depends_on_steps": [],
+    },
+}
+
+
+def _get_strategy_step_metadata(strategy_name: str) -> dict[str, Any]:
+    """Return the step_type, step_index, and depends_on_steps for a strategy.
+
+    Raises KeyError for unknown strategy names so misconfigurations fail loudly
+    at the call site rather than silently producing untyped spans.
+    """
+    return dict(_STRATEGY_STEP_METADATA[strategy_name])
+
+
 @weave.op(name="execute_single_strategy")
 def _execute_single_strategy(
     strategy_config: dict,
@@ -1040,19 +1080,22 @@ def _execute_strategy_generation_body(
             "\n[PARALLEL] ========== PHASE 1: Executing business_strategy (must run first) =========="
         )
         try:
-            strategy_name, doc_content, _used_openai = _execute_single_strategy(
-                strategy_config=business_strategy_config,
-                strategy_context=context,
-                firestore_client=firestore_client,
-                google_search_agent=google_search_agent,
-                neo4j_ops=neo4j_ops,
-                embedding_generator=embedding_generator,
-                performance_profiler=performance_profiler,
-                analytics_service=analytics_service,
-                dry_run=dry_run,
-                product_category_names=None,
-                override_product_categories=override_product_categories,
-            )
+            with weave.attributes(
+                _get_strategy_step_metadata("business_strategy")
+            ):
+                strategy_name, doc_content, _used_openai = _execute_single_strategy(
+                    strategy_config=business_strategy_config,
+                    strategy_context=context,
+                    firestore_client=firestore_client,
+                    google_search_agent=google_search_agent,
+                    neo4j_ops=neo4j_ops,
+                    embedding_generator=embedding_generator,
+                    performance_profiler=performance_profiler,
+                    analytics_service=analytics_service,
+                    dry_run=dry_run,
+                    product_category_names=None,
+                    override_product_categories=override_product_categories,
+                )
             generated_documents[strategy_name] = doc_content
 
             # Extract ProductCategory names for marketing coordination
@@ -1103,24 +1146,29 @@ def _execute_strategy_generation_body(
         with weave.ThreadPoolExecutor(
             max_workers=len(remaining_strategies)
         ) as executor:
-            # Submit all strategies for parallel execution
-            # Context propagation happens automatically in Python 3.12+
+            # Submit all strategies for parallel execution.
+            # Each submit() enters weave.attributes() with this strategy's step
+            # metadata so the contextvar is captured by the worker thread
+            # (Python 3.12+ propagation) and appears on the sub-agent span.
             future_to_strategy = {}
             for strat_config in remaining_strategies:
-                future = executor.submit(
-                    _execute_single_strategy,
-                    strategy_config=strat_config,
-                    strategy_context=context,
-                    firestore_client=firestore_client,
-                    google_search_agent=google_search_agent,
-                    neo4j_ops=neo4j_ops,
-                    embedding_generator=embedding_generator,
-                    performance_profiler=performance_profiler,
-                    analytics_service=analytics_service,
-                    dry_run=dry_run,
-                    product_category_names=product_category_names,
-                    override_product_categories=override_product_categories,
-                )
+                with weave.attributes(
+                    _get_strategy_step_metadata(strat_config["name"])
+                ):
+                    future = executor.submit(
+                        _execute_single_strategy,
+                        strategy_config=strat_config,
+                        strategy_context=context,
+                        firestore_client=firestore_client,
+                        google_search_agent=google_search_agent,
+                        neo4j_ops=neo4j_ops,
+                        embedding_generator=embedding_generator,
+                        performance_profiler=performance_profiler,
+                        analytics_service=analytics_service,
+                        dry_run=dry_run,
+                        product_category_names=product_category_names,
+                        override_product_categories=override_product_categories,
+                    )
                 future_to_strategy[future] = strat_config["name"]
 
             # Process results as they complete (fail-fast on first error)
