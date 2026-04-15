@@ -87,15 +87,13 @@ class TestChatbotL1Metadata:
         mock_attrs_ctx = MagicMock()
         mock_weave.attributes.return_value = mock_attrs_ctx
 
-        # Build a CallbackContext with realistic state.
+        # Build a CallbackContext with realistic state. account_id comes
+        # from session state (set by the API in routers/chat.py); session_id
+        # and user_id come from the ADK invocation_context.
         ctx = MagicMock()
-        state = {
-            "account_id": "acc_abc123",
-            "session_id": "session_xyz789",
-            "user_id": "user_42",
-        }
-        # Use a real dict as the state so .get works.
-        ctx.state = state
+        ctx.state = {"account_id": "acc_abc123"}
+        ctx._invocation_context.session.id = "session_xyz789"
+        ctx._invocation_context.user_id = "user_42"
         part = MagicMock()
         part.text = "What's our top traffic source?"
         content = MagicMock()
@@ -151,11 +149,9 @@ class TestChatbotL1Metadata:
         mock_weave.attributes.return_value = MagicMock()
 
         ctx = MagicMock()
-        ctx.state = {
-            "account_id": "acc_abc",
-            "session_id": "session_xyz",
-            "user_id": "user_1",
-        }
+        ctx.state = {"account_id": "acc_abc"}
+        ctx._invocation_context.session.id = "session_xyz"
+        ctx._invocation_context.user_id = "user_1"
         ctx.user_content = None  # No goal — simpler attrs dict
 
         weave_before_agent_callback(ctx)

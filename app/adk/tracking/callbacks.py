@@ -28,7 +28,6 @@ import contextvars
 import json
 import os
 import time
-from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import weave
@@ -64,22 +63,49 @@ _current_agent_goal_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
 _MAX_GOAL_LENGTH = 500
 
 
-@lru_cache(maxsize=1)
 def _get_chatbot_config_metadata() -> dict[str, Any]:
     """Load and cache ken_e_chatbot Firestore metadata for span attributes.
 
-    Cached for the lifetime of the process — config changes require a redeploy
-    anyway, so a per-request Firestore read would be wasted I/O.
-    """
-    try:
-        from app.adk.agents.strategy_agent.config_loader import (
-            get_current_config_metadata,
-        )
+    Cached for the lifetime of the process via _CHATBOT_CONFIG_CACHE — config
+    changes require a redeploy anyway, so a per-request Firestore read would
+    be wasted I/O. Note: not using @lru_cache because we want to retry on
+    failure (an early Firestore hiccup shouldn't permanently cache an empty
+    dict).
 
-        return get_current_config_metadata("ken_e_chatbot")
+    Import path handles both deployment layouts:
+      - Local dev: `app.adk.agents.strategy_agent.config_loader`
+      - Agent Engine runtime (extra_packages flatten to root):
+        `agents.strategy_agent.config_loader`
+    """
+    if _CHATBOT_CONFIG_CACHE.get("loaded"):
+        return _CHATBOT_CONFIG_CACHE["data"]
+
+    try:
+        try:
+            from agents.strategy_agent.config_loader import (
+                get_current_config_metadata,
+            )
+        except ImportError:
+            from app.adk.agents.strategy_agent.config_loader import (
+                get_current_config_metadata,
+            )
+
+        data = get_current_config_metadata("ken_e_chatbot")
+        # Only mark as loaded if we got real data (not an error fallback).
+        if data and not data.get("error"):
+            _CHATBOT_CONFIG_CACHE["data"] = data
+            _CHATBOT_CONFIG_CACHE["loaded"] = True
+            return data
+        logger.warning(
+            f"ken_e_chatbot config returned empty/error: {data}; will retry"
+        )
+        return data or {}
     except Exception as e:
         logger.warning(f"Failed to load ken_e_chatbot config metadata: {e}")
         return {}
+
+
+_CHATBOT_CONFIG_CACHE: dict[str, Any] = {"loaded": False, "data": {}}
 
 
 def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, Any]:
@@ -88,6 +114,14 @@ def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, An
     Per docs/trace-structure-spec.md §4.1-4.2, the root and L1 spans for a
     chatbot trace must carry account_id, session_id, user_id, environment,
     rollout_percentage, agent_id, agent_version, experiment_id, variant_name.
+
+    Sources:
+    - session_id, user_id: pulled from callback_context._invocation_context
+      (the canonical ADK location). The API doesn't push these into state
+      because ADK already owns them at the framework level.
+    - account_id: pulled from session state, set by the API in
+      routers/chat.py when creating the conversation.
+    - agent identity / experiment: from cached Firestore config snapshot.
     """
     state: dict[str, Any] = {}
     try:
@@ -98,11 +132,28 @@ def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, An
     except Exception:
         state = {}
 
+    # Pull session_id/user_id from the ADK invocation context — they live there,
+    # not in session state. Fall back to "unknown" if the private attribute
+    # ever moves (private API, but trace-only usage so non-critical).
+    session_id = "unknown"
+    user_id = "unknown"
+    try:
+        invocation_context = getattr(callback_context, "_invocation_context", None)
+        if invocation_context is not None:
+            session = getattr(invocation_context, "session", None)
+            if session is not None and getattr(session, "id", None):
+                session_id = session.id
+            inv_user_id = getattr(invocation_context, "user_id", None)
+            if inv_user_id:
+                user_id = inv_user_id
+    except Exception as e:
+        logger.debug(f"Could not read session/user from invocation_context: {e}")
+
     cfg = _get_chatbot_config_metadata()
     return {
         "account_id": state.get("account_id", "unknown"),
-        "session_id": state.get("session_id", "unknown"),
-        "user_id": state.get("user_id", "unknown"),
+        "session_id": session_id,
+        "user_id": user_id,
         "environment": os.getenv("ENVIRONMENT", "development"),
         "rollout_percentage": int(os.getenv("ROLLOUT_PERCENTAGE", "100")),
         "agent_id": "ken_e_chatbot",
@@ -361,19 +412,16 @@ async def adk_after_tool_callback(
         if start_time is not None:
             duration_ms = int((time.monotonic() - start_time) * 1000)
 
-        # Stamp status + duration on the current Weave tool span so the
-        # validator can see L3 timing/status (trace-structure-spec §4.3).
-        # weave.attributes() is read at call creation, so use call.summary
-        # to mutate the in-flight span.
-        try:
-            current_call = weave.get_current_call()
-            if current_call is not None:
-                current_call.summary["tool_name"] = tool.name
-                current_call.summary["status"] = status.value
-                if duration_ms is not None:
-                    current_call.summary["duration_ms"] = duration_ms
-        except Exception:
-            pass
+        # NOTE: We deliberately do NOT write status/duration_ms via
+        # weave.get_current_call().summary here. By the time after_tool_callback
+        # fires, the tool's @weave.op span has already finished, so
+        # get_current_call() returns the PARENT agent span — writing to it
+        # leaks tool-level fields onto the parent. Instead:
+        #   - duration_ms is already tracked natively by Weave on the L3 span
+        #   - status can be inferred from the tool's return value (captured
+        #     as the L3 span output by Weave)
+        #   - tool_name is already set via weave.attributes() in
+        #     adk_before_tool_callback (hooks.py)
 
         error_message: str | None = None
         if status != ExecutionStatus.SUCCESS and isinstance(tool_response, dict):
