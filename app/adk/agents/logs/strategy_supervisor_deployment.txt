@@ -1,5 +1,5 @@
 Deployment: strategy-supervisor-py313
 Python Version: 3.13
-Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/7782862820642652160
+Engine ID: projects/525657242938/locations/us-central1/reasoningEngines/3670618964016234496
 Project: ken-e-dev
 Location: us-central1

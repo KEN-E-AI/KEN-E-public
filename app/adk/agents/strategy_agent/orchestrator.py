@@ -375,6 +375,46 @@ def extract_document_sections(
     return extracted
 
 
+# Step metadata for each strategy, used to set step_type, step_index, and
+# depends_on_steps on the _execute_single_strategy sub-agent span. MER-E reads
+# these attributes to perform workflow step-level evaluation (see
+# docs/trace-structure-spec.md §9 and KEN-E-Self-Improving-Evaluation-Framework-Design.md §13).
+# - business_strategy runs first (step 0) and is the foundational research step.
+# - The other three run in parallel (step 1). Only marketing has a data
+#   dependency on business (it consumes product_category_names).
+_STRATEGY_STEP_METADATA: dict[str, dict[str, Any]] = {
+    "business_strategy": {
+        "step_type": "research",
+        "step_index": 0,
+        "depends_on_steps": [],
+    },
+    "competitive_strategy": {
+        "step_type": "analysis",
+        "step_index": 1,
+        "depends_on_steps": [],
+    },
+    "marketing_strategy": {
+        "step_type": "generation",
+        "step_index": 1,
+        "depends_on_steps": ["business_strategy"],
+    },
+    "brand_guidelines": {
+        "step_type": "generation",
+        "step_index": 1,
+        "depends_on_steps": [],
+    },
+}
+
+
+def _get_strategy_step_metadata(strategy_name: str) -> dict[str, Any]:
+    """Return the step_type, step_index, and depends_on_steps for a strategy.
+
+    Raises KeyError for unknown strategy names so misconfigurations fail loudly
+    at the call site rather than silently producing untyped spans.
+    """
+    return dict(_STRATEGY_STEP_METADATA[strategy_name])
+
+
 @weave.op(name="execute_single_strategy")
 def _execute_single_strategy(
     strategy_config: dict,
@@ -701,7 +741,6 @@ def _execute_single_strategy(
         raise  # Re-raise for fail-fast behavior
 
 
-@weave.op(name="execute_all_strategies")
 def execute_strategy_generation_direct(
     context: StrategyContext,
     firestore_client: FirestoreClient,
@@ -711,6 +750,7 @@ def execute_strategy_generation_direct(
     enabled_strategies: list[str] | None = None,
     override_product_categories: list[str] | None = None,
     dry_run: bool = False,
+    execution_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Execute strategy generation using split agent architecture + Neo4j.
@@ -748,8 +788,11 @@ def execute_strategy_generation_direct(
     Returns:
         Dictionary of generated documents
     """
-    # Set root span metadata for trace filtering in Weave UI
-    execution_id = uuid.uuid4().hex[:12]
+    # Set root span metadata for trace filtering in Weave UI.
+    # workflow_id and workflow_type are set by the execute_strategy_generation
+    # wrapper's weave.attributes() context, which merges with this dict.
+    if execution_id is None:
+        execution_id = uuid.uuid4().hex[:12]
     root_attrs = {
         "account_id": context.account_id,
         "session_id": f"strategy_{context.account_id}_{execution_id}",
@@ -1037,19 +1080,22 @@ def _execute_strategy_generation_body(
             "\n[PARALLEL] ========== PHASE 1: Executing business_strategy (must run first) =========="
         )
         try:
-            strategy_name, doc_content, _used_openai = _execute_single_strategy(
-                strategy_config=business_strategy_config,
-                strategy_context=context,
-                firestore_client=firestore_client,
-                google_search_agent=google_search_agent,
-                neo4j_ops=neo4j_ops,
-                embedding_generator=embedding_generator,
-                performance_profiler=performance_profiler,
-                analytics_service=analytics_service,
-                dry_run=dry_run,
-                product_category_names=None,
-                override_product_categories=override_product_categories,
-            )
+            with weave.attributes(
+                _get_strategy_step_metadata("business_strategy")
+            ):
+                strategy_name, doc_content, _used_openai = _execute_single_strategy(
+                    strategy_config=business_strategy_config,
+                    strategy_context=context,
+                    firestore_client=firestore_client,
+                    google_search_agent=google_search_agent,
+                    neo4j_ops=neo4j_ops,
+                    embedding_generator=embedding_generator,
+                    performance_profiler=performance_profiler,
+                    analytics_service=analytics_service,
+                    dry_run=dry_run,
+                    product_category_names=None,
+                    override_product_categories=override_product_categories,
+                )
             generated_documents[strategy_name] = doc_content
 
             # Extract ProductCategory names for marketing coordination
@@ -1100,24 +1146,29 @@ def _execute_strategy_generation_body(
         with weave.ThreadPoolExecutor(
             max_workers=len(remaining_strategies)
         ) as executor:
-            # Submit all strategies for parallel execution
-            # Context propagation happens automatically in Python 3.12+
+            # Submit all strategies for parallel execution.
+            # Each submit() enters weave.attributes() with this strategy's step
+            # metadata so the contextvar is captured by the worker thread
+            # (Python 3.12+ propagation) and appears on the sub-agent span.
             future_to_strategy = {}
             for strat_config in remaining_strategies:
-                future = executor.submit(
-                    _execute_single_strategy,
-                    strategy_config=strat_config,
-                    strategy_context=context,
-                    firestore_client=firestore_client,
-                    google_search_agent=google_search_agent,
-                    neo4j_ops=neo4j_ops,
-                    embedding_generator=embedding_generator,
-                    performance_profiler=performance_profiler,
-                    analytics_service=analytics_service,
-                    dry_run=dry_run,
-                    product_category_names=product_category_names,
-                    override_product_categories=override_product_categories,
-                )
+                with weave.attributes(
+                    _get_strategy_step_metadata(strat_config["name"])
+                ):
+                    future = executor.submit(
+                        _execute_single_strategy,
+                        strategy_config=strat_config,
+                        strategy_context=context,
+                        firestore_client=firestore_client,
+                        google_search_agent=google_search_agent,
+                        neo4j_ops=neo4j_ops,
+                        embedding_generator=embedding_generator,
+                        performance_profiler=performance_profiler,
+                        analytics_service=analytics_service,
+                        dry_run=dry_run,
+                        product_category_names=product_category_names,
+                        override_product_categories=override_product_categories,
+                    )
                 future_to_strategy[future] = strat_config["name"]
 
             # Process results as they complete (fail-fast on first error)
@@ -1160,13 +1211,14 @@ def _execute_strategy_generation_body(
 
 
 @weave.op(name="execute_strategy_generation")
-def execute_strategy_generation(
+def _execute_strategy_generation_impl(
     company_name: str,
     industry: str,
     websites: str,
     customer_regions: str,
     account_id: str,
     user_id: str,
+    execution_id: str,
     annual_ad_budget: float = 0.0,
     project_id: Optional[str] = None,
     uploaded_documents: Optional[List[str]] = None,
@@ -1502,7 +1554,6 @@ def execute_strategy_generation(
         logger.info("[EXECUTION] Starting direct sequential execution")
         start_time = time.time()
 
-        # Execute strategy generation directly
         generated_documents = execute_strategy_generation_direct(
             context=context,
             firestore_client=client,
@@ -1512,6 +1563,7 @@ def execute_strategy_generation(
             enabled_strategies=enabled_strategies,
             override_product_categories=override_product_categories,
             dry_run=dry_run,
+            execution_id=execution_id,
         )
 
         execution_time = time.time() - start_time
@@ -1537,6 +1589,59 @@ def execute_strategy_generation(
         error_msg = f"Failed to generate strategy documents: {e}"
         logger.error(error_msg)
         return error_msg
+
+
+def execute_strategy_generation(
+    company_name: str,
+    industry: str,
+    websites: str,
+    customer_regions: str,
+    account_id: str,
+    user_id: str,
+    annual_ad_budget: float = 0.0,
+    project_id: Optional[str] = None,
+    uploaded_documents: Optional[List[str]] = None,
+    enable_analytics: bool = True,
+    enabled_strategies: Optional[List[str]] = None,
+    override_product_categories: Optional[List[str]] = None,
+    dry_run: bool = False,
+) -> str:
+    """ADK tool entry point for strategy generation.
+
+    Initializes Weave first so the @weave.op decorator on
+    _execute_strategy_generation_impl creates a span (the decorator checks
+    is_tracing_setting_disabled() before the body runs, so Weave must be
+    initialized BEFORE calling the impl).
+
+    Then enters a weave.attributes() context so the impl's span carries
+    workflow_id and workflow_type as root span attributes for MER-E
+    workflow evaluation.
+    """
+    init_weave_if_needed()
+
+    execution_id = uuid.uuid4().hex[:12]
+    workflow_attrs = {
+        "workflow_id": execution_id,
+        "workflow_type": "strategy_generation",
+    }
+
+    with weave.attributes(workflow_attrs):
+        return _execute_strategy_generation_impl(
+            company_name=company_name,
+            industry=industry,
+            websites=websites,
+            customer_regions=customer_regions,
+            account_id=account_id,
+            user_id=user_id,
+            execution_id=execution_id,
+            annual_ad_budget=annual_ad_budget,
+            project_id=project_id,
+            uploaded_documents=uploaded_documents,
+            enable_analytics=enable_analytics,
+            enabled_strategies=enabled_strategies,
+            override_product_categories=override_product_categories,
+            dry_run=dry_run,
+        )
 
 
 def process_and_save_documents_with_analytics(
