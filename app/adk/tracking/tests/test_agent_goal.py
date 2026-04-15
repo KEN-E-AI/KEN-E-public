@@ -118,9 +118,18 @@ class TestAgentGoalContextPropagation:
 
         weave_before_agent_callback(ctx)
 
-        mock_weave.attributes.assert_called_once_with(
-            {"context_agent_goal": "Show me site traffic"}
-        )
+        # The before-callback now enters weave.attributes() with the full L1
+        # root metadata block plus context_agent_goal. Assert the goal is
+        # present along with the required L1 spec fields.
+        mock_weave.attributes.assert_called_once()
+        attrs_passed = mock_weave.attributes.call_args[0][0]
+        assert attrs_passed["context_agent_goal"] == "Show me site traffic"
+        assert attrs_passed["agent_id"] == "ken_e_chatbot"
+        assert "agent_version" in attrs_passed
+        assert "experiment_id" in attrs_passed
+        assert "variant_name" in attrs_passed
+        assert "environment" in attrs_passed
+        assert "rollout_percentage" in attrs_passed
         mock_attrs_ctx.__enter__.assert_called_once()
 
     @patch("app.adk.tracking.callbacks._weave_call_context")

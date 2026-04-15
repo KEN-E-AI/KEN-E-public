@@ -26,13 +26,16 @@ from __future__ import annotations
 
 import contextvars
 import json
+import os
 import time
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import weave
 from weave.trace.api import get_client as _weave_get_client
 from weave.trace.context import call_context as _weave_call_context
 
+from app.utils.trace_metadata import DEFAULT_VERSION
 from app.utils.weave_observability import init_weave_if_needed
 from shared.structured_logging import get_structured_logger
 
@@ -59,6 +62,55 @@ _current_agent_goal_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
 
 
 _MAX_GOAL_LENGTH = 500
+
+
+@lru_cache(maxsize=1)
+def _get_chatbot_config_metadata() -> dict[str, Any]:
+    """Load and cache ken_e_chatbot Firestore metadata for span attributes.
+
+    Cached for the lifetime of the process — config changes require a redeploy
+    anyway, so a per-request Firestore read would be wasted I/O.
+    """
+    try:
+        from app.adk.agents.strategy_agent.config_loader import (
+            get_current_config_metadata,
+        )
+
+        return get_current_config_metadata("ken_e_chatbot")
+    except Exception as e:
+        logger.warning(f"Failed to load ken_e_chatbot config metadata: {e}")
+        return {}
+
+
+def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, Any]:
+    """Build the L1 chatbot agent span attributes from session state + config.
+
+    Per docs/trace-structure-spec.md §4.1-4.2, the root and L1 spans for a
+    chatbot trace must carry account_id, session_id, user_id, environment,
+    rollout_percentage, agent_id, agent_version, experiment_id, variant_name.
+    """
+    state: dict[str, Any] = {}
+    try:
+        if hasattr(callback_context, "state") and hasattr(
+            callback_context.state, "get"
+        ):
+            state = callback_context.state  # type: ignore[assignment]
+    except Exception:
+        state = {}
+
+    cfg = _get_chatbot_config_metadata()
+    return {
+        "account_id": state.get("account_id", "unknown"),
+        "session_id": state.get("session_id", "unknown"),
+        "user_id": state.get("user_id", "unknown"),
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "rollout_percentage": int(os.getenv("ROLLOUT_PERCENTAGE", "100")),
+        "agent_id": "ken_e_chatbot",
+        "agent_version": cfg.get("version", DEFAULT_VERSION),
+        "experiment_id": cfg.get("experiment_id", "baseline"),
+        "variant_name": cfg.get("variant_name", "baseline"),
+        "model_used": cfg.get("model", "unknown"),
+    }
 
 
 def _extract_user_goal(callback_context: CallbackContext) -> str | None:
@@ -98,12 +150,17 @@ def weave_before_agent_callback(
 
         agent_goal = _extract_user_goal(callback_context)
 
-        # Enter weave.attributes() context so all child spans (tool dispatches)
-        # inherit context_agent_goal. Exited in weave_after_agent_callback.
+        # Build L1 root metadata + agent_goal in a single weave.attributes()
+        # context. Entering BEFORE create_call ensures the parent span itself
+        # carries the attributes (Weave reads contextvars at call creation
+        # time). Exited in weave_after_agent_callback.
+        root_attrs = _build_chatbot_root_attrs(callback_context)
         if agent_goal:
-            goal_ctx = weave.attributes({"context_agent_goal": agent_goal})
-            goal_ctx.__enter__()
-            _current_agent_goal_ctx.set(goal_ctx)
+            root_attrs["context_agent_goal"] = agent_goal
+
+        attrs_ctx = weave.attributes(root_attrs)
+        attrs_ctx.__enter__()
+        _current_agent_goal_ctx.set(attrs_ctx)
 
         call = client.create_call(
             op="ken_e_agent",
@@ -303,6 +360,20 @@ async def adk_after_tool_callback(
         start_time = state.get("_tool_start_time")
         if start_time is not None:
             duration_ms = int((time.monotonic() - start_time) * 1000)
+
+        # Stamp status + duration on the current Weave tool span so the
+        # validator can see L3 timing/status (trace-structure-spec §4.3).
+        # weave.attributes() is read at call creation, so use call.summary
+        # to mutate the in-flight span.
+        try:
+            current_call = weave.get_current_call()
+            if current_call is not None:
+                current_call.summary["tool_name"] = tool.name
+                current_call.summary["status"] = status.value
+                if duration_ms is not None:
+                    current_call.summary["duration_ms"] = duration_ms
+        except Exception:
+            pass
 
         error_message: str | None = None
         if status != ExecutionStatus.SUCCESS and isinstance(tool_response, dict):

@@ -273,11 +273,21 @@ def get_current_config_metadata(
         config_data = doc.to_dict()
         metadata = config_data.get("metadata", {})
 
+        from app.utils.trace_metadata import DEFAULT_VERSION, validate_semver
+
+        raw_version = metadata.get("version")
+        normalized_version = validate_semver(raw_version)
+        if normalized_version == DEFAULT_VERSION and raw_version != DEFAULT_VERSION:
+            logger.error(
+                f"Firestore config '{doc_id}' has invalid version: {raw_version!r}. "
+                f"Falling back to {DEFAULT_VERSION}. Fix the version in Firestore."
+            )
+
         return {
             "doc_id": doc_id,
-            "version": metadata.get("version", "unknown"),
-            "variant_name": metadata.get("variant_name", "unknown"),
-            "experiment_id": metadata.get("experiment_id", "unknown"),
+            "version": normalized_version,
+            "variant_name": metadata.get("variant_name", "baseline"),
+            "experiment_id": metadata.get("experiment_id", "baseline"),
             "model": config_data.get("model", "unknown"),
             "updated_at": metadata.get("updated_at", "unknown"),
         }

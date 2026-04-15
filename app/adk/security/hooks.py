@@ -213,7 +213,12 @@ async def adk_before_tool_callback(
 
         # Build trace context attributes for this tool span.
         # Entered here, exited in adk_after_tool_callback.
-        trace_attrs: dict[str, Any] = {}
+        # Per docs/trace-structure-spec.md §4.3, L3 tool spans must carry
+        # tool_name and parent agent identity in addition to the context block.
+        trace_attrs: dict[str, Any] = {
+            "tool_name": tool.name,
+            "context_agent_id": "ken_e_chatbot",
+        }
 
         # context_agent_goal: the user's query that triggered this tool call
         user_content = tool_context.user_content
@@ -232,10 +237,9 @@ async def adk_before_tool_callback(
             trace_attrs["context_reasoning"] = reasoning
             tool_context.state["_last_reasoning"] = None  # Clear after read
 
-        if trace_attrs:
-            attrs_ctx = weave.attributes(trace_attrs)
-            attrs_ctx.__enter__()
-            tool_context.state["_trace_attrs_ctx"] = attrs_ctx
+        attrs_ctx = weave.attributes(trace_attrs)
+        attrs_ctx.__enter__()
+        tool_context.state["_trace_attrs_ctx"] = attrs_ctx
 
     await _refresh_ga_token_if_needed(tool_context)
 
