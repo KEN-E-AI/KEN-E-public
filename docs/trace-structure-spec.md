@@ -258,7 +258,7 @@ LLM call metadata is auto-captured by ADK's OpenTelemetry GenAI conventions when
 | `gen_ai.usage.output_tokens` | int | Auto | Completion tokens |
 | `gen_ai.request.temperature` | float | Auto | Temperature setting |
 
-**Content capture:** Controlled by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. Set to `true` in development/staging for debugging. May be disabled in production to reduce trace size.
+**Content capture:** Controlled by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. Set to `true` in development and staging for debugging and MER-E evaluation. Set to `false` in production to protect user data privacy — LLM prompts and responses are NOT included in production traces. Span metadata (model, token counts, temperature, duration) is still captured.
 
 ## 5. Context Block Capture Strategy
 
@@ -579,7 +579,7 @@ This checklist is ordered by priority. Items 1-4 are needed for current MER-E fu
 
 ### Development/Debugging
 
-- [ ] **11. LLM content capture** — Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` in development and staging environments. **Depends on:** OTEL Pydantic bug resolution (Feature 7).
+- [x] **11. LLM content capture** — `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` in development and staging, `false` in production (user data privacy). Implemented in Feature 1.14 (Stories 1.14.2, 1.14.3).
 - [ ] **12. Trace verification** — After instrumentation changes, verify trace hierarchy in Weave UI for a sample execution
 - [ ] **13. Extractor compatibility** — Run MER-E's `ToolCallExtractor` against a sample trace to validate field extraction
 
