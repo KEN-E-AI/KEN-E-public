@@ -23,7 +23,8 @@ from agents.strategy_agent.orchestrator import execute_strategy_generation
 def test_strategy_generation():
     """Test the strategy generation with direct execution."""
 
-    # Test parameters
+    # Test parameters. dry_run=True skips Firestore/Neo4j writes so this
+    # is safe to run for trace verification without polluting dev data.
     test_params = {
         "company_name": "Test AI Solutions",
         "industry": "Technology",
@@ -33,6 +34,7 @@ def test_strategy_generation():
         "user_id": "test_user_456",
         "annual_ad_budget": 100000.0,
         "project_id": "ken-e-dev",
+        "dry_run": True,
     }
 
     print(f"\n{'=' * 60}")
