@@ -297,8 +297,14 @@ def deploy_ken_e() -> str | None:
 
         # Enable GCP Agent Engine telemetry (traces, logs, prompt/response capture)
         # See: https://docs.cloud.google.com/agent-builder/agent-engine/manage/tracing
+        # Production does not capture message content to protect user data privacy
+        # (mirrors .env.production). Dev/staging capture content for debugging and
+        # MER-E evaluation.
         os.environ.setdefault("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "true")
-        os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+        _capture_content = "false" if os.getenv("_TARGET_ENV") == "prod" else "true"
+        os.environ.setdefault(
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", _capture_content
+        )
 
         # Workaround for buggy google-genai OTEL instrumentation that crashes
         # strategy agents using output_schema (calls model_dump() on Pydantic classes).
