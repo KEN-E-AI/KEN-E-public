@@ -217,98 +217,93 @@ class TestChatbotToolSpanAttrs:
 
 
 # ---------------------------------------------------------------------------
-# Strategy L1: _execute_single_strategy wrapper
+# Strategy L2: _build_l2_span_attrs helper (called at sub-agent execution sites)
 # ---------------------------------------------------------------------------
 
 
-class TestStrategyL1Metadata:
-    """Strategy sub-agent L1 spans must carry agent_id/version per Decision A2."""
+class TestStrategyL2Metadata:
+    """Strategy sub-agent L2 spans must carry agent_id/version per Decision A2.
 
-    @patch("app.adk.agents.strategy_agent.orchestrator.weave")
-    def test_wrapper_enters_attributes_with_researcher_metadata(
-        self,
-        mock_weave: MagicMock,
-    ) -> None:
-        from app.adk.agents.strategy_agent import orchestrator
+    After Feature 1.13 (PR #236) landed `_STRATEGY_STEP_METADATA` and call-site
+    `weave.attributes()` blocks around `_execute_single_strategy`, Decision A2
+    is implemented by extending those call-site blocks via the
+    `_build_l2_span_attrs` helper. This test targets that helper directly —
+    it's a pure function so mocking `weave` is unnecessary.
+    """
 
-        # Stub the @weave.op-decorated inner so the wrapper just exercises
-        # its attribute-setup path without actually running a strategy.
-        with patch.object(
-            orchestrator,
-            "_execute_single_strategy_op",
-            return_value=("business_strategy", {}, False),
-        ) as mock_op:
-            mock_attrs_ctx = MagicMock()
-            mock_weave.attributes.return_value = mock_attrs_ctx
+    def test_helper_combines_workflow_step_and_agent_identity(self) -> None:
+        from app.adk.agents.strategy_agent.orchestrator import _build_l2_span_attrs
 
-            strategy_config = {
-                "name": "business_strategy",
-                "researcher_doc_id": "business_researcher",
-                "researcher_meta": {
-                    "version": "v2.1.0",
-                    "experiment_id": "baseline",
-                    "variant_name": "baseline",
-                },
-            }
+        strategy_config = {
+            "name": "business_strategy",
+            "researcher_doc_id": "business_researcher",
+            "researcher_meta": {
+                "version": "v2.1.0",
+                "experiment_id": "baseline",
+                "variant_name": "baseline",
+            },
+        }
 
-            orchestrator._execute_single_strategy(
-                strategy_config=strategy_config,
-                strategy_context=MagicMock(),
-                firestore_client=MagicMock(),
-                google_search_agent=MagicMock(),
-                neo4j_ops=None,
-                embedding_generator=None,
-                performance_profiler=None,
-                analytics_service=None,
-                dry_run=True,
-            )
+        attrs = _build_l2_span_attrs(strategy_config)
 
-        mock_weave.attributes.assert_called_once()
-        attrs = mock_weave.attributes.call_args[0][0]
+        # Agent identity from researcher_meta (Decision A2)
         assert attrs["agent_id"] == "business_researcher"
         assert attrs["agent_version"] == "v2.1.0"
         assert attrs["experiment_id"] == "baseline"
         assert attrs["variant_name"] == "baseline"
-        assert attrs["step_type"] == "business_strategy"
-        mock_op.assert_called_once()
 
-    @patch("app.adk.agents.strategy_agent.orchestrator.weave")
-    def test_wrapper_falls_back_to_default_version_when_meta_missing(
-        self,
-        mock_weave: MagicMock,
-    ) -> None:
+        # Step metadata from Feature 1.13 (_STRATEGY_STEP_METADATA)
+        assert attrs["step_type"] == "research"
+        assert attrs["step_index"] == 0
+        assert attrs["depends_on_steps"] == []
+
+    def test_helper_uses_marketing_dependency_on_business(self) -> None:
+        """Marketing strategy depends on business (consumes product_category_names).
+
+        Validates that the step metadata from Feature 1.13 flows through
+        `_build_l2_span_attrs` untouched — the agent-identity merge doesn't
+        clobber step_type or depends_on_steps.
+        """
+        from app.adk.agents.strategy_agent.orchestrator import _build_l2_span_attrs
+
+        attrs = _build_l2_span_attrs(
+            {
+                "name": "marketing_strategy",
+                "researcher_doc_id": "marketing_researcher",
+                "researcher_meta": {
+                    "version": "v1.3.0",
+                    "experiment_id": "Increasing detail around ICP's",
+                    "variant_name": "multi-part-search",
+                },
+            }
+        )
+
+        assert attrs["step_type"] == "generation"
+        assert attrs["step_index"] == 1
+        assert attrs["depends_on_steps"] == ["business_strategy"]
+        assert attrs["agent_id"] == "marketing_researcher"
+        assert attrs["agent_version"] == "v1.3.0"
+        # Real experiment metadata flows from Firestore via researcher_meta
+        assert attrs["experiment_id"] == "Increasing detail around ICP's"
+        assert attrs["variant_name"] == "multi-part-search"
+
+    def test_helper_falls_back_to_default_version_when_meta_missing(self) -> None:
         """If researcher_meta is empty, fall back to DEFAULT_VERSION (valid semver),
         not 'unknown' — the validator's semver regex would reject 'unknown'."""
-        from app.adk.agents.strategy_agent import orchestrator
+        from app.adk.agents.strategy_agent.orchestrator import _build_l2_span_attrs
         from app.utils.trace_metadata import DEFAULT_VERSION
 
-        with patch.object(
-            orchestrator,
-            "_execute_single_strategy_op",
-            return_value=("brand_guidelines", {}, False),
-        ):
-            mock_weave.attributes.return_value = MagicMock()
+        attrs = _build_l2_span_attrs(
+            {
+                "name": "brand_guidelines",
+                "researcher_doc_id": "brand_researcher",
+                # No researcher_meta at all
+            }
+        )
 
-            orchestrator._execute_single_strategy(
-                strategy_config={
-                    "name": "brand_guidelines",
-                    "researcher_doc_id": "brand_researcher",
-                    # No researcher_meta at all
-                },
-                strategy_context=MagicMock(),
-                firestore_client=MagicMock(),
-                google_search_agent=MagicMock(),
-                neo4j_ops=None,
-                embedding_generator=None,
-                performance_profiler=None,
-                analytics_service=None,
-                dry_run=True,
-            )
-
-        attrs = mock_weave.attributes.call_args[0][0]
         assert attrs["agent_version"] == DEFAULT_VERSION
-        # And DEFAULT_VERSION must itself be valid semver per the validator.
-        from app.adk.tracking.compliance import _validate_field, REQUIRED_FIELDS
+        # And DEFAULT_VERSION must itself be valid semver per the validator
+        from app.adk.tracking.compliance import REQUIRED_FIELDS, _validate_field
 
         version_issues = _validate_field(
             "agent_version",
@@ -316,3 +311,4 @@ class TestStrategyL1Metadata:
             REQUIRED_FIELDS["agent_version"],
         )
         assert not version_issues
+

@@ -77,53 +77,99 @@ class TestWorkflowMetadataOnRootSpan:
         impl_kwargs = mock_impl.call_args[1]
         assert attrs_dict["workflow_id"] == impl_kwargs["execution_id"]
 
-    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_body")
-    @patch("app.adk.agents.strategy_agent.config_loader.get_current_config_metadata")
+    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl")
     @patch("app.adk.agents.strategy_agent.orchestrator.weave")
-    def test_direct_uses_passed_execution_id_in_session_id(
+    def test_wrapper_builds_session_id_from_same_execution_id_as_workflow_id(
         self,
         mock_weave: MagicMock,
-        mock_get_meta: MagicMock,
-        mock_body: MagicMock,
+        mock_impl: MagicMock,
     ) -> None:
-        """When execution_id is passed to _direct, it's used in session_id."""
-        from app.adk.agents.strategy_agent.models import StrategyContext
+        """session_id and workflow_id must share the same execution_id suffix.
+
+        Rationale: the strategy trace has both a workflow_id (for MER-E
+        workflow evaluation) and a session_id (for root span identity). Both
+        are derived from the same `execution_id` generated in the wrapper,
+        so any correlation across trace stores works. This test guards
+        against a regression where the wrapper accidentally generates two
+        different execution_ids (e.g., one for workflow, one passed through
+        to impl) and the session_id would then lose its link to workflow_id.
+
+        After the Feature 1.1.2 rebase on top of Feature 1.13, ALL root
+        metadata (including account_id/session_id/agent_id/etc.) lives in
+        the wrapper's weave.attributes() dict — _direct no longer builds
+        session_id. The wrapper's single execution_id threads through both
+        the workflow_id field AND the session_id f-string.
+        """
         from app.adk.agents.strategy_agent.orchestrator import (
-            execute_strategy_generation_direct,
+            execute_strategy_generation,
         )
 
-        mock_get_meta.return_value = {}
-        mock_body.return_value = {}
+        mock_impl.return_value = "ok"
         mock_weave.attributes.return_value = MagicMock()
 
-        context = StrategyContext(
-            account_id="acc_test",
+        execute_strategy_generation(
             company_name="TestCo",
             industry="Tech",
+            websites="https://test.co",
+            customer_regions="US",
+            account_id="acc_test",
             user_id="user_1",
-        )
-
-        execute_strategy_generation_direct(
-            context=context,
-            firestore_client=MagicMock(),
-            analytics_service=None,
-            performance_profiler=None,
-            alert_manager=None,
-            enabled_strategies=[],
-            override_product_categories=None,
             dry_run=True,
-            execution_id="abc123def456",
         )
 
-        root_call = None
-        for call in mock_weave.attributes.call_args_list:
-            attrs = call[0][0] if call[0] else {}
-            if isinstance(attrs, dict) and "account_id" in attrs:
-                root_call = attrs
-                break
+        attrs_dict = mock_weave.attributes.call_args[0][0]
+        # Required: both fields present
+        assert "workflow_id" in attrs_dict
+        assert "session_id" in attrs_dict
+        # Invariant: session_id must contain the same execution_id as workflow_id
+        workflow_id = attrs_dict["workflow_id"]
+        assert attrs_dict["session_id"] == f"strategy_acc_test_{workflow_id}"
 
-        assert root_call is not None
-        assert root_call["session_id"] == "strategy_acc_test_abc123def456"
+    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl")
+    @patch("app.adk.agents.strategy_agent.orchestrator.weave")
+    def test_wrapper_populates_full_root_metadata_block(
+        self,
+        mock_weave: MagicMock,
+        mock_impl: MagicMock,
+    ) -> None:
+        """Per docs/trace-structure-spec.md §4.1, the strategy root span must
+        carry the full metadata block (not just workflow fields).
+
+        Feature 1.1.2 Decision A1 hardcodes the strategy_orchestrator identity
+        since the orchestrator is not a tunable LLM agent.
+        """
+        from app.adk.agents.strategy_agent.orchestrator import (
+            execute_strategy_generation,
+        )
+
+        mock_impl.return_value = "ok"
+        mock_weave.attributes.return_value = MagicMock()
+
+        execute_strategy_generation(
+            company_name="TestCo",
+            industry="Tech",
+            websites="https://test.co",
+            customer_regions="US",
+            account_id="acc_test",
+            user_id="user_1",
+            dry_run=True,
+        )
+
+        attrs = mock_weave.attributes.call_args[0][0]
+        # Workflow (Feature 1.13)
+        assert attrs["workflow_type"] == "strategy_generation"
+        assert "workflow_id" in attrs
+        # Root session identity (Feature 1.1.2 Story 1.1.2-2)
+        assert attrs["account_id"] == "acc_test"
+        assert attrs["user_id"] == "user_1"
+        assert "session_id" in attrs
+        assert "environment" in attrs
+        assert "rollout_percentage" in attrs
+        # Strategy orchestrator identity (Decision A1)
+        assert attrs["agent_id"] == "strategy_orchestrator"
+        assert attrs["agent_version"] == "v1.0.0"
+        assert attrs["experiment_id"] == "baseline"
+        assert attrs["variant_name"] == "baseline"
 
 
 class TestStepMetadataHelper:
