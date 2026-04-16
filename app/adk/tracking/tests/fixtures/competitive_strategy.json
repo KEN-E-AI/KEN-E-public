@@ -1,0 +1,17 @@
+{
+  "trace_id": "competitive_strategy_sample",
+  "description": "Compliant trace for the competitive_strategy sub-agent (step 1, parallel).",
+  "metadata": {
+    "agent_id": "competitive_researcher",
+    "agent_version": "v1.1.0",
+    "account_id": "acc_sample_strategy",
+    "session_id": "strategy_acc_sample_strategy_abc123def456",
+    "experiment_id": "baseline",
+    "variant_name": "baseline",
+    "environment": "development",
+    "rollout_percentage": 100,
+    "model_used": "gemini-2.5-pro",
+    "temperature": 0.3,
+    "max_output_tokens": 4096
+  }
+}

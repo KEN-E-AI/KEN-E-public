@@ -1,0 +1,17 @@
+{
+  "trace_id": "brand_guidelines_sample",
+  "description": "Compliant trace for the brand_guidelines sub-agent (step 1, parallel).",
+  "metadata": {
+    "agent_id": "brand_researcher",
+    "agent_version": "v1.0.1",
+    "account_id": "acc_sample_strategy",
+    "session_id": "strategy_acc_sample_strategy_abc123def456",
+    "experiment_id": "baseline",
+    "variant_name": "baseline",
+    "environment": "development",
+    "rollout_percentage": 100,
+    "model_used": "gemini-2.5-pro",
+    "temperature": 0.4,
+    "max_output_tokens": 4096
+  }
+}

@@ -12,7 +12,6 @@ import os
 import time
 import uuid
 from concurrent.futures import as_completed
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -46,6 +45,7 @@ try:
     from agents.strategy_agent.firestore import FirestoreClient
     from agents.strategy_agent.models import StrategyContext
     from agents.strategy_agent.performance_profiler import PerformanceProfiler
+    from app.utils.trace_metadata import DEFAULT_VERSION
     from shared.token_utils import TokenEstimator
 except ImportError:
     # Relative imports for local testing
@@ -65,6 +65,7 @@ except ImportError:
     from .firestore import FirestoreClient
     from .models import StrategyContext
     from .performance_profiler import PerformanceProfiler
+    from app.utils.trace_metadata import DEFAULT_VERSION
 
 # Load environment variables from .env file if it exists
 # The .env file is deployed with the agent and loaded at runtime
@@ -415,6 +416,33 @@ def _get_strategy_step_metadata(strategy_name: str) -> dict[str, Any]:
     return dict(_STRATEGY_STEP_METADATA[strategy_name])
 
 
+def _build_l2_span_attrs(strategy_config: dict[str, Any]) -> dict[str, Any]:
+    """Build the L2 sub-agent span attributes for a strategy execution.
+
+    Combines the workflow step metadata from Feature 1.13 (step_type,
+    step_index, depends_on_steps) with the agent identity from Feature 1.1.2
+    Decision A2 (agent_id from researcher_doc_id, agent_version from
+    researcher_meta["version"], plus experiment_id/variant_name from the
+    researcher's Firestore config). Per Decision A2, the sub-agent span uses
+    the researcher's version as the canonical version — the formatter
+    version is recorded on its own L3 child span.
+    """
+    strategy_name = strategy_config["name"]
+    researcher_meta = strategy_config.get("researcher_meta", {}) or {}
+    researcher_doc_id = strategy_config.get("researcher_doc_id") or strategy_name
+
+    attrs = _get_strategy_step_metadata(strategy_name)
+    attrs.update(
+        {
+            "agent_id": researcher_doc_id,
+            "agent_version": researcher_meta.get("version", DEFAULT_VERSION),
+            "experiment_id": researcher_meta.get("experiment_id", "baseline"),
+            "variant_name": researcher_meta.get("variant_name", "baseline"),
+        }
+    )
+    return attrs
+
+
 @weave.op(name="execute_single_strategy")
 def _execute_single_strategy(
     strategy_config: dict,
@@ -567,7 +595,11 @@ def _execute_single_strategy(
         with weave.attributes({
             "output_category": _research_category,
             "agent_id": researcher_doc_id or strategy_name,
-            "agent_version": researcher_meta.get("version", "unknown"),
+            "agent_version": researcher_meta.get("version", DEFAULT_VERSION),
+            "experiment_id": researcher_meta.get("experiment_id", "baseline"),
+            "variant_name": researcher_meta.get("variant_name", "baseline"),
+            "model_used": researcher_meta.get("model", "unknown"),
+            "step_type": f"{strategy_name}_research",
             "context_agent_goal": f"Research {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
         }):
             events = run_research()
@@ -655,7 +687,11 @@ def _execute_single_strategy(
         with weave.attributes({
             "output_category": _report_category,
             "agent_id": formatter_doc_id or strategy_name,
-            "agent_version": formatter_meta.get("version", "unknown"),
+            "agent_version": formatter_meta.get("version", DEFAULT_VERSION),
+            "experiment_id": formatter_meta.get("experiment_id", "baseline"),
+            "variant_name": formatter_meta.get("variant_name", "baseline"),
+            "model_used": formatter_meta.get("model", "unknown"),
+            "step_type": f"{strategy_name}_format",
             "context_agent_goal": f"Format {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
         }):
             openai_dict = run_openai_formatter()
@@ -788,52 +824,24 @@ def execute_strategy_generation_direct(
     Returns:
         Dictionary of generated documents
     """
-    # Set root span metadata for trace filtering in Weave UI.
-    # workflow_id and workflow_type are set by the execute_strategy_generation
-    # wrapper's weave.attributes() context, which merges with this dict.
-    if execution_id is None:
-        execution_id = uuid.uuid4().hex[:12]
-    root_attrs = {
-        "account_id": context.account_id,
-        "session_id": f"strategy_{context.account_id}_{execution_id}",
-        "user_id": context.user_id or "unknown",
-        "environment": os.getenv("ENVIRONMENT", "development"),
-        "rollout_percentage": 100,
-    }
-
-    # Add experiment metadata if configured (omit when no experiment active)
-    try:
-        from .config_loader import get_current_config_metadata
-
-        orchestrator_meta = get_current_config_metadata("ken_e_chatbot")
-        experiment_id = orchestrator_meta.get("experiment_id")
-        variant_name = orchestrator_meta.get("variant_name")
-        if experiment_id and experiment_id != "unknown":
-            root_attrs["experiment_id"] = experiment_id
-        if variant_name and variant_name != "unknown":
-            root_attrs["variant_name"] = variant_name
-    except Exception as e:
-        logger.warning(f"Failed to load experiment metadata: {e}")
-
-    exit_stack = ExitStack()
-    try:
-        exit_stack.enter_context(weave.attributes(root_attrs))
-    except Exception:
-        pass
-
-    try:
-        return _execute_strategy_generation_body(
-            context=context,
-            firestore_client=firestore_client,
-            analytics_service=analytics_service,
-            performance_profiler=performance_profiler,
-            alert_manager=alert_manager,
-            enabled_strategies=enabled_strategies,
-            override_product_categories=override_product_categories,
-            dry_run=dry_run,
-        )
-    finally:
-        exit_stack.close()
+    # Root span metadata (account_id, session_id, agent_id, etc.) is set by
+    # the undecorated execute_strategy_generation wrapper BEFORE it calls
+    # _execute_strategy_generation_impl, so it lands on the impl's @weave.op
+    # span and flows to all descendants via contextvar inheritance. We do NOT
+    # re-enter weave.attributes() here — doing so would either duplicate the
+    # metadata or (as in the original pre-rebase code) only decorate children
+    # of _direct when _direct itself was @weave.op'd.
+    # See docs/trace-structure-spec.md §4.1-4.2 and PR #238.
+    return _execute_strategy_generation_body(
+        context=context,
+        firestore_client=firestore_client,
+        analytics_service=analytics_service,
+        performance_profiler=performance_profiler,
+        alert_manager=alert_manager,
+        enabled_strategies=enabled_strategies,
+        override_product_categories=override_product_categories,
+        dry_run=dry_run,
+    )
 
 
 def _execute_strategy_generation_body(
@@ -1080,9 +1088,7 @@ def _execute_strategy_generation_body(
             "\n[PARALLEL] ========== PHASE 1: Executing business_strategy (must run first) =========="
         )
         try:
-            with weave.attributes(
-                _get_strategy_step_metadata("business_strategy")
-            ):
+            with weave.attributes(_build_l2_span_attrs(business_strategy_config)):
                 strategy_name, doc_content, _used_openai = _execute_single_strategy(
                     strategy_config=business_strategy_config,
                     strategy_context=context,
@@ -1152,9 +1158,7 @@ def _execute_strategy_generation_body(
             # (Python 3.12+ propagation) and appears on the sub-agent span.
             future_to_strategy = {}
             for strat_config in remaining_strategies:
-                with weave.attributes(
-                    _get_strategy_step_metadata(strat_config["name"])
-                ):
+                with weave.attributes(_build_l2_span_attrs(strat_config)):
                     future = executor.submit(
                         _execute_single_strategy,
                         strategy_config=strat_config,
@@ -1613,16 +1617,37 @@ def execute_strategy_generation(
     is_tracing_setting_disabled() before the body runs, so Weave must be
     initialized BEFORE calling the impl).
 
-    Then enters a weave.attributes() context so the impl's span carries
-    workflow_id and workflow_type as root span attributes for MER-E
-    workflow evaluation.
+    Then enters a weave.attributes() context so the impl's span carries the
+    full root span metadata block (workflow + identity + session + environment
+    fields) per docs/trace-structure-spec.md §4.1-4.2. All descendants — the
+    four L1 sub-agent spans and their L3 research/format children — inherit
+    via contextvar propagation and only add their own step/agent-identity
+    fields on top (see _build_l2_span_attrs).
+
+    Strategy orchestrator identity is hardcoded (strategy_orchestrator /
+    v1.0.0 / baseline) per Story 1.1.2-2 Decision A1 — the orchestrator is
+    not a tunable LLM agent, so no Firestore config doc is warranted until
+    orchestrator-level A/B testing arrives in Feature 4.4.
     """
     init_weave_if_needed()
 
     execution_id = uuid.uuid4().hex[:12]
+    session_id = f"strategy_{account_id}_{execution_id}"
     workflow_attrs = {
+        # Workflow fields (Feature 1.13)
         "workflow_id": execution_id,
         "workflow_type": "strategy_generation",
+        # Root session identity (trace-structure-spec §4.1)
+        "account_id": account_id,
+        "session_id": session_id,
+        "user_id": user_id or "unknown",
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "rollout_percentage": int(os.getenv("ROLLOUT_PERCENTAGE", "100")),
+        # Strategy orchestrator identity (Decision A1)
+        "agent_id": "strategy_orchestrator",
+        "agent_version": "v1.0.0",
+        "experiment_id": "baseline",
+        "variant_name": "baseline",
     }
 
     with weave.attributes(workflow_attrs):

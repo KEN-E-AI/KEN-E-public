@@ -1,0 +1,18 @@
+{
+  "trace_id": "ken_e_chatbot_sample",
+  "description": "Compliant trace for the KEN-E chatbot (root-level agent serving user queries).",
+  "metadata": {
+    "agent_id": "ken_e_chatbot",
+    "agent_version": "v1.0.0",
+    "account_id": "acc_sample_chatbot",
+    "session_id": "sess_chatbot_001",
+    "user_id": "user_sample",
+    "experiment_id": "baseline",
+    "variant_name": "baseline",
+    "environment": "development",
+    "rollout_percentage": 100,
+    "model_used": "gemini-2.5-pro",
+    "temperature": 0.3,
+    "max_output_tokens": 2500
+  }
+}

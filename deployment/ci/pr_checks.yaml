@@ -64,6 +64,22 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Validate trace compliance — runs the validator unit tests AND checks that
+  # canonical per-agent-type fixtures in app/adk/tracking/tests/fixtures/ all
+  # pass validate_trace_compliance(). Non-compliant fixtures fail the build.
+  # See docs/trace-structure-spec.md §11 and story 1.1.2-1.
+  - name: "python:3.11-slim"
+    id: trace-compliance-check
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        uv run pytest app/adk/tracking/tests/test_compliance.py -v
+        PYTHONPATH=. uv run python -m app.adk.tracking.compliance_check \
+          --fixtures app/adk/tracking/tests/fixtures/
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
