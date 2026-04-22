@@ -1,9 +1,11 @@
 # Release 1 Optimization Strategy
 
-**Version:** 1.0
-**Date:** February 20, 2026
-**Status:** Draft
+**Version:** 1.1
+**Date:** February 20, 2026 (realigned 2026-04-21)
+**Status:** Active — evaluation gates for Release 1.1 (Foundation Hardening)
 **Purpose:** Comprehensive evaluation plan to ensure Release 1 delivers high-quality outputs and optimal performance before deployment to live users.
+
+> **Status note (2026-04-21):** Release 1 has been re-scoped around the 8-component structure and the Release 1.1 "Foundation Hardening" feature set in [`product-roadmap.md`](product-roadmap.md#release-11-foundation-hardening). The authoritative sections of this document are: §3 Quality Evaluation Plan (methodology), §4 Performance Evaluation Plan, §6 Test Environment Requirements, §7 Acceptance Criteria (G-Q/G-P gates), §8 Schedule. §2 has been rewritten to map to current R1.1 features. MER-E / evaluation-framework infrastructure work is no longer part of R1 — it now lives in Features 2.5, 3.5, 4.3 (MER-E Phases 0–2) and is owned by [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md). The old DDP1-/NR1- scope IDs and Sprint 5c/6b story references have been removed from this document; they do not map to any current work.
 
 ---
 
@@ -31,7 +33,7 @@ This document defines the evaluation strategy for Release 1 of KEN-E. The two pr
 
 ### 1.2 Evaluation Philosophy
 
-Release 1 is the first deployment to live users. Evaluation must cover both the **user-facing agentic harness** (the features users interact with directly) and the **evaluation framework infrastructure** (the tooling that enables ongoing quality monitoring after launch). Both must work correctly before go-live.
+Release 1 is the first deployment to live users. Evaluation must cover the **user-facing agentic harness** (onboarding research, orchestrator routing, context loading, GA integration, tool discovery, session service, web channel) and the **R1.1 Foundation Hardening** features (ADK upgrade, tracing hardening, optimization gates, Firestore config registry, session-timeout removal). Tracing hardening (Feature 1.1.2) is the prerequisite that unblocks MER-E ingestion in R2.5 — in R1 we validate the trace contract holds, not the downstream evaluation pipeline.
 
 ### 1.3 Evaluation Types
 
@@ -47,48 +49,49 @@ Release 1 is the first deployment to live users. Evaluation must cover both the 
 
 ## 2. Scope Summary
 
-Release 1 spans two categories of work. Both must be evaluated.
+Release 1 is the first deployment to live users. The evaluation covers two things: the **existing agentic harness capabilities** that users will exercise on day one, and the **Release 1.1 "Foundation Hardening" features** that make those capabilities ready for production.
 
-### 2.1 User-Facing Agentic Harness (Design Document Phase 1)
+### 2.1 Release 1.1 Foundation Hardening features (active development)
 
-| ID | Feature | User Impact |
-|----|---------|-------------|
-| DDP1-1 | Hierarchical Context Manager | Determines quality of personalized responses |
-| DDP1-2 | Tool Registry & Index | Enables correct tool selection for user requests |
-| DDP1-3 | MCP Server Manager | Controls tool availability and connection reliability |
-| DDP1-4 | Session Service | Maintains conversation continuity |
-| DDP1-5 | Web Channel Adapter | User's primary interface for chat |
-| DDP1-6 | Primary Orchestrator (KEN-E) | Core conversational intelligence and routing |
-| DDP1-7 | Context Compression | Keeps long sessions functional |
-| DDP1-8 | Basic Monitoring | Enables operational visibility |
-| DDP1-9 | Onboarding Research Pipeline | First-run experience; triggers Strategy Specialist |
-| DDP1-10 | Google Analytics MCP Integration | Users can query and discuss GA data |
+Source of truth: [`product-roadmap.md`](product-roadmap.md#release-11-foundation-hardening) + Notion.
 
-### 2.2 Evaluation Framework Infrastructure (Notion Release 1)
+| Feature | Purpose | Design ref |
+|---|---|---|
+| 1.1.1 — ADK Upgrade | Move to ADK ≥ 1.26 for per-invocation tool caching + other fixes | Notion |
+| 1.1.2 — Tracing Hardening | Every agent call emits a trace with the required metadata fields (contract in `trace-structure-spec.md`) — enables MER-E ingestion starting in R2.5 | [trace-structure-spec §3, §10, §11](trace-structure-spec.md) |
+| 1.1.3 — Release 1 Optimization Gates | The go/no-go checklist — **this document defines the gates** | §7 below |
+| 1.1.4 — Firestore Config Registry | Agent configs live in Firestore; factory reads at deploy time | [AH-PRD-02 §4, §5.2](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [mcp-architecture §6](design/components/agentic-harness/mcp-architecture.md#6-mcp-server-config-registry) |
+| 1.1.5 — Remove Session Timeout | Session lifecycle aligned to ADK's invocation model | Notion |
 
-| ID | Feature | Purpose |
-|----|---------|---------|
-| NR1-1.1 | Evaluation Results Module | Fetch LLM/human evaluations from W&B and Firestore |
-| NR1-1.2 | Tool Call Extractor | Parse individual tool calls from agent traces |
-| NR1-1.3 | KEN-E Trace Enhancements | Standardized trace metadata on all agent calls |
-| NR1-1.4 | Enhanced Agent Config Schema | Version lineage and deployment status tracking |
-| NR1-1.5 | Database Schema Setup | Firestore/BigQuery collections for evaluation data |
-| NR1-1.6 | Basic API Endpoints | Agent CRUD, evaluation CRUD, and queue endpoints |
+### 2.2 Existing harness capabilities evaluated by this plan
+
+These capabilities are already implemented; R1.1 hardens them. The evaluation items in §3 and procedures in §5 target these surfaces directly.
+
+| Capability | Evaluation coverage |
+|---|---|
+| Primary Orchestrator (KEN-E) routing + response quality | §3.2, §5.2 |
+| Onboarding Research Pipeline (Strategy Specialist on account creation) | §3.1, §5.1 |
+| Hierarchical Context Manager + Level 1/2/3 loading + budget compliance | §3.3, §5.4 |
+| Google Analytics MCP integration | §3.4, §5.3 |
+| Tool discovery + MCP Server Manager | §3.5, §5.5 |
+| Session Service + context compression + multi-account isolation | §3.6, §5.6 |
+| Web Channel Adapter (WebSocket, streaming, structured rendering) | §3.7, §5.7 |
+
+### 2.3 Out of scope for this plan
+
+The following were in the original (Feb 2026) scope but are no longer R1 work:
+
+- **MER-E / evaluation framework infrastructure** (trace extractors, evaluation-results APIs, BigQuery tables, agreement-rate calculations). Now Features 2.5 / 3.5 / 4.3 — see [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md).
+- **Review loops, agent factory, specialist assembly** (R2.0 — see AH-PRD-01, AH-PRD-02, AH-PRD-03).
+- **Multi-tenant data-model migration** (R1 foundation parallel track — see [`design/components/data-management/README.md`](design/components/data-management/README.md)).
+
+These will get their own evaluation plans when those releases are cut.
 
 ---
 
 ## 3. Quality Evaluation Plan
 
-Quality is the primary optimization target. Each section below defines what "high quality" means for that feature area and how to evaluate it.
-
-> **Story References:** The "Stories" column links each evaluation item to its Sprint 5c (MER-E trace readiness) and Sprint 6b (KEN-E evaluation execution) user stories. Additionally, evaluation factor configuration stories span multiple items:
-> - **5c.19** configures evaluation factors for Q-1.1–Q-1.7 (all 4 strategy agent output types)
-> - **5c.20** configures evaluation factors for Q-2.1–Q-2.9 (orchestrator outputs)
-> - **5c.21** configures evaluation factors for Q-4.1–Q-4.6 (analytics outputs)
-> - **5c.22** configures evaluation factors for Q-5.1–Q-5.2 (tool discovery outputs)
-> - **5c.23–5c.25** verify the MER-E tool call extractor for orchestrator, MCP, and context manager traces
-> - **5c.18** ensures latency metrics (duration_ms) are present across all traces (performance readiness)
-> - **6b.51–6b.56** cover performance evaluation and final Go/No-Go validation (not tied to specific Q items)
+Quality is the primary optimization target. Each section below defines what "high quality" means for that feature area and how to evaluate it. Execution of the plan (assigning individual Q-items to user stories in Notion) is tracked under Feature 1.1.3 — Release 1 Optimization Gates; this document defines **what** to evaluate, not which sprint owns each item.
 
 ### 3.1 Onboarding Research Pipeline Quality
 
@@ -96,15 +99,15 @@ The onboarding research pipeline is the user's first experience with KEN-E. When
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-1.1 | Company overview accuracy | Factually correct; no hallucinated details; captures industry, size, and products accurately | Human review of 20+ generated overviews against actual company data | 5c.1, 5c.4, 6b.1, 6b.4 |
-| Q-1.2 | ICP relevance | Generated ICPs match the company's actual target market; pain points are realistic and specific | Marketing expert review; compare to known ICPs for recognizable companies | 5c.2, 6b.2 |
-| Q-1.3 | Competitor identification accuracy | Correct competitors identified; no irrelevant companies; competitive positioning is defensible | Cross-reference against industry databases and company websites | 5c.3, 6b.3 |
-| Q-1.4 | Research completeness | All expected knowledge graph sections populated (company overview, products, ICPs, competitors, strategies, brand guidelines) | Automated check of Neo4j graph completeness per account | 5c.5, 6b.5 |
-| Q-1.5 | Research depth | Level 2 and Level 3 context sections contain substantive, actionable detail — not shallow summaries | Human review: are Section summaries (~10k tokens) and Full details (~20k tokens) rich enough to inform strategy conversations? | (covered by Q-1.1–Q-1.4 stories) |
-| Q-1.6 | Knowledge graph structure | Entities and relationships are correctly typed; no orphan nodes; graph is traversable for context loading | Automated graph integrity checks | 5c.5, 6b.6 |
-| Q-1.7 | Source citation quality | Research claims are traceable to real sources; URLs resolve; no fabricated citations | Automated link validation + human spot-check | 5c.6, 6b.7 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-1.1 | Company overview accuracy | Factually correct; no hallucinated details; captures industry, size, and products accurately | Human review of 20+ generated overviews against actual company data |
+| Q-1.2 | ICP relevance | Generated ICPs match the company's actual target market; pain points are realistic and specific | Marketing expert review; compare to known ICPs for recognizable companies |
+| Q-1.3 | Competitor identification accuracy | Correct competitors identified; no irrelevant companies; competitive positioning is defensible | Cross-reference against industry databases and company websites |
+| Q-1.4 | Research completeness | All expected knowledge graph sections populated (company overview, products, ICPs, competitors, strategies, brand guidelines) | Automated check of Neo4j graph completeness per account |
+| Q-1.5 | Research depth | Level 2 and Level 3 context sections contain substantive, actionable detail — not shallow summaries | Human review: are Section summaries (~10k tokens) and Full details (~20k tokens) rich enough to inform strategy conversations? |
+| Q-1.6 | Knowledge graph structure | Entities and relationships are correctly typed; no orphan nodes; graph is traversable for context loading | Automated graph integrity checks |
+| Q-1.7 | Source citation quality | Research claims are traceable to real sources; URLs resolve; no fabricated citations | Automated link validation + human spot-check |
 
 **Test Companies:**
 - 5 well-known companies (verifiable ground truth)
@@ -118,17 +121,17 @@ KEN-E is the main agent users interact with. Quality here means understanding us
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-2.1 | Intent classification accuracy | KEN-E correctly identifies user intent (strategy question vs analytics request vs general chat) | Run 100+ diverse prompts; measure classification accuracy against human-labeled ground truth | 5c.7, 6b.8 |
-| Q-2.2 | Context selection relevance | KEN-E loads the correct context sections for the user's question (e.g., loads [competitors] for competitive questions, not [calendar]) | Log which sections are loaded per query; human review of appropriateness | 5c.8, 6b.9 |
-| Q-2.3 | Response personalization | Responses reference the user's specific company data (not generic advice) | Human review: does the response mention the user's actual products, ICPs, competitors? | 5c.9, 6b.10 |
-| Q-2.4 | Response accuracy | Factual claims about the user's business are correct based on the loaded context | Compare response content to knowledge graph source data | 5c.9, 6b.11 |
-| Q-2.5 | Response actionability | Recommendations are specific and implementable, not vague platitudes | Marketing expert scoring on 1-5 actionability scale | 6b.12 |
-| Q-2.6 | Conversation coherence | Multi-turn conversations maintain thread; KEN-E remembers what was discussed | Run 10+ multi-turn scenario scripts (5-15 turns each); verify no context loss | 5c.10, 6b.13 |
-| Q-2.7 | Clarification behavior | KEN-E asks clarifying questions when requests are ambiguous rather than guessing | Test with 20+ deliberately ambiguous prompts | 5c.11, 6b.14 |
-| Q-2.8 | Error handling quality | When something fails (tool unavailable, context missing), KEN-E communicates clearly and suggests alternatives | Simulate failures; evaluate error response quality | 5c.11, 6b.15 |
-| Q-2.9 | Tone and brand consistency | KEN-E maintains consistent professional-yet-approachable marketing expert persona | Human review across diverse conversation types | 6b.16 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-2.1 | Intent classification accuracy | KEN-E correctly identifies user intent (strategy question vs analytics request vs general chat) | Run 100+ diverse prompts; measure classification accuracy against human-labeled ground truth |
+| Q-2.2 | Context selection relevance | KEN-E loads the correct context sections for the user's question (e.g., loads [competitors] for competitive questions, not [calendar]) | Log which sections are loaded per query; human review of appropriateness |
+| Q-2.3 | Response personalization | Responses reference the user's specific company data (not generic advice) | Human review: does the response mention the user's actual products, ICPs, competitors? |
+| Q-2.4 | Response accuracy | Factual claims about the user's business are correct based on the loaded context | Compare response content to knowledge graph source data |
+| Q-2.5 | Response actionability | Recommendations are specific and implementable, not vague platitudes | Marketing expert scoring on 1-5 actionability scale |
+| Q-2.6 | Conversation coherence | Multi-turn conversations maintain thread; KEN-E remembers what was discussed | Run 10+ multi-turn scenario scripts (5-15 turns each); verify no context loss |
+| Q-2.7 | Clarification behavior | KEN-E asks clarifying questions when requests are ambiguous rather than guessing | Test with 20+ deliberately ambiguous prompts |
+| Q-2.8 | Error handling quality | When something fails (tool unavailable, context missing), KEN-E communicates clearly and suggests alternatives | Simulate failures; evaluate error response quality |
+| Q-2.9 | Tone and brand consistency | KEN-E maintains consistent professional-yet-approachable marketing expert persona | Human review across diverse conversation types |
 
 **Scenario Categories for Testing:**
 1. **Strategy discussions** — "What should our Q2 marketing strategy focus on?"
@@ -146,14 +149,14 @@ The context manager determines what company knowledge KEN-E has available for ea
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-3.1 | Executive summary completeness (Level 1) | Always-loaded summary captures the essential company identity in ~5,000 tokens | Human review across test companies | 5c.12, 6b.17 |
-| Q-3.2 | Section summary quality (Level 2) | Loaded sections are substantive enough to answer section-level questions without needing Level 3 | Test: ask questions answerable from Level 2; verify correctness | 5c.12, 6b.18 |
-| Q-3.3 | Full detail quality (Level 3) | Detail pages contain comprehensive information for specialist tasks | Test: ask detail-specific questions; verify Level 3 data sufficiency | 5c.12, 6b.19 |
-| Q-3.4 | Context budget compliance | Total loaded context stays under 40,000 token budget at all times | Automated monitoring during all test scenarios | 5c.12, 6b.20 |
-| Q-3.5 | Section loading appropriateness | Only relevant sections are loaded; irrelevant sections are not loaded unnecessarily | Log analysis: review section load patterns across 100+ queries | 5c.12, 6b.21 |
-| Q-3.6 | Unloading behavior | Sections are properly unloaded when switching topics to free token budget | Multi-topic conversation tests; verify budget reclamation | 5c.12, 6b.22 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-3.1 | Executive summary completeness (Level 1) | Always-loaded summary captures the essential company identity in ~5,000 tokens | Human review across test companies |
+| Q-3.2 | Section summary quality (Level 2) | Loaded sections are substantive enough to answer section-level questions without needing Level 3 | Test: ask questions answerable from Level 2; verify correctness |
+| Q-3.3 | Full detail quality (Level 3) | Detail pages contain comprehensive information for specialist tasks | Test: ask detail-specific questions; verify Level 3 data sufficiency |
+| Q-3.4 | Context budget compliance | Total loaded context stays under 40,000 token budget at all times | Automated monitoring during all test scenarios |
+| Q-3.5 | Section loading appropriateness | Only relevant sections are loaded; irrelevant sections are not loaded unnecessarily | Log analysis: review section load patterns across 100+ queries |
+| Q-3.6 | Unloading behavior | Sections are properly unloaded when switching topics to free token budget | Multi-topic conversation tests; verify budget reclamation |
 
 ### 3.4 Google Analytics MCP Integration Quality
 
@@ -161,14 +164,14 @@ Users will ask KEN-E about their website analytics. KEN-E must correctly use the
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-4.1 | Query construction accuracy | GA API queries correctly match the user's question (right metrics, dimensions, date ranges) | Run 30+ analytics questions; verify query parameters | 5c.13, 6b.23 |
-| Q-4.2 | Data interpretation accuracy | KEN-E correctly interprets GA data (e.g., doesn't confuse sessions with users, understands bounce rate meaning) | Human expert review of analytics explanations | 5c.14, 6b.24 |
-| Q-4.3 | Insight quality | KEN-E surfaces meaningful insights, not just raw numbers (trends, anomalies, actionable recommendations) | Marketing analyst scoring of insight depth | 5c.14, 6b.25 |
-| Q-4.4 | Error handling for GA queries | When GA returns no data or errors, KEN-E communicates clearly and suggests alternatives | Test with invalid date ranges, unavailable properties, etc. | 5c.15, 6b.26 |
-| Q-4.5 | Follow-up handling | KEN-E can drill deeper into analytics based on follow-up questions without re-querying unnecessarily | Multi-turn analytics conversation tests | 6b.27 |
-| Q-4.6 | Data accuracy relay | Numbers presented to the user match the actual GA API response (no rounding errors, no fabricated data) | Compare KEN-E's stated numbers to raw API responses | 5c.13, 6b.28 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-4.1 | Query construction accuracy | GA API queries correctly match the user's question (right metrics, dimensions, date ranges) | Run 30+ analytics questions; verify query parameters |
+| Q-4.2 | Data interpretation accuracy | KEN-E correctly interprets GA data (e.g., doesn't confuse sessions with users, understands bounce rate meaning) | Human expert review of analytics explanations |
+| Q-4.3 | Insight quality | KEN-E surfaces meaningful insights, not just raw numbers (trends, anomalies, actionable recommendations) | Marketing analyst scoring of insight depth |
+| Q-4.4 | Error handling for GA queries | When GA returns no data or errors, KEN-E communicates clearly and suggests alternatives | Test with invalid date ranges, unavailable properties, etc. |
+| Q-4.5 | Follow-up handling | KEN-E can drill deeper into analytics based on follow-up questions without re-querying unnecessarily | Multi-turn analytics conversation tests |
+| Q-4.6 | Data accuracy relay | Numbers presented to the user match the actual GA API response (no rounding errors, no fabricated data) | Compare KEN-E's stated numbers to raw API responses |
 
 **Test GA Scenarios:**
 1. "What was our website traffic last month?"
@@ -184,13 +187,13 @@ Tool discovery determines whether KEN-E finds the right tools for user requests.
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-5.1 | Search relevance | Tool searches return the correct MCP server/tools for the query (>90% relevant results in top 5) | Run 50+ tool search queries across all categories; measure precision@5 | 5c.16, 6b.29 |
-| Q-5.2 | Keyword coverage | Common user phrasings map to correct tools (e.g., "email marketing" -> mailchimp_mcp, "SEO" -> data4seo_mcp) | Test with synonym and paraphrase variations | 5c.16, 6b.30 |
-| Q-5.3 | Server loading reliability | MCP servers connect successfully on first attempt (>99% success rate) | Automated load testing of each MCP server 100 times | 5c.16, 6b.31 |
-| Q-5.4 | LRU eviction correctness | When at capacity, the least-recently-used server is evicted (not an actively needed one) | Simulate capacity scenarios; verify correct eviction | 5c.16, 6b.32 |
-| Q-5.5 | Tool schema accuracy | Loaded tool schemas match actual API capabilities; no stale definitions | Compare loaded schemas to source-of-truth API docs | 6b.33 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-5.1 | Search relevance | Tool searches return the correct MCP server/tools for the query (>90% relevant results in top 5) | Run 50+ tool search queries across all categories; measure precision@5 |
+| Q-5.2 | Keyword coverage | Common user phrasings map to correct tools (e.g., "email marketing" -> mailchimp_mcp, "SEO" -> data4seo_mcp) | Test with synonym and paraphrase variations |
+| Q-5.3 | Server loading reliability | MCP servers connect successfully on first attempt (>99% success rate) | Automated load testing of each MCP server 100 times |
+| Q-5.4 | LRU eviction correctness | When at capacity, the least-recently-used server is evicted (not an actively needed one) | Simulate capacity scenarios; verify correct eviction |
+| Q-5.5 | Tool schema accuracy | Loaded tool schemas match actual API capabilities; no stale definitions | Compare loaded schemas to source-of-truth API docs |
 
 ### 3.6 Session Service Quality
 
@@ -198,12 +201,12 @@ Session persistence and state management ensure conversation continuity.
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-6.1 | State persistence across reconnects | User reconnects to an existing session and conversation context is preserved | Simulate disconnection/reconnection; verify state continuity | 5c.17, 6b.34 |
-| Q-6.2 | Session isolation | Different users' sessions are completely isolated; no data leakage | Create concurrent sessions for different accounts; verify isolation | 5c.17, 6b.35 |
-| Q-6.3 | Context compression fidelity | When compression triggers, the summary preserves key decisions and facts from the conversation | Run long conversations; review compressed summaries for information loss | 5c.17, 6b.36 |
-| Q-6.4 | Session recovery | If the backend restarts mid-session, the user can resume without data loss | Simulate service restart during active session | 5c.17, 6b.37 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-6.1 | State persistence across reconnects | User reconnects to an existing session and conversation context is preserved | Simulate disconnection/reconnection; verify state continuity |
+| Q-6.2 | Session isolation | Different users' sessions are completely isolated; no data leakage | Create concurrent sessions for different accounts; verify isolation |
+| Q-6.3 | Context compression fidelity | When compression triggers, the summary preserves key decisions and facts from the conversation | Run long conversations; review compressed summaries for information loss |
+| Q-6.4 | Session recovery | If the backend restarts mid-session, the user can resume without data loss | Simulate service restart during active session |
 
 ### 3.7 Web Channel Adapter Quality
 
@@ -211,30 +214,26 @@ The web UI is the user's primary interface.
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-7.1 | Message delivery reliability | All user messages reach the orchestrator; all responses reach the user (no dropped messages) | Automated send/receive verification across 1000+ messages | 5c.17, 6b.38 |
-| Q-7.2 | Streaming behavior | Responses stream to the user token-by-token (not delayed until complete) | Measure time-to-first-token | 5c.17, 6b.39 |
-| Q-7.3 | Structured content rendering | Analytics charts, tables, and formatted outputs render correctly in the web UI | Visual inspection of all output types | 6b.40 |
-| Q-7.4 | Connection stability | WebSocket connection remains stable for 30+ minute sessions | Long-running session tests | 6b.41 |
-| Q-7.5 | Reconnection handling | If WebSocket drops, the client automatically reconnects and recovers state | Simulate network interruptions | 6b.42 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-7.1 | Message delivery reliability | All user messages reach the orchestrator; all responses reach the user (no dropped messages) | Automated send/receive verification across 1000+ messages |
+| Q-7.2 | Streaming behavior | Responses stream to the user token-by-token (not delayed until complete) | Measure time-to-first-token |
+| Q-7.3 | Structured content rendering | Analytics charts, tables, and formatted outputs render correctly in the web UI | Visual inspection of all output types |
+| Q-7.4 | Connection stability | WebSocket connection remains stable for 30+ minute sessions | Long-running session tests |
+| Q-7.5 | Reconnection handling | If WebSocket drops, the client automatically reconnects and recovers state | Simulate network interruptions |
 
-### 3.8 Evaluation Framework Infrastructure Quality
+### 3.8 Trace compliance (tracing hardening — Feature 1.1.2)
 
-The Notion Release 1 features build the evaluation infrastructure. While these are developer-facing, they must work correctly to enable ongoing quality monitoring.
+Feature 1.1.2 — Tracing Hardening is the R1.1 item that makes every agent call emit a trace matching the contract in [`trace-structure-spec.md`](trace-structure-spec.md). This is a **prerequisite** for MER-E ingestion in R2.5 and later; in R1 we only validate that the contract holds.
 
 **What to Evaluate:**
 
-| # | Evaluation Item | Quality Criteria | Method | Stories |
-|---|----------------|-----------------|--------|---------|
-| Q-8.1 | Trace completeness | Every agent call produces a trace with all required metadata fields (agent_id, agent_version, account_id, session_id, model config) | Run compliance validation across all agent types | 5c.32, 6b.43 |
-| Q-8.2 | Tool call extraction accuracy | Extractor correctly identifies >90% of tool calls in a trace, preserving parent-child relationships | Compare extracted tool calls to known trace data | 5c.33, 6b.44 |
-| Q-8.3 | LLM evaluation retrieval | Fetching evaluations from W&B Weave returns correct, complete data keyed by (trace_id, item_index) | Verify against manually created evaluations | 5c.26, 6b.45 |
-| Q-8.4 | Human evaluation retrieval | Fetching evaluations from Firestore returns correct, filtered data | Verify with known test evaluations | 5c.27, 6b.46 |
-| Q-8.5 | Agreement rate calculation | Agreement rates correctly computed for matching pairs; edge cases (zero overlap, partial overlap) handled | Unit tests with known score sets | 5c.28, 6b.47 |
-| Q-8.6 | Agent config versioning | Config changes create history records with correct diffs and timestamps | Modify configs; verify audit trail | 5c.29, 6b.48 |
-| Q-8.7 | API endpoint correctness | All CRUD endpoints return correct data, handle errors, and enforce authentication | Automated API test suite | 5c.30, 6b.49 |
-| Q-8.8 | Database schema integrity | All Firestore collections and BigQuery tables exist with correct indexes and partitioning | Schema validation scripts | 5c.31, 6b.50 |
+| # | Evaluation Item | Quality Criteria | Method |
+|---|----------------|-----------------|--------|
+| Q-8.1 | Trace completeness | Every agent call produces a trace with all required metadata fields (agent_id, agent_version, account_id, session_id, model config, duration_ms) per `trace-structure-spec.md` §4, §10 | Run the compliance validator (`trace-structure-spec.md` §11) across every agent type on staging |
+| Q-8.2 | Span naming conventions | Span names match the conventions in `trace-structure-spec.md` §3 (e.g., `ken_e.root`, `ken_e.specialist.{name}`, `ken_e.tool.{name}`) | Snapshot a diverse set of traces; diff against the convention table |
+
+Full MER-E evaluation-retrieval / agreement-rate / extractor-quality work (previously Q-8.3–Q-8.8) is scoped to [Feature 2.5 — MER-E Phase 0](product-roadmap.md#25--mer-e-phase-0-trace-extraction) and later, not Release 1. See [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md).
 
 ---
 
@@ -260,8 +259,6 @@ These targets are derived from the design document Section 10.3.
 | **GA query + interpretation** | < 5s | < 10s | > 15s |
 | **Context compression** | < 2s | < 5s | > 10s |
 | **Workflow state save** | < 100ms | < 200ms | > 500ms |
-| **API endpoint response** (evaluation framework) | < 200ms | < 500ms | > 1s |
-| **Evaluation data fetch** (1000 records) | < 5s | < 10s | > 15s |
 
 ### 4.2 Token Efficiency Targets
 
@@ -281,7 +278,6 @@ These targets are derived from the design document Section 10.3.
 | Concurrent active sessions | 100+ without degradation | Load test with simulated users |
 | Messages per second (system-wide) | 50+ | Load test with concurrent conversations |
 | MCP server connections per minute | 20+ | Concurrent tool loading test |
-| Evaluation API requests per second | 100+ | Load test evaluation endpoints |
 
 ### 4.4 Performance Test Procedures
 
@@ -440,24 +436,16 @@ Simulate worst-case token usage scenarios:
 - Zero dropped WebSocket connections in 60-minute test
 - Reconnection succeeds within 5 seconds for all simulated drops
 
-### 5.8 Evaluation Framework Infrastructure
+### 5.8 Trace Compliance (Feature 1.1.2)
 
 **Procedure:**
-1. **Trace completeness (Q-8.1):** Run each agent type; validate traces pass `validate_trace_compliance`.
-2. **Tool call extraction (Q-8.2):** Create 20 test traces with known tool calls; run extractor; compare output to ground truth.
-3. **Evaluation retrieval (Q-8.3, Q-8.4):** Seed W&B and Firestore with known evaluations; fetch and verify.
-4. **Agreement rate (Q-8.5):** Calculate agreement for known LLM/human score pairs; verify against hand-calculated results.
-5. **Config versioning (Q-8.6):** Modify agent configs 10 times; verify complete audit trail.
-6. **API endpoints (Q-8.7):** Run the full API test suite (`api/tests/`); verify all endpoints.
-7. **Database schema (Q-8.8):** Run schema validation against Firestore and BigQuery.
+1. **Trace completeness (Q-8.1):** Run each agent type on staging; run the compliance validator from `trace-structure-spec.md` §11.
+2. **Span naming (Q-8.2):** Snapshot a representative set of traces; diff span names against the convention table in `trace-structure-spec.md` §3.
 
 **Pass Criteria:**
-- 100% trace compliance across all agent types
-- Tool call extraction accuracy >= 90%
-- Evaluation retrieval returns correct data for all test cases
-- Agreement rate matches hand-calculated values exactly
-- All API tests pass
-- All database indexes and collections exist
+- 100% trace compliance across all agent types per the validator
+- All span names match the convention table
+- Required metadata (agent_id, agent_version, account_id, session_id, model config, duration_ms) present on every top-level and tool span
 
 ---
 
@@ -470,7 +458,6 @@ Simulate worst-case token usage scenarios:
 | **Test companies** | 17 companies (5 well-known, 5 mid-market, 5 niche, 2 brand-new) with verified ground truth data |
 | **Test GA4 property** | GA4 property with 6+ months of known data for analytics testing |
 | **Test Neo4j graph** | Pre-populated knowledge graphs for at least 5 companies |
-| **Test evaluations** | Seed data for W&B Weave and Firestore evaluation collections |
 | **Test user accounts** | 10+ test accounts with Firebase Auth credentials |
 | **Prompt test suite** | 100+ categorized prompts with expected behaviors documented |
 | **Multi-turn scripts** | 10+ conversation scripts of 5-15 turns each with expected outcomes |
@@ -482,9 +469,8 @@ Simulate worst-case token usage scenarios:
 | **Staging environment** | Full deployment matching production architecture |
 | **MCP servers** | At minimum: Google Analytics MCP server connected to test GA4 property |
 | **Neo4j** | Staging instance with test company data |
-| **Firestore** | Staging project with evaluation collections and test data |
-| **BigQuery** | Staging dataset with evaluation tables |
-| **W&B Weave** | Staging project for trace validation |
+| **Firestore** | Staging project with test data |
+| **W&B Weave** | Staging project for trace validation (Feature 1.1.2) |
 | **Load test tooling** | Locust configured for KEN-E endpoints |
 
 ### 6.3 Evaluator Requirements
@@ -511,8 +497,7 @@ Simulate worst-case token usage scenarios:
 | **G-Q6** | Tool search relevance | Precision@5 >= 90% |
 | **G-Q7** | Session persistence | 100% state recovery on reconnect/restart |
 | **G-Q8** | Account isolation | Zero data leakage between accounts |
-| **G-Q9** | Trace compliance | 100% of agent traces pass validation |
-| **G-Q10** | Evaluation framework APIs | 100% of API tests pass |
+| **G-Q9** | Trace compliance (Feature 1.1.2) | 100% of agent traces pass `trace-structure-spec.md` §11 validation |
 
 ### 7.2 Performance Gates (Must Pass for Go-Live)
 
@@ -527,7 +512,6 @@ Simulate worst-case token usage scenarios:
 | **G-P7** | MCP server connection success rate | >= 99% |
 | **G-P8** | 50-user sustained load | No errors for 30 minutes |
 | **G-P9** | Initial context consumption | < 20% of context window |
-| **G-P10** | Evaluation API response time | p95 < 500ms |
 
 ### 7.3 Go/No-Go Decision
 
@@ -543,10 +527,10 @@ Simulate worst-case token usage scenarios:
 
 | Phase | Duration | Activities |
 |-------|----------|------------|
-| **Test Preparation** | 3-5 days | Set up staging environment; prepare test data (companies, prompts, scripts); seed evaluation data; configure load test tooling |
-| **Functional Testing** | 3-5 days | Execute evaluation framework API tests (Section 5.8); verify database schema; validate trace compliance; test tool discovery and MCP loading |
-| **Quality Assessment** | 5-7 days | Run onboarding pipeline for 17 companies (Section 5.1); execute 100+ prompt test suite with evaluators (Section 5.2); test GA MCP integration (Section 5.3); test context manager (Section 5.4); test session service (Section 5.6) |
-| **Performance Testing** | 3-5 days | Latency profiling for all operations (Section 4.4.1); load testing with Locust (Section 4.4.2); token budget stress test (Section 4.4.3) |
+| **Test Preparation** | 3-5 days | Set up staging environment; prepare test data (companies, prompts, scripts); configure load test tooling |
+| **Functional Testing** | 3-5 days | Validate trace compliance (§5.8); test tool discovery and MCP loading (§5.5); test session service (§5.6); test web channel adapter (§5.7) |
+| **Quality Assessment** | 5-7 days | Run onboarding pipeline for 17 companies (§5.1); execute 100+ prompt test suite with evaluators (§5.2); test GA MCP integration (§5.3); test context manager (§5.4) |
+| **Performance Testing** | 3-5 days | Latency profiling for all operations (§4.4.1); load testing with Locust (§4.4.2); token budget stress test (§4.4.3) |
 | **Issue Resolution** | 3-5 days | Address quality and performance issues found; re-test failed items |
 | **Final Validation** | 2-3 days | Re-run failed gates; end-to-end user journey walkthrough; sign-off |
 

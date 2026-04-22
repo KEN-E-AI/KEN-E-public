@@ -63,7 +63,7 @@ The skill files should already be in your repository at:
     └── notion-schema.md          # Database IDs, sprint schedule, property definitions
 ```
 
-The skill references the architecture document at `docs/KEN-E-Agentic-Harness-Design.md` for technical context.
+The skill references the architecture document at `docs/KEN-E-System-Architecture.md` for technical context.
 
 ---
 
@@ -231,7 +231,7 @@ Claude Code will:
 
 ## Architecture Reference
 
-When working on stories, Claude Code will reference the relevant sections of `docs/KEN-E-Agentic-Harness-Design.md`:
+When working on stories, Claude Code will reference the relevant sections of `docs/KEN-E-System-Architecture.md`:
 
 | Feature Area | Architecture Section |
 |--------------|---------------------|
@@ -341,7 +341,7 @@ Ensure your previous sessions created Session Log entries in Notion. Check that 
 
 ### Claude Code doesn't reference the architecture doc
 
-Ensure `docs/KEN-E-Agentic-Harness-Design.md` exists in your repository. The skill references this file for technical context.
+Ensure `docs/KEN-E-System-Architecture.md` exists in your repository. The skill references this file for technical context.
 
 ---
 
@@ -351,7 +351,7 @@ Ensure `docs/KEN-E-Agentic-Harness-Design.md` exists in your repository. The ski
 |------|---------|
 | `.claude/skills/notion-pm-workflow/skill.md` | Main workflow instructions |
 | `.claude/skills/notion-pm-workflow/references/notion-schema.md` | Database IDs, sprint schedule, page IDs |
-| `docs/KEN-E-Agentic-Harness-Design.md` | Architecture and technical context |
+| `docs/KEN-E-System-Architecture.md` | Architecture and technical context |
 | `docs/claude-code-notion-setup-guide.md` | This guide |
 
 ---

@@ -75,7 +75,7 @@ Also check Design Decisions relation:
    - Primary sections (section numbers and line ranges)
    - Supporting sections
 
-3. Read the Primary Sections from `docs/KEN-E-Agentic-Harness-Design.md` using the line ranges
+3. Read the Primary Sections from `docs/KEN-E-System-Architecture.md` using the line ranges
    - Use `offset` and `limit` parameters based on the line ranges
    - Focus on data models, schemas, code examples, and diagrams
 

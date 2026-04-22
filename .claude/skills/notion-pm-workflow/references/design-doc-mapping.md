@@ -1,6 +1,6 @@
 # KEN-E Design Document Mapping
 
-This file maps KEN-E features (tracked in Notion) to sections in the design document at `docs/KEN-E-Agentic-Harness-Design.md`. Use this mapping to quickly find the architectural context for any feature or user story you're working on.
+This file maps KEN-E features (tracked in Notion) to sections in the design document at `docs/KEN-E-System-Architecture.md`. Use this mapping to quickly find the architectural context for any feature or user story you're working on.
 
 ---
 
@@ -557,9 +557,9 @@ Use these keywords to quickly find relevant sections when working on a task.
 
 1. Look up Feature 1.1 in the mapping table above
 2. Read primary sections first:
-   - `docs/KEN-E-Agentic-Harness-Design.md` lines 381–415 (The Context Challenge)
-   - `docs/KEN-E-Agentic-Harness-Design.md` lines 417–509 (HCL design)
-   - `docs/KEN-E-Agentic-Harness-Design.md` lines 511–605 (Implementation)
+   - `docs/KEN-E-System-Architecture.md` lines 381–415 (The Context Challenge)
+   - `docs/KEN-E-System-Architecture.md` lines 417–509 (HCL design)
+   - `docs/KEN-E-System-Architecture.md` lines 511–605 (Implementation)
 3. Check supporting sections for broader context:
    - Lines 34–42 for the design challenges driving this feature
    - Lines 3184–3233 for the expected test scenarios
@@ -568,8 +568,8 @@ Use these keywords to quickly find relevant sections when working on a task.
 
 1. Look up Feature 3.5 in the mapping table above
 2. Read primary sections:
-   - `docs/KEN-E-Agentic-Harness-Design.md` lines 2198–2291 (Slack Adapter implementation)
-   - `docs/KEN-E-Agentic-Harness-Design.md` lines 1989–2065 (Unified Channel Architecture)
+   - `docs/KEN-E-System-Architecture.md` lines 2198–2291 (Slack Adapter implementation)
+   - `docs/KEN-E-System-Architecture.md` lines 1989–2065 (Unified Channel Architecture)
 3. Check the unified message format at lines 2067–2128
 4. Review cross-channel test scenarios at lines 3302–3353
 
