@@ -2,21 +2,40 @@
 Agent configuration management endpoints.
 
 Provides CRUD operations for strategy agent configurations stored in Firestore.
+
+Pydantic models for the ``agent_configs/{id}`` schema live in
+``kene_api.models.agent_config_models``; this module re-exports them for
+backwards compatibility with pre-Sprint-6 callers.
 """
 
 import logging
-import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
-from pydantic import BaseModel, Field, field_validator
 
-from app.utils.trace_metadata import SEMVER_PATTERN, parse_semver, validate_semver
+from app.utils.trace_metadata import parse_semver, validate_semver
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
+from ..models.agent_config_models import (
+    AgentConfig,
+    AgentConfigMetadata,
+    AgentConfigUpdate,
+    ConfigAuditEntry,
+    GenerateContentConfig,
+)
+
+__all__ = [
+    "ALLOWED_CONFIG_IDS",
+    "AgentConfig",
+    "AgentConfigMetadata",
+    "AgentConfigUpdate",
+    "ConfigAuditEntry",
+    "GenerateContentConfig",
+    "router",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -38,163 +57,6 @@ ALLOWED_CONFIG_IDS: set[str] = {
     "brand_researcher",
     "brand_formatter",
 }
-
-
-class AgentConfigMetadata(BaseModel):
-    """Metadata for an agent configuration."""
-
-    version: str = Field(..., description="Version number (e.g., v1.0, v1.1)")
-    variant_name: str = Field(..., description="Descriptive variant name")
-    experiment_id: str = Field(
-        default="baseline", description="Experiment grouping identifier"
-    )
-    created_at: str = Field(..., description="ISO timestamp of creation")
-    updated_at: str = Field(..., description="ISO timestamp of last update")
-    updated_by: str = Field(..., description="Email or identifier of last updater")
-    notes: str = Field(default="", description="Change notes or description")
-
-
-class GenerateContentConfig(BaseModel):
-    """Generation configuration for the agent."""
-
-    temperature: float = Field(default=0.3, ge=0.0, le=1.0)
-    max_output_tokens: int = Field(default=2500, ge=100, le=65535)
-
-
-class AgentConfig(BaseModel):
-    """Complete agent configuration."""
-
-    name: str = Field(..., description="Agent name")
-    model: str = Field(..., description="Model identifier")
-    description: str = Field(..., description="Agent description")
-    instruction: str = Field(..., description="Agent instruction/prompt")
-    generate_content_config: GenerateContentConfig
-    metadata: AgentConfigMetadata
-
-
-class AgentConfigUpdate(BaseModel):
-    """Request to update an agent configuration with validation."""
-
-    instruction: str | None = Field(
-        None,
-        min_length=10,
-        max_length=50000,
-        description="Agent instruction/prompt",
-    )
-
-    model: str | None = Field(
-        None,
-        pattern=r"^(gemini-[\d]+-[\w-]+|gemini-[\d\.]+[-\w]+|gpt-[\w-]+|o1-[\w-]+)$",
-        description="Model identifier (Gemini or OpenAI model)",
-    )
-
-    description: str | None = Field(
-        None, min_length=10, max_length=1000, description="Agent description"
-    )
-
-    temperature: float | None = Field(
-        None, ge=0.0, le=1.0, description="Generation temperature (0.0-1.0)"
-    )
-
-    max_output_tokens: int | None = Field(
-        None,
-        ge=100,
-        le=65535,
-        description="Maximum output tokens (100-65535)",
-    )
-
-    version: str | None = Field(
-        None,
-        description="Version string in semver format (e.g., v1.0.0)",
-    )
-
-    @field_validator("version")
-    @classmethod
-    def validate_version_format(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        v = v.strip()
-        if not v.startswith("v"):
-            v = f"v{v}"
-        if not SEMVER_PATTERN.match(v):
-            raise ValueError(
-                f"Invalid version '{v}'. "
-                f"Please use semver format, e.g. v1.0.0 or v2.1.3"
-            )
-        return v
-
-    variant_name: str | None = Field(
-        None, min_length=1, max_length=100, description="Descriptive variant name"
-    )
-
-    experiment_id: str | None = Field(
-        None,
-        min_length=1,
-        max_length=100,
-        description="Experiment grouping identifier",
-    )
-
-    updated_by: str = Field(
-        ...,
-        min_length=3,
-        max_length=255,
-        description="Email of person making update",
-    )
-
-    notes: str = Field(
-        default="", max_length=5000, description="Notes about this change"
-    )
-
-    @field_validator("updated_by")
-    @classmethod
-    def validate_email_format(cls, v: str) -> str:
-        """Validate updated_by looks like an email."""
-        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-        if not re.match(email_pattern, v):
-            raise ValueError("updated_by must be a valid email address")
-        return v
-
-    @field_validator("model")
-    @classmethod
-    def validate_model_exists(cls, v: str | None) -> str | None:
-        """Validate model ID is a known Gemini or OpenAI model."""
-        if v is None:
-            return v
-
-        # List of supported models (update as new models are released)
-        SUPPORTED_MODELS = {
-            # Gemini 3 models (latest, preview)
-            "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
-            # Gemini 2.x models (current stable)
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-exp",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            # Gemini 1.5 models (stable fallback)
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-            # OpenAI models (for formatters)
-            "gpt-4o",
-            "gpt-4o-2024-08-06",
-            "gpt-4o-mini",
-            "o1-preview",
-            "o1-mini",
-        }
-
-        if v not in SUPPORTED_MODELS:
-            # Separate Gemini and OpenAI models for better error message
-            gemini_models = {m for m in SUPPORTED_MODELS if m.startswith("gemini")}
-            openai_models = {m for m in SUPPORTED_MODELS if not m.startswith("gemini")}
-
-            error_msg = (
-                f"Model '{v}' is not supported.\n"
-                f"Supported Gemini models: {', '.join(sorted(gemini_models))}\n"
-                f"Supported OpenAI models: {', '.join(sorted(openai_models))}"
-            )
-            raise ValueError(error_msg)
-
-        return v
 
 
 def _increment_version(current_version: str) -> str:
@@ -512,9 +374,7 @@ async def update_agent_config(
             # Prevent version downgrade
             if current_version_str:
                 try:
-                    current_parsed = parse_semver(
-                        validate_semver(current_version_str)
-                    )
+                    current_parsed = parse_semver(validate_semver(current_version_str))
                     new_parsed = parse_semver(new_version)
                     if new_parsed < current_parsed:
                         raise HTTPException(
