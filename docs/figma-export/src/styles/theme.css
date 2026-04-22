@@ -1,0 +1,441 @@
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================
+   KEN-E DESIGN SYSTEM — "Soft Maximalism"
+   Version 2.0.0 - Rebalanced
+   ============================================ */
+
+:root {
+  /* --- Core Brand Colors (Cooler Palette) --- */
+  --color-slate-100: #F1F5F9;
+  --color-slate-200: #E2E8F0;
+  --color-slate-300: #CBD5E1;
+  --color-slate-400: #94A3B8;
+  --color-slate-500: #64748B;
+  --color-blue-100: #EFF6FF;
+  --color-blue-200: #DBEAFE;
+  --color-blue-300: #BFDBFE;
+  --color-blue-400: #60A5FA;
+  --color-blue-500: #3B82F6;
+  --color-teal-100: #E8F8F6;
+  --color-teal-200: #C4EDE8;
+  --color-teal-300: #A8E6E0;
+  --color-teal-400: #6AD8CC;
+  --color-teal-500: #2EC4B6;
+  --color-violet-100: #EEF2FF;
+  --color-violet-200: #E0E7FF;
+  --color-violet-300: #C7D2FE;
+  --color-violet-400: #818CF8;
+  --color-violet-500: #6366F1;
+  --color-amber-100: #FEF3C7;
+  --color-amber-200: #FDE68A;
+  --color-amber-300: #FCD34D;
+  --color-amber-400: #FBBF24;
+  --color-amber-500: #F59E0B;
+
+  /* --- Surfaces --- */
+  --color-bg-primary: #FAFBFC;
+  --color-bg-secondary: #F3F4F6;
+  --color-bg-elevated: #FFFFFF;
+  --color-bg-overlay: rgba(30, 41, 59, 0.5);
+  --color-surface-muted: #F8F9FA;
+
+  /* --- Text --- */
+  --color-text-primary: #1E293B;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94A3B8;
+  --color-text-disabled: #CBD5E1;
+  --color-text-inverse: #FFFFFF;
+
+  /* --- Borders --- */
+  --color-border-default: #E2E8F0;
+  --color-border-subtle: #F1F5F9;
+  --color-border-strong: #CBD5E1;
+
+  /* --- Semantic Colors --- */
+  --color-success: #10B981;
+  --color-success-bg: #D1FAE5;
+  --color-success-text: #065F46;
+  --color-error: #EF4444;
+  --color-error-bg: #FEE2E2;
+  --color-error-text: #991B1B;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FEF3C7;
+  --color-warning-text: #92400E;
+  --color-info: #6366F1;
+  --color-info-bg: #EEF2FF;
+  --color-info-text: #3730A3;
+  --color-disconnected: #94A3B8;
+  --color-disconnected-bg: #F1F5F9;
+
+  /* --- Gradients --- */
+  --gradient-rainbow: linear-gradient(90deg, #3B82F6, #6366F1, #2EC4B6, #F59E0B);
+  --gradient-cta: linear-gradient(135deg, #3B82F6, #6366F1);
+  --gradient-subtle: linear-gradient(135deg, #A8E6E0, #C7D2FE);
+
+  /* --- Background Blobs --- */
+  --color-blob-blue: rgba(59, 130, 246, 0.08);
+  --color-blob-violet: rgba(99, 102, 241, 0.08);
+  --color-blob-teal: rgba(46, 196, 182, 0.08);
+  --color-blob-slate: rgba(100, 116, 139, 0.05);
+  --grain-opacity: 0.02;
+
+  /* --- Card Accent Slots (rotating colors for left borders) --- */
+  --color-accent-slot-1: #6366F1;
+  --color-accent-slot-2: #3B82F6;
+  --color-accent-slot-3: #2EC4B6;
+  --color-accent-slot-4: #F59E0B;
+  --color-accent-slot-5: #6366F1;
+  --color-accent-slot-6: #3B82F6;
+
+  /* --- Typography --- */
+  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-regular: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  /* --- Type Scale --- */
+  --text-display-xl: 48px;
+  --text-display-lg: 40px;
+  --text-display-md: 32px;
+  --text-heading-lg: 24px;
+  --text-heading-md: 20px;
+  --text-heading-sm: 18px;
+  --text-body-lg: 16px;
+  --text-body-md: 14px;
+  --text-body-sm: 13px;
+  --text-caption: 12px;
+  --text-overline: 11px;
+
+  /* --- Line Heights --- */
+  --lh-display-xl: 1.1;
+  --lh-display-lg: 1.15;
+  --lh-display-md: 1.2;
+  --lh-heading-lg: 1.3;
+  --lh-heading-md: 1.35;
+  --lh-heading-sm: 1.4;
+  --lh-body: 1.6;
+  --lh-body-md: 1.55;
+  --lh-body-sm: 1.5;
+  --lh-caption: 1.5;
+
+  /* --- Spacing (8px base unit) --- */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 56px;
+  --space-11: 64px;
+  --space-12: 80px;
+
+  /* --- Border Radii (Moderated) --- */
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 24px;
+  --radius-circle: 50%;
+
+  /* --- Border Widths --- */
+  --border-thin: 1px;
+  --border-default: 2px;
+  --border-thick: 3px;
+  --border-accent: 4px;
+
+  /* --- Shadows --- */
+  --shadow-none: none;
+  --shadow-sm: 0 2px 8px rgba(30, 41, 59, 0.04);
+  --shadow-md: 0 4px 16px rgba(30, 41, 59, 0.06);
+  --shadow-lg: 0 12px 32px rgba(30, 41, 59, 0.08);
+  --shadow-xl: 0 20px 48px rgba(30, 41, 59, 0.12);
+  --shadow-color-violet: 0 4px 16px rgba(99, 102, 241, 0.25);
+  --shadow-color-teal: 0 4px 16px rgba(46, 196, 182, 0.3);
+  --shadow-color-blue: 0 4px 16px rgba(59, 130, 246, 0.25);
+  --shadow-glow: 0 0 8px currentColor;
+
+  /* --- Easing Curves (Reduced Bounce) --- */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.15);
+  --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* --- Duration Scale --- */
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-default: 300ms;
+  --duration-moderate: 400ms;
+  --duration-slow: 600ms;
+  --duration-dramatic: 800ms;
+
+  /* --- Z-Index Scale --- */
+  --z-background: -1;
+  --z-base: 0;
+  --z-card: 1;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-modal: 30;
+  --z-toast: 40;
+  --z-tooltip: 50;
+  --z-max: 100;
+
+  /* --- Legacy Tailwind Compatibility --- */
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-elevated);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-elevated);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-violet-500);
+  --primary-foreground: var(--color-text-inverse);
+  --secondary: var(--color-bg-secondary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-surface-muted);
+  --muted-foreground: var(--color-text-tertiary);
+  --accent: var(--color-violet-100);
+  --accent-foreground: var(--color-violet-500);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-text-inverse);
+  --border: var(--color-border-default);
+  --input: var(--color-border-default);
+  --ring: var(--color-violet-500);
+  --radius: var(--radius-xl);
+}
+
+/* ============================================
+   DARK MODE OVERRIDES
+   ============================================ */
+
+.dark {
+  /* --- Core Brand Colors (Dark Mode) --- */
+  --color-slate-100: #1E293B;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748B;
+  --color-slate-500: #94A3B8;
+  --color-blue-100: #1E3A8A;
+  --color-blue-200: #1E40AF;
+  --color-blue-300: #2563EB;
+  --color-blue-400: #3B82F6;
+  --color-blue-500: #60A5FA;
+  --color-teal-100: #134E4A;
+  --color-teal-200: #115E59;
+  --color-teal-300: #14B8A6;
+  --color-teal-400: #2DD4BF;
+  --color-teal-500: #5EEAD4;
+  --color-violet-100: #312E81;
+  --color-violet-200: #3730A3;
+  --color-violet-300: #4F46E5;
+  --color-violet-400: #6366F1;
+  --color-violet-500: #818CF8;
+  --color-amber-100: #78350F;
+  --color-amber-200: #92400E;
+  --color-amber-300: #B45309;
+  --color-amber-400: #D97706;
+  --color-amber-500: #F59E0B;
+
+  /* --- Surfaces (Dark Mode) --- */
+  --color-bg-primary: #0F172A;
+  --color-bg-secondary: #1E293B;
+  --color-bg-elevated: #1E293B;
+  --color-bg-overlay: rgba(0, 0, 0, 0.6);
+  --color-surface-muted: #334155;
+
+  /* --- Text (Dark Mode) --- */
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #CBD5E1;
+  --color-text-tertiary: #64748B;
+  --color-text-disabled: #475569;
+  --color-text-inverse: #0F172A;
+
+  /* --- Borders (Dark Mode) --- */
+  --color-border-default: #334155;
+  --color-border-subtle: #1E293B;
+  --color-border-strong: #475569;
+
+  /* --- Semantic Colors (Dark Mode) --- */
+  --color-success: #10B981;
+  --color-success-bg: #134E4A;
+  --color-success-text: #6EE7B7;
+  --color-error: #EF4444;
+  --color-error-bg: #7F1D1D;
+  --color-error-text: #FCA5A5;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #78350F;
+  --color-warning-text: #FCD34D;
+  --color-info: #818CF8;
+  --color-info-bg: #312E81;
+  --color-info-text: #C7D2FE;
+  --color-disconnected: #64748B;
+  --color-disconnected-bg: #334155;
+
+  /* --- Gradients (Dark Mode) --- */
+  --gradient-rainbow: linear-gradient(90deg, #60A5FA, #818CF8, #5EEAD4, #FBBF24);
+  --gradient-cta: linear-gradient(135deg, #60A5FA, #818CF8);
+  --gradient-subtle: linear-gradient(135deg, #14B8A6, #4F46E5);
+
+  /* --- Background Blobs (Dark Mode - reduced opacity) --- */
+  --color-blob-blue: rgba(59, 130, 246, 0.06);
+  --color-blob-violet: rgba(99, 102, 241, 0.06);
+  --color-blob-teal: rgba(46, 196, 182, 0.05);
+  --color-blob-slate: rgba(148, 163, 184, 0.04);
+  --grain-opacity: 0.03;
+
+  /* --- Card Accent Slots (Dark Mode) --- */
+  --color-accent-slot-1: #818CF8;
+  --color-accent-slot-2: #60A5FA;
+  --color-accent-slot-3: #5EEAD4;
+  --color-accent-slot-4: #FBBF24;
+  --color-accent-slot-5: #818CF8;
+  --color-accent-slot-6: #60A5FA;
+
+  /* --- Shadows (Dark Mode) --- */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5);
+  --shadow-color-violet: 0 4px 16px rgba(129, 140, 248, 0.25);
+  --shadow-color-teal: 0 4px 16px rgba(94, 234, 212, 0.2);
+  --shadow-color-blue: 0 4px 16px rgba(96, 165, 250, 0.25);
+  --shadow-glow: 0 0 12px currentColor;
+
+  /* --- Legacy Tailwind Compatibility (Dark Mode) --- */
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-elevated);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-elevated);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-violet-500);
+  --primary-foreground: var(--color-text-inverse);
+  --secondary: var(--color-bg-secondary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-surface-muted);
+  --muted-foreground: var(--color-text-tertiary);
+  --accent: var(--color-violet-200);
+  --accent-foreground: var(--color-violet-500);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-text-inverse);
+  --border: var(--color-border-default);
+  --input: var(--color-border-default);
+  --ring: var(--color-violet-500);
+}
+
+/* ============================================
+   TAILWIND THEME INTEGRATION
+   ============================================ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    font-weight: var(--font-regular);
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Typography Defaults */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+
+  h1 {
+    font-size: var(--text-display-lg);
+    font-weight: var(--font-extrabold);
+    line-height: var(--lh-display-lg);
+  }
+
+  h2 {
+    font-size: var(--text-display-md);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-display-md);
+  }
+
+  h3 {
+    font-size: var(--text-heading-lg);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-heading-lg);
+  }
+
+  h4 {
+    font-size: var(--text-heading-md);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-heading-md);
+  }
+
+  p {
+    font-size: var(--text-body-lg);
+    font-weight: var(--font-regular);
+    line-height: var(--lh-body);
+  }
+
+  label {
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-semibold);
+    line-height: var(--lh-body-sm);
+  }
+
+  button {
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-body-sm);
+  }
+
+  input, textarea, select {
+    font-size: var(--text-body-md);
+    font-weight: var(--font-regular);
+    line-height: var(--lh-body-md);
+  }
+}
+
+/* ============================================
+   REDUCED MOTION SUPPORT
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,294 @@
+================================================================
+CalendarPage.tsx Panel + Recurring-Schedule Reconstruction
+Source: most recent Edit tool calls in transcript
+sessions/86dd3f3e-.../0cbed7e0-...jsonl (lines 2275–2341)
+================================================================
+
+──────────────────────────────────────────────────────────────
+1. IMPORT BLOCK ADDITIONS (transcript L2275)
+   Anchored AFTER:  import { useActivities } from '../contexts/ActivitiesContext';
+──────────────────────────────────────────────────────────────
+import { useActivities } from '../contexts/ActivitiesContext';
+import { UnscheduledTasksPanel } from '../components/UnscheduledTasksPanel';
+import { ProjectsInRangePanel } from '../components/ProjectsInRangePanel';
+import { MoveToProjectDialog } from '../components/MoveToProjectDialog';
+import {
+  useStandaloneTasks,
+  updateOrphan,
+  deleteOrphan,
+  attachToPlan,
+} from '../data/standaloneTasks';
+import { CURRENT_USER_EMAIL } from '../data/currentUser';
+import {
+  computeNextRun,
+  describeSchedule,
+  createDefaultSchedule,
+  DAY_LABELS as SCHEDULE_DAY_LABELS,
+  type AutomationSchedule,
+  type ScheduleFrequency,
+} from '../data/automationDetailsData';
+
+──────────────────────────────────────────────────────────────
+2. STATE ADDITIONS (transcript L2279, finalized by L2341 -> default `true`)
+   Placed AFTER: const [addCategory, setAddCategory] = useState<ActivityCategory>('task');
+──────────────────────────────────────────────────────────────
+  // Detail/Edit drawer
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [drawerMode, setDrawerMode] = useState<'view' | 'edit' | 'add'>('view');
+  const [addCategory, setAddCategory] = useState<ActivityCategory>('task');
+
+  // Standalone/orphan tasks panel
+  const orphanTasks = useStandaloneTasks();
+  const [unscheduledCollapsed, setUnscheduledCollapsed] = useState(true);
+  const [moveTaskId, setMoveTaskId] = useState<string | null>(null);
+
+──────────────────────────────────────────────────────────────
+3. HANDLERS (transcript L2282)
+   Placed immediately BEFORE the "// ─── Approval Actions ───" block.
+──────────────────────────────────────────────────────────────
+  // ─── Orphan → Project Actions ───
+
+  const handleMoveToProject = useCallback((taskId: string, planId: string) => {
+    const result = attachToPlan(taskId, planId);
+    if (result.ok) {
+      setActivities(prev => [...prev, result.task]);
+      setSelectedActivityId(result.task.activity_id);
+      setDrawerMode('view');
+    }
+    setMoveTaskId(null);
+  }, [setActivities]);
+
+  const handleCreateProjectForTask = useCallback((taskId: string, projectName: string) => {
+    const newPlanId = `wf-new-${Date.now()}`;
+    const result = attachToPlan(taskId, newPlanId);
+    if (result.ok) {
+      setActivities(prev => [...prev, result.task]);
+      setSelectedActivityId(result.task.activity_id);
+      setDrawerMode('view');
+    }
+    setMoveTaskId(null);
+    console.info(`[stub] Created project "${projectName}" with id ${newPlanId}`);
+  }, [setActivities]);
+
+  // ─── Approval Actions ───
+
+  const handleApprove = useCallback((id: string) => {
+
+──────────────────────────────────────────────────────────────
+4. filteredActivities MERGE (transcript L2287 + L2289)
+──────────────────────────────────────────────────────────────
+  const filteredActivities = useMemo(() => {
+    return [...activities, ...orphanTasks].filter(a => {
+      /* ...existing filter conditions unchanged... */
+      if (filters.tags.length > 0 && !filters.tags.some(t => a.tags.includes(t))) return false;
+      return true;
+    });
+  }, [activities, orphanTasks, filters]);
+
+──────────────────────────────────────────────────────────────
+5. JSX MOUNT of panels (transcript L2337 — final placement)
+   Order: Approval Queue → UnscheduledTasksPanel → ProjectsInRangePanel → PlatformLegend
+──────────────────────────────────────────────────────────────
+        {/* ─── Approval Queue ─── */}
+        <ApprovalQueue
+          items={approvalQueue}
+          collapsed={queueCollapsed}
+          onToggleCollapse={() => setQueueCollapsed(!queueCollapsed)}
+          onViewActivity={(id) => { setSelectedActivityId(id); setDrawerMode('view'); }}
+          onViewGroup={(ids) => { setSelectedGroupIds(ids); }}
+        />
+
+        {/* ─── Unscheduled tasks (orphan) ─── */}
+        <UnscheduledTasksPanel
+          onEdit={(taskId) => { setSelectedActivityId(taskId); setDrawerMode('view'); }}
+          onMoveToProject={(taskId) => setMoveTaskId(taskId)}
+          collapsed={unscheduledCollapsed}
+          onToggleCollapse={() => setUnscheduledCollapsed(v => !v)}
+        />
+
+        {/* ─── Projects in view ─── */}
+        <ProjectsInRangePanel
+          rangeStart={weekStart}
+          rangeEnd={addDays(weekStart, 27)}
+        />
+
+        {/* ─── Color Legend ─── */}
+        <PlatformLegend />
+
+MoveToProjectDialog (transcript L2314)
+Placed immediately BEFORE: "{/* ─── Group Review Drawer ─── */}"
+──────────────────────────────────────────────
+      {/* ─── Move-to-Project Dialog ─── */}
+      {moveTaskId && (() => {
+        const task = orphanTasks.find(t => t.activity_id === moveTaskId);
+        if (!task) return null;
+        return (
+          <MoveToProjectDialog
+            taskName={task.name}
+            onClose={() => setMoveTaskId(null)}
+            onAttach={(planId) => handleMoveToProject(moveTaskId, planId)}
+            onCreateNewProject={(name) => handleCreateProjectForTask(moveTaskId, name)}
+          />
+        );
+      })()}
+
+      {/* ─── Group Review Drawer ─── */}
+      {selectedGroupIds && selectedGroupIds.length > 0 && (
+
+──────────────────────────────────────────────────────────────
+6. REPEAT SECTION inside ActivityForm (transcript L2301)
+   Placed AFTER the launch-time field ("Leave blank if not time-scheduled.")
+   and BEFORE the "{/* Tags */}" section.
+──────────────────────────────────────────────────────────────
+          <p className="text-[10px] text-muted-foreground mt-1">Leave blank if not time-scheduled.</p>
+        </div>
+      </div>
+
+      {/* Repeat (tasks only) */}
+      {form.category === 'task' && (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Repeat className="size-3.5 text-[var(--color-violet-500)]" />
+              <span className="text-xs">Repeat</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (form.schedule?.enabled) {
+                  onChange({ ...form, schedule: { ...form.schedule, enabled: false } });
+                } else {
+                  const base = form.schedule ?? createDefaultSchedule();
+                  const time = form.launch_time_utc || base.time_utc || '09:00';
+                  onChange({
+                    ...form,
+                    schedule: { ...base, enabled: true, frequency: 'weekly', days_of_week: base.days_of_week.length ? base.days_of_week : [1], time_utc: time },
+                    launch_time_utc: time,
+                  });
+                }
+              }}
+              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                form.schedule?.enabled
+                  ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
+                  : 'border-[var(--color-border-default)] text-muted-foreground hover:border-[var(--color-border-strong)]'
+              }`}
+            >
+              {form.schedule?.enabled ? 'On' : 'Off'}
+            </button>
+          </div>
+
+          {form.schedule?.enabled && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelClass}>Frequency</label>
+                  <select
+                    className={fieldClass}
+                    value={form.schedule.frequency}
+                    onChange={e => onChange({ ...form, schedule: { ...form.schedule!, frequency: e.target.value as ScheduleFrequency } })}
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Time (UTC)</label>
+                  <input
+                    type="time"
+                    className={fieldClass}
+                    value={form.schedule.time_utc}
+                    onChange={e => onChange({ ...form, schedule: { ...form.schedule!, time_utc: e.target.value }, launch_time_utc: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {form.schedule.frequency === 'weekly' && (
+                <div>
+                  <label className={labelClass}>Days</label>
+                  <div className="flex gap-1">
+                    {SCHEDULE_DAY_LABELS.map((lab, idx) => {
+                      const selected = form.schedule!.days_of_week.includes(idx);
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            const cur = form.schedule!.days_of_week;
+                            const next = selected ? cur.filter(d => d !== idx) : [...cur, idx].sort((a, b) => a - b);
+                            onChange({ ...form, schedule: { ...form.schedule!, days_of_week: next } });
+                          }}
+                          className={`flex-1 text-[10px] py-1.5 rounded-[var(--radius-sm)] border transition-colors ${
+                            selected
+                              ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
+                              : 'border-[var(--color-border-default)] text-muted-foreground hover:border-[var(--color-border-strong)]'
+                          }`}
+                        >
+                          {lab}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {form.schedule.frequency === 'monthly' && (
+                <div>
+                  <label className={labelClass}>Day of Month</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    className={fieldClass}
+                    value={form.schedule.day_of_month ?? ''}
+                    onChange={e => onChange({ ...form, schedule: { ...form.schedule!, day_of_month: e.target.value ? Math.min(31, Math.max(1, Number(e.target.value))) : null } })}
+                    placeholder="1–31"
+                  />
+                </div>
+              )}
+
+              <p className="text-[10px] text-[var(--color-violet-600)]">
+                {describeSchedule(form.schedule)}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tags */}
+
+──────────────────────────────────────────────────────────────
+7. visibleActivities useMemo with recurring expansion (transcript L2292)
+   Replaces the old simple-filter block inside WeeklyCalendarGrid.
+──────────────────────────────────────────────────────────────
+  const windowStart = weekStart;
+  const windowEnd = addDays(weekStart, 27);
+
+  // Filter activities within the visible window, expanding recurring schedules.
+  const visibleActivities = useMemo<CalendarActivity[]>(() => {
+    const out: CalendarActivity[] = [];
+    for (const a of activities) {
+      if (a.schedule?.enabled) {
+        let cursor = new Date(windowStart.getTime() - 1);
+        const cap = 64;
+        for (let i = 0; i < cap; i++) {
+          const next = computeNextRun(a.schedule!, cursor);
+          if (!next || next > windowEnd) break;
+          out.push({
+            ...a,
+            activity_id: `${a.activity_id}@${next.toISOString()}`,
+            launch_date: next,
+            launch_time_utc: a.schedule!.time_utc,
+          });
+          cursor = next;
+        }
+      } else if (!a.unscheduled && a.launch_date >= windowStart && a.launch_date <= windowEnd) {
+        out.push(a);
+      }
+    }
+    return out;
+  }, [activities, windowStart, windowEnd]);
+
+================================================================
+END
+================================================================
