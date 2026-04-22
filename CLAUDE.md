@@ -6,6 +6,82 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KEN-E is a multi-agent AI system for marketing analysis built on Google Cloud Platform. It uses Google's Agent Development Kit (ADK) deployed on Vertex AI Agent Engine, integrated with a modern React frontend to provide comprehensive marketing insights and analytics.
 
+KEN-E's design is organized around **nine components** under [`docs/design/components/`](docs/design/components/): **Agentic Harness** (agent runtime + review loop + factory), **Knowledge Graph** (Neo4j + read tools + learning loop), **Project Tasks** (persistent plans + orchestration), **Automations** (re-executable templates + scheduler), **Dashboards** (canvas of widgets powered by plan artifacts), **Skills** (user-authored expertise packs), **UI** (design system + React pages), **Data Management** (Shape B Firestore convention), and **Feature Flags** (targeted rollouts). The cross-component architecture lives in [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md).
+
+## Context Loading Sequence
+
+At the start of every new story, PR, or open-ended request, follow this order. This flow is designed to give you system-level orientation in ~5 minutes, then component-specific depth as needed.
+
+### Step 1 — Scope the work
+
+Identify which component(s) the story touches. If unsure, read [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) §1.6 Component Landscape — the authoritative map. Quick-reference:
+
+| Component | Dir | Scope |
+|-----------|-----|-------|
+| Agentic Harness | `agentic-harness/` | Root agent, narrow specialists, review loop, agent factory, tool assignment, MCP |
+| Knowledge Graph | `knowledge-graph/` | Neo4j schema, provenance, orchestrator read tools, session-end learning loop |
+| Project Tasks | `project-tasks/` | `ProjectPlan` / `PlanTask`, `TaskOrchestrator`, triggers, calendar |
+| Automations | `automations/` | `PlanRun` execution, recurring scheduler, artifacts, Automations UI |
+| Dashboards | `dashboards/` | `type='dashboard'` plans, canvas placements, artifact resolver, Performance tab |
+| Skills | `skills/` | User-authored + predefined skills, sandbox code execution, authoring UI |
+| UI | `ui/` | Soft Maximalism design system, global shell, React pages |
+| Data Management | `data-management/` | Shape B Firestore convention, migrations, composite indexes |
+| Feature Flags | `feature-flags/` | Targeted rollouts, kill switches, admin UI + SDKs |
+
+### Step 2 — Orient with the System Architecture
+
+Always read [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) §1 (Executive Summary) + §1.6 (Component Landscape) at the start of a story. It is the canonical high-level map. Scan other sections (§3 Context Management, §8 Multi-Step Orchestration, §10 Infrastructure, §11 Resilience/Security, etc.) only if your work touches those concerns.
+
+### Step 3 — Read the relevant component README(s)
+
+For each component your work touches, read its README at `docs/design/components/<component>/README.md`. Each component README gives: architecture diagram, key abstractions, API contracts, component dependencies, and the PRD index.
+
+### Step 4 — If implementing a specific PRD, read it
+
+If the story maps to a project PRD (e.g., `AH-PRD-02`, `KG-PRD-04`, `PR-PRD-01`), read it at `docs/design/components/<component>/projects/<prd>.md`. Each PRD follows a standard 10-section structure (context, scope, dependencies, data contract, implementation outline, API contract, acceptance criteria, test plan, risks, reference).
+
+### When in doubt — diagnostic triggers
+
+- **You don't understand a requirement** → re-read the component README + System Architecture §1.6 for cross-component context. If the requirement spans components, the System Architecture is where the cross-component story lives.
+- **You don't know which component touches your work** → System Architecture §1.6 Component Landscape is the authoritative map.
+- **You find a contradiction between docs** → [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) has the decision history.
+- **You need to know what's shipped vs. planned** → project status is in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md); customer-facing release plan is in [`docs/product-roadmap.md`](docs/product-roadmap.md).
+- **You hit an ADK- or MCP-specific question** → [`docs/design/components/agentic-harness/mcp-architecture.md`](docs/design/components/agentic-harness/mcp-architecture.md) has verified ADK internals + platform decisions.
+
+## Design Documentation Index
+
+One table, ordered from most general (start here) to most specific (consult for deep dives).
+
+| Document | Read when... |
+|----------|--------------|
+| **— System-level —** | |
+| [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 8-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
+| [`docs/KEN-E_User_Stories.md`](docs/KEN-E_User_Stories.md) | Understanding the three guiding product scenarios. |
+| [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) | Project sequencing across all components — what's blocked by what, what's ready to start, what release each targets. |
+| [`docs/product-roadmap.md`](docs/product-roadmap.md) | Customer-facing release plan (1.1 → 6.0) with design-ref blockquotes into component docs. |
+| **— Component READMEs —** | |
+| [`docs/design/components/agentic-harness/README.md`](docs/design/components/agentic-harness/README.md) | Working on the agent runtime — root agent, specialists, review loop, agent factory, tool assignment, MCP. |
+| [`docs/design/components/knowledge-graph/README.md`](docs/design/components/knowledge-graph/README.md) | Working on Neo4j, orchestrator read tools, session-end automation, or research-on-creation. |
+| [`docs/design/components/project-tasks/README.md`](docs/design/components/project-tasks/README.md) | Working on project plans, the calendar UI, task orchestration, or the time-based scheduler. |
+| [`docs/design/components/automations/README.md`](docs/design/components/automations/README.md) | Working on recurring automations, `PlanRun`, the artifact system, test-run mode, or the Automations UI. |
+| [`docs/design/components/dashboards/README.md`](docs/design/components/dashboards/README.md) | Working on dashboards — canvas placements, widget renderers, the artifact resolver, or the Performance-page Dashboards tab. |
+| [`docs/design/components/skills/README.md`](docs/design/components/skills/README.md) | Working on skill authoring, attachment, sandbox code execution, or the Skills UI. |
+| [`docs/design/components/ui/README.md`](docs/design/components/ui/README.md) | Working on any React page or the design system (Soft Maximalism). |
+| [`docs/design/components/data-management/README.md`](docs/design/components/data-management/README.md) | Working on Firestore layout, migrations, composite indexes, or account-deletion cleanup. |
+| [`docs/design/components/feature-flags/README.md`](docs/design/components/feature-flags/README.md) | Working on a targeted rollout or kill-switching a feature. |
+| **— Specialist deep-dives —** | |
+| [`docs/design/components/agentic-harness/mcp-architecture.md`](docs/design/components/agentic-harness/mcp-architecture.md) | ADK MCP internals, platform integration decisions, Firestore config schema, MCPServerManager disposition. |
+| [`docs/design/components/agentic-harness/data-visualization.md`](docs/design/components/agentic-harness/data-visualization.md) | Vega-Lite artifacts, `create_visualization()` tool, chart rendering, channel considerations. |
+| [`docs/design/api-gateway-multi-channel.md`](docs/design/api-gateway-multi-channel.md) | API architecture, channel-agnostic design, planned Slack/Voice approaches. |
+| [`docs/design/review-loop-implementation-plan.md`](docs/design/review-loop-implementation-plan.md) | Review loop phases, ADK patterns, cost analysis, multi-step workflow pattern. |
+| [`docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md`](docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md) | MER-E evaluation framework — scoring, feedback, self-improvement. |
+| [`docs/trace-structure-spec.md`](docs/trace-structure-spec.md) | W&B Weave span structure specification — tracing contract between KEN-E and MER-E. |
+| [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) | History of design-doc revisions and architecture decisions. |
+| **— Spikes & strategy —** | |
+| [`docs/Release-1-Optimization-Strategy.md`](docs/Release-1-Optimization-Strategy.md) | Release 1 optimization targets. |
+| [`docs/spike-adk-reasoning-capture.md`](docs/spike-adk-reasoning-capture.md) | ADK reasoning-capture spike. |
+| [`docs/spike-otel-pydantic-findings.md`](docs/spike-otel-pydantic-findings.md) | OTEL and Pydantic findings. |
+
 ## Project Structure
 
 ```
@@ -225,17 +301,6 @@ These rules ensure maintainability, safety, and developer velocity.
 
 ---
 
-## Design Documents
-
-| Document | Topic |
-|----------|-------|
-| `docs/KEN-E-Agentic-Harness-Design.md` | Agentic harness architecture and design |
-| `docs/trace-structure-spec.md` | Trace structure specification |
-| `docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md` | Self-improving evaluation framework |
-| `docs/Release-1-Optimization-Strategy.md` | Release 1 optimization strategy |
-| `docs/spike-adk-reasoning-capture.md` | ADK reasoning capture spike |
-| `docs/spike-otel-pydantic-findings.md` | OTEL and Pydantic findings spike |
-
 ## Common Issues & Solutions
 
 1. **Port Conflicts**: Frontend runs on 8080, API on 8000
@@ -247,56 +312,17 @@ These rules ensure maintainability, safety, and developer velocity.
    - Alternative: `cd api && python -m uvicorn src.kene_api.main:app --reload`
 6. **Invitation Emails Not Sending**: See `api/CLAUDE.md` Email Service Setup section
 
-## Design Documentation & Architecture Decisions
+## Documentation Model
 
-### Documentation Model
+Architecture reference documents live in the [`docs/`](docs/) directory — both current implementation and planned extensions. Features marked `[PLANNED]` are not yet built. When a planned feature ships, collapse the current-vs-planned distinction in its doc: remove `[PLANNED]` tags, merge "current" and "planned" sections/diagrams, update status columns to "Implemented."
 
-The project uses a two-tier documentation model:
-
-- **`docs/` directory** — Architecture reference documents describing both the current implementation and planned extensions. Features marked `[PLANNED]` are not yet built. When a planned feature is deployed, update the docs to collapse the current-vs-planned distinction (remove `[PLANNED]` tags, merge diagrams, update status columns). Do not use `docs/` to record decision rationale or alternatives considered.
-- **Notion Design Decisions database** — The source of truth for *why* architectural choices were made. Each significant decision is recorded using the ADR format (Title, Status, Context, Decision, Consequences). Search the Notion workspace for "Design Decisions" to find the database, or use the Notion MCP tools.
-
-### Workflow for New Design Decisions
-
-When a significant architectural choice is made or revised during development:
-
-1. **Document the decision in Notion** — Create a new entry in the Design Decisions database (data source ID: `a88ce7c8-1ebb-4634-a422-2c1abcd2daf9`) with fields: Title, Status, Context, Decision, Consequences, Products (link to KEN-E product page).
-2. **Update `docs/` files** — Modify the relevant design docs to reflect the new architecture. If the change implements a previously `[PLANNED]` feature, collapse the current-vs-planned distinction: remove `[PLANNED]` tags, merge "current" and "planned" sections/diagrams, and update status columns to "Implemented".
-3. **Add a brief Notion reference** — Where the change was made in the docs, add a short inline callout referencing the Notion decision URL so readers can find the rationale. Format: `> **Revised [date]** — [brief description]. See [Decision N: Title](notion-url) for rationale.`
-4. **Log the change in DESIGN-REVIEW-LOG.md** — Add an entry documenting what changed in which files, with a reference to the Notion decision.
-
-### When to Create a Design Decision
-
-Create a Notion Design Decision entry when:
-- Choosing between multiple valid architectural approaches
-- Adopting, replacing, or deprecating a technology or pattern
-- Making a deliberate choice to defer or not build something
-- Revising a previous architectural decision based on new information
-
-Do NOT create a Design Decision for:
-- Bug fixes or implementation details
-- Routine code changes that don't affect architecture
-- Configuration changes within an existing architectural pattern
-
-### Design Docs in `docs/`
-
-| File | Purpose | Reference when... |
-|------|---------|-------------------|
-| `docs/KEN-E-Agentic-Harness-Design.md` | Root design document. Agent architecture, context loading, tool discovery, session management, multi-channel support, error handling, security, cost model, workflow management. | Working on any agent system component, understanding overall architecture, or planning new features. |
-| `docs/design/mcp-architecture.md` | MCP internals, platform integration decisions, token budget strategy, `tool_filter` architecture, MCPServerManager disposition. | Working on MCP server integration, tool management, or platform connections. |
-| `docs/design/agent-hierarchy.md` | Agent tree structure, dispatch pattern, InstructionProvider, ToolRegistry role, agent factory design, review loop & workflow orchestration. | Working on agent routing, adding new specialists, modifying dispatch logic, or implementing review loops. |
-| `docs/design/api-gateway-multi-channel.md` | API architecture, channel-agnostic design, planned Slack and Voice channel approaches. | Working on the API layer, adding new channels, or modifying the chat endpoint. |
-| `docs/design/DESIGN-REVIEW-LOG.md` | Changelog of design doc revisions with Notion decision references. Tracks what changed, when, and why (via Notion links). | Understanding the history of design changes or adding a new review entry after updating docs. |
-| `docs/design/review-loop-implementation-plan.md` | Implementation plan for review loops and workflow orchestration. 13 stories across 5 phases with dependency graph, verification checklist, and risk assessment. | Planning sprints for review loop implementation, creating user stories, or understanding the implementation roadmap. |
-| `docs/design/data-visualization.md` | Data visualization & artifacts design — Vega-Lite artifact model, `create_visualization()` tool, ChatResponse extension, review loop integration, frontend rendering, channel considerations. | Working on data visualization, chart rendering, artifact delivery, or extending ChatResponse. |
-| `docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md` | MER-E evaluation framework design — scoring, feedback loops, self-improvement. | Working on evaluation, quality metrics, or the MER-E system. 
-| `docs/KEN-E_User_Stories.md` | The three guiding user stories that will be enabled by this product. These are used to define the future state of the product and its capabilities. | Understanding the key goals and objectives of this product. |
-| `docs/trace-structure-spec.md` | W&B Weave span structure specification — tracing contract between KEN-E and MER-E. | Working on tracing, observability, or the evaluation pipeline. |
+Significant architectural changes are logged in [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) with the date, scope, list of affected files, and rationale. Add a new review entry at the top of that log whenever a design-doc change is non-trivial (structural reorganization, retired mechanism, new cross-component coupling, etc.).
 
 ## Additional Documentation
 
-- **API specifics**: See `api/CLAUDE.md` for architecture patterns, email setup, and endpoints
-- **Frontend specifics**: See `frontend/CLAUDE.md` for CSS architecture and component library
-- **Code review rules**: See `REVIEW.md` for review checklist
-- **Design documents**: See `docs/` directory (indexed above)
-- **Deployment**: See deployment files in `deployment/` directory
+- **Component-level design**: See [`docs/design/components/`](docs/design/components/) — the landing directory for all eight components. Each has a `README.md` and a `projects/` subdirectory with project PRDs.
+- **API specifics**: See `api/CLAUDE.md` for architecture patterns, email setup, and endpoints.
+- **Frontend specifics**: See `frontend/CLAUDE.md` for CSS architecture and component library.
+- **Code review rules**: See `REVIEW.md` for the review checklist.
+- **Design documents**: See [`docs/`](docs/) and the Design Documentation Index near the top of this file.
+- **Deployment**: See deployment files in the `deployment/` directory.

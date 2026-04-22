@@ -3095,7 +3095,7 @@ def get_collection(collection_name: str) -> str:
 
 > **Roadmap:** [Feature 3.5: MER-E Phase 1 — Quality Scoring](product-roadmap.md#35--mer-e-phase-1-quality-scoring) — Release 3.0
 
-This section describes how the evaluation framework integrates with the KEN-E Agentic Harness architecture (see `KEN-E-Agentic-Harness-Design.md`).
+This section describes how the evaluation framework integrates with the KEN-E Agentic Harness architecture (see `KEN-E-System-Architecture.md`).
 
 ### 11.1 New Agent Types Requiring Evaluation
 

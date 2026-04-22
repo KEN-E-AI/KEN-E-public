@@ -7,6 +7,8 @@
 > **Revised March 18, 2026 (v1.1)** — Structural corrections based on ADK 1.26.0 experiments: removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline wrappers for `ParallelAgent` branches, added synthesizer agent pattern, added 3 new risks (pitfalls).
 **Decision:** [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e)
 
+> **Status by phase (as of 2026-04-21):** Phases 1–3 are now tracked by [AH-PRD-01 — Review Loop Framework](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) (Release 2). Phase 4 (Multi-Step Workflow Support, Release 3) and Phase 5 (Observability & Monitoring, Release 5) have not yet been extracted into their own PRDs — this document remains the authoritative design source for both until those PRDs are written.
+
 ---
 
 ## 1. Overview
@@ -33,7 +35,7 @@ Use ADK's native workflow agents (LoopAgent, SequentialAgent, ParallelAgent) to 
 | Harness Design Doc | 8.2 | ADK Implementation Details (factory code, composition patterns) |
 | Harness Design Doc | 8.3 | ADK Pitfalls (validated rules from experiments) |
 | Harness Design Doc | 8.4 | LLM Call Cost & Latency (total-time estimates) |
-| `agent-hierarchy.md` | 9 | Review Loop & Workflow Orchestration |
+| `components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md` | — | Single-step review-loop execution PRD (this doc's Phases 1–3 realized) |
 | Notion | Decision 21 | Full decision rationale |
 
 ---
@@ -84,7 +86,7 @@ Key details:
 - **`include_contents='none'` on reviewer** — evaluates only the template-injected `{step_N_draft}`, not conversation history
 - **`{step_N_feedback?}` (optional)** — on first iteration, no feedback exists; `?` resolves to empty string
 - Each step uses a unique `output_key` suffix (e.g., `step_1a_draft`, `step_1b_draft`) to avoid state collisions in parallel execution
-- **Artifact evaluation** — when a specialist calls `create_visualization()`, the reviewer evaluates both the text draft and any visualization artifacts. See [`data-visualization.md`](data-visualization.md) Section 6.
+- **Artifact evaluation** — when a specialist calls `create_visualization()`, the reviewer evaluates both the text draft and any visualization artifacts. See [`data-visualization.md`](components/agentic-harness/data-visualization.md) Section 6.
 
 ### 3.2 Single-Step Delegation
 
@@ -196,7 +198,7 @@ Workflow progress is tracked in **session state** between turns so the Root Agen
 
 These figures represent **overhead only** — the additional cost of running a review loop compared to a single-pass specialist invocation without review. They do not include the specialist's own token consumption or tool-call latency.
 
-> For **total-time estimates** (including specialist LLM calls, tool execution, and review iterations), see the harness design doc Sections [4.6 — LLM Call Cost](../KEN-E-Agentic-Harness-Design.md#46-review-loop-pattern-generator-critic-planned) and [8.4 — LLM Call Cost & Latency](../KEN-E-Agentic-Harness-Design.md#84-llm-call-cost--latency), which provide per-scenario totals (e.g., 2 LLM calls / ~10-30s for first-pass approval, up to 6 calls / ~30-90s at max iterations).
+> For **total-time estimates** (including specialist LLM calls, tool execution, and review iterations), see the harness design doc Sections [4.6 — LLM Call Cost](../KEN-E-System-Architecture.md#46-review-loop-pattern-generator-critic-planned) and [8.4 — LLM Call Cost & Latency](../KEN-E-System-Architecture.md#84-llm-call-cost--latency), which provide per-scenario totals (e.g., 2 LLM calls / ~10-30s for first-pass approval, up to 6 calls / ~30-90s at max iterations).
 
 ---
 
@@ -231,6 +233,8 @@ These figures represent **overhead only** — the additional cost of running a r
 ## 5. Implementation Phases
 
 ### Phase 1: Review Pipeline Factory (Core Building Block)
+
+> **Tracked by:** [AH-PRD-01 — Review Loop Framework](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) (R2). Read the PRD for the current implementation plan; this section remains as the design rationale and code-sample reference.
 
 **Goal:** Create the reusable `build_review_pipeline()` function that constructs a LoopAgent with specialist and reviewer as direct sub-agents.
 
@@ -368,6 +372,8 @@ def extract_pipeline_result(session_state: dict, output_key_prefix: str) -> str 
 
 ### Phase 2: Single-Step Integration (Wire Into Existing Dispatch)
 
+> **Tracked by:** [AH-PRD-01 — Review Loop Framework](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) (R2).
+
 **Goal:** Integrate the review pipeline into existing dispatch handlers so that when acceptance criteria are provided, the specialist runs inside a review loop.
 
 **Stories:**
@@ -450,6 +456,8 @@ def dispatch_to_company_news(
 
 ### Phase 3: Enable Criteria Generation
 
+> **Tracked by:** [AH-PRD-01 — Review Loop Framework](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) (R2).
+
 **Goal:** Update the Root Agent's instruction to generate acceptance criteria before tool calls.
 
 **Stories:**
@@ -494,6 +502,7 @@ Pass your criteria as the `acceptance_criteria` parameter when calling the tool.
 ### Phase 4: Multi-Step Workflow Support
 
 > **Roadmap:** [Feature 3.4: Multi-Step Workflows](../product-roadmap.md#34--multi-step-workflows) — Release 3.0
+> **PRD status:** Not yet extracted into a PRD. This section is the authoritative design source until a dedicated AH-PRD is created.
 
 **Goal:** Add the ability to decompose complex tasks into multi-step workflows with parallel execution and user approval checkpoints.
 
@@ -692,6 +701,7 @@ Steps:
 ### Phase 5: Observability & Monitoring
 
 > **Roadmap:** [Feature 5.4: Advanced Workflow & Observability](../product-roadmap.md#54--advanced-workflow--observability) — Release 5.0
+> **PRD status:** Not yet extracted into a PRD. This section is the authoritative design source until a dedicated AH-PRD is created.
 
 **Goal:** Ensure review loop iterations and workflow execution are visible in tracing and monitoring.
 
@@ -834,6 +844,6 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 - [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) — Notion Design Decision
 - Harness Design Doc Section 4.6 — Review Loop Pattern (Generator-Critic)
 - Harness Design Doc Section 8.1 — Multi-Step Workflow Pattern
-- `agent-hierarchy.md` Section 9 — Review Loop & Workflow Orchestration
+- [`components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md`](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) — Single-step review-loop execution PRD
 - [ADK LoopAgent Documentation](https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/)
 - [ADK Generator-Critic Pattern](https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/#example-generator-critic-pattern)

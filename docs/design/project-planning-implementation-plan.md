@@ -1,8 +1,8 @@
 # Project Planning Feature — Implementation Plan
 
-> **Status (2026-04-17):** This plan has been split into 6 independently shippable PRDs in [`prd/`](./prd/) for parallel execution by multiple dev teams. See [`prd/README.md`](./prd/README.md) for the dependency graph and team workflow.
+> **Status (2026-04-17):** This plan has been split into 6 independently shippable PRDs in [`components/project-tasks/projects/`](./components/project-tasks/projects/) for parallel execution by multiple dev teams. See [`components/project-tasks/README.md`](./components/project-tasks/README.md) for the dependency graph and team workflow.
 >
-> **Gap closed by the split:** A new **PRD-6 — Time-Based Scheduler** ([`prd/06-time-based-scheduler.md`](./prd/06-time-based-scheduler.md)) was added because this document does not include any mechanism to fire a task when its `due_date + launch_time_utc` arrives. KEN-E has no scheduler infrastructure today; PRD-6 builds it.
+> **Gap closed by the split:** A new **PRD-6 — Time-Based Scheduler** ([`components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md`](./components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md)) was added because this document does not include any mechanism to fire a task when its `due_date + launch_time_utc` arrives. KEN-E has no scheduler infrastructure today; PRD-6 builds it.
 
 ## Context
 
@@ -86,21 +86,22 @@ The `depends_on` field on each task forms a directed acyclic graph (DAG). The Py
 
 ### Firestore Collection Structure
 
+> **Revised 2026-04-20** — Firestore paths follow the Shape B layout (`accounts/{account_id}/{resource}/...`). See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+
 ```
-project_plans_{account_id}/
-  {plan_id}/
+accounts/{account_id}/project_plans/{plan_id}
     plan_id, account_id, title, goal, acceptance_criteria,
     tasks, campaign, tags, status, version, created_at, updated_at,
     created_by, is_active
 
-project_plans_{account_id}/{plan_id}/versions/{version_number}/
+accounts/{account_id}/project_plans/{plan_id}/versions/{version_number}
     ... archived version snapshot ...
 
-project_plan_audit_{account_id}/
+accounts/{account_id}/project_plan_audit/{audit_id}
     ... audit trail entries (who changed what, when) ...
 ```
 
-This mirrors the strategy document collections (`strategy_docs_{account_id}`, `strategy_audit_{account_id}`).
+Account-scoped under Shape B; the existing strategy-doc / strategy-audit subcollections (`accounts/{account_id}/strategy_docs/*`, `accounts/{account_id}/strategy_audit/*`) follow the same pattern.
 
 ---
 
@@ -321,7 +322,7 @@ The system must:
 
 ### Recommended Architecture: Event-Driven Task Orchestrator
 
-> **Note:** This section covers event-driven orchestration only — i.e., "when task A finishes, dispatch task B." Time-based triggering (firing a task at `due_date + launch_time_utc`) is **not** covered here and is the subject of [PRD-6 — Time-Based Scheduler](./prd/06-time-based-scheduler.md).
+> **Note:** This section covers event-driven orchestration only — i.e., "when task A finishes, dispatch task B." Time-based triggering (firing a task at `due_date + launch_time_utc`) is **not** covered here and is the subject of [PRD-6 — Time-Based Scheduler](./components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md).
 
 #### Component: `TaskOrchestrator` service
 
