@@ -40,9 +40,34 @@ export function LayoutC() {
   );
 }
 
+const MINI_CHAT_DEFAULT_HEIGHT = 400;
+const MINI_CHAT_MIN_HEIGHT = 200;
+
 function LayoutCInner() {
   const location = useLocation();
   const [miniChatOpen, setMiniChatOpen] = useState(false);
+  const [miniChatHeight, setMiniChatHeight] = useState(MINI_CHAT_DEFAULT_HEIGHT);
+  const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    resizeStateRef.current = { startY: e.clientY, startHeight: miniChatHeight };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleResizePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeStateRef.current) return;
+    const delta = resizeStateRef.current.startY - e.clientY;
+    const max = Math.max(MINI_CHAT_MIN_HEIGHT, window.innerHeight - 200);
+    const next = Math.min(max, Math.max(MINI_CHAT_MIN_HEIGHT, resizeStateRef.current.startHeight + delta));
+    setMiniChatHeight(next);
+  };
+
+  const handleResizePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeStateRef.current) return;
+    resizeStateRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
   const isHome = location.pathname === '/';
   const isFullWidth = location.pathname.startsWith('/strategy') || location.pathname.startsWith('/workflows/automations') || location.pathname.startsWith('/performance/dashboards/');
   const currentPage = navigation.find(
@@ -163,8 +188,11 @@ function LayoutCInner() {
         </div>
         
         {/* Page Content */}
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <div className={`${isFullWidth ? '' : 'max-w-screen-2xl'} w-full flex-1 min-h-0 flex flex-col`}>
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg-secondary)]">
+          <div
+            className={`${isFullWidth ? '' : 'max-w-screen-2xl'} w-full flex-1 min-h-0 flex flex-col bg-[var(--color-bg-primary)]`}
+            style={isFullWidth ? undefined : { borderRight: '2px dashed var(--color-border-default)' }}
+          >
             <Outlet />
           </div>
         </div>
@@ -173,14 +201,28 @@ function LayoutCInner() {
       {/* Mini Chat Widget - Collapsible Bottom Bar (Desktop only, non-home pages) */}
       {!isHome && (
         <Collapsible open={miniChatOpen} onOpenChange={setMiniChatOpen} className="hidden md:block">
-          <div 
+          <div
             className="bg-background relative"
             style={{
               borderTop: miniChatOpen ? '3px solid transparent' : '4px solid transparent',
               borderImage: 'var(--gradient-rainbow) 1',
             }}
           >
-            <CollapsibleTrigger 
+            {miniChatOpen && (
+              <div
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize chat panel"
+                onPointerDown={handleResizePointerDown}
+                onPointerMove={handleResizePointerMove}
+                onPointerUp={handleResizePointerUp}
+                onPointerCancel={handleResizePointerUp}
+                className="absolute left-0 right-0 -top-1.5 h-3 z-20 cursor-ns-resize"
+                style={{ touchAction: 'none' }}
+                title="Drag to resize"
+              />
+            )}
+            <CollapsibleTrigger
               className="w-full px-6 py-4 flex items-center justify-between hover:bg-[var(--color-accent)] transition-all rounded-none"
               style={{
                 transitionTimingFunction: 'var(--ease-default)',
@@ -209,10 +251,10 @@ function LayoutCInner() {
             </CollapsibleTrigger>
 
             <CollapsibleContent>
-              <div 
+              <div
                 className="relative flex flex-col"
-                style={{ 
-                  height: '400px',
+                style={{
+                  height: miniChatHeight,
                   borderTop: '2px dashed var(--color-border-default)',
                 }}
               >

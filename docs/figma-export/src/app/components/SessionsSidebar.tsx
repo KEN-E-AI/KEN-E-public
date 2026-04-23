@@ -13,7 +13,7 @@ interface SessionsSidebarProps {
 }
 
 export function SessionsSidebar({ sessions, onSessionSelect, onNewSession }: SessionsSidebarProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 

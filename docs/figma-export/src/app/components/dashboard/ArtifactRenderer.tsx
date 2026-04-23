@@ -26,13 +26,13 @@ function useVegaTheme(deps: unknown[]): Record<string, unknown> {
 
   return useMemo(() => {
     const category = [
+      cssVar('--color-teal-500', '#2EC4B6'),
       cssVar('--color-violet-500', '#6366F1'),
       cssVar('--color-blue-500', '#3B82F6'),
-      cssVar('--color-teal-500', '#2EC4B6'),
       cssVar('--color-amber-500', '#F59E0B'),
+      cssVar('--color-teal-400', '#6AD8CC'),
       cssVar('--color-violet-400', '#818CF8'),
       cssVar('--color-blue-400', '#60A5FA'),
-      cssVar('--color-teal-400', '#6AD8CC'),
       cssVar('--color-slate-400', '#94A3B8'),
     ];
     const textPrimary = cssVar('--color-text-primary', '#0F172A');
