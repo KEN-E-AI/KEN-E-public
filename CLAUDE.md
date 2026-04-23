@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KEN-E is a multi-agent AI system for marketing analysis built on Google Cloud Platform. It uses Google's Agent Development Kit (ADK) deployed on Vertex AI Agent Engine, integrated with a modern React frontend to provide comprehensive marketing insights and analytics.
 
-KEN-E's design is organized around **nine components** under [`docs/design/components/`](docs/design/components/): **Agentic Harness** (agent runtime + review loop + factory), **Knowledge Graph** (Neo4j + read tools + learning loop), **Project Tasks** (persistent plans + orchestration), **Automations** (re-executable templates + scheduler), **Dashboards** (canvas of widgets powered by plan artifacts), **Skills** (user-authored expertise packs), **UI** (design system + React pages), **Data Management** (Shape B Firestore convention), and **Feature Flags** (targeted rollouts). The cross-component architecture lives in [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md).
+KEN-E's design is organized around **fourteen components** under [`docs/design/components/`](docs/design/components/): **Agentic Harness** (agent runtime + review loop + factory), **Knowledge Graph** (Neo4j + read tools + learning loop), **Project Tasks** (persistent plans + orchestration), **Automations** (re-executable templates + scheduler), **Dashboards** (canvas of widgets powered by plan artifacts), **Data Pipeline** (deterministic platform-API extraction jobs + sibling Cloud Run service), **Integrations** (OAuth credential substrate for third-party platforms), **SAR-E** (analytical backend — VAR forecasting, KPI ingestion, target derivation), **Performance** (marketing-measurement page that renders SAR-E outputs), **Skills** (user-authored expertise packs), **UI** (design system + React pages), **Data Management** (Shape B Firestore convention), **Billing** (Stripe-backed subscriptions + token meter + monthly enforcement), and **Feature Flags** (targeted rollouts). The cross-component architecture lives in [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md).
 
 ## Context Loading Sequence
 
@@ -23,9 +23,14 @@ Identify which component(s) the story touches. If unsure, read [`docs/KEN-E-Syst
 | Project Tasks | `project-tasks/` | `ProjectPlan` / `PlanTask`, `TaskOrchestrator`, triggers, calendar |
 | Automations | `automations/` | `PlanRun` execution, recurring scheduler, artifacts, Automations UI |
 | Dashboards | `dashboards/` | `type='dashboard'` plans, canvas placements, artifact resolver, Performance tab |
+| Data Pipeline | `data-pipeline/` | Deterministic platform-API extraction — connectors, jobs, runs, cache; sibling `kene-data-pipeline-{env}` Cloud Run service; `assignee_type="data_pipeline"` task branch |
+| Integrations | `integrations/` | OAuth flows per platform, KMS-encrypted token store, per-account connection sharing, re-auth lifecycle, `/settings/integrations` UI |
+| SAR-E | `sar-e/` | Weekly KPI time series, VAR baseline forecasts, IRF scenarios, LLM target derivation, analytical query layer (Simulation and Recommendations Engine) |
+| Performance | `performance/` | `/performance` page (Analysis / Simulations / Targets / Diagnostics / Configuration tabs + setup wizard), composite BFF endpoints |
 | Skills | `skills/` | User-authored + predefined skills, sandbox code execution, authoring UI |
 | UI | `ui/` | Soft Maximalism design system, global shell, React pages |
 | Data Management | `data-management/` | Shape B Firestore convention, migrations, composite indexes |
+| Billing | `billing/` | Stripe-backed subscriptions, 41-stop pricing tier table, internal token meter, org-status state machine, monthly enforcement, sales handoff |
 | Feature Flags | `feature-flags/` | Targeted rollouts, kill switches, admin UI + SDKs |
 
 ### Step 2 — Orient with the System Architecture
@@ -55,7 +60,7 @@ One table, ordered from most general (start here) to most specific (consult for 
 | Document | Read when... |
 |----------|--------------|
 | **— System-level —** | |
-| [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 8-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
+| [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 14-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
 | [`docs/KEN-E_User_Stories.md`](docs/KEN-E_User_Stories.md) | Understanding the three guiding product scenarios. |
 | [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) | Project sequencing across all components — what's blocked by what, what's ready to start, what release each targets. |
 | [`docs/product-roadmap.md`](docs/product-roadmap.md) | Customer-facing release plan (1.1 → 6.0) with design-ref blockquotes into component docs. |
@@ -65,14 +70,19 @@ One table, ordered from most general (start here) to most specific (consult for 
 | [`docs/design/components/project-tasks/README.md`](docs/design/components/project-tasks/README.md) | Working on project plans, the calendar UI, task orchestration, or the time-based scheduler. |
 | [`docs/design/components/automations/README.md`](docs/design/components/automations/README.md) | Working on recurring automations, `PlanRun`, the artifact system, test-run mode, or the Automations UI. |
 | [`docs/design/components/dashboards/README.md`](docs/design/components/dashboards/README.md) | Working on dashboards — canvas placements, widget renderers, the artifact resolver, or the Performance-page Dashboards tab. |
+| [`docs/design/components/data-pipeline/README.md`](docs/design/components/data-pipeline/README.md) | Working on deterministic platform-API extraction — connectors, jobs, runs, cache, the sibling `kene-data-pipeline-{env}` Cloud Run service, or task-system integration (`assignee_type="data_pipeline"`). |
+| [`docs/design/components/integrations/README.md`](docs/design/components/integrations/README.md) | Working on OAuth flows, the encrypted token store, per-account connection sharing, re-auth notifications, or the `/settings/integrations` UI. |
+| [`docs/design/components/sar-e/README.md`](docs/design/components/sar-e/README.md) | Working on weekly KPI ingestion, VAR baselines, IRF scenarios, LLM target derivation, or any analytical query the Performance page renders. |
+| [`docs/design/components/performance/README.md`](docs/design/components/performance/README.md) | Working on the `/performance` page — five tab surfaces, the setup wizard, BFF endpoints, or the Goal→Target terminology rename. |
 | [`docs/design/components/skills/README.md`](docs/design/components/skills/README.md) | Working on skill authoring, attachment, sandbox code execution, or the Skills UI. |
 | [`docs/design/components/ui/README.md`](docs/design/components/ui/README.md) | Working on any React page or the design system (Soft Maximalism). |
 | [`docs/design/components/data-management/README.md`](docs/design/components/data-management/README.md) | Working on Firestore layout, migrations, composite indexes, or account-deletion cleanup. |
+| [`docs/design/components/billing/README.md`](docs/design/components/billing/README.md) | Working on subscriptions, the token meter, monthly enforcement, the Subscription tab, the inactive banner, Stripe webhooks, manual override, or the sales-handoff flow. |
 | [`docs/design/components/feature-flags/README.md`](docs/design/components/feature-flags/README.md) | Working on a targeted rollout or kill-switching a feature. |
 | **— Specialist deep-dives —** | |
 | [`docs/design/components/agentic-harness/mcp-architecture.md`](docs/design/components/agentic-harness/mcp-architecture.md) | ADK MCP internals, platform integration decisions, Firestore config schema, MCPServerManager disposition. |
 | [`docs/design/components/agentic-harness/data-visualization.md`](docs/design/components/agentic-harness/data-visualization.md) | Vega-Lite artifacts, `create_visualization()` tool, chart rendering, channel considerations. |
-| [`docs/design/api-gateway-multi-channel.md`](docs/design/api-gateway-multi-channel.md) | API architecture, channel-agnostic design, planned Slack/Voice approaches. |
+| [`docs/design/components/backlog/api-gateway-multi-channel.md`](docs/design/components/backlog/api-gateway-multi-channel.md) | API architecture, channel-agnostic design, planned Slack/Voice approaches. (In backlog.) |
 | [`docs/design/review-loop-implementation-plan.md`](docs/design/review-loop-implementation-plan.md) | Review loop phases, ADK patterns, cost analysis, multi-step workflow pattern. |
 | [`docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md`](docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md) | MER-E evaluation framework — scoring, feedback, self-improvement. |
 | [`docs/trace-structure-spec.md`](docs/trace-structure-spec.md) | W&B Weave span structure specification — tracing contract between KEN-E and MER-E. |
@@ -320,7 +330,7 @@ Significant architectural changes are logged in [`docs/design/DESIGN-REVIEW-LOG.
 
 ## Additional Documentation
 
-- **Component-level design**: See [`docs/design/components/`](docs/design/components/) — the landing directory for all eight components. Each has a `README.md` and a `projects/` subdirectory with project PRDs.
+- **Component-level design**: See [`docs/design/components/`](docs/design/components/) — the landing directory for all fourteen components. Each has a `README.md` and a `projects/` subdirectory with project PRDs.
 - **API specifics**: See `api/CLAUDE.md` for architecture patterns, email setup, and endpoints.
 - **Frontend specifics**: See `frontend/CLAUDE.md` for CSS architecture and component library.
 - **Code review rules**: See `REVIEW.md` for the review checklist.

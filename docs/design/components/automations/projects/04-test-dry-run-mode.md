@@ -1,8 +1,8 @@
 # A-PRD-4 — Test / Dry-Run Mode
 
-**Status:** Ready for development (after A-PRDs 1 + 3 merge)
+**Status:** Ready for development (after A-PRD-1, A-PRD-3, and PR-PRD-04 merge)
 **Owner team:** Backend
-**Blocked by:** A-PRD-1, A-PRD-3
+**Blocked by:** A-PRD-1, A-PRD-3; PR-PRD-04 (`TaskOrchestrator` — extended here with the `is_test` flag and HITL halt-vs-continue behavior)
 **Parallel with:** A-PRDs 5, 6
 **Estimated effort:** 2 days
 

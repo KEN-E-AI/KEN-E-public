@@ -1,8 +1,8 @@
 # A-PRD-2 — Recurring Scheduler & Run Engine
 
-**Status:** Ready for development (after A-PRD-1 merges)
+**Status:** Ready for development (after A-PRD-1, PR-PRD-04, and PR-PRD-06 merge)
 **Owner team:** Backend / Infra
-**Blocked by:** A-PRD-1
+**Blocked by:** A-PRD-1; PR-PRD-04 (`TaskOrchestrator` — extended here with an optional `run_id` parameter); PR-PRD-06 (Cloud Scheduler Terraform + SA — reused for the sibling `launch-due-automations` job)
 **Parallel with:** A-PRDs 3, 5, 6
 **Estimated effort:** 3 days
 

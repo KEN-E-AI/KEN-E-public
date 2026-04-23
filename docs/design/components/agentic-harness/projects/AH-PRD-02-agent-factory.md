@@ -9,6 +9,8 @@
 
 ---
 
+> **Credential-loading migration note.** This PRD ships the `_make_header_provider(auth_type)` pattern (§5.3) that reads OAuth tokens from ADK session state (`ga_credentials`, `google_ads_credentials`, etc.). The [Integrations](../../integrations/implementation-plan.md) component takes ownership of OAuth flows, encrypted token storage, refresh, and revocation starting with **IN-PRD-02**. **IN-PRD-06** retrofits this factory so `_make_header_provider` fetches tokens via `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` instead of reading session state. The closure signature and ADK `header_provider=` plumbing remain intact — only the credential source moves. **Ship AH-PRD-02 as specified; the swap is IN-PRD-06's responsibility, not this PRD's.**
+
 ## 1. Context
 
 Today every specialist agent is constructed by a hand-written per-file factory (`create_google_analytics_agent()`, `create_ken_e_agent()`, etc.), and `deploy_ken_e.py` imports those singletons. Adding a new specialist requires writing and wiring new code. This project transforms the agent system into a **config-driven, multi-tenant architecture** — `agent_factory.build_hierarchy()` reads Firestore `agent_configs/{config_id}` + `mcp_servers/{server_id}` documents and assembles the full specialist hierarchy, including tool wiring, OAuth header providers, review-loop-aware dispatch functions, and per-account configuration overlays.
@@ -175,6 +177,8 @@ def _make_header_provider(auth_type: str) -> Callable[[ReadonlyContext], dict[st
 ```
 
 Generalizes the existing `_ga_header_provider()` pattern. Unknown `auth_type` values **fail fast at factory build time**, not at runtime — catches config typos before deploy.
+
+> **Future replacement (IN-PRD-06).** The closure body is rewritten to call `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` (OIDC-authed) instead of reading `context.state[state_key]`. Session-state credential keys are removed; [Integrations](../../integrations/implementation-plan.md) owns the OAuth lifecycle end-to-end. The `auth_type` enum maps one-to-one to Integrations `platform_id` values (`ga_oauth` → `google_analytics`, `google_ads_oauth` → `google_ads`, etc.). The returned header shape, the `header_provider=` callsite, and the fail-fast-on-unknown-auth-type behavior are unchanged — existing consumers see no contract difference.
 
 ### 5.4 Dynamic agent creation: why pre-declared specialists
 

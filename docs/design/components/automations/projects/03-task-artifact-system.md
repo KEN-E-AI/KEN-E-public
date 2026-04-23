@@ -1,8 +1,8 @@
 # A-PRD-3 — Task Artifact System
 
-**Status:** Ready for development (after A-PRD-1 merges)
+**Status:** Ready for development (after A-PRD-1, PR-PRD-02, and PR-PRD-04 merge)
 **Owner team:** Backend + Agent
-**Blocked by:** A-PRD-1
+**Blocked by:** A-PRD-1; PR-PRD-02 (ADK agent-tool plumbing — `attach_task_artifact` registers here); PR-PRD-04 (`TaskOrchestrator` — extended here to inject upstream-artifact prompt sections)
 **Parallel with:** A-PRDs 2, 5, 6
 **Estimated effort:** 3–4 days
 
