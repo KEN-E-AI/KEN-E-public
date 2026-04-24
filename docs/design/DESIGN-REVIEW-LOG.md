@@ -785,4 +785,59 @@ No new decision required — Review 19 acts on the decisions already captured in
 
 ---
 
+## Review 20: Sprint 6 — Firestore Config Registry Delivered (Feature 1.1.4)
+
+**Date:** 2026-04-24
+**Branch:** `feature/1.1.4-firestore-config-registry` (PR #240)
+**Scope:** Feature 1.1.4 — four stories delivering the Firestore config registry end-to-end: schemas, YAML→Firestore migration with fallback, admin CRUD + audit subcollection, and 60 s hot-reload cache. Plus two code/security-review follow-ups that surfaced during the pre-ship pass.
+
+### Key design decisions (Notion)
+
+| Decision | Link | Impact |
+|---|---|---|
+| A — Firestore MCP server config schema | https://www.notion.so/34830fd653028158bb4be8b22622bcb8 | Medium |
+| B — 60 s TTL cache for agent config hot-reload (instruction only; model/temperature/max_output_tokens require redeploy) | https://www.notion.so/34830fd653028107a823e73cdf27ddc8 | High |
+| C — Per-config history subcollection at `{collection}/{id}/history/{ts}` | https://www.notion.so/34830fd65302815fb08fddb54d9fafb5 | Medium |
+
+### What landed
+
+- **Pydantic models** at `api/src/kene_api/models/agent_config_models.py` and `api/src/kene_api/models/mcp_server_models.py` (schemas, `ConfigAuditEntry`, `CREDENTIAL_KEYS`, cross-field invariants).
+- **Firestore loader with YAML fallback** at `app/adk/mcp_config/firestore_loader.py`; factory in `app/adk/mcp_config/config.py` selects via `MCP_CONFIG_SOURCE` env var. Migration script at `app/adk/mcp_config/scripts/migrate_mcp_to_firestore.py` (ran against ken-e-dev, 6 docs). Bundle-fix in `deploy_ken_e.py` so YAML is copied into the Agent Engine artifact.
+- **Admin CRUD routers:** `api/src/kene_api/routers/agent_configs.py` (extended with PUT audit + redeploy-warning response) and `api/src/kene_api/routers/mcp_server_configs.py` (new — GET/PUT/history/reload). Shared helpers extracted to `api/src/kene_api/services/config_versioning.py`. Audit helper `log_config_action()` in `services/audit_service.py`. Per-config history subcollection writes on every PUT.
+- **Hot-reload cache** at `app/adk/agents/utils/config_cache.py` (TTL 60 s, `threading.Lock`, serve-stale-on-error, `GOOGLE_CLOUD_PROJECT_ID`-aware). `ken_e_agent.py` `_make_instruction_provider` rewired to read from cache each turn. `MCPServerManager.reload()` added for runtime toolset eviction on config change.
+
+### Correction to AC-6.25 scope
+
+The Sprint 6 plan originally framed hot-reload as "instruction and temperature propagate within 60 s." Pre-ship review surfaced that ADK's `Agent` constructor only accepts a callable for `instruction`; `model`, `generate_content_config` (including `temperature` and `max_output_tokens`), and tools are baked at construction. `_REDEPLOY_REQUIRED_FIELDS` in `routers/agent_configs.py` was corrected to `{"model", "temperature", "max_output_tokens"}` and the PUT response's `warnings` list now surfaces redeploy-required guidance for all three.
+
+### Security-review follow-up: loader-layer secret resolution
+
+The initial MCP admin implementation resolved `${VAR}` patterns at Pydantic model-construction time (via `mode="before"` field validators on `SseConnectionConfig` / `StdioConnectionConfig`). Because FastAPI constructs these models on request parsing, every PUT would have materialized resolved secrets into Firestore, the audit trail's `changes` dict, and the PUT/GET response bodies. Fix: validators removed from the connection models; resolution moved to a loader-only helper (`_resolve_env_vars_in_dict()` in `config.py`) invoked from `MCPConfigLoader.load()` and `FirestoreMCPLoader._doc_to_runtime_config`. The admin router uses `response_model=None` and returns raw Firestore dicts with literal `${VAR}` strings preserved end-to-end. Pinned by 4 regression tests asserting canary secrets never appear in writes/responses/audit.
+
+### Code-review follow-up: cache project_id
+
+`get_cached_config` previously called `load_config_from_firestore(doc_id)` without `project_id`, defaulting to the loader signature's hardcoded `"ken-e-dev"` in every environment. Staging/prod hot-reload reads would have silently mis-routed to dev Firestore. Fix: read `GOOGLE_CLOUD_PROJECT_ID` at call time (matches `load_and_apply_config_overrides` behavior). Pinned by a regression test.
+
+### Documents affected
+
+- `api/src/kene_api/models/` — new `agent_config_models.py`, `mcp_server_models.py`
+- `api/src/kene_api/routers/` — extended `agent_configs.py`; new `mcp_server_configs.py`
+- `api/src/kene_api/services/` — extended `audit_service.py`; new `config_versioning.py`
+- `app/adk/mcp_config/` — removed env-var resolvers from connection models; added `_resolve_env_vars_in_dict`; new `firestore_loader.py`; new `scripts/migrate_mcp_to_firestore.py`; `manager.py` gained `.reload()`
+- `app/adk/agents/` — `ken_e_agent.py` `_make_instruction_provider` rewired; new `utils/config_cache.py`
+- Tests: 241 passing across `api/tests/` and `app/adk/**/tests/`, 14+ new, including four secret-leak regression tests
+- `docs/design/components/agentic-harness/mcp-architecture.md` — Firestore schema already reflected via main's Review 19 rewrite; no further edits needed this sprint
+
+### Follow-ups (filed, out of Sprint 6 Feature 1.1.4 scope)
+
+- Rate limiting on admin endpoints (`POST /api/v1/mcp-server-configs/reload` DoS surface; cross-cutting concern).
+- Audit-swallow observability — structured log + metric when `log_config_action` fails silently so operators see the gap.
+- Migration script validation — run Pydantic validation pass over raw YAML before Firestore write.
+- Cache serve-stale bound + alert — currently unbounded; a prompt-injection remediation blocked by a Firestore outage could serve the old instruction indefinitely.
+- Semver rapid-update race test — needs integration-test infra.
+
+Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4) remains Backlog; those stories share the proposed `tests/integration/sprint6_harness/` infrastructure, not yet built.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*
