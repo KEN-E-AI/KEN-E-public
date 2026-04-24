@@ -1,0 +1,27 @@
+<svg width="190" height="156" viewBox="5 53 190 156" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ribPink" x1="60" y1="70" x2="180" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDA4AF"/>
+      <stop offset="1" stop-color="#DB2777"/>
+    </linearGradient>
+    <linearGradient id="ribYellow" x1="60" y1="90" x2="165" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="ribTeal" x1="60" y1="120" x2="180" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+    <linearGradient id="ribViolet" x1="150" y1="210" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C4B5FD"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(128 128) rotate(-3) translate(-128 -128)">
+    <rect x="22" y="120" width="40" height="16" rx="8" fill="#FDE68A"/>
+    <rect x="64" y="70" width="44" height="120" rx="22" fill="url(#ribViolet)"/>
+    <rect x="88" y="70" width="89.6" height="36" rx="18" fill="url(#ribPink)"/>
+    <rect x="88" y="110" width="70.4" height="36" rx="18" fill="url(#ribYellow)"/>
+    <rect x="88" y="150" width="89.6" height="36" rx="18" fill="url(#ribTeal)"/>
+  </g>
+</svg>

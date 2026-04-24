@@ -28,33 +28,33 @@ export function Logo({ size = 'md', variant = 'full' }: LogoProps) {
           transitionDuration: 'var(--duration-default)',
         }}
       >
-        <svg width="100%" height="100%" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="100%" height="100%" viewBox="5 53 190 156" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             {/* Ribbon gradients */}
-            <linearGradient id="ribPink" x1="60" y1="70" x2="210" y2="120" gradientUnits="userSpaceOnUse">
+            <linearGradient id="ribPink" x1="60" y1="70" x2="180" y2="110" gradientUnits="userSpaceOnUse">
               <stop stopColor="#FDA4AF"/>
               <stop offset="1" stopColor="#DB2777"/>
             </linearGradient>
 
-            <linearGradient id="ribYellow" x1="60" y1="90" x2="210" y2="150" gradientUnits="userSpaceOnUse">
+            <linearGradient id="ribYellow" x1="60" y1="90" x2="165" y2="140" gradientUnits="userSpaceOnUse">
               <stop stopColor="#FDE68A"/>
               <stop offset="1" stopColor="#F59E0B"/>
             </linearGradient>
 
-            <linearGradient id="ribTeal" x1="60" y1="120" x2="210" y2="190" gradientUnits="userSpaceOnUse">
+            <linearGradient id="ribTeal" x1="60" y1="120" x2="180" y2="180" gradientUnits="userSpaceOnUse">
               <stop stopColor="#5EEAD4"/>
               <stop offset="1" stopColor="#14B8A6"/>
             </linearGradient>
 
             {/* Violet spine */}
-            <linearGradient id="ribViolet" x1="60" y1="60" x2="150" y2="210" gradientUnits="userSpaceOnUse">
+            <linearGradient id="ribViolet" x1="150" y1="210" x2="60" y2="60" gradientUnits="userSpaceOnUse">
               <stop stopColor="#C4B5FD"/>
               <stop offset="1" stopColor="#7C3AED"/>
             </linearGradient>
 
             {/* Soft drop shadow */}
             <filter id="ribbonShadow" x="-40" y="-40" width="336" height="336" colorInterpolationFilters="sRGB">
-              <feDropShadow dx="0" dy="8" stdDeviation="10" floodColor="#0B102A" floodOpacity="0.22"/>
+              <feDropShadow dx="0" dy="4" stdDeviation="5" floodColor="#0B102A" floodOpacity="0.15"/>
             </filter>
           </defs>
 
@@ -68,16 +68,9 @@ export function Logo({ size = 'md', variant = 'full' }: LogoProps) {
             <rect x="64" y="70" width="44" height="120" rx="22" fill="url(#ribViolet)"/>
 
             {/* Horizontal bars */}
-            <rect x="88" y="70" width="112" height="36" rx="18" fill="url(#ribPink)"/>
-            <rect x="88" y="110" width="88" height="36" rx="18" fill="url(#ribYellow)"/>
-            <rect x="88" y="150" width="112" height="36" rx="18" fill="url(#ribTeal)"/>
-
-            {/* Subtle edge highlights (no spine highlight to avoid "glow" over bars) */}
-            <g opacity="0.20">
-              <rect x="88" y="70" width="112" height="36" rx="18" stroke="white" strokeWidth="2"/>
-              <rect x="88" y="110" width="88" height="36" rx="18" stroke="white" strokeWidth="2"/>
-              <rect x="88" y="150" width="112" height="36" rx="18" stroke="white" strokeWidth="2"/>
-            </g>
+            <rect x="88" y="70" width="89.6" height="36" rx="18" fill="url(#ribPink)"/>
+            <rect x="88" y="110" width="70.4" height="36" rx="18" fill="url(#ribYellow)"/>
+            <rect x="88" y="150" width="89.6" height="36" rx="18" fill="url(#ribTeal)"/>
           </g>
         </svg>
       </div>
