@@ -785,4 +785,48 @@ No new decision required — Review 19 acts on the decisions already captured in
 
 ---
 
+## Review 20: Frontend-migration scope lock-in — drop legacy pages, add UI-PRD-08
+
+**Date:** 2026-04-24
+**Scope:** Close the open questions carried by UI-PRD-02 and UI-PRD-05, and lock in which existing `frontend/src/pages/*` routes get redesigned versus dropped before the frontend migration kicks off.
+
+### Why
+
+Pre-migration gap audit against `docs/figma-export/src/app/pages/*` surfaced 11 existing routes with no plan: four admin pages, `AnalysisReport`, `OrganizationSelection`, `Recommendations`, `Campaigns`, `Reports`, `Index` (`/measurement-plan`), and `Home`. UI-PRD-02 and UI-PRD-05 had deferred three of them ("follow-up PRD"); seven had no mention anywhere. Rather than carry the ambiguity into implementation, we closed each with a disposition: drop, or redesign under a specific PRD.
+
+### Dispositions
+
+| Old page | Route | Disposition | PRD |
+|----------|-------|-------------|-----|
+| `Home.tsx` | `/` | Replaced by `ChatPage` at `/` | UI-PRD-02 §11 Cleanup |
+| `Settings.tsx` | `/settings` | Dropped — superseded by `LayoutSettings` sub-nav | UI-PRD-02 §11 |
+| `AdminSettings.tsx`, `AdminIndustryKeywords.tsx`, `AgentConfigManagement.tsx`, `ToolUsageDashboard.tsx` | `/settings/admin/*` | **Dropped** — admin surface removed from the product | UI-PRD-02 §11 |
+| `OrganizationSelection.tsx` | `/organization-selection` | Replaced by new `/select-organization` page | **UI-PRD-08 (new)** |
+| `AnalysisReport.tsx` | `/analysis-report/:reportId` | Dropped — report viewing now lives in Performance Analysis tab | UI-PRD-05 §11 (absorbed by PE-PRD-02) |
+| `Recommendations.tsx` | `/recommendations` | Dropped — absorbed by Performance Analysis tab | UI-PRD-07 §11 (absorbed by PE-PRD-02) |
+| `Campaigns.tsx` | `/campaigns` | Dropped — absorbed by Calendar + Campaign Management | UI-PRD-07 §11 (absorbed by PR-PRD-08) |
+| `Reports.tsx` | `/reports` | Dropped — absorbed by Dashboards | UI-PRD-07 §11 (absorbed by DB-PRD-*) |
+| `Simulations.tsx` | `/simulations` | Dropped — absorbed by Performance Simulations tab | UI-PRD-07 §11 (absorbed by PE-PRD-03) |
+| `Index.tsx` | `/measurement-plan` | Dropped — no replacement | UI-PRD-07 §11 |
+
+### Documents updated
+
+- **New:** `docs/design/components/ui/projects/UI-PRD-08-organization-selection-page.md` — full 10-section PRD for the redesigned post-auth org-picker (standalone, no shell; preserves agency / super-admin / auto-select logic).
+- `docs/design/components/ui/README.md` — §2 architecture diagram adds the standalone-page bucket; §5.1 dependency graph adds UI-PRD-08; §5.2 projects table adds a UI-PRD-08 row and annotates UI-PRD-07 as potentially retired in favor of PE-PRD-01…08; project count updated 7 → 8.
+- `docs/design/components/ui/projects/UI-PRD-02-core-shell-pages.md` — closed the Home/Chat open question (decision: Chat replaces Home at `/`); removed the "OrganizationSelection deferred" out-of-scope line (now owned by UI-PRD-08); added **§11 Cleanup** enumerating file deletes for Home, Settings hub, four admin pages, and the legacy org-selection page.
+- `docs/design/components/ui/projects/UI-PRD-05-knowledge-section.md` — closed the AnalysisReport open question (decision: dropped, not redesigned); added **§11 Cleanup** for `AnalysisReport.tsx`.
+- `docs/design/components/ui/projects/UI-PRD-07-performance-page.md` — §1 flags the subsumption risk vs. PE-PRD-01…08; moved Recommendations / Campaigns / Reports out of "Out of scope" and into a new "Pages dropped from the product" subsection; added **§11 Cleanup** for `Recommendations.tsx`, `Campaigns.tsx`, `Reports.tsx`, `Index.tsx` (`/measurement-plan`), `Simulations.tsx`.
+- `docs/design/components/PROJECT-PLANNER.md` — added UI-PRD-08 row at Release 1: Foundation; annotated UI-PRD-07 "may be subsumed".
+
+### Follow-ups
+
+- At PE-PRD-01 kickoff, decide whether to retire UI-PRD-07 and move its Cleanup table into PE-PRD-01. No action needed now — the Cleanup lives in one place in the meantime.
+- Figma has no exported node for the new org-select page; UI-PRD-08 §5 carries the visual spec inline until Figma catches up.
+
+### Notion Design Decision
+
+Add a Design Decision entry for "Frontend migration — drop legacy routes" linking to this review. (To be filed by the design-doc maintainer.)
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*

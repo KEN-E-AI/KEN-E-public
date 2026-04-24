@@ -22,16 +22,22 @@ The authentication, settings, and chat pages are the "day one" surfaces every us
 - Redesign `UserSettings.tsx` onto `LayoutSettings`
 - Redesign `AcceptInvitation.tsx` onto the auth layout
 - New `/chat` route and `ChatPage` with full conversational UI (`ChatInterface`, `ThinkingBlock`, `SessionsSidebar`)
+- `ChatPage` replaces `Home` as the app root: `/` now renders `ChatPage` inside `LayoutC`, and `frontend/src/pages/Home.tsx` is deleted
 - Wire `SessionsSidebar` to the existing `ChatContext` session list
 - Route migration: preserve current backward-compat redirects in `App.tsx`
+- Delete the dropped legacy routes + pages listed in §11 Cleanup
 - Component tests for every migrated page and the new chat components
 
 ### Out of scope
 - Changes to Firebase auth logic, email verification flow, or invitation backend
 - Changes to settings API endpoints
 - Changes to the chat endpoint or agent behavior — UI-only
-- AdminSettings / AdminIndustryKeywords / AgentConfigManagement / ToolUsageDashboard — admin-only pages deferred to a follow-up
-- Organization Selection page — deferred (not in the current Figma set)
+- Organization Selection page — owned by **UI-PRD-08** (new `/select-organization` page)
+
+### Pages dropped from the product (handled in §11 Cleanup, not redesigned)
+- `Home.tsx` — replaced by `ChatPage` at `/`
+- `AdminSettings.tsx`, `AdminIndustryKeywords.tsx`, `AgentConfigManagement.tsx`, `ToolUsageDashboard.tsx` — admin surfaces removed from the product; no redesign
+- `Settings.tsx` — old `/settings` hub page; superseded by `LayoutSettings` sub-nav
 
 ## 3. Dependencies
 
@@ -123,7 +129,6 @@ This PRD consumes only existing endpoints — no new contracts.
 
 ### Open questions
 
-- **Q:** Does Home (`/`) remain as a landing page or get replaced by Chat? → **Assumption:** Home remains unchanged in this PRD; a follow-up can decide redirect behavior.
 - **Q:** Does the chat page support artifact rendering (Vega-Lite viz)? → **Defer** to a future PRD tied to the data-visualization design doc.
 
 ## 10. Reference
@@ -134,3 +139,24 @@ This PRD consumes only existing endpoints — no new contracts.
 - Existing files: `frontend/src/pages/Authentication.tsx`, `AccountSettings.tsx`, `UserSettings.tsx`, `AcceptInvitation.tsx`; `frontend/src/contexts/AuthContext.tsx`, `ChatContext.tsx`
 - `frontend/CLAUDE.md` — Authentication State, CSS architecture
 - CLAUDE.md rules in scope: C-5, C-6, C-8; T-2; G-2, G-3
+
+## 11. Cleanup — legacy pages deleted by this PRD
+
+The following files are removed as part of this PRD. Each is either absorbed by a new surface (Chat, the new `LayoutSettings` sub-nav) or dropped from the product. Any lingering route references in `App.tsx`, sidebar nav, or tests must be removed in the same PR.
+
+| File | Route(s) | Replaced by / reason |
+|------|----------|----------------------|
+| `frontend/src/pages/Home.tsx` | `/` | `ChatPage` now renders at `/` inside `LayoutC` |
+| `frontend/src/pages/Settings.tsx` | `/settings` | `LayoutSettings` sub-nav — no hub page needed |
+| `frontend/src/pages/AdminSettings.tsx` | `/settings/admin` | Dropped — admin surface removed from the product |
+| `frontend/src/pages/AdminIndustryKeywords.tsx` | `/settings/admin/industry-keywords` | Dropped |
+| `frontend/src/pages/AgentConfigManagement.tsx` | `/settings/admin/agent-configs` | Dropped — admin surface removed; agent configuration will be authored via the Workflows > Agents UI (AH-PRD-02) |
+| `frontend/src/pages/ToolUsageDashboard.tsx` | `/settings/admin/tool-usage` | Dropped |
+
+`frontend/src/pages/OrganizationSelection.tsx` and its route are deleted by **UI-PRD-08**, not this PRD.
+
+Post-cleanup checks:
+- `grep -r "Home\|AdminSettings\|AdminIndustryKeywords\|AgentConfigManagement\|ToolUsageDashboard\|pages/Settings" frontend/src` returns only legitimate matches (e.g., `LayoutSettings` unrelated to the old `Settings.tsx` hub)
+- `App.tsx` no longer imports or routes to any deleted page
+- `Sidebar.tsx` has no nav entries pointing to deleted routes
+- Associated `*.test.tsx` files for deleted pages are also deleted

@@ -30,7 +30,9 @@ The Knowledge section is KEN-E's surface for exploring everything it knows about
 - Data wiring to `KG-PRD-03` read tools (`load_context_section`, `load_document`, `search_kb`, `list_observations`) — that wiring is KG-PRD-03's
 - Changes to Neo4j queries or any knowledge-graph backend
 - Changes to existing strategy-document endpoints
-- `AnalysisReport` page — defer to a follow-up unless design parity is trivial
+
+### Pages dropped from the product (handled in §11 Cleanup, not redesigned)
+- `AnalysisReport.tsx` (`/analysis-report/:reportId`) — replaced by the Performance page's **Analysis tab** (PE-PRD-02), which now owns historical-report viewing
 
 ## 3. Dependencies
 
@@ -126,7 +128,6 @@ N/A — this PRD consumes no new APIs. Existing strategy endpoints remain consum
 ### Open questions
 
 - **Q:** Should `/knowledge/insights` remain or merge into `/knowledge` (index)? → **Default:** keep separate — Figma lists both.
-- **Q:** Does `AnalysisReport` get redesigned here or as a follow-up? → **Defer to follow-up** unless small enough to include mid-PRD.
 - **Q:** Split or single PRD? → Team owner decides at kickoff based on capacity.
 
 ## 10. Reference
@@ -136,3 +137,14 @@ N/A — this PRD consumes no new APIs. Existing strategy endpoints remain consum
 - Downstream consumer: [`KG-PRD-03`](../../knowledge-graph/projects/KG-PRD-03-orchestrator-read-tools.md)
 - Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) — StrategyIndex, AccountDetailsPage, BrandPage, CompetitorsPage, CustomersPage, InsightsPage, JourneyPage, MarketingPage, MetricsPage, ProductsPage, KnowledgeGraphPage
 - CLAUDE.md rules in scope: C-5, C-6, C-8; T-2; G-2, G-3
+
+## 11. Cleanup — legacy pages deleted by this PRD
+
+| File | Route(s) | Replaced by / reason |
+|------|----------|----------------------|
+| `frontend/src/pages/AnalysisReport.tsx` | `/analysis-report/:reportId` | Absorbed into Performance **Analysis tab** (PE-PRD-02), which lets users view reports for prior months |
+
+Post-cleanup checks:
+- `App.tsx` no longer routes `/analysis-report/:reportId`
+- `grep -r "AnalysisReport\|analysis-report" frontend/src` returns no live references
+- Associated `*.test.tsx` file for `AnalysisReport` is also deleted

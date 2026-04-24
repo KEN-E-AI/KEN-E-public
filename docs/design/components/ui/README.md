@@ -37,12 +37,16 @@ A developer reading only this section should understand: this component owns the
    ├── /settings/organization    ├── /agents                   ├── calendar view
    ├── /settings/account         ├── /automations              ├── list view
    ├── /settings/user            └── /skills                   └── detail panel
-   └── /chat
+   └── /chat (= /)
 
         ▼                           ▼                            ▼
    UI-PRD-05                   UI-PRD-06                    UI-PRD-07
    Knowledge/Strategy          Extensions                   Performance
    /knowledge/*                /extensions/*                /performance
+
+   Standalone (no shell) — between auth and the app
+   ─────────────────────────────────────────────
+   UI-PRD-08 · Organization Selection · /select-organization
 ```
 
 ### 2.1 Key Directories
@@ -129,7 +133,7 @@ Every user-facing capability in KEN-E renders through this component's shell and
 
 ## 5. Project Index
 
-The migration is split across **7 project PRDs** under [`projects/`](./projects/). UI-PRD-01 is a hard prerequisite for UI-PRD-02…07. Beyond that, projects can run in parallel by separate dev teams once their owning backend release is close enough that a redesign won't rot before it ships.
+The migration is split across **8 project PRDs** under [`projects/`](./projects/). UI-PRD-01 is a hard prerequisite for UI-PRD-02…08. Beyond that, projects can run in parallel by separate dev teams once their owning backend release is close enough that a redesign won't rot before it ships.
 
 ### 5.1 Dependency graph
 
@@ -141,7 +145,8 @@ UI-PRD-01 (Design System Foundation + Shell)
     ├──► UI-PRD-04 (Calendar)                     (Release 2 — precedes PR-PRD-03)
     ├──► UI-PRD-05 (Knowledge / Strategy)         (Release 3 — precedes KG-PRD-*)
     ├──► UI-PRD-06 (Extensions)                   (no backend PRD today — roadmap)
-    └──► UI-PRD-07 (Performance)                  (no backend dependency — can ship anytime)
+    ├──► UI-PRD-07 (Performance)                  (may be subsumed by PE-PRD-01…08)
+    └──► UI-PRD-08 (Organization Selection)       (Release 1 — first screen post-auth)
 ```
 
 ### 5.2 Projects
@@ -154,7 +159,8 @@ UI-PRD-01 (Design System Foundation + Shell)
 | 04 | [Calendar Page](./projects/UI-PRD-04-calendar-page.md) | Frontend | UI-PRD-01 | Release 2 (precedes PR-PRD-03) | ~4–5 days |
 | 05 | [Knowledge / Strategy Section](./projects/UI-PRD-05-knowledge-section.md) | Frontend | UI-PRD-01 | Release 3 (precedes KG-PRD-*) | ~10–14 days |
 | 06 | [Extensions Page](./projects/UI-PRD-06-extensions-page.md) | Frontend | UI-PRD-01 | Roadmap (no backend PRD yet) | ~4–6 days |
-| 07 | [Performance Page](./projects/UI-PRD-07-performance-page.md) | Frontend | UI-PRD-01 | — | ~3–4 days |
+| 07 | [Performance Page](./projects/UI-PRD-07-performance-page.md) | Frontend | UI-PRD-01 | May be retired in favor of PE-PRD-01…08 | ~3–4 days |
+| 08 | [Organization Selection Page](./projects/UI-PRD-08-organization-selection-page.md) | Frontend | UI-PRD-01 | Release 1 | ~3–4 days |
 
 ### 5.3 Cross-PRD coordination points
 
