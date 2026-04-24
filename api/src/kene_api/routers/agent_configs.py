@@ -10,9 +10,11 @@ backwards compatibility with pre-Sprint-6 callers.
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
+from pydantic import Field
 
 from app.utils.trace_metadata import parse_semver, validate_semver
 
@@ -26,16 +28,44 @@ from ..models.agent_config_models import (
     ConfigAuditEntry,
     GenerateContentConfig,
 )
+from ..services.audit_service import log_config_action
 
 __all__ = [
     "ALLOWED_CONFIG_IDS",
     "AgentConfig",
     "AgentConfigMetadata",
     "AgentConfigUpdate",
+    "AgentConfigUpdateResponse",
     "ConfigAuditEntry",
     "GenerateContentConfig",
     "router",
 ]
+
+
+class AgentConfigUpdateResponse(AgentConfig):
+    """PUT response: the updated AgentConfig plus any operator warnings.
+
+    Extends ``AgentConfig`` (rather than nesting it) so existing callers that
+    read top-level fields like ``response.model`` or ``response.metadata``
+    keep working. Adding a new optional ``warnings`` list is additive.
+
+    Per Sprint 6 AC-6.25, changes to ``model`` or ``max_output_tokens`` /
+    ``generate_content_config`` cannot be picked up by the 60 s hot-reload
+    cache (ADK bakes them in at agent construction) — those changes surface
+    as a redeploy-required warning here so admins don't silently think the
+    change is live.
+    """
+
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Operator warnings (e.g., redeploy required for model change).",
+    )
+
+
+# Fields whose runtime effect requires a pod/agent redeploy. Per Sprint 6
+# Decision B, instruction and temperature propagate via the 60 s in-process
+# cache; everything else baked by the ADK Agent constructor is in this set.
+_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset({"model", "max_output_tokens"})
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +221,83 @@ def _build_firestore_updates(
     return updates
 
 
+def _snapshot_pre_image(
+    current_config: dict[str, Any], update: AgentConfigUpdate
+) -> dict[str, Any]:
+    """Capture current values for every field the update touches."""
+    gen_cfg = current_config.get("generate_content_config", {}) or {}
+    snap: dict[str, Any] = {}
+
+    if update.instruction is not None:
+        snap["instruction"] = current_config.get("instruction")
+    if update.model is not None:
+        snap["model"] = current_config.get("model")
+    if update.description is not None:
+        snap["description"] = current_config.get("description")
+    if update.temperature is not None:
+        snap["temperature"] = gen_cfg.get("temperature")
+    if update.max_output_tokens is not None:
+        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+
+    return snap
+
+
+def _snapshot_post_image(
+    updated_data: dict[str, Any], update: AgentConfigUpdate
+) -> dict[str, Any]:
+    gen_cfg = updated_data.get("generate_content_config", {}) or {}
+    snap: dict[str, Any] = {}
+
+    if update.instruction is not None:
+        snap["instruction"] = updated_data.get("instruction")
+    if update.model is not None:
+        snap["model"] = updated_data.get("model")
+    if update.description is not None:
+        snap["description"] = updated_data.get("description")
+    if update.temperature is not None:
+        snap["temperature"] = gen_cfg.get("temperature")
+    if update.max_output_tokens is not None:
+        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+
+    return snap
+
+
+def _diff_fields(
+    pre: dict[str, Any],
+    post: dict[str, Any],
+    update: AgentConfigUpdate,
+) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """Return (fields_changed, changes) for fields the caller actually set.
+
+    A field is "changed" if it was present in the update body and its value
+    actually differs from the pre-image. This avoids logging no-op fields.
+    """
+    fields_changed: list[str] = []
+    changes: dict[str, dict[str, Any]] = {}
+
+    for field_name in pre:
+        before = pre[field_name]
+        after = post.get(field_name)
+        if before != after:
+            fields_changed.append(field_name)
+            changes[field_name] = {"before": before, "after": after}
+
+    return fields_changed, changes
+
+
+def _build_redeploy_warnings(fields_changed: list[str]) -> list[str]:
+    """Surface redeploy-required warnings for fields ADK bakes at construction."""
+    warnings: list[str] = []
+    for field_name in fields_changed:
+        if field_name in _REDEPLOY_REQUIRED_FIELDS:
+            warnings.append(
+                f"Change to '{field_name}' requires a pod/agent redeploy to take "
+                f"effect. The 60 s hot-reload cache only covers instruction and "
+                f"temperature."
+            )
+    return warnings
+
+
 @router.get("/", response_model=list[str])
 async def list_agent_configs(
     user: UserContext = Depends(get_current_user_context),
@@ -304,13 +411,13 @@ async def get_agent_config(
         ) from e
 
 
-@router.put("/{config_id}", response_model=AgentConfig)
+@router.put("/{config_id}", response_model=AgentConfigUpdateResponse)
 async def update_agent_config(
     config_id: str,
     update: AgentConfigUpdate,
     user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
-) -> AgentConfig:
+) -> AgentConfigUpdateResponse:
     """
     Update an agent configuration.
 
@@ -428,6 +535,9 @@ async def update_agent_config(
             current_gen_config=current_config.get("generate_content_config", {}),
         )
 
+        # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
+        pre_image = _snapshot_pre_image(current_config, update)
+
         # Apply updates
         doc_ref.update(updates)
 
@@ -435,11 +545,29 @@ async def update_agent_config(
         updated_doc = doc_ref.get()
         updated_data = updated_doc.to_dict()
 
+        # Diff + audit write (failure non-fatal)
+        post_image = _snapshot_post_image(updated_data, update)
+        fields_changed, changes = _diff_fields(pre_image, post_image, update)
+        await log_config_action(
+            db=db,
+            doc_type="agent_config",
+            doc_id=config_id,
+            action="updated",
+            user=user,
+            version_before=current_version_str,
+            version_after=new_version,
+            fields_changed=fields_changed,
+            changes=changes,
+        )
+
+        # Redeploy warnings (Sprint 6 AC-6.25)
+        warnings = _build_redeploy_warnings(fields_changed)
+
         logger.info(
             f"User {user.email} updated config {config_id} to version {new_version}"
         )
 
-        return AgentConfig(**updated_data)
+        return AgentConfigUpdateResponse(**updated_data, warnings=warnings)
 
     except HTTPException:
         raise
@@ -447,4 +575,47 @@ async def update_agent_config(
         logger.error(f"Failed to update agent config {config_id}: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update agent configuration"
+        ) from e
+
+
+@router.get("/{config_id}/history", response_model=list[ConfigAuditEntry])
+async def get_agent_config_history(
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+    limit: int = Query(20, ge=1, le=100, description="Max entries to return"),
+) -> list[ConfigAuditEntry]:
+    """Return recent audit entries for an agent config, newest first.
+
+    Reads from ``agent_configs/{config_id}/history/*`` subcollection written
+    by ``log_config_action``. Per Sprint 6 AC-6.9 / Decision C.
+    """
+    if not user.is_super_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only super administrators can read agent config history",
+        )
+
+    if config_id not in ALLOWED_CONFIG_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid config_id. Must be one of: {', '.join(sorted(ALLOWED_CONFIG_IDS))}",
+        )
+
+    if limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be <= 100")
+
+    try:
+        history_ref = (
+            db.collection("agent_configs")
+            .document(config_id)
+            .collection("history")
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+        )
+        return [ConfigAuditEntry(**doc.to_dict()) for doc in history_ref.stream()]
+    except Exception as e:
+        logger.error(f"Failed to fetch history for {config_id}: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve config history"
         ) from e

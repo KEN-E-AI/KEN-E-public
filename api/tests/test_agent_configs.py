@@ -1,20 +1,20 @@
 """Tests for agent configuration endpoints."""
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
 from fastapi import HTTPException
-from unittest.mock import Mock, patch, MagicMock
-
+from src.kene_api.auth import UserContext
 from src.kene_api.routers.agent_configs import (
-    update_agent_config,
-    get_agent_config,
-    list_agent_configs,
     ALLOWED_CONFIG_IDS,
+    AgentConfigUpdate,
+    _build_firestore_updates,
     _increment_version,
     _sanitize_updated_by,
-    _build_firestore_updates,
-    AgentConfigUpdate,
+    get_agent_config,
+    list_agent_configs,
+    update_agent_config,
 )
-from src.kene_api.auth import UserContext
 
 
 @pytest.fixture
@@ -348,3 +348,263 @@ class TestAllowlistDerivedFromRegistry:
         from app.adk.agents.registry import get_registry
 
         assert ALLOWED_CONFIG_IDS == get_registry().get_all_config_doc_ids()
+
+
+# ---------------------------------------------------------------------------
+# Story 1.1.4-3 — Audit trail, warnings, and history endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestAuditWriteOnUpdate:
+    """PUT /api/v1/agent-configs/{id} writes a ConfigAuditEntry on success."""
+
+    @pytest.mark.asyncio
+    async def test_successful_update_calls_log_config_action(
+        self, admin_user, sample_config_data
+    ):
+        """Happy-path PUT must invoke log_config_action exactly once."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["instruction"] = "Old instruction text used before update"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+
+        post = dict(pre)
+        post["instruction"] = "New instruction text after update"
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        spy_audit = AsyncMock(return_value="audit-1")
+
+        with patch.object(router_mod, "log_config_action", spy_audit):
+            update = AgentConfigUpdate(
+                instruction="New instruction text after update",
+                updated_by="admin@ken-e.ai",
+            )
+
+            await router_mod.update_agent_config(
+                "business_researcher", update, user=admin_user, db=mock_db
+            )
+
+        assert spy_audit.await_count == 1
+        kw = spy_audit.await_args.kwargs
+        assert kw["doc_type"] == "agent_config"
+        assert kw["doc_id"] == "business_researcher"
+        assert kw["action"] == "updated"
+        assert "instruction" in kw["fields_changed"]
+        assert kw["changes"]["instruction"] == {
+            "before": "Old instruction text used before update",
+            "after": "New instruction text after update",
+        }
+        assert kw["version_before"] == "v1.0.0"
+        assert kw["version_after"] == "v1.0.1"
+
+
+class TestWarningsOnRedeployRequiredFields:
+    """Changes to model / max_output_tokens / generate_content_config surface a
+    redeploy-required warning (AC-6.25) because ADK Agent constructor bakes
+    these fields in at module-import time."""
+
+    @pytest.mark.asyncio
+    async def test_model_change_surfaces_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["model"] = "gemini-2.0-flash"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = {**pre, "model": "gemini-2.5-pro"}
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            resp = await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(model="gemini-2.5-pro", updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert hasattr(resp, "warnings"), (
+            "update_agent_config must return AgentConfigUpdateResponse (config + warnings)"
+        )
+        assert any(
+            "redeploy" in w.lower() for w in resp.warnings
+        ), f"Expected redeploy warning for model change; got warnings={resp.warnings}"
+
+    @pytest.mark.asyncio
+    async def test_temperature_change_does_not_surface_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        """Temperature propagates via the 60s InstructionProvider cache per
+        Decision B — no redeploy required."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["generate_content_config"] = {"temperature": 0.5, "max_output_tokens": 2500}
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            resp = await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(temperature=0.5, updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert not any(
+            "redeploy" in w.lower() for w in resp.warnings
+        ), (
+            f"Temperature change should NOT trigger redeploy warning; "
+            f"got warnings={resp.warnings}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_max_output_tokens_change_surfaces_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["generate_content_config"] = {"temperature": 0.3, "max_output_tokens": 5000}
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            resp = await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(
+                    max_output_tokens=5000, updated_by="admin@ken-e.ai"
+                ),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert any("redeploy" in w.lower() for w in resp.warnings)
+
+
+class TestAgentConfigHistoryEndpoint:
+    """GET /api/v1/agent-configs/{id}/history returns recent ConfigAuditEntry rows."""
+
+    @pytest.mark.asyncio
+    async def test_history_non_admin_forbidden(self, regular_user):
+        from src.kene_api.routers.agent_configs import get_agent_config_history
+
+        with pytest.raises(HTTPException) as exc:
+            await get_agent_config_history(
+                "business_researcher", user=regular_user, db=MagicMock()
+            )
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_history_returns_entries_desc(self, admin_user):
+        from src.kene_api.routers.agent_configs import get_agent_config_history
+
+        mock_db = MagicMock()
+
+        entry_new = MagicMock()
+        entry_new.to_dict.return_value = {
+            "action": "updated",
+            "doc_type": "agent_config",
+            "doc_id": "business_researcher",
+            "user_id": "admin-uid",
+            "user_email": "admin@ken-e.ai",
+            "timestamp": "2026-04-24T10:00:00+00:00",
+            "version_before": "v1.0.0",
+            "version_after": "v1.0.1",
+            "fields_changed": ["instruction"],
+            "changes": {"instruction": {"before": "old", "after": "new"}},
+        }
+        entry_old = MagicMock()
+        entry_old.to_dict.return_value = {
+            "action": "updated",
+            "doc_type": "agent_config",
+            "doc_id": "business_researcher",
+            "user_id": "admin-uid",
+            "user_email": "admin@ken-e.ai",
+            "timestamp": "2026-04-23T10:00:00+00:00",
+            "version_before": None,
+            "version_after": "v1.0.0",
+            "fields_changed": [],
+            "changes": {},
+        }
+
+        subcol = MagicMock()
+        subcol.order_by.return_value.limit.return_value.stream.return_value = iter(
+            [entry_new, entry_old]
+        )
+        mock_db.collection.return_value.document.return_value.collection.return_value = (
+            subcol
+        )
+
+        result = await get_agent_config_history(
+            "business_researcher", user=admin_user, db=mock_db, limit=20
+        )
+
+        assert len(result) == 2
+        assert result[0].timestamp > result[1].timestamp
+
+    @pytest.mark.asyncio
+    async def test_history_rejects_invalid_config_id(self, admin_user):
+        from src.kene_api.routers.agent_configs import get_agent_config_history
+
+        with pytest.raises(HTTPException) as exc:
+            await get_agent_config_history(
+                "../etc/passwd", user=admin_user, db=MagicMock()
+            )
+        assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_history_limit_bounded(self, admin_user):
+        from src.kene_api.routers.agent_configs import get_agent_config_history
+
+        with pytest.raises(HTTPException) as exc:
+            await get_agent_config_history(
+                "business_researcher",
+                user=admin_user,
+                db=MagicMock(),
+                limit=10000,
+            )
+        assert exc.value.status_code == 400
