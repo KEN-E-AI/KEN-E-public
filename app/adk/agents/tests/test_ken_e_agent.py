@@ -3,15 +3,25 @@
 import importlib
 from unittest.mock import MagicMock, patch
 
+import pytest
 from google.adk.agents.llm_agent_config import LlmAgentConfig
+
+from app.adk.agents.utils import config_cache
 
 # Import the module directly (bypass __init__.py's __getattr__ which returns the agent instance)
 ken_e_module = importlib.import_module("app.adk.agents.ken_e_agent")
 
 _BASE_INSTRUCTION = ken_e_module._BASE_INSTRUCTION
-build_ken_e_instruction = ken_e_module.build_ken_e_instruction
 _make_instruction_provider = ken_e_module._make_instruction_provider
 create_ken_e_agent = ken_e_module.create_ken_e_agent
+
+
+@pytest.fixture(autouse=True)
+def _clear_config_cache():
+    """Every test starts and ends with a clean agent config cache."""
+    config_cache.clear_config_cache()
+    yield
+    config_cache.clear_config_cache()
 
 
 def test_ken_e_has_correct_tools():
@@ -37,9 +47,21 @@ def test_ken_e_instruction_is_callable():
     assert callable(agent.instruction)
 
 
+def _seed_cache(doc_id: str, instruction: str, version: str = "v1.0") -> None:
+    """Helper: seed the cache so closure reads return a known value."""
+    cfg = LlmAgentConfig(
+        name=doc_id,
+        model="gemini-2.0-flash",
+        instruction=instruction,
+    )
+    with patch.object(config_cache, "load_config_from_firestore") as mock_load:
+        mock_load.return_value = (cfg, {"version": version})
+        config_cache.get_cached_config(doc_id)
+
+
 @patch.object(ken_e_module, "load_config_from_firestore")
 def test_firestore_config_applied(mock_load):
-    """Firestore config fields are applied to the Agent."""
+    """Firestore config fields are applied to the Agent at construction."""
     mock_config = LlmAgentConfig(
         name="ken_e_chatbot",
         model="gemini-2.5-pro",
@@ -54,34 +76,38 @@ def test_firestore_config_applied(mock_load):
     assert agent.model == "gemini-2.5-pro"
     assert agent.description == "Custom description"
     assert agent.generate_content_config is not None
-    # Instruction should be a callable that uses the Firestore instruction
+    # Instruction is a callable; reading it now goes through the cache.
     assert callable(agent.instruction)
+
+    # Seed cache so the closure returns the Firestore instruction.
+    _seed_cache("ken_e_chatbot", "Custom instruction from Firestore", "v2.0")
     ctx = MagicMock()
     ctx.state = {}
-    result = agent.instruction(ctx)
-    assert result == "Custom instruction from Firestore"
+    assert agent.instruction(ctx) == "Custom instruction from Firestore"
 
 
 @patch.object(ken_e_module, "load_config_from_firestore")
 def test_firestore_fallback_on_failure(mock_load):
-    """Agent uses hardcoded defaults when Firestore loading fails."""
+    """Agent uses hardcoded defaults when construction-time Firestore load fails."""
     mock_load.side_effect = Exception("Firestore unavailable")
 
     agent = create_ken_e_agent()
 
     assert agent.model == "gemini-2.0-flash"
     assert agent.description == ""
-    # Instruction should still be callable and use _BASE_INSTRUCTION
     assert callable(agent.instruction)
-    ctx = MagicMock()
-    ctx.state = {}
-    result = agent.instruction(ctx)
-    assert result == _BASE_INSTRUCTION
+
+    # Closure with a failing cache load must fall back to _BASE_INSTRUCTION.
+    with patch.object(config_cache, "load_config_from_firestore") as cache_load:
+        cache_load.side_effect = Exception("Firestore still unavailable")
+        ctx = MagicMock()
+        ctx.state = {}
+        assert agent.instruction(ctx) == _BASE_INSTRUCTION
 
 
 @patch.object(ken_e_module, "load_config_from_firestore")
-def test_instruction_provider_uses_firestore_instruction(mock_load):
-    """The closure-based instruction provider uses the loaded Firestore instruction, not _BASE_INSTRUCTION."""
+def test_instruction_provider_uses_cached_firestore_instruction(mock_load):
+    """The closure reads the cached Firestore instruction on each turn."""
     custom_instruction = "You are a custom KEN-E agent."
     mock_config = LlmAgentConfig(
         name="ken_e_chatbot",
@@ -92,17 +118,44 @@ def test_instruction_provider_uses_firestore_instruction(mock_load):
 
     agent = create_ken_e_agent()
 
-    # Without org context — should return custom instruction
+    _seed_cache("ken_e_chatbot", custom_instruction, "v1.1")
+
     ctx = MagicMock()
     ctx.state = {}
     assert agent.instruction(ctx) == custom_instruction
 
-    # With org context — should prepend org context before custom instruction
     ctx.state = {"organization_context": "Acme Corp"}
     result = agent.instruction(ctx)
     assert "Acme Corp" in result
     assert custom_instruction in result
     assert _BASE_INSTRUCTION not in result
+
+
+@patch.object(ken_e_module, "load_config_from_firestore")
+def test_instruction_update_reflects_within_ttl(mock_load):
+    """Decision B / AC-6.25: a new instruction in Firestore must show up on
+    the next turn after the cache entry expires."""
+    initial = LlmAgentConfig(
+        name="ken_e_chatbot",
+        model="gemini-2.0-flash",
+        instruction="version one instruction",
+    )
+    mock_load.return_value = (initial, {"version": "v1.0"})
+
+    agent = create_ken_e_agent()
+
+    # Seed cache with v1
+    _seed_cache("ken_e_chatbot", "version one instruction", "v1.0")
+    ctx = MagicMock()
+    ctx.state = {}
+    assert agent.instruction(ctx) == "version one instruction"
+
+    # Clear cache to simulate TTL expiry, then have Firestore return v2
+    config_cache.clear_config_cache()
+    _seed_cache("ken_e_chatbot", "version two instruction", "v2.0")
+
+    # Same agent, same closure — new instruction reflected
+    assert agent.instruction(ctx) == "version two instruction"
 
 
 @patch.object(ken_e_module, "load_config_from_firestore")
@@ -119,98 +172,78 @@ def test_agent_name_stays_ken_e(mock_load):
     assert agent.name == "ken_e"
 
 
-class TestBuildKenEInstruction:
-    """Tests for the build_ken_e_instruction InstructionProvider callable."""
-
-    def _make_context(self, state: dict) -> MagicMock:
-        """Create a mock ReadonlyContext with given state."""
-        ctx = MagicMock()
-        ctx.state = state
-        return ctx
-
-    def test_returns_base_instruction_when_no_org_context(self):
-        """Without org context in state, returns base instruction only."""
-        ctx = self._make_context({})
-        result = build_ken_e_instruction(ctx)
-        assert result == _BASE_INSTRUCTION
-
-    def test_returns_base_instruction_when_org_context_is_none(self):
-        """With None org context in state, returns base instruction only."""
-        ctx = self._make_context({"organization_context": None})
-        result = build_ken_e_instruction(ctx)
-        assert result == _BASE_INSTRUCTION
-
-    def test_returns_base_instruction_when_org_context_is_empty(self):
-        """With empty string org context in state, returns base instruction only."""
-        ctx = self._make_context({"organization_context": ""})
-        result = build_ken_e_instruction(ctx)
-        assert result == _BASE_INSTRUCTION
-
-    def test_prepends_org_context_when_present(self):
-        """With org context in state, prepends it before base instruction."""
-        org_context = "# Acme Corp\nIndustry: Tech\n**Tone:** Professional"
-        ctx = self._make_context({"organization_context": org_context})
-        result = build_ken_e_instruction(ctx)
-
-        assert result.startswith("[ORGANIZATION CONTEXT]")
-        assert org_context in result
-        assert "[END CONTEXT]" in result
-        assert _BASE_INSTRUCTION in result
-        # Context comes before instruction
-        assert result.index("[ORGANIZATION CONTEXT]") < result.index(_BASE_INSTRUCTION)
-
-    def test_org_context_with_curly_braces_not_interpolated(self):
-        """Org context containing curly braces is preserved literally."""
-        org_context = "Revenue: {confidential} | Format: {custom}"
-        ctx = self._make_context({"organization_context": org_context})
-        result = build_ken_e_instruction(ctx)
-
-        assert "{confidential}" in result
-        assert "{custom}" in result
-
-    def test_base_instruction_contains_routing_info(self):
-        """Base instruction includes all key routing components."""
-        assert "KEN-E" in _BASE_INSTRUCTION
-        assert "Company News" in _BASE_INSTRUCTION
-        assert "Google Analytics" in _BASE_INSTRUCTION
-        assert "search_company_news" in _BASE_INSTRUCTION
-        assert "query_google_analytics" in _BASE_INSTRUCTION
-        assert "Strategy documents are automatically generated" in _BASE_INSTRUCTION
-
-    def test_ignores_unrelated_state_keys(self):
-        """Other state keys don't affect instruction generation."""
-        ctx = self._make_context({
-            "ga_credentials": {"access_token": "secret"},
-            "account_id": "acc_123",
-        })
-        result = build_ken_e_instruction(ctx)
-        assert result == _BASE_INSTRUCTION
+def test_base_instruction_contains_routing_info():
+    """Base instruction text preserves its key routing components."""
+    assert "KEN-E" in _BASE_INSTRUCTION
+    assert "Company News" in _BASE_INSTRUCTION
+    assert "Google Analytics" in _BASE_INSTRUCTION
+    assert "search_company_news" in _BASE_INSTRUCTION
+    assert "query_google_analytics" in _BASE_INSTRUCTION
+    assert "Strategy documents are automatically generated" in _BASE_INSTRUCTION
 
 
 class TestMakeInstructionProvider:
-    """Tests for the _make_instruction_provider closure factory."""
+    """Tests for the _make_instruction_provider closure factory.
+
+    Post Sprint 6 Decision B: the closure takes a ``config_doc_id`` and
+    reads ``instruction`` from the cache on every turn, so admin PUTs
+    propagate within the cache TTL (~60 s) without redeploy.
+    """
 
     def _make_context(self, state: dict) -> MagicMock:
         ctx = MagicMock()
         ctx.state = state
         return ctx
 
-    def test_returns_base_instruction_without_org_context(self):
-        provider = _make_instruction_provider("Custom base")
+    def _seed(self, doc_id: str, instruction: str) -> None:
+        cfg = LlmAgentConfig(
+            name=doc_id, model="gemini-2.0-flash", instruction=instruction
+        )
+        with patch.object(config_cache, "load_config_from_firestore") as mock_load:
+            mock_load.return_value = (cfg, {"version": "v1.0"})
+            config_cache.get_cached_config(doc_id)
+
+    def test_reads_cached_instruction_each_turn(self):
+        """Closure must delegate to get_cached_config; no captured string."""
+        self._seed("ken_e_chatbot", "Cached instruction")
+        provider = _make_instruction_provider("ken_e_chatbot")
         ctx = self._make_context({})
-        assert provider(ctx) == "Custom base"
+        assert provider(ctx) == "Cached instruction"
 
     def test_prepends_org_context(self):
-        provider = _make_instruction_provider("Custom base")
+        self._seed("ken_e_chatbot", "Cached base")
+        provider = _make_instruction_provider("ken_e_chatbot")
         ctx = self._make_context({"organization_context": "Org info"})
         result = provider(ctx)
         assert "Org info" in result
-        assert "Custom base" in result
-        assert result.index("[ORGANIZATION CONTEXT]") < result.index("Custom base")
+        assert "Cached base" in result
+        assert result.index("[ORGANIZATION CONTEXT]") < result.index("Cached base")
 
-    def test_different_base_instructions_produce_different_providers(self):
-        provider_a = _make_instruction_provider("Instruction A")
-        provider_b = _make_instruction_provider("Instruction B")
+    def test_different_doc_ids_produce_different_instructions(self):
+        self._seed("ken_e_chatbot", "Instruction A")
+        self._seed("business_researcher", "Instruction B")
+        provider_a = _make_instruction_provider("ken_e_chatbot")
+        provider_b = _make_instruction_provider("business_researcher")
         ctx = self._make_context({})
         assert provider_a(ctx) == "Instruction A"
         assert provider_b(ctx) == "Instruction B"
+
+    def test_cache_error_falls_back_to_base_instruction(self):
+        """If the cache raises (Firestore down, no cached value), the closure
+        must not propagate the exception — return _BASE_INSTRUCTION so the
+        agent stays functional rather than failing the turn."""
+        provider = _make_instruction_provider("ken_e_chatbot")
+        with patch.object(config_cache, "get_cached_config") as mock_get:
+            mock_get.side_effect = RuntimeError("cache + Firestore both down")
+            ctx = self._make_context({})
+            assert provider(ctx) == _BASE_INSTRUCTION
+
+    def test_cache_error_with_org_context_still_prepends(self):
+        """Even on cache failure, org context should still wrap _BASE_INSTRUCTION."""
+        provider = _make_instruction_provider("ken_e_chatbot")
+        with patch.object(config_cache, "get_cached_config") as mock_get:
+            mock_get.side_effect = RuntimeError("down")
+            ctx = self._make_context({"organization_context": "Acme"})
+            result = provider(ctx)
+            assert "Acme" in result
+            assert _BASE_INSTRUCTION in result

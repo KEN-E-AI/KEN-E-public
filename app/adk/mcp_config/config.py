@@ -12,10 +12,10 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
@@ -42,6 +42,12 @@ class StdioConnectionConfig(MCPConnectionParams):
           args: ["-y", "@anthropic/mcp-server-google-analytics"]
           env:
             GA_PROPERTY_ID: "${GA_PROPERTY_ID}"
+
+    Note: ``${VAR}`` resolution happens in the loader (see
+    :func:`_resolve_env_vars_in_dict`) **before** this model is constructed,
+    so runtime ``env`` values are already resolved strings. The admin
+    router path does NOT run the loader, so it sees literal ``${VAR}``
+    strings end-to-end (Sprint 6 secret-leak fix).
     """
 
     connection_type: Literal["stdio"] = "stdio"
@@ -51,14 +57,6 @@ class StdioConnectionConfig(MCPConnectionParams):
         default_factory=dict, description="Environment variables for the process"
     )
     working_dir: str | None = Field(None, description="Working directory for process")
-
-    @field_validator("env", mode="before")
-    @classmethod
-    def resolve_env_vars(cls, v: dict[str, str]) -> dict[str, str]:
-        """Resolve ${VAR_NAME} patterns in environment values."""
-        if not v:
-            return {}
-        return {key: _resolve_env_pattern(value) for key, value in v.items()}
 
 
 class SseConnectionConfig(MCPConnectionParams):
@@ -74,6 +72,12 @@ class SseConnectionConfig(MCPConnectionParams):
           headers:
             Authorization: "Bearer ${HUBSPOT_API_KEY}"
           timeout_seconds: 30
+
+    Note: ``${VAR}`` resolution happens in the loader (see
+    :func:`_resolve_env_vars_in_dict`) **before** this model is constructed.
+    The admin router deliberately bypasses the loader so literal ``${VAR}``
+    strings flow through GET/PUT/audit without leaking resolved secrets
+    (Sprint 6 secret-leak fix).
     """
 
     connection_type: Literal["sse"] = "sse"
@@ -84,20 +88,6 @@ class SseConnectionConfig(MCPConnectionParams):
     timeout_seconds: int = Field(
         30, ge=5, le=300, description="Connection timeout in seconds"
     )
-
-    @field_validator("url", mode="before")
-    @classmethod
-    def resolve_url(cls, v: str) -> str:
-        """Resolve ${VAR_NAME} patterns in URL."""
-        return _resolve_env_pattern(v)
-
-    @field_validator("headers", mode="before")
-    @classmethod
-    def resolve_headers(cls, v: dict[str, str]) -> dict[str, str]:
-        """Resolve ${VAR_NAME} patterns in headers."""
-        if not v:
-            return {}
-        return {key: _resolve_env_pattern(value) for key, value in v.items()}
 
 
 class MCPServerConfig(BaseModel):
@@ -209,6 +199,11 @@ class MCPConfigLoader:
         for name, config in servers.items():
             try:
                 config["name"] = name
+                # Resolve ${VAR} patterns before Pydantic construction — the
+                # connection sub-models used to do this via field validators
+                # but that leaked resolved secrets through the admin PUT/GET
+                # path. Resolution is now an explicit loader concern.
+                config = _resolve_env_vars_in_dict(config)
                 self._configs[name] = MCPServerConfig(**config)
                 logger.info(
                     f"Loaded MCP server config: {name}",
@@ -319,6 +314,25 @@ def _resolve_env_pattern(value: str) -> str:
         return resolved or ""
 
     return re.sub(pattern, replacer, value)
+
+
+def _resolve_env_vars_in_dict(data: Any) -> Any:
+    """Recursively resolve ``${VAR}`` patterns in every string in ``data``.
+
+    Used by loaders (:class:`MCPConfigLoader.load`,
+    :func:`FirestoreMCPLoader._doc_to_runtime_config`) to materialize
+    secrets before constructing :class:`MCPServerConfig`. The admin router
+    deliberately does NOT call this helper — it keeps literal ``${VAR}``
+    strings end-to-end so GET/PUT responses, Firestore writes, and audit
+    diffs never carry resolved secrets.
+    """
+    if isinstance(data, str):
+        return _resolve_env_pattern(data)
+    if isinstance(data, dict):
+        return {k: _resolve_env_vars_in_dict(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_resolve_env_vars_in_dict(v) for v in data]
+    return data
 
 
 # Singleton loader instance. Typed as the base loader interface; the concrete

@@ -236,9 +236,11 @@ class TestGet:
 
         result = await get_mcp_server_config("hubspot_mcp", user=admin_user, db=mock_db)
 
-        assert result.name == "hubspot_mcp"
-        assert result.hosting == "provider"
-        assert result.connection.connection_type == "sse"
+        # GET returns the raw Firestore dict (preserves ${VAR} literals per
+        # the secret-materialization fix); fields accessed by key, not attr.
+        assert result["name"] == "hubspot_mcp"
+        assert result["hosting"] == "provider"
+        assert result["connection"]["connection_type"] == "sse"
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_returns_404(
@@ -309,8 +311,8 @@ class TestUpdate:
         spy_reload.assert_not_awaited()
 
         # Response payload exposes the updated config fields + warnings list
-        assert resp.description == "new desc"
-        assert resp.warnings == []
+        assert resp["description"] == "new desc"
+        assert resp["warnings"] == []
 
     @pytest.mark.asyncio
     async def test_put_connection_change_triggers_reload(
@@ -354,7 +356,7 @@ class TestUpdate:
 
         spy_reload.assert_awaited_once()
         # Response surfaces the reload action
-        assert any("reload" in w.lower() for w in resp.warnings)
+        assert any("reload" in w.lower() for w in resp["warnings"])
 
     @pytest.mark.asyncio
     async def test_put_enabled_flip_triggers_reload(
@@ -432,7 +434,7 @@ class TestUpdate:
 
         assert any(
             "reload" in w.lower() and ("failed" in w.lower() or "error" in w.lower())
-            for w in resp.warnings
+            for w in resp["warnings"]
         )
 
     @pytest.mark.asyncio
@@ -466,6 +468,191 @@ class TestUpdate:
             await router_mod.update_mcp_server_config(
                 "hubspot_mcp", update, user=admin_user, db=mock_db
             )
+
+
+class TestSecretMaterialization:
+    """Regression tests for the Sprint 6 code-review secret-leak fix.
+
+    Pre-fix, ``MCPServerFirestoreConfig(**merged).model_dump()`` ran the
+    ``SseConnectionConfig.url`` / ``StdioConnectionConfig.env`` validators
+    (``mode="before"``) which replaced ``${VAR}`` patterns with the
+    resolved secret value via ``get_env_or_secret``. That resolved payload
+    was then written to Firestore, returned in PUT responses, and
+    captured in audit trail ``changes`` — leaking every secret.
+
+    Post-fix, the router writes the raw ``merged`` dict (literals
+    preserved) and uses ``response_model=None``. The throwaway
+    ``MCPServerFirestoreConfig(**merged)`` call exists only to enforce
+    cross-field invariants; its resolved output is discarded.
+
+    These tests pin the invariant: ``${VAR}`` strings must stay literal
+    in Firestore writes, GET responses, PUT responses, and audit
+    ``changes`` — even when the env var resolves to a real value.
+    """
+
+    @pytest.mark.asyncio
+    async def test_put_preserves_literal_var_in_firestore(
+        self,
+        admin_user: UserContext,
+        mock_db: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.kene_api.models.mcp_server_models import SseConnectionConfig
+        from src.kene_api.routers import mcp_server_configs as router_mod
+
+        # Pin the env var so Pydantic resolves ${HUBSPOT_API_KEY} → a
+        # non-empty "real secret". This is the condition that WOULD leak.
+        monkeypatch.setenv("HUBSPOT_MCP_URL", "https://hub.example.com/mcp")
+        monkeypatch.setenv("HUBSPOT_API_KEY", "SUPER-SECRET-DO-NOT-LEAK-123")
+
+        pre = _make_sse_server_doc()
+        doc_ref = _seed_doc(mock_db, "hubspot_mcp", pre)
+
+        monkeypatch.setattr(
+            router_mod, "log_config_action", AsyncMock(return_value="audit-id")
+        )
+        mock_manager = MagicMock()
+        mock_manager.reload = AsyncMock(return_value={"unloaded": [], "kept": 0})
+        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+
+        new_conn = SseConnectionConfig(
+            connection_type="sse",
+            url="${HUBSPOT_MCP_URL}",
+            headers={"Authorization": "Bearer ${HUBSPOT_API_KEY}"},
+            timeout_seconds=45,
+        )
+        update = MCPServerConfigUpdate(connection=new_conn, updated_by="admin@ken-e.ai")
+
+        await router_mod.update_mcp_server_config(
+            "hubspot_mcp", update, user=admin_user, db=mock_db
+        )
+
+        # Capture the dict handed to Firestore's .set()
+        written_payload = doc_ref.set.call_args.args[0]
+
+        # Literal ${VAR} must be in the stored doc, NOT the resolved secret
+        assert written_payload["connection"]["url"] == "${HUBSPOT_MCP_URL}", (
+            f"URL must be literal; got {written_payload['connection']['url']!r}"
+        )
+        assert (
+            written_payload["connection"]["headers"]["Authorization"]
+            == "Bearer ${HUBSPOT_API_KEY}"
+        ), "Authorization header must preserve ${HUBSPOT_API_KEY} literal"
+        assert "SUPER-SECRET-DO-NOT-LEAK-123" not in str(written_payload), (
+            f"Resolved secret leaked into Firestore payload: {written_payload!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_put_response_preserves_literal_var(
+        self,
+        admin_user: UserContext,
+        mock_db: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.kene_api.models.mcp_server_models import SseConnectionConfig
+        from src.kene_api.routers import mcp_server_configs as router_mod
+
+        monkeypatch.setenv("HUBSPOT_MCP_URL", "https://hub.example.com/mcp")
+        monkeypatch.setenv("HUBSPOT_API_KEY", "SUPER-SECRET-DO-NOT-LEAK-456")
+
+        pre = _make_sse_server_doc()
+        _seed_doc(mock_db, "hubspot_mcp", pre)
+
+        monkeypatch.setattr(
+            router_mod, "log_config_action", AsyncMock(return_value="audit-id")
+        )
+        mock_manager = MagicMock()
+        mock_manager.reload = AsyncMock(return_value={"unloaded": [], "kept": 0})
+        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+
+        new_conn = SseConnectionConfig(
+            connection_type="sse",
+            url="${HUBSPOT_MCP_URL}",
+            headers={"Authorization": "Bearer ${HUBSPOT_API_KEY}"},
+            timeout_seconds=45,
+        )
+        update = MCPServerConfigUpdate(connection=new_conn, updated_by="admin@ken-e.ai")
+
+        resp = await router_mod.update_mcp_server_config(
+            "hubspot_mcp", update, user=admin_user, db=mock_db
+        )
+
+        assert resp["connection"]["url"] == "${HUBSPOT_MCP_URL}"
+        assert (
+            resp["connection"]["headers"]["Authorization"]
+            == "Bearer ${HUBSPOT_API_KEY}"
+        )
+        assert "SUPER-SECRET-DO-NOT-LEAK-456" not in str(resp)
+
+    @pytest.mark.asyncio
+    async def test_get_returns_literal_var(
+        self,
+        admin_user: UserContext,
+        mock_db: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.kene_api.routers.mcp_server_configs import get_mcp_server_config
+
+        monkeypatch.setenv("HUBSPOT_MCP_URL", "https://hub.example.com/mcp")
+        monkeypatch.setenv("HUBSPOT_API_KEY", "SUPER-SECRET-DO-NOT-LEAK-789")
+
+        _seed_doc(mock_db, "hubspot_mcp", _make_sse_server_doc())
+
+        resp = await get_mcp_server_config("hubspot_mcp", user=admin_user, db=mock_db)
+
+        # GET must return the raw Firestore dict with ${VAR} literals
+        assert resp["connection"]["url"] == "${HUBSPOT_MCP_URL}"
+        assert (
+            resp["connection"]["headers"]["Authorization"]
+            == "Bearer ${HUBSPOT_API_KEY}"
+        )
+        assert "SUPER-SECRET-DO-NOT-LEAK-789" not in str(resp)
+
+    @pytest.mark.asyncio
+    async def test_audit_changes_record_literal_var_not_resolved(
+        self,
+        admin_user: UserContext,
+        mock_db: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.kene_api.models.mcp_server_models import SseConnectionConfig
+        from src.kene_api.routers import mcp_server_configs as router_mod
+
+        monkeypatch.setenv("HUBSPOT_MCP_URL", "https://hub.example.com/mcp")
+        monkeypatch.setenv("HUBSPOT_API_KEY", "SUPER-SECRET-DO-NOT-LEAK-999")
+
+        pre = _make_sse_server_doc()
+        _seed_doc(mock_db, "hubspot_mcp", pre)
+
+        spy_audit = AsyncMock(return_value="audit-id")
+        monkeypatch.setattr(router_mod, "log_config_action", spy_audit)
+        mock_manager = MagicMock()
+        mock_manager.reload = AsyncMock(return_value={"unloaded": [], "kept": 0})
+        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+
+        new_conn = SseConnectionConfig(
+            connection_type="sse",
+            url="${HUBSPOT_MCP_URL}",
+            headers={"Authorization": "Bearer ${HUBSPOT_API_KEY}"},
+            timeout_seconds=60,  # differ from pre (30) so connection is in diff
+        )
+        update = MCPServerConfigUpdate(connection=new_conn, updated_by="admin@ken-e.ai")
+
+        await router_mod.update_mcp_server_config(
+            "hubspot_mcp", update, user=admin_user, db=mock_db
+        )
+
+        # Audit's changes.connection must contain literal ${VAR}s for both
+        # before and after — the secret must NOT be in the history record.
+        changes = spy_audit.await_args.kwargs["changes"]
+        assert "connection" in changes, (
+            f"Expected connection in audit changes; got keys={list(changes)}"
+        )
+        changes_str = str(changes["connection"])
+        assert "${HUBSPOT_API_KEY}" in changes_str
+        assert "SUPER-SECRET-DO-NOT-LEAK-999" not in changes_str, (
+            f"Audit leaked resolved secret: {changes_str!r}"
+        )
 
 
 class TestUpdateValidation:

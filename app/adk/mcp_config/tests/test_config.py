@@ -28,8 +28,13 @@ class TestStdioConnectionConfig:
         assert config.args == ["-y", "test-server"]
         assert config.env == {}
 
-    def test_env_var_resolution(self, monkeypatch):
-        """Test environment variable resolution in env dict."""
+    def test_env_vars_preserved_as_literals_on_direct_construction(self, monkeypatch):
+        """Per Sprint 6 secret-leak fix, ``${VAR}`` strings MUST stay literal
+        when a model is constructed directly. Resolution is a loader-layer
+        concern — see ``_resolve_env_vars_in_dict`` in ``config.py`` and
+        its invocations in ``MCPConfigLoader.load`` and
+        ``FirestoreMCPLoader._doc_to_runtime_config``.
+        """
         monkeypatch.setenv("TEST_API_KEY", "secret123")
         monkeypatch.setenv("TEST_PROJECT", "my-project")
 
@@ -43,12 +48,15 @@ class TestStdioConnectionConfig:
             },
         )
 
-        assert config.env["API_KEY"] == "secret123"
-        assert config.env["PROJECT"] == "my-project"
+        # Literals preserved — secret must NOT be resolved at model layer
+        assert config.env["API_KEY"] == "${TEST_API_KEY}"
+        assert config.env["PROJECT"] == "${TEST_PROJECT}"
         assert config.env["STATIC"] == "plain_value"
 
-    def test_missing_env_var_becomes_empty(self, monkeypatch):
-        """Test that missing env vars become empty strings."""
+    def test_missing_env_var_stays_literal_on_direct_construction(self, monkeypatch):
+        """Direct model construction preserves ``${VAR}`` regardless of
+        whether the env var is set — resolution happens only in the loader.
+        """
         monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
 
         config = StdioConnectionConfig(
@@ -56,7 +64,7 @@ class TestStdioConnectionConfig:
             env={"KEY": "${NONEXISTENT_VAR}"},
         )
 
-        assert config.env["KEY"] == ""
+        assert config.env["KEY"] == "${NONEXISTENT_VAR}"
 
 
 class TestSseConnectionConfig:
@@ -72,18 +80,19 @@ class TestSseConnectionConfig:
         assert config.timeout_seconds == 30
         assert config.headers == {}
 
-    def test_url_resolution(self, monkeypatch):
-        """Test URL with environment variable."""
+    def test_url_preserved_as_literal_on_direct_construction(self, monkeypatch):
+        """Per Sprint 6 secret-leak fix, ``SseConnectionConfig(url="${MCP_HOST}/api")``
+        preserves the literal string. Loaders (see ``MCPConfigLoader.load``)
+        are responsible for resolving before constructing the model.
+        """
         monkeypatch.setenv("MCP_HOST", "https://mcp.example.com")
 
-        config = SseConnectionConfig(
-            url="${MCP_HOST}/api",
-        )
+        config = SseConnectionConfig(url="${MCP_HOST}/api")
 
-        assert config.url == "https://mcp.example.com/api"
+        assert config.url == "${MCP_HOST}/api"
 
-    def test_header_resolution(self, monkeypatch):
-        """Test header values with environment variables."""
+    def test_headers_preserved_as_literals_on_direct_construction(self, monkeypatch):
+        """Same secret-leak invariant as ``test_url_preserved``."""
         monkeypatch.setenv("API_TOKEN", "bearer_token_123")
 
         config = SseConnectionConfig(
@@ -94,7 +103,8 @@ class TestSseConnectionConfig:
             },
         )
 
-        assert config.headers["Authorization"] == "Bearer bearer_token_123"
+        # ``${API_TOKEN}`` must stay literal — not leaked as "Bearer bearer_token_123"
+        assert config.headers["Authorization"] == "Bearer ${API_TOKEN}"
         assert config.headers["Content-Type"] == "application/json"
 
     def test_timeout_validation(self):

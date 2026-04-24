@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from shared.structured_logging import get_structured_logger, log_context
 
-from .config import MCPConfigLoader, MCPServerConfig
+from .config import MCPConfigLoader, MCPServerConfig, _resolve_env_vars_in_dict
 
 if TYPE_CHECKING:
     from google.cloud import firestore
@@ -40,16 +40,18 @@ _REGISTRY_ONLY_FIELDS: frozenset[str] = frozenset(
 def _doc_to_runtime_config(doc_id: str, data: dict[str, Any]) -> MCPServerConfig:
     """Translate a Firestore MCP server doc to the runtime MCPServerConfig.
 
-    ``MCPServerConfig``'s field validators re-resolve ``${VAR}`` patterns at
-    instantiation, so secrets stored as literals in Firestore are resolved
-    here — matching YAML behavior exactly.
+    Firestore stores ``${VAR}`` references as literals; this function
+    explicitly resolves them before constructing :class:`MCPServerConfig`
+    so the runtime receives usable values. (The admin router path does
+    NOT call this — literal ``${VAR}`` strings stay untouched on their
+    way through the CRUD endpoints, per the Sprint 6 secret-leak fix.)
 
     Args:
         doc_id: Firestore document ID (used as the server ``name``)
-        data: Document payload
+        data: Document payload (with literal ``${VAR}`` strings)
 
     Returns:
-        Runtime MCPServerConfig
+        Runtime MCPServerConfig with secrets resolved.
     """
     runtime_data: dict[str, Any] = {
         k: v for k, v in data.items() if k not in _REGISTRY_ONLY_FIELDS
@@ -65,6 +67,11 @@ def _doc_to_runtime_config(doc_id: str, data: dict[str, Any]) -> MCPServerConfig
     # ``name`` is stored in the doc payload and also derivable from the doc ID.
     # Prefer the payload value but fall back to doc_id for defensive safety.
     runtime_data.setdefault("name", doc_id)
+
+    # Resolve ${VAR} literals everywhere (url, headers, env) before Pydantic
+    # construction. Matches the YAML loader's behavior and keeps secret
+    # resolution a loader-layer concern, not a model side effect.
+    runtime_data = _resolve_env_vars_in_dict(runtime_data)
 
     return MCPServerConfig(**runtime_data)
 

@@ -29,6 +29,7 @@ from ..models.agent_config_models import (
     GenerateContentConfig,
 )
 from ..services.audit_service import log_config_action
+from ..services.config_versioning import increment_version, sanitize_updated_by
 
 __all__ = [
     "ALLOWED_CONFIG_IDS",
@@ -63,9 +64,14 @@ class AgentConfigUpdateResponse(AgentConfig):
 
 
 # Fields whose runtime effect requires a pod/agent redeploy. Per Sprint 6
-# Decision B, instruction and temperature propagate via the 60 s in-process
-# cache; everything else baked by the ADK Agent constructor is in this set.
-_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset({"model", "max_output_tokens"})
+# Decision B, ONLY ``instruction`` propagates via the 60 s in-process cache
+# because the ADK ``Agent`` constructor only accepts a callable for the
+# ``instruction`` field. ``model``, ``generate_content_config`` (including
+# ``temperature`` and ``max_output_tokens``) and tools are baked at
+# construction time, so updates to any of them require a pod restart.
+_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
+    {"model", "temperature", "max_output_tokens"}
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,60 +95,13 @@ ALLOWED_CONFIG_IDS: set[str] = {
 }
 
 
-def _increment_version(current_version: str) -> str:
-    """
-    Increment version patch number (semver format).
-
-    Auto-increment bumps the patch version. Major/minor bumps are manual.
-    Handles both legacy 2-part (vX.Y) and semver 3-part (vX.Y.Z) formats.
-
-    Args:
-        current_version: Current version string (e.g., "v1.0.0", "v1.2")
-
-    Returns:
-        Incremented semver version string (e.g., "v1.0.1")
-
-    Raises:
-        ValueError: If version format is not parseable
-    """
-    version = current_version.strip() if current_version else ""
-    if not version.startswith("v"):
-        version = f"v{version}" if version else ""
-
-    # Strip prerelease suffix for incrementing (e.g., "v1.0.0-beta" → "v1.0.0")
-    base = version[1:].split("-", 1)[0] if version.startswith("v") else ""
-    parts = base.split(".") if base else []
-
-    if len(parts) == 2:
-        major, minor, patch = int(parts[0]), int(parts[1]), 0
-    elif len(parts) == 3:
-        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
-    else:
-        raise ValueError(
-            f"Cannot increment version '{current_version}': "
-            f"expected vX.Y or vX.Y.Z format"
-        )
-
-    return f"v{major}.{minor}.{patch + 1}"
-
-
-def _sanitize_updated_by(email: str) -> str:
-    """
-    Sanitize updated_by field to prevent Firestore injection.
-
-    Firestore doesn't allow dots or dollar signs in field names,
-    so we sanitize the email to prevent potential issues.
-
-    Args:
-        email: Email address to sanitize
-
-    Returns:
-        Sanitized email string (max 100 chars, dots/dollars replaced)
-    """
-    if not email:
-        return "unknown"
-
-    return email.replace(".", "_").replace("$", "_")[:100]
+# Version-bump + field-name sanitization helpers now live in
+# ``services/config_versioning.py`` so ``routers/mcp_server_configs.py`` can
+# import them without reaching across into another router's private API.
+# Kept as backward-compatible aliases for any external callers / tests that
+# still reference the underscored names.
+_increment_version = increment_version
+_sanitize_updated_by = sanitize_updated_by
 
 
 def _build_firestore_updates(
@@ -506,7 +465,7 @@ async def update_agent_config(
                     "Please set a version manually (e.g., v1.0.0).",
                 )
             try:
-                new_version = _increment_version(current_version_str)
+                new_version = increment_version(current_version_str)
             except ValueError as e:
                 raise HTTPException(
                     status_code=400,
@@ -517,7 +476,7 @@ async def update_agent_config(
                 ) from e
 
         # Sanitize updated_by field
-        safe_updated_by = _sanitize_updated_by(update.updated_by)
+        safe_updated_by = sanitize_updated_by(update.updated_by)
 
         # Build type-safe updates using helper function
         updates = _build_firestore_updates(
@@ -602,6 +561,8 @@ async def get_agent_config_history(
             detail=f"Invalid config_id. Must be one of: {', '.join(sorted(ALLOWED_CONFIG_IDS))}",
         )
 
+    # FastAPI enforces `le=100` on the query-param, but that only runs at the
+    # HTTP boundary; in-process callers could pass a wider value.
     if limit > 100:
         raise HTTPException(status_code=400, detail="limit must be <= 100")
 

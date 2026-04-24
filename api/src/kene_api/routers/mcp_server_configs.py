@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
 from app.adk.mcp_config.manager import get_mcp_manager
 from app.utils.trace_metadata import parse_semver, validate_semver
@@ -29,7 +29,7 @@ from ..models.mcp_server_models import (
     MCPServerFirestoreConfig,
 )
 from ..services.audit_service import log_config_action
-from .agent_configs import _increment_version, _sanitize_updated_by
+from ..services.config_versioning import increment_version, sanitize_updated_by
 
 logger = logging.getLogger(__name__)
 
@@ -50,21 +50,13 @@ _RELOAD_TRIGGER_FIELDS: frozenset[str] = frozenset(
 )
 
 
-class MCPServerConfigUpdateResponse(MCPServerFirestoreConfig):
-    """PUT response: updated MCPServerFirestoreConfig fields + warnings.
-
-    Extends ``MCPServerFirestoreConfig`` so callers can read top-level fields
-    (``response.description``, ``response.connection``, etc.) unchanged.
-    """
-
-    warnings: list[str] = Field(
-        default_factory=list,
-        description="Operator warnings (e.g., reload result, validation notes).",
-    )
-
-
-class ReloadResponse(dict):
-    """Stand-in type (kept dict-shaped for the JSON response)."""
+# Note: GET and PUT deliberately use ``response_model=None`` and return the
+# raw Firestore dict. Wrapping the payload in ``MCPServerFirestoreConfig``
+# would run ``SseConnectionConfig`` / ``StdioConnectionConfig`` field
+# validators, which resolve ``${VAR}`` patterns via ``get_env_or_secret`` —
+# leaking every secret into the response body, the audit trail, and (for
+# PUT) Firestore itself. By keeping the admin path on raw dicts, literal
+# ``${VAR}`` strings are preserved end-to-end.
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +206,7 @@ def _resolve_version(current_version_str: str | None, requested: str | None) -> 
             detail="No version found in metadata. Set one manually (e.g., v1.0.0).",
         )
     try:
-        return _increment_version(current_version_str)
+        return increment_version(current_version_str)
     except ValueError as e:
         raise HTTPException(
             status_code=400,
@@ -244,12 +236,19 @@ async def list_mcp_server_configs(
         ) from e
 
 
-@router.get("/{server_id}", response_model=MCPServerFirestoreConfig)
+@router.get("/{server_id}", response_model=None)
 async def get_mcp_server_config(
     server_id: str,
     user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
-) -> MCPServerFirestoreConfig:
+) -> dict[str, Any]:
+    """Return the raw Firestore doc for one MCP server config.
+
+    ``response_model=None`` is deliberate — see module docstring. Wrapping
+    the doc in ``MCPServerFirestoreConfig`` would resolve ``${VAR}``
+    secrets via the connection validators and leak them in the response
+    body. The raw dict preserves literal secret references.
+    """
     _require_admin(user, "get")
     _validate_server_id(server_id)
 
@@ -257,7 +256,7 @@ async def get_mcp_server_config(
         doc = db.collection(MCP_COLLECTION).document(server_id).get()
         if not doc.exists:
             raise HTTPException(status_code=404, detail="MCP server config not found")
-        return MCPServerFirestoreConfig(**doc.to_dict())
+        return doc.to_dict()
     except HTTPException:
         raise
     except Exception as e:
@@ -267,13 +266,23 @@ async def get_mcp_server_config(
         ) from e
 
 
-@router.put("/{server_id}", response_model=MCPServerConfigUpdateResponse)
+@router.put("/{server_id}", response_model=None)
 async def update_mcp_server_config(
     server_id: str,
     update: MCPServerConfigUpdate,
     user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
-) -> MCPServerConfigUpdateResponse:
+) -> dict[str, Any]:
+    """Write an update to a Firestore MCP server config.
+
+    **Preserves literal ``${VAR}`` patterns end-to-end**: the incoming
+    ``merged`` dict is what lands in Firestore, and the response echoes
+    that same dict (plus operator warnings). The validator-bearing
+    ``MCPServerFirestoreConfig`` is constructed once as a throwaway to
+    enforce cross-field invariants (hosting↔connection-type, SSE URL
+    non-empty, auth_type allowlist) — we discard its resolved-secret
+    output immediately.
+    """
     _require_admin(user, "update")
     _validate_server_id(server_id)
 
@@ -288,7 +297,7 @@ async def update_mcp_server_config(
         current_version_str = current_metadata.get("version")
 
         new_version = _resolve_version(current_version_str, update.version)
-        safe_updated_by = _sanitize_updated_by(update.updated_by)
+        safe_updated_by = sanitize_updated_by(update.updated_by)
         now_iso = datetime.now(timezone.utc).isoformat()
 
         merged = _merge_update_into_doc(
@@ -299,17 +308,18 @@ async def update_mcp_server_config(
             now_iso=now_iso,
         )
 
-        # Re-validate the merged doc — catches hosting/connection_type mismatches,
-        # empty SSE URLs, and bad auth_type values. Surface as 422.
+        # Invariant check only. The validated instance is discarded — its
+        # `connection` sub-object has resolved secrets that must NEVER be
+        # written back to Firestore.
         try:
-            validated = MCPServerFirestoreConfig(**merged)
+            MCPServerFirestoreConfig(**merged)
         except ValidationError as e:
             raise HTTPException(status_code=422, detail=e.errors()) from e
 
-        updated_doc = validated.model_dump()
-        doc_ref.set(updated_doc)
+        # Write the raw merged dict (literal `${VAR}` strings preserved).
+        doc_ref.set(merged)
 
-        fields_changed, changes = _diff_mcp_fields(current, updated_doc, update)
+        fields_changed, changes = _diff_mcp_fields(current, merged, update)
         await log_config_action(
             db=db,
             doc_type="mcp_server_config",
@@ -329,7 +339,7 @@ async def update_mcp_server_config(
             f"to version {new_version} (fields_changed={fields_changed})"
         )
 
-        return MCPServerConfigUpdateResponse(**updated_doc, warnings=warnings)
+        return {**merged, "warnings": warnings}
 
     except HTTPException:
         raise
@@ -378,6 +388,9 @@ async def get_mcp_server_config_history(
     _require_admin(user, "history")
     _validate_server_id(server_id)
 
+    # FastAPI enforces `le=100` on the query-param, but that guard only
+    # runs at the HTTP boundary; in-process callers could pass a wider
+    # value, so keep the explicit check here too.
     if limit > 100:
         raise HTTPException(status_code=400, detail="limit must be <= 100")
 

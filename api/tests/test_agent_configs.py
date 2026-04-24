@@ -70,9 +70,7 @@ class TestAuthentication:
     """Test authentication and authorization."""
 
     @pytest.mark.asyncio
-    async def test_non_admin_cannot_list_configs(
-        self, regular_user, mock_firestore_db
-    ):
+    async def test_non_admin_cannot_list_configs(self, regular_user, mock_firestore_db):
         """Non-admin users should receive 403 when listing configs."""
         with pytest.raises(HTTPException) as exc_info:
             await list_agent_configs(user=regular_user, db=mock_firestore_db)
@@ -122,7 +120,9 @@ class TestInputValidation:
 
         for invalid_id in invalid_ids:
             with pytest.raises(HTTPException) as exc_info:
-                await get_agent_config(invalid_id, user=admin_user, db=mock_firestore_db)
+                await get_agent_config(
+                    invalid_id, user=admin_user, db=mock_firestore_db
+                )
 
             assert exc_info.value.status_code == 400
             assert invalid_id not in ALLOWED_CONFIG_IDS
@@ -303,9 +303,7 @@ class TestErrorHandling:
         mock_doc = Mock()
         mock_doc.exists = False
 
-        mock_firestore_db.collection.return_value.document.return_value.get.return_value = (
-            mock_doc
-        )
+        mock_firestore_db.collection.return_value.document.return_value.get.return_value = mock_doc
 
         with pytest.raises(HTTPException) as exc_info:
             await get_agent_config(
@@ -447,16 +445,18 @@ class TestWarningsOnRedeployRequiredFields:
         assert hasattr(resp, "warnings"), (
             "update_agent_config must return AgentConfigUpdateResponse (config + warnings)"
         )
-        assert any(
-            "redeploy" in w.lower() for w in resp.warnings
-        ), f"Expected redeploy warning for model change; got warnings={resp.warnings}"
+        assert any("redeploy" in w.lower() for w in resp.warnings), (
+            f"Expected redeploy warning for model change; got warnings={resp.warnings}"
+        )
 
     @pytest.mark.asyncio
-    async def test_temperature_change_does_not_surface_redeploy_warning(
+    async def test_temperature_change_surfaces_redeploy_warning(
         self, admin_user, sample_config_data
     ):
-        """Temperature propagates via the 60s InstructionProvider cache per
-        Decision B — no redeploy required."""
+        """Temperature is baked into generate_content_config at ADK Agent
+        construction time; ADK doesn't accept a callable for this field, so
+        changes cannot propagate via the InstructionProvider cache. Must
+        surface a redeploy-required warning (corrects a 1.1.4-3 design gap)."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -464,7 +464,10 @@ class TestWarningsOnRedeployRequiredFields:
         pre = dict(sample_config_data)
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = dict(pre)
-        post["generate_content_config"] = {"temperature": 0.5, "max_output_tokens": 2500}
+        post["generate_content_config"] = {
+            "temperature": 0.5,
+            "max_output_tokens": 2500,
+        }
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
 
         mock_db = MagicMock()
@@ -483,25 +486,25 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert not any(
-            "redeploy" in w.lower() for w in resp.warnings
-        ), (
-            f"Temperature change should NOT trigger redeploy warning; "
-            f"got warnings={resp.warnings}"
+        assert any("redeploy" in w.lower() for w in resp.warnings), (
+            f"Temperature change MUST trigger redeploy warning; got warnings={resp.warnings}"
         )
 
     @pytest.mark.asyncio
-    async def test_max_output_tokens_change_surfaces_redeploy_warning(
+    async def test_instruction_change_does_not_surface_redeploy_warning(
         self, admin_user, sample_config_data
     ):
+        """Instruction propagates via the 60 s InstructionProvider cache
+        (Decision B) — no redeploy required."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
 
         pre = dict(sample_config_data)
+        pre["instruction"] = "Old instruction text"
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = dict(pre)
-        post["generate_content_config"] = {"temperature": 0.3, "max_output_tokens": 5000}
+        post["instruction"] = "New instruction text for the agent"
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
 
         mock_db = MagicMock()
@@ -516,8 +519,47 @@ class TestWarningsOnRedeployRequiredFields:
             resp = await router_mod.update_agent_config(
                 "business_researcher",
                 AgentConfigUpdate(
-                    max_output_tokens=5000, updated_by="admin@ken-e.ai"
+                    instruction="New instruction text for the agent",
+                    updated_by="admin@ken-e.ai",
                 ),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert not any("redeploy" in w.lower() for w in resp.warnings), (
+            f"Instruction change should NOT trigger redeploy warning; "
+            f"got warnings={resp.warnings}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_max_output_tokens_change_surfaces_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["generate_content_config"] = {
+            "temperature": 0.3,
+            "max_output_tokens": 5000,
+        }
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            resp = await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(max_output_tokens=5000, updated_by="admin@ken-e.ai"),
                 user=admin_user,
                 db=mock_db,
             )
@@ -575,9 +617,7 @@ class TestAgentConfigHistoryEndpoint:
         subcol.order_by.return_value.limit.return_value.stream.return_value = iter(
             [entry_new, entry_old]
         )
-        mock_db.collection.return_value.document.return_value.collection.return_value = (
-            subcol
-        )
+        mock_db.collection.return_value.document.return_value.collection.return_value = subcol
 
         result = await get_agent_config_history(
             "business_researcher", user=admin_user, db=mock_db, limit=20
