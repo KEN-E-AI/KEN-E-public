@@ -23,7 +23,8 @@ Six facts shape the design:
 **Scoped out of v1** (following the qreview pass on 2026-04-24):
 - **Per-session cost display** — subscription-level pricing complexity deferred.
 - **Manual Compact-now button** — ADK auto-compaction still runs; manual trigger returns in a future PRD if the ADK API stabilizes.
-- **"Permissions Approved" + "Loaded Tools" figma cards** — not rendered at all (no placeholder, no mock data, no flag). Future PRDs bring these in when they become real features.
+- **"Permissions Approved" figma card** — not rendered at all (no placeholder, no mock data, no flag). Future PRD brings this in when it becomes a real feature.
+- **"Loaded Tools" figma card is replaced** by a new **Authentication Status** card (CH-PRD-04 §5.6) showing account-level integration state. Ships read-only in v1 via IN-PRD-03's data; per-row Check Status button is enabled once IN-PRD-07 ships (soft dep; flag-gated).
 
 ## 2. What exists today (before Chat)
 
@@ -36,7 +37,7 @@ The backend plumbing is further along than the frontend. A `/api/v1/chat/*` Fast
 | **ADK `EventsCompactionConfig`** | Already configured in `app/adk/deploy_ken_e.py` per `docs/KEN-E-System-Architecture.md` §3.5 — `gemini-2.5-flash` summarizer every 5 invocations or >50K tokens, 1-invocation overlap, last 10 events kept raw. Automatic, not manual. |
 | **ADK `GcsArtifactService`** | Artifact blob storage. Filename + MIME native; no `created_at` or tool-name metadata. |
 | **ADK callback API** | `before_agent_callback` / `after_agent_callback` at the invocation level (plus `before_model_callback` / `after_model_callback` / `before_tool_callback` / `after_tool_callback` at finer grains). Chat uses the agent-level pair. **Day-1 spike in CH-PRD-01 confirms exact signatures** before implementation begins. |
-| **`docs/figma-export/`** | Complete React prototype of the target UX. `SessionsSidebar`, `SessionSettings`, `ChatInterface`, `ChatPage`, mock data. All 11 user-facing features are designed; four figma elements are deliberately not ported in v1 (summary editability, Compact-now button, Permissions Approved card, Loaded Tools card, cost line). |
+| **`docs/figma-export/`** | Complete React prototype of the target UX. `SessionsSidebar`, `SessionSettings`, `ChatInterface`, `ChatPage`, mock data. All 11 user-facing features are designed; three figma elements are deliberately not ported in v1 (summary editability, Compact-now button, Permissions Approved card, cost line). The figma's "Loaded Tools" card is replaced by a new Authentication Status card — see CH-PRD-04 §5.6. |
 | **DM-PRD-00** (Migration Foundation) | Shape B convention + `_migrate_shape_b/resources.py` registry for new subcollections. |
 | **DM-PRD-05** (Deletion Sweep) | `recursive_delete` covers `chat_sessions` and its artifact subcollection on account deletion; user deletion covers `chat_categories`. |
 | **UI-PRD-01** (Design System Foundation) | `LayoutC`, Tailwind tokens, shadcn primitives, `TopNav`, `AccountSwitcher`, text-size preference. |
@@ -276,7 +277,7 @@ No new notification categories from Chat in v1.
 - `chat_status_detail_enabled` — gates the status view (CH-PRD-04). When false, the Session Status button is hidden.
 - `chat_categories_enabled` — gates CH-PRD-03. When false, category dropdowns are hidden.
 
-**No `chat_manual_compaction_enabled`** (Compact-now out of v1). **No placeholder-cards flag** (Permissions Approved + Loaded Tools cards not rendered at all). All three existing flags are targeted-rollout-capable.
+**No `chat_manual_compaction_enabled`** (Compact-now out of v1). **No placeholder-card flag for Permissions Approved** (not rendered at all). **Auth Status card inherits `integrations_connection_test_enabled`** from IN-PRD-07 — no Chat-owned flag. All three existing flags are targeted-rollout-capable.
 
 ## 6. Phasing
 
@@ -312,11 +313,11 @@ Five PRDs. Proposed prefix: `CH-PRD-NN`.
 
 **Parallel with:** CH-PRD-04, CH-PRD-05.
 
-### CH-PRD-04 — Session status view (4 days, full-stack — reduced from 5 after Compact-now + placeholder cards + cost scoped out)
+### CH-PRD-04 — Session status view (5 days, full-stack — base 4 days + ~1 day for the Authentication Status card and graceful-degradation branches)
 
-**Delivers:** `SessionStatusView.tsx` (port + scope-adjusted — **no Compact-now, no Permissions Approved card, no Loaded Tools card, no cost line**); "Session Status" header toggle button; `status-detail` composite endpoint; `TokenUsagePanel.tsx` (context bar + 3-card token grid — no cost); `chat/export.py` markdown-export streamer using `yaml.safe_dump` with 24-hour signed artifact URLs; PUT title endpoint with casefold search_text recomputation; DELETE two-phase tombstone with async Cloud Run cleanup; summary figma deviation fix (read-only); rate limits via BL-PRD-05.
+**Delivers:** `SessionStatusView.tsx` (port + scope-adjusted — **no Compact-now, no Permissions Approved card, no cost line**); **`AuthStatusCard.tsx` (§5.6)** replacing the figma's Loaded Tools card — pure frontend composition over IN-PRD-03's `useConnections(accountId)` with four per-row states and deep-links to `/settings/integrations/{connection_id}`; ships **read-only** (soft dep on IN-PRD-07 — the per-row Check Status button turns on once IN-PRD-07's flag + hook + `last_tested_at` field land); "Session Status" header toggle button; `status-detail` composite endpoint; `TokenUsagePanel.tsx` (context bar + 3-card token grid — no cost); `chat/export.py` markdown-export streamer using `yaml.safe_dump` with 24-hour signed artifact URLs; PUT title endpoint with casefold search_text recomputation; DELETE two-phase tombstone with async Cloud Run cleanup; summary figma deviation fix (read-only); rate limits via BL-PRD-05.
 
-**Exit criteria:** user can open the status view for any session and see every field populated; visual regression asserts absence of Compact-now button + Permissions card + Loaded Tools card + cost line; Delete tombstones the session and sidebar refreshes; Export downloads a valid markdown transcript with `yaml.safe_dump` front-matter + 24-hour artifact links.
+**Exit criteria:** user can open the status view for any session and see every field populated; visual regression asserts absence of Compact-now button + Permissions card + cost line AND presence of the Authentication Status card; Auth Status card renders all four row states correctly against a seeded account (one connected, one expired, one not-connected); Delete tombstones the session and sidebar refreshes; Export downloads a valid markdown transcript with `yaml.safe_dump` front-matter + 24-hour artifact links.
 
 **Blocked by:** CH-PRD-02.
 
@@ -336,7 +337,8 @@ Five PRDs. Proposed prefix: `CH-PRD-NN`.
 
 - **Per-session cost display.** Subscription-level pricing complexity deferred. Chat shows token counts only; Billing is the sole owner of cost display at any level.
 - **Manual Compact-now button.** Deferred beyond v1. ADK's automatic compaction still runs. Will return as a future PRD once the ADK manual-compaction API stabilizes.
-- **"Permissions Approved" + "Loaded Tools" status-view cards.** Not rendered at all in v1. No placeholder, no mock data, no flag. Future PRDs wire them when they become real features.
+- **"Permissions Approved" status-view card.** Not rendered at all in v1. No placeholder, no mock data, no flag. Future PRD wires it when it becomes a real feature.
+- **"Loaded Tools" status-view card is replaced** by a new Authentication Status card (CH-PRD-04 §5.6). The figma's generic "tool-loading status" concept is re-framed as "account-level integration auth status" — the data users actually want to see before engaging an agent with a platform-dependent task.
 - **User-writable summary.** Agent-authored. Users who want to override should set a session title instead.
 - **User-writable todo lists.** Agents own the checkboxes.
 - **Session sharing between users.** Always scoped to one `(user_id, account_id)`.
@@ -418,14 +420,14 @@ Decisions that need a product / ops call before or during implementation.
 3. **Export format in v2.** Markdown v1 is settled. JSON / PDF demand should be driven by data.
 4. **`STUCK_THRESHOLD` for `is_agent_running` derivation.** 10 min is the proposal; revisit if users report stuck "working…" indicators.
 5. **Compact-now return.** Is there a target quarter to bring it back? Depends on ADK API evolution.
-6. **"Permissions Approved" + "Loaded Tools" card return.** These will come back when the real features ship. Each gets its own PRD.
+6. **"Permissions Approved" card return.** Will come back when the real feature ships. Separate PRD.
 7. **Multi-currency token display.** Not for v1. If it ever matters, coordinate with Billing.
 
 ## 11. Success criteria
 
 - User can open `/chat`, see 30-day session history in the sidebar, search across name + category + summary, filter by category, and load older sessions via infinite scroll — all within 1 second of initial page load on a warm cache.
 - Status dots correctly reflect session state: **Active** transitions to **Needs Review** within 2s of the agent's final event; **Needs Review** transitions to **Idle** within 2s of the user scrolling the latest message into view.
-- Status view displays every in-scope figma field (name, category, summary, todo lists, artifacts, tokens, context, activity summary, duration, export, delete) with real data. Compact-now, Permissions Approved, Loaded Tools, and cost line do NOT appear.
+- Status view displays every in-scope figma field (name, category, summary, todo lists, artifacts, tokens, context, activity summary, duration, export, delete) with real data + the new Authentication Status card with account-level integration state. Compact-now, Permissions Approved, and cost line do NOT appear.
 - Delete is instant from the user's perspective (<200ms UI); async cleanup completes within 5 minutes or is caught by CH-PRD-05's ADK-session orphan scan within 24 hours.
 - Export generates a valid markdown file with `yaml.safe_dump` front-matter (hostile-character-safe) within 10s for sessions under 50 events; artifact URLs valid for 24 hours.
 - Token aggregates match Billing's per-session projection within 0.5% at month-end reconciliation.

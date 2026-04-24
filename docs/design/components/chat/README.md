@@ -11,7 +11,7 @@ The Chat component is KEN-E's **conversational surface**. It owns the `/chat` pa
 
 Six facts shape the design. **Sessions are per-user-per-account** — every session is scoped to exactly one `(user_id, account_id)` tuple, matching how the existing `/api/v1/chat/completions` code path already scopes its state; the sidebar lists only that user's sessions for the currently selected account. Firestore security rules enforce this server-side. **ADK is the source of truth for conversation events**, but ADK's `VertexAiSessionService` has no native pagination, no sorting, no full-text search, no session title, and sparse artifact metadata — so a **Firestore `chat_sessions` side-table** mirrors every ADK session and adds the product fields (title, category, summary cache, search text, activity timestamps, token aggregates, artifact index). **State denormalization happens in ADK callbacks + the completion endpoint's event loop**, not on the read path — `before_agent_callback` / `after_agent_callback` stamp start/stop timestamps + flush per-turn token counters, keeping the hot-read sidebar fast. **`is_agent_running` is a derived field**, not a persistent boolean — computed at read time from `last_agent_started_at`, `last_agent_stopped_at`, and a 10-minute stuck-threshold; no in-process sweeper is needed. **Multi-session concurrency is a first-class capability** — a user can send messages in session A, switch to session B, and see session A transition from active to needs-review without reloading; the sidebar polls a lightweight status endpoint. **"Read-only" on the user's side, for summary and todo lists** — the compaction summary and todo-list checkboxes are agent-authored state; the user views but does not edit them, so there is no merge conflict between user writes and agent state updates.
 
-**Scoped out of v1 (scope from the user on 2026-04-24 qreview):** per-session cost display (subscription-level pricing is Billing's concern — Chat shows token counts only), manual Compact-now button (ADK auto-compaction still runs), and the "Permissions Approved" / "Loaded Tools" figma cards (not rendered at all; future PRD when those become real features).
+**Scoped out of v1 (scope from the user on 2026-04-24 qreview):** per-session cost display (subscription-level pricing is Billing's concern — Chat shows token counts only), manual Compact-now button (ADK auto-compaction still runs), and the "Permissions Approved" figma card (not rendered at all; future PRD when it becomes a real feature). The figma's "Loaded Tools" card is **replaced** by a new **Authentication Status** card (CH-PRD-04 §5.6) that lists account-level integrations with state-dependent CTAs; ships read-only in v1 using IN-PRD-03's `/connections` data, and the per-row Check Status button is enabled once IN-PRD-07 ships (soft dep; flag-gated).
 
 A developer reading only this section should understand: this component owns the `chat_sessions/*`, `chat_categories/*` (per-user), and the session-scoped `artifacts/*` subcollection. It owns the `/api/v1/chat/*` user-facing surface in full — the existing endpoints plus new additions for categories, artifacts, todos, status detail, mark-read, and export. It owns the production `/chat` page, the expandable `SessionsSidebar`, the `SessionStatusView`, and every hook that feeds them. It ships across **5 project PRDs (CH-PRD-01 → CH-PRD-05)** and is required by the UI shell (the `/chat` route mounts here), Billing (reads `is_agent_running` derived-field for the inactive banner's "finish current turn" affordance), Knowledge Graph (KG-PRD-04's session-end sweep respects `deleted_at`), and the Agentic Harness (every LLM-consuming turn emits ADK callbacks that Chat subscribes to + the completion endpoint iterates the event stream into a per-turn accumulator).
 
@@ -97,7 +97,9 @@ A developer reading only this section should understand: this component owns the
 
 (No Compact-now button — deferred from v1.
  No cost display — subscription-level pricing is Billing's concern.
- No Permissions Approved / Loaded Tools cards — not rendered at all.)
+ No Permissions Approved card — not rendered at all.
+ Authentication Status card — renders account-level integration status;
+ read-only until IN-PRD-07's Check Status button is enabled.)
 
                               Categories (per user)
 
@@ -153,7 +155,8 @@ A developer reading only this section should understand: this component owns the
 | `frontend/src/components/chat/SessionsSidebar.tsx` | Port of `docs/figma-export/src/app/components/SessionsSidebar.tsx`; production wiring to `/api/v1/chat/conversations` with infinite scroll + search + category filter + status dots. (CH-PRD-02) |
 | `frontend/src/components/chat/SessionStatusDot.tsx` | 3-state (active / needs-review / idle) dot with tooltip. Used in sidebar and page header. (CH-PRD-02) |
 | `frontend/src/components/chat/ChatInterface.tsx` | Port of `docs/figma-export/src/app/components/ChatInterface.tsx`; message list, input, artifact blocks, thinking blocks. Fires `mark-read` on latest-message visibility. (CH-PRD-02) |
-| `frontend/src/components/chat/SessionStatusView.tsx` | Port + scope-adjusted version of `docs/figma-export/src/app/components/SessionSettings.tsx`; session details panel. **No Compact-now button. No Permissions Approved card. No Loaded Tools card. No cost line.** (CH-PRD-04) |
+| `frontend/src/components/chat/SessionStatusView.tsx` | Port + scope-adjusted version of `docs/figma-export/src/app/components/SessionSettings.tsx`; session details panel. **No Compact-now button. No Permissions Approved card. No cost line. Authentication Status card replaces the figma's Loaded Tools card (see `AuthStatusCard.tsx`).** (CH-PRD-04) |
+| `frontend/src/components/chat/AuthStatusCard.tsx` | Account-level integration auth status on the session status view. Data from IN-PRD-03's `useConnections(accountId)`; per-row "Check Status" button flag-gated on `integrations_connection_test_enabled` (powered by IN-PRD-07 when shipped). Four states: Authenticated / Needs re-auth / Transient / Not connected. Row-click deep-links to `/settings/integrations/{connection_id}`. (CH-PRD-04 §5.6) |
 | `frontend/src/components/chat/CategoriesDropdown.tsx` | Shared dropdown with inline "+ New" create + trash-icon delete per category. Used in sidebar filter and in status-view assign. (CH-PRD-03) |
 | `frontend/src/components/chat/TodoListsPanel.tsx` | Read-only renderer for `todo_lists` from the status-detail payload; collapsible list, progress fraction, Current / Previous distinction. (CH-PRD-05) |
 | `frontend/src/components/chat/ArtifactsPanel.tsx` | File-type icons + "KEN-E" badge (all v1 artifacts are agent-created) with tool name on hover. (CH-PRD-05) |
@@ -266,7 +269,7 @@ Schema source of truth: `api/src/kene_api/models/chat.py` (Pydantic), mirrored i
 | Document | Sections | When to Read |
 |----------|----------|--------------|
 | `docs/figma-export/src/app/components/SessionsSidebar.tsx` | Entire file | **Design contract for CH-PRD-02.** 384px expanded / 64px collapsed; status dots; search + category-filter layout; session-item three-line layout. |
-| `docs/figma-export/src/app/components/SessionSettings.tsx` | Entire file, **with four deliberate deviations for v1**: summary is read-only (figma's "You can edit this summary" copy dropped); **no Compact-now button**; **no Permissions Approved card**; **no Loaded Tools card**; **no cost line in the token-usage card**. | **Design contract for CH-PRD-04** with the noted deviations. |
+| `docs/figma-export/src/app/components/SessionSettings.tsx` | Entire file, **with four deliberate deviations for v1**: summary is read-only (figma's "You can edit this summary" copy dropped); **no Compact-now button**; **no Permissions Approved card**; **no cost line in the token-usage card**; the figma's **"Loaded Tools" card is replaced by a new Authentication Status card** rendering account-level integration state with four per-row states and state-dependent CTAs (see CH-PRD-04 §5.6 and `AuthStatusCard.tsx` lines ~526–586 of the figma file for the visual template). | **Design contract for CH-PRD-04** with the noted deviations. |
 | `docs/figma-export/src/app/components/ChatInterface.tsx` | Entire file | **Design contract for CH-PRD-02.** Message list, input, artifact blocks, thinking blocks. |
 | `docs/figma-export/src/app/pages/ChatPage.tsx` | Entire file | **Design contract for CH-PRD-02.** Page orchestration; toggle between chat and status view via header button. |
 | `docs/figma-export/src/app/data/mockData.ts` | `AISession`, `sessionCategories`, `mockDocuments`, `mockTodoLists` | Reference for field shapes. (`mockPermissions` + `mockTools` deliberately unused in v1.) |
@@ -415,7 +418,8 @@ DM-PRD-05's `recursive_delete` registry picks up all three paths.
 
 - **Component-level kill switches:** `chat_v2_enabled` (master; reverts `/chat` to the pre-component UX), `chat_status_detail_enabled` (gates the status view), `chat_categories_enabled` (gates categories end-to-end).
 - **No `chat_manual_compaction_enabled`** — manual Compact-now is scoped out of v1. Auto-compaction always runs.
-- **No placeholder-cards flag** — Permissions Approved + Loaded Tools cards are not rendered at all in v1. Future PRD adds real feature + flag.
+- **No placeholder-card flag for Permissions Approved** — that card is not rendered at all in v1. Future PRD adds real feature + flag.
+- **Auth Status card inherits `integrations_connection_test_enabled`** (from IN-PRD-07) — when off, the card ships read-only (no Check Status button, no state-reactive CTAs); when on, the button appears per-row. No Chat-owned flag.
 - All three flags ship targeted-rollout-capable.
 - `chat_v2_enabled=false` defaults ALL new endpoints to 404, not 500. Existing endpoints stay functional.
 
@@ -446,7 +450,8 @@ Updating this PRD:
 - When a new user-scoped collection lands: point it at the pattern documented in §7.2 + update DM-PRD-05's deletion sweep.
 - When cost display becomes a real feature (post-v1): design + Billing coordination needed; add a CH-PRD-06 (or similar) scoped to cost surfacing.
 - When manual compaction becomes a real feature (post-v1): add a CH-PRD for the Compact-now button; re-register the feature flag.
-- When the "Permissions Approved" or "Loaded Tools" cards become real features: new PRD(s) + flag registration + figma re-alignment.
+- When the "Permissions Approved" card becomes a real feature: new PRD + flag registration + figma re-alignment.
+- When IN-PRD-07 ships after CH-PRD-04: the Auth Status card's Check Status button + state-reactive CTAs light up via `integrations_connection_test_enabled`. No CH-PRD-04 re-release — IN-PRD-07's frontend scope includes the extension to `AuthStatusCard.tsx`.
 
 This PRD is read by the Dev Team agent during implementation planning (CLAUDE.md §Context Loading Sequence, Step 1). Keep it concise — every sentence should help a dev write better code or avoid mistakes.
 -->

@@ -61,7 +61,8 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 
 - **Cost display (per-session dollar amount).** Subscription-level pricing is Billing's concern; Chat shows token counts only. No `cost_usd_cents` field, no pricing registry, no cost formatter.
 - **Manual compaction trigger / Compact-now button.** Deferred beyond v1; ADK's automatic compaction continues to run.
-- **"Permissions Approved" / "Loaded Tools" figma cards.** Not rendered in v1 — no placeholder, no flag, no data contract. Future PRD brings these in.
+- **"Permissions Approved" figma card.** Not rendered in v1 — no placeholder, no flag, no data contract. Future PRD brings it in.
+- **"Loaded Tools" figma card is replaced** by a new Authentication Status card in CH-PRD-04 §5.6. No CH-PRD-01 data contract changes — the card reads account-level integration state from IN-PRD-03's existing `platform_connections` collection; no Chat-owned storage.
 - **In-process stale-flag sweeper.** Replaced by the events-based derivation above.
 - Sidebar UI, page route, search input — CH-PRD-02.
 - Category CRUD endpoints + UI — CH-PRD-03.

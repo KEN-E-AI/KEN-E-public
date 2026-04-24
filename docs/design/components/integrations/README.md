@@ -10,7 +10,7 @@ The Integrations component is KEN-E's **third-party credential substrate**. It o
 
 Three facts shape the design. **Connections are account-scoped, not user-scoped** — when a user authorizes "my business's GA account," the resulting tokens belong to the KEN-E account and every member can invoke jobs that use them, which matches how marketing teams actually work. **Tokens are KMS-encrypted at rest** with an env-specific Cloud KMS key that never leaves GCP, so a stolen Firestore export does not yield usable credentials. **Re-auth is first-class** — tokens expire, scopes change, users revoke at the platform; the component emits a single standard "Connection Needs Re-auth" notification and every consumer handles it the same way (hold the task, surface the notification, restore on reconnection).
 
-A developer reading only this section should understand: this component owns the `platform_definitions/*` and `accounts/{account_id}/platform_connections/*` Firestore collections (plus the token subcollection + audit log), the `/api/v1/integrations/*` user-facing and `/api/v1/internal/integrations/*` service-to-service API surfaces, the `/settings/integrations` UI tab, and the KMS-encryption + JWT-state-token + re-auth-notification substrate that makes all of the above work. It ships across **6 project PRDs (IN-PRD-01 → IN-PRD-06)** and blocks the Data Pipeline platform connectors (DP-PRD-02 Google Analytics, DP-PRD-05 Meta / Mailchimp) as well as the Agent Factory's credential-loading retrofit (IN-PRD-06 absorbs the cleanup).
+A developer reading only this section should understand: this component owns the `platform_definitions/*` and `accounts/{account_id}/platform_connections/*` Firestore collections (plus the token subcollection + audit log), the `/api/v1/integrations/*` user-facing and `/api/v1/internal/integrations/*` service-to-service API surfaces, the `/settings/integrations` UI tab, and the KMS-encryption + JWT-state-token + re-auth-notification substrate that makes all of the above work. It ships across **7 project PRDs (IN-PRD-01 → IN-PRD-07)** and blocks the Data Pipeline platform connectors (DP-PRD-02 Google Analytics, DP-PRD-05 Meta / Mailchimp) as well as the Agent Factory's credential-loading retrofit (IN-PRD-06 absorbs the cleanup). IN-PRD-07 is an opt-in verification surface — on-demand "Test connection" from the Settings tab plus an MCP tool — that rides the substrate without gating anything downstream.
 
 ## 2. Architecture
 
@@ -103,13 +103,16 @@ A developer reading only this section should understand: this component owns the
 | `api/src/kene_api/integrations/workers/idle_cleanup.py` | Daily cron — revokes connections inactive ≥90 days. (IN-PRD-02) |
 | `api/src/kene_api/integrations/workers/stuck_expired_watchdog.py` | Daily cron — alerts on connections stuck `expired` >7 days. (IN-PRD-05) |
 | `api/src/kene_api/integrations/workers/kms_rewrap_sweeper.py` | Post-rotation re-encrypt-under-new-version sweeper; disabled by default. (IN-PRD-06) |
+| `api/src/kene_api/integrations/testing.py` | `test_connection(account_id, connection_id)` — orchestrator for the on-demand Test-connection endpoint. 60s cache on the connection doc. (IN-PRD-07) |
+| `api/src/kene_api/models/integrations_test.py` | `ConnectionTestResult`, `ConnectionTestError`, `ProbeDetails`. (IN-PRD-07) |
+| `app/adk/tools/integrations_test_tool.py` | MCP tool exposing `integrations.test_connection(platform_id)` for agent-side preflight. (IN-PRD-07) |
 | `api/src/kene_api/routers/integrations.py` | User-facing + internal endpoints — initiate, callback, refresh, revoke, mark-expired, on-user-removed, credential-read. (IN-PRD-01; extended across IN-PRD-02 / IN-PRD-05) |
 | `api/src/kene_api/routers/integrations_management.py` | Management reads — `/connections`, `/connections/{id}`, `/connections/{id}/downstream-impact`, `/audit`, `/platforms`. (IN-PRD-03) |
 | `api/src/kene_api/routers/_test_stub_platform.py` | Stub-platform test harness; gated `ENV != "production"`. (IN-PRD-01) |
 | `api/scripts/migrate_integrations_foundation.py` | Shape B migration — creates collections, seeds empty `platform_definitions`, configures indexes + TTL. (IN-PRD-01) |
 | `api/scripts/seed_google_platform_definition.py` | Seeds `platform_definitions/google`. (IN-PRD-02) |
 | `api/scripts/seed_meta_platform_definition.py`, `seed_mailchimp_platform_definition.py` | (IN-PRD-04) |
-| `frontend/src/app/pages/settings/integrations/` | Settings → Integrations tab: `IntegrationsTab.tsx`, `ConnectionCard.tsx`, `ConnectFlow.tsx` (popup choreography), `DisconnectDialog.tsx`, `AuditLogDrawer.tsx`, `EmptyState.tsx`. (IN-PRD-03) |
+| `frontend/src/app/pages/settings/integrations/` | Settings → Integrations tab: `IntegrationsTab.tsx`, `ConnectionCard.tsx`, `ConnectFlow.tsx` (popup choreography), `DisconnectDialog.tsx`, `AuditLogDrawer.tsx`, `EmptyState.tsx`. (IN-PRD-03) + `ConnectionTestResultBadge.tsx` (IN-PRD-07) |
 | `frontend/src/app/lib/api/integrations.ts` | Typed API client + React Query hooks with branded `ConnectionId` / `PlatformId`. (IN-PRD-03) |
 | `docs/design/components/integrations/operations/` | Runbooks: `google-oauth-setup.md`, `meta-oauth-setup.md`, `mailchimp-oauth-setup.md`, `kms-key-rotation.md`, `integrations-watchdog.md`. |
 
@@ -133,6 +136,7 @@ Owned endpoints:
 | `/api/v1/integrations/callback/{platform_id}` | GET | IN-PRD-01 | OAuth callback; verifies state JWT, exchanges code, persists tokens, redirects to UI. |
 | `/api/v1/integrations/{account_id}/connections/{connection_id}` | DELETE | IN-PRD-02 | Revoke + recursive-delete. **Account admin.** |
 | `/api/v1/integrations/{account_id}/connections/{connection_id}/refresh` | POST | IN-PRD-02 | Force refresh. **Account admin** (rate-limited 1/min). |
+| `/api/v1/integrations/{account_id}/connections/{connection_id}/test` | POST | IN-PRD-07 | On-demand live probe. Account member. Returns `ConnectionTestResult`. 60s cache on the connection doc; transient errors not cached. |
 | `/api/v1/integrations/{account_id}/connections` | GET | IN-PRD-03 | Enriched connection cards — includes `connected_by_user: UserRef`. |
 | `/api/v1/integrations/{account_id}/connections/{connection_id}` | GET | IN-PRD-03 | Full `PlatformConnectionPublic`. No tokens. |
 | `/api/v1/integrations/{account_id}/connections/{connection_id}/downstream-impact` | GET | IN-PRD-03 | Up to 20 entities affected by a disconnect (for the confirmation dialog). |
@@ -163,6 +167,8 @@ Schema source of truth: `api/src/kene_api/models/integrations.py` (Pydantic), mi
 | `on_user_removed(account_id, user_id)` | `api/src/kene_api/integrations/user_removal.py` | Revoke + delete every connection authored by `user_id`; notify remaining admins. |
 | `write_connection_audit(...)` | `api/src/kene_api/integrations/audit.py` | Writes `ConnectionAuditEntry` via DM-PRD-07's `write_audit`. Lint rule blocks token values in `metadata`. |
 | `StubPlatform` | `api/src/kene_api/integrations/stub_platform.py` | In-memory fake OAuth server. Configurable modes for plain OAuth, long-lived exchange (Meta), extra response fields (Mailchimp `dc`). Non-production only. |
+| `test_connection(account_id, connection_id)` | `api/src/kene_api/integrations/testing.py` | On-demand verification orchestrator. Reads credentials via the existing internal path, calls `PlatformDefinition.health_check_endpoint` with a 1s timeout, classifies the response into `{ok, auth_failed, scope_missing, rate_limited, platform_5xx, timeout, network, needs_reauth, no_probe_configured}`, triggers `mark_expired` on definitive 401/403, persists result on the connection doc with a 60s cache window (transient errors not cached). (IN-PRD-07) |
+| `ConnectionTestResult` | `api/src/kene_api/models/integrations_test.py` | Response type — `{ok, checked_at, latency_ms, probe, error?, cache_hit}`. (IN-PRD-07) |
 
 ## 3. Component Dependencies
 
@@ -172,7 +178,7 @@ Schema source of truth: `api/src/kene_api/models/integrations.py` (Pydantic), mi
 |-----------|------------|-----------|
 | **[Data Management — DM-PRD-00 (Migration Foundation)](../data-management/projects/DM-PRD-00-migration-foundation.md)** | **Hard prerequisite for IN-PRD-01.** Shape B convention + `migrate_to_shape_b.py` + `_migrate_shape_b/resources.py` registry. Integrations lands its new subcollections (`accounts/{account_id}/platform_connections`, the token subcollection, `accounts/{account_id}/integrations_audit`) via this framework. | `../data-management/README.md` §2.2 |
 | **[Data Management — DM-PRD-07 (Approval Workflow & Audit)](../data-management/projects/DM-PRD-07-approval-workflow-audit.md)** | **Hard prerequisite for IN-PRD-01.** `AuditEntry` schema + `write_audit(actor_id, event, ...)`. Integrations subclasses into `ConnectionAuditEntry`. | `../data-management/README.md` audit section |
-| **[Feature Flags — FF-PRD-01 (Evaluation API + Backend SDK)](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)** | **Hard prerequisite.** `integrations_enabled`, `integrations_ui_enabled`, `integrations_reauth_lifecycle_enabled`, and per-platform flags (`integration_google_enabled`, `integration_meta_enabled`, `integration_mailchimp_enabled`). | `../feature-flags/README.md` |
+| **[Feature Flags — FF-PRD-01 (Evaluation API + Backend SDK)](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)** | **Hard prerequisite.** `integrations_enabled`, `integrations_ui_enabled`, `integrations_reauth_lifecycle_enabled`, `integrations_connection_test_enabled`, and per-platform flags (`integration_google_enabled`, `integration_meta_enabled`, `integration_mailchimp_enabled`). | `../feature-flags/README.md` |
 | **[UI — UI-PRD-01 (Design System Foundation + Shell)](../ui/projects/UI-PRD-01-design-system-foundation-shell.md)** | **Hard prerequisite for IN-PRD-03.** `LayoutSettings` shell + re-skinned shadcn primitives (`Card`, `Badge`, `Sheet`, `Dialog`, `Button`). | `../ui/README.md` |
 | GCP Cloud KMS | Per-environment `token-encryption` key under the `integrations` key ring. Service account has only `cryptoKeyEncrypterDecrypter` — no export, no destroy. Terraform `lifecycle { prevent_destroy = true }` on the key. | `deployment/terraform/` |
 | GCP Secret Manager | Per-env OAuth client credentials (`google-oauth-client-{id,secret}-{env}`, Meta, Mailchimp) + `integrations-state-token-hmac-{env}` JWT signing key. | `deployment/terraform/` |
@@ -190,6 +196,7 @@ Schema source of truth: `api/src/kene_api/models/integrations.py` (Pydantic), mi
 | **[Performance / Setup Wizard (PE-PRD-05)](../performance/projects/PE-PRD-05-setup-wizard.md)** | Wizard deep-links to `/settings/integrations` when a required platform isn't connected; reads `GET /platforms` to detect connection status. |
 | **[Knowledge Graph](../knowledge-graph/README.md)** | Future platform ingestion (once KG pulls from GA / Ads / Meta directly) will read credentials via Integrations. Not yet active. |
 | **[Automations](../automations/README.md)** | Downstream-impact lookup in IN-PRD-03's Disconnect dialog enumerates scheduled automations that reference affected platforms. Transitive only — Automations never reads tokens. |
+| **[Chat (CH-PRD-04)](../chat/projects/CH-PRD-04-session-status-view.md)** | Session Status View's Authentication Status card (§5.6) renders account-level integration state — **hard dep on IN-PRD-03** for `GET /connections` + `useConnections(accountId)` hook; **soft dep on IN-PRD-07** for the per-row Check Status button + state-reactive CTAs (flag-gated on `integrations_connection_test_enabled`). Pure frontend composition — no new Chat-owned backend endpoint. Deep-links to `/settings/integrations/{connection_id}` for row-level management. |
 | Engineering incident response | Any platform can be killed account-wide in ≤60s via the per-platform feature flag. Any individual connection can be force-revoked via the admin UI. Documented in `operations/` runbooks. |
 
 ## 4. Design System References
@@ -202,7 +209,7 @@ Schema source of truth: `api/src/kene_api/models/integrations.py` (Pydantic), mi
 
 ## 5. Project Index
 
-The component's work is split across **6 project PRDs** under [`projects/`](./projects/). IN-PRD-01 is a strict prerequisite (the substrate); IN-PRD-02 is a strict prerequisite for the remaining four (first real platform). After IN-PRD-02 lands, IN-PRD-03 (UI), IN-PRD-04 (Meta + Mailchimp), and the first half of IN-PRD-05 (the `mark-expired` hook + user-removal handler) can run in parallel. IN-PRD-05's notification path needs IN-PRD-03's deep-link target. IN-PRD-06 is the capstone — E2E + legacy cleanup + KMS-rotation drill.
+The component's work is split across **7 project PRDs** under [`projects/`](./projects/). IN-PRD-01 is a strict prerequisite (the substrate); IN-PRD-02 is a strict prerequisite for the remaining five (first real platform). After IN-PRD-02 lands, IN-PRD-03 (UI), IN-PRD-04 (Meta + Mailchimp), and the first half of IN-PRD-05 (the `mark-expired` hook + user-removal handler) can run in parallel. IN-PRD-05's notification path needs IN-PRD-03's deep-link target. IN-PRD-06 is the capstone — E2E + legacy cleanup + KMS-rotation drill. IN-PRD-07 is an optional verification surface (on-demand Test-connection endpoint + Settings-card button + MCP tool) that can ship in parallel with IN-PRD-06 or as a fast-follow; it reads the substrate IN-PRD-02/03/05 deliver and gates nothing downstream.
 
 ### 5.1 Dependency graph
 
@@ -243,6 +250,15 @@ FF-PRD-01 (Feature Flags)         ─┤
               │ + legacy │
               │ cleanup  │
               └──────────┘
+
+          IN-PRD-03 + IN-PRD-05
+                    │
+                    ▼
+              ┌──────────┐
+              │IN-PRD-07 │   On-demand Test-connection
+              │ Test     │   (endpoint + Settings button
+              │ conn.    │    + MCP tool; parallel with 06)
+              └──────────┘
 ```
 
 ### 5.2 Projects
@@ -255,6 +271,7 @@ FF-PRD-01 (Feature Flags)         ─┤
 | 04 | [Meta + Mailchimp Platforms](./projects/IN-PRD-04-meta-mailchimp-platforms.md) | Integrations / Backend | IN-PRD-02 | IN-PRD-03 | 3 days |
 | 05 | [Re-auth Lifecycle](./projects/IN-PRD-05-reauth-lifecycle.md) | Integrations / Backend + thin frontend | IN-PRD-02, IN-PRD-03 | IN-PRD-04 | 2 days |
 | 06 | [Integration Testing + Legacy Cleanup](./projects/IN-PRD-06-integration-testing-cleanup.md) | Integrations / Backend (cross-component sweep) | IN-PRD-01..05 | — | 2 days |
+| 07 | [On-demand Connection Test](./projects/IN-PRD-07-on-demand-connection-test.md) | Integrations / Backend + thin frontend + small agent-tool addition | IN-PRD-02, IN-PRD-03, IN-PRD-05 | IN-PRD-06 | 3 days |
 
 ### 5.3 Cross-PRD coordination points
 
@@ -270,6 +287,7 @@ Three touchpoints need conscious coordination:
 2. **Sprint 2:** IN-PRD-02 lands (4 days, backend). DP-PRD-02 can start in parallel against the Integrations internal credential-read (with IN-PRD-02's stub fallback).
 3. **Sprint 3:** IN-PRD-03 (frontend team) and IN-PRD-04 (backend team) run in parallel. IN-PRD-05's backend half (`mark-expired`, `on-user-removed`, stuck-expired watchdog) can start once IN-PRD-02 is done; the notification-UI half waits for IN-PRD-03's deep-link page.
 4. **Sprint 4:** IN-PRD-06 capstone — E2E suite, KMS rotation drill in dev, AH-PRD-02 retrofit, docs sweep. Finalize feature-flag defaults. Verification report appended to this README.
+5. **Sprint 4 or fast-follow:** IN-PRD-07 on-demand Test-connection — endpoint + Settings button + MCP tool. Can run in parallel with IN-PRD-06 (no substrate conflicts) or slip a sprint if IN-PRD-06 absorbs the team.
 
 ## 6. Global Document References
 
@@ -340,7 +358,7 @@ Tokens never flow through ADK session state, Firestore outside `platform_connect
 
 ### 7.8 Feature-flag structure
 
-- **Component-level kill switches:** `integrations_enabled` (user-facing endpoints; internal credential-read is unconditional), `integrations_ui_enabled` (Settings tab), `integrations_reauth_lifecycle_enabled` (notification emission — status transitions still happen regardless).
+- **Component-level kill switches:** `integrations_enabled` (user-facing endpoints; internal credential-read is unconditional), `integrations_ui_enabled` (Settings tab), `integrations_reauth_lifecycle_enabled` (notification emission — status transitions still happen regardless), `integrations_connection_test_enabled` (IN-PRD-07's on-demand Test-connection endpoint + Settings button + MCP tool; when off: endpoint 404s, button hidden, tool unregistered).
 - **Per-platform kill switches:** `integration_google_enabled`, `integration_meta_enabled`, `integration_mailchimp_enabled`. Platform disappears from `/platforms` + `initiate` 404s when off. Internal credential-read still works for existing connections (so already-running consumer tasks can finish; disconnect the platform to really kill it).
 - **IN-PRD-06 flips component-level flags on in prod by default.** Per-platform flags remain as the ongoing kill switches.
 
