@@ -126,6 +126,21 @@ If users ask about creating or generating strategy documents, explain:
 Remember: You are a router, not a data source. ALWAYS delegate to the appropriate specialized agent using the provided tools."""
 
 
+def build_ken_e_instruction(context: ReadonlyContext) -> str:
+    """Build KEN-E's instruction from ``_BASE_INSTRUCTION`` + org context.
+
+    Static alternative to the cache-backed :func:`_make_instruction_provider`
+    closure. Kept because ``tests/unit/test_adk_agents/test_ken_e_instruction_provider.py``
+    targets the static merge behavior directly (no cache / no Firestore),
+    which is useful for regression-testing the org-context prepend logic
+    independently of the hot-reload path.
+    """
+    org_context = context.state.get("organization_context")
+    if org_context:
+        return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{_BASE_INSTRUCTION}"
+    return _BASE_INSTRUCTION
+
+
 def _make_instruction_provider(config_doc_id: str) -> Callable[[ReadonlyContext], str]:
     """Create an InstructionProvider that reads the latest instruction from cache.
 
