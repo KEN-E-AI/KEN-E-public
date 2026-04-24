@@ -9,6 +9,7 @@ automatically resolved using the shared.secrets module.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Literal
@@ -165,7 +166,9 @@ class MCPConfigLoader:
             config_path: Path to YAML config file. Defaults to mcp_servers.yaml
                         in the config subdirectory of this module.
         """
-        self.config_path = config_path or Path(__file__).parent / "config" / "mcp_servers.yaml"
+        self.config_path = (
+            config_path or Path(__file__).parent / "config" / "mcp_servers.yaml"
+        )
         self._configs: dict[str, MCPServerConfig] = {}
 
     @property
@@ -266,7 +269,9 @@ class MCPConfigLoader:
         """
         if not self._configs:
             self.load()
-        return [c for c in self._configs.values() if c.category == category and c.enabled]
+        return [
+            c for c in self._configs.values() if c.category == category and c.enabled
+        ]
 
     def reload(self) -> dict[str, MCPServerConfig]:
         """Force reload configurations from disk.
@@ -316,18 +321,74 @@ def _resolve_env_pattern(value: str) -> str:
     return re.sub(pattern, replacer, value)
 
 
-# Singleton loader instance
+# Singleton loader instance. Typed as the base loader interface; the concrete
+# implementation is either ``MCPConfigLoader`` (YAML) or ``FirestoreMCPLoader``
+# depending on the ``MCP_CONFIG_SOURCE`` env var.
 _config_loader: MCPConfigLoader | None = None
 
 
 def get_mcp_config_loader() -> MCPConfigLoader:
     """Get the singleton MCP config loader.
 
+    The ``MCP_CONFIG_SOURCE`` env var selects the backing store:
+
+    * ``"yaml"`` (default during the Sprint 6 transition) — reads from
+      ``mcp_servers.yaml``. Preserves legacy behavior for local dev and for
+      environments where the Firestore migration (Story 1.1.4-2) hasn't run yet.
+    * ``"firestore"`` — reads from ``mcp_server_configs/{id}`` via
+      ``FirestoreMCPLoader``, which falls back to YAML on connection errors.
+      Operators should flip the env var after running the migration script
+      against a given environment.
+
+    Both loaders expose the same public surface (``.load``, ``.reload``,
+    ``.configs``, ``.get_server``, ``.get_enabled_servers``,
+    ``.get_servers_by_category``), so ``MCPServerManager`` consumes either
+    without changes.
+
     Returns:
-        Shared MCPConfigLoader instance
+        Shared loader singleton (duck-typed as ``MCPConfigLoader``).
     """
     global _config_loader
     if _config_loader is None:
-        _config_loader = MCPConfigLoader()
+        source = os.getenv("MCP_CONFIG_SOURCE", "yaml").strip().lower()
+        if source == "firestore":
+            # Local import to keep google.cloud.firestore out of the YAML-only
+            # code path (useful for tests that don't install firestore).
+            from .firestore_loader import FirestoreMCPLoader
+
+            _config_loader = FirestoreMCPLoader()  # type: ignore[assignment]
+            logger.info(
+                "MCP config source: firestore",
+                extra=log_context(
+                    component="mcp_config",
+                    action="loader_selected",
+                    extra={"source": "firestore"},
+                ),
+            )
+        else:
+            if source not in ("yaml", ""):
+                logger.warning(
+                    f"Unknown MCP_CONFIG_SOURCE={source!r}; defaulting to yaml",
+                    extra=log_context(
+                        component="mcp_config",
+                        action="loader_unknown_source",
+                        extra={"source": source},
+                    ),
+                )
+            _config_loader = MCPConfigLoader()
+            logger.info(
+                "MCP config source: yaml",
+                extra=log_context(
+                    component="mcp_config",
+                    action="loader_selected",
+                    extra={"source": "yaml"},
+                ),
+            )
         _config_loader.load()
     return _config_loader
+
+
+def reset_mcp_config_loader() -> None:
+    """Reset the singleton loader (primarily for tests)."""
+    global _config_loader
+    _config_loader = None
