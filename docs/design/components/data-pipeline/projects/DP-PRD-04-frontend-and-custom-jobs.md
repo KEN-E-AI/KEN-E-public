@@ -373,8 +373,8 @@ Role gating from DM-PRD-07:
 - Upstream: [IN-PRD-03 Connection-management UI](../../integrations/projects/IN-PRD-03-connection-management-ui.md)
 - Sibling: [PR-PRD-03 Calendar page frontend](../../project-tasks/projects/PR-PRD-03-calendar-page-frontend.md) — hosts `ProjectEditDrawer` + `ActivityDetailPanel`
 - Sibling: [PR-PRD-01 Project plan data model + API](../../project-tasks/projects/PR-PRD-01-data-model-and-api.md) — `PATCH /api/v1/plans/{plan_id}/tasks/{task_id}`
-- Sibling: [A-PRD-02 Recurring scheduler](../../automations/projects/02-recurring-scheduler.md) — `{inputs.*}` substitution
-- Sibling: [A-PRD-03 Task artifact system](../../automations/projects/03-task-artifact-system.md) — artifact preview endpoint
+- Sibling: [A-PRD-02 Recurring scheduler](../../automations/projects/A-PRD-02-recurring-scheduler.md) — `{inputs.*}` substitution
+- Sibling: [A-PRD-03 Task artifact system](../../automations/projects/A-PRD-03-task-artifact-system.md) — artifact preview endpoint
 - Policy: [DM-PRD-07 Approval & audit](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) — role table
 - Feature Flags: [FF-PRD-03 SDK hook](../../feature-flags/projects/FF-PRD-03-feature-flag-sdks.md) — `useFeatureFlag`
 - Design tokens: [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)

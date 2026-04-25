@@ -248,6 +248,6 @@ All endpoints use the existing account-scoped access-control dependency. Approva
 - Foundation: [PR-PRD-01](./PR-PRD-01-data-model-and-api.md) §4 data contract, §6 API contract
 - Campaigns: [PR-PRD-08](./PR-PRD-08-campaign-management.md)
 - Approval + audit: [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)
-- Schedule preview: [A-PRD-2](../../automations/projects/02-recurring-scheduler.md) §6 (updated to add the preview and upcoming endpoints)
+- Schedule preview: [A-PRD-2](../../automations/projects/A-PRD-02-recurring-scheduler.md) §6 (updated to add the preview and upcoming endpoints)
 - Frontend context: `docs/figma-export/src/app/data/calendarData.ts` (`CalendarActivity`, category enums, sparse field shapes), `docs/figma-export/src/app/data/standaloneTasks.ts` (orphan-task pattern), `docs/figma-export/src/app/pages/CalendarPage.tsx` (batch wizard, group edit, Unscheduled panel, Move-to-Project dialog)
 - CLAUDE.md rules in scope: C-1, C-5; D-1, D-2, D-5; PY-1, PY-2, PY-7; T-1, T-3, T-4, T-7, T-8

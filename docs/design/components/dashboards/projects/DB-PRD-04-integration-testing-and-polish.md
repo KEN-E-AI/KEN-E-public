@@ -184,6 +184,6 @@ Implement as a parameterized Pytest suite in `api/tests/integration/test_dashboa
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Siblings: [DB-PRD-01](./DB-PRD-01-data-model-and-api.md), [DB-PRD-02](./DB-PRD-02-dashboards-tab-and-list.md), [DB-PRD-03](./DB-PRD-03-dashboard-details-and-canvas.md)
-- Pattern: [A-PRD-07 Automations Integration Testing & Polish](../../automations/projects/07-integration-testing-and-polish.md) — same closeout pattern
+- Pattern: [A-PRD-07 Automations Integration Testing & Polish](../../automations/projects/A-PRD-07-integration-testing-and-polish.md) — same closeout pattern
 - Role policy: [DM-PRD-07 §4 transition policy table](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md#4-data-contract)
 - CLAUDE.md rules in scope: T-2, T-3, T-4, T-5, T-6, T-8; G-1, G-2, G-3

@@ -589,8 +589,8 @@ With a 10k+ account scale target and no production users, the decision was made 
 | `docs/design/components/skills/projects/SK-PRD-04-agent-builder-controls.md` | 5 path references (`replace_all skills_{account_id}` → `accounts/{account_id}/skills`); Notion callout added to §4. |
 | `docs/design/components/project-tasks/projects/PR-PRD-01-data-model-and-api.md` | Firestore layout block (lines 120–124 in prior version) rewritten; AC #1 path updated; Notion callout added. |
 | `docs/design/components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md` | Scheduler now uses collection-group query over `project_plans` (Shape B); the per-account-iteration fallback row removed from the Risks table. |
-| `docs/design/components/automations/projects/01-data-model-and-api.md` | Firestore layout block rewritten; composite-index block updated to `accounts/*/project_plans` + `accounts/*/plan_runs` collection scope; Notion callout added. |
-| `docs/design/components/automations/projects/03-task-artifact-system.md` | `plan_runs_{account_id}` → `accounts/{account_id}/plan_runs` in Dependencies + AC #3; Notion callout added. |
+| `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md` | Firestore layout block rewritten; composite-index block updated to `accounts/*/project_plans` + `accounts/*/plan_runs` collection scope; Notion callout added. |
+| `docs/design/components/automations/projects/A-PRD-03-task-artifact-system.md` | `plan_runs_{account_id}` → `accounts/{account_id}/plan_runs` in Dependencies + AC #3; Notion callout added. |
 | `docs/design/components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md` | No path changes (consumes the Automations API, not Firestore directly). Notion callout added to §3 for reader context. |
 | `docs/design/project-planning-implementation-plan.md` | Firestore Collection Structure block rewritten; Notion callout added. |
 | `docs/design/components/knowledge-graph/projects/KG-PRD-05-research-on-creation-refactor.md` | AC #4 path reference updated + Notion callout. |
@@ -826,6 +826,59 @@ Pre-migration gap audit against `docs/figma-export/src/app/pages/*` surfaced 11 
 ### Notion Design Decision
 
 Add a Design Decision entry for "Frontend migration — drop legacy routes" linking to this review. (To be filed by the design-doc maintainer.)
+
+---
+
+## Review 21: Release assignments — full dependency-driven sequencing across all 15 components
+
+**Date:** 2026-04-24
+**Scope:** Fill the `release` column for every PRD row in `PROJECT-PLANNER.md` (91 rows across 15 components) based on the full `blocked_by` dependency graph, and reconcile the Release overview table in `KEN-E-System-Architecture.md` §12.
+
+### Why
+
+Six components (Data Pipeline, Integrations, SAR-E, Performance, Billing, Chat) had `release` unset in `PROJECT-PLANNER.md`, and the pre-existing assignments contained a circular impossibility: `DM-PRD-07` (Approval Workflow & Audit) was slotted to Release 1, but depends on `PR-PRD-01` (Project Tasks data model), which was Release 2. `System-Architecture §12` carried a `TBD` row acknowledging the gap but with no resolution. With component design complete across the landscape, release sequencing was the last missing piece before implementation could be parallelized across teams.
+
+### Method
+
+1. Walked every `blocked_by` edge in the PRD graph (91 rows) to identify the topological earliest possible release per project.
+2. Grouped projects into release themes matching product coherence (Foundation → Task Automation → Expertise + Monetization → Measurement → Multi-Channel + Extensions → Voice).
+3. Resolved four judgment calls with the user before writing: billing placement (R3, not R4, to turn on revenue before the analytical layer ships); R2 width (kept wide — PR + A + DB + IN + DP + CH-04 + DM-07 as one connected graph); chat split (CH-01/02/03/05 in R1; CH-04 in R2 because its AuthStatusCard needs IN-PRD-03); DP-05 placement (R5 with the additional specialists it pairs with).
+
+### Release structure (final)
+
+| Release | Theme | PRD count | Content |
+|---------|-------|-----------|---------|
+| **1** | Foundation | 20 | DM-00..06, AH-01..03, UI-01/02/08, FF-01..03, CH-01/02/03/05 |
+| **2** | Task Automation | 35 | DM-07, PR-01..08, A-01..07, DB-01..04, UI-03/04, IN-01..07, DP-01..04 + 06, CH-04 |
+| **3** | Expertise + Monetization | 18 | KG-01..05, SK-00..04, UI-05, AH-04, BL-01..06 |
+| **4** | Measurement | 15 | SE-01..07, PE-01..08 |
+| **5** | Multi-Channel + Extensions | 2 | UI-06, DP-05 (plus Slack + additional specialists — no PRDs yet) |
+| **6** | Voice | 0 | Voice channel (no PRDs yet) |
+| **Subsumed** | — | 1 | UI-PRD-07 folded into PE-PRD-01 |
+
+### Dependency observations that drove placement
+
+- **DM-PRD-07 → R2** (not R1): depends on PR-PRD-01. Cascades to IN-PRD-01, BL-PRD-01, SE-PRD-01, DB-PRD-01 which all need DM-07 and therefore sit at R2 or later.
+- **Integrations + Data Pipeline → R2** alongside PR + A + DB: IN-03 needs UI-01 + IN-02; DP-03 needs PR-04 + A-03 + A-04. They form one connected subgraph.
+- **SAR-E → R4**: SE-02 (Weekly KPI Ingestion) depends on DP-01/02/03. Data Pipeline's first production consumer is SAR-E; SAR-E can't ship until Data Pipeline ships.
+- **Performance → R4**: PE-05 (Setup Wizard) depends on IN-PRD-03; PE-07 (Diagnostics) depends on DP-PRD-01. Thematically pairs with SAR-E.
+- **Billing → R3**: unblocked after R2 (DM-07 + FF-01 + UI-02 all in R1/R2). Placed with Expertise rather than with Measurement (R4) so revenue is turned on before the analytical layer.
+- **Chat split at CH-04**: CH-04 (Session Status View) depends on IN-PRD-03 for its AuthStatusCard. CH-01/02/03/05 have no Integrations dep and ship in R1. The chat redesign is user-visible from R1 but the status view completes in R2.
+- **UI-PRD-07 subsumed**: its own PRD acknowledged "May be subsumed by PE-PRD-01…08." PE-PRD-01 delivers the same `/performance` shell on `LayoutC`. UI-07 is marked subsumed rather than released.
+
+### Documents updated
+
+- `docs/design/components/PROJECT-PLANNER.md` — filled the `release` column on every previously-blank row (Chat 01/02/03/04/05, Integrations 01..07, Data Pipeline 01..06, SAR-E 01..07, Performance 01..08, Billing 01..06, UI-07); moved DM-PRD-07 from R1 → R2; normalized theme casing (`2: task automation` → `2: Task Automation`; `3: Expertise` → `3: Expertise + Monetization`; `5: integrations` → `5: Multi-Channel + Extensions`); added a **Release Strategy** section above the project table with per-release theme + rationale.
+- `docs/KEN-E-System-Architecture.md` — rewrote the §12 Release overview table: R1 loses DM-07 (now lists DM-00..06) and gains Chat; R2 gains DM-07, IN, DP, and CH-04; R3 renamed to "Expertise + Monetization" and gains Billing; R4 "Measurement" added for SAR-E + Performance; R5 renamed to "Multi-Channel + Extensions"; `TBD` row removed; UI-PRD-07 subsumption called out below the table. Updated the note on numbering to reflect that PROJECT-PLANNER now uses 1..6 (not just 1/2/3/5).
+
+### Follow-ups
+
+- **`docs/product-roadmap.md` reconciliation** — that doc still describes R2.0 as "Intelligent Analytics" (review loop + GA specialist + data viz) and R3.0 as "Content & Campaigns," which no longer matches the component planner's release structure. Recommendation under separate cover: retire `product-roadmap.md` in favor of `PROJECT-PLANNER.md` + Notion, since the roadmap's unique content (Features Index, design refs) is already duplicated in the component PRDs and Notion is designated as the source of truth for feature detail.
+- **No implementation work unblocked yet** — this review only fills in the release column. Component teams continue to pull from `blocked_by` directly; the `release` column is for cross-component planning and product-roadmap sync.
+
+### Notion Design Decision
+
+Add a Design Decision entry for "Release assignments — full dependency-driven sequencing" linking to this review. (To be filed by the design-doc maintainer.)
 
 ---
 

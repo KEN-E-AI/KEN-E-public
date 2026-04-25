@@ -325,7 +325,7 @@ This PRD owns no new endpoints. It consumes:
 - Siblings: [DP-PRD-01 Foundation](./DP-PRD-01-foundation.md), [DP-PRD-02 Google Analytics connector](./DP-PRD-02-google-analytics-connector.md), [DP-PRD-03 Task-system integration](./DP-PRD-03-task-system-integration.md), [DP-PRD-04 Frontend + custom-job authoring](./DP-PRD-04-frontend-and-custom-jobs.md), [DP-PRD-05 Additional connectors](./DP-PRD-05-additional-connectors.md)
 - Pattern template: [PE-PRD-08 Performance Integration Testing & Polish](../../performance/projects/PE-PRD-08-integration-testing.md)
 - Secondary template: [DB-PRD-04 Dashboards Integration Testing & Polish](../../dashboards/projects/DB-PRD-04-integration-testing-and-polish.md)
-- Upstream: [A-PRD-02 Recurring scheduler](../../automations/projects/02-recurring-scheduler.md), [A-PRD-03 Task artifact system](../../automations/projects/03-task-artifact-system.md), [A-PRD-04 Test / dry-run mode](../../automations/projects/04-test-dry-run-mode.md)
+- Upstream: [A-PRD-02 Recurring scheduler](../../automations/projects/A-PRD-02-recurring-scheduler.md), [A-PRD-03 Task artifact system](../../automations/projects/A-PRD-03-task-artifact-system.md), [A-PRD-04 Test / dry-run mode](../../automations/projects/A-PRD-04-test-dry-run-mode.md)
 - Upstream: [PR-PRD-04 Event-driven orchestrator](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md)
 - Upstream: [IN-PRD-02 Google OAuth](../../integrations/projects/IN-PRD-02-google-oauth.md)
 - Role policy: [DM-PRD-07 Approval & audit](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)

@@ -458,8 +458,8 @@ Owned by this PRD. OIDC-authed (sibling service SA). Invoked when a `DataPipelin
 - Upstream: [DP-PRD-02 — Google Analytics connector](./DP-PRD-02-google-analytics-connector.md)
 - Upstream: [PR-PRD-01 — Data Model & API](../../project-tasks/projects/PR-PRD-01-data-model-and-api.md) — `PlanTask` model extended here
 - Upstream: [PR-PRD-04 — Event-Driven Orchestrator](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md) — `TaskOrchestrator` hooks extended here
-- Upstream: [A-PRD-03 — Task Artifact System](../../automations/projects/03-task-artifact-system.md) — `TaskArtifact` write path
-- Upstream: [A-PRD-04 — Test / Dry-Run Mode](../../automations/projects/04-test-dry-run-mode.md) — `is_test` threading
+- Upstream: [A-PRD-03 — Task Artifact System](../../automations/projects/A-PRD-03-task-artifact-system.md) — `TaskArtifact` write path
+- Upstream: [A-PRD-04 — Test / Dry-Run Mode](../../automations/projects/A-PRD-04-test-dry-run-mode.md) — `is_test` threading
 - Upstream (soft): [IN-PRD-05 — Re-auth lifecycle](../../integrations/implementation-plan.md) — `"Integration Needs Re-auth"` notification path
 - Sibling (downstream): [DP-PRD-04 — Frontend + custom-job authoring](./DP-PRD-04-frontend-and-authoring.md)
 - Sibling (downstream): [DP-PRD-06 — Integration testing & polish](./DP-PRD-06-integration-testing.md)

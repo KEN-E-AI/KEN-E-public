@@ -132,6 +132,6 @@ All other A-PRDs (1–6) must be merged. A-PRD-7 cannot start before then.
 ## 8. Reference
 
 - Parent plan: [`../README.md`](../README.md) §6 (Verification plan)
-- All sibling PRDs: [01](./01-data-model-and-api.md), [02](./02-recurring-scheduler.md), [03](./03-task-artifact-system.md), [04](./04-test-dry-run-mode.md), [05](./05-automations-list-page.md), [06](./06-automation-details-page.md)
+- All sibling PRDs: [01](./A-PRD-01-data-model-and-api.md), [02](./A-PRD-02-recurring-scheduler.md), [03](./A-PRD-03-task-artifact-system.md), [04](./A-PRD-04-test-dry-run-mode.md), [05](./A-PRD-05-automations-list-page.md), [06](./A-PRD-06-automation-details-page.md)
 - Calendar verification reference: [Calendar PRD-5](../../project-tasks/projects/PR-PRD-05-integration-testing-and-polish.md)
 - CLAUDE.md rules in scope: T-3, T-5 (integration tests preferred over heavy mocking)

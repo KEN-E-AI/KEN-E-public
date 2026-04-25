@@ -353,7 +353,7 @@ Rules:
 ## 10. Reference
 
 - Parent plan: [`../README.md`](../README.md) §2 (Architectural overview)
-- Foundation: [A-PRD-1](./01-data-model-and-api.md)
+- Foundation: [A-PRD-1](./A-PRD-01-data-model-and-api.md)
 - Reused infra: [Calendar PRD-6](../../project-tasks/projects/PR-PRD-06-time-based-scheduler.md), [Calendar PRD-4](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md)
 - Pattern files: `api/src/kene_api/routers/internal/scheduler.py` (Calendar PRD-6)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-3, PY-7; D-1, D-5; T-1, T-3, T-4, T-6

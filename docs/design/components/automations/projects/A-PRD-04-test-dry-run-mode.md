@@ -60,7 +60,7 @@ Request body (all fields optional):
 }
 ```
 
-The `inputs` object, if provided, is stored on the new `PlanRun` and substituted into agent prompts per [A-PRD-2 §Inputs template substitution](./02-recurring-scheduler.md#inputs-template-substitution). This is how a user validates an automation that expects per-run context (e.g. the KG session-end automation, [KG-PRD-04](../../knowledge-graph/projects/KG-PRD-04-session-end-automation.md)) — they pass sample context in the test request and observe the agents dispatch against it.
+The `inputs` object, if provided, is stored on the new `PlanRun` and substituted into agent prompts per [A-PRD-2 §Inputs template substitution](./A-PRD-02-recurring-scheduler.md#inputs-template-substitution). This is how a user validates an automation that expects per-run context (e.g. the KG session-end automation, [KG-PRD-04](../../knowledge-graph/projects/KG-PRD-04-session-end-automation.md)) — they pass sample context in the test request and observe the agents dispatch against it.
 
 This subsumes the previously-deferred `override_inputs` idea — one `inputs` field covers scheduled, manual, `system`, and `test` runs.
 
@@ -200,6 +200,6 @@ Both endpoints reuse the access-control dependency from A-PRD-1.
 ## 10. Reference
 
 - Parent plan: [`../README.md`](../README.md) §2 (Test mode flow)
-- Foundation: [A-PRD-1](./01-data-model-and-api.md), [A-PRD-3](./03-task-artifact-system.md)
+- Foundation: [A-PRD-1](./A-PRD-01-data-model-and-api.md), [A-PRD-3](./A-PRD-03-task-artifact-system.md)
 - Orchestrator extension: [Calendar PRD-4](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-7; T-1, T-3, T-5

@@ -248,7 +248,7 @@ Cache policy (TanStack Query):
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Foundation: [DB-PRD-01](./DB-PRD-01-data-model-and-api.md)
 - Sibling (shared tab container): [UI-PRD-07 Performance page](../../ui/projects/UI-PRD-07-performance-page.md) *(if exists; otherwise this PRD adds the tab container ad-hoc per §3)*
-- Pattern to mirror: [A-PRD-05 Automations list](../../automations/projects/05-automations-list-page.md)
+- Pattern to mirror: [A-PRD-05 Automations list](../../automations/projects/A-PRD-05-automations-list-page.md)
 - Figma reference: `docs/figma-export/src/app/components/DashboardsSection.tsx` (UX only — rebuild in Soft Maximalism)
 - Frontend conventions: `frontend/CLAUDE.md` (CSS architecture, component library, branded types)
 - CLAUDE.md rules in scope: C-5, C-6, C-8; T-2, T-6, T-8; G-2, G-3

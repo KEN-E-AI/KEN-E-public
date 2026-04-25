@@ -272,7 +272,7 @@ This PRD consumes:
 ## 10. Reference
 
 - Parent plan: [`../README.md`](../README.md) §5 (Phase 6)
-- Foundation: [A-PRD-1](./01-data-model-and-api.md), [A-PRD-3](./03-task-artifact-system.md), [A-PRD-4](./04-test-dry-run-mode.md)
+- Foundation: [A-PRD-1](./A-PRD-01-data-model-and-api.md), [A-PRD-3](./A-PRD-03-task-artifact-system.md), [A-PRD-4](./A-PRD-04-test-dry-run-mode.md)
 - Pattern files: `frontend/src/components/ActivityDetailPanel.tsx` (Calendar PRD-3), `frontend/src/pages/CalendarPage.tsx`
 - React Flow docs: https://reactflow.dev/
 - Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) — Workflows / Automations / Configure

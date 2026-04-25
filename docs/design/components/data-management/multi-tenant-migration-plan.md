@@ -208,8 +208,8 @@ Tracked separately (executed in the same session as this plan was written):
 - `docs/design/components/skills/projects/SK-PRD-04-agent-builder-controls.md`
 - `docs/design/components/project-tasks/projects/PR-PRD-01-data-model-and-api.md`
 - `docs/design/components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md` (also remove the per-account-iteration fallback row in the Risks table)
-- `docs/design/components/automations/projects/01-data-model-and-api.md`
-- `docs/design/components/automations/projects/03-task-artifact-system.md`
+- `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md`
+- `docs/design/components/automations/projects/A-PRD-03-task-artifact-system.md`
 - `docs/design/components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md`
 - `docs/design/DESIGN-REVIEW-LOG.md` — new review entry
 
@@ -395,8 +395,8 @@ See Phase 5. The impact per PRD:
 | `docs/design/components/skills/projects/SK-PRD-04-agent-builder-controls.md` | 5 path references |
 | `docs/design/components/project-tasks/projects/PR-PRD-01-data-model-and-api.md` (Plans) | Firestore layout block + AC #1 |
 | `docs/design/components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md` | Collection-group index name; remove the per-account-iteration fallback row in §9 |
-| `docs/design/components/automations/projects/01-data-model-and-api.md` | Firestore layout block + index section |
-| `docs/design/components/automations/projects/03-task-artifact-system.md` | Artifact path reference |
+| `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md` | Firestore layout block + index section |
+| `docs/design/components/automations/projects/A-PRD-03-task-artifact-system.md` | Artifact path reference |
 | `docs/design/components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md` | No structural path changes (uses Automations API), but add a Notion callout for reader context |
 
 Each edited PRD gets a short inline callout at the top of its Firestore-layout section:

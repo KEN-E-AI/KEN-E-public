@@ -207,7 +207,7 @@ This PRD only consumes — no new endpoints. Calls:
 ## 10. Reference
 
 - Parent plan: [`../README.md`](../README.md) §5 (Phase 5)
-- Foundation: [A-PRD-1](./01-data-model-and-api.md)
+- Foundation: [A-PRD-1](./A-PRD-01-data-model-and-api.md)
 - Pattern files: `frontend/src/pages/CalendarPage.tsx` (Calendar PRD-3), `frontend/src/services/projectPlanService.ts`
 - Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) — Workflows page, Automations tab
 - CLAUDE.md rules in scope: C-5 (branded types), C-6 (`import type`), C-8 (`type` over `interface`), G-2, G-3, T-2

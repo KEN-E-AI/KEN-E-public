@@ -249,6 +249,6 @@ All endpoints reuse the access-control dependency from A-PRD-1.
 ## 10. Reference
 
 - Parent plan: [`../README.md`](../README.md) §2 (Architectural pillar 3)
-- Foundation: [A-PRD-1](./01-data-model-and-api.md), [Calendar PRD-4](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md)
+- Foundation: [A-PRD-1](./A-PRD-01-data-model-and-api.md), [Calendar PRD-4](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md)
 - Pattern files: `app/utils/gcs.py`, `app/adk/tools/registry/config/tools.yaml`
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; D-2, D-5; T-1, T-3, T-4, T-5, T-6
