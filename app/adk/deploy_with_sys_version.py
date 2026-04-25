@@ -196,15 +196,15 @@ with tempfile.TemporaryDirectory() as temp_dir:
     else:
         logger.warning("⚠️  shared package not found")
 
-    # Copy app sub-packages needed by agent code (trace_metadata, weave_observability, etc.)
-    # These are imported as `from app.utils.trace_metadata import ...` so we
-    # replicate the package structure.
+    # Copy app sub-packages needed by agent code (weave_observability, etc.)
+    # These are imported as ``from app.utils.* import ...``, so replicate
+    # the package structure. (trace_metadata lives in shared/ now.)
     adk_root = Path(__file__).parent  # app/adk/
     app_root = adk_root.parent  # app/
     app_dest = temp_path / "app"
     app_dest.mkdir(parents=True, exist_ok=True)
 
-    # Copy app/utils/ (trace_metadata, weave_observability, etc.)
+    # Copy app/utils/ (weave_observability, etc.)
     app_utils_src = app_root / "utils"
     if app_utils_src.exists():
         shutil.copytree(

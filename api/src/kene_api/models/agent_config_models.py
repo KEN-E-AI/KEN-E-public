@@ -21,7 +21,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.utils.trace_metadata import SEMVER_PATTERN
+from shared.trace_metadata import SEMVER_PATTERN
 
 # Supported model identifiers. Updated as new Gemini/OpenAI models are released.
 SUPPORTED_MODELS: frozenset[str] = frozenset(

@@ -12,82 +12,37 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from shared.mcp_connection_config import (
+    MCPConnectionParams,
+    SseConnectionConfig,
+    StdioConnectionConfig,
+)
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
 
 logger = get_structured_logger(__name__)
 
 
-class MCPConnectionParams(BaseModel):
-    """Base connection parameters for MCP servers."""
-
-    pass
-
-
-class StdioConnectionConfig(MCPConnectionParams):
-    """Configuration for stdio-based MCP connections (local processes).
-
-    Stdio connections start a local process that communicates via stdin/stdout.
-    Typically used for MCP servers installed via npm or running locally.
-
-    Example:
-        connection:
-          connection_type: stdio
-          command: "npx"
-          args: ["-y", "@anthropic/mcp-server-google-analytics"]
-          env:
-            GA_PROPERTY_ID: "${GA_PROPERTY_ID}"
-
-    Note: ``${VAR}`` resolution happens in the loader (see
-    :func:`_resolve_env_vars_in_dict`) **before** this model is constructed,
-    so runtime ``env`` values are already resolved strings. The admin
-    router path does NOT run the loader, so it sees literal ``${VAR}``
-    strings end-to-end (Sprint 6 secret-leak fix).
-    """
-
-    connection_type: Literal["stdio"] = "stdio"
-    command: str = Field(..., description="Command to run (e.g., 'npx', 'python')")
-    args: list[str] = Field(default_factory=list, description="Command arguments")
-    env: dict[str, str] = Field(
-        default_factory=dict, description="Environment variables for the process"
-    )
-    working_dir: str | None = Field(None, description="Working directory for process")
-
-
-class SseConnectionConfig(MCPConnectionParams):
-    """Configuration for SSE-based MCP connections (remote servers).
-
-    SSE connections connect to remote MCP servers over HTTP using
-    Server-Sent Events for bidirectional communication.
-
-    Example:
-        connection:
-          connection_type: sse
-          url: "${HUBSPOT_MCP_URL}"
-          headers:
-            Authorization: "Bearer ${HUBSPOT_API_KEY}"
-          timeout_seconds: 30
-
-    Note: ``${VAR}`` resolution happens in the loader (see
-    :func:`_resolve_env_vars_in_dict`) **before** this model is constructed.
-    The admin router deliberately bypasses the loader so literal ``${VAR}``
-    strings flow through GET/PUT/audit without leaking resolved secrets
-    (Sprint 6 secret-leak fix).
-    """
-
-    connection_type: Literal["sse"] = "sse"
-    url: str = Field(..., description="SSE endpoint URL")
-    headers: dict[str, str] = Field(
-        default_factory=dict, description="HTTP headers to include"
-    )
-    timeout_seconds: int = Field(
-        30, ge=5, le=300, description="Connection timeout in seconds"
-    )
+# Re-exported so existing call sites can keep importing from
+# ``app.adk.mcp_config.config``. The canonical definitions live in
+# ``shared.mcp_connection_config`` because the admin API in
+# ``kene_api.models.mcp_server_models`` embeds them too.
+__all__ = [
+    "MCPConfigLoader",
+    "MCPConnectionParams",
+    "MCPServerConfig",
+    "SseConnectionConfig",
+    "StdioConnectionConfig",
+    "_resolve_env_pattern",
+    "_resolve_env_vars_in_dict",
+    "get_mcp_config_loader",
+    "reset_mcp_config_loader",
+]
 
 
 class MCPServerConfig(BaseModel):

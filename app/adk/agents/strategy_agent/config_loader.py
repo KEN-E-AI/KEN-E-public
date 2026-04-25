@@ -101,7 +101,7 @@ def load_config_from_firestore(
 
         # Extract metadata (for Weave logging) and validate version
         metadata = config_data.get("metadata", {})
-        from app.utils.trace_metadata import DEFAULT_VERSION, validate_semver
+        from shared.trace_metadata import DEFAULT_VERSION, validate_semver
 
         raw_version = metadata.get("version")
         metadata["version"] = validate_semver(raw_version)
@@ -273,7 +273,7 @@ def get_current_config_metadata(
         config_data = doc.to_dict()
         metadata = config_data.get("metadata", {})
 
-        from app.utils.trace_metadata import DEFAULT_VERSION, validate_semver
+        from shared.trace_metadata import DEFAULT_VERSION, validate_semver
 
         raw_version = metadata.get("version")
         normalized_version = validate_semver(raw_version)

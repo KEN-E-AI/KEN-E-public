@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
 from pydantic import Field
 
-from app.utils.trace_metadata import parse_semver, validate_semver
+from shared.trace_metadata import parse_semver, validate_semver
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context

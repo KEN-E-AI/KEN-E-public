@@ -34,9 +34,9 @@ import weave
 from weave.trace.api import get_client as _weave_get_client
 from weave.trace.context import call_context as _weave_call_context
 
-from app.utils.trace_metadata import DEFAULT_VERSION
 from app.utils.weave_observability import init_weave_if_needed
 from shared.structured_logging import get_structured_logger
+from shared.trace_metadata import DEFAULT_VERSION
 
 from .usage import ExecutionStatus, get_usage_tracker
 

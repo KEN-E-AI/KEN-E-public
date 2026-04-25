@@ -284,7 +284,7 @@ class TestUpdate:
         spy_reload = AsyncMock()
         mock_manager = MagicMock()
         mock_manager.reload = spy_reload
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         update = MCPServerConfigUpdate(
             description="new desc", updated_by="admin@ken-e.ai"
@@ -340,7 +340,7 @@ class TestUpdate:
         spy_reload = AsyncMock()
         mock_manager = MagicMock()
         mock_manager.reload = spy_reload
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         new_conn = SseConnectionConfig(
             connection_type="sse",
@@ -382,7 +382,7 @@ class TestUpdate:
         spy_reload = AsyncMock()
         mock_manager = MagicMock()
         mock_manager.reload = spy_reload
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         update = MCPServerConfigUpdate(enabled=False, updated_by="admin@ken-e.ai")
         await router_mod.update_mcp_server_config(
@@ -416,7 +416,7 @@ class TestUpdate:
         )
         mock_manager = MagicMock()
         mock_manager.reload = AsyncMock(side_effect=RuntimeError("boom"))
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         update = MCPServerConfigUpdate(
             connection=SseConnectionConfig(
@@ -513,7 +513,7 @@ class TestSecretMaterialization:
         )
         mock_manager = MagicMock()
         mock_manager.reload = AsyncMock(return_value={"unloaded": [], "kept": 0})
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         new_conn = SseConnectionConfig(
             connection_type="sse",
@@ -563,7 +563,7 @@ class TestSecretMaterialization:
         )
         mock_manager = MagicMock()
         mock_manager.reload = AsyncMock(return_value={"unloaded": [], "kept": 0})
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         new_conn = SseConnectionConfig(
             connection_type="sse",
@@ -628,7 +628,7 @@ class TestSecretMaterialization:
         monkeypatch.setattr(router_mod, "log_config_action", spy_audit)
         mock_manager = MagicMock()
         mock_manager.reload = AsyncMock(return_value={"unloaded": [], "kept": 0})
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         new_conn = SseConnectionConfig(
             connection_type="sse",
@@ -752,7 +752,7 @@ class TestReloadEndpoint:
         spy_reload = AsyncMock(return_value={"unloaded": ["hubspot_mcp"], "kept": 5})
         mock_manager = MagicMock()
         mock_manager.reload = spy_reload
-        monkeypatch.setattr(router_mod, "get_mcp_manager", lambda: mock_manager)
+        monkeypatch.setattr("app.adk.mcp_config.manager.get_mcp_manager", lambda: mock_manager)
 
         resp = await router_mod.reload_mcp_server_configs(user=admin_user)
 
