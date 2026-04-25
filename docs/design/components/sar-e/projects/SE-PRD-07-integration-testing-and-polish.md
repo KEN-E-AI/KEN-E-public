@@ -393,8 +393,8 @@ Shape: ramp 100 users over 60s, hold 5 min, ramp down 60s. Reports generated fro
 - Agentic Harness (specialist runtime)
 
 ## PRD index
-- [SE-PRD-01](./projects/SE-PRD-01-configuration-foundation.md) — ...
-- [SE-PRD-02](./projects/SE-PRD-02-weekly-kpi-ingestion.md) — ...
+- [SE-PRD-01](./SE-PRD-01-configuration-foundation.md) — ...
+- [SE-PRD-02](./SE-PRD-02-weekly-kpi-ingestion.md) — ...
 ...
 
 ## Verification report
@@ -486,7 +486,7 @@ No user-facing endpoints.
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md) §6 SE-PRD-07
 - Upstream: SE-PRDs 01–06
-- Runbook target: [`api/CLAUDE.md`](../../../../api/CLAUDE.md)
+- Runbook target: [`api/CLAUDE.md`](../../../../../api/CLAUDE.md)
 - Existing load-test conventions: `tests/load_test/`
 - Weave span catalog: `docs/trace-structure-spec.md`
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-3, PY-5, PY-7; C-1, C-2, C-4; T-1, T-3, T-4, T-5, T-6, T-7, T-8; G-1

@@ -1,6 +1,6 @@
 # Skills — Product Requirements Document
 
-> **Linear Team:** [TBD] Skills
+> **Linear Team:** [KEN-E] SKILLS
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

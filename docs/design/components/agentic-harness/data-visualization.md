@@ -481,7 +481,7 @@ The renderer applies these transforms after receiving the spec. Backends should 
 | **Slack** `[PLANNED]` | Server-side render Vega-Lite to PNG via `vega-lite-to-png` or Vega CLI, send as image attachment. Apply the same app-theme config server-side for consistency. | Requires server-side rendering pipeline |
 | **Voice** `[PLANNED]` | No visual rendering. Agent describes the data verbally: "Sessions peaked on Thursday at 1,423" | `create_visualization()` still produces the artifact for session history; voice channel skips rendering |
 
-See [`api-gateway-multi-channel.md`](../../api-gateway-multi-channel.md) Section 6 for the per-channel rendering architecture.
+See [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Section 6 for the per-channel rendering architecture.
 
 ---
 
@@ -503,7 +503,7 @@ See [`api-gateway-multi-channel.md`](../../api-gateway-multi-channel.md) Section
 
 - Harness Design Doc — Sections 1.4 (Key Design Decisions), 2.3.2 (Request Flow), 3.6.2 (Session State), 4.4 (Specialist Agents), 4.6 (Review Loop Pattern)
 - [`components/agentic-harness/README.md`](./README.md) §2.6 — Specialist roadmap
-- [`api-gateway-multi-channel.md`](../../api-gateway-multi-channel.md) Section 6 — Stable Components Across Channels
+- [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Section 6 — Stable Components Across Channels
 - [`mcp-architecture.md`](./mcp-architecture.md) §4 — SDK Function Tools Pattern
 - [`review-loop-implementation-plan.md`](../../review-loop-implementation-plan.md) Section 3 — Architecture
 - Frontend renderer: `src/app/components/dashboard/ArtifactRenderer.tsx`

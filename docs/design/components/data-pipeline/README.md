@@ -1,6 +1,6 @@
 # Data Pipeline — Product Requirements Document
 
-> **Linear Team:** [TBD] Data Pipeline
+> **Linear Team:** [KEN-E] Data Pipeline
 > **Last Updated:** 2026-04-23
 > **Status:** Design complete, implementation not started
 

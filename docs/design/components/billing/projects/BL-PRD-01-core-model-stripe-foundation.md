@@ -2,7 +2,7 @@
 
 **Status:** Not started
 **Owner team:** Billing component team (backend)
-**Blocked by:** [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention + migration framework), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-audit.md) (`AuditEntry` schema + `write_audit` helper)
+**Blocked by:** [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention + migration framework), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) (`AuditEntry` schema + `write_audit` helper)
 **Parallel with:** none — Billing is a fresh component
 **Blocks:** BL-PRD-02, BL-PRD-03
 **Estimated effort:** 4 days backend
@@ -48,7 +48,7 @@ Landing the substrate first lets BL-PRD-02 (meter) and BL-PRD-03 (Stripe lifecyc
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **[DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)** | Shape B convention + `api/scripts/_migrate_shape_b/resources.py` registry. New subcollections under `organizations/{org_id}/` are registered via this framework. | `../../data-management/README.md` |
-| **[DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-audit.md)** | `AuditEntry` schema + `write_audit` helper. `BillingAuditEntry` subclasses with billing-specific event Literals. | `../../data-management/README.md` audit section |
+| **[DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)** | `AuditEntry` schema + `write_audit` helper. `BillingAuditEntry` subclasses with billing-specific event Literals. | `../../data-management/README.md` audit section |
 | Existing org-creation flow | Single hook insertion — calls `create_billing_profile_for_org(org_id)` after the org doc is committed. | `api/src/kene_api/routers/organizations.py` (or wherever org create lives today) |
 | Secret Manager | Per-env secret `stripe-price-ids-{env}` (map of `stop_index → stripe_price_id`); per-env `stripe-api-key-{env}` (placeholder, populated in BL-PRD-03); per-env `stripe-webhook-secret-{env}` (placeholder, populated in BL-PRD-03). | `deployment/terraform/` |
 | Stripe (dev account) | A Stripe test-mode account with the 41 Prices created (one per tier stop). The Price IDs are written into Secret Manager. Manual one-time setup; documented in §5.5. | Stripe Dashboard |
@@ -311,7 +311,7 @@ Automation of this step is out of scope for v1 — pricing-table changes are a q
 ## 10. Reference
 
 - Component plan: [`../implementation-plan.md`](../implementation-plan.md)
-- Upstream: [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-audit.md)
+- Upstream: [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)
 - Downstream: [BL-PRD-02](./BL-PRD-02-token-meter-monthly-enforcement.md), [BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md)
 - Stripe docs: [Customers API](https://stripe.com/docs/api/customers), [Prices API](https://stripe.com/docs/api/prices)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; D-1, D-2, D-5; C-2, C-4; T-1, T-3, T-4, T-5

@@ -453,9 +453,9 @@ This endpoint does not exist in the current SAR-E implementation plan. This PRD'
 ## 10. Reference
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
-- Foundation: [PE-PRD-01 — page shell](./PE-PRD-01-page-shell.md) (TBD path — align once PE-PRD-01 file is authored)
+- Foundation: [PE-PRD-01 — page shell](./PE-PRD-01-page-shell-and-routing.md) (TBD path — align once PE-PRD-01 file is authored)
 - Sibling: [PE-PRD-04 Configuration tab](./PE-PRD-04-configuration-tab.md) (exports `<FunnelStageMappingEditor />` consumed by Step 2; hosts the resume banner)
-- Upstream: [SE-PRD-01 Configuration foundation + setup state](../../sar-e/projects/SE-PRD-01-configuration-foundation.md), [SE-PRD-02 Weekly ingestion](../../sar-e/projects/SE-PRD-02-weekly-ingestion.md) — **must add the `POST /sar-e/{account_id}/config/backfill-plan` endpoint specified in §4.2 + §6.2**
+- Upstream: [SE-PRD-01 Configuration foundation + setup state](../../sar-e/projects/SE-PRD-01-configuration-foundation.md), [SE-PRD-02 Weekly ingestion](../../sar-e/projects/SE-PRD-02-weekly-kpi-ingestion.md) — **must add the `POST /sar-e/{account_id}/config/backfill-plan` endpoint specified in §4.2 + §6.2**
 - Related: [IN-PRD-03 Connection-management UI](../../integrations/projects/IN-PRD-03-connection-management-ui.md) (`/settings/integrations` — the redirect target in Step 1)
 - Design tokens: [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)
 - Figma reference: `docs/figma-export/src/app/pages/performance/PerformanceSetupWizard.tsx` (rebuild against Soft Maximalism)

@@ -376,7 +376,7 @@ Role gating from DM-PRD-07:
 - Sibling: [A-PRD-02 Recurring scheduler](../../automations/projects/A-PRD-02-recurring-scheduler.md) — `{inputs.*}` substitution
 - Sibling: [A-PRD-03 Task artifact system](../../automations/projects/A-PRD-03-task-artifact-system.md) — artifact preview endpoint
 - Policy: [DM-PRD-07 Approval & audit](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) — role table
-- Feature Flags: [FF-PRD-03 SDK hook](../../feature-flags/projects/FF-PRD-03-feature-flag-sdks.md) — `useFeatureFlag`
+- Feature Flags: [FF-PRD-03 SDK hook](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md) — `useFeatureFlag`
 - Design tokens: [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)
 - Code files expected to be touched:
   - `frontend/src/components/ProjectEditDrawer.tsx`

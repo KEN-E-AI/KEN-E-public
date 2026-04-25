@@ -47,7 +47,7 @@ The goal is to prove the substrate is **platform-generic**: we capture Meta's lo
 | Meta Developer app | Meta Business app registered per env; App ID + App Secret + per-env OAuth redirect URIs. One-time manual setup runbook: `operations/meta-oauth-setup.md`. | Operations runbook |
 | Mailchimp OAuth app | Mailchimp app registered per env. Runbook: `operations/mailchimp-oauth-setup.md`. | Operations runbook |
 | Secret Manager | `meta-oauth-client-{id,secret}-{env}`, `mailchimp-oauth-client-{id,secret}-{env}`. | `deployment/terraform/` |
-| Feature Flags | `integration_meta_enabled`, `integration_mailchimp_enabled`. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md) |
+| Feature Flags | `integration_meta_enabled`, `integration_mailchimp_enabled`. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md) |
 
 ## 4. Data contract
 

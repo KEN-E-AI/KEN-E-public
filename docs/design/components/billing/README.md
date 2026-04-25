@@ -1,6 +1,6 @@
 # Billing — Product Requirements Document
 
-> **Linear Team:** [TBD] Platform / Billing
+> **Linear Team:** [KEN-E] Billing
 > **Last Updated:** 2026-04-23
 > **Status:** Draft — substrate designed, PRDs scoped, not yet implemented
 > **Backend payment provider:** Stripe (Checkout + Subscriptions + Customer Portal + Tax)
@@ -222,8 +222,8 @@ Schema source of truth: `api/src/kene_api/models/billing.py` (Pydantic), mirrore
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **[Data Management — DM-PRD-00 (Migration Foundation)](../data-management/projects/DM-PRD-00-migration-foundation.md)** | **Hard prerequisite for BL-PRD-01.** Shape B convention + `migrate_to_shape_b.py` + `_migrate_shape_b/resources.py` registry. Billing lands its new subcollections (`organizations/{org_id}/billing_profile`, `usage_windows`, `accounts/{account_id}/usage_daily`, `status`, `billing_audit`) via this framework. | `../data-management/README.md` §2.2 |
-| **[Data Management — DM-PRD-07 (Approval Workflow & Audit)](../data-management/projects/DM-PRD-07-approval-workflow-audit.md)** | **Hard prerequisite for BL-PRD-01.** `AuditEntry` schema + `write_audit(actor_id, event, ...)`. Billing subclasses into `BillingAuditEntry`. | `../data-management/README.md` audit section |
-| **[Feature Flags — FF-PRD-01](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)** | **Hard prerequisite.** Three flags: `billing_enabled` (master kill switch), `billing_enforce_limits` (separate enforcement gate so observe-only mode works), `billing_show_subscription_ui` (gates the Subscription tab visibility). | `../feature-flags/README.md` |
+| **[Data Management — DM-PRD-07 (Approval Workflow & Audit)](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)** | **Hard prerequisite for BL-PRD-01.** `AuditEntry` schema + `write_audit(actor_id, event, ...)`. Billing subclasses into `BillingAuditEntry`. | `../data-management/README.md` audit section |
+| **[Feature Flags — FF-PRD-01](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)** | **Hard prerequisite.** Three flags: `billing_enabled` (master kill switch), `billing_enforce_limits` (separate enforcement gate so observe-only mode works), `billing_show_subscription_ui` (gates the Subscription tab visibility). | `../feature-flags/README.md` |
 | Existing org-creation flow | Single hook insertion — calls `create_billing_profile_for_org(org_id, owner_email)` after the org doc commits. Spike required to confirm where this lives today. | `api/src/kene_api/routers/organizations.py` |
 | Existing role model | `accounts/{account_id}/users/{user_id}` (or wherever org-level role lives). Read by `require_billing_role` middleware. | `api/src/kene_api/auth/` |
 | Existing notification system | `create_notification(category, org_id, user_ids, ...)`. Four new categories: `Approaching Token Limit`, `Token Limit Exceeded`, `Payment Failed`, `Subscription Updated`. | `api/src/kene_api/notifications/` |

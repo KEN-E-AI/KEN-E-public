@@ -378,11 +378,11 @@ No endpoints owned by this PRD. Configuration is a pure-frontend project consumi
 ## 10. Reference
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
-- Foundation: [PE-PRD-01 — page shell](./PE-PRD-01-page-shell.md) (TBD path — align once PE-PRD-01 file is authored)
+- Foundation: [PE-PRD-01 — page shell](./PE-PRD-01-page-shell-and-routing.md) (TBD path — align once PE-PRD-01 file is authored)
 - Sibling: [PE-PRD-05 Setup Wizard](./PE-PRD-05-setup-wizard.md) (reuses `<FunnelStageMappingEditor />`)
 - Upstream: [SE-PRD-01 Configuration foundation + setup state](../../sar-e/projects/SE-PRD-01-configuration-foundation.md)
 - Related: [IN-PRD-03 Connection-management UI](../../integrations/projects/IN-PRD-03-connection-management-ui.md) (CTA link target)
-- Related: [PR-PRD-03 Calendar](../../project-tasks/projects/PR-PRD-03-calendar.md) (new home for ExogenousEvents editing)
+- Related: [PR-PRD-03 Calendar](../../project-tasks/projects/PR-PRD-03-calendar-page-frontend.md) (new home for ExogenousEvents editing)
 - Figma reference: `docs/figma-export/src/app/components/performance/ConfigurationSection.tsx`
 - Design tokens: [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)
 - CLAUDE.md rules in scope: C-1 (TDD), C-2 (domain vocabulary — Objective / Effectiveness KPI / Threshold), C-5 (branded IDs), C-6 (`import type`), C-8 (`type` default, `interface` for merging/readability), C-9 (no premature extraction except for the reused `<FunnelStageMappingEditor />`); T-2 (colocated `*.test.tsx`), T-3 (API integration tests), T-5 (prefer integration tests over heavy mocking), T-8 (assert the full structure); G-2 (`npm run format.fix`), G-3 (`npm run typecheck`)

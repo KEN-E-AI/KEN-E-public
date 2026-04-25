@@ -304,5 +304,5 @@ This tab is read-only. `POST /internal/sar-e/retrain-var` (SE-PRD-03) and DP-PRD
 - Sibling: [PE-PRD-01 Page shell](./PE-PRD-01-page-shell-and-routing.md) `ForecastingEnabledGate`, feature-flag wiring
 - Sibling: [DB-PRD-03 Dashboard details & canvas](../../dashboards/projects/DB-PRD-03-dashboard-details-and-canvas.md) LineChart widget candidate for confidence-band reuse
 - Style reference: [DB-PRD-01 Dashboard Data Model & API](../../dashboards/projects/DB-PRD-01-data-model-and-api.md)
-- Feature Flags: [FF-PRD-03 `useFeatureFlag` hook](../../feature-flags/projects/FF-PRD-03-feature-flag-sdks.md)
+- Feature Flags: [FF-PRD-03 `useFeatureFlag` hook](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)
 - CLAUDE.md rules in scope: C-1 (TDD), C-4 (composable functions), C-5 (branded IDs), C-6 (`import type`), C-8 (prefer `type`); T-2 (colocated frontend tests), T-4 (separate pure vs DB), T-5 (prefer integration over heavy mocking), T-8 (structural assertions); G-2 (`npm run format.fix`), G-3 (`npm run typecheck`); O-2 (shared frontend/API types)

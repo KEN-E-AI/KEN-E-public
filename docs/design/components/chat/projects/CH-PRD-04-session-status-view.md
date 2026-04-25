@@ -78,7 +78,7 @@ Landing the status view completes the "see everything about a session" surface t
 | **[BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md)** (soft) | Rate-limit substrate for the export endpoint. Fallback: minimal in-process limiter. | `../../billing/README.md` |
 | Existing `DELETE /conversations/{id}` | Base endpoint; CH-PRD-04 adds the side-table tombstone + async cleanup. | `api/src/kene_api/routers/chat.py` |
 | GCS signed URLs | 10-minute TTL for in-app listing; 24-hour TTL for export-embedded links. | GCP |
-| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-e2e.md)** | `chat_status_detail_enabled` flag (gates the status view). `integrations_connection_test_enabled` flag (inherited from IN-PRD-07; gates the Check Status button and state-reactive CTAs on the Auth Status card). | `../../feature-flags/README.md` |
+| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `chat_status_detail_enabled` flag (gates the status view). `integrations_connection_test_enabled` flag (inherited from IN-PRD-07; gates the Check Status button and state-reactive CTAs on the Auth Status card). | `../../feature-flags/README.md` |
 
 ## 4. Data contract
 

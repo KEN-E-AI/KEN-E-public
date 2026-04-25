@@ -1,6 +1,6 @@
 # UI (User Interface) — Product Requirements Document
 
-> **Linear Team:** [TBD] Frontend
+> **Linear Team:** [KEN-E] UI
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

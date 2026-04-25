@@ -2,7 +2,7 @@
 
 **Status:** Not started
 **Owner team:** Integrations component team (backend)
-**Blocked by:** [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention + migration framework), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-audit.md) (`AuditEntry` schema + `write_audit` helper)
+**Blocked by:** [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention + migration framework), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) (`AuditEntry` schema + `write_audit` helper)
 **Parallel with:** FF-PRD-01 (Feature Flags data model) — both are foundation-release backend projects with no cross-dependency
 **Blocks:** IN-PRD-02, IN-PRD-04 (via IN-PRD-02), DP-PRD-01 (soft — can stub via `StubPlatform` and swap to IN-PRD-02 during DP-PRD-02)
 **Estimated effort:** 4 days backend
@@ -47,7 +47,7 @@ Landing the substrate first, without any real platform, lets downstream projects
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **[DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)** | Shape B convention + `api/scripts/migrate_to_shape_b.py` CLI + `_migrate_shape_b/resources.py` registry. New subcollections under `accounts/{account_id}/` are created via this framework. | `../../data-management/README.md` §2.2 Data Flow |
-| **[DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-audit.md)** | `AuditEntry` schema + `write_audit(actor_id, event, ...)` helper. Integrations defines a subclass `ConnectionAuditEntry` with platform-specific metadata and uses the shared writer. | `../../data-management/README.md` audit section |
+| **[DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)** | `AuditEntry` schema + `write_audit(actor_id, event, ...)` helper. Integrations defines a subclass `ConnectionAuditEntry` with platform-specific metadata and uses the shared writer. | `../../data-management/README.md` audit section |
 | Cloud KMS | Per-environment `token-encryption` key under the `integrations` key ring. Terraform adds the keys + IAM bindings to the API service account (encrypt + decrypt only; no key export). | `deployment/terraform/` |
 | Secret Manager | Per-environment secret `integrations-state-token-hmac-{env}` holding the JWT signing key. Rotation cadence owned by the IN-PRD-06 runbook. | `deployment/terraform/` |
 | Existing API auth | OIDC-authed internal endpoint pattern reused from Data Pipeline / Agent Engine callbacks. | `api/src/kene_api/auth/` |
@@ -275,6 +275,6 @@ Both user-facing paths are gated by the `integrations_enabled` feature flag. The
 ## 10. Reference
 
 - Component plan: [`../implementation-plan.md`](../implementation-plan.md)
-- Upstream: [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-audit.md)
+- Upstream: [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md), [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)
 - Downstream: [IN-PRD-02](./IN-PRD-02-google-oauth-flow.md), [DP-PRD-01](../../data-pipeline/projects/DP-PRD-01-foundation.md) (soft)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; D-1, D-2, D-5; C-2, C-4, C-5; T-1, T-3, T-4, T-5

@@ -1,6 +1,6 @@
 # Feature Flags — Product Requirements Document
 
-> **Linear Team:** [TBD] Platform
+> **Linear Team:** [KEN-E] Feature Flags
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

@@ -1,6 +1,6 @@
 # Knowledge Graph — Product Requirements Document
 
-> **Linear Team:** [TBD] Knowledge Graph
+> **Linear Team:** [KEN-E] Knowledge Graph
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

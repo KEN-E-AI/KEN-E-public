@@ -55,7 +55,7 @@ This PRD also lights up a low-priority watchdog — if a connection has been in 
 | **[IN-PRD-03](./IN-PRD-03-connection-management-ui.md)** | `/settings/integrations/{connection_id}` deep-link target page (pulse-animation + Reconnect focus behavior). | This component |
 | **Notification system** (existing) | `create_notification(account_id, category, payload, ...)` + `NotificationCategory` enum. This PRD adds a category and uses the existing routing (in-app bell, email-digest subscription if configured). | `api/src/kene_api/notifications/` |
 | Account-member service | User-removal flow calls our `on-user-removed` hook. Wiring edits: the existing `DELETE /api/v1/accounts/{account_id}/members/{user_id}` handler (or equivalent) appends a POST to `on-user-removed` after successful removal, transactionally or via a post-commit hook. | `api/src/kene_api/routers/accounts.py` or `organizations.py` |
-| Feature Flags | `integrations_reauth_lifecycle_enabled`. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md) |
+| Feature Flags | `integrations_reauth_lifecycle_enabled`. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md) |
 | Cloud Scheduler | One additional job: `integrations-stuck-expired-watchdog` (daily). | `deployment/terraform/` |
 | Internal alerting channel | Existing PagerDuty / Slack routing for system alerts. Runbook: `operations/integrations-watchdog.md` (new). | Operations |
 

@@ -1,6 +1,6 @@
 # Agentic Harness — Product Requirements Document
 
-> **Linear Team:** [TBD] Core AI / Agent Platform
+> **Linear Team:** [KEN-E] Agentic Harness
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

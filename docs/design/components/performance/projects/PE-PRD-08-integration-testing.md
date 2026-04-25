@@ -277,5 +277,5 @@ The Performance component shipped on YYYY-MM-DD. This section records the observ
 - Upstream: [SE-PRD-07 SAR-E Integration testing & polish](../../sar-e/implementation-plan.md#se-prd-07--integration-testing--polish) fixtures + methodology-language audit
 - Upstream: [DP-PRD-06 Data Pipeline Integration testing & polish](../../data-pipeline/implementation-plan.md#dp-prd-06--integration-testing--polish) ingestion-status query validation
 - Role policy: [DM-PRD-07 §4 transition policy table](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md#4-data-contract)
-- Feature Flags: [FF-PRD-03 `useFeatureFlag` hook](../../feature-flags/projects/FF-PRD-03-feature-flag-sdks.md)
+- Feature Flags: [FF-PRD-03 `useFeatureFlag` hook](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)
 - CLAUDE.md rules in scope: T-2 (colocated frontend tests), T-3 (integration tests for API changes), T-4 (separate pure vs DB), T-5 (prefer integration over heavy mocking), T-6 (unit-test complex algorithms), T-8 (structural assertions); G-1 (`make lint`), G-2 (`npm run format.fix`), G-3 (`npm run typecheck`); GH-1 (Conventional Commits)

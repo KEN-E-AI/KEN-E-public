@@ -301,7 +301,6 @@ No new endpoints. The existing account-creation endpoint at `api/src/kene_api/ro
 ## 10. Reference
 
 - KG-PRD-01 (shared label, constraints); KG-PRD-02 (ResearchRun + provenance methods).
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 5.
 - Existing files being refactored: `app/adk/agents/strategy_agent/orchestrator.py`, `*_graph_builder.py` × 4, `neo4j_tools.py`.
 - Existing service being extended: `api/src/kene_api/services/graph_sync_service.py`.
 - CLAUDE.md rules in scope: C-2, C-4, C-9; PY-1, PY-2, PY-3, PY-7; T-1, T-3, T-5, T-8.

@@ -1,6 +1,6 @@
 # Automations — Product Requirements Document
 
-> **Linear Team:** [TBD] Automations
+> **Linear Team:** [KEN-E] Automations
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

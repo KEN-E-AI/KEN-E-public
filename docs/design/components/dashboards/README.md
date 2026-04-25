@@ -1,6 +1,6 @@
 # Dashboards — Product Requirements Document
 
-> **Linear Team:** [TBD] Dashboards
+> **Linear Team:** [KEN-E] Dashboards
 > **Last Updated:** 2026-04-22
 > **Status:** Design complete, implementation not started
 
@@ -111,7 +111,7 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` + `dash
 | `frontend/CLAUDE.md` | CSS architecture, component library, branded types | Before adding new visual components. |
 | `frontend/src/pages/workflows/AutomationDetailsPage.tsx` (A-PRD-06) | Task-graph + task-panel integration pattern | Starting DB-PRD-03; the Dashboard Details page mirrors this layout. |
 | `docs/figma-export/AH-PRD-04-data-visualization.md` / `data-visualization-1.md` | Vega-Lite artifact format, `create_visualization()` tool | When extending `VisualizationWidget`. |
-| [`../agentic-harness/data-visualization.md`](../agentic-harness/components/agentic-harness/data-visualization.md) | Chart rendering, channel considerations, theming | When debugging Vega rendering or adding a new `view_override`. |
+| [`../agentic-harness/data-visualization.md`](../agentic-harness/data-visualization.md) | Chart rendering, channel considerations, theming | When debugging Vega rendering or adding a new `view_override`. |
 
 ## 5. Project Index
 

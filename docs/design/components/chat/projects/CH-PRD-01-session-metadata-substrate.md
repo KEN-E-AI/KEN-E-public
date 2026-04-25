@@ -2,7 +2,7 @@
 
 **Status:** Not started
 **Owner team:** Chat component team (backend + ADK)
-**Blocked by:** [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention + registry), [DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) (`recursive_delete` covers `chat_sessions/*`), [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md) (backend feature-flag SDK)
+**Blocked by:** [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention + registry), [DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) (`recursive_delete` covers `chat_sessions/*`), [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md) (backend feature-flag SDK)
 **Parallel with:** none — substrate gates every sibling PRD
 **Blocks:** CH-PRD-02, CH-PRD-03, CH-PRD-04, CH-PRD-05
 **Estimated effort:** 5 days backend + ADK
@@ -76,7 +76,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 |-----------|------------|-----------|
 | **[DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)** | Shape B convention + `_migrate_shape_b/resources.py` registry. `chat_sessions` + nested `artifacts` registered here. | `../../data-management/README.md` |
 | **[DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | `recursive_delete` on account deletion cleans `chat_sessions/*` and sub-`artifacts/*`. `users/{user_id}/chat_categories/*` cleans on user deletion (first user-scoped subcollection). | `../../data-management/README.md` |
-| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)** | Backend feature-flag SDK. Three Chat flags registered here. | `../../feature-flags/README.md` |
+| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)** | Backend feature-flag SDK. Three Chat flags registered here. | `../../feature-flags/README.md` |
 | **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md)** | **Soft.** Agent Factory is the idiomatic callback-registration site. If unshipped, register against current hardcoded root + TODO. | `../../agentic-harness/README.md` |
 | **[BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md)** | **Peer — Billing owns `extract_billable_tokens`.** Chat consumes. If Billing hasn't shipped, Chat lands the helper under Billing's namespace with Billing as reviewer + maintainer. Same token definition (input + output + reasoning, cached-input excluded) per Billing README §7.4. | `../../billing/README.md` §7.4 |
 | **[BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md)** | **Soft — rate-limit substrate.** Billing introduces a Firestore-backed sliding-window limiter. Chat endpoints that need rate limits (CH-PRD-02..05) reuse this substrate when available. If BL-PRD-05 has not shipped when a Chat rate-limited endpoint ships, that Chat endpoint ships a minimal in-process limiter with a TODO to migrate. | `../../billing/README.md` |
@@ -580,7 +580,7 @@ Auth gates:
 
 - Component plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Component README: [`../README.md`](../README.md)
-- Upstream: [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md), [DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md), [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)
+- Upstream: [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md), [DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md), [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)
 - Downstream: [CH-PRD-02](./CH-PRD-02-chat-page-shell-and-sidebar.md), [CH-PRD-03](./CH-PRD-03-session-categories.md), [CH-PRD-04](./CH-PRD-04-session-status-view.md), [CH-PRD-05](./CH-PRD-05-todo-lists-and-artifacts.md)
 - Peer (Billing): [BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md) — owns `extract_billable_tokens`. Rate-limit substrate: [BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md).
 - ADK docs: [`VertexAiSessionService`](https://google.github.io/adk-docs/sessions/), [`EventsCompactionConfig`](https://google.github.io/adk-docs/context/compaction/), [agent callbacks](https://google.github.io/adk-docs/agents/)

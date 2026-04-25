@@ -1,6 +1,6 @@
 # Integrations — Product Requirements Document
 
-> **Linear Team:** [TBD] Platform / Integrations
+> **Linear Team:** [KEN-E] Integrations
 > **Last Updated:** 2026-04-23
 > **Status:** Draft — substrate designed, PRDs scoped, not yet implemented
 
@@ -177,9 +177,9 @@ Schema source of truth: `api/src/kene_api/models/integrations.py` (Pydantic), mi
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **[Data Management — DM-PRD-00 (Migration Foundation)](../data-management/projects/DM-PRD-00-migration-foundation.md)** | **Hard prerequisite for IN-PRD-01.** Shape B convention + `migrate_to_shape_b.py` + `_migrate_shape_b/resources.py` registry. Integrations lands its new subcollections (`accounts/{account_id}/platform_connections`, the token subcollection, `accounts/{account_id}/integrations_audit`) via this framework. | `../data-management/README.md` §2.2 |
-| **[Data Management — DM-PRD-07 (Approval Workflow & Audit)](../data-management/projects/DM-PRD-07-approval-workflow-audit.md)** | **Hard prerequisite for IN-PRD-01.** `AuditEntry` schema + `write_audit(actor_id, event, ...)`. Integrations subclasses into `ConnectionAuditEntry`. | `../data-management/README.md` audit section |
-| **[Feature Flags — FF-PRD-01 (Evaluation API + Backend SDK)](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)** | **Hard prerequisite.** `integrations_enabled`, `integrations_ui_enabled`, `integrations_reauth_lifecycle_enabled`, `integrations_connection_test_enabled`, and per-platform flags (`integration_google_enabled`, `integration_meta_enabled`, `integration_mailchimp_enabled`). | `../feature-flags/README.md` |
-| **[UI — UI-PRD-01 (Design System Foundation + Shell)](../ui/projects/UI-PRD-01-design-system-foundation-shell.md)** | **Hard prerequisite for IN-PRD-03.** `LayoutSettings` shell + re-skinned shadcn primitives (`Card`, `Badge`, `Sheet`, `Dialog`, `Button`). | `../ui/README.md` |
+| **[Data Management — DM-PRD-07 (Approval Workflow & Audit)](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)** | **Hard prerequisite for IN-PRD-01.** `AuditEntry` schema + `write_audit(actor_id, event, ...)`. Integrations subclasses into `ConnectionAuditEntry`. | `../data-management/README.md` audit section |
+| **[Feature Flags — FF-PRD-01 (Evaluation API + Backend SDK)](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)** | **Hard prerequisite.** `integrations_enabled`, `integrations_ui_enabled`, `integrations_reauth_lifecycle_enabled`, `integrations_connection_test_enabled`, and per-platform flags (`integration_google_enabled`, `integration_meta_enabled`, `integration_mailchimp_enabled`). | `../feature-flags/README.md` |
+| **[UI — UI-PRD-01 (Design System Foundation + Shell)](../ui/projects/UI-PRD-01-design-system-foundation.md)** | **Hard prerequisite for IN-PRD-03.** `LayoutSettings` shell + re-skinned shadcn primitives (`Card`, `Badge`, `Sheet`, `Dialog`, `Button`). | `../ui/README.md` |
 | GCP Cloud KMS | Per-environment `token-encryption` key under the `integrations` key ring. Service account has only `cryptoKeyEncrypterDecrypter` — no export, no destroy. Terraform `lifecycle { prevent_destroy = true }` on the key. | `deployment/terraform/` |
 | GCP Secret Manager | Per-env OAuth client credentials (`google-oauth-client-{id,secret}-{env}`, Meta, Mailchimp) + `integrations-state-token-hmac-{env}` JWT signing key. | `deployment/terraform/` |
 | GCP Cloud Scheduler | Four cron jobs: `integrations-google-refresh-sweeper` (5-min), `integrations-idle-cleanup` (daily), `integrations-stuck-expired-watchdog` (daily), `integrations-kms-rewrap-sweeper` (hourly, disabled by default). | `deployment/terraform/` |

@@ -70,7 +70,7 @@ Landing these together closes the two figma status-view surfaces that CH-PRD-04 
 | **ADK `GcsArtifactService`** | Blob storage. The wrapper sits on top. | Google ADK Python |
 | **ADK `VertexAiSessionService`** | `get_session(id).state` read for todo lists; `list_sessions` for the orphan scan. | Google ADK Python |
 | Existing `app/adk/agents/strategy_agent/artifact_utils.py` | Current raw `save_artifact_to_service` callsite. Migrated to the wrapper in the same PR. | `app/adk/agents/strategy_agent/artifact_utils.py` |
-| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-e2e.md)** | `chat_v2_enabled` (master). No per-feature flag — todos + artifacts are non-optional once Chat is on. | `../../feature-flags/README.md` |
+| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `chat_v2_enabled` (master). No per-feature flag — todos + artifacts are non-optional once Chat is on. | `../../feature-flags/README.md` |
 
 ## 4. Data contract
 

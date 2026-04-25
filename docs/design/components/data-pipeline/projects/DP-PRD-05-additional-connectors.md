@@ -301,7 +301,7 @@ Endpoints consumed:
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md) §7 DP-PRD-05
 - Upstream: [DP-PRD-01 Foundation](./DP-PRD-01-foundation.md), [DP-PRD-02 Google Analytics connector](./DP-PRD-02-google-analytics-connector.md) — framework template
-- Upstream: [IN-PRD-02 Google OAuth](../../integrations/projects/IN-PRD-02-google-oauth.md), [IN-PRD-04 Meta + Mailchimp platforms](../../integrations/projects/IN-PRD-04-meta-mailchimp-platforms.md)
+- Upstream: [IN-PRD-02 Google OAuth](../../integrations/projects/IN-PRD-02-google-oauth-flow.md), [IN-PRD-04 Meta + Mailchimp platforms](../../integrations/projects/IN-PRD-04-meta-mailchimp-platforms.md)
 - Sibling: [DP-PRD-03 Task-system integration](./DP-PRD-03-task-system-integration.md) — dispatcher branch + artifact write
 - Sibling: [DP-PRD-06 Integration testing + polish](./DP-PRD-06-integration-testing.md) — rate-limit ceiling tests + connector-level perf data
 - Related (deferred): HubSpot Specialist PRD — HubSpot connector follows that work

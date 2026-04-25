@@ -48,7 +48,7 @@ After this project, a user can connect Google via UI, Data Pipeline GA jobs can 
 | Google Cloud project — OAuth client | Per-env OAuth 2.0 Client IDs registered in the Google Cloud Console with the correct redirect URIs for each env. Owner: platform admin. | `deployment/terraform/` does not manage these (not Terraform-able); one-time manual setup documented in an operations runbook shipped with this project. |
 | Secret Manager | `google-oauth-client-id-{env}`, `google-oauth-client-secret-{env}` secrets. Terraform adds IAM bindings; values populated manually after OAuth client registration. | `deployment/terraform/` |
 | Cloud Scheduler | Two jobs — `integrations-google-refresh-sweeper` (every 5 min) and `integrations-idle-cleanup` (daily). | `deployment/terraform/` |
-| Existing Feature Flags | `integration_google_enabled` flag. Evaluated in the initiate/list paths. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md) |
+| Existing Feature Flags | `integration_google_enabled` flag. Evaluated in the initiate/list paths. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md) |
 
 ## 4. Data contract
 

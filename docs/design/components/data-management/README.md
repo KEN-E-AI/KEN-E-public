@@ -1,6 +1,6 @@
 # Data Management — Product Requirements Document
 
-> **Linear Team:** [TBD] Data Management / Platform
+> **Linear Team:** [KEN-E] Data Management
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

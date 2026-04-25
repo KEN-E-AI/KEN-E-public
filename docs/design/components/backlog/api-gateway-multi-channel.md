@@ -128,7 +128,7 @@ The only new code needed per channel is: auth adapter, input normalizer, output 
 
 | `ChatResponse` artifacts field | No — optional field, backward-compatible. Old clients ignore it. |
 
-> **Per-channel artifact rendering:** The `artifacts` field in `ChatResponse` contains Vega-Lite specs. Each channel renders artifacts differently: Web UI renders interactive charts via `react-vega` or Recharts translation; Slack `[PLANNED]` server-side renders to PNG and sends as image attachment; Voice `[PLANNED]` describes the data verbally with no visual rendering. See [`data-visualization.md`](components/agentic-harness/data-visualization.md) Section 9 for channel-specific rendering details.
+> **Per-channel artifact rendering:** The `artifacts` field in `ChatResponse` contains Vega-Lite specs. Each channel renders artifacts differently: Web UI renders interactive charts via `react-vega` or Recharts translation; Slack `[PLANNED]` server-side renders to PNG and sends as image attachment; Voice `[PLANNED]` describes the data verbally with no visual rendering. See [`data-visualization.md`](../agentic-harness/data-visualization.md) Section 9 for channel-specific rendering details.
 
 ## References
 

@@ -467,6 +467,6 @@ Admin-triggered retrain (e.g., after a mapping change that invalidates cached ba
 - Upstream: [SE-PRD-01](./SE-PRD-01-configuration-foundation.md), [SE-PRD-02](./SE-PRD-02-weekly-kpi-ingestion.md)
 - Downstream: [SE-PRD-04](./SE-PRD-04-irf-scenarios.md), [SE-PRD-05](./SE-PRD-05-target-derivation-specialist.md), [SE-PRD-06](./SE-PRD-06-analytical-query-layer.md), [PE-PRD-03](../../performance/projects/PE-PRD-03-simulations-tab.md), [PE-PRD-07](../../performance/projects/PE-PRD-07-diagnostics-tab.md)
 - Agent factory: [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) — the `sar_e_retrain` glue agent is factory-assembled
-- Automations: [A-PRD-01](../../automations/projects/A-PRD-01-data-model-and-api-extensions.md), [A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler-and-run-engine.md)
+- Automations: [A-PRD-01](../../automations/projects/A-PRD-01-data-model-and-api.md), [A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler.md)
 - statsmodels VAR: https://www.statsmodels.org/stable/vector_ar.html (reference, not used at runtime for fetches)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-3, PY-5, PY-7; C-1, C-2, C-4; D-2, D-5; T-1, T-3, T-4, T-5, T-6, T-7, T-8; G-1

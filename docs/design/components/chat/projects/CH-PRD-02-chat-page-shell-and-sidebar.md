@@ -2,7 +2,7 @@
 
 **Status:** Not started
 **Owner team:** Chat component team (frontend + thin backend)
-**Blocked by:** [CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md) (side-table + callbacks + pagination backend), [UI-PRD-01](../../ui/README.md) (design system foundation, `LayoutC`, shell components), [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-e2e.md) (frontend feature-flag SDK)
+**Blocked by:** [CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md) (side-table + callbacks + pagination backend), [UI-PRD-01](../../ui/README.md) (design system foundation, `LayoutC`, shell components), [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md) (frontend feature-flag SDK)
 **Parallel with:** none — the shell is the container for CH-PRD-03/04/05
 **Blocks:** CH-PRD-03, CH-PRD-04, CH-PRD-05
 **Estimated effort:** 5 days frontend + 1 day thin backend
@@ -53,7 +53,7 @@ Landing the shell first means CH-PRD-03/04/05 each ship in-place under the `/cha
 |-----------|------------|-----------|
 | **[CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md)** | Side-table + callbacks + `GET /conversations` signature + composite indexes. Without this, sidebar has no data to render. | This PRD package |
 | **[UI-PRD-01](../../ui/README.md)** | `LayoutC`, `Sidebar` (primary), `TopNav`, `AccountSwitcher`, `BackgroundEffects`, Tailwind tokens, shadcn primitives (`Button`, `Input`, `Select`, `ScrollArea`, `Tooltip`). Text-size preference infrastructure. | `../../ui/README.md` |
-| **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-e2e.md)** | `useFeatureFlag("chat_v2_enabled")`, `useFeatureFlag("chat_categories_enabled")` hooks. | `../../feature-flags/README.md` |
+| **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `useFeatureFlag("chat_v2_enabled")`, `useFeatureFlag("chat_categories_enabled")` hooks. | `../../feature-flags/README.md` |
 | **[UI-PRD-02](../../ui/README.md)** (coordination only) | Scope adjustment: `/chat` page creation absorbed by CH-PRD-02. See [`../implementation-plan.md`](../implementation-plan.md) §5.3. | Chat team flags the PROJECT-PLANNER edit. |
 | Existing `/api/v1/chat/*` surface | The 9 existing endpoints + CH-PRD-01's extensions. | `api/src/kene_api/routers/chat.py` |
 | `docs/figma-export/src/app/components/*` | Design contract for every component ported. | `docs/figma-export/` |
@@ -352,7 +352,7 @@ Auth: both endpoints require authenticated user + session ownership (`session.us
 
 - Component plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Component README: [`../README.md`](../README.md)
-- Upstream: [CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md), [UI-PRD-01](../../ui/README.md), [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-e2e.md)
+- Upstream: [CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md), [UI-PRD-01](../../ui/README.md), [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)
 - Downstream: [CH-PRD-03](./CH-PRD-03-session-categories.md), [CH-PRD-04](./CH-PRD-04-session-status-view.md), [CH-PRD-05](./CH-PRD-05-todo-lists-and-artifacts.md)
 - Figma: `docs/figma-export/src/app/components/SessionsSidebar.tsx`, `ChatInterface.tsx`, `ChatPage.tsx`
 - Existing code: [`frontend/src/services/chatService.ts`](../../../../frontend/src/services/chatService.ts), [`api/src/kene_api/routers/chat.py`](../../../../api/src/kene_api/routers/chat.py)

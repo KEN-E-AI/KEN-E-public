@@ -1,6 +1,6 @@
 # SAR-E (Simulation and Recommendations Engine) — Product Requirements Document
 
-> **Linear Team:** [TBD] SAR-E
+> **Linear Team:** [KEN-E] SAR-E
 > **Last Updated:** 2026-04-23
 > **Status:** Draft — 7 PRDs authored; implementation not yet started
 

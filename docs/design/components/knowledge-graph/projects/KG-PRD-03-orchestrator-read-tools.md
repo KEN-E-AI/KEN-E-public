@@ -368,6 +368,5 @@ No HTTP endpoints. Tools are called by the ADK runtime on the agent's behalf.
 - Historical Notion User Stories (archive only): [Story 1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [Story 1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e) — these cover `load_context_section` and `load_document`.
 - Decision rationale: [Review 4 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading) — agent-driven context loading supersedes keyword detection.
 - Harness design: `docs/KEN-E-System-Architecture.md` §3.2 (Hierarchical Context Loading).
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 3.
 - Pattern files: `app/adk/agents/ken_e_agent.py:210-244`, `app/adk/agents/utils/context_loader.py`.
 - CLAUDE.md rules in scope: C-1, C-2, C-4, C-7; PY-1, PY-3, PY-7; T-1, T-3, T-4, T-6.

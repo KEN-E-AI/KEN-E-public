@@ -466,7 +466,6 @@ No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's re
 
 ## 10. Reference
 
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 4.
 - KG-PRD-01, 2, 3 (direct dependencies).
 - Calendar PRDs 1, 4, 6 + Automations PRDs 1, 2, 3, 4, 6 (platform dependencies — see §3).
 - `api/src/kene_api/routers/chat.py:1291` — transcript access.

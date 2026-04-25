@@ -461,7 +461,7 @@ Owned by this PRD. OIDC-authed (sibling service SA). Invoked when a `DataPipelin
 - Upstream: [A-PRD-03 — Task Artifact System](../../automations/projects/A-PRD-03-task-artifact-system.md) — `TaskArtifact` write path
 - Upstream: [A-PRD-04 — Test / Dry-Run Mode](../../automations/projects/A-PRD-04-test-dry-run-mode.md) — `is_test` threading
 - Upstream (soft): [IN-PRD-05 — Re-auth lifecycle](../../integrations/implementation-plan.md) — `"Integration Needs Re-auth"` notification path
-- Sibling (downstream): [DP-PRD-04 — Frontend + custom-job authoring](./DP-PRD-04-frontend-and-authoring.md)
+- Sibling (downstream): [DP-PRD-04 — Frontend + custom-job authoring](./DP-PRD-04-frontend-and-custom-jobs.md)
 - Sibling (downstream): [DP-PRD-06 — Integration testing & polish](./DP-PRD-06-integration-testing.md)
 - Cross-component: [`../../sar-e/implementation-plan.md`](../../sar-e/implementation-plan.md) SE-PRD-02 — first scheduled consumer of this dispatch branch
 - Pattern files: `api/src/kene_api/services/task_orchestrator.py`, `api/src/kene_api/services/automation_run_engine.py` (`{inputs.*}` substitution), `api/src/kene_api/services/artifact_service.py`

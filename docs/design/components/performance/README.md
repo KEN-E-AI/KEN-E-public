@@ -1,6 +1,6 @@
 # Performance — Product Requirements Document
 
-> **Linear Team:** [TBD] Performance
+> **Linear Team:** [KEN-E] Performance
 > **Last Updated:** 2026-04-23
 > **Status:** Draft — 8 PRDs authored; implementation not yet started
 

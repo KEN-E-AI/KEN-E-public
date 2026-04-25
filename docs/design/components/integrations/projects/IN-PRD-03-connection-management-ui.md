@@ -2,9 +2,9 @@
 
 **Status:** Not started
 **Owner team:** Integrations component team (frontend + thin backend)
-**Blocked by:** [IN-PRD-02](./IN-PRD-02-google-oauth-flow.md) (at least one real platform to connect); [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation-shell.md) (design system + LayoutSettings shell)
+**Blocked by:** [IN-PRD-02](./IN-PRD-02-google-oauth-flow.md) (at least one real platform to connect); [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md) (design system + LayoutSettings shell)
 **Parallel with:** [IN-PRD-04](./IN-PRD-04-meta-mailchimp-platforms.md) — IN-PRD-04 adds platforms that automatically appear in this UI once their feature flags are on
-**Blocks:** [IN-PRD-05](./IN-PRD-05-reauth-lifecycle.md) (re-auth flow lands on this page); [DP-PRD-04](../../data-pipeline/projects/DP-PRD-04-frontend-custom-job-authoring.md) (custom-job authoring uses the connection picker); [PE-PRD-05](../../performance/projects/PE-PRD-05-setup-wizard.md) (setup wizard links to this page for missing connections)
+**Blocks:** [IN-PRD-05](./IN-PRD-05-reauth-lifecycle.md) (re-auth flow lands on this page); [DP-PRD-04](../../data-pipeline/projects/DP-PRD-04-frontend-and-custom-jobs.md) (custom-job authoring uses the connection picker); [PE-PRD-05](../../performance/projects/PE-PRD-05-setup-wizard.md) (setup wizard links to this page for missing connections)
 **Estimated effort:** 3 days frontend + 0.5 day backend management endpoints
 
 ---
@@ -49,10 +49,10 @@ The page also handles the re-auth deep-link target: when IN-PRD-05 emits a "Conn
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **[IN-PRD-02](./IN-PRD-02-google-oauth-flow.md)** | Google platform end-to-end working. The UI can render the page with just IN-PRD-01's stub platform during development but is not useful without a real platform. | This component |
-| **[UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation-shell.md)** | Soft Maximalism tokens, `LayoutSettings` shell, shadcn primitives (`Card`, `Badge`, `Sheet`, `Dialog`, `Button`). | `../../ui/README.md` |
+| **[UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)** | Soft Maximalism tokens, `LayoutSettings` shell, shadcn primitives (`Card`, `Badge`, `Sheet`, `Dialog`, `Button`). | `../../ui/README.md` |
 | Existing auth | `has_account_access` + admin-role check; current-user resolver for user-name display. | `api/src/kene_api/auth/` |
 | User directory | A way to resolve `user_id → {display_name, email}` for multiple users efficiently — the Users API (batch lookup) or a join on account members. If a batch endpoint doesn't exist, add a minimal `POST /api/v1/users/lookup` (body: `{user_ids: []}`) as part of this project. | `api/src/kene_api/routers/users.py` |
-| Feature Flags SDK | `useFeatureFlag("integrations_ui_enabled")` on the tab + per-platform flags from IN-PRD-02/04. | [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-e2e.md) |
+| Feature Flags SDK | `useFeatureFlag("integrations_ui_enabled")` on the tab + per-platform flags from IN-PRD-02/04. | [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md) |
 | Figma | Integrations tab design (connection card variants, audit drawer, empty state). Lives under `figma-make/exports/settings-integrations/`. | Figma Make file |
 
 ## 4. Data contract
@@ -222,7 +222,7 @@ All routes require account access. Admin-only routes are explicitly marked.
 ## 10. Reference
 
 - Component plan: [`../implementation-plan.md`](../implementation-plan.md)
-- Upstream: [IN-PRD-02](./IN-PRD-02-google-oauth-flow.md), [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation-shell.md)
-- Downstream: [IN-PRD-05](./IN-PRD-05-reauth-lifecycle.md), [DP-PRD-04](../../data-pipeline/projects/DP-PRD-04-frontend-custom-job-authoring.md), [PE-PRD-05](../../performance/projects/PE-PRD-05-setup-wizard.md)
+- Upstream: [IN-PRD-02](./IN-PRD-02-google-oauth-flow.md), [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)
+- Downstream: [IN-PRD-05](./IN-PRD-05-reauth-lifecycle.md), [DP-PRD-04](../../data-pipeline/projects/DP-PRD-04-frontend-and-custom-jobs.md), [PE-PRD-05](../../performance/projects/PE-PRD-05-setup-wizard.md)
 - Design: Figma Make `settings-integrations` node
 - CLAUDE.md rules in scope: C-5, C-6, C-8; T-2; G-2, G-3

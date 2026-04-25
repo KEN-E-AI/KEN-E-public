@@ -338,9 +338,9 @@ The composite `/simulations/run` endpoint is new and owned by this PRD. Its impl
 ## 10. Reference
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
-- Foundation: [PE-PRD-01 — page shell](./PE-PRD-01-page-shell.md) (TBD path — align once PE-PRD-01 file is authored)
+- Foundation: [PE-PRD-01 — page shell](./PE-PRD-01-page-shell-and-routing.md) (TBD path — align once PE-PRD-01 file is authored)
 - Sibling tabs: [PE-PRD-02 Analysis](./PE-PRD-02-analysis-tab.md), [PE-PRD-06 Targets](./PE-PRD-06-targets-tab.md)
-- Upstream: [SE-PRD-03 VAR + baseline](../../sar-e/projects/SE-PRD-03-var-baseline.md), [SE-PRD-04 IRF scenarios](../../sar-e/projects/SE-PRD-04-irf-scenarios.md), [SE-PRD-05 Target derivation specialist](../../sar-e/projects/SE-PRD-05-target-derivation.md)
+- Upstream: [SE-PRD-03 VAR + baseline](../../sar-e/projects/SE-PRD-03-var-baseline.md), [SE-PRD-04 IRF scenarios](../../sar-e/projects/SE-PRD-04-irf-scenarios.md), [SE-PRD-05 Target derivation specialist](../../sar-e/projects/SE-PRD-05-target-derivation-specialist.md)
 - Dashboards LineChart widget (not reused, but referenced): [DB-PRD-03](../../dashboards/projects/DB-PRD-03-dashboard-details-and-canvas.md)
 - Figma reference: `docs/figma-export/src/app/pages/performance/SimulationsSection.tsx`
 - Design tokens: [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)

@@ -356,5 +356,5 @@ Implement `ttl_lru_cache` as a small wrapper in `api/src/kene_api/utils/caching.
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md) §6 SE-PRD-02
 - Upstream: [SE-PRD-01](./SE-PRD-01-configuration-foundation.md), [DP-PRD-01](../../data-pipeline/projects/DP-PRD-01-foundation.md), [DP-PRD-02](../../data-pipeline/projects/DP-PRD-02-google-analytics-connector.md), [DP-PRD-03](../../data-pipeline/projects/DP-PRD-03-task-system-integration.md)
 - Downstream: [SE-PRD-03](./SE-PRD-03-var-baseline.md), [SE-PRD-06](./SE-PRD-06-analytical-query-layer.md), [PE-PRD-05](../../performance/projects/PE-PRD-05-setup-wizard.md)
-- Automations platform: [A-PRD-01](../../automations/projects/A-PRD-01-data-model-and-api-extensions.md), [A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler-and-run-engine.md), [A-PRD-03](../../automations/projects/A-PRD-03-task-artifact-system.md)
+- Automations platform: [A-PRD-01](../../automations/projects/A-PRD-01-data-model-and-api.md), [A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler.md), [A-PRD-03](../../automations/projects/A-PRD-03-task-artifact-system.md)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-3, PY-5, PY-7; C-1, C-2, C-4; D-1, D-2, D-5; T-1, T-3, T-4, T-5, T-6, T-7, T-8; G-1

@@ -393,5 +393,4 @@ No REST endpoints for `ResearchRun` in this PRD — KG-PRD-05 creates them inter
 - KG-PRD-01 for the schema foundation this builds on.
 - `api/src/kene_api/services/graph_sync_service.py` — the pattern to extend (look at `create_node` and `update_node` in particular).
 - `api/src/kene_api/routers/knowledge_graph/crud_factory.py` — the factory that mounts the CRUD endpoints for each node type.
-- Harness parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 2.
 - CLAUDE.md rules in scope: D-1, D-2, D-5; PY-1, PY-2, PY-3, PY-7; T-1, T-3, T-4, T-7, T-8.

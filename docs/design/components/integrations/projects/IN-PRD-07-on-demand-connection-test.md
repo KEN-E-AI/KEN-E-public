@@ -51,7 +51,7 @@ Scope is deliberately narrow: on-demand only (no background polling), single pro
 | **[IN-PRD-02](./IN-PRD-02-google-oauth-flow.md)** | `PlatformDefinition.health_check_endpoint`, credential-read path with auto-refresh, the extracted `_run_health_check(platform_def, access_token)` helper (implied by IN-PRD-02 §5.4; this PRD makes it a reusable module-level function if IN-PRD-02 left it inline). | This component |
 | **[IN-PRD-03](./IN-PRD-03-connection-management-ui.md)** | `ConnectionCard` component, `frontend/src/app/lib/api/integrations.ts` typed client, branded `ConnectionId` / `PlatformId` types, TanStack Query patterns. | This component |
 | **[IN-PRD-05](./IN-PRD-05-reauth-lifecycle.md)** | `mark_expired(connection_id, reason)` transactional helper. | This component |
-| **[Feature Flags — FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api-backend-sdk.md)** | `integrations_connection_test_enabled` evaluation. | `../../feature-flags/README.md` |
+| **[Feature Flags — FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)** | `integrations_connection_test_enabled` evaluation. | `../../feature-flags/README.md` |
 | **[Agentic Harness — MCP substrate](../../agentic-harness/mcp-architecture.md)** | Tool registration path for `integrations.test_connection`; ADK session-context account resolution. | `../../agentic-harness/README.md` |
 | W&B Weave tracing | New span `integrations.test_connection` with attributes `{platform_id, ok, cache_hit, latency_ms, error_code?}`. No token values. | `app/adk/tracking/` |
 

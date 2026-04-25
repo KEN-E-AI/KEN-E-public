@@ -377,7 +377,7 @@ N-PRD-01 (Foundation & Rebuild) ─┬─► N-PRD-02 (Event contract) ─┬─
 | **PR-PRD-04 (Event-Driven Orchestrator)** | N-PRD-02 emitter patch lives here. If PR-PRD-04 has not shipped, task events cannot fire. | [`../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md`](../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md) |
 | **A-PRD-02 (Recurring Scheduler)** | Automation completion events originate here. | [`../automations/README.md`](../automations/README.md) |
 | **A-PRD-06 (Automation Details Page)** | Hosts the per-automation subscription UI — N-PRD-06 lands the control on this page. | [`../automations/README.md`](../automations/README.md) |
-| **DP-PRD-03 (Task System Integration)** | Data-pipeline completion events originate here. Without it, the data-pipeline gap remains open. | [`./backlog/data-pipeline.md`](../backlog/data-pipeline.md) |
+| **DP-PRD-03 (Task System Integration)** | Data-pipeline completion events originate here. Without it, the data-pipeline gap remains open. | [`./backlog/data-pipeline.md`](../data-pipeline/README.md) |
 | **AH-PRD-03 (GA Specialist)** | Re-auth events originate from specialist OAuth failures. | [`../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md`](../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md) |
 
 ### Downstream consumers
@@ -402,7 +402,7 @@ N-PRD-01 (Foundation & Rebuild) ─┬─► N-PRD-02 (Event contract) ─┬─
 - [`../project-tasks/README.md`](../project-tasks/README.md) — `PlanTask`, `TaskOrchestrator` (event-emission integration point)
 - [`../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md`](../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md) — orchestrator dispatch lifecycle, where task events fire
 - [`../automations/README.md`](../automations/README.md) — `AutomationRunEngine`, `AutomationDetailsPage` (per-automation subscription UI host)
-- [`../backlog/data-pipeline.md`](../backlog/data-pipeline.md) §9 item 5 — the re-auth / completion signaling gap this component closes
+- [`../data-pipeline/README.md`](../data-pipeline/README.md) §9 item 5 — the re-auth / completion signaling gap this component closes
 - [`../agentic-harness/README.md`](../agentic-harness/README.md) — specialist OAuth + re-auth signaling patterns
 - [`../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md`](../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md) — `_requires_reauth` signal that becomes `specialist_credentials_expired`
 - [`../data-management/README.md`](../data-management/README.md) — Shape B convention, migration framework

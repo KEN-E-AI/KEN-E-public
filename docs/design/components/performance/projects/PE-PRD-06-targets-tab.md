@@ -259,5 +259,5 @@ This is a one-way deep link; no callback. The contract is recorded in this PRD a
 - Sibling: [PE-PRD-01 Page shell](./PE-PRD-01-page-shell-and-routing.md) `ForecastingEnabledGate`, branded types, feature-flag wiring
 - Sibling: [PE-PRD-03 Simulations tab](./PE-PRD-03-simulations-tab.md) Save-Forecast-as-Targets flow + replace-target handshake
 - Style reference: [DB-PRD-01 Dashboard Data Model & API](../../dashboards/projects/DB-PRD-01-data-model-and-api.md)
-- Feature Flags: [FF-PRD-03 `useFeatureFlag` hook](../../feature-flags/projects/FF-PRD-03-feature-flag-sdks.md)
+- Feature Flags: [FF-PRD-03 `useFeatureFlag` hook](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)
 - CLAUDE.md rules in scope: C-1 (TDD), C-5 (branded IDs), C-6 (`import type`), C-7 (minimal comments), C-8 (prefer `type`); T-2 (colocated frontend tests), T-4 (separate pure vs DB), T-8 (structural assertions); G-2 (`npm run format.fix`), G-3 (`npm run typecheck`); O-2 (shared types between frontend and API)
